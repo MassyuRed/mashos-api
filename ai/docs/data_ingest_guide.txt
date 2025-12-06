@@ -1,0 +1,35 @@
+CocolonAI 実データ流し込みガイド（最短手順）
+======================================
+
+1) あなたの実データを CSV/JSON/JSONL のいずれかで用意
+   - 例（CSV）: data/raw/import_template.csv を参考に同じ列名で作ると簡単
+   - 列名が違う場合は tools/import_mapping.yaml でマッピングを設定
+
+2) 取り込み（import）
+   - CSVの場合（列名が template と同じなら mapping 省略可）:
+     python tools/import_logs.py --src data/raw/import_template.csv --mapping tools/import_mapping.yaml --backup
+   - JSONLの場合:
+     python tools/import_logs.py --src data/raw/mylogs.jsonl --backup
+
+   → 出力: data/raw/logs.jsonl （既存があれば .backup.YYYYMMDDHHMMSS に退避）
+
+3) バリデート（validate）
+   python tools/validate_logs.py --src data/raw/logs.jsonl
+
+   → 件数、タイムスタンプの不正、感情カテゴリの集計を表示
+
+4) 構造抽出（Structure Engine）
+   python services/structure_engine/extract.py
+
+   → 出力:
+      - data/processed/features.json
+      - data/processed/summary.txt （テンプレ文による自然文サマリー）
+
+5) 教師データ作成のスタート（おまけ）
+   python training/build_dataset.py
+   → data/train/{{AI_NAME}}_interpret_train.jsonl に1行追記（雛形）
+
+Tips:
+- keywords の区切りは mapping.yaml の keywords_delimiter で調整（デフォ: , ; 、 ／ / |）
+- strength が 0〜100 の場合は strength_scale を "0-100" に変更して 0.0〜1.0 に正規化
+- 感情表記は emotion_map で日本語→英語に正規化できます（悲しみ→Sadness 等）

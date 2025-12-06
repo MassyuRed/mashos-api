@@ -1,0 +1,20 @@
+{
+  "title": "Cocolon Raw Log Schema",
+  "type": "object",
+  "required": ["uid", "ts", "emotion"],
+  "properties": {
+    "uid": {"type": "string", "description": "User identifier (anonymized ID allowed)"},
+    "ts": {"type": "string", "description": "ISO8601 timestamp, e.g., 2025-10-24T13:20:00 or with offset"},
+    "emotion": {"type": "string", "description": "Primary emotion label (free text allowed)"},
+    "strength": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Optional intensity (0.0-1.0)"},
+    "keywords": {
+      "oneOf": [
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "string"}
+      ],
+      "description": "Key words; if string, split by comma/space/JP punctuation"
+    },
+    "note": {"type": "string", "description": "Optional free text memo"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,42 @@
+# 入力ファイルの列名 → CocolonAI標準スキーマへのマッピング
+# 使い方: python tools/import_logs.py --src data/raw/mylogs.csv --mapping tools/import_mapping.yaml
+mapping:
+  timestamp: "ts"
+  emotion: "emotion"
+  strength: "strength"
+  keywords: "keywords"
+  note: "note"
+
+# キーワード区切り（CSVのkeywords列内で使うセパレータ）
+keywords_delimiter: "[,;、／/|]"
+
+# strength（強度）のスケール
+# - "0-1"   : 0.0〜1.0 の小数（推奨）
+# - "0-100" : 0〜100 を 0.0〜1.0 にスケール変換
+strength_scale: "0-1"
+
+# 感情表記の正規化（日本語→英語／英語→英語）
+emotion_map:
+  悲しみ: "Sadness"
+  不安: "Anxiety"
+  落ち着き: "Calm"
+  喜び: "Joy"
+  怒り: "Anger"
+  恐れ: "Fear"
+  驚き: "Surprise"
+  嫌悪: "Disgust"
+  安心: "Calm"
+  寂しさ: "Sadness"
+  # 英語もそのまま通す
+  sadness: "Sadness"
+  anxiety: "Anxiety"
+  calm: "Calm"
+  joy: "Joy"
+  anger: "Anger"
+  fear: "Fear"
+  surprise: "Surprise"
+  disgust: "Disgust"
+
+# 入力で見つからなかった場合の既定
+defaults:
+  emotion: "Unknown"

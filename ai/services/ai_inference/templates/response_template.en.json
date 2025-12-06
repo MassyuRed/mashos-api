@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "lang": "en",
+  "style": {
+    "tone": "structural, non-assertive",
+    "sections": [
+      "Observation",
+      "Hypothesis",
+      "Note"
+    ]
+  },
+  "format": {
+    "observation_prefix": "Observation: ",
+    "hypothesis_prefix": "Hypothesis: ",
+    "note_prefix": "Note: "
+  },
+  "guardrails": {
+    "prohibited_phrases": [
+      "unstable",
+      "abnormal",
+      "pathological",
+      "needs treatment",
+      "should improve"
+    ],
+    "date_query_reject": "This query includes date/time specifics, which MyModel does not accept. For date-based reflection, use MyWeb (weekly/monthly).",
+    "short_input_reject": "The input is too short to respond structurally."
+  }
+}

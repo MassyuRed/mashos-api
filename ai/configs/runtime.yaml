@@ -1,0 +1,10 @@
+cache_ttl_seconds: 600
+rate_limit:
+  interpret_per_minute: 30
+  interpret_per_day: 800
+fallback:
+  enable_structure_fallback: true
+logging:
+  anonymize_ids: true
+  capture_tokens: true
+  latency_p95_threshold_ms: 2500

@@ -1,0 +1,17 @@
+map:
+  uid: user_id
+  ts: timestamp
+  emotion: mood
+  strength: score
+  keywords: tags
+  note: memo
+options:
+  keywords_delimiters: [",", "|", "、", "，", "・"]
+  ts_space_to_T: true
+  default_uid: "U1"
+  emotion_map:
+    悲しみ: Sadness
+    不安: Anxiety
+    落ち着き: Calm
+    喜び: Joy
+    怒り: Anger

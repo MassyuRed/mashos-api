@@ -1,0 +1,3 @@
+POST /v1/{{AI_NAME}}/interpret
+body: {"question": "...", "features": {...}, "target_model_id": "..."}
+return: {"text": "...", "meta": {"model_version": "v0.1"}}

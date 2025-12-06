@@ -1,0 +1,6 @@
+{AI_NAME} 実装フォルダ
+Date: 2025-10-26
+
+最初に実行:
+  python services/structure_engine/extract.py
+  python training/build_dataset.py

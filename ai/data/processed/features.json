@@ -1,0 +1,18 @@
+{
+  "period": "30d",
+  "ratios": {
+    "Sadness": 0.4,
+    "Calm": 0.2,
+    "Anxiety": 0.2,
+    "Joy": 0.2
+  },
+  "time_bias": [
+    "evening",
+    "morning"
+  ],
+  "hot_words": [
+    "孤独",
+    "疲労",
+    "朝日"
+  ]
+}

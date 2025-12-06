@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "lang": "ja",
+  "style": {
+    "tone": "構造的・非断定",
+    "sections": [
+      "観測",
+      "仮説",
+      "注記"
+    ]
+  },
+  "format": {
+    "observation_prefix": "観測：",
+    "hypothesis_prefix": "仮説：",
+    "note_prefix": "注記："
+  },
+  "guardrails": {
+    "prohibited_phrases": [
+      "不安定",
+      "異常",
+      "病的",
+      "治療が必要",
+      "改善すべき"
+    ],
+    "date_query_reject": "この照会は日付/時系列の特定を含むため、MyModelでは受け付けていません。日付に関する振り返りは MyWeb（週報/月報）をご利用ください。",
+    "short_input_reject": "入力が短いため、構造的に応答できません。"
+  }
+}
