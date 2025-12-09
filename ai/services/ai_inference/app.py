@@ -19,12 +19,18 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from structure_dict import build_structure_answer
-from api_emotion_submit import register_emotion_submit_routes
+from api_emotion_submit import (
+    register_emotion_submit_routes,
+    _extract_bearer_token,
+    _resolve_user_id_from_token,
+)
 from astor_mymodel_persona import build_persona_context_payload
+from astor_myweb_insight import generate_myweb_insight_text
+from astor_core import AstorEngine, AstorRequest, AstorMode
 
 APP_NAME = os.getenv("MYMODEL_APP_NAME", "Cocolon MyModel")
 PORT = int(os.getenv("MYMODEL_PORT", "8765"))
@@ -46,6 +52,9 @@ app.add_middleware(
 
 register_emotion_submit_routes(app)
 
+# ASTOR engine for MyWeb insight (構造分析レポート用)
+astor_myweb_engine = AstorEngine()
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("mymodel")
 
@@ -66,6 +75,7 @@ class InferRequest(BaseModel):
 class InferResponse(BaseModel):
     output: str
     meta: Dict[str, Any] = {}
+
 
 # ---------- Rules & Utilities ----------
 DATE_WORDS = re.compile(r"(いつ|何日|何時|何年度|何年|昨日|明日|先週|来週|先月|来月|去年|来年)")
@@ -247,13 +257,133 @@ def contains_date_like_adv(text: str) -> bool:
 # ---------- End Add-on ----------
 
 
-# ---------- Routes ----------
+
+
+
+# ---------- MyWeb Insight Models ----------
+class MyWebInsightRequest(BaseModel):
+    user_id: Optional[str] = Field(
+        default=None,
+        description="ASTOR 構造分析対象のユーザーID（省略時は Authorization から解決）",
+    )
+    period: Optional[str] = Field(
+        default="30d",
+        description="分析対象期間（例: 7d/30d/12w/3m）",
+    )
+
+
+class MyWebInsightResponse(BaseModel):
+    text: str
+    meta: Dict[str, Any] = {}
+
+
+# ---------- MyWeb Insight Routes ----------
+@app.post("/myweb/insight", response_model=MyWebInsightResponse)
+async def myweb_insight(
+    req: MyWebInsightRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> MyWebInsightResponse:
+    """汎用 MyWeb 構造分析レポート。
+
+    - period: "7d", "30d", "12w", "3m" など
+    - user_id が指定されていない場合は Authorization: Bearer トークンから解決する。
+    """
+    # user_id をリクエストボディまたは Authorization ヘッダから解決
+    user_id = req.user_id
+    if not user_id:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization header with Bearer token is required when user_id is omitted",
+            )
+        try:
+            user_id = await _resolve_user_id_from_token(access_token)
+        except Exception as exc:
+            logger.error("Failed to resolve user_id from token in /myweb/insight: %s", exc)
+            raise HTTPException(status_code=401, detail="Invalid authorization token")
+
+    astor_req = AstorRequest(
+        mode=AstorMode.MYWEB_INSIGHT,
+        user_id=user_id,
+        period=req.period or "30d",
+    )
+    astor_resp = astor_myweb_engine.handle(astor_req)
+    if astor_resp.text is None:
+        raise HTTPException(status_code=500, detail="ASTOR MyWebInsight failed")
+
+    meta: Dict[str, Any] = dict(astor_resp.meta or {})
+    # period 情報が無ければ補完
+    meta.setdefault("period", req.period or "30d")
+    return MyWebInsightResponse(text=astor_resp.text, meta=meta)
+
+
+@app.post("/myweb/insight/weekly", response_model=MyWebInsightResponse)
+async def myweb_insight_weekly(
+    req: MyWebInsightRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> MyWebInsightResponse:
+    """週次 MyWeb 構造分析レポート。
+
+    period が指定されていなければ自動的に "7d" を採用する。
+    """
+    effective_req = MyWebInsightRequest(
+        user_id=req.user_id,
+        period=req.period or "7d",
+    )
+    return await myweb_insight(effective_req, authorization=authorization)
+
+
+@app.post("/myweb/insight/monthly", response_model=MyWebInsightResponse)
+async def myweb_insight_monthly(
+    req: MyWebInsightRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> MyWebInsightResponse:
+    """月次 MyWeb 構造分析レポート。
+
+    period が指定されていなければ自動的に "30d" を採用する。
+    """
+    effective_req = MyWebInsightRequest(
+        user_id=req.user_id,
+        period=req.period or "30d",
+    )
+    return await myweb_insight(effective_req, authorization=authorization)
+
+
+@app.get("/myweb/insight/weekly", response_model=MyWebInsightResponse)
+async def myweb_insight_weekly_get(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> MyWebInsightResponse:
+    """GET 版の週次 MyWeb 構造分析レポート。
+
+    - ボディを送らず Authorization ヘッダだけで呼び出す互換用。
+    """
+    req = MyWebInsightRequest(user_id=None, period="7d")
+    return await myweb_insight(req, authorization=authorization)
+
+
+@app.get("/myweb/insight/monthly", response_model=MyWebInsightResponse)
+async def myweb_insight_monthly_get(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> MyWebInsightResponse:
+    """GET 版の月次 MyWeb 構造分析レポート。
+
+    - ボディを送らず Authorization ヘッダだけで呼び出す互換用。
+    """
+    req = MyWebInsightRequest(user_id=None, period="30d")
+    return await myweb_insight(req, authorization=authorization)
+
+
 @app.get("/healthz")
 def healthz() -> Dict[str, Any]:
     return {"status": "ok", "app": APP_NAME}
 
+
 @app.post("/mymodel/infer", response_model=InferResponse)
-def infer(req: InferRequest) -> InferResponse:
+async def infer(
+    req: InferRequest,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> InferResponse:
     instr = req.instruction.strip()
 
     if len(instr) < 4:
@@ -261,42 +391,47 @@ def infer(req: InferRequest) -> InferResponse:
     if contains_date_like_adv(instr):
         raise HTTPException(status_code=400, detail="この照会は受け付けられません（日付が含まれています）。")
 
+    # ASTOR persona context 用の user_id を解決（body 優先、無ければ Authorization）
+    user_id: Optional[str] = req.user_id
+    if not user_id and authorization:
+        access_token = _extract_bearer_token(authorization)
+        if access_token:
+            try:
+                user_id = await _resolve_user_id_from_token(access_token)
+            except Exception as exc:
+                logger.warning("ASTOR persona token resolution failed: %s", exc)
 
-    # ASTOR persona context（user_id があれば利用）
-    persona_ctx = None
-    if getattr(req, "user_id", None):
+    persona_ctx: Optional[Dict[str, Any]] = None
+    if user_id:
         try:
-            persona_ctx = build_persona_context_payload(user_id=req.user_id)
+            persona_ctx = build_persona_context_payload(user_id=user_id)
         except Exception as exc:
             logger.warning("ASTOR persona context build failed: %s", exc)
-    
-        # 1) 構造辞書ベースの“定義質問”であれば、そちらを優先して応答
-        lang = detect_lang(instr)
-        struct_answer = build_structure_answer(instr, lang=lang)
-        print("DEBUG struct_answer=", repr(struct_answer))  # for temporary debugging
-        if struct_answer:
-            logger.info("structure_dict hit for instruction=%r", instr[:80])
-            return InferResponse(
-                output=struct_answer,
-                meta={
-                    "target": req.target or "self",
-                    "engine": "structure_dict",
-                    "version": "1.0.0",
-                },
-            )
-    
-        # 2) 上記に該当しなければ、従来どおり人格ベースの応答を返す
-        output = compose_response(instr, req.input, req.target or "self", persona_ctx)
-    
-        # Privacy-safe telemetry (no content persisted)
-        logger.info("infer called: len=%d target=%s", len(instr), req.target)
-    
-    
-    meta = {"target": req.target or "self", "engine": "rule", "version": "1.0.0"}
+
+    # 1) 構造辞書ベースの“定義質問”であれば、そちらを優先して応答
+    lang = detect_lang(instr)
+    struct_answer = build_structure_answer(instr, lang=lang)
+    if struct_answer:
+        logger.info("structure_dict hit for instruction=%r", instr[:80])
+        return InferResponse(
+            output=struct_answer,
+            meta={
+                "target": req.target or "self",
+                "engine": "structure_dict",
+                "version": "1.0.0",
+            },
+        )
+
+    # 2) 上記に該当しなければ、従来どおり人格ベースの応答を返す
+    output = compose_response(instr, req.input, req.target or "self", persona_ctx)
+
+    # Privacy-safe telemetry (no content persisted)
+    logger.info("infer called: len=%d target=%s", len(instr), req.target)
+
+    meta: Dict[str, Any] = {"target": req.target or "self", "engine": "rule", "version": "1.0.0"}
     if persona_ctx is not None:
         meta["astor_persona"] = persona_ctx
     return InferResponse(output=output, meta=meta)
-    
 # ---------- Entrypoint ----------
 if __name__ == "__main__":
     import uvicorn
