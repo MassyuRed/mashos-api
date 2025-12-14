@@ -28,7 +28,7 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
-from astor_mymodel_persona import build_persona_context_payload
+from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
 from astor_core import AstorEngine, AstorRequest, AstorMode
 

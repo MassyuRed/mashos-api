@@ -17,11 +17,16 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 import datetime as _dt
+import os
 
 try:
     from astor_patterns import StructurePatternsStore
 except ImportError:
     StructurePatternsStore = None  # type: ignore
+
+
+# ユーザーに見せるエンジン名（リネーム時にここだけ替えられるようにする）
+ENGINE_DISPLAY_NAME = os.getenv("COCOLON_ENGINE_DISPLAY_NAME", "ASTOR")
 
 
 @dataclass
@@ -110,10 +115,10 @@ def persona_state_to_brief_text(state: AstorPersonaState, lang: str = "ja") -> s
         lang = "ja"
 
     if not state.top_structures:
-        return "ASTORはまだ、あなたの感情から安定した構造の傾向をつかめていません。"
+        return f"{ENGINE_DISPLAY_NAME}はまだ、あなたの感情から安定した構造の傾向をつかめていません。"
 
     lines: List[str] = []
-    lines.append("ASTORが最近の感情ログから観測している構造の傾向:")
+    lines.append(f"{ENGINE_DISPLAY_NAME}が最近の感情ログから観測している構造の傾向:")
 
     for v in state.top_structures:
         if v.avg_intensity >= 2.5:
@@ -129,7 +134,7 @@ def persona_state_to_brief_text(state: AstorPersonaState, lang: str = "ja") -> s
 
     lines.append("")
     lines.append(
-        "これは診断ではなく、「最近の感情の背景として現れやすい構造」をASTORがメモしているだけの情報です。"
+        f"これは診断ではなく、『最近の感情の背景として現れやすい構造』を{ENGINE_DISPLAY_NAME}がメモしているだけの情報です。"
     )
     return "\n".join(lines)
 

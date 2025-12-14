@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocolon.dev/schemas/myweb_report_schema.json",
+  "title": "MyWeb Report Schema",
+  "description": "Cocolon MyWeb の週報/月報（期間レポート）出力構文。ERST + 三軸構造 + 揺らぎパターンに基づく“観測レポート”を、UIで安定表示できる形に構造化する。数値的な断定/診断/統計の提示ではなく、『やや』『少し』『比較的』『いつもより』等の相対表現で意味と背景を言語化する。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "engine_display_name",
+    "language",
+    "period",
+    "headline",
+    "sections"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "myweb.report.v1",
+      "description": "レポート構文バージョン（固定）"
+    },
+    "report_id": {
+      "type": "string",
+      "description": "レポート識別子（UUID推奨）"
+    },
+    "engine_display_name": {
+      "type": "string",
+      "description": "ユーザーに見せるエンジン表示名（例: ASTOR / 別名に差し替え可）",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "description": "レポート言語コード（例: ja）",
+      "default": "ja",
+      "minLength": 2,
+      "maxLength": 8
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "生成時刻（ISO 8601）"
+    },
+    "frameworks": {
+      "type": "array",
+      "description": "分析の前提フレーム（参照用）",
+      "items": {
+        "type": "string",
+        "enum": [
+          "ERST",
+          "ERST-B",
+          "ThreeAxis",
+          "SwayPatterns",
+          "ObservationNotDiagnosis"
+        ]
+      },
+      "default": [
+        "ERST",
+        "ThreeAxis",
+        "SwayPatterns",
+        "ObservationNotDiagnosis"
+      ]
+    },
+    "period": {
+      "type": "object",
+      "description": "対象期間",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start_date",
+        "end_date",
+        "days"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "レポート種別",
+          "enum": [
+            "weekly",
+            "monthly",
+            "custom"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "description": "UI表示用の期間ラベル（例: 直近7日 / 直近30日）"
+        },
+        "start_date": {
+          "type": "string",
+          "format": "date",
+          "description": "期間開始日（YYYY-MM-DD）"
+        },
+        "end_date": {
+          "type": "string",
+          "format": "date",
+          "description": "期間終了日（YYYY-MM-DD）"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 366,
+          "description": "対象日数（1〜366）"
+        }
+      }
+    },
+    "headline": {
+      "type": "string",
+      "description": "レポートのキャッチ（短い主語付きタイトル）",
+      "minLength": 1
+    },
+    "sections": {
+      "type": "array",
+      "description": "UIで順に描画するセクション配列",
+      "minItems": 5,
+      "items": {
+        "$ref": "#/$defs/Section"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "observation_summary"
+          }
+        }
+      },
+      "description": "観測サマリーが必須"
+    },
+    {
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "pattern_detection"
+          }
+        }
+      },
+      "description": "パターン検出が必須"
+    },
+    {
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "structure_movements"
+          }
+        }
+      },
+      "description": "構造の動きが必須"
+    },
+    {
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "self_reflection_hint"
+          }
+        }
+      },
+      "description": "自己観照ヒントが必須"
+    },
+    {
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "notes"
+          }
+        }
+      },
+      "description": "注記が必須"
+    }
+  ],
+  "$defs": {
+    "Section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "セクション識別子（推奨: observation_summary / pattern_detection / structure_movements / self_reflection_hint / notes）",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "description": "UIに表示する見出し",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "セクション表示タイプ",
+          "enum": [
+            "text",
+            "bullets",
+            "structures",
+            "callout"
+          ]
+        },
+        "tone": {
+          "type": "string",
+          "description": "文体/温度感のタグ（任意）",
+          "enum": [
+            "neutral",
+            "gentle",
+            "reflective",
+            "encouraging",
+            "meta"
+          ],
+          "default": "gentle"
+        },
+        "text": {
+          "type": "string",
+          "description": "段落テキスト（type=text/callout で使用）",
+          "minLength": 1
+        },
+        "items": {
+          "type": "array",
+          "description": "セクション用の items（type=bullets/structures で使用）"
+        },
+        "style": {
+          "type": "string",
+          "description": "強調枠の種類（type=callout で使用）",
+          "enum": [
+            "hint",
+            "reflection",
+            "note"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "text"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "段落テキスト（観測主義・非診断・相対表現）",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "bullets"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "description": "箇条書き（周期性/揺らぎ/切り替え/補正などの意味づけ）",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/BulletItem"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "structures"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "description": "構造語の動き（非数値・相対表現）",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/StructureItem"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "callout"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "style": {
+                "type": "string",
+                "description": "強調枠の種類",
+                "enum": [
+                  "hint",
+                  "reflection",
+                  "note"
+                ],
+                "default": "reflection"
+              },
+              "text": {
+                "type": "string",
+                "description": "強調文（自己観照へ繋ぐメッセージ）",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "BulletItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "箇条書き本文（『やや』『少し』『比較的』『いつもより』等の相対表現）"
+        },
+        "tags": {
+          "type": "array",
+          "description": "分類タグ（任意）",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "StructureItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "structure_key",
+        "label",
+        "relative_desc"
+      ],
+      "properties": {
+        "structure_key": {
+          "type": "string",
+          "description": "内部参照用の構造キー（例: anxiety, hope, acceptance 等 / もしくは構造語ID）",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "description": "UI表示用の構造語ラベル（例: 不安 / 希望 / 受容）",
+          "minLength": 1
+        },
+        "relative_desc": {
+          "type": "string",
+          "description": "自己基準（Baseline）や直近の流れに対する相対的な説明（数値ではなく言葉で）",
+          "minLength": 1
+        },
+        "movement": {
+          "type": "string",
+          "description": "変化方向（任意。数値ではなく方向性）",
+          "enum": [
+            "increasing",
+            "decreasing",
+            "stable",
+            "oscillating",
+            "emerging"
+          ],
+          "default": "stable"
+        },
+        "context": {
+          "type": "string",
+          "description": "背景・補足（任意。意味づけや出力の背景）"
+        }
+      }
+    }
+  }
+}

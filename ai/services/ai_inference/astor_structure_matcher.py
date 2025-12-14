@@ -51,7 +51,12 @@ class StructureMatcher:
 
     def __init__(self, config_path: Optional[Path] = None) -> None:
         if config_path is None:
-            base = Path(__file__).resolve().parents[3]  # mashos-api/
+            # 既定は mashos-api/ai/data/config/astor_structure_dict.json を想定。
+            # ただしテスト/単体実行などでフォルダ深度が足りない場合に IndexError で落ちないよう、
+            # 安全にフォールバックする。
+            here = Path(__file__).resolve()
+            parents = list(here.parents)
+            base = parents[3] if len(parents) > 3 else here.parent
             config_path = base / "ai" / "data" / "config" / "astor_structure_dict.json"
 
         self.config_path = config_path

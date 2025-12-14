@@ -20,10 +20,13 @@ from typing import Any, Dict, List, Optional
 
 import json
 from pydantic import BaseModel, Field
+
 from astor_structure_matcher import StructureMatcher
+from astor_myweb_insight import generate_myweb_insight_payload
 
 
 # ---------- モード定義 ----------
+
 
 class AstorMode(str, Enum):
     EMOTION_INGEST = "EmotionIngest"
@@ -33,12 +36,14 @@ class AstorMode(str, Enum):
 
 # ---------- ペイロード定義 ----------
 
+
 class AstorEmotionPayload(BaseModel):
     """
     EmotionIngest モードで ASTOR に渡される情報。
     /emotion/submit で Supabase に保存された内容のうち、
     ASTOR が構造思考に使いたい要素のみをまとめたもの。
     """
+
     user_id: str = Field(..., description="感情を入力したユーザーのID")
     created_at: str = Field(..., description="感情レコードの作成時刻（ISO8601, UTC想定）")
     emotions: List[Dict[str, Any]] = Field(
@@ -55,6 +60,7 @@ class AstorRequest(BaseModel):
     ASTOR に渡す共通リクエストモデル。
     mode に応じて、使用するフィールドが変わる。
     """
+
     mode: AstorMode
 
     # EmotionIngest 用
@@ -77,6 +83,40 @@ class AstorResponse(BaseModel):
     meta: Dict[str, Any] = {}
 
 
+# ---------- ユーティリティ ----------
+
+
+def _parse_period_days(period: Optional[str]) -> int:
+    """
+    "7d", "30d", "12w", "3m" などの文字列から日数をざっくり算出するユーティリティ。
+    - サフィックス:
+        d: 日
+        w: 週 (×7日)
+        m: 月 (×30日程度のラフな換算)
+    - うまく解釈できなかった場合は 30 日を返す。
+    """
+    if not period:
+        return 30
+    s = str(period).strip().lower()
+    if not s:
+        return 30
+    try:
+        if s.endswith("d"):
+            n = int(s[:-1] or "30")
+            return max(1, n)
+        if s.endswith("w"):
+            n = int(s[:-1] or "1")
+            return max(1, n * 7)
+        if s.endswith("m"):
+            n = int(s[:-1] or "1")
+            return max(1, n * 30)
+        # サフィックス無しは日数とみなす
+        n = int(s)
+        return max(1, n)
+    except Exception:
+        return 30
+
+
 # ---------- ASTOR 本体 ----------
 
 
@@ -94,6 +134,7 @@ class AstorEngine:
         self._matcher = StructureMatcher()
         # 構造語パターンストア（ユーザーごとの構造状態を保持）
         from astor_patterns import StructurePatternsStore  # 局所 import で循環を避ける
+
         self._patterns = StructurePatternsStore()
 
     def handle(self, req: AstorRequest) -> AstorResponse:
@@ -217,8 +258,11 @@ class AstorEngine:
         ASTOR専用の感情ログ保存先を返す。
         - 既存の ai/data/raw/logs.jsonl とは分けておく。
         """
-        # このファイル: mashos-api/ai/services/ai_inference/astor_core.py 想定
-        base = Path(__file__).resolve().parents[3]  # mashos-api/
+        # このファイル: mashos-api/ai/services/ai_inference/astor_core.py 想定。
+        # テスト/単体実行などでフォルダ深度が足りない場合でも IndexError で落ちないようにする。
+        here = Path(__file__).resolve()
+        parents = list(here.parents)
+        base = parents[3] if len(parents) > 3 else here.parent
         return base / "ai" / "data" / "raw" / "astor_emotions.jsonl"
 
     # ------ MyModelReply: 既存人格応答をラップするモード（v0.1では未接続） ------
@@ -235,21 +279,52 @@ class AstorEngine:
             meta={"mode": req.mode.value, "status": "not_implemented"},
         )
 
-    # ------ MyWebInsight: 週報・月報など期間分析モード（プレースホルダ） ------
+    # ------ MyWebInsight: 週報・月報など期間分析モード ------
 
     def _handle_myweb_insight(self, req: AstorRequest) -> AstorResponse:
         """
         MyWeb 用の期間レポート生成モード。
 
-        v0.1 ではまだ直接は呼び出さず、analysis_engine.weekly / monthly を
-        ASTOR 経由で使うためのプレースホルダとして残しておく。
+        v1.0 では astor_myweb_insight.generate_myweb_insight_payload() を呼び出し、
+        MyWeb 用の「構文（=レポートスキーマ）」と、表示用テキストを返す。
         """
-        period = req.period or "30d"
-        return AstorResponse(
-            text=f"ASTOR MyWebInsight placeholder for period={period}",
-            meta={
+        user_id = req.user_id
+        if not user_id:
+            return AstorResponse(
+                text=None,
+                meta={
+                    "mode": req.mode.value,
+                    "status": "no_user_id",
+                    "error": "MyWebInsight requires user_id",
+                    "engine": "astor.myweb.v1",
+                },
+            )
+
+        period_str = req.period or "30d"
+        period_days = _parse_period_days(period_str)
+
+        try:
+            text, report = generate_myweb_insight_payload(user_id=user_id, period_days=period_days, lang="ja")
+            meta: Dict[str, Any] = {
                 "mode": req.mode.value,
-                "period": period,
-                "engine": "astor.myweb.placeholder",
-            },
-        )
+                "engine": "astor.myweb.v1",
+                "period": period_str,
+                "period_days": period_days,
+                "status": "ok",
+                # UI 側で安定して表示するためのレポート構文
+                "report": report,
+            }
+            return AstorResponse(text=text, meta=meta)
+        except Exception as exc:
+            # ここでエラーになっても MyWeb 全体は落とさない方針
+            return AstorResponse(
+                text=None,
+                meta={
+                    "mode": req.mode.value,
+                    "engine": "astor.myweb.v1",
+                    "period": period_str,
+                    "period_days": period_days,
+                    "status": "error",
+                    "error": str(exc),
+                },
+            )
