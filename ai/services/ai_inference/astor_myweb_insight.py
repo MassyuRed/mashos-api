@@ -44,6 +44,22 @@ ENGINE_DISPLAY_NAME = os.getenv("COCOLON_ENGINE_DISPLAY_NAME", "ASTOR")
 REPORT_VERSION = "myweb.report.v1"
 
 
+# ---------- self insight（自己理解）フィルタ ----------
+
+# 「自己理解」入力は MyWeb の“感情傾向”分析には使わない。
+# （履歴には残り得るため、MyWeb で参照する集計ロジック側で除外する。）
+SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
+
+
+def _is_self_insight_emotion_label(label: Any) -> bool:
+    """トリガーの emotion ラベルが「自己理解」由来かを判定する。"""
+    try:
+        s = str(label or "").strip()
+    except Exception:
+        return False
+    return s in SELF_INSIGHT_EMOTION_LABELS
+
+
 # ---------- 内部データ構造（集計用） ----------
 
 
@@ -135,6 +151,10 @@ def _filter_by_range(
         if ts < start or ts >= end:
             continue
 
+        # 「自己理解」入力は MyWeb の感情傾向分析には含めない
+        if _is_self_insight_emotion_label(t.get("emotion")):
+            continue
+
         try:
             score = float(t.get("score") or 0.0)
         except (TypeError, ValueError):
@@ -212,7 +232,15 @@ def _emotion_label_ja(label: Optional[str]) -> Optional[str]:
 
 
 def analyze_myweb_structures(user_id: str, period_days: int = 30) -> List[StructureTrend]:
-    """指定ユーザーの構造語について、現在期間と直前期間の比較を返す。"""
+    """指定ユーザーの「感情（emotion label）」について、現在期間と直前期間の比較を返す。
+
+    重要:
+    - MyWeb は「感情傾向/推移」からの観測レポートに寄せる。
+      （自己構造/思考構造の推定は MyProfile 側に寄せる）
+    - そのため、ここでの key は structure_key ではなく「emotion label」を採用する。
+      MyWeb の "structure_movements" セクションは互換のためIDを維持しつつ、
+      実際の中身は「感情の動き」として表示されることを想定する。
+    """
 
     struct_map = _load_user_structures(user_id)
     if not struct_map:
@@ -224,11 +252,49 @@ def analyze_myweb_structures(user_id: str, period_days: int = 30) -> List[Struct
     prev_start = now - _dt.timedelta(days=period_days * 2)
     prev_end = cur_start
 
+    # 重複（同一ログが複数構造語にヒット）をゆるく除いて "感情イベント列" を作る
+    cur_events = _collect_deduped_events(struct_map, start=cur_start, end=cur_end)
+    prev_events = _collect_deduped_events(struct_map, start=prev_start, end=prev_end)
+
+    def _stats(events: List[Dict[str, Any]]) -> Dict[str, PeriodStructureStat]:
+        buckets: Dict[str, Dict[str, Any]] = {}
+        for e in events:
+            emo = str(e.get("emotion") or "").strip()
+            if not emo:
+                continue
+            # safety: 「自己理解」入力は MyWeb の感情傾向分析には含めない
+            if _is_self_insight_emotion_label(emo):
+                continue
+
+            b = buckets.setdefault(emo, {"count": 0, "sum_int": 0.0, "cnt_int": 0})
+            b["count"] += 1
+
+            if e.get("intensity") is not None:
+                try:
+                    f = float(e["intensity"])
+                except (TypeError, ValueError):
+                    f = None
+                if f is not None:
+                    b["sum_int"] += f
+                    b["cnt_int"] += 1
+
+        out: Dict[str, PeriodStructureStat] = {}
+        for emo, b in buckets.items():
+            cnt = int(b["count"])
+            avg_int = float(b["sum_int"] / b["cnt_int"]) if b["cnt_int"] else 0.0
+            # avg_score は互換のために残している（ここでは avg_int と同値でよい）
+            out[emo] = PeriodStructureStat(key=emo, count=cnt, avg_score=avg_int, avg_intensity=avg_int)
+        return out
+
+    cur_stats = _stats(cur_events)
+    prev_stats = _stats(prev_events)
+
+    all_keys = sorted(set(cur_stats.keys()) | set(prev_stats.keys()))
     trends: List[StructureTrend] = []
 
-    for struct_entry in struct_map.values():
-        cur = _filter_by_range(struct_entry, start=cur_start, end=cur_end)
-        prev = _filter_by_range(struct_entry, start=prev_start, end=prev_end)
+    for emo in all_keys:
+        cur = cur_stats.get(emo) or PeriodStructureStat(key=emo, count=0, avg_score=0.0, avg_intensity=0.0)
+        prev = prev_stats.get(emo) or PeriodStructureStat(key=emo, count=0, avg_score=0.0, avg_intensity=0.0)
         if cur.count <= 0 and prev.count <= 0:
             continue
 
@@ -236,23 +302,22 @@ def analyze_myweb_structures(user_id: str, period_days: int = 30) -> List[Struct
         delta_intensity = float(cur.avg_intensity - prev.avg_intensity)
         trend = _trend_label(period_days, prev.count, cur.count)
 
-        term_en, definition, observation = _lookup_structure_dict(cur.key or prev.key)
-
         trends.append(
             StructureTrend(
-                key=cur.key or prev.key,
+                key=emo,
                 current=cur,
                 previous=prev,
                 delta_count=delta_count,
                 delta_intensity=delta_intensity,
                 trend=trend,
-                term_en=term_en,
-                definition=definition,
-                observation_viewpoint=observation,
+                term_en=None,
+                definition=None,
+                observation_viewpoint=None,
             )
         )
 
     return trends
+
 
 
 # ---------- 集計（感情の揺らぎ/切り替え：ERST視点の材料） ----------
@@ -282,6 +347,10 @@ def _collect_deduped_events(
             if ts is None:
                 continue
             if ts < start or ts >= end:
+                continue
+
+            # 「自己理解」入力は MyWeb の感情傾向分析には含めない
+            if _is_self_insight_emotion_label(t.get("emotion")):
                 continue
 
             emotion = t.get("emotion")
@@ -398,18 +467,21 @@ def _period_meta(period_days: int) -> Dict[str, Any]:
     start = (now - _dt.timedelta(days=period_days)).date().isoformat()
     end = now.date().isoformat()
 
+    # MyWeb は「感情構造」レポート：
+    # 自己（価値観/思考特性/反応モデル）の断定ではなく、
+    # 一定期間における感情の傾向・推移・揺らぎを観測できる形にまとめる。
     if period_days <= 8:
         kind = "weekly"
         label = "最近の一週間"
-        headline = "最近の一週間の構造観測"
+        headline = "最近の一週間の感情構造レポート"
     elif period_days <= 35:
         kind = "monthly"
         label = "最近のひと月"
-        headline = "最近のひと月の構造観測"
+        headline = "最近のひと月の感情構造レポート"
     else:
         kind = "custom"
         label = "最近の期間"
-        headline = "最近の期間の構造観測"
+        headline = "最近の期間の感情構造レポート"
 
     return {
         "kind": kind,
@@ -419,6 +491,7 @@ def _period_meta(period_days: int) -> Dict[str, Any]:
         "days": int(max(1, min(period_days, 366))),
         "_headline": headline,  # 内部用（後で取り出して headline に使う）
     }
+
 
 
 def _movement_from_trend(tr: StructureTrend) -> str:
@@ -486,44 +559,98 @@ def _build_observation_summary(
     sway: Dict[str, Any],
     kind_label: str,
 ) -> str:
-    """観測サマリー（段落）。"""
+    """観測サマリー（段落）。
 
-    # 中心テーマ
+    MyWeb は「感情の傾向・推移」を扱う。
+    そのため、ここでは "中心テーマ" を「中心に出やすかった感情」として言語化する。
+
+    追加方針（商業性とのバランス）:
+    - 構造精度（観測主義・非診断）は維持する。
+    - ただしユーザーが「答え」を受け取った感覚を持てるよう、
+      冒頭に “要点（答え）” を短く明示してから、根拠となる観測文へ繋げる。
+    """
+
+    # --------------------------
+    # 要点（答え）: まず短く明示
+    # --------------------------
+    takeaways: List[str] = []
+
+    # 中心（出やすい感情）
     if top_keys:
-        center = "「" + "」「".join(top_keys[:3]) + "」"
-        head = f"{kind_label}は、{center}が中心に観測されました。"
+        labels = [(_emotion_label_ja(k) or str(k)) for k in top_keys[:3]]
+        center = "「" + "」「".join(labels) + "」"
+        takeaways.append(f"中心は{center}。")
     else:
-        head = f"{kind_label}は、いくつかの構造が薄く観測されています。"
+        takeaways.append("中心となる感情はまだはっきりしません（分散気味）。")
 
-    # 揺らぎの説明
+    # 揺れ方（切り替え）
     sw = sway.get("switchiness")
     if sw == "fine":
-        sway_line = "感情の切り替えが比較的細かく、揺れながら調整している印象があります。"
+        takeaways.append("切り替えは細かめ（揺れながら調整している状態）。")
     elif sw == "slow":
-        sway_line = "ひとつの流れが続きやすく、同じテーマを抱え続けるような動きが見えます。"
+        takeaways.append("ひとつの感情が続きやすい（同じ感情が長めに滞在）。")
+    else:
+        takeaways.append("揺れはあるが、移り変わりはほどよい。")
+
+    # 戻り方（ネガ→ポジ / 落ち着きへ戻る動き）
+    rtc = sway.get("return_to_center")
+    poss = [_emotion_label_ja(x) for x in (sway.get("positives") or [])]
+    pos_phrase = "・".join([p for p in poss if p]) if poss else "落ち着き"
+
+    if rtc in ("repeating", "often"):
+        takeaways.append(f"揺れたあとに{pos_phrase}へ戻る動きが複数回。")
+    elif rtc == "some":
+        takeaways.append(f"{pos_phrase}へ戻る動きは一部で確認。")
+    else:
+        takeaways.append("揺れが残りやすく、戻りは少なめ。")
+
+    # 観測密度（ログが少ない場合は控えめに）
+    density = sway.get("density")
+    if density == "low":
+        takeaways.append("ログが少なめなので輪郭は控えめに解釈。")
+
+    answer_block = "【要点（答え）】\n" + "\n".join([f"・{t}" for t in takeaways])
+
+    # --------------------------
+    # 以降: 観測文（根拠・意味づけ）
+    # --------------------------
+
+    # 中心（出やすい感情）: 段落
+    if top_keys:
+        labels = [(_emotion_label_ja(k) or str(k)) for k in top_keys[:3]]
+        center = "「" + "」「".join(labels) + "」"
+        head = f"{kind_label}は、{center}が中心に観測されました。"
+    else:
+        head = f"{kind_label}は、いくつかの感情が薄く観測されています。"
+
+    # 揺らぎの説明
+    if sw == "fine":
+        sway_line = "感情の切り替えが比較的細かく、揺れながら調整している動きが見えます。"
+    elif sw == "slow":
+        sway_line = "ひとつの感情の流れが続きやすく、同じ感情が長めに滞在する動きが見えます。"
     else:
         sway_line = "揺れはあるものの、ほどよい間隔で移り変わっている印象です。"
 
-    # 戻り（自己調整）
-    rtc = sway.get("return_to_center")
+    # 戻り（ネガ→ポジ/落ち着きへ戻る動き）
     if rtc in ("repeating", "often"):
-        rtc_line = "揺れたあとに落ち着きへ戻ろうとする流れが、繰り返し見えています。"
-        meaning = "これは、外から受けた刺激を自分の中で受け止め直すプロセスが働いている可能性があります。"
+        rtc_line = "揺れたあとに落ち着きへ戻ろうとする動きが、繰り返し見えています。"
+        meaning = "刺激を受けたあとに、感情が自然に整っていく流れが起きている可能性があります。"
     elif rtc == "some":
         rtc_line = "揺れたあとに落ち着きへ戻る動きが、一部で見えています。"
-        meaning = "乱れそのものよりも、『戻り方』にあなたの調整力が出ているかもしれません。"
+        meaning = "乱れそのものよりも、『戻り方』に感情の整え方のパターンが出やすいかもしれません。"
     else:
         rtc_line = "揺れがそのまま残りやすく、今は整える前の段階にいる可能性があります。"
-        meaning = "焦って結論を出すより、『何が反応しているか』を静かに見ていく時期かもしれません。"
+        meaning = "焦って結論を出すより、『何で揺れたか（きっかけ）』を静かに観測していくのが安全です。"
 
-    # 観測密度
-    density = sway.get("density")
+    # 観測密度の補足
     if density == "low":
         tail = "観測ログが少なめなので、今回は輪郭を柔らかく捉えています。"
     else:
         tail = ""
 
-    return "\n\n".join([t for t in [head, sway_line, rtc_line, meaning, tail] if t]).strip()
+    return "\n\n".join([t for t in [answer_block, head, sway_line, rtc_line, meaning, tail] if t]).strip()
+
+
 
 
 def _build_pattern_bullets(
@@ -531,7 +658,11 @@ def _build_pattern_bullets(
     sway: Dict[str, Any],
     top_keys: List[str],
 ) -> List[Dict[str, Any]]:
-    """パターン検出（bullets）。"""
+    """パターン検出（bullets）。
+
+    MyWeb では「自己の断定」ではなく、
+    感情の揺らぎ・切り替え・戻り方など“状態の動き”を中心に提示する。
+    """
 
     items: List[Dict[str, Any]] = []
 
@@ -540,14 +671,14 @@ def _build_pattern_bullets(
     if sw == "fine":
         items.append(
             {
-                "text": "短いスパンで切り替えが起きやすく、揺れながらも自分を整え直している印象です。",
+                "text": "短いスパンで切り替えが起きやすく、揺れながらも感情が調整されている印象です。",
                 "tags": ["sway", "alternation"],
             }
         )
     elif sw == "slow":
         items.append(
             {
-                "text": "同じ流れが続きやすく、ひとつのテーマを抱えながら進んでいる印象です。",
+                "text": "同じ流れが続きやすく、ひとつの感情が長めに滞在しやすい動きがあります。",
                 "tags": ["sway", "continuity"],
             }
         )
@@ -559,7 +690,7 @@ def _build_pattern_bullets(
             }
         )
 
-    # ネガ→ポジの戻り
+    # ネガ→ポジの戻り（落ち着きへ戻る）
     rtc = sway.get("return_to_center")
     negs = [_emotion_label_ja(x) for x in (sway.get("negatives") or [])]
     poss = [_emotion_label_ja(x) for x in (sway.get("positives") or [])]
@@ -581,13 +712,14 @@ def _build_pattern_bullets(
             }
         )
 
-    # 中心テーマ
+    # 中心（出やすい感情）
     if top_keys:
-        center = "・".join(top_keys[:3])
+        center_labels = [(_emotion_label_ja(k) or str(k)) for k in top_keys[:3]]
+        center = "・".join(center_labels)
         items.append(
             {
-                "text": f"この期間の中心テーマは「{center}」まわりに集まりやすいようです。",
-                "tags": ["themes"],
+                "text": f"この期間は「{center}」が、比較的出やすい中心の感情でした。",
+                "tags": ["emotions", "center"],
             }
         )
 
@@ -602,35 +734,34 @@ def _build_pattern_bullets(
 
     # 最低1件は保証
     if not items:
-        items = [{"text": "今回は大きなパターンの断定はせず、観測された流れだけを短くまとめています。", "tags": []}]
+        items = [{"text": "今回は大きな断定はせず、観測された流れだけを短くまとめています。", "tags": []}]
 
     return items
 
 
+
+
 def _build_structure_items(trends_sorted: List[StructureTrend], period_days: int) -> List[Dict[str, Any]]:
+    """互換セクション: "structure_movements" だが、内容は「感情の動き」を入れる。
+
+    UI/スキーマ互換のためセクションIDは維持しつつ、
+    中身を「感情構造（傾向・推移）」として表示する。
+    """
+
     items: List[Dict[str, Any]] = []
 
     for tr in trends_sorted[:5]:
         movement = _movement_from_trend(tr)
         rel = _relative_desc(tr, period_days)
 
-        ctx_parts: List[str] = []
-        if tr.observation_viewpoint:
-            ctx_parts.append(tr.observation_viewpoint)
-        elif tr.definition:
-            ctx_parts.append(tr.definition)
-        if tr.term_en:
-            ctx_parts.append(f"英語ラベル: {tr.term_en}")
+        label = _emotion_label_ja(tr.key) or tr.key
 
         item: Dict[str, Any] = {
-            "structure_key": tr.key,
-            "label": tr.key,
+            "structure_key": tr.key,  # ここでは emotion label を入れる
+            "label": label,
             "relative_desc": rel,
             "movement": movement,
         }
-        if ctx_parts:
-            # context は長文化しやすいので、ここでは短く結合する
-            item["context"] = " / ".join(ctx_parts)[:240]
 
         items.append(item)
 
@@ -639,12 +770,47 @@ def _build_structure_items(trends_sorted: List[StructureTrend], period_days: int
             {
                 "structure_key": "observing",
                 "label": "観測準備中",
-                "relative_desc": "もう少し記録が積み重なると、構造の動きが見えてきます。",
+                "relative_desc": "もう少し記録が積み重なると、感情の動きが見えてきます。",
                 "movement": "stable",
             }
         )
 
     return items
+
+
+
+
+def _build_reflection_text(*, top_keys: List[str]) -> str:
+    """MyWeb の「感情観測ヒント」用テキストを作る。
+
+    目的:
+    - 構造精度（観測主義・非診断）は守りつつ、
+      ユーザーが「次に何をすれば答えに近づくか」を掴みやすくする。
+    - MyProfile（自己構造）へ踏み込みすぎず、"感情のきっかけ" の観測に留める。
+    """
+
+    hints = {
+        "Anxiety": "不安が出た直前の『未確定だった点／不確実だった点』を1つメモ",
+        "Anger": "怒りが出た直前の『止まったこと／納得できなかった点』を1つメモ",
+        "Sadness": "悲しみが出た直前の『終わったと感じたこと／できなかったこと』を1つメモ",
+        "Joy": "喜びが出た直前の『うまくいったこと／満たされたこと』を1つメモ",
+        "Calm": "落ち着きが出た直前の『安心材料（環境・人・状況）』を1つメモ",
+    }
+
+    lines: List[str] = []
+    lines.append("今週の“答え”を見つけるための観測メモ：")
+    lines.append("・強く出た感情があった日は、『直前の出来事・環境・体調』を一言メモ")
+    lines.append("・感情を良し悪しで判断せず、『いつ・どんな場面で・どれくらい出たか』を観測")
+
+    if top_keys:
+        lines.append("")
+        lines.append("中心になりやすかった感情（ヒント）:")
+        for k in top_keys[:2]:
+            label = _emotion_label_ja(k) or str(k)
+            hint = hints.get(str(k), "その感情が出た直前の出来事を一言メモ")
+            lines.append(f"・{label}: {hint}")
+
+    return "\n".join(lines).strip()
 
 
 def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str = "ja") -> Dict[str, Any]:
@@ -664,8 +830,8 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
     if not struct_map or not trends:
         period_label = p.get("label") or "最近の期間"
         observation = (
-            f"{period_label}は、まだ安定して観測できる構造の傾向が十分ではありません。\n\n"
-            "記録が少ないときは、無理に結論を出さず、まず『いま何が反応しているか』だけを静かに見ていくのが安全です。"
+            f"{period_label}は、まだ安定して観測できる感情の傾向が十分ではありません。\n\n"
+            "記録が少ないときは、無理に結論を出さず、まず『何で揺れたか（きっかけ）』だけを静かに見ていくのが安全です。"
         )
 
         report: Dict[str, Any] = {
@@ -679,7 +845,7 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
             "sections": [
                 {
                     "id": "observation_summary",
-                    "title": "構造観測サマリー",
+                    "title": "感情観測サマリー",
                     "type": "text",
                     "tone": "gentle",
                     "text": observation,
@@ -698,25 +864,25 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
                 },
                 {
                     "id": "structure_movements",
-                    "title": "構造の動き",
+                    "title": "感情の動き",
                     "type": "structures",
                     "tone": "neutral",
                     "items": [
                         {
                             "structure_key": "observing",
                             "label": "観測準備中",
-                            "relative_desc": "もう少し記録が積み重なると、構造の動きが見えてきます。",
+                            "relative_desc": "もう少し記録が積み重なると、感情の動きが見えてきます。",
                             "movement": "stable",
                         }
                     ],
                 },
                 {
                     "id": "self_reflection_hint",
-                    "title": "自己観照ヒント",
+                    "title": "感情観測ヒント",
                     "type": "callout",
                     "tone": "reflective",
                     "style": "reflection",
-                    "text": "どんな感情が出たかよりも、『そのあと自分がどう動いたか』に目を向けてみてください。\n揺れたあとの選択に、いまのあなたらしさが出ています。",
+                    "text": "強く出た感情があった日は、\n『直前の出来事・環境・体調』を一言メモしておくと、次のレポートで“出やすい条件”が見えやすくなります。\n\n感情を良し悪しで判断せず、\n『いつ・どんな場面で・どれくらい出たか』を観測してみてください。",
                 },
                 {
                     "id": "notes",
@@ -724,14 +890,14 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
                     "type": "callout",
                     "tone": "meta",
                     "style": "note",
-                    "text": f"これは診断ではなく、『{ENGINE_DISPLAY_NAME}が記録から観測した傾向』のメモです。数値ではなく相対表現でまとめています。",
+                    "text": f"これは診断ではなく、『{ENGINE_DISPLAY_NAME}が記録から観測した感情の傾向』のメモです。数値ではなく相対表現でまとめています。",
                 },
             ],
         }
         return report
 
     # 通常ケース
-    trends_sorted = sorted(trends, key=lambda t: (t.current.count, t.current.avg_score), reverse=True)
+    trends_sorted = sorted(trends, key=lambda t: (t.current.count, t.current.avg_intensity), reverse=True)
     top_keys = [t.key for t in trends_sorted[:3] if t.key]
 
     # sway analysis
@@ -752,16 +918,11 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
     structure_items = _build_structure_items(trends_sorted=trends_sorted, period_days=period_days)
 
     # self-reflection hint（基本固定。将来、top 構造に応じた個別ヒントも可能）
-    reflection_text = (
-        "どんな感情が出たかよりも、\n"
-        "『そのあと自分がどう動いたか』に目を向けてみてください。\n\n"
-        "揺れたあとの選択にこそ、\n"
-        "いまのあなたらしさが出ています。"
-    )
+    reflection_text = _build_reflection_text(top_keys=top_keys)
 
     # notes
     notes_lines = [
-        f"これは診断ではなく、『{ENGINE_DISPLAY_NAME}が記録から観測した傾向』のメモです。",
+        f"これは診断ではなく、『{ENGINE_DISPLAY_NAME}が記録から観測した感情の傾向』のメモです。",
         "数値ではなく相対表現でまとめています。",
     ]
     if sway.get("density") == "low":
@@ -778,7 +939,7 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
         "sections": [
             {
                 "id": "observation_summary",
-                "title": "構造観測サマリー",
+                "title": "感情観測サマリー",
                 "type": "text",
                 "tone": "gentle",
                 "text": observation_summary,
@@ -792,14 +953,14 @@ def generate_myweb_insight_report(user_id: str, period_days: int = 30, lang: str
             },
             {
                 "id": "structure_movements",
-                "title": "構造の動き",
+                "title": "感情の動き",
                 "type": "structures",
                 "tone": "neutral",
                 "items": structure_items,
             },
             {
                 "id": "self_reflection_hint",
-                "title": "自己観照ヒント",
+                "title": "感情観測ヒント",
                 "type": "callout",
                 "tone": "reflective",
                 "style": "reflection",

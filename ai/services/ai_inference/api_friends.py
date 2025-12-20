@@ -1,0 +1,362 @@
+# -*- coding: utf-8 -*-
+"""Friends API for Cocolon (MashOS / FastAPI)
+
+Implements the minimum endpoints required for the MVP:
+
+- POST /friends/request
+    Body: {"friend_code": "XXXXXXXXXX"}
+    Creates a pending friend request.
+
+- POST /friends/requests/{id}/accept
+    The receiver accepts a pending request. Creates friendships (both directions).
+
+- POST /friends/requests/{id}/reject
+    The receiver rejects a pending request.
+
+Notes
+-----
+* The caller must pass Supabase Auth access token via:
+    Authorization: Bearer <access_token>
+  We resolve the user_id by calling Supabase Auth `/auth/v1/user`.
+* DB writes are performed via Supabase PostgREST using the service role key.
+* We do NOT expose secret memo content anywhere.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import httpx
+from fastapi import FastAPI, Header, HTTPException, Path
+from pydantic import BaseModel, Field
+
+# Reuse auth helpers & config checks from emotion submit module
+from api_emotion_submit import (
+    _ensure_supabase_config,
+    _extract_bearer_token,
+    _resolve_user_id_from_token,
+)
+
+logger = logging.getLogger("friends_api")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+# ----------------------------
+# Pydantic models
+# ----------------------------
+
+
+class FriendRequestCreateBody(BaseModel):
+    friend_code: str = Field(..., min_length=4, max_length=64, description="Target user's friend_code")
+
+
+class FriendRequestCreateResponse(BaseModel):
+    status: str = Field(..., description="ok | already_friends | already_pending")
+    request_id: Optional[int] = None
+    requested_user_id: Optional[str] = None
+    requested_display_name: Optional[str] = None
+
+
+class FriendRequestActionResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    request_id: int
+
+
+# ----------------------------
+# Supabase helpers
+# ----------------------------
+
+
+def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
+    _ensure_supabase_config()
+    h = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        h["Prefer"] = prefer
+    return h
+
+
+async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.get(url, headers=_sb_headers_json(), params=params)
+
+
+async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json)
+
+
+async def _sb_patch(path: str, *, params: Dict[str, str], json: Any, prefer: Optional[str] = None) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+
+
+async def _lookup_profile_by_friend_code(friend_code: str) -> Optional[Dict[str, Any]]:
+    """Return {id, display_name} or None"""
+    resp = await _sb_get(
+        "/rest/v1/profiles",
+        params={
+            "select": "id,display_name,friend_code",
+            "friend_code": f"eq.{friend_code}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase profiles lookup failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to look up friend code")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+async def _are_already_friends(user_id: str, friend_user_id: str) -> bool:
+    resp = await _sb_get(
+        "/rest/v1/friendships",
+        params={
+            "select": "user_id",
+            "user_id": f"eq.{user_id}",
+            "friend_user_id": f"eq.{friend_user_id}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase friendships select failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to check friendship")
+    rows = resp.json()
+    return bool(isinstance(rows, list) and rows)
+
+
+async def _find_existing_pending_request(user_a: str, user_b: str) -> Optional[Dict[str, Any]]:
+    """Return a pending request for the pair in either direction."""
+    # PostgREST OR syntax
+    or_expr = (
+        f"and(requester_user_id.eq.{user_a},requested_user_id.eq.{user_b}),"
+        f"and(requester_user_id.eq.{user_b},requested_user_id.eq.{user_a})"
+    )
+    resp = await _sb_get(
+        "/rest/v1/friend_requests",
+        params={
+            "select": "id,requester_user_id,requested_user_id,status,created_at",
+            "status": "eq.pending",
+            "or": f"({or_expr})",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase friend_requests select failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query friend requests")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+async def _get_friend_request_by_id(req_id: int) -> Dict[str, Any]:
+    resp = await _sb_get(
+        "/rest/v1/friend_requests",
+        params={
+            "select": "id,requester_user_id,requested_user_id,status,created_at,responded_at",
+            "id": f"eq.{req_id}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase friend_requests get failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query friend request")
+    rows = resp.json()
+    if not (isinstance(rows, list) and rows):
+        raise HTTPException(status_code=404, detail="Friend request not found")
+    return rows[0]
+
+
+async def _insert_friendships_bidirectional(user_a: str, user_b: str) -> None:
+    payload = [
+        {"user_id": user_a, "friend_user_id": user_b},
+        {"user_id": user_b, "friend_user_id": user_a},
+    ]
+    resp = await _sb_post(
+        "/rest/v1/friendships",
+        json=payload,
+        prefer="return=minimal",
+    )
+
+    # 201/204 ok. 409 can happen if already exists; treat as ok.
+    if resp.status_code in (200, 201, 204):
+        return
+    if resp.status_code == 409:
+        logger.info("friendships already exist for %s<->%s", user_a, user_b)
+        return
+    logger.error("Supabase insert friendships failed: %s %s", resp.status_code, resp.text[:1500])
+    raise HTTPException(status_code=502, detail="Failed to create friendship")
+
+
+# ----------------------------
+# Route registration
+# ----------------------------
+
+
+def register_friend_routes(app: FastAPI) -> None:
+    """Register friend request endpoints on the given FastAPI app."""
+
+    @app.post("/friends/request", response_model=FriendRequestCreateResponse)
+    async def create_friend_request(
+        body: FriendRequestCreateBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendRequestCreateResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        requester_user_id = await _resolve_user_id_from_token(access_token)
+        friend_code = body.friend_code.strip()
+        if not friend_code:
+            raise HTTPException(status_code=400, detail="friend_code is required")
+
+        target_profile = await _lookup_profile_by_friend_code(friend_code)
+        if not target_profile:
+            raise HTTPException(status_code=404, detail="User not found for the given friend_code")
+
+        requested_user_id = str(target_profile.get("id") or "")
+        requested_display_name = target_profile.get("display_name") or None
+
+        if not requested_user_id:
+            raise HTTPException(status_code=404, detail="User not found for the given friend_code")
+
+        if requested_user_id == requester_user_id:
+            raise HTTPException(status_code=400, detail="You cannot send a friend request to yourself")
+
+        # If already friends -> idempotent ok
+        if await _are_already_friends(requester_user_id, requested_user_id):
+            return FriendRequestCreateResponse(
+                status="already_friends",
+                request_id=None,
+                requested_user_id=requested_user_id,
+                requested_display_name=requested_display_name,
+            )
+
+        # If pending already exists (either direction) -> return that
+        existing = await _find_existing_pending_request(requester_user_id, requested_user_id)
+        if existing:
+            return FriendRequestCreateResponse(
+                status="already_pending",
+                request_id=int(existing.get("id")),
+                requested_user_id=requested_user_id,
+                requested_display_name=requested_display_name,
+            )
+
+        # Create request
+        payload = {
+            "requester_user_id": requester_user_id,
+            "requested_user_id": requested_user_id,
+            "status": "pending",
+        }
+        resp = await _sb_post(
+            "/rest/v1/friend_requests",
+            json=payload,
+            prefer="return=representation",
+        )
+        if resp.status_code not in (200, 201):
+            # Unique pending pair index may fire -> try to return existing pending
+            if resp.status_code == 409:
+                existing2 = await _find_existing_pending_request(requester_user_id, requested_user_id)
+                if existing2:
+                    return FriendRequestCreateResponse(
+                        status="already_pending",
+                        request_id=int(existing2.get("id")),
+                        requested_user_id=requested_user_id,
+                        requested_display_name=requested_display_name,
+                    )
+            logger.error("Supabase insert friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to create friend request")
+
+        data = resp.json()
+        row = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else {})
+        return FriendRequestCreateResponse(
+            status="ok",
+            request_id=int(row.get("id")) if row.get("id") is not None else None,
+            requested_user_id=requested_user_id,
+            requested_display_name=requested_display_name,
+        )
+
+    @app.post("/friends/requests/{request_id}/accept", response_model=FriendRequestActionResponse)
+    async def accept_friend_request(
+        request_id: int = Path(..., ge=1),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendRequestActionResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        req = await _get_friend_request_by_id(request_id)
+
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="Friend request is not pending")
+
+        requested_user_id = str(req.get("requested_user_id"))
+        requester_user_id = str(req.get("requester_user_id"))
+        if requested_user_id != me:
+            raise HTTPException(status_code=403, detail="You are not allowed to accept this request")
+
+        now = datetime.now(timezone.utc).isoformat()
+        # Update request status
+        resp = await _sb_patch(
+            "/rest/v1/friend_requests",
+            params={"id": f"eq.{request_id}"},
+            json={"status": "accepted", "responded_at": now},
+            prefer="return=minimal",
+        )
+        if resp.status_code not in (200, 204):
+            logger.error("Supabase update friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to accept friend request")
+
+        # Create friendships (both directions)
+        await _insert_friendships_bidirectional(requester_user_id, requested_user_id)
+        return FriendRequestActionResponse(status="ok", request_id=request_id)
+
+    @app.post("/friends/requests/{request_id}/reject", response_model=FriendRequestActionResponse)
+    async def reject_friend_request(
+        request_id: int = Path(..., ge=1),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendRequestActionResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        req = await _get_friend_request_by_id(request_id)
+
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="Friend request is not pending")
+
+        requested_user_id = str(req.get("requested_user_id"))
+        if requested_user_id != me:
+            raise HTTPException(status_code=403, detail="You are not allowed to reject this request")
+
+        now = datetime.now(timezone.utc).isoformat()
+        resp = await _sb_patch(
+            "/rest/v1/friend_requests",
+            params={"id": f"eq.{request_id}"},
+            json={"status": "rejected", "responded_at": now},
+            prefer="return=minimal",
+        )
+        if resp.status_code not in (200, 204):
+            logger.error("Supabase update friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to reject friend request")
+
+        return FriendRequestActionResponse(status="ok", request_id=request_id)

@@ -172,6 +172,49 @@ class StructurePatternsStore:
         # 変更を保存
         self._save()
 
+    def update_triggers_secret_by_ts(self, user_id: str, ts: str, is_secret: bool) -> int:
+        """指定ユーザーの trigger 群のうち、ts が一致するものの is_secret を更新する。
+
+        目的:
+        - MyWeb 履歴画面などで「後から secret を切り替えた」場合に、
+          既に astor_structure_patterns.json に蓄積されている triggers 側も整合させる。
+
+        仕様:
+        - 1つの感情ログが複数の構造語にヒットしている場合、複数 trigger が同じ ts を持つ。
+          そのため、ts 一致の trigger をまとめて更新する。
+        - 更新が発生した場合のみ _save() を行う。
+        """
+
+        uid = str(user_id or "").strip()
+        ts_s = str(ts or "").strip()
+        if not uid or not ts_s:
+            return 0
+
+        users = self._state.get("users") or {}
+        user_entry = users.get(uid) or {}
+        struct_map: Dict[str, Any] = user_entry.get("structures") or {}
+        if not struct_map:
+            return 0
+
+        target = bool(is_secret)
+        updated = 0
+
+        for entry in struct_map.values():
+            triggers = entry.get("triggers") or []
+            for t in triggers:
+                if not isinstance(t, dict):
+                    continue
+                if str(t.get("ts") or "") != ts_s:
+                    continue
+                if bool(t.get("is_secret", False)) == target:
+                    continue
+                t["is_secret"] = target
+                updated += 1
+
+        if updated > 0:
+            self._save()
+        return updated
+
     def get_user_patterns(self, user_id: str) -> Dict[str, Any]:
         """
         特定ユーザーの構造語パターン状態を返す。

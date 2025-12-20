@@ -19,6 +19,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
+import httpx
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -27,9 +29,18 @@ from api_emotion_submit import (
     register_emotion_submit_routes,
     _extract_bearer_token,
     _resolve_user_id_from_token,
+    _ensure_supabase_config,
 )
+from api_emotion_secret import register_emotion_secret_routes
+from api_friends import register_friend_routes
+from api_myprofile import register_myprofile_routes
+from api_deep_insight import register_deep_insight_routes
 from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
+from astor_myprofile_report import (
+    is_myprofile_monthly_report_instruction,
+    build_myprofile_monthly_report,
+)
 from astor_core import AstorEngine, AstorRequest, AstorMode
 
 APP_NAME = os.getenv("MYMODEL_APP_NAME", "Cocolon MyModel")
@@ -38,6 +49,10 @@ HOST = os.getenv("MYMODEL_HOST", "0.0.0.0")
 # For release, set MYMODEL_CORS_ORIGINS to a comma-separated list of allowed origins.
 ALLOWED_ORIGINS_RAW = os.getenv("MYMODEL_CORS_ORIGINS", "*")
 ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_RAW.split(",")] if ALLOWED_ORIGINS_RAW else ["*"]
+
+# Supabase (for MyProfileID access control)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 # ---------- App ----------
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -51,6 +66,10 @@ app.add_middleware(
 )
 
 register_emotion_submit_routes(app)
+register_emotion_secret_routes(app)
+register_friend_routes(app)
+register_myprofile_routes(app)
+register_deep_insight_routes(app)
 
 # ASTOR engine for MyWeb insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
@@ -86,6 +105,81 @@ MD_DATE = re.compile(r"\b\d{1,2}[-/]\d{1,2}\b")
 def contains_date_like(text: str) -> bool:
     return bool(ISO_DATE.search(text) or JP_DATE.search(text) or MD_DATE.search(text) or DATE_WORDS.search(text))
 
+
+def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
+    """Supabase PostgREST 用の service_role ヘッダ。"""
+    _ensure_supabase_config()
+    h = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        h["Prefer"] = prefer
+    return h
+
+
+async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.get(url, headers=_sb_headers_json(), params=params)
+
+
+async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
+    """viewer -> owner のアクセス許可があるか（myprofile_links で判定）。"""
+    resp = await _sb_get(
+        "/rest/v1/myprofile_links",
+        params={
+            "select": "viewer_user_id",
+            "viewer_user_id": f"eq.{viewer_user_id}",
+            "owner_user_id": f"eq.{owner_user_id}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error(
+            "Supabase myprofile_links select failed: %s %s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        raise HTTPException(status_code=502, detail="Failed to check myprofile link")
+    rows = resp.json()
+    return bool(isinstance(rows, list) and rows)
+
+async def _fetch_latest_monthly_report_text(*, user_id: str) -> Optional[str]:
+    """差分要約用に、直近の月次レポ本文を取得する（self のみで使用）。
+
+    - report_type="monthly"
+    - content_text を返す（無ければ None）
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    try:
+        resp = await _sb_get(
+            "/rest/v1/myprofile_reports",
+            params={
+                "select": "content_text,period_end",
+                "user_id": f"eq.{uid}",
+                "report_type": "eq.monthly",
+                "order": "period_end.desc",
+                "limit": "1",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning("Supabase myprofile_reports select failed: %s %s", resp.status_code, resp.text[:500])
+            return None
+        rows = resp.json()
+        if isinstance(rows, list) and rows:
+            txt = rows[0].get("content_text") or ""
+            txt = str(txt)
+            # 解析に十分な範囲だけ（重すぎないように）
+            return txt[:8000]
+    except Exception as exc:
+        logger.warning("Failed to fetch previous monthly report: %s", exc)
+    return None
+
 def load_default_features() -> Dict[str, Any]:
     """Attempt to load default features from common repo layouts."""
     candidates = [
@@ -112,96 +206,234 @@ def intensity_from_len(text: str) -> str:
 
 
 def compose_response(instr: str, payload: Optional[InputPayload], target: str, persona_ctx: Optional[Dict[str, Any]] = None) -> str:
-    """
-    完全人格型の応答。
-    - 一問一答だが会話的な口調
-    - 数値や割合の列挙を避け、人格としての「私」が感じ取ったことを伝える
-    - 診断・断定はせず、相対的・非断定的に述べる
+    """MyProfile 一問一答（深掘り）用の応答文を作る。
+
+    v0.x の rule ベースでも「答えが明示される体験」を作れるように、
+    先頭に結論（答え）→ 構造仮説 → 根拠 → 微調整 → 観測 の順で返す。
     """
     import os
+
+    # ---- 入力の整形（テンプレに埋め込まれている場合の抽出） ----
+    raw = (instr or "").strip()
+    q = raw
+    # 生成テンプレに埋めた場合
+    for marker in ["【質問】", "<USER_QUESTION>", "<QUESTION>"]:
+        if marker in q:
+            q = q.split(marker)[-1].strip()
+    if not q:
+        q = raw
+
+    # ---- 特徴量（感情傾向は補助的に使う） ----
     features = payload.dict() if payload else {}
     defaults = load_default_features()
-
-    # 参照可能な特徴（なければ既定）
     ratios = features.get("ratios") or defaults.get("ratios") or {}
-    period = features.get("period") or defaults.get("period") or "30d"
     time_bias = features.get("time_bias") or []
     hot_words = features.get("hot_words") or []
 
-    # 簡易言語推定
-    lang = detect_lang(instr)
+    lang = detect_lang(q)
 
     # 上位感情（最大2）
     def top2(d):
-        return [k for k, _ in sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:2]] if d else []
+        return [k for k, _ in sorted((d or {}).items(), key=lambda kv: kv[1], reverse=True)[:2]]
+
     tops = top2(ratios)
     e1 = tops[0] if len(tops) > 0 else None
     e2 = tops[1] if len(tops) > 1 else None
 
-    # 日本語表示名マップ
-    EMO_JA = {"Joy":"喜び","Sadness":"悲しみ","Anxiety":"不安","Anger":"怒り","Calm":"落ち着き"}
-    def emo_label_jp(x): 
-        return EMO_JA.get(x or "", "感情")
+    EMO_JA = {"Joy": "喜び", "Sadness": "悲しみ", "Anxiety": "不安", "Anger": "怒り", "Calm": "落ち着き"}
+    def emo_label_jp(x: Optional[str]) -> str:
+        return EMO_JA.get(str(x or ""), "感情")
 
-    # 時間帯表現（日本語）
-    TB_JA = {"morning":"朝","noon":"昼","afternoon":"午後","evening":"夕方","night":"夜","midnight":"深夜"}
-    def time_bias_jp(bias):
-        if not bias: 
-            return None
-        mapped = [TB_JA.get(b, b) for b in bias]
-        return "、".join(mapped[:3])
+    def intensity_label(x: float) -> str:
+        if x >= 2.6:
+            return "強め"
+        if x >= 1.9:
+            return "中くらい"
+        if x >= 1.2:
+            return "やわらかめ"
+        return "かなりやわらかめ"
 
-    # ホットワードの表示
-    def hot_words_fmt(hw, lang):
-        if not hw: 
-            return None
-        return ("、".join(hw[:4]) if lang=='ja' else ", ".join(hw[:4]))
+    # ---- persona context（構造傾向/Deep Insight） ----
+    structures = []
+    deep_answers = []
+    if persona_ctx and isinstance(persona_ctx, dict):
+        structures = persona_ctx.get("structures") or []
+        deep_bundle = persona_ctx.get("deep_insight") or {}
+        if isinstance(deep_bundle, dict):
+            deep_answers = deep_bundle.get("answers") or []
 
-    # ユーザー名（環境変数で与えられていれば使用）
+    top_keys: List[str] = []
+    top_meta: List[Tuple[str, float]] = []  # (key, avg_intensity)
+    for s in (structures or [])[:3]:
+        if not isinstance(s, dict):
+            continue
+        k = str(s.get("key") or "").strip()
+        if not k:
+            continue
+        top_keys.append(k)
+        try:
+            top_meta.append((k, float(s.get("avg_intensity") or 0.0)))
+        except Exception:
+            top_meta.append((k, 0.0))
+
+    # ---- 口調/呼称 ----
     user_name = os.getenv("MYMODEL_USER_NAME", None)
-    you = user_name if (user_name and lang=='ja') else ("you" if lang=='en' else "あなた")
+    you = user_name if (user_name and lang == "ja") else ("you" if lang == "en" else "あなた")
 
-    # 文章パーツの組立（人格として「私は～と受け取っています」）
-    if lang == 'en':
-        emo_phrase = (f"{e1}/{e2}" if (e1 and e2) else (e1 or "some feelings"))
-        tb_phrase = time_bias and f"— especially around {', '.join(time_bias[:3])}" or ""
-        hw_phrase = hot_words_fmt(hot_words, 'en')
-        if hw_phrase:
-            hw_clause = f", often in contexts related to {hw_phrase}"
-        else:
-            hw_clause = ""
-        line1 = f"As the persona shaped by your records, I sense that {you} tends to experience {emo_phrase} in certain situations{tb_phrase}{hw_clause}."
-        return line1
+    # ---- ざっくり質問タイプ推定（“答え感”を作るため） ----
+    qtype = "general"
+    if re.search(r"どっち|選ぶ|迷", q):
+        qtype = "decision"
+    elif re.search(r"どうすれば|どうしたら|したらいい|すればいい", q):
+        qtype = "action"
+    elif re.search(r"なぜ|原因|理由", q):
+        qtype = "why"
+
+    # ---- 結論（答え） ----
+    conclusion: List[str] = []
+    if lang != "ja":
+        # minimal EN support (keep it short)
+        core = (top_keys[0] if top_keys else "your current pattern")
+        conclusion.append(f"This question likely appears when {core} is active.")
+        conclusion.append("Try separating the trigger and your interpretation before deciding.")
     else:
-        # JA
-        emo_phrase = (f"{emo_label_jp(e1)}/{emo_label_jp(e2)}" if (e1 and e2) else (emo_label_jp(e1) if e1 else "いくつかの感情"))
-        tbp = time_bias_jp(time_bias)
-        tb_phrase = f"（とくに{tbp}）" if tbp else ""
-        hw_phrase = hot_words_fmt(hot_words, 'ja')
-        if hw_phrase:
-            hw_clause = f"、{hw_phrase}に触れた場面で少し強まりやすい印象です。"
+        if qtype == "decision":
+            conclusion.append("結論: いまは『基準を1つ言語化 → 小さく試す』が一番確実です。")
+        elif qtype == "action":
+            conclusion.append("結論: まず『刺激→解釈→感情→行動』を1行ずつ書くと、次の一手が決まります。")
+        elif qtype == "why":
+            conclusion.append("結論: 原因は1つに断定せず、『よく出る構造 × 直前の刺激』として観測すると近道です。")
         else:
-            hw_clause = "。"
+            conclusion.append("結論: この問いは、自己構造の“前提”が揺れているサインです。前提を1行で仮置きすると整理が進みます。")
 
-        # 口調は“人格の私”として、Mash（=あなた）へ語りかける
-        line1 = f"私は{you}の記録から形作られた“私”です。{you}は、ある種の状況で{emo_phrase}を感じやすいように私は受け取っています{tb_phrase}{hw_clause}"
-        return line1
+        if top_keys:
+            conclusion.append(f"（補助: 最近は『{top_keys[0]}』が立ちやすい傾向があり、その影響下で出ている問いかもしれません）")
 
+    # ---- 仮説（刺激→認知→感情→行動） ----
+    emo_phrase = None
+    if lang == "ja":
+        if e1 and e2:
+            emo_phrase = f"{emo_label_jp(e1)}/{emo_label_jp(e2)}"
+        elif e1:
+            emo_phrase = emo_label_jp(e1)
+    else:
+        if e1 and e2:
+            emo_phrase = f"{e1}/{e2}"
+        elif e1:
+            emo_phrase = str(e1)
 
-    r1 = pct(ratios.get(e1, 0))
-    r2 = pct(ratios.get(e2, 0))
-    bias_txt = f"{'・'.join(time_bias)}に偏在" if time_bias else "特定の時間帯への明確な偏在は未検出"
-    hw_txt = "／".join(hot_words[:4]) if hot_words else "観測語なし"
+    hypo: List[str] = []
+    if lang == "ja":
+        core_k = top_keys[0] if top_keys else "（未特定）"
+        hypo.append(f"・刺激: （例）評価/比較/未確定/期待のズレ など")
+        hypo.append(f"・認知: （仮）『{core_k}』の判断が入って、意味づけが急に固定されやすい")
+        if emo_phrase:
+            hypo.append(f"・感情: {emo_phrase} に寄りやすい")
+        hypo.append("・行動: （仮）確認/修正へ向かう、または一時停止して距離を取る")
+    else:
+        hypo.append("- Trigger: e.g., evaluation / comparison / uncertainty")
+        hypo.append("- Interpretation: a quick, fixed meaning-making")
+        if emo_phrase:
+            hypo.append(f"- Feeling: {emo_phrase}")
+        hypo.append("- Action: checking / correcting, or pausing")
 
-    intent = intensity_from_len(instr)
-    scope = "公開範囲" if target == "external" else "全入力"
+    # ---- 根拠 ----
+    evidence: List[str] = []
+    if lang == "ja":
+        if top_meta:
+            for k, inten in top_meta[:2]:
+                evidence.append(f"・構造傾向: 『{k}』が出やすい（強度: {intensity_label(inten)}）")
+        if hot_words:
+            evidence.append(f"・観測語: { '、'.join(hot_words[:3]) } が登場しやすい")
+        if deep_answers:
+            a0 = next((a for a in deep_answers if isinstance(a, dict) and str(a.get("text") or "").strip()), None)
+            if a0:
+                txt = str(a0.get("text") or "").strip()
+                if len(txt) > 80:
+                    txt = txt[:80] + "…"
+                evidence.append(f"・Deep Insight: 最近の言語化（抜粋）『{txt}』")
+        if not evidence:
+            evidence.append("・観測材料: まだ少なめ（入力が増えるほど精度が上がります）")
+    else:
+        if top_meta:
+            for k, _ in top_meta[:2]:
+                evidence.append(f"- Structure: {k} tends to appear")
+        if not evidence:
+            evidence.append("- Evidence is limited; more logs improve accuracy.")
 
-    lines = [
-        f"推定：入力は「{e1}/{e2}」の揺らぎを中心にした{intent}感情駆動。対象は{scope}。",
-        f"根拠：期間{period}の記録から {e1}:{r1}, {e2}:{r2}。出現は{bias_txt}。観測語：{hw_txt}。",
-        "注記：断定を避け、観測可能な構造のみを述べています。一次情報が不足する照会には応答を抑制します。",
+    # ---- 微調整 ----
+    tweaks: List[str] = []
+    if lang == "ja":
+        tweaks.append("・結論を急がず『仮置き』を許可する（いまは1回で決めない）")
+        tweaks.append("・刺激と解釈を分けて書く（解釈は“仮説”として扱う）")
+        tweaks.append("・強い日は、先に身体（睡眠/空腹/疲労）を整えてから判断する")
+        if time_bias:
+            TB_JA = {"morning": "朝", "noon": "昼", "afternoon": "午後", "evening": "夕方", "night": "夜", "midnight": "深夜"}
+            mapped = [TB_JA.get(b, b) for b in time_bias[:3]]
+            tweaks.append(f"・{ '、'.join(mapped) }は揺れやすい可能性があるので、重要判断は避ける")
+    else:
+        tweaks.append("- Avoid forcing a final decision; keep it provisional.")
+        tweaks.append("- Separate trigger and interpretation.")
+        tweaks.append("- Stabilize basic body needs before judging.")
+
+    # ---- 次の観測 ----
+    observe: List[str] = []
+    if lang == "ja":
+        observe.append("・刺激: 何が起きたか（1語）")
+        observe.append("・解釈: どう意味づけたか（1文）")
+        observe.append("・身体: 眠気/空腹/疲労の有無（○×）")
+    else:
+        observe.append("- Trigger: what happened (one phrase)")
+        observe.append("- Interpretation: one sentence")
+        observe.append("- Body: sleep/hunger/fatigue (yes/no)")
+
+    # ---- 追加質問（精度を上げる） ----
+    followups: List[str] = []
+    if lang == "ja":
+        followups.append("・いまの場面は『評価される/比較される』が関係していますか？")
+        followups.append("・この問いの直前に“何を守りたかったか”を1語で言うなら？")
+    else:
+        followups.append("- Is evaluation/comparison involved in this situation?")
+        followups.append("- What were you trying to protect (one word)?")
+
+    # ---- 出力 ----
+    if lang != "ja":
+        parts = [
+            "[Conclusion]",
+            "\n".join(conclusion),
+            "\n[Hypothesis]",
+            "\n".join(hypo),
+            "\n[Evidence]",
+            "\n".join(evidence),
+            "\n[Micro-adjustments]",
+            "\n".join(tweaks),
+            "\n[Next observations]",
+            "\n".join(observe),
+            "\n[Optional follow-ups]",
+            "\n".join(followups),
+        ]
+        return "\n".join(parts).strip()
+
+    parts = [
+        "【結論（答え）】",
+        "\n".join(conclusion),
+        "",
+        "【自己構造の仮説（刺激→認知→感情→行動）】",
+        "\n".join(hypo),
+        "",
+        "【根拠（観測として見えていること）】",
+        "\n".join(evidence),
+        "",
+        "【安定させる微調整】",
+        "\n".join(tweaks),
+        "",
+        "【次の観測（2〜3）】",
+        "\n".join(observe),
+        "",
+        "【追加で確認したい点（任意・1〜2）】",
+        "\n".join(followups),
     ]
-    return "\n".join(lines)
+    return "\n".join(parts).strip()
 
 
 # ---------- Add-on: Advanced date-like guard (non-destructive) ----------
@@ -386,27 +618,82 @@ async def infer(
 ) -> InferResponse:
     instr = req.instruction.strip()
 
+    # MyProfile（月次レポート生成）の場合は、instruction 内に日付表現（例: 12/1〜）が
+    # 含まれることがあるため、日付ガードを“照会”にだけ適用する。
+    is_myprofile_report = is_myprofile_monthly_report_instruction(instr)
+
     if len(instr) < 4:
         raise HTTPException(status_code=400, detail="情報が足りないため応答できません。")
-    if contains_date_like_adv(instr):
+    if (not is_myprofile_report) and contains_date_like_adv(instr):
         raise HTTPException(status_code=400, detail="この照会は受け付けられません（日付が含まれています）。")
 
-    # ASTOR persona context 用の user_id を解決（body 優先、無ければ Authorization）
+    # --- MyProfileID（外部照会）のアクセス制御 ---
+    # viewer（照会者）は Authorization から確定する。
+    access_token = _extract_bearer_token(authorization) if authorization else None
+    viewer_user_id: Optional[str] = None
+    if access_token:
+        # 不正/期限切れトークンは 401
+        viewer_user_id = await _resolve_user_id_from_token(access_token)
+
+    target = req.target or "self"
     user_id: Optional[str] = req.user_id
-    if not user_id and authorization:
-        access_token = _extract_bearer_token(authorization)
-        if access_token:
-            try:
-                user_id = await _resolve_user_id_from_token(access_token)
-            except Exception as exc:
-                logger.warning("ASTOR persona token resolution failed: %s", exc)
+
+    if target == "external":
+        # 外部照会は必ず認証が必要（誰が見ているか、を確定するため）
+        if not viewer_user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization header with Bearer token is required for external MyProfile queries",
+            )
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required for external MyProfile queries")
+
+        owner_user_id = str(user_id)
+        # 自分の user_id を external で投げてきた場合は self として扱う（UIバグ耐性）
+        if owner_user_id == viewer_user_id:
+            target = "self"
+            user_id = viewer_user_id
+        else:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+            user_id = owner_user_id
+    else:
+        # self 照会: 認証がある場合は user_id を viewer に固定して、他人の user_id 指定を拒否する。
+        if viewer_user_id:
+            if user_id and str(user_id) != viewer_user_id:
+                raise HTTPException(status_code=403, detail="user_id mismatch")
+            user_id = viewer_user_id
 
     persona_ctx: Optional[Dict[str, Any]] = None
     if user_id:
+        # secret の扱い:
+        # - self: secret を含めてよい
+        # - external: secret を含めない（公開範囲だけで構造傾向を算出）
+        include_secret = (target != "external")
         try:
-            persona_ctx = build_persona_context_payload(user_id=user_id)
+            persona_ctx = build_persona_context_payload(user_id=user_id, include_secret=include_secret)
         except Exception as exc:
             logger.warning("ASTOR persona context build failed: %s", exc)
+
+    # 0) MyProfile（月次自己構造分析レポート）生成
+    if is_myprofile_report:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required for MyProfile report generation")
+        include_secret = (target != "external")
+        period = (req.input.period if req.input and req.input.period else None) or "30d"
+        prev_text = None
+        if include_secret:
+            prev_text = await _fetch_latest_monthly_report_text(user_id=str(user_id))
+        text, meta2 = build_myprofile_monthly_report(
+            user_id=str(user_id),
+            period=str(period),
+            include_secret=include_secret,
+            prev_report_text=prev_text,
+        )
+        meta: Dict[str, Any] = {"target": target, "engine": "astor_myprofile_report", "version": "1.0.0"}
+        meta.update(meta2 or {})
+        return InferResponse(output=text, meta=meta)
 
     # 1) 構造辞書ベースの“定義質問”であれば、そちらを優先して応答
     lang = detect_lang(instr)
@@ -416,19 +703,19 @@ async def infer(
         return InferResponse(
             output=struct_answer,
             meta={
-                "target": req.target or "self",
+                "target": target,
                 "engine": "structure_dict",
                 "version": "1.0.0",
             },
         )
 
     # 2) 上記に該当しなければ、従来どおり人格ベースの応答を返す
-    output = compose_response(instr, req.input, req.target or "self", persona_ctx)
+    output = compose_response(instr, req.input, target, persona_ctx)
 
     # Privacy-safe telemetry (no content persisted)
-    logger.info("infer called: len=%d target=%s", len(instr), req.target)
+    logger.info("infer called: len=%d target=%s", len(instr), target)
 
-    meta: Dict[str, Any] = {"target": req.target or "self", "engine": "rule", "version": "1.0.0"}
+    meta: Dict[str, Any] = {"target": target, "engine": "rule", "version": "1.0.0"}
     if persona_ctx is not None:
         meta["astor_persona"] = persona_ctx
     return InferResponse(output=output, meta=meta)

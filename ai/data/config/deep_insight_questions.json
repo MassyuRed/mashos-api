@@ -1,0 +1,95 @@
+{
+  "__meta__": {
+    "name": "Deep Insight",
+    "version": "0.1",
+    "lang": "ja"
+  },
+  "_global": [
+    {
+      "id": "explore_001",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "未観測",
+      "text": "最近、自分でも言葉にしていないままの気持ちがあるとしたら、どんなものですか？",
+      "hint": "はっきりしていなくても大丈夫。雰囲気だけでも。"
+    },
+    {
+      "id": "explore_002",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "価値観",
+      "text": "最近、あなたが『これは大事にしたい』と感じたことはありましたか？",
+      "hint": "小さなことでもOKです。"
+    },
+    {
+      "id": "explore_003",
+      "strategy": "unexplored",
+      "depth": 2,
+      "structure_key": "価値観",
+      "text": "その『大事にしたい』は、あなたにとって何を守ることにつながっていますか？",
+      "hint": "理由が浮かべばで大丈夫です。"
+    }
+  ],
+  "_deep_dive_fallback": [
+    {
+      "id": "deepdive_001",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": null,
+      "text": "最近その気持ちが強く出たのは、どんな場面でしたか？",
+      "hint": "場所・相手・出来事など、思い出せる範囲で。"
+    },
+    {
+      "id": "deepdive_002",
+      "strategy": "deep_dive",
+      "depth": 2,
+      "structure_key": null,
+      "text": "そのとき、心の中で一番引っかかっていたのは何でしたか？",
+      "hint": null
+    }
+  ],
+  "承認": [
+    {
+      "id": "approval_001",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": "承認",
+      "text": "最近『認められたい』と感じた場面はありましたか？",
+      "hint": "相手が思い浮かべば、その人のことも。"
+    },
+    {
+      "id": "approval_002",
+      "strategy": "deep_dive",
+      "depth": 2,
+      "structure_key": "承認",
+      "text": "そのとき、あなたは何を“認められたかった”と感じていますか？",
+      "hint": "行動・結果・存在そのもの、など。"
+    },
+    {
+      "id": "approval_003",
+      "strategy": "deep_dive",
+      "depth": 3,
+      "structure_key": "承認",
+      "text": "もし『認められる』が手に入ったとして、あなたの中で何が安心すると思いますか？",
+      "hint": null
+    }
+  ],
+  "不安": [
+    {
+      "id": "anxiety_001",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": "不安",
+      "text": "最近、不安が強くなったのはどんなタイミングでしたか？",
+      "hint": "出来事がなければ、頭の中の想像でも。"
+    },
+    {
+      "id": "anxiety_002",
+      "strategy": "deep_dive",
+      "depth": 2,
+      "structure_key": "不安",
+      "text": "その不安は、何が失われることを一番怖がっている感じがしますか？",
+      "hint": "評価、関係、健康、自由など。"
+    }
+  ]
+}

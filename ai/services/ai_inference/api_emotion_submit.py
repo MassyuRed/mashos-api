@@ -250,12 +250,18 @@ class EmotionSubmitResponse(BaseModel):
 
 
 async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
-    """friend_links テーブルから、指定ユーザーの accepted フレンドを取得する。"""
+    """friendships テーブルから、指定ユーザーのフレンド（通知の配布先）を取得する。
+
+    前提:
+    - friendships は (user_id, friend_user_id) の行で表現する。
+    - 実装上は「双方向2行」を作る運用が最もシンプルだが、
+      片方向しか入っていない場合にも耐えるため、両方向を問い合わせて set で統合する。
+    """
     _ensure_supabase_config()
     if not user_id:
         return []
 
-    url = f"{SUPABASE_URL}/rest/v1/friend_links"
+    url = f"{SUPABASE_URL}/rest/v1/friendships"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -265,14 +271,13 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # 自分が user_id 側の行
+            # 自分が user_id 側の行（標準運用：ここだけで十分）
             resp1 = await client.get(
                 url,
                 headers=headers,
                 params={
-                    "select": "user_id,friend_user_id,status",
+                    "select": "user_id,friend_user_id",
                     "user_id": f"eq.{user_id}",
-                    "status": "eq.accepted",
                 },
             )
             if resp1.status_code < 300:
@@ -284,19 +289,18 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
                             viewer_ids_set.add(fid)
             else:
                 logger.error(
-                    "Supabase select from friend_links (user_id side) failed: status=%s body=%s",
+                    "Supabase select from friendships (user_id side) failed: status=%s body=%s",
                     resp1.status_code,
                     resp1.text[:2000],
                 )
 
-            # 自分が friend_user_id 側の行
+            # 自分が friend_user_id 側の行（片方向しか存在しないケースの救済）
             resp2 = await client.get(
                 url,
                 headers=headers,
                 params={
-                    "select": "user_id,friend_user_id,status",
+                    "select": "user_id,friend_user_id",
                     "friend_user_id": f"eq.{user_id}",
-                    "status": "eq.accepted",
                 },
             )
             if resp2.status_code < 300:
@@ -308,12 +312,12 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
                             viewer_ids_set.add(uid)
             else:
                 logger.error(
-                    "Supabase select from friend_links (friend_user_id side) failed: status=%s body=%s",
+                    "Supabase select from friendships (friend_user_id side) failed: status=%s body=%s",
                     resp2.status_code,
                     resp2.text[:2000],
                 )
     except Exception as exc:
-        logger.error("Failed to fetch friend_links for user %s: %s", user_id, exc)
+        logger.error("Failed to fetch friendships for user %s: %s", user_id, exc)
 
     return list(viewer_ids_set)
 
