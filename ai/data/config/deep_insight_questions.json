@@ -28,6 +28,78 @@
       "structure_key": "価値観",
       "text": "その『大事にしたい』は、あなたにとって何を守ることにつながっていますか？",
       "hint": "理由が浮かべばで大丈夫です。"
+    },
+    {
+      "id": "explore_004",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "安心",
+      "text": "最近、少しでも『ほっとした』瞬間はありましたか？そのとき何が起きていましたか？",
+      "hint": "数秒でもOK。場所や相手、状況など。"
+    },
+    {
+      "id": "explore_005",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "身体感覚",
+      "text": "最近、心が動いたとき（嬉しい/不安/イライラなど）、体のどこに反応が出やすいですか？",
+      "hint": "胸、喉、胃、肩、呼吸、など。"
+    },
+    {
+      "id": "explore_006",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "回避",
+      "text": "最近、なんとなく避けていることや、見ないふりをしていることはありますか？",
+      "hint": "大きなことじゃなくてOK。"
+    },
+    {
+      "id": "explore_007",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "頑張り",
+      "text": "最近、誰にも見えないところで頑張っていることは何ですか？",
+      "hint": "小さな継続でも十分です。"
+    },
+    {
+      "id": "explore_008",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "本音",
+      "text": "最近、『本当はこうしたい』が一瞬でも浮かんだことはありますか？",
+      "hint": "言い切れなくてもOK。方向性だけでも。"
+    },
+    {
+      "id": "explore_009",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "反復",
+      "text": "最近、頭の中に繰り返し戻ってくるテーマや言葉はありますか？",
+      "hint": "同じ場面、同じ不安、同じ希望、など。"
+    },
+    {
+      "id": "explore_010",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "エネルギー",
+      "text": "最近、エネルギーが『減った』ものと『増えた』ものがあるとしたら、それは何ですか？",
+      "hint": "人/作業/場所/情報/睡眠…何でも。"
+    },
+    {
+      "id": "explore_011",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "感情の裏",
+      "text": "最近のイライラやモヤモヤの『奥』に、別の気持ちがあるとしたら何だと思いますか？",
+      "hint": "悲しみ/寂しさ/怖さ/悔しさ…など。"
+    },
+    {
+      "id": "explore_012",
+      "strategy": "unexplored",
+      "depth": 1,
+      "structure_key": "素直さ",
+      "text": "最近、嬉しかったのに素直に喜べなかった瞬間はありましたか？",
+      "hint": "理由が分からなくてもOK。"
     }
   ],
   "_deep_dive_fallback": [
@@ -45,6 +117,38 @@
       "depth": 2,
       "structure_key": null,
       "text": "そのとき、心の中で一番引っかかっていたのは何でしたか？",
+      "hint": null
+    },
+    {
+      "id": "deepdive_003",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": null,
+      "text": "その場面で、あなたが本当は欲しかったもの（言葉/扱い/時間）は何でしたか？",
+      "hint": "『こうしてほしかった』の形でOK。"
+    },
+    {
+      "id": "deepdive_004",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": null,
+      "text": "その気持ちが出たとき、あなたはまず何を守ろうとしていましたか？",
+      "hint": "評価/関係/自由/健康/安心…など。"
+    },
+    {
+      "id": "deepdive_005",
+      "strategy": "deep_dive",
+      "depth": 1,
+      "structure_key": null,
+      "text": "その気持ちの強さを 0〜10 で表すと、いくつくらいでしたか？",
+      "hint": "直感でOK。"
+    },
+    {
+      "id": "deepdive_006",
+      "strategy": "deep_dive",
+      "depth": 2,
+      "structure_key": null,
+      "text": "もしその気持ちが『メッセージ』だとしたら、あなたに何を伝えようとしていると思いますか？",
       "hint": null
     }
   ],

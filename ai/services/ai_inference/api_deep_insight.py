@@ -21,7 +21,7 @@ import datetime as _dt
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
@@ -83,6 +83,7 @@ def register_deep_insight_routes(app: FastAPI) -> None:
 
     @app.get("/deep_insight/questions", response_model=DeepInsightQuestionsResponse)
     async def deep_insight_questions(
+        response: Response,
         max_questions: int = Query(default=3, ge=1, le=5),
         max_depth: int = Query(default=1, ge=1, le=5),
         tier: str = Query(default="free"),
@@ -90,6 +91,14 @@ def register_deep_insight_routes(app: FastAPI) -> None:
         context: Optional[str] = Query(default=None),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> DeepInsightQuestionsResponse:
+        # Avoid proxy / client caching for question refresh
+        try:
+            if response is not None:
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+        except Exception:
+            pass
+
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -127,8 +136,17 @@ def register_deep_insight_routes(app: FastAPI) -> None:
     @app.post("/deep_insight/answers", response_model=DeepInsightAnswersResponse)
     async def deep_insight_answers(
         body: DeepInsightAnswersRequest,
+        response: Response,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> DeepInsightAnswersResponse:
+        # Avoid proxy / client caching for question refresh
+        try:
+            if response is not None:
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+        except Exception:
+            pass
+
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")

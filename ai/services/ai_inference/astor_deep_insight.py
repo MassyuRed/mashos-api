@@ -18,22 +18,32 @@ v0.1 の方針:
 - Deep Insight の回答は **MyProfile にのみ活用**し、MyWeb（週報/月報）には反映しない。
   → そのため、本モジュールは「質問生成」のみを担当し、
      astor_structure_patterns.json（MyWeb参照）を更新しない。
+
+更新: 2025-12
+- "別の問いを受け取る" で同じ問いが続かないように、
+  提示済み（served）履歴を見てローテーション/シャッフルするロジックを追加。
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import datetime as _dt
+import hashlib
 import json
 import os
+import random
+import time
 
 try:
     from astor_patterns import StructurePatternsStore
 except ImportError:
     StructurePatternsStore = None  # type: ignore
+
+from astor_deep_insight_question_store import DeepInsightServedStore
+from astor_deep_insight_store import DeepInsightAnswerStore
 
 
 ENGINE_NAME = "astor.deep_insight.v0.1"
@@ -202,6 +212,13 @@ def _pick_top_structure_in_period(struct_map: Dict[str, Any], period_days: int) 
     return best_key
 
 
+def _seed_for_user(uid: str) -> int:
+    """ユーザー/時刻から seed を作る（毎回変化するが user_id で偏りは抑える）。"""
+    material = f"{uid}:{time.time_ns()}".encode("utf-8")
+    digest = hashlib.sha256(material).digest()
+    return int.from_bytes(digest[:8], "big", signed=False)
+
+
 def _select_questions_from_templates(
     templates: List[Dict[str, Any]],
     *,
@@ -209,35 +226,58 @@ def _select_questions_from_templates(
     max_depth: int,
     strategy: str,
     structure_key_fallback: Optional[str] = None,
+    exclude_ids: Optional[Set[str]] = None,
+    rng: Optional[random.Random] = None,
 ) -> List[DeepInsightQuestion]:
-    out: List[DeepInsightQuestion] = []
-    used = set()
+    """テンプレート群から質問を選ぶ。
 
-    def ok(item: Dict[str, Any]) -> bool:
+    - depth / strategy / text の基本条件を満たした候補を作る
+    - exclude_ids に含まれる question_id は除外
+    - rng が与えられている場合、候補をシャッフルしてから先頭から採用
+
+    注意:
+    - v0.1 は "形式を提供する" が目的なので、ここでは heavy な推論はしない。
+    """
+
+    out: List[DeepInsightQuestion] = []
+    exclude: Set[str] = set(exclude_ids or set())
+
+    # 重複排除（テンプレ側の重複耐性）
+    seen: Set[str] = set()
+
+    # まず候補を集める
+    cand: List[Dict[str, Any]] = []
+
+    for item in templates or []:
         if not isinstance(item, dict):
-            return False
+            continue
         qid = str(item.get("id") or "").strip()
-        if not qid or qid in used:
-            return False
+        if not qid or qid in seen or qid in exclude:
+            continue
+
         try:
             d = int(item.get("depth") or 1)
         except Exception:
             d = 1
-        if d > max_depth:
-            return False
+        if d > int(max_depth):
+            continue
+
         s = str(item.get("strategy") or "").strip() or None
         if s and s != strategy:
-            return False
-        # text が空のものはスキップ
-        if not str(item.get("text") or "").strip():
-            return False
-        return True
-
-    for item in templates:
-        if not ok(item):
             continue
+
+        if not str(item.get("text") or "").strip():
+            continue
+
+        seen.add(qid)
+        cand.append(item)
+
+    if rng is not None and len(cand) >= 2:
+        rng.shuffle(cand)
+
+    # 候補から採用
+    for item in cand:
         qid = str(item.get("id") or "").strip()
-        used.add(qid)
 
         sk = item.get("structure_key")
         if sk is None:
@@ -263,7 +303,7 @@ def _select_questions_from_templates(
             )
         )
 
-        if len(out) >= max_questions:
+        if len(out) >= int(max_questions):
             break
 
     return out
@@ -312,6 +352,7 @@ def generate_deep_insight_questions_payload(
         max_q_i = 3
     max_q_i = max(1, min(max_q_i, 5))
 
+    # ---- 構造の密度判定（rich/sparse） ----
     struct_map: Dict[str, Any] = {}
     if StructurePatternsStore is not None:
         try:
@@ -340,14 +381,71 @@ def generate_deep_insight_questions_payload(
     else:
         candidates.extend(template_store.get_global_templates())
 
+    # ---- ローテーション: 直前提示の除外 / 回答済みの除外 ----
+    served_store = DeepInsightServedStore()
+    answer_store = DeepInsightAnswerStore()
+
+    answered_ids: Set[str] = set()
+    try:
+        # secret も含めて「回答済み」は避ける（再提示を防ぐ）
+        for a in answer_store.get_user_answers(uid, limit=200, include_secret=True):
+            if not isinstance(a, dict):
+                continue
+            qid = str(a.get("question_id") or "").strip()
+            if qid:
+                answered_ids.add(qid)
+    except Exception:
+        answered_ids = set()
+
+    last_batch = set(served_store.get_last_batch(uid))
+
+    rng = random.Random(_seed_for_user(uid))
+
+    # 1) まずは "回答済み + 直前バッチ" を除外して選ぶ
+    exclude_primary = answered_ids | last_batch
     questions = _select_questions_from_templates(
         candidates,
         max_questions=max_q_i,
         max_depth=max_depth_i,
         strategy=strategy,
         structure_key_fallback=chosen_structure,
+        exclude_ids=exclude_primary,
+        rng=rng,
     )
 
+    # 2) 足りない場合は "回答済み" だけ除外（= 直前バッチの再利用は許可）
+    if len(questions) < max_q_i:
+        already = {q.id for q in questions}
+        more = _select_questions_from_templates(
+            candidates,
+            max_questions=max_q_i,
+            max_depth=max_depth_i,
+            strategy=strategy,
+            structure_key_fallback=chosen_structure,
+            exclude_ids=(answered_ids | already),
+            rng=rng,
+        )
+        for q in more:
+            if q.id in already:
+                continue
+            questions.append(q)
+            already.add(q.id)
+            if len(questions) >= max_q_i:
+                break
+
+    # 3) それでも空なら（テンプレ不足など）、最終フォールバック（何も除外しない）
+    if not questions:
+        questions = _select_questions_from_templates(
+            candidates,
+            max_questions=max_q_i,
+            max_depth=max_depth_i,
+            strategy=strategy,
+            structure_key_fallback=chosen_structure,
+            exclude_ids=set(),
+            rng=rng,
+        )
+
+    # 候補が0の時だけ、別系統のフォールバック候補からも拾う
     if not questions:
         fb = template_store.get_global_templates() if strategy != "deep_dive" else template_store.get_deep_dive_fallback()
         questions = _select_questions_from_templates(
@@ -356,7 +454,16 @@ def generate_deep_insight_questions_payload(
             max_depth=max_depth_i,
             strategy=strategy,
             structure_key_fallback=chosen_structure,
+            exclude_ids=set(),
+            rng=rng,
         )
+
+    # 提示履歴に記録（次回の "別の問い" で直前を避ける）
+    try:
+        served_store.record_batch(uid, [q.id for q in questions])
+    except Exception:
+        # served 保存の失敗は致命ではない
+        pass
 
     now_iso = _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -376,5 +483,10 @@ def generate_deep_insight_questions_payload(
             "strategy": strategy,
             "chosen_structure_key": chosen_structure,
             "context": (str(context)[:200] if context else None),
+            # デバッグ用（必要ならフロントで非表示にしてOK）
+            "rotation": {
+                "excluded_answered": len(answered_ids),
+                "excluded_last_batch": len(last_batch),
+            },
         },
     }

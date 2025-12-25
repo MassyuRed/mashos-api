@@ -35,6 +35,7 @@ from api_emotion_secret import register_emotion_secret_routes
 from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
 from api_deep_insight import register_deep_insight_routes
+from api_subscription import register_subscription_routes
 from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
 from astor_myprofile_report import (
@@ -70,6 +71,7 @@ register_emotion_secret_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
 register_deep_insight_routes(app)
+register_subscription_routes(app)
 
 # ASTOR engine for MyWeb insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
@@ -89,6 +91,7 @@ class InferRequest(BaseModel):
     input: Optional[InputPayload] = Field(default=None, description="分析の補助特徴量（省略可）")
     target: Optional[Literal["self", "external"]] = Field(default="self", description="自己/他者（外部）")
     user_id: Optional[str] = Field(default=None, description="ASTOR連携用のユーザーID（任意）")
+    report_mode: Optional[str] = Field(default=None, description="MyProfile出力モード（light|standard|deep）。サブスクTierで制御されます")
 
 
 class InferResponse(BaseModel):
@@ -205,7 +208,41 @@ def intensity_from_len(text: str) -> str:
     return "強い" if n > 60 else "中程度の" if n > 30 else "弱い"
 
 
-def compose_response(instr: str, payload: Optional[InputPayload], target: str, persona_ctx: Optional[Dict[str, Any]] = None) -> str:
+def _short_structure_gloss_for_qa(struct_key: str) -> str:
+    """構造辞書があれば、短い説明（1行）を返す（MyProfile 一問一答用）。
+
+    - Standard/Deep のときのみ利用する想定。
+    - 辞書が無い/該当エントリが無い場合は空文字。
+    """
+
+    try:
+        from structure_dict import load_structure_dict  # local module
+    except Exception:
+        return ""
+
+    try:
+        d = load_structure_dict() or {}
+        entry = d.get(struct_key)
+        if not isinstance(entry, dict):
+            return ""
+        secs = entry.get("sections") or {}
+        defin = str(secs.get("定義") or "").strip()
+        if not defin:
+            return ""
+        # 先頭1文っぽく切る（長すぎないように）
+        defin = re.split(r"[。\n]", defin)[0].strip()
+        return defin[:64] if defin else ""
+    except Exception:
+        return ""
+
+
+def compose_response(
+    instr: str,
+    payload: Optional[InputPayload],
+    target: str,
+    persona_ctx: Optional[Dict[str, Any]] = None,
+    report_mode: Optional[str] = "light",
+) -> str:
     """MyProfile 一問一答（深掘り）用の応答文を作る。
 
     v0.x の rule ベースでも「答えが明示される体験」を作れるように、
@@ -231,6 +268,49 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
     hot_words = features.get("hot_words") or []
 
     lang = detect_lang(q)
+
+    # ---- report_mode（Light / Standard / Deep）----
+    # Step 4: 一問一答も3モードに対応。
+    # - Light: 構造辞書(gloss)なし / Deep追加なし
+    # - Standard: glossあり（読み手が置いていかれない密度で）
+    # - Deep: Standard + MashLogic追記（別モジュールで分離）
+    # Default is Light to preserve the legacy (pre-mode) behavior.
+    mode = "light"
+    try:
+        from subscription import MyProfileMode, normalize_myprofile_mode
+
+        mode = normalize_myprofile_mode(report_mode, default=MyProfileMode.LIGHT).value
+    except Exception:
+        # Fallback (be permissive but safe)
+        s = str(report_mode or "").strip()
+        s2 = s.lower()
+        if s2 in ("light", "standard", "deep"):
+            mode = s2
+        elif s in ("ライト", "Light"):
+            mode = "light"
+        elif s in ("スタンダード", "Standard"):
+            mode = "standard"
+        elif s in ("ディープ", "Deep"):
+            mode = "deep"
+        else:
+            mode = "light"
+
+    use_structure_gloss = (lang == "ja") and (mode != "light")
+    use_mashlogic = (lang == "ja") and (mode == "deep")
+
+    def _fmt_key(k: str) -> str:
+        """Format a structure key with optional short gloss."""
+
+        kk = str(k or "").strip()
+        if not kk:
+            return ""
+        if not use_structure_gloss:
+            return kk
+        g = _short_structure_gloss_for_qa(kk)
+        if not g:
+            return kk
+        # keep it short (already trimmed in helper)
+        return f"{kk}（意味: {g}）"
 
     # 上位感情（最大2）
     def top2(d):
@@ -307,7 +387,9 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
             conclusion.append("結論: この問いは、自己構造の“前提”が揺れているサインです。前提を1行で仮置きすると整理が進みます。")
 
         if top_keys:
-            conclusion.append(f"（補助: 最近は『{top_keys[0]}』が立ちやすい傾向があり、その影響下で出ている問いかもしれません）")
+            conclusion.append(
+                f"（補助: 最近は『{_fmt_key(top_keys[0])}』が立ちやすい傾向があり、その影響下で出ている問いかもしれません）"
+            )
 
     # ---- 仮説（刺激→認知→感情→行動） ----
     emo_phrase = None
@@ -324,7 +406,7 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
 
     hypo: List[str] = []
     if lang == "ja":
-        core_k = top_keys[0] if top_keys else "（未特定）"
+        core_k = _fmt_key(top_keys[0]) if top_keys else "（未特定）"
         hypo.append(f"・刺激: （例）評価/比較/未確定/期待のズレ など")
         hypo.append(f"・認知: （仮）『{core_k}』の判断が入って、意味づけが急に固定されやすい")
         if emo_phrase:
@@ -342,7 +424,7 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
     if lang == "ja":
         if top_meta:
             for k, inten in top_meta[:2]:
-                evidence.append(f"・構造傾向: 『{k}』が出やすい（強度: {intensity_label(inten)}）")
+                evidence.append(f"・構造傾向: 『{_fmt_key(k)}』が出やすい（強度: {intensity_label(inten)}）")
         if hot_words:
             evidence.append(f"・観測語: { '、'.join(hot_words[:3]) } が登場しやすい")
         if deep_answers:
@@ -412,7 +494,8 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
             "\n[Optional follow-ups]",
             "\n".join(followups),
         ]
-        return "\n".join(parts).strip()
+        out_text = "\n".join(parts).strip()
+        return out_text
 
     parts = [
         "【結論（答え）】",
@@ -433,7 +516,30 @@ def compose_response(instr: str, payload: Optional[InputPayload], target: str, p
         "【追加で確認したい点（任意・1〜2）】",
         "\n".join(followups),
     ]
-    return "\n".join(parts).strip()
+
+    out_text = "\n".join(parts).strip()
+
+    # Deep-only enhancer (MashLogic): keep isolated from Light/Standard
+    if use_mashlogic:
+        try:
+            from mashlogic_qa_enhancer import enhance_myprofile_qa_response
+
+            ctx = {
+                "user_id": (persona_ctx or {}).get("user_id"),
+                "mode": mode,
+                "lang": lang,
+                "qtype": qtype,
+                "question": q,
+                "top_keys": top_keys,
+                "structures": structures,
+                "deep_insight_answers": deep_answers,
+            }
+            out_text = enhance_myprofile_qa_response(out_text, ctx)
+        except Exception:
+            # Deep mode must degrade gracefully
+            pass
+
+    return out_text
 
 
 # ---------- Add-on: Advanced date-like guard (non-destructive) ----------
@@ -635,6 +741,46 @@ async def infer(
         # 不正/期限切れトークンは 401
         viewer_user_id = await _resolve_user_id_from_token(access_token)
 
+    # --- Step 5: Subscription tier & report_mode gating ---
+    # report_mode is used for:
+    # - MyProfile monthly report generation
+    # - MyProfile Q&A (compose_response)
+    # Fail-closed: if tier cannot be resolved, treat as FREE (light only).
+    from subscription import (
+        SubscriptionTier,
+        MyProfileMode,
+        normalize_myprofile_mode,
+        is_myprofile_mode_allowed,
+        allowed_myprofile_modes_for_tier,
+    )
+    from subscription_store import get_subscription_tier_for_user
+
+    tier_enum: SubscriptionTier = SubscriptionTier.FREE
+    if viewer_user_id:
+        try:
+            tier_enum = await get_subscription_tier_for_user(
+                viewer_user_id,
+                default=SubscriptionTier.FREE,
+            )
+        except Exception as exc:
+            logger.warning("Failed to resolve subscription tier; fallback to FREE: %s", exc)
+            tier_enum = SubscriptionTier.FREE
+
+    # If client omits report_mode, pick a safe default per tier.
+    # - Free: light
+    # - Plus/Premium: standard (Deep should be explicitly chosen)
+    default_mode = MyProfileMode.LIGHT if tier_enum == SubscriptionTier.FREE else MyProfileMode.STANDARD
+    mode_enum = normalize_myprofile_mode(req.report_mode, default=default_mode)
+
+    if not is_myprofile_mode_allowed(tier_enum, mode_enum):
+        allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier_enum)]
+        raise HTTPException(
+            status_code=403,
+            detail=f"report_mode '{mode_enum.value}' is not allowed for tier '{tier_enum.value}'. Allowed: {', '.join(allowed)}",
+        )
+
+    effective_report_mode: str = mode_enum.value
+
     target = req.target or "self"
     user_id: Optional[str] = req.user_id
 
@@ -688,11 +834,14 @@ async def infer(
         text, meta2 = build_myprofile_monthly_report(
             user_id=str(user_id),
             period=str(period),
+            report_mode=effective_report_mode,
             include_secret=include_secret,
             prev_report_text=prev_text,
         )
         meta: Dict[str, Any] = {"target": target, "engine": "astor_myprofile_report", "version": "1.0.0"}
         meta.update(meta2 or {})
+        meta.setdefault("subscription_tier", tier_enum.value)
+        meta.setdefault("report_mode", effective_report_mode)
         return InferResponse(output=text, meta=meta)
 
     # 1) 構造辞書ベースの“定義質問”であれば、そちらを優先して応答
@@ -706,16 +855,20 @@ async def infer(
                 "target": target,
                 "engine": "structure_dict",
                 "version": "1.0.0",
+                "subscription_tier": tier_enum.value,
+                "report_mode": effective_report_mode,
             },
         )
 
     # 2) 上記に該当しなければ、従来どおり人格ベースの応答を返す
-    output = compose_response(instr, req.input, target, persona_ctx)
+    output = compose_response(instr, req.input, target, persona_ctx, report_mode=effective_report_mode)
 
     # Privacy-safe telemetry (no content persisted)
     logger.info("infer called: len=%d target=%s", len(instr), target)
 
     meta: Dict[str, Any] = {"target": target, "engine": "rule", "version": "1.0.0"}
+    meta["subscription_tier"] = tier_enum.value
+    meta["report_mode"] = effective_report_mode
     if persona_ctx is not None:
         meta["astor_persona"] = persona_ctx
     return InferResponse(output=output, meta=meta)

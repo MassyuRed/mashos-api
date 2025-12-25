@@ -43,6 +43,40 @@ except Exception:  # pragma: no cover
     load_structure_dict = None  # type: ignore
 
 
+# Subscription / modes (Step 3)
+try:
+    from subscription import MyProfileMode, normalize_myprofile_mode
+except Exception:  # pragma: no cover
+    MyProfileMode = None  # type: ignore
+    normalize_myprofile_mode = None  # type: ignore
+
+
+def _normalize_report_mode(x: Any) -> str:
+    """Normalize report_mode into one of: light / standard / deep."""
+    # Prefer subscription.py normalizer if available
+    if normalize_myprofile_mode is not None and MyProfileMode is not None:
+        try:
+            return normalize_myprofile_mode(x, default=MyProfileMode.STANDARD).value
+        except Exception:
+            return "standard"
+
+    # Fallback: string normalization
+    s = str(x or "").strip()
+    if not s:
+        return "standard"
+    s2 = s.lower()
+    if s2 in ("light", "standard", "deep"):
+        return s2
+    # common JP labels
+    if s in ("ライト", "Light"):
+        return "light"
+    if s in ("スタンダード", "Standard"):
+        return "standard"
+    if s in ("ディープ", "Deep"):
+        return "deep"
+    return "standard"
+
+
 EMO_JA = {
     "Joy": "喜び",
     "Sadness": "悲しみ",
@@ -438,6 +472,7 @@ def build_myprofile_monthly_report(
     *,
     user_id: str,
     period: str = "30d",
+    report_mode: Optional[str] = "standard",
     include_secret: bool = True,
     now: Optional[_dt.datetime] = None,
     prev_report_text: Optional[str] = None,
@@ -451,6 +486,9 @@ def build_myprofile_monthly_report(
         )
 
     days = parse_period_days(period)
+    mode = _normalize_report_mode(report_mode)
+    use_structure_gloss = (mode != "light")
+    use_mashlogic = (mode == "deep")
     now_dt = now or _dt.datetime.utcnow().replace(microsecond=0, tzinfo=_dt.timezone.utc)
 
     end = now_dt
@@ -529,7 +567,7 @@ def build_myprofile_monthly_report(
         lines.append("この期間は入力が少なめで、自己モデルの輪郭がまだ薄い状態です。")
         lines.append("感情入力や自己理解/Deep Insight の回答が増えるほど、自己モデルの精度は上がっていきます。")
     else:
-        gloss1 = _short_structure_gloss(top[0].key)
+        gloss1 = _short_structure_gloss(top[0].key) if use_structure_gloss else ""
         if gloss1:
             lines.append(f"核として『{top[0].key}』が出やすく（意味: {gloss1}）、判断の起点になっている可能性があります。")
         else:
@@ -648,13 +686,37 @@ def build_myprofile_monthly_report(
     else:
         lines.append("MyWeb（感情傾向）で揺れが見えたら、MyProfile側で“刺激→解釈”の観測を増やすと接続が強くなります。")
 
+    # Deep mode enhancer (MashLogic) - isolated to Deep only
+    mashlogic_applied = False
+    if use_mashlogic:
+        try:
+            from mashlogic_profile_enhancer import enhance_myprofile_monthly_report
+
+            lines = enhance_myprofile_monthly_report(
+                lines,
+                context={
+                    "user_id": uid,
+                    "mode": mode,
+                    "period": period,
+                    "top_keys": top_keys,
+                    "top_views": [v.__dict__ for v in top],
+                    "deep_insight_answers": deep_answers,
+                },
+            )
+            mashlogic_applied = True
+        except Exception:
+            mashlogic_applied = False
+
     meta = {
         "engine": "astor_myprofile_report",
         "version": "myprofile.report.v1",
+        "report_mode": mode,
         "period": period,
         "period_days": days,
         "data_scope": "self" if include_secret else "public",
         "diff_reference": "prev_report_text" if (prev_report_text and used_prev_text) else "data_only",
+        "structure_gloss_used": bool(use_structure_gloss),
+        "mashlogic_applied": bool(mashlogic_applied),
         "top_structures": [
             {
                 "key": v.key,

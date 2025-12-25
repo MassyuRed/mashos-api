@@ -65,3 +65,59 @@ export interface EmotionRecord extends EmotionEntry {
   /** 平均強度（weak=1, medium=2, strong=3 の平均値） */
   emotion_strength_avg?: number;
 }
+
+// ------------------------------------------------------------
+// Subscription / Modes (Cocolon)
+// ------------------------------------------------------------
+
+/** Subscription tier (single source of truth for UI gating) */
+export type SubscriptionTier = 'free' | 'plus' | 'premium';
+
+/** MyProfile output mode (Light / Standard / Deep) */
+export type MyProfileMode = 'light' | 'standard' | 'deep';
+
+/** Tier → allowed MyProfile modes */
+export const TIER_PERMISSION_MAP: Record<SubscriptionTier, MyProfileMode[]> = {
+  free: ['light'],
+  plus: ['light', 'standard'],
+  premium: ['light', 'standard', 'deep'],
+};
+
+export function normalizeSubscriptionTier(
+  raw: string | null | undefined,
+  fallback: SubscriptionTier = 'free'
+): SubscriptionTier {
+  const s = (raw ?? '').trim();
+  if (!s) return fallback;
+  // JP labels
+  if (s === '無料' || s === '無課金' || s === 'フリー') return 'free';
+  if (s === 'プラス') return 'plus';
+  if (s === 'プレミアム') return 'premium';
+  // canonical
+  const low = s.toLowerCase();
+  if (low === 'free') return 'free';
+  if (low === 'plus') return 'plus';
+  if (low === 'premium') return 'premium';
+  return fallback;
+}
+
+export function normalizeMyProfileMode(
+  raw: string | null | undefined,
+  fallback: MyProfileMode = 'light'
+): MyProfileMode {
+  const s = (raw ?? '').trim();
+  if (!s) return fallback;
+  // JP labels
+  if (s === 'ライト') return 'light';
+  if (s === 'スタンダード') return 'standard';
+  if (s === 'ディープ') return 'deep';
+  const low = s.toLowerCase();
+  if (low === 'light') return 'light';
+  if (low === 'standard') return 'standard';
+  if (low === 'deep') return 'deep';
+  return fallback;
+}
+
+export function isMyProfileModeAllowed(tier: SubscriptionTier, mode: MyProfileMode): boolean {
+  return TIER_PERMISSION_MAP[tier].includes(mode);
+}
