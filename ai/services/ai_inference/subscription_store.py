@@ -180,3 +180,92 @@ async def get_subscription_tier_from_access_token(
         return default
 
     return await get_subscription_tier_for_user(uid, default=default)
+
+
+# -----------------
+# Tier update (IAP)
+# -----------------
+
+
+async def _patch_profile_row(user_id: str, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """PATCH a single profile row.
+
+    Uses Supabase PostgREST with service_role.
+    Returns the updated row (dict) when possible.
+    """
+    _ensure_supabase_config()
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+
+    url = f"{SUPABASE_URL}/rest/v1/{PROFILES_TABLE}"
+    params = {
+        "id": f"eq.{uid}",
+    }
+    headers = {
+        **_sb_headers(),
+        "Content-Type": "application/json",
+        # Return the updated row (helpful for debugging)
+        "Prefer": "return=representation",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.patch(url, headers=headers, params=params, json=patch)
+    except Exception as exc:
+        logger.warning("Supabase profile update failed (network): %s", exc)
+        return None
+
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase profile update failed: status=%s body=%s",
+            resp.status_code,
+            resp.text[:1200],
+        )
+        return None
+
+    try:
+        data = resp.json()
+    except Exception:
+        # Some PostgREST configs may return empty body.
+        return {}
+
+    if isinstance(data, list) and data:
+        row0 = data[0]
+        return row0 if isinstance(row0, dict) else {}
+    if isinstance(data, dict):
+        return data
+    return {}
+
+
+async def set_subscription_tier_for_user(
+    user_id: str,
+    tier: TierLike,
+    *,
+    default: SubscriptionTier = SubscriptionTier.FREE,
+) -> SubscriptionTier:
+    """Update a user's subscription tier in `public.profiles`.
+
+    Notes:
+    - Uses service_role key, so RLS will be bypassed.
+    - Returns the normalized tier that was requested.
+    - Raises RuntimeError on failure (network / schema / permission).
+
+    This function intentionally does NOT do purchase verification.
+    Verification should be handled at the API layer (or upstream service).
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    t = normalize_subscription_tier(tier, default=default)
+
+    # PATCH profiles where id == user_id
+    updated = await _patch_profile_row(uid, {TIER_COLUMN: t.value})
+    if updated is None:
+        raise RuntimeError(
+            "Failed to update subscription tier in Supabase. "
+            "Ensure public.profiles has column 'subscription_tier' and SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are set."
+        )
+
+    return t
