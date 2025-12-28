@@ -440,7 +440,7 @@ def _build_prev_diff_summary_lines(
         elif cur_main:
             lines.append(f"・中心テーマ: 今回は『{cur_main}』が核になっている可能性")
         else:
-            lines.append("・中心テーマ: （今回は材料が少なめで、核の推定が弱い）")
+            lines.append("・中心テーマ: 今月は入力が少ないため、中心テーマはまだ特定できません")
 
     # 2) 崩れ/安定の要点比較（取れたときだけ）
     if prev_shaky and cur_shaky:
@@ -542,10 +542,10 @@ def build_myprofile_monthly_report(
             steady += "『刺激/解釈/身体』を1行メモすると、揺れがほどけやすい"
             one_liner = f"・ひとこと: いまは『{top[0].key}』が起点になりやすい状態。判断が硬くなる前に“1行メモ”が効きやすい。"
     else:
-        core = "・核（いちばん出やすい自己テーマ）: （この期間は材料が少なめ）"
-        shaky = "・崩れ条件（揺れを強めやすい引き金）: （未観測）"
-        steady = "・安定に寄せるキー（整える1手）: 観測メモを増やすと輪郭が出ます"
-        one_liner = "・ひとこと: 入力が少なめ。短文でもいいので観測を増やすと輪郭が出ます。"
+        core = "・核（いちばん出やすい自己テーマ）: まだ情報がありません"
+        shaky = "・崩れ条件（揺れを強めやすい引き金）: まだ情報がありません"
+        steady = "・安定に寄せるキー（整える1手）: まずは短い観測メモを増やす"
+        one_liner = "・ひとこと: 今月は入力が少ないため、レポートは簡易版です。短文でOKなので『刺激→解釈→感情→行動』を1セットだけ記録してみてください。"
 
 # 領域メモの割り当て
     bucket = _guess_domain_hints(top_keys)
@@ -564,8 +564,8 @@ def build_myprofile_monthly_report(
     # 1. 輪郭
     lines.append("1. 今月の輪郭（仮説・1〜4行）")
     if not top:
-        lines.append("この期間は入力が少なめで、自己モデルの輪郭がまだ薄い状態です。")
-        lines.append("感情入力や自己理解/Deep Insight の回答が増えるほど、自己モデルの精度は上がっていきます。")
+        lines.append("今月は入力が少ないため、はっきりした傾向はまだ読み取れません。")
+        lines.append("短文で大丈夫なので、感情入力やメモ（刺激・解釈・感情・行動）が増えると、次回以降のレポートが具体的になります。")
     else:
         gloss1 = _short_structure_gloss(top[0].key) if use_structure_gloss else ""
         if gloss1:
@@ -580,7 +580,12 @@ def build_myprofile_monthly_report(
     # 2. 反応パターン
     lines.append("2. 主要な反応パターン（刺激→認知→感情→行動）")
     if not top:
-        lines.append("（未観測：まずは“刺激/解釈/感情/行動”を1セットだけでもメモすると、パターンが立ち上がります）")
+        lines.append("今月は反応パターンを特定できるほどの情報がありません。")
+        lines.append("次の4点を、1回だけでもメモしてみてください（短文でOKです）。")
+        lines.append("・刺激（何が起きたか）")
+        lines.append("・認知（どう解釈したか）")
+        lines.append("・感情（何を感じたか）")
+        lines.append("・行動（どうしたか）")
     else:
         for i, v in enumerate(top[:2], start=1):
             emo_hint = "、".join([emo_label_ja(x) for x in v.top_emotions]) if v.top_emotions else "感情"
@@ -612,7 +617,8 @@ def build_myprofile_monthly_report(
     # 4. 思考のクセ
     lines.append("4. 思考のクセ・判断のクセ（あれば）")
     if not top:
-        lines.append("（未観測）")
+        lines.append("今月は思考のクセが見えるほどの情報がありません。")
+        lines.append("気づいたときに「考えたこと（1文）」を残すと、次回以降で傾向が見えやすくなります。")
     else:
         lines.append(f"・『{top[0].key}』が上位に出ているため、判断の起点が“評価/意味づけ”に寄りやすい可能性があります。")
         if len(top) >= 2:
@@ -627,7 +633,7 @@ def build_myprofile_monthly_report(
         if hints:
             lines.append(f"- {domain}: 『{ '』『'.join(hints) }』が絡む場面で自己モデルが動きやすい可能性")
         else:
-            lines.append(f"- {domain}: （この期間の観測からは強い偏りは不明）")
+            lines.append(f"- {domain}: 今月はまだ傾向を判断できません。")
     lines.append("")
 
     # 6. 観測ポイント
@@ -660,9 +666,9 @@ def build_myprofile_monthly_report(
     # 前回本文が無い場合/抽出できない場合は、データ差分で補う
     if not used_prev_text:
         if not prev_views and not cur_views:
-            lines.append("前回/今回ともに観測材料が少ないため、差分はまだ評価できません。")
+            lines.append("前回と今回の入力が少ないため、差分はまだまとめられません。")
         elif not prev_views and cur_views:
-            lines.append("前回期間は観測材料が少なく、今回から自己構造が立ち上がり始めた状態です。")
+            lines.append("前回は入力が少なく、今月から傾向が見え始めている状態です。")
         else:
             shown = 0
             for k, dc, di in deltas:

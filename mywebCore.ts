@@ -41,8 +41,8 @@ export function isWeeklyReportTrigger(d: Date): boolean {
   return d.getDay() === 0 && d.getHours() === 7 && d.getMinutes() === 0;
 }
 export function isMonthlyReportTrigger(d: Date): boolean {
-  // 毎月1日 07:00（ローカル）
-  return d.getDate() === 1 && d.getHours() === 7 && d.getMinutes() === 0;
+  // 毎月1日 00:00（ローカル）
+  return d.getDate() === 1 && d.getHours() === 0 && d.getMinutes() === 0;
 }
 
 /**
@@ -65,7 +65,7 @@ export function getCurrentWeeklyRangeContaining(ref: Date): PeriodRange {
 /**
  * ちょうど「配信トリガ時刻」に呼ばれたときに出すべき
  * 「直近の“完了済み”月次レンジ」を返す。
- * 例：1日07:00に実行 → 前月の範囲
+ * 例：1日00:00に実行 → 前月の範囲
  */
 export function getCompletedMonthlyRangeFrom(ref: Date): PeriodRange {
   const thisMonthStart = startOfMonth(ref);

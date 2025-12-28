@@ -827,7 +827,10 @@ async def infer(
         if not user_id:
             raise HTTPException(status_code=400, detail="user_id is required for MyProfile report generation")
         include_secret = (target != "external")
-        period = (req.input.period if req.input and req.input.period else None) or "30d"
+        # MyProfile（月次自己構造分析レポート）は「前月（カレンダー月）」を固定で生成する。
+        # - UI側の誤設定（例: 28d のローリング）で週次配布のように見える問題を防ぐ。
+        # - 配布タイミング（月初）に関係なく、常に “直近の完了済み月（=前月）” を対象にする。
+        period = "prev_month"
         prev_text = None
         if include_secret:
             prev_text = await _fetch_latest_monthly_report_text(user_id=str(user_id))
