@@ -1,0 +1,243 @@
+{
+  "執着": {
+    "base_weight": 0.1,
+    "emotion_weights": {
+      "Anxiety": 0.6,
+      "Anger": 0.3,
+      "Sadness": 0.2
+    },
+    "keywords": [
+      "手放せない",
+      "離れたくない",
+      "失いたくない",
+      "執着",
+      "縛られる",
+      "こだわり"
+    ],
+    "keyword_weight": 0.6
+  },
+  "自己否定": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Sadness": 0.6,
+      "Anxiety": 0.4
+    },
+    "keywords": [
+      "自分が悪い",
+      "価値がない",
+      "ダメ",
+      "無理",
+      "否定",
+      "自信がない"
+    ],
+    "keyword_weight": 0.6
+  },
+  "完璧主義": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.5,
+      "Anger": 0.3
+    },
+    "keywords": [
+      "完璧",
+      "ミスできない",
+      "ちゃんと",
+      "100点",
+      "理想",
+      "正解"
+    ],
+    "keyword_weight": 0.6
+  },
+  "承認欲求": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.4,
+      "Sadness": 0.3,
+      "Joy": 0.2
+    },
+    "keywords": [
+      "認められたい",
+      "評価",
+      "褒め",
+      "承認",
+      "見てほしい",
+      "SNS"
+    ],
+    "keyword_weight": 0.5
+  },
+  "過剰責任": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.4,
+      "Anger": 0.2
+    },
+    "keywords": [
+      "私がやる",
+      "責任",
+      "背負う",
+      "任せられない",
+      "全部",
+      "やらなきゃ"
+    ],
+    "keyword_weight": 0.5
+  },
+  "回避": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.5,
+      "Sadness": 0.2
+    },
+    "keywords": [
+      "逃げたい",
+      "避けたい",
+      "面倒",
+      "先送り",
+      "やめたい",
+      "放置"
+    ],
+    "keyword_weight": 0.6
+  },
+  "衝突回避": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.4,
+      "Sadness": 0.2,
+      "Calm": 0.1
+    },
+    "keywords": [
+      "波風立てたくない",
+      "嫌われたくない",
+      "我慢",
+      "言えない",
+      "飲み込む",
+      "空気"
+    ],
+    "keyword_weight": 0.6
+  },
+  "境界線の弱さ": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Sadness": 0.3,
+      "Anxiety": 0.3
+    },
+    "keywords": [
+      "断れない",
+      "頼まれると",
+      "優先",
+      "しんどいのに",
+      "疲れた",
+      "抱え込む"
+    ],
+    "keyword_weight": 0.5
+  },
+  "怒りの蓄積": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anger": 0.7
+    },
+    "keywords": [
+      "イライラ",
+      "ムカつく",
+      "怒",
+      "許せない",
+      "腹が立つ",
+      "キレそう"
+    ],
+    "keyword_weight": 0.6
+  },
+  "不安ループ": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.7
+    },
+    "keywords": [
+      "不安",
+      "心配",
+      "考えすぎ",
+      "ぐるぐる",
+      "眠れない",
+      "最悪"
+    ],
+    "keyword_weight": 0.6
+  },
+  "孤独感": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Sadness": 0.5,
+      "Anxiety": 0.3
+    },
+    "keywords": [
+      "孤独",
+      "ひとり",
+      "寂しい",
+      "誰も",
+      "話せない",
+      "置いていかれる"
+    ],
+    "keyword_weight": 0.6
+  },
+  "安心追求": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Calm": 0.3,
+      "Anxiety": 0.2,
+      "Joy": 0.2
+    },
+    "keywords": [
+      "安心",
+      "落ち着く",
+      "安定",
+      "守りたい",
+      "整えたい",
+      "余裕"
+    ],
+    "keyword_weight": 0.4
+  },
+  "成長志向": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Joy": 0.4,
+      "SelfInsight": 0.5
+    },
+    "keywords": [
+      "学び",
+      "挑戦",
+      "成長",
+      "改善",
+      "振り返り",
+      "上達"
+    ],
+    "keyword_weight": 0.5
+  },
+  "自己理解": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "SelfInsight": 0.8
+    },
+    "keywords": [
+      "気づき",
+      "整理",
+      "言語化",
+      "パターン",
+      "構造",
+      "観測"
+    ],
+    "keyword_weight": 0.5
+  },
+  "評価不安": {
+    "base_weight": 0.05,
+    "emotion_weights": {
+      "Anxiety": 0.6,
+      "Sadness": 0.2
+    },
+    "keywords": [
+      "評価",
+      "見られてる",
+      "怖い",
+      "失敗",
+      "恥",
+      "比較"
+    ],
+    "keyword_weight": 0.5
+  }
+}

@@ -37,7 +37,7 @@ import os
 import tempfile
 import threading
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import httpx
@@ -364,6 +364,205 @@ async def _insert_emotion_row(
     if isinstance(data, dict):
         return data
     return {"id": None, "created_at": created_at}
+
+
+
+# ---------- MyProfile Latest Report (auto-refresh) ----------
+# 目的:
+# - ユーザーが感情入力した直後に、MyProfile の「最新版プレビュー」を更新しておく。
+# - 既存UI（Supabase の myprofile_reports を読むだけ）でも最新が反映されるようにする。
+#
+# 注意:
+# - 失敗しても emotion/submit 自体は成功として扱う（入力保存を優先）。
+#
+# Env (optional):
+# - MYPROFILE_LATEST_AUTO_REFRESH_ENABLED=true/false
+# - MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS=90
+# - MYPROFILE_LATEST_PERIOD=28d  (例: 7d / 28d / 30d)
+#
+# 既存アプリ実装と互換のため、latest は period_start/end を固定値にして 1 行を使い回す。
+LATEST_REPORT_PERIOD_START = "1970-01-01T00:00:00.000Z"
+LATEST_REPORT_PERIOD_END = "1970-01-01T00:00:00.000Z"
+
+def _env_truthy(name: str, default: str = "true") -> bool:
+    v = os.getenv(name, default)
+    return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
+
+MYPROFILE_LATEST_AUTO_REFRESH_ENABLED = _env_truthy(
+    "MYPROFILE_LATEST_AUTO_REFRESH_ENABLED", "true"
+)
+
+try:
+    MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS = int(
+        os.getenv("MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS", "90")
+    )
+except Exception:
+    MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS = 90
+
+MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28d").strip()
+
+async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
+    """myprofile_reports(latest) の generated_at を取得する（無ければ None）。"""
+    _ensure_supabase_config()
+
+    url = f"{SUPABASE_URL}/rest/v1/myprofile_reports"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    params = {
+        "select": "generated_at",
+        "user_id": f"eq.{user_id}",
+        "report_type": "eq.latest",
+        "period_start": f"eq.{LATEST_REPORT_PERIOD_START}",
+        "period_end": f"eq.{LATEST_REPORT_PERIOD_END}",
+        "limit": "1",
+    }
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(url, headers=headers, params=params)
+
+    # 200: OK, 206: Partial Content（range）
+    if resp.status_code not in (200, 206):
+        logger.warning(
+            "Supabase fetch myprofile_reports(latest) failed: status=%s body=%s",
+            resp.status_code,
+            resp.text[:800],
+        )
+        return None
+
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+
+    if isinstance(data, list) and data:
+        return data[0].get("generated_at")
+    if isinstance(data, dict):
+        return data.get("generated_at")
+    return None
+
+async def _upsert_myprofile_latest_report_row(payload: Dict[str, Any]) -> None:
+    """myprofile_reports に latest を upsert（失敗したら例外）。"""
+    _ensure_supabase_config()
+
+    url = f"{SUPABASE_URL}/rest/v1/myprofile_reports"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        # merge duplicates on conflict
+        "Prefer": "resolution=merge-duplicates,return=minimal",
+    }
+    params = {
+        "on_conflict": "user_id,report_type,period_start,period_end",
+    }
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.post(url, headers=headers, params=params, json=payload)
+
+    if resp.status_code not in (200, 201, 204):
+        raise RuntimeError(
+            f"Supabase upsert myprofile_reports(latest) failed: HTTP {resp.status_code} {resp.text[:800]}"
+        )
+
+async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
+    """感情入力後に MyProfile 最新レポート（プレビュー）を更新する。"""
+    if not MYPROFILE_LATEST_AUTO_REFRESH_ENABLED:
+        return
+
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+
+    # ---- throttle ----
+    min_interval = int(MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS or 0)
+    if min_interval > 0:
+        try:
+            last_iso = await _fetch_myprofile_latest_generated_at(uid)
+            if last_iso:
+                try:
+                    last_dt = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+                    now_dt = datetime.now(timezone.utc)
+                    if (now_dt - last_dt).total_seconds() < float(min_interval):
+                        return
+                except Exception:
+                    # 解析できない場合は更新を続行
+                    pass
+        except Exception:
+            # 取得できなくても更新は続行
+            pass
+
+    # ---- determine report_mode (fail-closed) ----
+    report_mode = "light"
+    try:
+        from subscription_store import get_subscription_tier_for_user
+        from subscription import SubscriptionTier
+
+        tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+        report_mode = "light" if tier == SubscriptionTier.FREE else "standard"
+    except Exception:
+        report_mode = "light"
+
+    # ---- generate latest text (rule-based; no LLM) ----
+    try:
+        from astor_myprofile_report import build_myprofile_monthly_report
+
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        text, meta = build_myprofile_monthly_report(
+            user_id=uid,
+            period=MYPROFILE_LATEST_PERIOD or "28d",
+            report_mode=report_mode,
+            include_secret=True,
+            now=now_dt,
+            prev_report_text=None,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"latest report build failed: {exc}") from exc
+
+    text = str(text or "").strip()
+    if not text:
+        return
+
+    # snapshot window (for debugging / UI hints)
+    try:
+        days = 28
+        try:
+            # reuse astor_myprofile_report's parser if available
+            from astor_myprofile_report import parse_period_days
+            days = int(parse_period_days(MYPROFILE_LATEST_PERIOD))
+        except Exception:
+            pass
+        end_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        start_dt = end_dt - timedelta(days=max(days, 1))
+        snap = {
+            "start": start_dt.isoformat().replace("+00:00", "Z"),
+            "end": end_dt.isoformat().replace("+00:00", "Z"),
+            "period": MYPROFILE_LATEST_PERIOD,
+        }
+    except Exception:
+        snap = {"period": MYPROFILE_LATEST_PERIOD}
+
+    generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    payload = {
+        "user_id": uid,
+        "report_type": "latest",
+        "period_start": LATEST_REPORT_PERIOD_START,
+        "period_end": LATEST_REPORT_PERIOD_END,
+        "title": "自己構造レポート（最新版）",
+        "content_text": text,
+        "content_json": {
+            **(meta or {}),
+            "source": "auto_refresh_emotion_submit",
+            "snapshot": snap,
+            "generated_at_server": generated_at,
+        },
+        "generated_at": generated_at,
+    }
+
+    await _upsert_myprofile_latest_report_row(payload)
 
 
 # ---------- Pydantic models ----------
@@ -977,6 +1176,13 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 emotion=astor_payload,
             )
             astor_engine.handle(astor_req)
+
+
+            # 7) MyProfile 最新レポート（プレビュー）を自動更新（失敗しても致命的ではない）
+            try:
+                await _auto_refresh_myprofile_latest_report(user_id)
+            except Exception as exc:
+                logger.error("MyProfile latest auto-refresh failed: %s", exc)
         except Exception as exc:
             logger.error("ASTOR EmotionIngest failed: %s", exc)
 
