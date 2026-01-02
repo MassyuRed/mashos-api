@@ -32,6 +32,7 @@ from subscription import (
     normalize_subscription_tier,
 )
 from subscription_store import get_subscription_tier_for_user, set_subscription_tier_for_user
+from active_users_store import touch_active_user
 
 
 logger = logging.getLogger("subscription_api")
@@ -214,6 +215,18 @@ def register_subscription_routes(app: FastAPI) -> None:
                 ),
             )
         modes = [m.value for m in allowed_myprofile_modes_for_tier(updated_tier)]
+
+
+        # Phase8++: keep active_users.subscription_tier in sync (best-effort)
+        try:
+            await touch_active_user(
+                user_id,
+                activity="subscription/update",
+                subscription_tier=updated_tier.value,
+                force=True,
+            )
+        except Exception:
+            pass
 
         return SubscriptionUpdateResponse(
             user_id=user_id,

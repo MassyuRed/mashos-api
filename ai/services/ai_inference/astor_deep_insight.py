@@ -35,6 +35,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import time
 
 try:
@@ -44,6 +45,7 @@ except ImportError:
 
 from astor_deep_insight_question_store import DeepInsightServedStore
 from astor_deep_insight_store import DeepInsightAnswerStore
+from deep_insight_strategy import decide_deep_insight_strategy
 
 
 ENGINE_NAME = "astor.deep_insight.v0.1"
@@ -77,7 +79,17 @@ class DeepInsightTemplateStore:
             here = Path(__file__).resolve()
             parents = list(here.parents)
             base = parents[3] if len(parents) > 3 else here.parent
-            path = base / "ai" / "data" / "config" / "deep_insight_questions.json"
+            cfg_dir = base / "ai" / "data" / "config"
+
+            # Phase5.3: 質問セットの差し替え（文体/戦略の検証用）
+            # - 例: DEEP_INSIGHT_QUESTION_SET_ID=v2
+            # - 読み込み候補: deep_insight_questions.v2.json
+            set_id = str(os.getenv("DEEP_INSIGHT_QUESTION_SET_ID", "") or "").strip()
+            safe_set_id = re.sub(r"[^0-9A-Za-z_\-]", "", set_id)[:32] if set_id else ""
+
+            alt = cfg_dir / f"deep_insight_questions.{safe_set_id}.json" if safe_set_id else None
+            default_path = cfg_dir / "deep_insight_questions.json"
+            path = alt if (alt is not None and alt.exists()) else default_path
         self.path = path
         self._raw: Dict[str, Any] = self._load()
 
@@ -362,11 +374,18 @@ def generate_deep_insight_questions_payload(
         except Exception:
             struct_map = {}
 
-    unique_events = _unique_emotion_events_in_period(struct_map, period_days=period_days)
-    rich_threshold = int(os.getenv("DEEP_INSIGHT_RICH_THRESHOLD", "8") or "8")
-    density = "rich" if unique_events >= rich_threshold else "sparse"
+        unique_events = _unique_emotion_events_in_period(struct_map, period_days=period_days)
 
-    strategy = "deep_dive" if density == "rich" else "unexplored"
+        # Phase5.4: 戦略判定（deep_dive / unexplored）をサーバ設定（ENV）で切替可能にする
+        # - 例: DEEP_INSIGHT_RICH_THRESHOLD=8
+        # - 例: DEEP_INSIGHT_FREE_ALWAYS_UNEXPLORED=true
+        # - 例: DEEP_INSIGHT_STRATEGY_FORCE=unexplored
+        strategy, decision = decide_deep_insight_strategy(unique_events=unique_events, tier=str(tier or "free"))
+        density = str(decision.get("density") or "").strip() or ("rich" if int(unique_events) >= 8 else "sparse")
+        try:
+            rich_threshold = int(decision.get("rich_threshold") or 8)
+        except Exception:
+            rich_threshold = 8
 
     template_store = DeepInsightTemplateStore()
 
@@ -480,7 +499,9 @@ def generate_deep_insight_questions_payload(
             "max_questions": max_q_i,
             "density": density,
             "unique_emotion_events": unique_events,
+            "rich_threshold": int(rich_threshold),
             "strategy": strategy,
+            "strategy_decision": (decision if isinstance(decision, dict) else None),
             "chosen_structure_key": chosen_structure,
             "context": (str(context)[:200] if context else None),
             # デバッグ用（必要ならフロントで非表示にしてOK）

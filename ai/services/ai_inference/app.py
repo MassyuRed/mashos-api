@@ -23,6 +23,7 @@ import httpx
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from middleware_active_user_touch import install_active_user_touch_middleware
 from pydantic import BaseModel, Field
 from structure_dict import build_structure_answer
 from api_emotion_submit import (
@@ -36,6 +37,9 @@ from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
 from api_deep_insight import register_deep_insight_routes
 from api_subscription import register_subscription_routes
+from api_myweb_reports import register_myweb_report_routes
+from api_cron_distribution import register_cron_distribution_routes
+from prompt_templates import render_prompt_template, list_prompt_templates
 from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
 from astor_myprofile_report import (
@@ -66,12 +70,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Phase8++: global active_users touch middleware (best-effort)
+install_active_user_touch_middleware(app)
+
+
 register_emotion_submit_routes(app)
 register_emotion_secret_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
 register_deep_insight_routes(app)
 register_subscription_routes(app)
+register_myweb_report_routes(app)
+register_cron_distribution_routes(app)
 
 # ASTOR engine for MyWeb insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
@@ -87,7 +97,18 @@ class InputPayload(BaseModel):
     hot_words: Optional[List[str]] = Field(default=None, description="観測語（例: ['孤独','疲労']）")
 
 class InferRequest(BaseModel):
-    instruction: str = Field(..., min_length=4, description="一問一答の照会文（時系列を含まないこと）")
+    instruction: Optional[str] = Field(
+        default=None,
+        description="一問一答の照会文（時系列を含まないこと）。template_id を使う場合は省略可",
+    )
+    template_id: Optional[str] = Field(
+        default=None,
+        description="サーバ側テンプレID（例: myprofile_qna_v1）。instruction の代わりに指定できます。",
+    )
+    template_vars: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="テンプレへ渡す変数（例: {question: \"...\"}）。省略可。",
+    )
     input: Optional[InputPayload] = Field(default=None, description="分析の補助特徴量（省略可）")
     target: Optional[Literal["self", "external"]] = Field(default="self", description="自己/他者（外部）")
     user_id: Optional[str] = Field(default=None, description="ASTOR連携用のユーザーID（任意）")
@@ -717,12 +738,34 @@ def healthz() -> Dict[str, Any]:
     return {"status": "ok", "app": APP_NAME}
 
 
+
+@app.get("/mymodel/templates")
+def mymodel_templates() -> Dict[str, Any]:
+    """Return available server-side prompt templates (Phase5)."""
+    return {"status": "ok", "templates": list_prompt_templates()}
+
+
 @app.post("/mymodel/infer", response_model=InferResponse)
 async def infer(
     req: InferRequest,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> InferResponse:
-    instr = req.instruction.strip()
+    instr = (req.instruction or "").strip()
+    if not instr:
+        # Phase5: allow client to send template_id instead of raw instruction
+        if req.template_id:
+            try:
+                instr = render_prompt_template(
+                    req.template_id,
+                    req.template_vars or {},
+                    target=(req.target or "self"),
+                ).strip()
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"テンプレ生成に失敗しました: {exc}")
+        else:
+            raise HTTPException(status_code=400, detail="情報が足りないため応答できません。")
 
     # MyProfile（月次レポート生成）の場合は、instruction 内に日付表現（例: 12/1〜）が
     # 含まれることがあるため、日付ガードを“照会”にだけ適用する。

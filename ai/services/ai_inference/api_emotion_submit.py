@@ -505,6 +505,44 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
     except Exception:
         report_mode = "light"
 
+    # ---- Phase10: generation lock (best-effort) ----
+    lock_key = None
+    lock_owner = None
+    lock_acquired = True
+    try:
+        from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock
+
+        lock_key = build_lock_key(
+            namespace="myprofile",
+            user_id=uid,
+            report_type="latest",
+            period_start=LATEST_REPORT_PERIOD_START,
+            period_end=LATEST_REPORT_PERIOD_END,
+        )
+        lock_owner = make_owner_id("auto_refresh_latest")
+        ttl = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYPROFILE_LATEST", "180") or "180")
+        lr = await try_acquire_lock(
+            lock_key=lock_key,
+            ttl_seconds=ttl,
+            owner_id=lock_owner,
+            context={
+                "namespace": "myprofile",
+                "user_id": uid,
+                "report_type": "latest",
+                "period": MYPROFILE_LATEST_PERIOD,
+                "report_mode": report_mode,
+                "source": "auto_refresh_emotion_submit",
+            },
+        )
+        lock_acquired = bool(getattr(lr, "acquired", False))
+        lock_owner = getattr(lr, "owner_id", lock_owner)
+    except Exception:
+        lock_acquired = True
+
+    if not lock_acquired:
+        # Someone else is generating; skip silently.
+        return
+
     # ---- generate latest text (rule-based; no LLM) ----
     try:
         from astor_myprofile_report import build_myprofile_monthly_report
@@ -562,7 +600,16 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
         "generated_at": generated_at,
     }
 
-    await _upsert_myprofile_latest_report_row(payload)
+    try:
+        await _upsert_myprofile_latest_report_row(payload)
+    finally:
+        try:
+            from generation_lock import release_lock
+
+            if lock_key:
+                await release_lock(lock_key=lock_key, owner_id=lock_owner)
+        except Exception:
+            pass
 
 
 # ---------- Pydantic models ----------
