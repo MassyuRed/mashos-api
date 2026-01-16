@@ -1047,16 +1047,19 @@ async def _push_notify_friends_about_emotion(
     if not tokens:
         return
 
-    title = f"{owner_name}の感情が更新されました"
-    body = _format_emotion_push_body(emotion_details)
+    # 仕様: 通知で飛ばす内容は「感情選択内容のみ」
+    # - display_name / user_id / created_at 等のメタ情報は含めない
+    emotion_body = _format_emotion_push_body(emotion_details)
+    if not emotion_body:
+        return
+    # _format_emotion_push_body のフォールバック（感情が空のとき）は
+    # 「感情選択内容のみ」という要件を満たさないため送信しない。
+    if emotion_body == "フレンドが感情を入力しました":
+        return
 
-    data: Dict[str, Any] = {
-        "type": "friend_emotion",
-        "owner_user_id": owner_user_id,
-        "created_at": created_at,
-    }
+    # Android の通知UIでは title が最も目立つため、title に集約して送る。
+    await _send_fcm_push(tokens=tokens, title=emotion_body, body="", data=None)
 
-    await _send_fcm_push(tokens=tokens, title=title, body=body, data=data)
 async def _insert_friend_emotion_feed_rows(
     *,
     viewer_user_ids: List[str],

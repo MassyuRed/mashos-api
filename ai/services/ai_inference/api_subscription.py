@@ -68,6 +68,10 @@ class SubscriptionUpdateRequest(BaseModel):
         default=None,
         description="iOS: base64 receipt / Android: transactionReceipt (raw)",
     )
+    transaction_id: Optional[str] = Field(
+        default=None,
+        description="iOS: transactionId (optional, for logging/debug)",
+    )
     subscription_tier: Optional[str] = Field(
         default=None,
         description="Requested tier (free|plus|premium). If omitted, derived from product_id.",
@@ -94,6 +98,22 @@ def _split_env_list(name: str) -> list[str]:
     if not raw:
         return []
     return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _user_in_unverified_allowlist(user_id: str) -> bool:
+    """Return True if user_id is explicitly allowed to use unverified updates.
+
+    This is intended for dev/staging safety:
+    - Keep COCOLON_IAP_ALLOW_UNVERIFIED=false
+    - Allow only specific test accounts (Supabase user ids) to update tier
+      without verification.
+    """
+
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+    allow = set(_split_env_list("COCOLON_IAP_ALLOW_UNVERIFIED_USER_IDS"))
+    return uid in allow
 
 
 def _resolve_tier_from_request(req: SubscriptionUpdateRequest) -> SubscriptionTier:
@@ -191,13 +211,27 @@ def register_subscription_routes(app: FastAPI) -> None:
 
         # Fail-closed by default.
         # In production, do NOT enable unverified updates.
+        #
+        # Dev/staging options:
+        # - COCOLON_IAP_ALLOW_UNVERIFIED=true (global)
+        # - COCOLON_IAP_ALLOW_UNVERIFIED_USER_IDS=<uuid1,uuid2,...> (per-user allowlist)
         allow_unverified = _env_flag("COCOLON_IAP_ALLOW_UNVERIFIED", default=False)
+        verification_mode = ""
+
+        if allow_unverified:
+            verification_mode = "unverified_dev"
+        elif _user_in_unverified_allowlist(user_id):
+            # Safer dev option: allow only specified test accounts
+            allow_unverified = True
+            verification_mode = "unverified_dev_user_allowlist"
+
         if not allow_unverified:
             raise HTTPException(
                 status_code=501,
                 detail=(
                     "IAP verification is not configured. "
                     "Set COCOLON_IAP_ALLOW_UNVERIFIED=true for dev, "
+                    "or set COCOLON_IAP_ALLOW_UNVERIFIED_USER_IDS for a safer dev allowlist, "
                     "or implement server-side purchase verification before production."
                 ),
             )
@@ -233,5 +267,5 @@ def register_subscription_routes(app: FastAPI) -> None:
             subscription_tier=updated_tier.value,
             allowed_myprofile_modes=modes,
             updated=True,
-            verification="unverified_dev",
+            verification=verification_mode or "unverified_dev",
         )
