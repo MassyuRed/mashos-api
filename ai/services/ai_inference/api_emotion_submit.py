@@ -99,14 +99,14 @@ except ValueError:
 _FCM_APP_INITIALIZED = False
 _FCM_APP_INIT_LOCK = threading.Lock()
 _FCM_SERVICE_ACCOUNT_TMPFILE: Optional[str] = None
+_FCM_V1_APP_NAME = os.getenv("FCM_V1_APP_NAME", "cocolon_fcm_v1").strip() or "cocolon_fcm_v1"
+_FCM_V1_APP: Optional[Any] = None  # firebase_admin.App
+
 
 
 def _has_fcm_v1_credentials() -> bool:
     """FCM HTTP v1 の資格情報が設定されているかをざっくり判定する。"""
     if FCM_SERVICE_ACCOUNT_FILE and os.path.isfile(FCM_SERVICE_ACCOUNT_FILE):
-        return True
-    # Render Secret Files default path (when env var is missing)
-    if os.path.isfile("/etc/secrets/firebase_service_account.json"):
         return True
     if FCM_SERVICE_ACCOUNT_JSON_BASE64:
         return True
@@ -126,11 +126,6 @@ def _ensure_fcm_service_account_file() -> str:
 
     if FCM_SERVICE_ACCOUNT_FILE and os.path.isfile(FCM_SERVICE_ACCOUNT_FILE):
         return FCM_SERVICE_ACCOUNT_FILE
-
-    # Render Secret Files default path (when env var is missing or points elsewhere)
-    default_secret = "/etc/secrets/firebase_service_account.json"
-    if os.path.isfile(default_secret):
-        return default_secret
 
     if _FCM_SERVICE_ACCOUNT_TMPFILE and os.path.isfile(_FCM_SERVICE_ACCOUNT_TMPFILE):
         return _FCM_SERVICE_ACCOUNT_TMPFILE
@@ -174,14 +169,20 @@ def _ensure_fcm_service_account_file() -> str:
 
 
 def _ensure_firebase_admin_initialized() -> bool:
-    """Firebase Admin SDK を初期化する（FCM HTTP v1 用）。"""
-    global _FCM_APP_INITIALIZED
+    """Firebase Admin SDK を初期化する（FCM HTTP v1 用）。
 
-    if _FCM_APP_INITIALIZED:
+    重要:
+    - 既に default app がどこかで初期化されていても、それを信用しない。
+      Render 環境では ADC(デフォルト認証) が使えず 401 になりやすいため、
+      必ず service account credential で named app を用意して送信時にそれを使う。
+    """
+    global _FCM_APP_INITIALIZED, _FCM_V1_APP
+
+    if _FCM_APP_INITIALIZED and _FCM_V1_APP is not None:
         return True
 
     with _FCM_APP_INIT_LOCK:
-        if _FCM_APP_INITIALIZED:
+        if _FCM_APP_INITIALIZED and _FCM_V1_APP is not None:
             return True
 
         try:
@@ -191,27 +192,42 @@ def _ensure_firebase_admin_initialized() -> bool:
             logger.error("firebase-admin is not available: %s", exc)
             return False
 
-        # すでに初期化済みならOK
+        # 既に named app があればそれを使う
         try:
-            firebase_admin.get_app()
+            _FCM_V1_APP = firebase_admin.get_app(_FCM_V1_APP_NAME)
             _FCM_APP_INITIALIZED = True
+            logger.info(
+                "Firebase Admin SDK initialized for FCM push (v1) [patch_v4 name=%s existing].",
+                _FCM_V1_APP_NAME,
+            )
             return True
         except Exception:
-            pass
+            _FCM_V1_APP = None
 
+        # credential を service account から必ず用意
         cred_path = _ensure_fcm_service_account_file()
         if not cred_path:
-            return False
+            # Render Secret Files の標準パスも念のため見る
+            default_path = "/etc/secrets/firebase_service_account.json"
+            if os.path.isfile(default_path):
+                cred_path = default_path
+            else:
+                return False
 
         try:
             cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
+            _FCM_V1_APP = firebase_admin.initialize_app(cred, name=_FCM_V1_APP_NAME)
             _FCM_APP_INITIALIZED = True
-            logger.info("Firebase Admin SDK initialized for FCM push (v1) [patch_v2].")
+            logger.info(
+                "Firebase Admin SDK initialized for FCM push (v1) [patch_v4 name=%s].",
+                _FCM_V1_APP_NAME,
+            )
             return True
         except Exception as exc:
             logger.error("Failed to initialize Firebase Admin SDK: %s", exc)
+            _FCM_V1_APP = None
             return False
+
 
 # 強度ラベル（RN側の表示と合わせる）
 STRENGTH_LABEL_JA: Dict[str, str] = {"weak": "弱", "medium": "中", "strong": "強"}
@@ -874,12 +890,15 @@ async def _send_fcm_push_v1(
     body: str,
     data: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """FCM HTTP v1 で push を送る（best-effort）。
+    """FCM HTTP v1 (Firebase Admin SDK) で push を送る（best-effort）。
 
-    実運用で firebase_admin 経由が 401("missing required authentication credential") になるケースがあったため、
-    Render Shell で検証済みの手法（service account -> OAuth2 access token -> FCM v1 HTTP）に寄せて送信する。
+    Render 環境での 401 ("Request is missing required authentication credential") を避けるため、
+    必ず service account で初期化した named app を明示し、token 1件ずつ `messaging.send` で送る。
+    （multicast は default app を掴む事故が起きやすいため安定側に寄せる）
     """
     if not (FCM_PUSH_ENABLED and _has_fcm_v1_credentials()):
+        return
+    if not _ensure_firebase_admin_initialized():
         return
 
     # 重複除去・空除去
@@ -907,92 +926,67 @@ async def _send_fcm_push_v1(
                 continue
             data_str[str(k)] = str(v)
 
-    # --- service account -> access token ---
-    cred_path = _ensure_fcm_service_account_file()
-    if not cred_path:
-        logger.warning("FCM v1 push skipped: service account file not found")
-        return
+    # 送信は最大 500 tokens を超えない想定だが、安全側で分割
+    batches = _chunk_list(uniq, 450)
 
-    try:
-        with open(cred_path, "r", encoding="utf-8") as f:
-            sa_info = json.load(f)
-    except Exception as exc:
-        logger.error("FCM v1 push skipped: failed to read service account json (%s): %s", cred_path, exc)
-        return
+    async def _send_one_batch(batch_tokens: List[str]):
+        def _send_sync():
+            import firebase_admin
+            from firebase_admin import messaging
 
-    project_id = str(sa_info.get("project_id") or "").strip()
-    if not project_id:
-        logger.error("FCM v1 push skipped: project_id is missing in service account json")
-        return
+            # named app を必ず使う
+            app = _FCM_V1_APP
+            if app is None:
+                try:
+                    app = firebase_admin.get_app(_FCM_V1_APP_NAME)
+                except Exception:
+                    app = None
 
-    try:
-        from google.oauth2 import service_account
-        from google.auth.transport.requests import Request
+            success = 0
+            failure = 0
+            errs: List[str] = []
 
-        scopes = ["https://www.googleapis.com/auth/firebase.messaging"]
-        creds = service_account.Credentials.from_service_account_file(cred_path, scopes=scopes)
-        creds.refresh(Request())
-        access_token = str(creds.token or "").strip()
-        expiry = getattr(creds, "expiry", None)
-        if not access_token:
-            raise RuntimeError("access token is empty")
-    except Exception as exc:
-        logger.error("FCM v1 push skipped: failed to obtain OAuth token: %s", exc)
-        return
-
-    endpoint = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-
-    logger.info(
-        "FCM v1 push sending via direct HTTP OAuth [patch_v3]: project_id=%s sa=%s exp=%s",
-        project_id,
-        os.path.basename(cred_path),
-        expiry,
-    )
-
-    success = 0
-    failure = 0
-    errs: List[str] = []
-
-    async with httpx.AsyncClient(timeout=FCM_TIMEOUT_SEC) as client:
-        for t in uniq:
-            token_head = t[:10] + "..." if len(t) > 10 else t
-
-            payload: Dict[str, Any] = {
-                "message": {
-                    "token": t,
-                    "notification": {"title": title, "body": body},
-                    "data": data_str or {},
-                    "android": {"priority": "HIGH"},
-                    "apns": {
-                        "headers": {
+            for tok in batch_tokens:
+                msg = messaging.Message(
+                    token=tok,
+                    notification=messaging.Notification(title=title, body=body),
+                    data=data_str or None,
+                    android=messaging.AndroidConfig(priority="high"),
+                    apns=messaging.APNSConfig(
+                        headers={
                             "apns-push-type": "alert",
                             "apns-priority": "10",
                         },
-                        "payload": {"aps": {"sound": "default"}},
-                    },
-                }
-            }
+                        payload=messaging.APNSPayload(
+                            aps=messaging.Aps(sound="default"),
+                        ),
+                    ),
+                )
 
-            try:
-                resp = await client.post(endpoint, headers=headers, json=payload)
-                if resp.status_code == 200:
+                try:
+                    messaging.send(msg, app=app)
                     success += 1
-                    continue
+                except Exception as exc:
+                    failure += 1
+                    errs.append(str(exc))
 
-                failure += 1
-                body_txt = (resp.text or "")[:1200]
-                errs.append(f"{resp.status_code} {token_head} {body_txt}")
-            except Exception as exc:
-                failure += 1
-                errs.append(f"ERR {token_head} {exc}")
+            return {"success": success, "failure": failure, "errors": errs}
 
-    logger.info("FCM v1 push sent (direct_http) [patch_v3]: success=%s failure=%s", success, failure)
-    if failure and errs:
-        logger.warning("FCM v1 push failures (sample) [patch_v3]: %s", errs[:5])
+        return await asyncio.to_thread(_send_sync)
+
+    for batch in batches:
+        try:
+            resp = await _send_one_batch(batch)
+            success = resp.get("success")
+            failure = resp.get("failure")
+            logger.info("FCM v1 push sent [patch_v4]: success=%s failure=%s", success, failure)
+
+            errs = resp.get("errors") or []
+            if failure and errs:
+                logger.warning("FCM v1 push failures (sample) [patch_v4]: %s", errs[:5])
+
+        except Exception as exc:
+            logger.error("FCM v1 push send failed [patch_v4]: %s", exc)
 
 
 async def _send_fcm_push_legacy(
