@@ -639,6 +639,19 @@ class EmotionSubmitRequest(BaseModel):
         description="MyModel external からの照会制御用フラグ（Frend通知には影響しない）。",
     )
 
+    notify_friends: Optional[bool] = Field(
+        default=True,
+        alias="send_friend_notification",
+        description=(
+            "フレンドに通知を送るかどうか。true のとき friend_emotion_feed と Push 通知を作成する。"
+            "後方互換のため未指定は true。"
+        ),
+    )
+
+    class Config:
+        # payload に notify_friends / send_friend_notification のどちらが来ても受け取れるようにする
+        allow_population_by_field_name = True
+
 
 class EmotionSubmitResponse(BaseModel):
     status: str = Field(..., description="'ok' 固定（現状）")
@@ -896,6 +909,19 @@ async def _send_fcm_push_v1(
                 notification=messaging.Notification(title=title, body=body),
                 data=data_str or None,
                 android=messaging.AndroidConfig(priority="high"),
+                # iOS(APNs) 側で確実に「通知として表示」させるため、alert + high priority を明示。
+                # - apns-push-type: alert
+                # - apns-priority: 10 (immediate)
+                # - sound: default
+                apns=messaging.APNSConfig(
+                    headers={
+                        "apns-push-type": "alert",
+                        "apns-priority": "10",
+                    },
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(sound="default"),
+                    ),
+                ),
             )
 
             send_each = getattr(messaging, "send_each_for_multicast", None)
@@ -976,7 +1002,7 @@ async def _send_fcm_push_legacy(
             payload: Dict[str, Any] = {
                 "registration_ids": batch,
                 "priority": "high",
-                "notification": {"title": title, "body": body},
+                "notification": {"title": title, "body": body, "sound": "default"},
             }
             if data:
                 payload["data"] = data
@@ -1057,8 +1083,10 @@ async def _push_notify_friends_about_emotion(
     if emotion_body == "フレンドが感情を入力しました":
         return
 
-    # Android の通知UIでは title が最も目立つため、title に集約して送る。
-    await _send_fcm_push(tokens=tokens, title=emotion_body, body="", data=None)
+    # iOS は notification.body が空だと通知が表示されない/抑制されるケースがあるため、
+    # 本文(body)に感情選択内容を入れる。
+    # 仕様「感情選択内容のみ」は維持し、title は固定(アプリ名)にしてメタ情報を増やさない。
+    await _send_fcm_push(tokens=tokens, title="Cocolon", body=emotion_body, data=None)
 
 async def _insert_friend_emotion_feed_rows(
     *,
@@ -1200,16 +1228,19 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             is_secret=bool(payload.is_secret),
         )
 
-        # 5) フレンドへの通知（Frend タブ用タイムライン）
-        # 失敗しても感情ログ本体は成功させたいので、例外は握りつぶす。
-        try:
-            await _notify_friends_about_emotion(
-                owner_user_id=user_id,
-                emotion_details=emotion_details,
-                created_at=created_at,
-            )
-        except Exception as exc:
-            logger.error("Failed to notify friends about emotion: %s", exc)
+        # 5) フレンドへの通知（Friend タブ用タイムライン）
+        # - notify_friends=false（または send_friend_notification=false）の場合は通知しない。
+        # - 失敗しても感情ログ本体は成功させたいので、例外は握りつぶす。
+        notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
+        if notify_friends:
+            try:
+                await _notify_friends_about_emotion(
+                    owner_user_id=user_id,
+                    emotion_details=emotion_details,
+                    created_at=created_at,
+                )
+            except Exception as exc:
+                logger.error("Failed to notify friends about emotion: %s", exc)
 
         # 6) ASTOR への感情インジェスト（失敗しても致命的ではない）
         try:
