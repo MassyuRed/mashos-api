@@ -100,25 +100,11 @@ _FCM_APP_INITIALIZED = False
 _FCM_APP_INIT_LOCK = threading.Lock()
 _FCM_SERVICE_ACCOUNT_TMPFILE: Optional[str] = None
 
-# Render の Secret Files は /etc/secrets 配下にマウントされることが多い。
-# Env が未設定/パス違いでも拾えるように候補を持っておく。
-_DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES = (
-    "/etc/secrets/firebase_service_account.json",
-)
-
-# Default App が別の credential で初期化済みでも影響を受けにくくするため、
-# 必要なら named app を使って送信する。
-_FCM_APP_NAME = "cocolon_fcm"
-_FCM_APP: Optional[Any] = None
-
 
 def _has_fcm_v1_credentials() -> bool:
     """FCM HTTP v1 の資格情報が設定されているかをざっくり判定する。"""
     if FCM_SERVICE_ACCOUNT_FILE and os.path.isfile(FCM_SERVICE_ACCOUNT_FILE):
         return True
-    for candidate in _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES:
-        if candidate and os.path.isfile(candidate):
-            return True
     if FCM_SERVICE_ACCOUNT_JSON_BASE64:
         return True
     if FCM_SERVICE_ACCOUNT_JSON:
@@ -138,9 +124,10 @@ def _ensure_fcm_service_account_file() -> str:
     if FCM_SERVICE_ACCOUNT_FILE and os.path.isfile(FCM_SERVICE_ACCOUNT_FILE):
         return FCM_SERVICE_ACCOUNT_FILE
 
-    for candidate in _DEFAULT_FCM_SERVICE_ACCOUNT_CANDIDATES:
-        if candidate and os.path.isfile(candidate):
-            return candidate
+    # Render Secret Files default path (when env var is missing or points elsewhere)
+    default_secret = "/etc/secrets/firebase_service_account.json"
+    if os.path.isfile(default_secret):
+        return default_secret
 
     if _FCM_SERVICE_ACCOUNT_TMPFILE and os.path.isfile(_FCM_SERVICE_ACCOUNT_TMPFILE):
         return _FCM_SERVICE_ACCOUNT_TMPFILE
@@ -185,7 +172,7 @@ def _ensure_fcm_service_account_file() -> str:
 
 def _ensure_firebase_admin_initialized() -> bool:
     """Firebase Admin SDK を初期化する（FCM HTTP v1 用）。"""
-    global _FCM_APP_INITIALIZED, _FCM_APP
+    global _FCM_APP_INITIALIZED
 
     if _FCM_APP_INITIALIZED:
         return True
@@ -199,69 +186,6 @@ def _ensure_firebase_admin_initialized() -> bool:
             from firebase_admin import credentials
         except Exception as exc:
             logger.error("firebase-admin is not available: %s", exc)
-            return False
-
-        # すでに初期化済みならOK（default app）
-        try:
-            app = firebase_admin.get_app()
-            cred_obj = getattr(app, "credential", None)
-            cred_name = getattr(getattr(cred_obj, "__class__", None), "__name__", "") if cred_obj else ""
-            if "Certificate" in cred_name:
-                _FCM_APP_INITIALIZED = True
-                _FCM_APP = None
-                logger.info(
-                    "Firebase Admin SDK already initialized for FCM push (default app, credential=%s).",
-                    cred_name or "unknown",
-                )
-                return True
-
-            # default app が別credential(ADC等)で初期化済みだと、Render環境では認証が失敗しやすい。
-            # 可能なら削除して service account で再初期化する。
-            logger.warning(
-                "Firebase default app is already initialized with credential=%s; reinitializing with service account.",
-                cred_name or "unknown",
-            )
-            try:
-                firebase_admin.delete_app(app)
-            except Exception as exc:
-                logger.warning("Failed to delete existing default Firebase app: %s", exc)
-        except Exception:
-            pass
-
-        # named app (fallback) がすでにあればそれを使う
-        try:
-            _FCM_APP = firebase_admin.get_app(_FCM_APP_NAME)
-            _FCM_APP_INITIALIZED = True
-            logger.info("Firebase Admin SDK already initialized for FCM push (named app=%s).", _FCM_APP_NAME)
-            return True
-        except Exception:
-            _FCM_APP = None
-
-        cred_path = _ensure_fcm_service_account_file()
-        if not cred_path:
-            logger.error("FCM service account credential file is missing.")
-            return False
-
-        try:
-            cred = credentials.Certificate(cred_path)
-
-            # まず default app を service account で初期化
-            try:
-                firebase_admin.initialize_app(cred)
-                _FCM_APP = None
-                _FCM_APP_INITIALIZED = True
-                logger.info("Firebase Admin SDK initialized for FCM push (v1, default app).")
-                return True
-            except ValueError:
-                # default app が既に存在する場合など。named app で回避。
-                pass
-
-            _FCM_APP = firebase_admin.initialize_app(cred, name=_FCM_APP_NAME)
-            _FCM_APP_INITIALIZED = True
-            logger.info("Firebase Admin SDK initialized for FCM push (v1, named app=%s).", _FCM_APP_NAME)
-            return True
-        except Exception as exc:
-            logger.error("Failed to initialize Firebase Admin SDK: %s", exc)
             return False
 
         # すでに初期化済みならOK
@@ -280,7 +204,7 @@ def _ensure_firebase_admin_initialized() -> bool:
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
             _FCM_APP_INITIALIZED = True
-            logger.info("Firebase Admin SDK initialized for FCM push (v1).")
+            logger.info("Firebase Admin SDK initialized for FCM push (v1) [patch_v2].")
             return True
         except Exception as exc:
             logger.error("Failed to initialize Firebase Admin SDK: %s", exc)
@@ -947,7 +871,12 @@ async def _send_fcm_push_v1(
     body: str,
     data: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """FCM HTTP v1 (Firebase Admin SDK) で push を送る（best-effort）。"""
+    """FCM HTTP v1 (Firebase Admin SDK) で push を送る（best-effort）。
+
+    NOTE:
+    - 実運用で `send_each_for_multicast` / `send_multicast` が認証系で不安定になるケースがあったため、
+      まずは最もシンプルな `messaging.send()` で 1 token ずつ送信する実装に寄せる。
+    """
     if not (FCM_PUSH_ENABLED and _has_fcm_v1_credentials()):
         return
     if not _ensure_firebase_admin_initialized():
@@ -978,22 +907,16 @@ async def _send_fcm_push_v1(
                 continue
             data_str[str(k)] = str(v)
 
-    # Multicast は最大 500 tokens（安全側で 450）
-    batches = _chunk_list(uniq, 450)
-
-    async def _send_one_batch(batch_tokens: List[str]):
+    async def _send_one(token: str):
         def _send_sync():
             from firebase_admin import messaging
 
-            msg = messaging.MulticastMessage(
-                tokens=batch_tokens,
+            msg = messaging.Message(
+                token=token,
                 notification=messaging.Notification(title=title, body=body),
                 data=data_str or None,
                 android=messaging.AndroidConfig(priority="high"),
                 # iOS(APNs) 側で確実に「通知として表示」させるため、alert + high priority を明示。
-                # - apns-push-type: alert
-                # - apns-priority: 10 (immediate)
-                # - sound: default
                 apns=messaging.APNSConfig(
                     headers={
                         "apns-push-type": "alert",
@@ -1005,55 +928,27 @@ async def _send_fcm_push_v1(
                 ),
             )
 
-            app = _FCM_APP
-
-            send_each = getattr(messaging, "send_each_for_multicast", None)
-            if callable(send_each):
-                if app is not None:
-                    try:
-                        return send_each(msg, app=app)
-                    except TypeError:
-                        pass
-                return send_each(msg)
-
-            send_multi = getattr(messaging, "send_multicast", None)
-            if callable(send_multi):
-                if app is not None:
-                    try:
-                        return send_multi(msg, app=app)
-                    except TypeError:
-                        pass
-                return send_multi(msg)
-
-            raise RuntimeError("firebase_admin.messaging does not support multicast send on this version")
+            # firebase_admin.messaging.send はバージョンにより app 引数の有無が変わることがあるため、
+            # ここでは default app を利用する（initialize_app 済みが前提）。
+            return messaging.send(msg)
 
         return await asyncio.to_thread(_send_sync)
 
-    for batch in batches:
-        try:
-            resp = await _send_one_batch(batch)
-            success = getattr(resp, "success_count", None)
-            failure = getattr(resp, "failure_count", None)
-            logger.info("FCM v1 push sent: success=%s failure=%s", success, failure)
+    success = 0
+    failure = 0
+    errs: List[str] = []
 
-            if failure:
-                responses = getattr(resp, "responses", None)
-                if isinstance(responses, list):
-                    errs = []
-                    for r in responses:
-                        try:
-                            ok = getattr(r, "success", True)
-                            if ok:
-                                continue
-                            exc = getattr(r, "exception", None)
-                            if exc:
-                                errs.append(str(exc))
-                        except Exception:
-                            continue
-                    if errs:
-                        logger.warning("FCM v1 push failures (sample): %s", errs[:5])
+    for t in uniq:
+        try:
+            await _send_one(t)
+            success += 1
         except Exception as exc:
-            logger.error("FCM v1 push send failed: %s", exc)
+            failure += 1
+            errs.append(str(exc))
+
+    logger.info("FCM v1 push sent: success=%s failure=%s", success, failure)
+    if failure and errs:
+        logger.warning("FCM v1 push failures (sample): %s", errs[:5])
 
 
 async def _send_fcm_push_legacy(
@@ -1090,14 +985,6 @@ async def _send_fcm_push_legacy(
     # Legacy API は registration_ids で最大1000件まで送れる（安全側で900に分割）
     batches = _chunk_list(uniq, 900)
 
-    legacy_url = FCM_API_URL
-    if "/v1/" in legacy_url or "messages:send" in legacy_url:
-        # v1 endpoint は OAuth(Bearer) 必須。legacy key では認証できないため、誤設定を吸収する。
-        logger.warning(
-            "FCM_API_URL looks like HTTP v1 endpoint; using legacy endpoint /fcm/send for legacy push."
-        )
-        legacy_url = "https://fcm.googleapis.com/fcm/send"
-
     async with httpx.AsyncClient(timeout=FCM_TIMEOUT_SEC) as client:
         for batch in batches:
             payload: Dict[str, Any] = {
@@ -1108,7 +995,7 @@ async def _send_fcm_push_legacy(
             if data:
                 payload["data"] = data
 
-            resp = await client.post(legacy_url, headers=headers, json=payload)
+            resp = await client.post(FCM_API_URL, headers=headers, json=payload)
             if resp.status_code != 200:
                 logger.error(
                     "FCM legacy push send failed: status=%s body=%s",
