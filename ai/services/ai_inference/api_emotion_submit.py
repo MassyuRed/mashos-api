@@ -883,6 +883,104 @@ def _chunk_list(xs: List[str], size: int) -> List[List[str]]:
     return [xs[i : i + size] for i in range(0, len(xs), size)]
 
 
+
+# ---- FCM HTTP v1 (Direct HTTP + OAuth2) [patch_v5] ----
+# firebase_admin 経由で 401 ("missing required authentication credential") が継続するケースがあるため、
+# Render Shell で成功した「service account -> OAuth access token -> HTTP v1」方式に寄せる。
+_FCM_OAUTH_TOKEN: Optional[str] = None
+_FCM_OAUTH_EXPIRY: Optional[datetime] = None
+_FCM_OAUTH_PROJECT_ID: Optional[str] = None
+_FCM_OAUTH_CLIENT_EMAIL: Optional[str] = None
+_FCM_OAUTH_LOCK = threading.Lock()
+
+
+def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
+    """FCM HTTP v1 用の OAuth2 access token を取得/キャッシュして返す。
+
+    戻り値: (token, expiry, project_id, client_email)
+    """
+    global _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY, _FCM_OAUTH_PROJECT_ID, _FCM_OAUTH_CLIENT_EMAIL
+
+    with _FCM_OAUTH_LOCK:
+        now = datetime.now(timezone.utc)
+        if _FCM_OAUTH_TOKEN and _FCM_OAUTH_EXPIRY and (_FCM_OAUTH_EXPIRY - now) > timedelta(seconds=60):
+            return (
+                _FCM_OAUTH_TOKEN,
+                _FCM_OAUTH_EXPIRY,
+                _FCM_OAUTH_PROJECT_ID or "",
+                _FCM_OAUTH_CLIENT_EMAIL or "",
+            )
+
+        # まずは既存の設定から探す（/etc/secrets を最後の砦として見る）
+        cred_path = _ensure_fcm_service_account_file()
+        if not cred_path:
+            default_path = "/etc/secrets/firebase_service_account.json"
+            if os.path.isfile(default_path):
+                cred_path = default_path
+            else:
+                raise RuntimeError("FCM service account file not found.")
+
+        project_id = ""
+        client_email = ""
+        try:
+            with open(cred_path, "r", encoding="utf-8") as f:
+                info = json.load(f)
+            project_id = str(info.get("project_id") or "")
+            client_email = str(info.get("client_email") or "")
+        except Exception:
+            # JSON が読めなくても Credentials 側から拾えることがあるので続行
+            project_id = ""
+            client_email = ""
+
+        try:
+            from google.oauth2 import service_account
+        except Exception as exc:
+            raise RuntimeError(f"google-auth is not available: {exc}")
+
+        scopes = ["https://www.googleapis.com/auth/firebase.messaging"]
+        creds = service_account.Credentials.from_service_account_file(cred_path, scopes=scopes)
+
+        # refresh (requests が無い環境もあり得るので transport をフォールバック)
+        req = None
+        try:
+            from google.auth.transport.requests import Request as GARequest  # type: ignore
+            req = GARequest()
+        except Exception:
+            try:
+                from google.auth.transport.urllib3 import Request as GARequest  # type: ignore
+                req = GARequest()
+            except Exception as exc:
+                raise RuntimeError(f"google-auth transport is not available: {exc}")
+
+        creds.refresh(req)
+        token = getattr(creds, "token", None)
+        expiry = getattr(creds, "expiry", None)
+
+        if not token or not expiry:
+            raise RuntimeError("Failed to mint OAuth access token for FCM v1.")
+
+        if getattr(expiry, "tzinfo", None) is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+
+        if not project_id:
+            project_id = getattr(creds, "project_id", "") or ""
+
+        _FCM_OAUTH_TOKEN = str(token)
+        _FCM_OAUTH_EXPIRY = expiry
+        _FCM_OAUTH_PROJECT_ID = project_id
+        _FCM_OAUTH_CLIENT_EMAIL = client_email
+
+        logger.info(
+            "FCM v1 OAuth token refreshed [patch_v5]: project_id=%s token_len=%s exp=%s sa=%s",
+            project_id,
+            len(_FCM_OAUTH_TOKEN),
+            _FCM_OAUTH_EXPIRY.isoformat(),
+            (client_email or ""),
+        )
+
+        return _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY, project_id, client_email
+
+
 async def _send_fcm_push_v1(
     *,
     tokens: List[str],
@@ -890,15 +988,16 @@ async def _send_fcm_push_v1(
     body: str,
     data: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """FCM HTTP v1 (Firebase Admin SDK) で push を送る（best-effort）。
+    """FCM HTTP v1 (Direct HTTP + OAuth2) で push を送る（best-effort）。
 
-    Render 環境での 401 ("Request is missing required authentication credential") を避けるため、
-    必ず service account で初期化した named app を明示し、token 1件ずつ `messaging.send` で送る。
-    （multicast は default app を掴む事故が起きやすいため安定側に寄せる）
+    - service account JSON から OAuth2 access token を作り、HTTP v1 に投げる。
+    - 401 が出たらトークンを作り直して 1回だけリトライする。
     """
-    if not (FCM_PUSH_ENABLED and _has_fcm_v1_credentials()):
+    if not FCM_PUSH_ENABLED:
         return
-    if not _ensure_firebase_admin_initialized():
+
+    # credentials が設定されていなくても /etc/secrets にあれば送る
+    if not (_has_fcm_v1_credentials() or os.path.isfile("/etc/secrets/firebase_service_account.json")):
         return
 
     # 重複除去・空除去
@@ -920,74 +1019,95 @@ async def _send_fcm_push_v1(
     data_str: Dict[str, str] = {}
     if data:
         for k, v in data.items():
-            if k is None:
-                continue
-            if v is None:
+            if k is None or v is None:
                 continue
             data_str[str(k)] = str(v)
 
-    # 送信は最大 500 tokens を超えない想定だが、安全側で分割
-    batches = _chunk_list(uniq, 450)
+    # token / project を取得
+    try:
+        access_token, expiry, project_id, client_email = _get_fcm_oauth_access_token()
+    except Exception as exc:
+        logger.error("FCM v1 OAuth token error [patch_v5]: %s", exc)
+        return
 
-    async def _send_one_batch(batch_tokens: List[str]):
-        def _send_sync():
-            import firebase_admin
-            from firebase_admin import messaging
+    if not project_id:
+        logger.error("FCM v1 project_id is empty [patch_v5].")
+        return
 
-            # named app を必ず使う
-            app = _FCM_V1_APP
-            if app is None:
-                try:
-                    app = firebase_admin.get_app(_FCM_V1_APP_NAME)
-                except Exception:
-                    app = None
+    url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json; UTF-8",
+    }
 
-            success = 0
-            failure = 0
-            errs: List[str] = []
+    async def _post_one(tok: str, *, retry_on_401: bool = True) -> Tuple[bool, int, str]:
+        message: Dict[str, Any] = {
+            "token": tok,
+            "notification": {"title": title, "body": body},
+            "android": {"priority": "HIGH"},
+            "apns": {
+                "headers": {
+                    "apns-push-type": "alert",
+                    "apns-priority": "10",
+                },
+                "payload": {
+                    "aps": {
+                        "sound": "default",
+                    }
+                },
+            },
+        }
+        if data_str:
+            message["data"] = data_str
 
-            for tok in batch_tokens:
-                msg = messaging.Message(
-                    token=tok,
-                    notification=messaging.Notification(title=title, body=body),
-                    data=data_str or None,
-                    android=messaging.AndroidConfig(priority="high"),
-                    apns=messaging.APNSConfig(
-                        headers={
-                            "apns-push-type": "alert",
-                            "apns-priority": "10",
-                        },
-                        payload=messaging.APNSPayload(
-                            aps=messaging.Aps(sound="default"),
-                        ),
-                    ),
-                )
+        payload: Dict[str, Any] = {"message": message}
 
-                try:
-                    messaging.send(msg, app=app)
-                    success += 1
-                except Exception as exc:
-                    failure += 1
-                    errs.append(str(exc))
+        async with httpx.AsyncClient(timeout=FCM_TIMEOUT_SEC) as client:
+            resp = await client.post(url, headers=headers, json=payload)
 
-            return {"success": success, "failure": failure, "errors": errs}
+        if resp.status_code == 200:
+            return True, resp.status_code, ""
 
-        return await asyncio.to_thread(_send_sync)
+        # 401 の場合は token を作り直して 1回だけリトライ
+        if retry_on_401 and resp.status_code == 401:
+            global _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY
+            with _FCM_OAUTH_LOCK:
+                _FCM_OAUTH_TOKEN = None
+                _FCM_OAUTH_EXPIRY = None
+            try:
+                new_token, _, _, _ = _get_fcm_oauth_access_token()
+                headers["Authorization"] = f"Bearer {new_token}"
+            except Exception as exc:
+                return False, resp.status_code, f"retry token refresh failed: {exc}"
 
-    for batch in batches:
+            async with httpx.AsyncClient(timeout=FCM_TIMEOUT_SEC) as client:
+                resp2 = await client.post(url, headers=headers, json=payload)
+
+            if resp2.status_code == 200:
+                return True, resp2.status_code, ""
+            return False, resp2.status_code, (resp2.text or "")[:600]
+
+        return False, resp.status_code, (resp.text or "")[:600]
+
+    success = 0
+    failure = 0
+    errs: List[str] = []
+
+    for tok in uniq:
         try:
-            resp = await _send_one_batch(batch)
-            success = resp.get("success")
-            failure = resp.get("failure")
-            logger.info("FCM v1 push sent [patch_v4]: success=%s failure=%s", success, failure)
-
-            errs = resp.get("errors") or []
-            if failure and errs:
-                logger.warning("FCM v1 push failures (sample) [patch_v4]: %s", errs[:5])
-
+            ok, status, err = await _post_one(tok)
+            if ok:
+                success += 1
+            else:
+                failure += 1
+                errs.append(f"status={status} err={err}")
         except Exception as exc:
-            logger.error("FCM v1 push send failed [patch_v4]: %s", exc)
+            failure += 1
+            errs.append(str(exc))
 
+    logger.info("FCM v1 push sent [patch_v5]: success=%s failure=%s", success, failure)
+    if failure and errs:
+        logger.warning("FCM v1 push failures (sample) [patch_v5 told=%s sa=%s]: %s", project_id, (client_email or ""), errs[:3])
 
 async def _send_fcm_push_legacy(
     *,
