@@ -688,10 +688,10 @@ class EmotionSubmitRequest(BaseModel):
     # （Config.allow_population_by_field_name は v1 用）
     if ConfigDict is not None:  # pragma: no cover
         model_config = ConfigDict(populate_by_name=True)
-
-    class Config:
-        # payload に notify_friends / send_friend_notification のどちらが来ても受け取れるようにする
-        allow_population_by_field_name = True
+    else:  # pragma: no cover
+        class Config:
+            # payload に notify_friends / send_friend_notification のどちらが来ても受け取れるようにする
+            allow_population_by_field_name = True
 
 
 class EmotionSubmitResponse(BaseModel):
@@ -1541,7 +1541,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             notify_friends=notify_friends,
         )
 
-return EmotionSubmitResponse(
+        return EmotionSubmitResponse(
             status="ok",
             id=inserted.get("id"),
             created_at=inserted.get("created_at", created_at),
