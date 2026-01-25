@@ -407,12 +407,8 @@ def generate_deep_insight_questions_payload(
     answered_ids: Set[str] = set()
     try:
         # secret も含めて「回答済み」は避ける（再提示を防ぐ）
-        for a in answer_store.get_user_answers(uid, limit=200, include_secret=True):
-            if not isinstance(a, dict):
-                continue
-            qid = str(a.get("question_id") or "").strip()
-            if qid:
-                answered_ids.add(qid)
+        # NOTE: 長期ユーザーが増えると直近N件だけでは重複が発生し得るため、question_id の集合を広めに取得する。
+        answered_ids = set(answer_store.get_answered_question_ids(uid, limit=5000, include_secret=True) or set())
     except Exception:
         answered_ids = set()
 
@@ -452,19 +448,40 @@ def generate_deep_insight_questions_payload(
             if len(questions) >= max_q_i:
                 break
 
-    # 3) それでも空なら（テンプレ不足など）、最終フォールバック（何も除外しない）
-    if not questions:
-        questions = _select_questions_from_templates(
-            candidates,
-            max_questions=max_q_i,
-            max_depth=max_depth_i,
-            strategy=strategy,
-            structure_key_fallback=chosen_structure,
-            exclude_ids=set(),
-            rng=rng,
-        )
+    # 3) それでも足りない場合は、反対戦略のテンプレも試す（ただし回答済みは避ける）
+    if len(questions) < max_q_i:
+        alt_strategy = "deep_dive" if strategy != "deep_dive" else "unexplored"
+        alt_candidates: List[Dict[str, Any]] = []
+        alt_structure: Optional[str] = None
 
-    # 候補が0の時だけ、別系統のフォールバック候補からも拾う
+        if alt_strategy == "deep_dive":
+            alt_structure = _pick_top_structure_in_period(struct_map, period_days=max(period_days, 30))
+            if alt_structure:
+                alt_candidates.extend(template_store.get_templates_for_structure(alt_structure))
+            alt_candidates.extend(template_store.get_deep_dive_fallback())
+        else:
+            alt_candidates.extend(template_store.get_global_templates())
+
+        if alt_candidates:
+            already = {q.id for q in questions}
+            more = _select_questions_from_templates(
+                alt_candidates,
+                max_questions=max_q_i,
+                max_depth=max_depth_i,
+                strategy=alt_strategy,
+                structure_key_fallback=alt_structure,
+                exclude_ids=(answered_ids | last_batch | already),
+                rng=rng,
+            )
+            for q in more:
+                if q.id in already:
+                    continue
+                questions.append(q)
+                already.add(q.id)
+                if len(questions) >= max_q_i:
+                    break
+
+    # 候補が0の時だけ、別系統のフォールバック候補からも拾う（ただし回答済みは避ける）
     if not questions:
         fb = template_store.get_global_templates() if strategy != "deep_dive" else template_store.get_deep_dive_fallback()
         questions = _select_questions_from_templates(
@@ -473,7 +490,7 @@ def generate_deep_insight_questions_payload(
             max_depth=max_depth_i,
             strategy=strategy,
             structure_key_fallback=chosen_structure,
-            exclude_ids=set(),
+            exclude_ids=(answered_ids | last_batch),
             rng=rng,
         )
 

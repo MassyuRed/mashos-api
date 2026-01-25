@@ -10,7 +10,7 @@ Deep Insight Answer Store v0.2 (Supabase)
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import datetime as _dt
 import json
@@ -194,6 +194,93 @@ class DeepInsightAnswerStore:
 
         # local fallback
         return self._get_user_answers_local(uid, limit=lim, include_secret=include_secret)
+
+    def get_answered_question_ids(self, user_id: str, *, limit: int = 5000, include_secret: bool = True) -> Set[str]:
+        """Return a set of answered question_id for the user.
+
+        Notes:
+        - Used by question generation to avoid re-serving already answered questions.
+        - For Supabase, fetches only question_id with pagination (best-effort).
+        - include_secret=True means even secret answers will exclude the question from rotation.
+        """
+
+        uid = str(user_id or "").strip()
+        if not uid:
+            return set()
+
+        max_rows = max(1, int(limit))
+
+        if self._use_supabase:
+            url = f"{SUPABASE_URL}/rest/v1/{ANSWERS_TABLE}"
+            out: Set[str] = set()
+
+            page_size = 1000
+            offset = 0
+
+            while offset < max_rows:
+                lim = min(page_size, max_rows - offset)
+                params: Dict[str, str] = {
+                    "select": "question_id",
+                    "user_id": f"eq.{uid}",
+                    # skip null/empty ids
+                    "question_id": "not.is.null",
+                    "order": "created_at.desc",
+                    "limit": str(lim),
+                    "offset": str(offset),
+                }
+                if not include_secret:
+                    params["is_secret"] = "eq.false"
+
+                try:
+                    with httpx.Client(timeout=6.0) as client:
+                        resp = client.get(url, headers=_sb_headers(), params=params)
+                    if resp.status_code >= 300:
+                        logger.warning(
+                            "Supabase select(question_id) failed: status=%s body=%s",
+                            resp.status_code,
+                            resp.text[:600],
+                        )
+                        break
+                    rows = resp.json()
+                    if not isinstance(rows, list) or not rows:
+                        break
+                    for r in rows:
+                        if not isinstance(r, dict):
+                            continue
+                        qid = str(r.get("question_id") or "").strip()
+                        if qid:
+                            out.add(qid)
+                    # stop when fewer than requested rows returned
+                    if len(rows) < lim:
+                        break
+                    offset += len(rows)
+                except Exception as exc:
+                    logger.warning("Supabase select(question_id) failed (network): %s", exc)
+                    break
+
+            return out
+
+        # local fallback
+        users = self._state.get("users") or {}
+        entry = users.get(uid, None)
+        if not isinstance(entry, dict):
+            return set()
+        answers = entry.get("answers") or []
+        if not isinstance(answers, list) or not answers:
+            return set()
+
+        out: Set[str] = set()
+        for a in answers:
+            if not isinstance(a, dict):
+                continue
+            if not include_secret and bool(a.get("is_secret", False)):
+                continue
+            qid = str(a.get("question_id") or "").strip()
+            if qid:
+                out.add(qid)
+            if len(out) >= max_rows:
+                break
+        return out
 
     # ---------- Supabase helpers ----------
 

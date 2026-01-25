@@ -96,7 +96,7 @@ KEY_TO_JP: Dict[str, str] = {v: k for k, v in JP_TO_KEY.items()}
 class MyWebEnsureRequest(BaseModel):
     types: Optional[List[Literal["daily", "weekly", "monthly"]]] = Field(
         default=None,
-        description="生成対象。未指定なら daily/weekly/monthly 全部。",
+        description="生成対象。未指定なら weekly/monthly。",
     )
     force: bool = Field(
         default=False,
@@ -698,7 +698,9 @@ def register_myweb_report_routes(app: FastAPI) -> None:
 
         now_utc = _parse_now_utc(req.now_iso)
 
-        types = req.types or ["daily", "weekly", "monthly"]
+        # NOTE: 日報(daily)はUX上は廃止方針のため、未指定時は weekly/monthly のみを ensure する。
+        #       ただし後方互換のため、types に daily が明示された場合は生成を許可する。
+        types = req.types or ["weekly", "monthly"]
         # normalize & unique keep order
         cleaned: List[str] = []
         for t in types:
@@ -707,7 +709,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
             if t not in cleaned:
                 cleaned.append(t)
         if not cleaned:
-            cleaned = ["daily", "weekly", "monthly"]
+            cleaned = ["weekly", "monthly"]
 
         results: List[MyWebEnsureItem] = []
 

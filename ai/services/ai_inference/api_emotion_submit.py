@@ -44,6 +44,17 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+# NOTE:
+# - Pydantic v2 では "alias" を指定したフィールドに対して、
+#   リクエストJSON側がフィールド名（notify_friends）で送ってきた場合、
+#   populate_by_name=True を設定しないと値が入らず default が使われる。
+# - 本APIはクライアントが notify_friends / send_friend_notification の
+#   どちらでも送れるよう後方互換を維持する。
+try:
+    from pydantic import ConfigDict  # pydantic v2
+except ImportError:  # pragma: no cover
+    ConfigDict = None  # type: ignore
+
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 
 logger = logging.getLogger("emotion_submit")
@@ -671,6 +682,12 @@ class EmotionSubmitRequest(BaseModel):
             "後方互換のため未指定は true。"
         ),
     )
+
+    # Pydantic v2: alias を指定したフィールドでも、
+    # フィールド名（notify_friends）での入力を許可する。
+    # （Config.allow_population_by_field_name は v1 用）
+    if ConfigDict is not None:  # pragma: no cover
+        model_config = ConfigDict(populate_by_name=True)
 
     class Config:
         # payload に notify_friends / send_friend_notification のどちらが来ても受け取れるようにする
@@ -1345,6 +1362,120 @@ async def _notify_friends_about_emotion(
         logger.error("Failed to send FCM push notification: %s", exc)
 
 
+
+# ---------- Post-submit background processing ----------
+# 目的:
+# - ユーザー体感の入力処理を短縮するため、感情保存(insert)後の重い処理をバックグラウンドで実行する。
+# - 具体的には、フレンド通知 / ASTOR ingest / MyProfile latest auto-refresh をレスポンス後に回す。
+#
+# NOTE:
+# - Render 環境での安定性を優先し、別スレッドで asyncio.run() を使って完結させる。
+# - 失敗しても emotion/submit 自体は成功として扱う（入力保存を優先）。
+
+async def _post_submit_background_async(
+    *,
+    user_id: str,
+    emotion_details: List[Dict[str, Any]],
+    created_at: str,
+    avg_strength: Optional[float],
+    memo: Optional[str],
+    is_secret: bool,
+    notify_friends: bool,
+) -> None:
+    # 1) フレンド通知（Friend タブ用タイムライン + Push）
+    if notify_friends:
+        try:
+            await _notify_friends_about_emotion(
+                owner_user_id=user_id,
+                emotion_details=emotion_details,
+                created_at=created_at,
+            )
+        except Exception as exc:
+            logger.error("Failed to notify friends about emotion (bg): %s", exc)
+
+    # 2) ASTOR への感情インジェスト（失敗しても致命的ではない）
+    try:
+        astor_payload = AstorEmotionPayload(
+            user_id=user_id,
+            created_at=created_at,
+            emotions=emotion_details,
+            emotion_strength_avg=avg_strength if avg_strength is not None else 0.0,
+            memo=memo,
+            is_secret=bool(is_secret),
+        )
+        astor_req = AstorRequest(
+            mode=AstorMode.EMOTION_INGEST,
+            emotion=astor_payload,
+        )
+        try:
+            astor_engine.handle(astor_req)
+        except Exception as exc:
+            logger.error("ASTOR EmotionIngest failed (bg): %s", exc)
+
+        # 3) MyProfile 最新レポート（プレビュー）を自動更新（失敗しても致命的ではない）
+        try:
+            await _auto_refresh_myprofile_latest_report(user_id)
+        except Exception as exc:
+            logger.error("MyProfile latest auto-refresh failed (bg): %s", exc)
+    except Exception as exc:
+        logger.error("ASTOR background pipeline failed (bg): %s", exc)
+
+
+def _post_submit_background_thread_entry(
+    *,
+    user_id: str,
+    emotion_details: List[Dict[str, Any]],
+    created_at: str,
+    avg_strength: Optional[float],
+    memo: Optional[str],
+    is_secret: bool,
+    notify_friends: bool,
+) -> None:
+    try:
+        asyncio.run(
+            _post_submit_background_async(
+                user_id=user_id,
+                emotion_details=emotion_details,
+                created_at=created_at,
+                avg_strength=avg_strength,
+                memo=memo,
+                is_secret=is_secret,
+                notify_friends=notify_friends,
+            )
+        )
+    except Exception as exc:
+        logger.error("post-submit background thread failed: %s", exc)
+
+
+def _start_post_submit_background_tasks(
+    *,
+    user_id: str,
+    emotion_details: List[Dict[str, Any]],
+    created_at: str,
+    avg_strength: Optional[float],
+    memo: Optional[str],
+    is_secret: bool,
+    notify_friends: bool,
+) -> None:
+    try:
+        t = threading.Thread(
+            target=_post_submit_background_thread_entry,
+            kwargs={
+                "user_id": user_id,
+                "emotion_details": emotion_details,
+                "created_at": created_at,
+                "avg_strength": avg_strength,
+                "memo": memo,
+                "is_secret": is_secret,
+                "notify_friends": notify_friends,
+            },
+            daemon=True,
+        )
+        t.start()
+    except Exception as exc:
+        logger.error("Failed to start post-submit background tasks: %s", exc)
+
+
 # ---------- Route registration ----------
 
 
@@ -1397,46 +1528,20 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             is_secret=bool(payload.is_secret),
         )
 
-        # 5) フレンドへの通知（Friend タブ用タイムライン）
+        # 5) 残りの重い処理（通知/分析/レポート更新）はバックグラウンドで実行する
         # - notify_friends=false（または send_friend_notification=false）の場合は通知しない。
-        # - 失敗しても感情ログ本体は成功させたいので、例外は握りつぶす。
         notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
-        if notify_friends:
-            try:
-                await _notify_friends_about_emotion(
-                    owner_user_id=user_id,
-                    emotion_details=emotion_details,
-                    created_at=created_at,
-                )
-            except Exception as exc:
-                logger.error("Failed to notify friends about emotion: %s", exc)
+        _start_post_submit_background_tasks(
+            user_id=user_id,
+            emotion_details=emotion_details,
+            created_at=created_at,
+            avg_strength=avg_strength,
+            memo=payload.memo,
+            is_secret=bool(payload.is_secret),
+            notify_friends=notify_friends,
+        )
 
-        # 6) ASTOR への感情インジェスト（失敗しても致命的ではない）
-        try:
-            astor_payload = AstorEmotionPayload(
-                user_id=user_id,
-                created_at=created_at,
-                emotions=emotion_details,
-                emotion_strength_avg=avg_strength if avg_strength is not None else 0.0,
-                memo=payload.memo,
-                is_secret=bool(payload.is_secret),
-            )
-            astor_req = AstorRequest(
-                mode=AstorMode.EMOTION_INGEST,
-                emotion=astor_payload,
-            )
-            astor_engine.handle(astor_req)
-
-
-            # 7) MyProfile 最新レポート（プレビュー）を自動更新（失敗しても致命的ではない）
-            try:
-                await _auto_refresh_myprofile_latest_report(user_id)
-            except Exception as exc:
-                logger.error("MyProfile latest auto-refresh failed: %s", exc)
-        except Exception as exc:
-            logger.error("ASTOR EmotionIngest failed: %s", exc)
-
-        return EmotionSubmitResponse(
+return EmotionSubmitResponse(
             status="ok",
             id=inserted.get("id"),
             created_at=inserted.get("created_at", created_at),

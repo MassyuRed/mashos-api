@@ -465,6 +465,6 @@ def register_deep_insight_routes(app: FastAPI) -> None:
                 "saved_at": now_iso,
                 "engine": "astor.deep_insight.answers.v0.2",
                 # UI側の固定文を減らす（アプリ更新無しで文面を変えられるようにする）
-                "ui_message": "ありがとう。ASTORが静かに受け取りました。",
+                "ui_message": "ありがとう。回答を受け取りました。",
             },
         )
