@@ -818,18 +818,21 @@ def _format_emotion_push_body(emotion_details: List[Dict[str, Any]]) -> str:
         if not t:
             continue
         label = STRENGTH_LABEL_JA.get(s, "")
-        parts.append(f"{t}{f'（{label}）' if label else ''}")
+        parts.append(f"『{t}{f' {label}' if label else ''}』")
 
     if not parts:
-        return "フレンドが感情を入力しました"
+        return ""
 
-    # 例: 喜び（強） / 不安（弱）
-    body = " / ".join(parts)
+    # 例: 『喜び 強』  『不安 弱』
+    body = "  ".join(parts)
     return body[:180]
 
 
 async def _fetch_push_tokens_for_users(user_ids: List[str]) -> Dict[str, str]:
-    """profiles から push_token を取得する（service_roleでRLSをバイパス）。"""
+    """profiles から push_token を取得する（service_roleでRLSをバイパス）。
+
+    - push_enabled=false のユーザーは除外する（列が無い場合は全員ON扱いで後方互換）。
+    """
     _ensure_supabase_config()
     ids = [uid for uid in (user_ids or []) if isinstance(uid, str) and uid.strip()]
     if not ids:
@@ -843,14 +846,29 @@ async def _fetch_push_tokens_for_users(user_ids: List[str]) -> Dict[str, str]:
 
     # PostgREST: id=in.("uuid1","uuid2",...)
     quoted = ",".join([f"\"{uid}\"" for uid in ids])
-    params = {
-        "select": "id,push_token",
-        "id": f"in.({quoted})",
-    }
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
+            # まずは push_enabled も含めて取得（通知OFFを除外するため）
+            params = {
+                "select": "id,push_token,push_enabled",
+                "id": f"in.({quoted})",
+            }
             resp = await client.get(url, headers=headers, params=params)
+
+            use_push_enabled = resp.status_code < 300
+            if resp.status_code >= 300:
+                # push_enabled 列が無い等でもここに来るので、後方互換で push_token のみにフォールバック
+                logger.warning(
+                    "Supabase select id,push_token,push_enabled from profiles failed (fallback to push_token only): status=%s body=%s",
+                    resp.status_code,
+                    resp.text[:2000],
+                )
+                params = {
+                    "select": "id,push_token",
+                    "id": f"in.({quoted})",
+                }
+                resp = await client.get(url, headers=headers, params=params)
 
         if resp.status_code >= 300:
             # push_token 列が無い等でもここに来るので、warn に留める
@@ -869,6 +887,12 @@ async def _fetch_push_tokens_for_users(user_ids: List[str]) -> Dict[str, str]:
                     continue
                 uid = row.get("id")
                 token = row.get("push_token")
+
+                if use_push_enabled:
+                    enabled = row.get("push_enabled")
+                    if enabled is False:
+                        continue
+
                 if isinstance(uid, str) and isinstance(token, str) and token.strip():
                     out[uid] = token.strip()
         return out
@@ -1219,20 +1243,19 @@ async def _push_notify_friends_about_emotion(
     if not tokens:
         return
 
-    # 仕様: 通知で飛ばす内容は「感情選択内容のみ」
-    # - display_name / user_id / created_at 等のメタ情報は含めない
+    # 仕様: 通知で飛ばす内容は「誰が + 感情選択内容」。
     emotion_body = _format_emotion_push_body(emotion_details)
     if not emotion_body:
         return
-    # _format_emotion_push_body のフォールバック（感情が空のとき）は
-    # 「感情選択内容のみ」という要件を満たさないため送信しない。
-    if emotion_body == "フレンドが感情を入力しました":
-        return
+
+    owner_label = (owner_name or "").strip() or "フレンド"
+    if owner_label == "Friend":
+        owner_label = "フレンド"
+    body = f"{owner_label}さんが{emotion_body}を入力しました"
 
     # iOS は notification.body が空だと通知が表示されない/抑制されるケースがあるため、
-    # 本文(body)に感情選択内容を入れる。
-    # 仕様「感情選択内容のみ」は維持し、title は固定(アプリ名)にしてメタ情報を増やさない。
-    await _send_fcm_push(tokens=tokens, title="Cocolon", body=emotion_body, data=None)
+    # 本文(body)に「誰が + 感情選択内容」を入れる。
+    await _send_fcm_push(tokens=tokens, title="Cocolon", body=body, data=None)
 
 async def _insert_friend_emotion_feed_rows(
     *,
