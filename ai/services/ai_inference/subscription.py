@@ -31,18 +31,32 @@ class SubscriptionTier(str, Enum):
 
 
 class MyProfileMode(str, Enum):
-    """MyProfile output mode."""
+    """MyProfile output mode.
 
-    LIGHT = "light"
+    Spec v2 (2026-01):
+    - standard   (Plus)
+    - structural (Premium)
+
+    Notes:
+    - "deep" is kept as a backward-compatible alias for "structural".
+    - "light" is kept for backward-compat input, but is not entitled by default.
+    """
+
+    LIGHT = "light"  # deprecated
     STANDARD = "standard"
-    DEEP = "deep"
+    STRUCTURAL = "structural"
+    # Backward-compatible alias
+    DEEP = "structural"
 
 
 # --- Tier → allowed MyProfile modes (Single source of truth) ---
 TIER_ALLOWED_MYPROFILE_MODES: Dict[SubscriptionTier, Tuple[MyProfileMode, ...]] = {
+    # NOTE:
+    # - This table defines "report_mode" availability across features.
+    # - MyProfile（月報）の閲覧可否はエンドポイント側で別途ゲートする（Spec v2）。
     SubscriptionTier.FREE: (MyProfileMode.LIGHT,),
     SubscriptionTier.PLUS: (MyProfileMode.LIGHT, MyProfileMode.STANDARD),
-    SubscriptionTier.PREMIUM: (MyProfileMode.LIGHT, MyProfileMode.STANDARD, MyProfileMode.DEEP),
+    SubscriptionTier.PREMIUM: (MyProfileMode.LIGHT, MyProfileMode.STANDARD, MyProfileMode.STRUCTURAL),
 }
 
 
@@ -67,17 +81,22 @@ _TIER_ALIASES: Dict[str, SubscriptionTier] = {
 
 _MODE_ALIASES: Dict[str, MyProfileMode] = {
     # canonical
-    "light": MyProfileMode.LIGHT,
     "standard": MyProfileMode.STANDARD,
-    "deep": MyProfileMode.DEEP,
+    "structural": MyProfileMode.STRUCTURAL,
+    # legacy
+    "light": MyProfileMode.LIGHT,
+    "deep": MyProfileMode.STRUCTURAL,
     # typical casing
-    "Light": MyProfileMode.LIGHT,
     "Standard": MyProfileMode.STANDARD,
-    "Deep": MyProfileMode.DEEP,
+    "Structural": MyProfileMode.STRUCTURAL,
+    "Deep": MyProfileMode.STRUCTURAL,
+    "Light": MyProfileMode.LIGHT,
     # JP labels
-    "ライト": MyProfileMode.LIGHT,
     "スタンダード": MyProfileMode.STANDARD,
-    "ディープ": MyProfileMode.DEEP,
+    "構造": MyProfileMode.STRUCTURAL,
+    "ストラクチュラル": MyProfileMode.STRUCTURAL,
+    "ディープ": MyProfileMode.STRUCTURAL,
+    "ライト": MyProfileMode.LIGHT,
 }
 
 

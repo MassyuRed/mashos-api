@@ -54,11 +54,19 @@ except Exception:  # pragma: no cover
     try_acquire_lock = None  # type: ignore
 
 
-# Optional: enrich weekly/monthly with ASTOR insight text (structure patterns based)
+# Optional: enrich weekly/monthly with ASTOR insight (structure patterns based)
 try:
-    from astor_myweb_insight import generate_myweb_insight_text
+    from astor_myweb_insight import generate_myweb_insight_payload
 except Exception:  # pragma: no cover
-    generate_myweb_insight_text = None  # type: ignore
+    generate_myweb_insight_payload = None  # type: ignore
+
+# Optional: subscription tier (MyWeb v3 output gating)
+try:
+    from subscription import SubscriptionTier
+    from subscription_store import get_subscription_tier_for_user
+except Exception:  # pragma: no cover
+    SubscriptionTier = None  # type: ignore
+    get_subscription_tier_for_user = None  # type: ignore
 
 
 logger = logging.getLogger("myweb_reports_api")
@@ -593,8 +601,18 @@ async def _generate_and_save(
     # 2) metrics
     content_json: Dict[str, Any] = {}
     astor_text: Optional[str] = None
+    astor_report: Optional[Dict[str, Any]] = None
     astor_meta: Optional[Dict[str, Any]] = None
     astor_error: Optional[str] = None
+
+    # MyWeb report v3: Standard / Structural (tier-gated)
+    tier_enum = None
+    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+        try:
+            tier_enum = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
+        except Exception:
+            tier_enum = SubscriptionTier.FREE
+    is_premium = bool(tier_enum == SubscriptionTier.PREMIUM) if SubscriptionTier is not None else False
 
     if target.report_type == "daily":
         metrics = _build_daily_metrics(rows)
@@ -612,9 +630,9 @@ async def _generate_and_save(
         metrics = _compute_weekly_metrics(days)
         content_json["metrics"] = metrics
         content_json["days"] = days
-        if include_astor and generate_myweb_insight_text is not None:
+        if include_astor and is_premium and generate_myweb_insight_payload is not None:
             try:
-                astor_text = generate_myweb_insight_text(user_id=user_id, period_days=7, lang="ja")
+                astor_text, astor_report = generate_myweb_insight_payload(user_id=user_id, period_days=7, lang="ja")
                 astor_meta = {"engine": "astor_myweb_insight", "period_days": 7, "version": "0.3"}
             except Exception as e:
                 astor_error = str(e)
@@ -638,9 +656,9 @@ async def _generate_and_save(
         content_json["metrics"] = metrics
         # viewer fallback support
         content_json["weeks"] = weeks
-        if include_astor and generate_myweb_insight_text is not None:
+        if include_astor and is_premium and generate_myweb_insight_payload is not None:
             try:
-                astor_text = generate_myweb_insight_text(user_id=user_id, period_days=28, lang="ja")
+                astor_text, astor_report = generate_myweb_insight_payload(user_id=user_id, period_days=28, lang="ja")
                 astor_meta = {"engine": "astor_myweb_insight", "period_days": 28, "version": "0.3"}
             except Exception as e:
                 astor_error = str(e)
@@ -660,6 +678,19 @@ async def _generate_and_save(
         )
 
     # 3) upsert
+
+    # --- MyWeb report v3 structure (Standard / Structural) ---
+    try:
+        content_json.setdefault("reportVersion", "myweb.report.v3")
+        content_json["standardReport"] = {
+            "version": "myweb.standard.v1",
+            "contentText": text,
+        }
+        if astor_report:
+            content_json["structuralReport"] = astor_report
+    except Exception:
+        pass
+
     payload = {
         "user_id": user_id,
         "report_type": target.report_type,
@@ -668,7 +699,7 @@ async def _generate_and_save(
         "title": target.title,
         "content_text": text,
         "content_json": content_json,
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "generated_at": (target.dist_utc if target.report_type in ("weekly", "monthly") else datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
     }
     rid = await _upsert_report(payload)
     payload["_id"] = rid

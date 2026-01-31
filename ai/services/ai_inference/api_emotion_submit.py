@@ -349,6 +349,7 @@ async def _insert_emotion_row(
     emotion_details: List[Dict[str, Any]],
     emotion_strength_avg: Optional[float],
     memo: Optional[str],
+    memo_action: Optional[str],
     created_at: str,
     is_secret: bool,
 ) -> Dict[str, Any]:
@@ -372,6 +373,8 @@ async def _insert_emotion_row(
         "created_at": created_at,
         "is_secret": bool(is_secret),
     }
+    if memo_action is not None:
+        payload["memo_action"] = memo_action
     if emotion_details:
         payload["emotion_details"] = emotion_details
     if emotion_strength_avg is not None:
@@ -530,13 +533,19 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
             pass
 
     # ---- determine report_mode (fail-closed) ----
+    # Spec v2: Plus=standard, Premium=structural, Free=not entitled (keep "light" for compatibility).
     report_mode = "light"
     try:
         from subscription_store import get_subscription_tier_for_user
         from subscription import SubscriptionTier
 
         tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
-        report_mode = "light" if tier == SubscriptionTier.FREE else "standard"
+        if tier == SubscriptionTier.PREMIUM:
+            report_mode = "structural"
+        elif tier == SubscriptionTier.PLUS:
+            report_mode = "standard"
+        else:
+            report_mode = "light"
     except Exception:
         report_mode = "light"
 
@@ -664,7 +673,12 @@ class EmotionSubmitRequest(BaseModel):
         ...,
         description="感情＋強度の配列。旧形式 string[] も許容する。",
     )
-    memo: Optional[str] = Field(default=None, description="メモ本文")
+    memo: Optional[str] = Field(default=None, description="メモ本文（思考内容）")
+    memo_action: Optional[str] = Field(
+        default=None,
+        alias="memoAction",
+        description="行動内容メモ（実世界の出来事・行動）",
+    )
     created_at: Optional[str] = Field(
         default=None,
         description="ISO8601文字列。未指定時はサーバー側で now() を採用。",
@@ -1524,6 +1538,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             emotion_details=emotion_details,
             emotion_strength_avg=avg_strength,
             memo=payload.memo,
+            memo_action=payload.memo_action,
             created_at=created_at,
             is_secret=bool(payload.is_secret),
         )

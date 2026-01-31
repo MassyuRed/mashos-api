@@ -125,7 +125,7 @@ class MyProfileLatestEnsureResponse(BaseModel):
         ...,
         description="missing | stale_patterns | force | up_to_date | no_patterns",
     )
-    report_mode: str = Field(..., description="light | standard | deep")
+    report_mode: str = Field(..., description="standard | structural")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     patterns_updated_at: Optional[str] = Field(
         default=None, description="updated_at of structure patterns"
@@ -162,7 +162,7 @@ class MyProfileMonthlyEnsureBody(BaseModel):
     )
     report_mode: Optional[str] = Field(
         default=None,
-        description="Requested report mode (light|standard|deep). Tier-gated.",
+        description="Requested report mode (standard|structural). Tier-gated.",
     )
     include_secret: bool = Field(
         default=True,
@@ -178,7 +178,7 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
     reason: str = Field(..., description="missing | force | up_to_date")
-    report_mode: str = Field(..., description="light | standard | deep")
+    report_mode: str = Field(..., description="standard | structural")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     period_start: str = Field(..., description="period_start (ISO)")
     period_end: str = Field(..., description="period_end (ISO)")
@@ -524,7 +524,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
         ),
         report_mode: Optional[str] = Query(
             default=None,
-            description="Requested report mode (light|standard|deep). Tier-gated.",
+            description="Requested report mode (standard|structural). Tier-gated.",
         ),
     ) -> MyProfileLatestEnsureResponse:
         access_token = _extract_bearer_token(authorization)
@@ -542,7 +542,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
         effective_period = (period or DEFAULT_LATEST_PERIOD or "28d").strip() or "28d"
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
-        effective_report_mode = "light"
+        # Spec v2: free users cannot view MyProfile self-structure reports.
+        effective_report_mode = "standard"
         try:
             from subscription import (
                 SubscriptionTier,
@@ -554,15 +555,18 @@ def register_myprofile_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
-            default_mode = (
-                MyProfileMode.LIGHT
-                if tier == SubscriptionTier.FREE
-                else MyProfileMode.STANDARD
-            )
+            if tier == SubscriptionTier.FREE:
+                raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
+
+            default_mode = MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD
             mode_enum = normalize_myprofile_mode(report_mode, default=default_mode)
 
+            # "light" is kept only for backward-compat input; disallow for MyProfile.
+            if mode_enum == MyProfileMode.LIGHT:
+                raise HTTPException(status_code=403, detail="report_mode 'light' is not available")
+
             if not is_myprofile_mode_allowed(tier, mode_enum):
-                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier)]
+                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier) if m != MyProfileMode.LIGHT]
                 raise HTTPException(
                     status_code=403,
                     detail=(
@@ -574,11 +578,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning(
-                "Failed to resolve subscription tier/report_mode; fallback to light: %s",
-                exc,
-            )
-            effective_report_mode = "light"
+            logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
+            raise HTTPException(status_code=403, detail="MyProfile report is not available")
 
         # ---- Fetch patterns updated_at (B1) ----
         patterns_updated_at: Optional[str] = None
@@ -597,6 +598,26 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     patterns_updated_at = rows[0].get("updated_at")
         except Exception as exc:
             logger.warning("Failed to fetch structure patterns updated_at: %s", exc)
+
+        # Spec v2: MyProfile（月次/最新）は raw logs（思考/行動）を主材料にするため、
+        # patterns が無い場合は emotions の最新 created_at を更新指標として使う。
+        if not patterns_updated_at:
+            try:
+                resp = await _sb_get(
+                    "/rest/v1/emotions",
+                    params={
+                        "select": "created_at",
+                        "user_id": f"eq.{uid}",
+                        "order": "created_at.desc",
+                        "limit": "1",
+                    },
+                )
+                if resp.status_code < 300:
+                    rows = resp.json()
+                    if isinstance(rows, list) and rows:
+                        patterns_updated_at = rows[0].get("created_at")
+            except Exception:
+                pass
 
         # ---- Fetch latest report row ----
         latest_row: Optional[Dict[str, Any]] = None
@@ -871,7 +892,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
         effective_period = (body.period or DEFAULT_MONTHLY_DISTRIBUTION_PERIOD or "28d").strip() or "28d"
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
-        effective_report_mode = "light"
+        # Spec v2: free users cannot view MyProfile self-structure reports.
+        effective_report_mode = "standard"
         try:
             from subscription import (
                 SubscriptionTier,
@@ -883,15 +905,17 @@ def register_myprofile_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
-            default_mode = (
-                MyProfileMode.LIGHT
-                if tier == SubscriptionTier.FREE
-                else MyProfileMode.STANDARD
-            )
+            if tier == SubscriptionTier.FREE:
+                raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
+
+            default_mode = MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD
             mode_enum = normalize_myprofile_mode(body.report_mode, default=default_mode)
 
+            if mode_enum == MyProfileMode.LIGHT:
+                raise HTTPException(status_code=403, detail="report_mode 'light' is not available")
+
             if not is_myprofile_mode_allowed(tier, mode_enum):
-                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier)]
+                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier) if m != MyProfileMode.LIGHT]
                 raise HTTPException(
                     status_code=403,
                     detail=(
@@ -903,11 +927,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
         except HTTPException:
             raise
         except Exception as exc:
-            logger.warning(
-                "Failed to resolve subscription tier/report_mode; fallback to light: %s",
-                exc,
-            )
-            effective_report_mode = "light"
+            logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
+            raise HTTPException(status_code=403, detail="MyProfile report is not available")
 
         # ---- time helpers (JST fixed) ----
         JST = timezone(timedelta(hours=9))
@@ -1100,14 +1121,14 @@ def register_myprofile_routes(app: FastAPI) -> None:
             if not report_text:
                 raise HTTPException(status_code=500, detail="Monthly MyProfile report text was empty")
 
-            generated_at = _to_iso_z(datetime.now(timezone.utc))
+            generated_at = _to_iso_z(dist_utc)
 
             content_json = {
                 **(report_meta or {}),
                 "source": "myprofile.monthly.ensure",
                 "distribution_utc": _to_iso_z(dist_utc),
                 "distribution_jst": dist_jst.isoformat(),
-                "generated_at_server": generated_at,
+                "generated_at_server": _to_iso_z(datetime.now(timezone.utc)),
                 "period_start": period_start_iso,
                 "period_end": period_end_iso,
                 "period_days": period_days,

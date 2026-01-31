@@ -53,7 +53,7 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "summary_shaky_default": "・崩れ条件（揺れを強めやすい引き金）: 刺激が重なった場面で、意味づけが固定されやすい可能性",
         "summary_shaky_no_data": "・崩れ条件（揺れを強めやすい引き金）: まだ情報がありません",
         "summary_steady_deep": "・安定に寄せるキー（整える1手）: 判断の前に『基準を1行だけ言語化』すると、構造の暴走が収まりやすい",
-        "summary_steady_default": "・安定に寄せるキー（整える1手）: 『刺激/解釈/身体』を1行メモすると、揺れがほどけやすい",
+        "summary_steady_default": "・安定に寄せるキー（整える1手）: 揺れた瞬間に「思考内容1文」「行動内容1文」を分けて書くと、迷いがほどけやすい",
         "summary_steady_no_data": "・安定に寄せるキー（整える1手）: まずは短い観測メモを増やす",
         "summary_one_liner": "・ひとこと: いまは『{core_key}』が起点になりやすい状態。判断が硬くなる前に“1行メモ”が効きやすい。",
         "summary_one_liner_no_data": "・ひとこと: 今月は入力が少ないため、レポートは簡易版です。短文でOKなので『刺激→解釈→感情→行動』を1セットだけ記録してみてください。",
@@ -91,7 +91,7 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "sec3_title": "3. 安定条件（安心が生まれやすい条件） / 崩れ条件（揺れやすい条件）",
         "sec3_stable_heading": "安定条件:",
         "sec3_shaky_heading": "崩れ条件:",
-        "sec3_stable_line_1": "・判断の前に『刺激/解釈/身体』を1行で切り分けられる",
+        "sec3_stable_line_1": "・揺れた瞬間に「思考内容」と「行動内容」を分けて短文で書けた日",
         "sec3_stable_line_deep": "・Deep Insight の回答で自分の基準を言語化できているとき",
         "sec3_stable_line_3": "・忙しい日は短文でもいいので“観測”だけは継続できる",
         "sec3_shaky_line_top": "・『{structure_key}』が{intensity_label}で出ている日に、判断が硬直しやすい",
@@ -116,9 +116,9 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         # section 6
         "sec6_title": "6. 次の観測ポイント（3つ。行動に落ちる形で）",
         "sec6_lines": [
-            "・揺れた瞬間に『何が刺激だったか』を1語で書く",
-            "・その刺激を『どう解釈したか（1文）』を書いてから、感情ラベルを選ぶ",
-            "・強い日は『身体（睡眠/空腹/疲労）』も一緒にメモして、構造と身体を分けて観測する",
+            "・揺れた瞬間に「思考内容（1文）」と「行動内容（1文）」を分けて書く",
+            "・止まった日は「できなかった」「固まった」も行動として書く",
+            "・月に1回だけでいいので「今月の暫定結論（1行）」を残す",
         ],
 
         # section 7
@@ -140,10 +140,11 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "diff_no_major": "大きな差分は目立たず、構造は安定して推移しています。",
 
         # section 8
-        "sec8_title": "8. 感情構造との接続（MyWebに譲る前提で、短く）",
-        "sec8_with_top_line_1": "MyWebで感情の揺れ（不安/怒りなど）が目立つとき、背景で『{core_key}』が立っている可能性があります。",
-        "sec8_with_top_line_2": "感情の“天気”と、自己構造の“地形”を分けて見るほど、回復が速くなります。",
-        "sec8_no_data_line": "MyWeb（感情傾向）で揺れが見えたら、MyProfile側で“刺激→解釈”の観測を増やすと接続が強くなります。",
+        # NOTE: ユーザー向け本文では内部名（MyWeb 等）を出さない
+        "sec8_title": "8. 感情の動きとの接続（短く）",
+        "sec8_with_top_line_1": "不安/怒りなどの揺れが目立つとき、背景で『{core_key}』が立っている可能性があります。",
+        "sec8_with_top_line_2": "気持ちの“天気”と、自己の判断の“クセ”を分けて見るほど、回復が速くなります。",
+        "sec8_no_data_line": "感情の揺れが見えたら、“刺激→解釈”の観測を増やすと接続が強くなります。",
     },
 
     # --- Variant examples (差分だけ) ---
@@ -157,7 +158,7 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         # 例: いくつか短縮（必要ならここを増やす）
         "sec2_pattern_stimulus": "  刺激: （例）評価/比較/未確定など、『{structure_key}』を強めやすい出来事",
         "sec3_title": "3. 安定条件 / 崩れ条件",
-        "sec8_title": "8. MyWebとの接続（短く）",
+        "sec8_title": "8. 感情の動きとの接続（短く）",
     },
 }
 

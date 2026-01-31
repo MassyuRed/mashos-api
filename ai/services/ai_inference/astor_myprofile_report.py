@@ -21,8 +21,12 @@ from __future__ import annotations
 import datetime as _dt
 import os
 import re
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 
 # MyProfile section text templates (Phase9+)
 try:
@@ -72,7 +76,12 @@ except Exception:  # pragma: no cover
 
 
 def _normalize_report_mode(x: Any) -> str:
-    """Normalize report_mode into one of: light / standard / deep."""
+    """Normalize report_mode into one of: standard / structural.
+
+    Backward-compat:
+    - deep -> structural
+    - light -> standard (MyProfile API should gate this, but keep safe fallback)
+    """
     # Prefer subscription.py normalizer if available
     if normalize_myprofile_mode is not None and MyProfileMode is not None:
         try:
@@ -85,16 +94,144 @@ def _normalize_report_mode(x: Any) -> str:
     if not s:
         return "standard"
     s2 = s.lower()
-    if s2 in ("light", "standard", "deep"):
+    if s2 in ("standard", "structural"):
         return s2
+    if s2 in ("deep",):
+        return "structural"
+    if s2 in ("light",):
+        return "standard"
     # common JP labels
     if s in ("ライト", "Light"):
-        return "light"
+        return "standard"
     if s in ("スタンダード", "Standard"):
         return "standard"
     if s in ("ディープ", "Deep"):
-        return "deep"
+        return "structural"
     return "standard"
+
+
+# ---------- Supabase (MyProfile source of truth) ----------
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _has_supabase_config() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+
+
+def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
+    h = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        h["Prefer"] = prefer
+    return h
+
+
+def _sb_headers(*, prefer: Optional[str] = None) -> Dict[str, str]:
+    h = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
+    if prefer:
+        h["Prefer"] = prefer
+    return h
+
+
+STRENGTH_SCORE: Dict[str, float] = {"weak": 1.0, "medium": 2.0, "strong": 3.0}
+
+JP_TO_EMO_EN: Dict[str, str] = {
+    "喜び": "Joy",
+    "悲しみ": "Sadness",
+    "不安": "Anxiety",
+    "怒り": "Anger",
+    "平穏": "Calm",
+    "落ち着き": "Calm",
+    "自己理解": "SelfInsight",
+}
+
+SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
+
+
+def _to_iso_z(dt: _dt.datetime) -> str:
+    dtu = dt.astimezone(_dt.timezone.utc)
+    return dtu.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _normalize_emotion_details(row: Dict[str, Any]) -> List[Tuple[str, float]]:
+    """Return list of (emotion_label_en, intensity_score[1..3])."""
+    out: List[Tuple[str, float]] = []
+
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        for it in details:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("type") or "").strip()
+            if not t:
+                continue
+            s = str(it.get("strength") or "medium").strip().lower()
+            if s not in STRENGTH_SCORE:
+                s = "medium"
+
+            en = JP_TO_EMO_EN.get(t, t)
+            out.append((en, float(STRENGTH_SCORE.get(s, 2.0))))
+        return out
+
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        for t in emos:
+            tt = str(t or "").strip()
+            if not tt:
+                continue
+            en = JP_TO_EMO_EN.get(tt, tt)
+            out.append((en, 2.0))
+        return out
+
+    return out
+
+
+def _fetch_emotion_rows(user_id: str, *, start: _dt.datetime, end: _dt.datetime) -> List[Dict[str, Any]]:
+    """Fetch emotion rows for period.
+
+    NOTE: This is sync (called from sync report builder).
+    """
+    if not _has_supabase_config():
+        return []
+
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+
+    start_iso = _to_iso_z(start)
+    end_iso = _to_iso_z(end)
+
+    url = f"{SUPABASE_URL}/rest/v1/emotions"
+    params = [
+        ("select", "created_at,emotions,emotion_details,memo,memo_action,is_secret"),
+        ("user_id", f"eq.{uid}"),
+        ("created_at", f"gte.{start_iso}"),
+        ("created_at", f"lte.{end_iso}"),
+        ("order", "created_at.asc"),
+    ]
+
+    try:
+        with httpx.Client(timeout=6.0) as client:
+            resp = client.get(url, headers=_sb_headers(), params=params)
+    except Exception:
+        return []
+
+    if resp.status_code != 200:
+        return []
+
+    try:
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
 
 
 EMO_JA = {
@@ -195,6 +332,343 @@ def _load_deep_insight_answers(user_id: str, *, include_secret: bool, limit: int
         return store.get_user_answers(user_id, limit=limit, include_secret=include_secret)
     except Exception:
         return []
+
+
+# ---------- MyProfile v2: direct matching from raw logs ----------
+
+_STANDARD_DICT_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+def _load_standard_structure_dict() -> Dict[str, Dict[str, Any]]:
+    """Load Standard structure dict (ai/data/config/astor_structure_dict.json)."""
+    global _STANDARD_DICT_CACHE
+    if _STANDARD_DICT_CACHE is not None:
+        return _STANDARD_DICT_CACHE
+
+    here = Path(__file__).resolve()
+    ai_root = here.parents[2]
+    candidates = [
+        ai_root / "data" / "config" / "astor_structure_dict.json",
+        Path.cwd() / "ai" / "data" / "config" / "astor_structure_dict.json",
+    ]
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                _STANDARD_DICT_CACHE = raw
+                return _STANDARD_DICT_CACHE
+        except Exception:
+            continue
+
+    _STANDARD_DICT_CACHE = {}
+    return _STANDARD_DICT_CACHE
+
+
+def _collapse_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip())
+
+
+def _excerpt(text: str, limit: int = 96) -> str:
+    t = _collapse_ws(text)
+    return t[:limit] + ("…" if len(t) > limit else "")
+
+
+def _build_event_excerpt(thought: str, action: str, self_insight: str = "", deep_text: str = "") -> str:
+    parts: List[str] = []
+    if thought:
+        parts.append(f"思考: {_excerpt(thought)}")
+    if action:
+        parts.append(f"行動: {_excerpt(action)}")
+    if self_insight:
+        parts.append(f"理解: {_excerpt(self_insight)}")
+    if deep_text:
+        parts.append(f"一問一答: {_excerpt(deep_text)}")
+    return " / ".join(parts)[:220]
+
+
+def _is_self_insight_row(details: List[Tuple[str, float]]) -> bool:
+    return any((lbl in SELF_INSIGHT_EMOTION_LABELS) for (lbl, _) in (details or []))
+
+
+def _parse_created_at(row: Dict[str, Any]) -> Optional[_dt.datetime]:
+    return _parse_ts(row.get("created_at"))
+
+
+def _build_text_events_from_emotions(
+    rows: List[Dict[str, Any]],
+    *,
+    start: _dt.datetime,
+    end: _dt.datetime,
+    include_secret: bool,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Return (events, self_insight_quotes).
+
+    events: each event includes combined_text, emotions[], intensity, excerpt, ts.
+    """
+    events: List[Dict[str, Any]] = []
+    self_insights: List[Tuple[_dt.datetime, str]] = []
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if (not include_secret) and bool(row.get("is_secret", False)):
+            continue
+        ts = _parse_created_at(row)
+        if ts is None:
+            continue
+        if ts < start or ts >= end:
+            continue
+
+        thought = str(row.get("memo") or "").strip()
+        action = str(row.get("memo_action") or "").strip()
+
+        details = _normalize_emotion_details(row)
+        labels = [lbl for (lbl, _) in details if lbl]
+        # intensity: use the strongest selected emotion as the representative
+        inten = 0.0
+        if details:
+            inten = max(float(x[1]) for x in details)
+
+        if _is_self_insight_row(details):
+            if thought:
+                self_insights.append((ts, thought))
+            combined = "\n".join([thought, action]).strip()
+            events.append(
+                {
+                    "ts": ts,
+                    "kind": "self_insight",
+                    "combined_text": combined,
+                    "thought": thought,
+                    "action": action,
+                    "emotions": labels,
+                    "intensity": 0.0,
+                    "excerpt": _build_event_excerpt(thought, action, self_insight=thought),
+                }
+            )
+            continue
+
+        combined = "\n".join([thought, action]).strip()
+        if not combined:
+            # no text -> skip for matching, but keep for emotion counting? (skip)
+            continue
+
+        events.append(
+            {
+                "ts": ts,
+                "kind": "emotion",
+                "combined_text": combined,
+                "thought": thought,
+                "action": action,
+                "emotions": labels,
+                "intensity": inten,
+                "excerpt": _build_event_excerpt(thought, action),
+            }
+        )
+
+    self_insights.sort(key=lambda x: x[0])
+    quotes = [q for _, q in self_insights[-2:]]  # latest 1~2
+    return events, quotes
+
+
+def _build_text_events_from_deep_answers(
+    answers: List[Dict[str, Any]],
+    *,
+    start: _dt.datetime,
+    end: _dt.datetime,
+    include_secret: bool,
+    limit: int = 6,
+) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    for a in (answers or [])[: max(1, int(limit))]:
+        if not isinstance(a, dict):
+            continue
+        if (not include_secret) and bool(a.get("is_secret", False)):
+            continue
+        ts = _parse_ts(a.get("created_at"))
+        if ts is None:
+            continue
+        if ts < start or ts >= end:
+            continue
+        text = str(a.get("text") or a.get("answer_text") or "").strip()
+        if not text:
+            continue
+        events.append(
+            {
+                "ts": ts,
+                "kind": "deep",
+                "combined_text": text,
+                "thought": "",
+                "action": "",
+                "emotions": [],
+                "intensity": 0.0,
+                "excerpt": _build_event_excerpt("", "", deep_text=text),
+            }
+        )
+    return events
+
+
+def _score_standard_one(
+    *,
+    conf: Dict[str, Any],
+    emotions: List[str],
+    intensity: float,
+    text: str,
+) -> Tuple[float, List[str]]:
+    base = float(conf.get("base_weight", 0.0))
+    keyword_weight = float(conf.get("keyword_weight", 0.5))
+
+    ew: Dict[str, float] = conf.get("emotion_weights") or {}
+    norm_intensity = max(0.0, min((float(intensity or 0.0) - 1.0) / 2.0, 1.0))
+    emotion_score = 0.0
+    if emotions and ew and norm_intensity > 0:
+        for lbl in emotions:
+            if lbl in ew:
+                emotion_score = max(emotion_score, float(ew.get(lbl) or 0.0) * norm_intensity)
+
+    kw_list: List[str] = conf.get("keywords") or []
+    kw_hits: List[str] = []
+    memo_score = 0.0
+    if text and kw_list:
+        for kw in kw_list:
+            if kw and kw in text:
+                kw_hits.append(kw)
+        if kw_hits:
+            memo_score = min(len(kw_hits) / max(len(kw_list), 1), 1.0)
+
+    score = base + emotion_score + memo_score * keyword_weight
+    return score, kw_hits[:4]
+
+
+def _score_structural_one(*, entry: Dict[str, Any], text: str) -> Tuple[float, List[str]]:
+    kw_list: List[str] = entry.get("memo_keywords") or []
+    kw_hits: List[str] = []
+    memo_score = 0.0
+    if text and kw_list:
+        for kw in kw_list:
+            if kw and kw in text:
+                kw_hits.append(kw)
+        if kw_hits:
+            memo_score = min(len(kw_hits) / max(len(kw_list), 1), 1.0)
+    # simple, stable scoring (avoid exposing internals)
+    base = 0.05
+    keyword_weight = 0.75
+    score = base + memo_score * keyword_weight
+    return score, kw_hits[:4]
+
+
+def _collect_period_views_from_events(
+    events: List[Dict[str, Any]],
+    *,
+    mode: str,
+    match_threshold: float = 0.20,
+    max_samples: int = 2,
+) -> List[StructurePeriodView]:
+    """Compute StructurePeriodView from raw text events."""
+
+    out: List[StructurePeriodView] = []
+    m = str(mode or "standard").strip().lower()
+
+    if m == "structural" and load_structure_dict is not None:
+        entries = load_structure_dict() or {}
+        for key, entry in entries.items():
+            if not isinstance(entry, dict):
+                continue
+            cnt = 0
+            score_sum = 0.0
+            inten_sum = 0.0
+            inten_n = 0
+            emo_counter: Dict[str, int] = {}
+            memos: List[str] = []
+            for ev in events or []:
+                text = str(ev.get("combined_text") or "")
+                if not text:
+                    continue
+                score, _kw = _score_structural_one(entry=entry, text=text)
+                if score < match_threshold:
+                    continue
+                cnt += 1
+                score_sum += float(score)
+                inten = float(ev.get("intensity") or 0.0)
+                if inten > 0:
+                    inten_sum += inten
+                    inten_n += 1
+                for emo in (ev.get("emotions") or []):
+                    if emo:
+                        emo_counter[str(emo)] = emo_counter.get(str(emo), 0) + 1
+                ex = str(ev.get("excerpt") or "").strip()
+                if ex and ex not in memos and len(memos) < max_samples:
+                    memos.append(ex)
+
+            if cnt <= 0:
+                continue
+            avg_score = (score_sum / cnt) if cnt else 0.0
+            avg_intensity = (inten_sum / inten_n) if inten_n > 0 else 0.0
+            top_emotions = [k for k, _ in sorted(emo_counter.items(), key=lambda kv: kv[1], reverse=True)[:2]]
+            out.append(
+                StructurePeriodView(
+                    key=str(key),
+                    count=cnt,
+                    avg_intensity=avg_intensity,
+                    avg_score=avg_score,
+                    top_emotions=top_emotions,
+                    sample_memos=memos[:max_samples],
+                )
+            )
+
+        out.sort(key=lambda v: (v.count, v.avg_intensity, v.avg_score), reverse=True)
+        return out
+
+    # Standard mode
+    defs = _load_standard_structure_dict()
+    for key, conf in (defs or {}).items():
+        if not isinstance(conf, dict):
+            continue
+        cnt = 0
+        score_sum = 0.0
+        inten_sum = 0.0
+        inten_n = 0
+        emo_counter: Dict[str, int] = {}
+        memos: List[str] = []
+        for ev in events or []:
+            text = str(ev.get("combined_text") or "")
+            if not text:
+                continue
+            emotions = [str(x) for x in (ev.get("emotions") or []) if str(x).strip()]
+            intensity = float(ev.get("intensity") or 0.0)
+            score, _kw = _score_standard_one(conf=conf, emotions=emotions, intensity=intensity, text=text)
+            if score < match_threshold:
+                continue
+            cnt += 1
+            score_sum += float(score)
+            if intensity > 0:
+                inten_sum += intensity
+                inten_n += 1
+            for emo in emotions:
+                emo_counter[emo] = emo_counter.get(emo, 0) + 1
+            ex = str(ev.get("excerpt") or "").strip()
+            if ex and ex not in memos and len(memos) < max_samples:
+                memos.append(ex)
+
+        if cnt <= 0:
+            continue
+        avg_score = (score_sum / cnt) if cnt else 0.0
+        avg_intensity = (inten_sum / inten_n) if inten_n > 0 else 0.0
+        top_emotions = [k for k, _ in sorted(emo_counter.items(), key=lambda kv: kv[1], reverse=True)[:2]]
+        out.append(
+            StructurePeriodView(
+                key=str(key),
+                count=cnt,
+                avg_intensity=avg_intensity,
+                avg_score=avg_score,
+                top_emotions=top_emotions,
+                sample_memos=memos[:max_samples],
+            )
+        )
+
+    out.sort(key=lambda v: (v.count, v.avg_intensity, v.avg_score), reverse=True)
+    return out
 
 
 def _collect_period_views(
@@ -569,8 +1043,10 @@ def build_myprofile_monthly_report(
 
     days = parse_period_days(period)
     mode = _normalize_report_mode(report_mode)
-    use_structure_gloss = (mode != "light")
-    use_mashlogic = (mode == "deep")
+    # Spec v2: definitions are only appended in Structural mode
+    use_structure_gloss = (mode == "structural")
+    # Legacy deep enhancer is not used for Spec v2; keep the variable for meta only.
+    use_mashlogic = False
     now_dt = now or _dt.datetime.utcnow().replace(microsecond=0, tzinfo=_dt.timezone.utc)
 
     end = now_dt
@@ -578,9 +1054,32 @@ def build_myprofile_monthly_report(
     prev_end = start
     prev_start = prev_end - _dt.timedelta(days=max(days, 1))
 
-    structures_map = _load_structures_map(uid)
-    cur_views = _collect_period_views(structures_map, start=start, end=end, include_secret=include_secret)
-    prev_views = _collect_period_views(structures_map, start=prev_start, end=prev_end, include_secret=include_secret)
+    # Materials (Spec v2): thought/action logs + self-insight + deep answers
+    deep_answers = _load_deep_insight_answers(uid, include_secret=include_secret, limit=12)
+
+    analysis_source = "supabase_emotions" if _has_supabase_config() else "patterns_store"
+
+    # Prefer raw logs (Supabase emotions) for v2; fallback to legacy patterns store when unavailable.
+    cur_rows = _fetch_emotion_rows(uid, start=start, end=end)
+    prev_rows = _fetch_emotion_rows(uid, start=prev_start, end=prev_end)
+
+    cur_events, self_insight_quotes = _build_text_events_from_emotions(cur_rows, start=start, end=end, include_secret=include_secret)
+    prev_events, _ = _build_text_events_from_emotions(prev_rows, start=prev_start, end=prev_end, include_secret=include_secret)
+
+    # Deep Insight answers: include those within the window as additional text material (best-effort).
+    cur_events.extend(_build_text_events_from_deep_answers(deep_answers, start=start, end=end, include_secret=include_secret, limit=6))
+    prev_events.extend(_build_text_events_from_deep_answers(deep_answers, start=prev_start, end=prev_end, include_secret=include_secret, limit=6))
+
+    cur_views = _collect_period_views_from_events(cur_events, mode=mode)
+    prev_views = _collect_period_views_from_events(prev_events, mode=mode)
+
+    if not cur_views:
+        # legacy fallback
+        analysis_source = "patterns_store"
+        self_insight_quotes = []
+        structures_map = _load_structures_map(uid)
+        cur_views = _collect_period_views(structures_map, start=start, end=end, include_secret=include_secret)
+        prev_views = _collect_period_views(structures_map, start=prev_start, end=prev_end, include_secret=include_secret)
 
     prev_map = {v.key: v for v in prev_views}
 
@@ -588,8 +1087,8 @@ def build_myprofile_monthly_report(
     top = cur_views[:3]
     top_keys = [v.key for v in top]
 
-    # Deep Insight
-    deep_answers = _load_deep_insight_answers(uid, include_secret=include_secret, limit=6)
+    # Deep Insight (narrative)
+    deep_answers = deep_answers[:6]
 
     # 差分
     deltas: List[Tuple[str, int, float]] = []  # key, delta_count, delta_intensity
@@ -601,18 +1100,38 @@ def build_myprofile_monthly_report(
     deltas.sort(key=lambda x: (abs(x[1]), abs(x[2])), reverse=True)
 
     # --- summary bullets ---
+    # Spec v2: focus on thought/action alignment as "崩れ条件".
+    def _has_any(text: str, words: List[str]) -> bool:
+        t = str(text or "")
+        return any(w in t for w in words)
+
+    mismatch_events: List[Dict[str, Any]] = []
+    for ev in cur_events:
+        if str(ev.get("kind")) != "emotion":
+            continue
+        th = str(ev.get("thought") or "")
+        ac = str(ev.get("action") or "")
+        if not th or not ac:
+            continue
+        if _has_any(th, ["したい", "やりたい", "言いたい", "伝えたい", "必要", "べき"]) and _has_any(
+            ac,
+            ["できな", "できなかった", "しなかった", "やらな", "言わな", "送らな", "固ま", "止ま", "動け", "先延ばし", "延期", "逃げ"],
+        ):
+            mismatch_events.append(ev)
     if top:
         themes = "、".join([f"『{k}』" for k in top_keys[:2]])
         core = PF("summary_core", "・核（いちばん出やすい自己テーマ）: {themes}", themes=themes)
 
-        # top構造に紐づく感情ヒント（ただし MyWeb に踏み込みすぎない）
+        # top構造に紐づく感情ヒント（数値や内部ロジックは出さない）
         ehs: List[str] = []
         for v in top[:2]:
             if v.top_emotions:
                 ehs.extend([emo_label_ja(x) for x in v.top_emotions])
         ehs = [x for i, x in enumerate(ehs) if x and x not in ehs[:i]]
 
-        if ehs:
+        if mismatch_events:
+            shaky = "・崩れ条件（揺れを強めやすい引き金）: 思考では『したい/必要』が出ても、行動が止まりやすい場面が増えた可能性"
+        elif ehs:
             shaky = PF(
                 "summary_shaky_with_emotions",
                 "・崩れ条件（揺れを強めやすい引き金）: {emotions}が強い場面で、判断が硬くなりやすい可能性",
@@ -632,7 +1151,7 @@ def build_myprofile_monthly_report(
         else:
             steady = P(
                 "summary_steady_default",
-                "・安定に寄せるキー（整える1手）: 『刺激/解釈/身体』を1行メモすると、揺れがほどけやすい",
+                "・安定に寄せるキー（整える1手）: 揺れた瞬間に「思考内容1文」「行動内容1文」を分けて書くと、迷いがほどけやすい",
             )
 
         one_liner = PF(
@@ -703,6 +1222,9 @@ def build_myprofile_monthly_report(
                 )
             )
         lines.append(P("sec1_note_line", "※これは診断ではなく、最近の入力から読み取れる“仮の自己モデル”です。"))
+        if self_insight_quotes:
+            q = self_insight_quotes[-1]
+            lines.append(f"今月あなたが言語化できた理解: 「{_excerpt(q, 120)}」")
     lines.append("")
 
     # 2. 反応パターン
@@ -860,41 +1382,47 @@ def build_myprofile_monthly_report(
 
     lines.append("")
 
-    # 8. 感情構造との接続
-    lines.append(P("sec8_title", "8. 感情構造との接続（MyWebに譲る前提で、短く）"))
+    # Structural appendix (Premium): short, user-facing; no internal names.
+    if mode == "structural":
+        lines.append("【Structural追記】")
+        lines.append("※ここからは構造の『定義/干渉/誤認』の観点で、仮説をもう1段だけ深掘りします。")
+        lines.append("※断定ではなく『観測→仮説→次の観測』の循環を作るための追記です。")
+        lines.append("")
+        if top_keys:
+            lines.append(f"・核候補: 『{top_keys[0]}』")
+            lines.append("  - チェック: これは“人格”ではなく、“条件が揃うと出る反応”として扱えているか")
+            lines.append("  - 次の観測: 何が揃うと立ち上がる？（睡眠/空腹/期限/評価/未確定 など）")
+            if len(top_keys) >= 2:
+                lines.append(f"・干渉仮説: 『{top_keys[0]}』が強い日に『{top_keys[1]}』が重なり、判断が硬くなる可能性")
+                lines.append("  - 次の観測: “重なった順番”を1行だけ記録（先にどっちが来た？）")
+        else:
+            lines.append("・材料が少ないため、追記は“観測設計”に寄せます。")
+            lines.append("  - 次の観測: 揺れた時に『思考/行動』を1行ずつ残す（最低1回）")
+
+        lines.append("")
+        lines.append("・誤認チェック（よく起きるズレ）")
+        lines.append("  - 相手/環境の問題を“自分の欠陥”に回収していないか")
+        lines.append("  - 未確定を“確定した悪い未来”として扱っていないか")
+        lines.append("  - 1回の失敗を“恒常的な自己定義”にしていないか")
+        lines.append("")
+
+    # 8. 感情の動きとの接続
+    lines.append(P("sec8_title", "8. 感情の動きとの接続（短く）"))
     if top:
-        lines.append(PF("sec8_with_top_line_1", "MyWebで感情の揺れ（不安/怒りなど）が目立つとき、背景で『{core_key}』が立っている可能性があります。", core_key=top[0].key))
-        lines.append(P("sec8_with_top_line_2", "感情の“天気”と、自己構造の“地形”を分けて見るほど、回復が速くなります。"))
+        lines.append(PF("sec8_with_top_line_1", "不安/怒りなどの揺れが目立つとき、背景で『{core_key}』が立っている可能性があります。", core_key=top[0].key))
+        lines.append(P("sec8_with_top_line_2", "気持ちの“天気”と、自己の判断の“クセ”を分けて見るほど、回復が速くなります。"))
     else:
-        lines.append(P("sec8_no_data_line", "MyWeb（感情傾向）で揺れが見えたら、MyProfile側で“刺激→解釈”の観測を増やすと接続が強くなります。"))
+        lines.append(P("sec8_no_data_line", "感情の揺れが見えたら、“刺激→解釈”の観測を増やすと接続が強くなります。"))
 
-    # Deep mode enhancer (MashLogic) - isolated to Deep only
     mashlogic_applied = False
-    if use_mashlogic:
-        try:
-            from mashlogic_profile_enhancer import enhance_myprofile_monthly_report
-
-            lines = enhance_myprofile_monthly_report(
-                lines,
-                context={
-                    "user_id": uid,
-                    "mode": mode,
-                    "period": period,
-                    "top_keys": top_keys,
-                    "top_views": [v.__dict__ for v in top],
-                    "deep_insight_answers": deep_answers,
-                },
-            )
-            mashlogic_applied = True
-        except Exception:
-            mashlogic_applied = False
 
     meta = {
         "engine": "astor_myprofile_report",
-        "version": "myprofile.report.v1",
+        "version": "myprofile.report.v2",
         "report_mode": mode,
         "period": period,
         "period_days": days,
+        "analysis_source": analysis_source,
         "data_scope": "self" if include_secret else "public",
         "diff_reference": "prev_report_text" if (prev_report_text and used_prev_text) else "data_only",
         "structure_gloss_used": bool(use_structure_gloss),
@@ -904,6 +1432,8 @@ def build_myprofile_monthly_report(
             {"key": v.key, "count": v.count, "avg_intensity": v.avg_intensity} for v in top
         ],
         "deep_insight_answers": len(deep_answers),
+        "self_insight_quotes": len(self_insight_quotes),
+        "thought_action_mismatch_count": len(mismatch_events),
     }
 
     return ("\n".join(lines).strip() + "\n", meta)

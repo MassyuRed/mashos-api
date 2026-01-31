@@ -647,20 +647,38 @@ async def myweb_insight(
     - period: "7d", "30d", "12w", "3m" など
     - user_id が指定されていない場合は Authorization: Bearer トークンから解決する。
     """
-    # user_id をリクエストボディまたは Authorization ヘッダから解決
-    user_id = req.user_id
-    if not user_id:
-        access_token = _extract_bearer_token(authorization)
-        if not access_token:
-            raise HTTPException(
-                status_code=401,
-                detail="Authorization header with Bearer token is required when user_id is omitted",
-            )
-        try:
-            user_id = await _resolve_user_id_from_token(access_token)
-        except Exception as exc:
-            logger.error("Failed to resolve user_id from token in /myweb/insight: %s", exc)
-            raise HTTPException(status_code=401, detail="Invalid authorization token")
+    # Authorization is required for MyWeb insight (premium feature)
+    access_token = _extract_bearer_token(authorization)
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header with Bearer token is required",
+        )
+
+    try:
+        viewer_user_id = await _resolve_user_id_from_token(access_token)
+    except Exception as exc:
+        logger.error("Failed to resolve user_id from token in /myweb/insight: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid authorization token")
+
+    # Only allow self access (prevents passing arbitrary user_id)
+    user_id = req.user_id or viewer_user_id
+    if req.user_id and str(req.user_id) != str(viewer_user_id):
+        raise HTTPException(status_code=403, detail="user_id must match the authenticated user")
+
+    # Subscription tier gating (Plus: Standard, Premium: Structural)
+    from subscription import SubscriptionTier
+    from subscription_store import get_subscription_tier_for_user
+
+    tier_enum: SubscriptionTier = SubscriptionTier.FREE
+    try:
+        tier_enum = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
+    except Exception as exc:
+        logger.warning("Failed to resolve subscription tier; fallback to FREE: %s", exc)
+        tier_enum = SubscriptionTier.FREE
+
+    if tier_enum != SubscriptionTier.PREMIUM:
+        raise HTTPException(status_code=403, detail="MyWeb insight is available for premium users only")
 
     astor_req = AstorRequest(
         mode=AstorMode.MYWEB_INSIGHT,

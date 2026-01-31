@@ -587,22 +587,30 @@ async def _myprofile_monthly_upsert(
 
 
 async def _select_monthly_report_mode(user_id: str) -> str:
-    """Tierに応じて最も高いMyProfileModeを返す。
+    """Tierに応じて MyProfile（月報）の report_mode を返す。
 
-    Fail-closed: 取得に失敗したら light。
+    Spec v2:
+    - free    : entitlementなし（"" を返す）
+    - plus    : standard
+    - premium : structural
+
+    Fail-closed: 取得に失敗したら entitlementなし。
     """
 
     if get_subscription_tier_for_user is None or allowed_myprofile_modes_for_tier is None:
-        return "light"
+        return ""
 
     try:
         tier = await get_subscription_tier_for_user(user_id)
+        if str(getattr(tier, "value", tier)) == "free":
+            return ""
         modes = allowed_myprofile_modes_for_tier(tier)
         if modes:
+            # Prefer highest allowed mode
             return modes[-1].value
     except Exception:
-        return "light"
-    return "light"
+        return ""
+    return ""
 
 
 @dataclass(frozen=True)
@@ -770,6 +778,10 @@ async def _run_myprofile_monthly_for_users(
 
                     report_mode = await _select_monthly_report_mode(uid)
 
+                    # Spec v2: free users have no entitlement for MyProfile（月報）本文。
+                    if not report_mode:
+                        return {"user_id": uid, "status": "skipped", "skipped": "not_entitled"}
+
                     if dry_run:
                         return {"user_id": uid, "status": "generated", "dry_run": True, "report_mode": report_mode}
 
@@ -837,7 +849,7 @@ async def _run_myprofile_monthly_for_users(
                                 "dist_utc": _iso_utc(target.dist_utc),
                                 "include_secret": include_secret,
                             },
-                            "generated_at": _iso_utc(datetime.now(timezone.utc)),
+                            "generated_at": _iso_utc(target.dist_utc),
                         }
 
                         rid = await _myprofile_monthly_upsert(client, payload=payload, run_id=run_id, job=job)
