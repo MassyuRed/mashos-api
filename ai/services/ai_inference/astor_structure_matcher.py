@@ -99,7 +99,7 @@ class StructureMatcher:
         if not hits:
             return []
 
-        THRESHOLD = 0.35
+        THRESHOLD = 0.20
         MAX_HITS = 5
         filtered = [h for h in hits if h.score >= THRESHOLD][:MAX_HITS]
         return filtered
