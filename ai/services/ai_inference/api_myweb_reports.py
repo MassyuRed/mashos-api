@@ -613,6 +613,9 @@ async def _generate_and_save(
         except Exception:
             tier_enum = SubscriptionTier.FREE
     is_premium = bool(tier_enum == SubscriptionTier.PREMIUM) if SubscriptionTier is not None else False
+    is_plus_or_higher = (
+        bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
+    )
 
     if target.report_type == "daily":
         metrics = _build_daily_metrics(rows)
@@ -630,7 +633,7 @@ async def _generate_and_save(
         metrics = _compute_weekly_metrics(days)
         content_json["metrics"] = metrics
         content_json["days"] = days
-        if include_astor and is_premium and generate_myweb_insight_payload is not None:
+        if include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
             try:
                 astor_text, astor_report = generate_myweb_insight_payload(user_id=user_id, period_days=7, lang="ja")
                 astor_meta = {"engine": "astor_myweb_insight", "period_days": 7, "version": "0.3"}
@@ -656,7 +659,7 @@ async def _generate_and_save(
         content_json["metrics"] = metrics
         # viewer fallback support
         content_json["weeks"] = weeks
-        if include_astor and is_premium and generate_myweb_insight_payload is not None:
+        if include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
             try:
                 astor_text, astor_report = generate_myweb_insight_payload(user_id=user_id, period_days=28, lang="ja")
                 astor_meta = {"engine": "astor_myweb_insight", "period_days": 28, "version": "0.3"}
@@ -686,7 +689,7 @@ async def _generate_and_save(
             "version": "myweb.standard.v1",
             "contentText": text,
         }
-        if astor_report:
+        if astor_report and is_premium:
             content_json["structuralReport"] = astor_report
     except Exception:
         pass
