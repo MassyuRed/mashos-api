@@ -849,7 +849,7 @@ def _format_emotion_push_body(emotion_details: List[Dict[str, Any]]) -> str:
         if not t:
             continue
         label = STRENGTH_LABEL_JA.get(s, "")
-        parts.append(f"『{t}{f' {label}' if label else ''}』")
+        parts.append(f"『{t}{('（' + label + '）') if label else ''}』")
 
     if not parts:
         return ""
