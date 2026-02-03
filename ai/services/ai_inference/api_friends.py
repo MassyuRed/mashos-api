@@ -38,6 +38,9 @@ from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
     _resolve_user_id_from_token,
+    _fetch_profile_display_name,
+    _fetch_push_tokens_for_users,
+    _send_fcm_push,
 )
 
 logger = logging.getLogger("friends_api")
@@ -286,9 +289,30 @@ def register_friend_routes(app: FastAPI) -> None:
 
         data = resp.json()
         row = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else {})
+        request_id = int(row.get("id")) if row.get("id") is not None else None
+
+        # Push通知（best-effort）：申請先ユーザーへ通知
+        try:
+            token_map = await _fetch_push_tokens_for_users([requested_user_id])
+            tokens = list(token_map.values())
+            if tokens:
+                requester_name = await _fetch_profile_display_name(requester_user_id)
+                requester_label = (requester_name or "").strip() or "フレンド"
+                if requester_label == "Friend":
+                    requester_label = "フレンド"
+
+                body_text = f"{requester_label}さんからフレンド通知が届きました"
+                data_payload: Dict[str, str] = {"type": "friend_request"}
+                if request_id is not None:
+                    data_payload["request_id"] = str(request_id)
+
+                await _send_fcm_push(tokens=tokens, title="Cocolon", body=body_text, data=data_payload)
+        except Exception as exc:
+            logger.warning("Failed to send friend request push: %s", exc)
+
         return FriendRequestCreateResponse(
             status="ok",
-            request_id=int(row.get("id")) if row.get("id") is not None else None,
+            request_id=request_id,
             requested_user_id=requested_user_id,
             requested_display_name=requested_display_name,
         )
