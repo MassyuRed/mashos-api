@@ -40,6 +40,7 @@ from api_subscription import register_subscription_routes
 from api_myweb_reports import register_myweb_report_routes
 from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
+from api_mymodel_create import register_mymodel_create_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
 from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
@@ -84,6 +85,7 @@ register_subscription_routes(app)
 register_myweb_report_routes(app)
 register_cron_distribution_routes(app)
 register_ranking_routes(app)
+register_mymodel_create_routes(app)
 
 # ASTOR engine for MyWeb insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
