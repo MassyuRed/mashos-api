@@ -466,7 +466,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         # Fetch Create questions (effective tier)
         try:
-            qrows = await _fetch_create_questions(effective_tier)
+            qrows = await _fetch_create_questions(build_tier=effective_tier)
         except Exception as exc:
             logger.error("failed to fetch create questions: %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load questions")
@@ -596,7 +596,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         # Tier gating (viewer can only see effective tier)
         _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-        qrows = await _fetch_create_questions(effective_tier)
+        qrows = await _fetch_create_questions(build_tier=effective_tier)
         qmap = {int(r.get("id")): str(r.get("question_text") or "").strip() for r in (qrows or []) if r.get("id") is not None}
         title = qmap.get(int(qid))
         if not title:
