@@ -131,6 +131,19 @@ class MyProfileFollowStatsResponse(BaseModel):
     follower_count: int
     is_following: bool
 
+class MyProfileFollowListItem(BaseModel):
+    id: str
+    display_name: Optional[str] = None
+    friend_code: Optional[str] = None
+    myprofile_code: Optional[str] = None
+
+
+class MyProfileFollowListResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    target_user_id: str
+    tab: str = Field(..., description="following | followers")
+    rows: list[MyProfileFollowListItem]
+
 
 
 
@@ -730,7 +743,124 @@ def register_myprofile_routes(app: FastAPI) -> None:
             is_following=bool(is_following),
         )
 
-@app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
+    @app.get("/myprofile/follow-list", response_model=MyProfileFollowListResponse)
+    async def get_myprofile_follow_list(
+        target_user_id: str = Query(..., description="Target user's UUID (profiles.id)"),
+        tab: str = Query(default="following", description="following | followers"),
+        limit: int = Query(default=1000, ge=1, le=1000, description="Max number of rows"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileFollowListResponse:
+        """Return follow list (profiles) for a target user.
+
+        - tab=following: users the target is following
+        - tab=followers: users who follow the target
+        """
+        uid = str(target_user_id or "").strip()
+        if not uid:
+            raise HTTPException(status_code=400, detail="target_user_id is required")
+
+        t = str(tab or "").strip().lower()
+        if t not in ("following", "followers"):
+            t = "following"
+
+        # authorization is accepted for future-proofing, but currently optional
+        _ = authorization  # noqa: F841
+
+        # 1) link table -> ordered ids
+        if t == "following":
+            resp = await _sb_get(
+                "/rest/v1/myprofile_links",
+                params={
+                    "select": "owner_user_id,created_at",
+                    "viewer_user_id": f"eq.{uid}",
+                    "order": "created_at.desc",
+                    "limit": str(int(limit)),
+                },
+            )
+            key = "owner_user_id"
+        else:
+            resp = await _sb_get(
+                "/rest/v1/myprofile_links",
+                params={
+                    "select": "viewer_user_id,created_at",
+                    "owner_user_id": f"eq.{uid}",
+                    "order": "created_at.desc",
+                    "limit": str(int(limit)),
+                },
+            )
+            key = "viewer_user_id"
+
+        if resp.status_code >= 300:
+            logger.error("Supabase myprofile_links list failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to load follow list")
+
+        link_rows = resp.json()
+        ids_raw: list[str] = []
+        if isinstance(link_rows, list):
+            for r in link_rows:
+                if isinstance(r, dict):
+                    v = str(r.get(key) or "").strip()
+                    if v:
+                        ids_raw.append(v)
+
+        # dedupe while preserving order
+        ids: list[str] = []
+        seen = set()
+        for x in ids_raw:
+            if x not in seen:
+                ids.append(x)
+                seen.add(x)
+
+        if not ids:
+            return MyProfileFollowListResponse(status="ok", target_user_id=uid, tab=t, rows=[])
+
+        # 2) profiles bulk fetch (chunked to keep URLs reasonable)
+        profiles_map: Dict[str, Dict[str, Any]] = {}
+        chunk_size = 200
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i : i + chunk_size]
+            in_expr = ",".join(chunk)
+
+            resp2 = await _sb_get(
+                "/rest/v1/profiles",
+                params={
+                    "select": "id,display_name,friend_code,myprofile_code",
+                    "id": f"in.({in_expr})",
+                    "limit": str(len(chunk)),
+                },
+            )
+            if resp2.status_code >= 300:
+                logger.error("Supabase profiles list failed: %s %s", resp2.status_code, resp2.text[:1500])
+                raise HTTPException(status_code=502, detail="Failed to load profiles")
+
+            rows2 = resp2.json()
+            if isinstance(rows2, list):
+                for p in rows2:
+                    if isinstance(p, dict) and p.get("id") is not None:
+                        profiles_map[str(p.get("id"))] = p
+
+        # 3) order restore
+        ordered: list[MyProfileFollowListItem] = []
+        for pid in ids:
+            p = profiles_map.get(pid)
+            if not p:
+                continue
+            ordered.append(
+                MyProfileFollowListItem(
+                    id=str(p.get("id")),
+                    display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
+                    friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
+                    myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
+                )
+            )
+
+        return MyProfileFollowListResponse(
+            status="ok",
+            target_user_id=uid,
+            tab=t,
+            rows=ordered,
+        )
+    @app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
     async def get_or_refresh_myprofile_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         ensure: bool = Query(
