@@ -124,6 +124,14 @@ class MyProfileLinkActionResponse(BaseModel):
     is_following: bool
 
 
+class MyProfileFollowStatsResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    target_user_id: str
+    following_count: int
+    follower_count: int
+    is_following: bool
+
+
 
 
 # ----------------------------
@@ -235,6 +243,38 @@ async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> http
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.get(url, headers=_sb_headers_json(), params=params)
+
+
+async def _sb_count(path: str, *, params: Dict[str, str]) -> int:
+    """Return exact row count for a given REST endpoint query (PostgREST count header)."""
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            url,
+            headers=_sb_headers_json(prefer="count=exact"),
+            params=params,
+        )
+
+    if resp.status_code >= 300:
+        logger.error("Supabase count failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to count rows")
+
+    content_range = resp.headers.get("content-range") or resp.headers.get("Content-Range") or ""
+    if "/" in content_range:
+        tail = content_range.split("/")[-1].strip()
+        if tail.isdigit():
+            return int(tail)
+        try:
+            return int(tail)
+        except Exception:
+            pass
+
+    try:
+        data = resp.json()
+        return len(data) if isinstance(data, list) else 0
+    except Exception:
+        return 0
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
@@ -630,7 +670,67 @@ def register_myprofile_routes(app: FastAPI) -> None:
             owner_user_id=owner_user_id,
             is_following=False,
         )
-    @app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
+    
+
+    @app.get("/myprofile/follow-stats", response_model=MyProfileFollowStatsResponse)
+    async def get_myprofile_follow_stats(
+        target_user_id: str = Query(..., description="Target user's UUID (profiles.id)"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileFollowStatsResponse:
+        """Return follow stats for a target user.
+
+        - following_count: number of users the target is following
+        - follower_count: number of users following the target
+        - is_following: whether the caller follows the target (false if not authenticated)
+        """
+        uid = str(target_user_id or "").strip()
+        if not uid:
+            raise HTTPException(status_code=400, detail="target_user_id is required")
+
+        # Resolve viewer (optional). If no token, is_following is always False.
+        viewer_user_id: Optional[str] = None
+        access_token = _extract_bearer_token(authorization)
+        if access_token:
+            try:
+                viewer_user_id = await _resolve_user_id_from_token(access_token)
+            except Exception:
+                viewer_user_id = None
+
+        # Count following / followers via service_role (avoid client-side RLS)
+        following_count = await _sb_count(
+            "/rest/v1/myprofile_links",
+            params={
+                "select": "owner_user_id",
+                "viewer_user_id": f"eq.{uid}",
+                "limit": "1",
+            },
+        )
+
+        follower_count = await _sb_count(
+            "/rest/v1/myprofile_links",
+            params={
+                "select": "viewer_user_id",
+                "owner_user_id": f"eq.{uid}",
+                "limit": "1",
+            },
+        )
+
+        is_following = False
+        if viewer_user_id and str(viewer_user_id) != uid:
+            try:
+                is_following = await _is_already_registered(str(viewer_user_id), uid)
+            except Exception:
+                is_following = False
+
+        return MyProfileFollowStatsResponse(
+            status="ok",
+            target_user_id=uid,
+            following_count=int(following_count or 0),
+            follower_count=int(follower_count or 0),
+            is_following=bool(is_following),
+        )
+
+@app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
     async def get_or_refresh_myprofile_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
         ensure: bool = Query(
