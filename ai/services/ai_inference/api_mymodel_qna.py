@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
@@ -161,6 +162,13 @@ class QnaHoldersResponse(BaseModel):
     total_items: int
     users: List[QnaHolderUser]
 
+
+
+class QnaRecommendUsersResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    days: int = Field(3, description="Activity window in days")
+    total_items: int
+    users: List[QnaHolderUser]
 
 # ----------------------------
 # Supabase helpers
@@ -374,6 +382,91 @@ async def _fetch_holder_user_ids_for_question(*, question_id: int, scan_limit: i
     return out
 
 
+
+
+async def _fetch_followed_owner_ids(*, viewer_user_id: str, limit: int = 5000) -> Set[str]:
+    """Fetch all owner_user_id that viewer is following (best-effort).
+
+    This avoids very long `in.(...)` filters when candidate lists are large.
+    """
+    if not viewer_user_id:
+        return set()
+    resp = await _sb_get(
+        "/rest/v1/myprofile_links",
+        params={
+            "select": "owner_user_id",
+            "viewer_user_id": f"eq.{viewer_user_id}",
+            "limit": str(int(limit)),
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase myprofile_links select failed: %s %s", resp.status_code, resp.text[:1500])
+        return set()
+    rows = resp.json()
+    out: Set[str] = set()
+    if isinstance(rows, list):
+        for r in rows:
+            oid = str((r or {}).get("owner_user_id") or "").strip()
+            if oid:
+                out.add(oid)
+    return out
+
+
+async def _fetch_active_user_ids(*, since_iso: str, scan_limit: int) -> Set[str]:
+    """Fetch active user ids within window, based on:
+    - emotions.created_at >= since
+    - OR mymodel_create_answers.updated_at >= since
+
+    Fail-soft: if a source fails, it is skipped.
+    """
+    out: Set[str] = set()
+    # 1) emotions
+    try:
+        resp1 = await _sb_get(
+            "/rest/v1/emotions",
+            params={
+                "select": "user_id,created_at",
+                "created_at": f"gte.{since_iso}",
+                "order": "created_at.desc",
+                "limit": str(int(scan_limit)),
+            },
+        )
+        if resp1.status_code < 300:
+            rows1 = resp1.json()
+            if isinstance(rows1, list):
+                for r in rows1:
+                    uid = str((r or {}).get("user_id") or "").strip()
+                    if uid:
+                        out.add(uid)
+        else:
+            logger.error("Supabase emotions select failed: %s %s", resp1.status_code, resp1.text[:800])
+    except Exception as exc:
+        logger.warning("active users: emotions fetch failed: %s", exc)
+
+    # 2) mymodel_create_answers
+    try:
+        resp2 = await _sb_get(
+            "/rest/v1/mymodel_create_answers",
+            params={
+                "select": "user_id,updated_at",
+                "updated_at": f"gte.{since_iso}",
+                "order": "updated_at.desc",
+                "limit": str(int(scan_limit)),
+            },
+        )
+        if resp2.status_code < 300:
+            rows2 = resp2.json()
+            if isinstance(rows2, list):
+                for r in rows2:
+                    uid = str((r or {}).get("user_id") or "").strip()
+                    if uid:
+                        out.add(uid)
+        else:
+            logger.error("Supabase mymodel_create_answers select failed: %s %s", resp2.status_code, resp2.text[:800])
+    except Exception as exc:
+        logger.warning("active users: mymodel_create_answers fetch failed: %s", exc)
+
+    return out
 
 async def _fetch_metrics(q_keys: Set[str]) -> Dict[str, Dict[str, Any]]:
     """Fetch *global* popularity metrics aggregated by q_key.
@@ -1030,6 +1123,77 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         )
 
 
+
+
+    @app.get("/mymodel/recommend/users", response_model=QnaRecommendUsersResponse)
+    async def recommend_users(
+        limit: int = Query(default=5, ge=1, le=20, description="Number of users to return"),
+        days: int = Query(default=3, ge=1, le=30, description="Activity window in days"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaRecommendUsersResponse:
+        """Recommend active users not yet followed by the viewer.
+
+        Active definition (Mash confirmed):
+        - within `days` (default 3), either
+          - emotions.created_at >= now - days
+          - OR mymodel_create_answers.updated_at >= now - days
+        - count not required; either table is enough
+        """
+
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        window_days = int(days)
+        since_iso = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+
+        # Scan a bit more than limit to allow filtering + randomness
+        scan_limit = int(max(300, min(5000, int(limit) * 800)))
+
+        candidate_ids = await _fetch_active_user_ids(since_iso=since_iso, scan_limit=scan_limit)
+        if not candidate_ids:
+            return QnaRecommendUsersResponse(status="ok", days=window_days, total_items=0, users=[])
+
+        # Exclude self
+        candidate_ids.discard(str(viewer_user_id))
+
+        # Exclude already-followed users
+        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+
+        pool = [uid for uid in candidate_ids if uid and (uid not in followed_set)]
+        if not pool:
+            return QnaRecommendUsersResponse(status="ok", days=window_days, total_items=0, users=[])
+
+        random.shuffle(pool)
+        picked = pool[: int(limit)]
+
+        profiles_map = await _fetch_profiles_by_ids(picked)
+
+        users: List[QnaHolderUser] = []
+        for uid in picked:
+            p = profiles_map.get(str(uid))
+            if not p:
+                continue
+            users.append(
+                QnaHolderUser(
+                    id=str(p.get("id") or uid),
+                    display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
+                    friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
+                    myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
+                    is_following=False,
+                )
+            )
+
+        return QnaRecommendUsersResponse(
+            status="ok",
+            days=window_days,
+            total_items=len(users),
+            users=users,
+        )
 
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(
