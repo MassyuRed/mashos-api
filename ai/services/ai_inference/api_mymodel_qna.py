@@ -661,6 +661,27 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         # Mark read (best-effort)
         await _upsert_read(viewer_user_id, req.q_instance_id)
 
+        # Self views should not affect popularity metrics.
+        if tgt == viewer_user_id:
+            metrics = await _fetch_metrics({qk})
+            m = metrics.get(qk) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                resonances = int(m.get("resonances") or 0)
+            except Exception:
+                resonances = 0
+            return QnaViewResponse(
+                status="self",
+                q_key=qk,
+                q_instance_id=req.q_instance_id,
+                views=views,
+                resonances=resonances,
+                is_new=False,
+            )
+
         # Increment views (count every display)
         counts = await _inc_metric(q_key=qk, field="views", delta=1)
         return QnaViewResponse(
@@ -696,6 +717,27 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
 
         qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        # Self resonance is not allowed.
+        if tgt == viewer_user_id:
+            metrics = await _fetch_metrics({qk})
+            m = metrics.get(qk) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                res_cnt = int(m.get("resonances") or 0)
+            except Exception:
+                res_cnt = 0
+            return QnaResonanceResponse(
+                status="self",
+                q_key=qk,
+                q_instance_id=req.q_instance_id,
+                resonated=False,
+                views=views,
+                resonances=res_cnt,
+            )
 
         already = await _is_resonated(viewer_user_id, req.q_instance_id)
         if already:

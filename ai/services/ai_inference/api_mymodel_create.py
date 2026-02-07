@@ -88,6 +88,7 @@ class MyModelCreateQuestionItem(BaseModel):
     answer_text: Optional[str] = Field(default=None, description="Saved answer (if any)")
     answered: bool = Field(..., description="True if answered")
     updated_at: Optional[str] = Field(default=None, description="Answer updated_at (ISO)")
+    is_secret: bool = Field(default=False, description="Secret flag for this answer (default false)")
     # Backward-compat: older clients may read `editable`.
     # RN should prefer `can_edit` and `edit_block_reason`.
     editable: bool = Field(..., description="True if the user can edit this answer (legacy field)")
@@ -104,6 +105,10 @@ class MyModelCreateQuestionsResponse(BaseModel):
 class MyModelCreateAnswerItem(BaseModel):
     question_id: int = Field(..., description="Template question id")
     answer_text: Optional[str] = Field(default=None, description="Answer text. Empty/blank means 'clear'.")
+    is_secret: Optional[bool] = Field(
+        default=None,
+        description="Secret flag (optional). If omitted, secret state is unchanged for existing answers.",
+    )
 
 
 class MyModelCreateAnswersRequest(BaseModel):
@@ -198,7 +203,7 @@ async def _fetch_answers(*, user_id: str, question_ids: Optional[Set[int]] = Non
         return {}
 
     params: Dict[str, str] = {
-        "select": "question_id,answer_text,updated_at",
+        "select": "question_id,answer_text,updated_at,is_secret",
         "user_id": f"eq.{uid}",
     }
     # If filtering by question_ids, use `in.(...)`
@@ -276,6 +281,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             qtext = str(q.get("question_text") or "").strip()
             ans = answers.get(qid)
             ans_text = (str(ans.get("answer_text") or "").strip() if isinstance(ans, dict) else "")
+            ans_secret = (bool(ans.get("is_secret")) if isinstance(ans, dict) else False)
             is_answered = bool(ans_text)
             if is_answered:
                 answered_count += 1
@@ -294,6 +300,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                     answer_text=(ans_text if is_answered else None),
                     answered=is_answered,
                     updated_at=updated_at,
+                    is_secret=bool(ans_secret),
                     editable=bool(editable),
                     can_edit=bool(editable),
                     edit_block_reason=edit_block_reason,
@@ -398,7 +405,18 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
 
             prev = existing.get(qid)
             prev_text = (str(prev.get("answer_text") or "").strip() if isinstance(prev, dict) else "")
+            prev_secret = (bool(prev.get("is_secret")) if isinstance(prev, dict) else False)
             has_prev = bool(prev_text)
+
+            # is_secret is optional for backward compatibility.
+            # - If omitted on existing answers, keep current secret flag.
+            # - If omitted on new answers, default to False.
+            new_secret_opt = getattr(a, "is_secret", None)
+            desired_secret = (
+                prev_secret
+                if (new_secret_opt is None and has_prev)
+                else (bool(new_secret_opt) if new_secret_opt is not None else False)
+            )
 
             # Empty/blank => clear
             if not new_text_stripped:
@@ -411,23 +429,38 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 delete_ids.add(qid)
                 continue
 
-            # If already answered, editing is subscription-only.
+            # If already answered, editing text is subscription-only.
             if has_prev and not paid:
-                # Allow no-op if the text is unchanged.
+                # Allow secret-only updates when text is unchanged.
                 if new_text_stripped == prev_text:
+                    if (new_secret_opt is not None) and (desired_secret != prev_secret):
+                        saved_payload.append(
+                            {
+                                "user_id": user_id,
+                                "question_id": qid,
+                                "is_secret": bool(desired_secret),
+                            }
+                        )
                     continue
+                # Allow no-op if the text is unchanged.
                 skipped_locked_ids.add(qid)
                 continue
 
             # Upsert row
-            saved_payload.append(
-                {
-                    "user_id": user_id,
-                    "question_id": qid,
-                    "answer_text": new_text_stripped,
-                    "updated_at": now_iso,
-                }
-            )
+            row: Dict[str, Any] = {
+                "user_id": user_id,
+                "question_id": qid,
+                "answer_text": new_text_stripped,
+                "is_secret": bool(desired_secret),
+                "updated_at": now_iso,
+            }
+
+            # If only secret changed (text unchanged), do not bump updated_at.
+            if has_prev and new_text_stripped == prev_text and desired_secret != prev_secret:
+                row.pop("updated_at", None)
+                row.pop("answer_text", None)
+
+            saved_payload.append(row)
 
         # Apply deletes first (so clearing + re-saving in same batch behaves deterministically).
         deleted = 0
