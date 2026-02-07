@@ -98,6 +98,32 @@ class MyProfileRequestActionResponse(BaseModel):
     request_id: int
 
 
+class MyProfileLinkBody(BaseModel):
+    """Follow (link) create/delete body.
+
+    - owner_user_id: target user's UUID (preferred)
+    - myprofile_code: target user's short public ID (optional fallback)
+
+    Note: viewer_user_id is always derived from the caller's access token.
+    """
+
+    owner_user_id: Optional[str] = Field(
+        default=None,
+        description="Target user's UUID (profiles.id)",
+    )
+    myprofile_code: Optional[str] = Field(
+        default=None,
+        description="Target user's myprofile_code (MyProfileID)",
+    )
+
+
+class MyProfileLinkActionResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    viewer_user_id: str
+    owner_user_id: str
+    is_following: bool
+
+
 
 
 # ----------------------------
@@ -225,6 +251,13 @@ async def _sb_patch(path: str, *, params: Dict[str, str], json: Any, prefer: Opt
         return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
 
 
+async def _sb_delete(path: str, *, params: Dict[str, str]) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.delete(url, headers=_sb_headers_json(), params=params)
+
+
 async def _lookup_profile_by_myprofile_code(myprofile_code: str) -> Optional[Dict[str, Any]]:
     """Return {id, display_name, myprofile_code} or None"""
     resp = await _sb_get(
@@ -315,6 +348,21 @@ async def _insert_myprofile_link(viewer_user_id: str, owner_user_id: str) -> Non
         return
     logger.error("Supabase insert myprofile_links failed: %s %s", resp.status_code, resp.text[:1500])
     raise HTTPException(status_code=502, detail="Failed to create myprofile link")
+
+
+async def _delete_myprofile_link(viewer_user_id: str, owner_user_id: str) -> None:
+    params = {
+        "viewer_user_id": f"eq.{viewer_user_id}",
+        "owner_user_id": f"eq.{owner_user_id}",
+    }
+    resp = await _sb_delete("/rest/v1/myprofile_links", params=params)
+
+    # 200/204 ok (even if 0 rows).
+    if resp.status_code in (200, 204):
+        return
+
+    logger.error("Supabase delete myprofile_links failed: %s %s", resp.status_code, resp.text[:1500])
+    raise HTTPException(status_code=502, detail="Failed to delete myprofile link")
 
 
 # ----------------------------
@@ -507,6 +555,81 @@ def register_myprofile_routes(app: FastAPI) -> None:
         return MyProfileRequestActionResponse(status="ok", request_id=request_id)
 
 
+
+
+    # ------------------------------
+    # Follow / Unfollow (direct link)
+    # - DB: myprofile_links (viewer_user_id -> owner_user_id)
+    # - Writes are performed via service_role to avoid RLS issues on the client.
+    # ------------------------------
+
+    @app.post("/myprofile/follow", response_model=MyProfileLinkActionResponse)
+    async def follow_myprofile(
+        body: MyProfileLinkBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileLinkActionResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(access_token)
+
+        owner_user_id = str(body.owner_user_id or "").strip()
+        if not owner_user_id:
+            code = str(body.myprofile_code or "").strip()
+            if not code:
+                raise HTTPException(status_code=400, detail="owner_user_id or myprofile_code is required")
+            target_profile = await _lookup_profile_by_myprofile_code(code)
+            if not target_profile:
+                raise HTTPException(status_code=404, detail="User not found for the given myprofile_code")
+            owner_user_id = str(target_profile.get("id") or "").strip()
+
+        if not owner_user_id:
+            raise HTTPException(status_code=404, detail="Owner user not found")
+
+        if owner_user_id == viewer_user_id:
+            raise HTTPException(status_code=400, detail="You cannot follow yourself")
+
+        await _insert_myprofile_link(viewer_user_id, owner_user_id)
+        return MyProfileLinkActionResponse(
+            status="ok",
+            viewer_user_id=viewer_user_id,
+            owner_user_id=owner_user_id,
+            is_following=True,
+        )
+
+    @app.post("/myprofile/unfollow", response_model=MyProfileLinkActionResponse)
+    async def unfollow_myprofile(
+        body: MyProfileLinkBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileLinkActionResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(access_token)
+
+        owner_user_id = str(body.owner_user_id or "").strip()
+        if not owner_user_id:
+            code = str(body.myprofile_code or "").strip()
+            if not code:
+                raise HTTPException(status_code=400, detail="owner_user_id or myprofile_code is required")
+            target_profile = await _lookup_profile_by_myprofile_code(code)
+            if not target_profile:
+                raise HTTPException(status_code=404, detail="User not found for the given myprofile_code")
+            owner_user_id = str(target_profile.get("id") or "").strip()
+
+        if not owner_user_id:
+            raise HTTPException(status_code=404, detail="Owner user not found")
+
+        # Deleting a non-existing link is treated as ok (idempotent)
+        await _delete_myprofile_link(viewer_user_id, owner_user_id)
+        return MyProfileLinkActionResponse(
+            status="ok",
+            viewer_user_id=viewer_user_id,
+            owner_user_id=owner_user_id,
+            is_following=False,
+        )
     @app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
     async def get_or_refresh_myprofile_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
