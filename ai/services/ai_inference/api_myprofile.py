@@ -117,6 +117,13 @@ class MyProfileLinkBody(BaseModel):
     )
 
 
+class MyProfileRemoveFollowerBody(BaseModel):
+    viewer_user_id: str = Field(
+        ...,
+        description="Follower user's UUID (profiles.id)",
+    )
+
+
 class MyProfileLinkActionResponse(BaseModel):
     status: str = Field(..., description="ok")
     viewer_user_id: str
@@ -684,6 +691,34 @@ def register_myprofile_routes(app: FastAPI) -> None:
             is_following=False,
         )
     
+
+    @app.post("/myprofile/remove-follower", response_model=MyProfileLinkActionResponse)
+    async def remove_myprofile_follower(
+        body: MyProfileRemoveFollowerBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileLinkActionResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        owner_user_id = await _resolve_user_id_from_token(access_token)
+
+        viewer_user_id = str(body.viewer_user_id or "").strip()
+        if not viewer_user_id:
+            raise HTTPException(status_code=400, detail="viewer_user_id is required")
+
+        if viewer_user_id == owner_user_id:
+            raise HTTPException(status_code=400, detail="You cannot remove yourself")
+
+        # Delete follower link: viewer -> owner(me)
+        await _delete_myprofile_link(viewer_user_id, owner_user_id)
+        return MyProfileLinkActionResponse(
+            status="ok",
+            viewer_user_id=viewer_user_id,
+            owner_user_id=owner_user_id,
+            is_following=False,
+        )
+
 
     @app.get("/myprofile/follow-stats", response_model=MyProfileFollowStatsResponse)
     async def get_myprofile_follow_stats(
