@@ -60,6 +60,12 @@ RESONANCES_TABLE = os.getenv(
     "COCOLON_MYMODEL_QNA_RESONANCES_TABLE", "mymodel_qna_resonances"
 )
 
+# Ranking logs tables (overrideable)
+VIEW_LOGS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_VIEW_LOGS_TABLE", "mymodel_qna_view_logs")
+RESONANCE_LOGS_TABLE = os.getenv(
+    "COCOLON_MYMODEL_QNA_RESONANCE_LOGS_TABLE", "mymodel_qna_resonance_logs"
+)
+
 
 # ----------------------------
 # Models
@@ -587,6 +593,88 @@ async def _upsert_read(viewer_user_id: str, q_instance_id: str) -> None:
     if resp.status_code >= 300:
         # Fail-soft
         logger.warning("Supabase %s upsert failed: %s %s", READS_TABLE, resp.status_code, resp.text[:800])
+
+
+async def _insert_view_log(
+    *, target_user_id: str, viewer_user_id: str, question_id: int, q_key: str, q_instance_id: str
+) -> None:
+    """Insert ranking view log (best-effort).
+
+    Notes:
+    - This is for *user rankings* (views = other people opened the Q&A).
+    - Duplicates are allowed (every open is counted).
+    - Self-view is ignored.
+    """
+    if not target_user_id or not viewer_user_id or not q_instance_id:
+        return
+    if str(target_user_id) == str(viewer_user_id):
+        return
+
+    payload = {
+        "target_user_id": str(target_user_id),
+        "viewer_user_id": str(viewer_user_id),
+        "question_id": int(question_id),
+        "q_key": str(q_key or "").strip(),
+        "q_instance_id": str(q_instance_id),
+        "created_at": _now_iso(),
+    }
+
+    try:
+        resp = await _sb_post(
+            f"/rest/v1/{VIEW_LOGS_TABLE}",
+            json=payload,
+            prefer="return=minimal",
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s insert failed: %s %s",
+                VIEW_LOGS_TABLE,
+                resp.status_code,
+                resp.text[:800],
+            )
+    except Exception as exc:
+        logger.warning("Supabase %s insert failed: %s", VIEW_LOGS_TABLE, exc)
+
+
+async def _insert_resonance_log(
+    *, target_user_id: str, viewer_user_id: str, question_id: int, q_key: str, q_instance_id: str
+) -> None:
+    """Insert ranking resonance log (best-effort).
+
+    Notes:
+    - This is for *user rankings* (resonances = other people resonated).
+    - Self-resonance is ignored.
+    - Duplicates are ignored (viewer x q_instance_id is unique).
+    """
+    if not target_user_id or not viewer_user_id or not q_instance_id:
+        return
+    if str(target_user_id) == str(viewer_user_id):
+        return
+
+    payload = {
+        "target_user_id": str(target_user_id),
+        "viewer_user_id": str(viewer_user_id),
+        "question_id": int(question_id),
+        "q_key": str(q_key or "").strip(),
+        "q_instance_id": str(q_instance_id),
+        "created_at": _now_iso(),
+    }
+
+    try:
+        resp = await _sb_post(
+            f"/rest/v1/{RESONANCE_LOGS_TABLE}",
+            json=payload,
+            prefer="resolution=ignore-duplicates,return=minimal",
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s insert failed: %s %s",
+                RESONANCE_LOGS_TABLE,
+                resp.status_code,
+                resp.text[:800],
+            )
+    except Exception as exc:
+        logger.warning("Supabase %s insert failed: %s", RESONANCE_LOGS_TABLE, exc)
 
 
 async def _inc_metric(
@@ -1306,6 +1394,16 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 is_new=False,
             )
 
+
+        # Ranking view log (best-effort)
+        await _insert_view_log(
+            target_user_id=tgt,
+            viewer_user_id=viewer_user_id,
+            question_id=int(qid),
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+        )
+
         # Increment views (count every display)
         counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="views", delta=1)
         return QnaViewResponse(
@@ -1399,6 +1497,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         )
         if resp.status_code >= 300:
             logger.warning("Supabase %s insert failed: %s %s", RESONANCES_TABLE, resp.status_code, resp.text[:800])
+
+        # Ranking resonance log (best-effort)
+        await _insert_resonance_log(
+            target_user_id=tgt,
+            viewer_user_id=viewer_user_id,
+            question_id=int(qid),
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+        )
 
         counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1)
         return QnaResonanceResponse(

@@ -40,6 +40,8 @@ from api_subscription import register_subscription_routes
 from api_myweb_reports import register_myweb_report_routes
 from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
+from api_activity_login import register_activity_login_routes
+from api_account_status import register_account_status_routes
 from api_mymodel_create import register_mymodel_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
@@ -86,6 +88,8 @@ register_subscription_routes(app)
 register_myweb_report_routes(app)
 register_cron_distribution_routes(app)
 register_ranking_routes(app)
+register_activity_login_routes(app)
+register_account_status_routes(app)
 register_mymodel_create_routes(app)
 register_mymodel_qna_routes(app)
 
