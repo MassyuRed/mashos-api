@@ -40,6 +40,19 @@ from api_subscription import register_subscription_routes
 from api_myweb_reports import register_myweb_report_routes
 from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
+from api_ranking_mymodel_views import register_ranking_mymodel_views_routes
+from api_ranking_mymodel_resonances import register_ranking_mymodel_resonances_routes
+
+# Optional: login streak routes may live in a dedicated module in some deployments.
+try:
+    from api_ranking_login_streak import register_ranking_login_streak_routes  # type: ignore
+except Exception:
+    register_ranking_login_streak_routes = None  # type: ignore
+
+try:
+    from api_ranking_login_streak import register_ranking_routes as register_ranking_routes_login_streak  # type: ignore
+except Exception:
+    register_ranking_routes_login_streak = None  # type: ignore
 from api_activity_login import register_activity_login_routes
 from api_account_status import register_account_status_routes
 from api_mymodel_create import register_mymodel_create_routes
@@ -92,6 +105,29 @@ register_activity_login_routes(app)
 register_account_status_routes(app)
 register_mymodel_create_routes(app)
 register_mymodel_qna_routes(app)
+
+# Extra ranking routes (Phase: MyModel views/resonances + login streak)
+# NOTE: Some ranking endpoints live in separate modules; ensure they are registered.
+def _route_exists(_path: str, _method: str) -> bool:
+    for _r in app.router.routes:
+        if getattr(_r, "path", None) == _path and _method in getattr(_r, "methods", set()):
+            return True
+    return False
+
+if not _route_exists("/ranking/mymodel_views", "GET"):
+    register_ranking_mymodel_views_routes(app)
+
+if not _route_exists("/ranking/mymodel_resonances", "GET"):
+    register_ranking_mymodel_resonances_routes(app)
+
+# /ranking/login_streak may already exist in api_ranking.py; register it here only if missing.
+if not _route_exists("/ranking/login_streak", "GET"):
+    if callable(register_ranking_login_streak_routes):
+        register_ranking_login_streak_routes(app)  # type: ignore
+    elif callable(register_ranking_routes_login_streak):
+        # Fallback: module may expose register_ranking_routes (includes login_streak).
+        register_ranking_routes_login_streak(app)  # type: ignore
+
 
 # ASTOR engine for MyWeb insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
