@@ -67,6 +67,9 @@ RESONANCE_LOGS_TABLE = os.getenv(
 )
 
 
+VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
+
+
 # ----------------------------
 # Models
 # ----------------------------
@@ -219,6 +222,54 @@ async def _sb_patch(
 # ----------------------------
 # Internal helpers
 # ----------------------------
+
+
+async def _filter_recommendation_enabled(user_ids: List[str]) -> List[str]:
+    """Filter out users who have is_recommendation_enabled = false.
+
+    Missing settings rows are treated as enabled (public default).
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return []
+
+    # Default: enabled unless explicitly disabled.
+    enabled_set = set(ids)
+
+    # Chunk to avoid huge query strings.
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_recommendation_enabled",
+                "user_id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase visibility settings fetch failed (recommendation filter): %s %s",
+                resp.status_code,
+                (resp.text or "")[:500],
+            )
+            continue
+        rows = resp.json()
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+            flag = r.get("is_recommendation_enabled")
+            if flag is False:
+                enabled_set.discard(uid)
+
+    # Preserve original order.
+    return [uid for uid in ids if uid in enabled_set]
 
 
 def _now_iso() -> str:
@@ -1253,6 +1304,9 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
 
         pool = [uid for uid in candidate_ids if uid and (uid not in followed_set)]
+
+        # Exclude users who disabled recommendations
+        pool = await _filter_recommendation_enabled(pool)
         if not pool:
             return QnaRecommendUsersResponse(status="ok", days=window_days, total_items=0, users=[])
 

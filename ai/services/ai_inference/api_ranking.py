@@ -43,6 +43,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
+VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
+
+
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
     _ensure_supabase_config()
     h = {
@@ -143,6 +146,86 @@ async def _fetch_profiles_map(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+async def _fetch_ranking_visibility_map(user_ids: List[str]) -> Dict[str, bool]:
+    """Return map user_id -> is_ranking_visible.
+
+    Missing settings rows are treated as visible (True).
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    # Default visible unless explicitly disabled.
+    out: Dict[str, bool] = {uid: True for uid in ids}
+
+    # Chunk to avoid huge query strings.
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_ranking_visible",
+                "user_id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase visibility settings fetch failed (ranking filter): %s %s",
+                resp.status_code,
+                (resp.text or "")[:500],
+            )
+            continue
+        rows = resp.json()
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+            flag = r.get("is_ranking_visible")
+            if flag is False:
+                out[uid] = False
+            elif flag is True:
+                out[uid] = True
+
+    return out
+
+
+async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter ranking rows by is_ranking_visible and re-number ranks.
+
+    This keeps server-side aggregation intact but hides users who opted out.
+    """
+    raw_rows = [r for r in (rows or []) if isinstance(r, dict)]
+    user_ids = [str(r.get("user_id") or "").strip() for r in raw_rows]
+    user_ids = [uid for uid in user_ids if uid]
+    if not user_ids:
+        return raw_rows
+
+    vis = await _fetch_ranking_visibility_map(user_ids)
+    filtered = [
+        r for r in raw_rows
+        if vis.get(str(r.get("user_id") or "").strip(), True)
+    ]
+
+    # Stable ordering by original rank, then re-assign sequential ranks.
+    def _rk(v: Dict[str, Any]) -> int:
+        try:
+            return int(v.get("rank") or 0)
+        except Exception:
+            return 0
+
+    filtered.sort(key=_rk)
+    for i, r in enumerate(filtered, 1):
+        r["rank"] = i
+
+    return filtered
+
+
 def register_ranking_routes(app: FastAPI) -> None:
     """Register ranking endpoints on the given FastAPI app."""
 
@@ -189,6 +272,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
         rows = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": p_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
         user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
         items: List[Dict[str, Any]] = []
@@ -218,6 +302,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
         rows = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": p_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
         user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
         items: List[Dict[str, Any]] = []
@@ -247,6 +332,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
         rows = await _rpc("rank_mymodel_used", {"p_range": p_range, "p_limit": p_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
         user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
         items: List[Dict[str, Any]] = []

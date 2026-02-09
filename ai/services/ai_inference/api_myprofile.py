@@ -35,6 +35,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Path, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 # Reuse auth helpers & config checks from emotion submit module
@@ -129,6 +130,8 @@ class MyProfileLinkActionResponse(BaseModel):
     viewer_user_id: str
     owner_user_id: str
     is_following: bool
+    is_follow_requested: bool = False
+    result: Optional[str] = None
 
 
 class MyProfileFollowStatsResponse(BaseModel):
@@ -137,6 +140,7 @@ class MyProfileFollowStatsResponse(BaseModel):
     following_count: int
     follower_count: int
     is_following: bool
+    is_follow_requested: bool = False
 
 class MyProfileFollowListItem(BaseModel):
     id: str
@@ -152,6 +156,30 @@ class MyProfileFollowListResponse(BaseModel):
     rows: list[MyProfileFollowListItem]
 
 
+
+
+
+
+class MyProfileFollowRequestCancelBody(BaseModel):
+    target_user_id: str = Field(..., description="Target user's UUID (profiles.id)")
+
+
+class MyProfileFollowRequestIdBody(BaseModel):
+    request_id: str = Field(..., description="Follow request UUID")
+
+
+class MyProfileIncomingFollowRequestItem(BaseModel):
+    request_id: str
+    requester_user_id: str
+    requester_display_name: Optional[str] = None
+    requester_myprofile_code: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class MyProfileIncomingFollowRequestsResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    total_items: int
+    requests: list[MyProfileIncomingFollowRequestItem]
 
 
 # ----------------------------
@@ -426,6 +454,175 @@ async def _delete_myprofile_link(viewer_user_id: str, owner_user_id: str) -> Non
 
 
 # ----------------------------
+# Follow approval (private account) helpers
+# ----------------------------
+
+VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
+FOLLOW_REQUESTS_TABLE = (os.getenv("COCOLON_FOLLOW_REQUESTS_TABLE", "follow_requests") or "follow_requests").strip()
+
+
+async def _is_private_account(user_id: str) -> bool:
+    """Return True if the user has is_private_account enabled.
+
+    Missing row => treated as public (False).
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+
+    resp = await _sb_get(
+        f"/rest/v1/{VISIBILITY_TABLE}",
+        params={
+            "select": "user_id,is_private_account",
+            "user_id": f"eq.{uid}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase visibility select failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query visibility settings")
+
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return bool(rows[0].get("is_private_account") or False)
+
+    return False
+
+
+async def _find_existing_follow_request_id(requester_user_id: str, target_user_id: str) -> Optional[str]:
+    resp = await _sb_get(
+        f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+        params={
+            "select": "id",
+            "requester_user_id": f"eq.{requester_user_id}",
+            "target_user_id": f"eq.{target_user_id}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase follow_requests select failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query follow requests")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        rid = str((rows[0] or {}).get("id") or "").strip()
+        return rid or None
+    return None
+
+
+async def _has_follow_request(requester_user_id: str, target_user_id: str) -> bool:
+    rid = await _find_existing_follow_request_id(requester_user_id, target_user_id)
+    return bool(rid)
+
+
+async def _insert_follow_request(requester_user_id: str, target_user_id: str) -> bool:
+    payload = {
+        "requester_user_id": requester_user_id,
+        "target_user_id": target_user_id,
+    }
+    resp = await _sb_post(
+        f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+        json=payload,
+        prefer="return=minimal",
+    )
+
+    # 201/204 ok. 409 means already exists.
+    if resp.status_code in (200, 201, 204):
+        return True
+    if resp.status_code == 409:
+        return False
+
+    logger.error("Supabase insert follow_requests failed: %s %s", resp.status_code, resp.text[:1500])
+    raise HTTPException(status_code=502, detail="Failed to create follow request")
+
+
+async def _delete_follow_request_pair(requester_user_id: str, target_user_id: str) -> None:
+    resp = await _sb_delete(
+        f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+        params={
+            "requester_user_id": f"eq.{requester_user_id}",
+            "target_user_id": f"eq.{target_user_id}",
+        },
+    )
+
+    if resp.status_code in (200, 204):
+        return
+
+    logger.error("Supabase delete follow_requests failed: %s %s", resp.status_code, resp.text[:1500])
+    raise HTTPException(status_code=502, detail="Failed to delete follow request")
+
+
+async def _delete_follow_request_by_id(request_id: str) -> None:
+    rid = str(request_id or "").strip()
+    if not rid:
+        return
+    resp = await _sb_delete(
+        f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+        params={
+            "id": f"eq.{rid}",
+        },
+    )
+
+    if resp.status_code in (200, 204):
+        return
+
+    logger.error("Supabase delete follow_requests by id failed: %s %s", resp.status_code, resp.text[:1500])
+    raise HTTPException(status_code=502, detail="Failed to delete follow request")
+
+
+async def _get_follow_request_by_id(request_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(request_id or "").strip()
+    if not rid:
+        return None
+
+    resp = await _sb_get(
+        f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+        params={
+            "select": "id,requester_user_id,target_user_id,created_at",
+            "id": f"eq.{rid}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase follow_requests get failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query follow request")
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+async def _fetch_profiles_basic_map(user_ids: list[str]) -> Dict[str, Dict[str, Any]]:
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    # PostgREST in.(...) expects comma separated values.
+    in_list = ",".join(ids)
+    resp = await _sb_get(
+        "/rest/v1/profiles",
+        params={
+            "select": "id,display_name,myprofile_code",
+            "id": f"in.({in_list})",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning("Supabase profiles fetch failed: %s %s", resp.status_code, resp.text[:800])
+        return {}
+
+    rows = resp.json()
+    out: Dict[str, Dict[str, Any]] = {}
+    if isinstance(rows, list):
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            rid2 = str(r.get("id") or "").strip()
+            if not rid2:
+                continue
+            out[rid2] = r
+    return out
+
+
+# ----------------------------
 # Route registration
 # ----------------------------
 
@@ -650,12 +847,77 @@ def register_myprofile_routes(app: FastAPI) -> None:
         if owner_user_id == viewer_user_id:
             raise HTTPException(status_code=400, detail="You cannot follow yourself")
 
+        # If already following, treat as ok (idempotent).
+        try:
+            if await _is_already_registered(viewer_user_id, owner_user_id):
+                return MyProfileLinkActionResponse(
+                    status="ok",
+                    viewer_user_id=viewer_user_id,
+                    owner_user_id=owner_user_id,
+                    is_following=True,
+                    is_follow_requested=False,
+                    result="followed",
+                )
+        except Exception:
+            # Best-effort; fall through.
+            pass
+
+        # Private account => create a follow request (approval required)
+        is_private = False
+        try:
+            is_private = await _is_private_account(owner_user_id)
+        except Exception:
+            is_private = False
+
+        if is_private:
+            existing_id = await _find_existing_follow_request_id(viewer_user_id, owner_user_id)
+            if existing_id:
+                return MyProfileLinkActionResponse(
+                    status="ok",
+                    viewer_user_id=viewer_user_id,
+                    owner_user_id=owner_user_id,
+                    is_following=False,
+                    is_follow_requested=True,
+                    result="requested",
+                )
+
+            created = await _insert_follow_request(viewer_user_id, owner_user_id)
+            if not created:
+                # Likely already requested (race). Treat as requested.
+                return MyProfileLinkActionResponse(
+                    status="ok",
+                    viewer_user_id=viewer_user_id,
+                    owner_user_id=owner_user_id,
+                    is_following=False,
+                    is_follow_requested=True,
+                    result="requested",
+                )
+
+            return MyProfileLinkActionResponse(
+                status="ok",
+                viewer_user_id=viewer_user_id,
+                owner_user_id=owner_user_id,
+                is_following=False,
+                is_follow_requested=True,
+                result="requested",
+            )
+
+        # Public account => create link immediately
         await _insert_myprofile_link(viewer_user_id, owner_user_id)
+
+        # If there was a pending request from the same viewer->owner, clean it up (best-effort).
+        try:
+            await _delete_follow_request_pair(viewer_user_id, owner_user_id)
+        except Exception:
+            pass
+
         return MyProfileLinkActionResponse(
             status="ok",
             viewer_user_id=viewer_user_id,
             owner_user_id=owner_user_id,
             is_following=True,
+            is_follow_requested=False,
+            result="followed",
         )
 
     @app.post("/myprofile/unfollow", response_model=MyProfileLinkActionResponse)
@@ -770,13 +1032,175 @@ def register_myprofile_routes(app: FastAPI) -> None:
             except Exception:
                 is_following = False
 
+        is_follow_requested = False
+        if viewer_user_id and str(viewer_user_id) != uid and (not is_following):
+            try:
+                is_follow_requested = bool(await _has_follow_request(str(viewer_user_id), uid))
+            except Exception:
+                is_follow_requested = False
+
         return MyProfileFollowStatsResponse(
             status="ok",
             target_user_id=uid,
             following_count=int(following_count or 0),
             follower_count=int(follower_count or 0),
             is_following=bool(is_following),
+            is_follow_requested=bool(is_follow_requested),
         )
+
+
+
+    @app.post("/myprofile/follow-request/cancel")
+    async def cancel_follow_request(
+        body: MyProfileFollowRequestCancelBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Dict[str, Any]:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        requester_user_id = await _resolve_user_id_from_token(access_token)
+        tgt = str(body.target_user_id or "").strip()
+        if not tgt:
+            return JSONResponse(status_code=400, content={"detail": "target_user_id is required", "code": "invalid_target_user_id"})
+        if tgt == str(requester_user_id):
+            return JSONResponse(status_code=400, content={"detail": "You cannot cancel for yourself", "code": "invalid_target_user_id"})
+
+        existing_id = await _find_existing_follow_request_id(str(requester_user_id), tgt)
+        if not existing_id:
+            return JSONResponse(status_code=404, content={"detail": "申請が見つかりません", "code": "request_not_found"})
+
+        await _delete_follow_request_pair(str(requester_user_id), tgt)
+        return {"status": "ok", "result": "canceled", "target_user_id": tgt}
+
+
+    @app.get("/myprofile/follow-requests/incoming", response_model=MyProfileIncomingFollowRequestsResponse)
+    async def incoming_follow_requests(
+        limit: int = Query(default=100, ge=1, le=300, description="Max number of requests"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileIncomingFollowRequestsResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+
+        resp = await _sb_get(
+            f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+            params={
+                "select": "id,requester_user_id,created_at",
+                "target_user_id": f"eq.{me}",
+                "order": "created_at.desc",
+                "limit": str(int(limit)),
+            },
+        )
+        if resp.status_code >= 300:
+            logger.error("Supabase follow_requests incoming failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to load follow requests")
+
+        rows = resp.json()
+        if not isinstance(rows, list):
+            rows = []
+
+        requester_ids = [str((r or {}).get("requester_user_id") or "").strip() for r in rows if isinstance(r, dict)]
+        profiles_map = await _fetch_profiles_basic_map(requester_ids)
+
+        items: list[MyProfileIncomingFollowRequestItem] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            req_id = str(r.get("id") or "").strip()
+            requester_id = str(r.get("requester_user_id") or "").strip()
+            if not req_id or not requester_id:
+                continue
+            p = profiles_map.get(requester_id) or {}
+            items.append(
+                MyProfileIncomingFollowRequestItem(
+                    request_id=req_id,
+                    requester_user_id=requester_id,
+                    requester_display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
+                    requester_myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
+                    created_at=(str(r.get("created_at")) if r.get("created_at") is not None else None),
+                )
+            )
+
+        return MyProfileIncomingFollowRequestsResponse(status="ok", total_items=len(items), requests=items)
+
+
+    @app.post("/myprofile/follow-requests/approve")
+    async def approve_follow_request(
+        body: MyProfileFollowRequestIdBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Dict[str, Any]:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        request_id = str(body.request_id or "").strip()
+        if not request_id:
+            return JSONResponse(status_code=400, content={"detail": "request_id is required", "code": "invalid_request_id"})
+
+        req = await _get_follow_request_by_id(request_id)
+        if not req:
+            return JSONResponse(status_code=404, content={"detail": "申請が見つかりません", "code": "request_not_found"})
+
+        target_user_id = str(req.get("target_user_id") or "").strip()
+        requester_user_id = str(req.get("requester_user_id") or "").strip()
+        if not target_user_id or not requester_user_id:
+            return JSONResponse(status_code=404, content={"detail": "申請が見つかりません", "code": "request_not_found"})
+
+        if str(target_user_id) != str(me):
+            raise HTTPException(status_code=403, detail="You are not allowed to approve this request")
+
+        # Create link (requester follows me)
+        await _insert_myprofile_link(requester_user_id, str(me))
+
+        # Remove request (best-effort)
+        try:
+            await _delete_follow_request_by_id(request_id)
+        except Exception:
+            pass
+
+        return {
+            "status": "ok",
+            "result": "approved",
+            "request_id": request_id,
+            "requester_user_id": requester_user_id,
+            "target_user_id": str(me),
+        }
+
+
+    @app.post("/myprofile/follow-requests/reject")
+    async def reject_follow_request(
+        body: MyProfileFollowRequestIdBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Dict[str, Any]:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        request_id = str(body.request_id or "").strip()
+        if not request_id:
+            return JSONResponse(status_code=400, content={"detail": "request_id is required", "code": "invalid_request_id"})
+
+        req = await _get_follow_request_by_id(request_id)
+        if not req:
+            return JSONResponse(status_code=404, content={"detail": "申請が見つかりません", "code": "request_not_found"})
+
+        target_user_id = str(req.get("target_user_id") or "").strip()
+        if str(target_user_id) != str(me):
+            raise HTTPException(status_code=403, detail="You are not allowed to reject this request")
+
+        await _delete_follow_request_by_id(request_id)
+
+        return {
+            "status": "ok",
+            "result": "rejected",
+            "request_id": request_id,
+        }
+
 
     @app.get("/myprofile/follow-list", response_model=MyProfileFollowListResponse)
     async def get_myprofile_follow_list(

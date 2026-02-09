@@ -34,6 +34,7 @@ from api_ranking import (  # noqa: F401
     _normalize_range,
     _require_user_id,
     _rpc,
+    _filter_rows_by_ranking_visibility,
 )
 
 
@@ -56,6 +57,7 @@ def register_ranking_mymodel_views_routes(app: FastAPI) -> None:
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
         rows = await _rpc("rank_mymodel_views", {"p_range": p_range, "p_limit": p_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
 
         user_ids = [
             str((r or {}).get("user_id") or "").strip()

@@ -39,6 +39,9 @@ from api_emotion_submit import (
 )
 
 
+from api_ranking import _filter_rows_by_ranking_visibility
+
+
 logger = logging.getLogger("ranking_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -317,3 +320,81 @@ def register_ranking_routes(app: FastAPI) -> None:
                 }
             )
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+
+
+
+def register_ranking_login_streak_routes(app: FastAPI) -> None:
+    """Register only /ranking/login_streak endpoint.
+
+    This avoids duplicating other /ranking/* routes when app.py conditionally
+    adds login_streak.
+    """
+
+    @app.get("/ranking/login_streak")
+    async def ranking_login_streak(
+        range: str = Query(default="week"),
+        limit: Optional[int] = Query(default=30),
+        authorization: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        await _require_user_id(authorization)
+        p_range = _normalize_range(range)
+        p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+        rows = await _rpc("rank_login_streak", {"p_range": p_range, "p_limit": p_limit})
+
+        # Hide users who opted out of ranking display
+        rows = await _filter_rows_by_ranking_visibility(rows)
+
+        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
+        profiles = await _fetch_profiles_map(user_ids)
+
+        items: List[Dict[str, Any]] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+
+            try:
+                rank = int(r.get("rank") or 0)
+            except Exception:
+                rank = 0
+
+            raw_streak = r.get("streak_days")
+            if raw_streak is None:
+                raw_streak = r.get("streak")
+            if raw_streak is None:
+                raw_streak = r.get("days")
+            try:
+                streak_days = int(raw_streak or 0)
+            except Exception:
+                streak_days = 0
+
+            last_login_date = r.get("last_login_date")
+            if last_login_date is None:
+                last_login_date = r.get("last_date")
+            last_login_date = str(last_login_date or "")
+
+            prof = profiles.get(uid) or {}
+            items.append(
+                {
+                    "rank": rank,
+                    "user_id": uid,
+                    "display_name": prof.get("display_name"),
+                    "streak_days": streak_days,
+                    "last_login_date": last_login_date or None,
+                    "value": streak_days,
+                }
+            )
+
+        # Stable ordering
+        items.sort(key=lambda x: int(x.get("rank") or 0))
+
+        return {
+            "status": "ok",
+            "range": p_range,
+            "timezone": "Asia/Tokyo",
+            "limit": p_limit,
+            "items": items,
+        }
