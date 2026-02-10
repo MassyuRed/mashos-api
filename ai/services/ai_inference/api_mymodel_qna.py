@@ -108,6 +108,7 @@ class QnaDetailResponse(BaseModel):
     views: int = 0
     resonances: int = 0
     is_new: bool = False
+    is_resonated: bool = False
 
 
 class QnaViewRequest(BaseModel):
@@ -217,6 +218,15 @@ async def _sb_patch(
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+
+
+async def _sb_delete(
+    path: str, *, params: Dict[str, str], prefer: Optional[str] = None
+) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.delete(url, headers=_sb_headers_json(prefer=prefer), params=params)
 
 
 # ----------------------------
@@ -791,6 +801,12 @@ async def _inc_metric(
         else:
             cur_res += int(delta)
 
+        # Clamp (allow decrement for toggle; never go below 0)
+        if cur_views < 0:
+            cur_views = 0
+        if cur_res < 0:
+            cur_res = 0
+
         # 3) Upsert
         params_patch = {"q_key": f"eq.{kk}"}
         if iid_filter is None:
@@ -1088,7 +1104,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             params={
                 "select": "q_key,views,resonances",
                 "q_instance_id": "is.null",
-                "order": "views.desc,resonances.desc",
+                "order": "resonances.desc,views.desc",
                 "limit": str(scan_limit),
             },
         )
@@ -1200,7 +1216,72 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         # Scan a bit more than limit to allow filtering
         scan_limit = int(max(50, min(2000, int(limit) * 25)))
 
-        holder_ids = await _fetch_holder_user_ids_for_question(question_id=int(question_id), scan_limit=scan_limit)
+        # Candidates:
+        # - Primary: order by per-answer resonances for this question (metrics)
+        # - Fallback: recent answer holders (updated_at desc)
+        metric_ordered_ids: List[str] = []
+        try:
+            resp_m = await _sb_get(
+                f"/rest/v1/{METRICS_TABLE}",
+                params={
+                    "select": "q_instance_id,resonances",
+                    "q_key": f"eq.{qk}",
+                    "q_instance_id": "not.is.null",
+                    "order": "resonances.desc",
+                    "limit": str(int(scan_limit)),
+                },
+            )
+            if resp_m.status_code < 300:
+                rows_m = resp_m.json()
+                if isinstance(rows_m, list):
+                    for r in rows_m:
+                        iid = str((r or {}).get("q_instance_id") or "").strip()
+                        if not iid:
+                            continue
+                        try:
+                            uid, qid2 = _parse_instance_id(iid)
+                        except Exception:
+                            continue
+                        if int(qid2) != int(question_id):
+                            continue
+                        if uid:
+                            metric_ordered_ids.append(uid)
+            else:
+                logger.warning(
+                    "Supabase %s select failed (holders metrics): %s %s",
+                    METRICS_TABLE,
+                    resp_m.status_code,
+                    (resp_m.text or "")[:800],
+                )
+        except Exception as exc:
+            logger.warning("holders metrics fetch failed: %s", exc)
+
+        recent_holder_ids = await _fetch_holder_user_ids_for_question(
+            question_id=int(question_id), scan_limit=scan_limit
+        )
+
+        # Merge (unique) with size cap = scan_limit (avoid huge IN filters downstream)
+        holder_ids: List[str] = []
+        seen_ids: Set[str] = set()
+
+        for uid in metric_ordered_ids:
+            uid2 = str(uid or "").strip()
+            if not uid2 or uid2 in seen_ids:
+                continue
+            seen_ids.add(uid2)
+            holder_ids.append(uid2)
+            if len(holder_ids) >= int(scan_limit):
+                break
+
+        if len(holder_ids) < int(scan_limit):
+            for uid in recent_holder_ids:
+                uid2 = str(uid or "").strip()
+                if not uid2 or uid2 in seen_ids:
+                    continue
+                seen_ids.add(uid2)
+                holder_ids.append(uid2)
+                if len(holder_ids) >= int(scan_limit):
+                    break
 
         # Optional filters
         if exclude_self:
@@ -1388,6 +1469,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         read_set = await _fetch_reads(viewer_user_id, {str(q_instance_id)})
         is_new = str(q_instance_id) not in read_set
+        is_resonated = await _is_resonated(viewer_user_id, str(q_instance_id))
 
         return QnaDetailResponse(
             title=title,
@@ -1397,6 +1479,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             views=views,
             resonances=resonances,
             is_new=is_new,
+            is_resonated=bool(is_resonated),
         )
 
     @app.post("/mymodel/qna/view", response_model=QnaViewResponse)
@@ -1564,6 +1647,157 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1)
         return QnaResonanceResponse(
             status="ok",
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+            resonated=True,
+            views=int(counts.get("views") or 0),
+            resonances=int(counts.get("resonances") or 0),
+        )
+
+
+    @app.post("/mymodel/qna/resonance/toggle", response_model=QnaResonanceResponse)
+    async def qna_resonance_toggle(
+        req: QnaResonanceRequest,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaResonanceResponse:
+        """Toggle resonance for a Q&A.
+
+        - If not resonated yet: create resonance (+1)
+        - If already resonated: cancel resonance (-1)
+
+        Notes:
+        - Self-resonance is not allowed.
+        - This endpoint is introduced for the "共鳴済み ↔ 共鳴" UI toggle.
+        """
+
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(req.q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        # Self resonance is not allowed.
+        if tgt == viewer_user_id:
+            metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
+            m = metrics.get(str(req.q_instance_id)) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                res_cnt = int(m.get("resonances") or 0)
+            except Exception:
+                res_cnt = 0
+            return QnaResonanceResponse(
+                status="self",
+                q_key=qk,
+                q_instance_id=req.q_instance_id,
+                resonated=False,
+                views=views,
+                resonances=res_cnt,
+            )
+
+        already = await _is_resonated(viewer_user_id, req.q_instance_id)
+
+        if already:
+            # Cancel: delete resonance record (strict)
+            params_del = {
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{req.q_instance_id}",
+            }
+
+            resp_del = await _sb_delete(
+                f"/rest/v1/{RESONANCES_TABLE}",
+                params=params_del,
+                prefer="return=minimal",
+            )
+            if resp_del.status_code >= 300:
+                logger.error(
+                    "Supabase %s delete failed: %s %s",
+                    RESONANCES_TABLE,
+                    resp_del.status_code,
+                    (resp_del.text or "")[:800],
+                )
+                raise HTTPException(status_code=502, detail="Failed to cancel resonance")
+
+            # Also delete ranking resonance log (best-effort; enables re-resonance to count again)
+            try:
+                resp_del2 = await _sb_delete(
+                    f"/rest/v1/{RESONANCE_LOGS_TABLE}",
+                    params=params_del,
+                    prefer="return=minimal",
+                )
+                if resp_del2.status_code >= 300:
+                    logger.warning(
+                        "Supabase %s delete failed: %s %s",
+                        RESONANCE_LOGS_TABLE,
+                        resp_del2.status_code,
+                        (resp_del2.text or "")[:800],
+                    )
+            except Exception as exc:
+                logger.warning("Supabase %s delete failed: %s", RESONANCE_LOGS_TABLE, exc)
+
+            counts = await _inc_metric(
+                q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=-1
+            )
+            return QnaResonanceResponse(
+                status="off",
+                q_key=qk,
+                q_instance_id=req.q_instance_id,
+                resonated=False,
+                views=int(counts.get("views") or 0),
+                resonances=int(counts.get("resonances") or 0),
+            )
+
+        # Add resonance (strict: don't increment if record insert fails)
+        payload = {
+            "viewer_user_id": str(viewer_user_id),
+            "q_instance_id": str(req.q_instance_id),
+            "q_key": str(qk),
+            "created_at": _now_iso(),
+        }
+        resp = await _sb_post(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            json=payload,
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase %s insert failed: %s %s",
+                RESONANCES_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to add resonance")
+
+        # Ranking resonance log (best-effort)
+        await _insert_resonance_log(
+            target_user_id=tgt,
+            viewer_user_id=viewer_user_id,
+            question_id=int(qid),
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+        )
+
+        counts = await _inc_metric(
+            q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1
+        )
+        return QnaResonanceResponse(
+            status="on",
             q_key=qk,
             q_instance_id=req.q_instance_id,
             resonated=True,
