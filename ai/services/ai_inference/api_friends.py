@@ -70,6 +70,15 @@ class FriendRequestActionResponse(BaseModel):
     request_id: int
 
 
+class FriendRemoveBody(BaseModel):
+    friend_user_id: str = Field(..., min_length=1, max_length=128, description="Target user's user id")
+
+
+class FriendRemoveResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    friend_user_id: str
+
+
 # ----------------------------
 # Supabase helpers
 # ----------------------------
@@ -106,6 +115,13 @@ async def _sb_patch(path: str, *, params: Dict[str, str], json: Any, prefer: Opt
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+
+async def _sb_delete(path: str, *, params: Dict[str, str], prefer: Optional[str] = None) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.delete(url, headers=_sb_headers_json(prefer=prefer), params=params)
+
 
 
 async def _lookup_profile_by_friend_code(friend_code: str) -> Optional[Dict[str, Any]]:
@@ -206,6 +222,27 @@ async def _insert_friendships_bidirectional(user_a: str, user_b: str) -> None:
         return
     logger.error("Supabase insert friendships failed: %s %s", resp.status_code, resp.text[:1500])
     raise HTTPException(status_code=502, detail="Failed to create friendship")
+
+
+async def _delete_friendships_bidirectional(user_a: str, user_b: str) -> None:
+    """Delete friendships rows in both directions (idempotent)."""
+    for u, f in ((user_a, user_b), (user_b, user_a)):
+        resp = await _sb_delete(
+            "/rest/v1/friendships",
+            params={
+                "user_id": f"eq.{u}",
+                "friend_user_id": f"eq.{f}",
+            },
+            prefer="return=minimal",
+        )
+        # 204 No Content even when nothing deleted; treat as ok
+        if resp.status_code in (200, 204):
+            continue
+        # Some PostgREST setups may return 404; treat as idempotent ok
+        if resp.status_code == 404:
+            continue
+        logger.error("Supabase delete friendships failed: %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to remove friendship")
 
 
 # ----------------------------
@@ -384,3 +421,22 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=502, detail="Failed to reject friend request")
 
         return FriendRequestActionResponse(status="ok", request_id=request_id)
+
+    @app.post("/friends/remove", response_model=FriendRemoveResponse)
+    async def remove_friend(
+        body: FriendRemoveBody,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendRemoveResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        friend_user_id = (body.friend_user_id or "").strip()
+        if not friend_user_id:
+            raise HTTPException(status_code=400, detail="friend_user_id is required")
+        if friend_user_id == me:
+            raise HTTPException(status_code=400, detail="You cannot remove yourself from friends")
+
+        await _delete_friendships_bidirectional(me, friend_user_id)
+        return FriendRemoveResponse(status="ok", friend_user_id=friend_user_id)

@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -44,6 +46,113 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
+
+# MyModel Create (template Q&A) answers table. Used for input_count / input_length aggregation.
+MYMODEL_CREATE_ANSWERS_TABLE = (
+    os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_create_answers") or "mymodel_create_answers"
+).strip() or "mymodel_create_answers"
+
+_JST = ZoneInfo("Asia/Tokyo")
+
+
+def _canonical_range(v: str) -> str:
+    s = str(v or "").strip()
+    if s in ("日",):
+        return "day"
+    if s in ("週",):
+        return "week"
+    if s in ("月",):
+        return "month"
+    if s in ("年",):
+        return "year"
+    return s or "week"
+
+
+def _range_since_iso(*, p_range: str) -> Optional[str]:
+    """Return UTC ISO string (Z) for the start boundary of the given range.
+
+    Boundary is JST 00:00.
+    - day  : today 00:00 JST
+    - week : past 7 days (today + previous 6 days), start at 00:00 JST
+    - month: past 30 days (today + previous 29 days), start at 00:00 JST
+    - year : total (None)
+    """
+    r = _canonical_range(p_range)
+    if r == "year":
+        return None
+    now_jst = datetime.now(_JST)
+    start_jst = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
+    if r == "week":
+        start_jst = start_jst - timedelta(days=6)
+    elif r == "month":
+        start_jst = start_jst - timedelta(days=29)
+    # day: keep today 00:00 JST
+    start_utc = start_jst.astimezone(timezone.utc).replace(microsecond=0)
+    return start_utc.isoformat().replace("+00:00", "Z")
+
+
+async def _fetch_mymodel_create_agg(*, p_range: str) -> Dict[str, Dict[str, int]]:
+    """Aggregate MyModel Create answers for the given range.
+
+    Returns: { user_id: {"count": int, "chars": int} }
+
+    Notes:
+    - For day/week/month: filters by updated_at >= since (JST boundary).
+    - For year(total): no time filter.
+    """
+    since_iso = _range_since_iso(p_range=p_range)
+
+    base_params: Dict[str, str] = {
+        "select": "user_id,answer_text,updated_at",
+        "order": "updated_at.desc",
+    }
+    if since_iso:
+        base_params["updated_at"] = f"gte.{since_iso}"
+
+    out: Dict[str, Dict[str, int]] = {}
+    chunk = 1000
+    offset = 0
+    while True:
+        params = dict(base_params)
+        params["limit"] = str(chunk)
+        params["offset"] = str(offset)
+        resp = await _sb_get(f"/rest/v1/{MYMODEL_CREATE_ANSWERS_TABLE}", params=params)
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s fetch failed (create agg): %s %s",
+                MYMODEL_CREATE_ANSWERS_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            return {}
+
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            break
+
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+            txt = r.get("answer_text")
+            s = "" if txt is None else str(txt)
+            if not s.strip():
+                # Skip empty/blank answers just in case.
+                continue
+            rec = out.get(uid)
+            if rec is None:
+                rec = {"count": 0, "chars": 0}
+                out[uid] = rec
+            rec["count"] += 1
+            rec["chars"] += len(s)
+
+        if len(rows) < chunk:
+            break
+        offset += chunk
+
+    return out
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
@@ -271,25 +380,67 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-        rows = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": p_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
-        items: List[Dict[str, Any]] = []
-        for r in rows:
+
+        # Base ranking (existing SQL RPC) + MyModel Create answers aggregation.
+        # We prefetch more than requested and re-rank after merging so users who only used
+        # MyModel Create can also appear in the final top-N.
+        prefetch_limit = max(int(p_limit), 300)
+        rows_base = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": prefetch_limit})
+
+        base_map: Dict[str, int] = {}
+        for r in rows_base:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
+            if not uid:
+                continue
+            try:
+                base_map[uid] = int(r.get("input_count") or 0)
+            except Exception:
+                base_map[uid] = 0
+
+        create_map: Dict[str, Dict[str, int]] = {}
+        try:
+            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
+        except Exception as exc:
+            logger.warning("Failed to aggregate mymodel_create_answers for ranking: %s", exc)
+            create_map = {}
+
+        all_uids = sorted(set(list(base_map.keys()) + list(create_map.keys())))
+        vis = await _fetch_ranking_visibility_map(all_uids)
+
+        combined: List[Dict[str, Any]] = []
+        for uid in all_uids:
+            if not vis.get(uid, True):
+                continue
+            base_cnt = int(base_map.get(uid, 0) or 0)
+            extra_cnt = int((create_map.get(uid) or {}).get("count", 0) or 0)
+            total = base_cnt + extra_cnt
+            if total <= 0:
+                continue
+            combined.append({"user_id": uid, "input_count": total})
+
+        combined.sort(key=lambda x: (-int(x.get("input_count") or 0), str(x.get("user_id") or "")))
+        combined = combined[: int(p_limit)]
+
+        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        profiles = await _fetch_profiles_map(user_ids)
+
+        items: List[Dict[str, Any]] = []
+        for i, r in enumerate(combined, 1):
+            uid = str(r.get("user_id") or "").strip()
             cnt = int(r.get("input_count") or 0)
             prof = profiles.get(uid) or {}
             items.append(
                 {
-                    "rank": rank,
+                    "rank": i,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
                     "input_count": cnt,
                     "value": cnt,
                 }
             )
+
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
 
     @app.get("/ranking/input_length")
@@ -301,27 +452,130 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-        rows = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": p_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
-        items: List[Dict[str, Any]] = []
-        for r in rows:
+
+        prefetch_limit = max(int(p_limit), 300)
+        rows_base = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": prefetch_limit})
+
+        base_map: Dict[str, int] = {}
+        for r in rows_base:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
+            if not uid:
+                continue
+            try:
+                base_map[uid] = int(r.get("total_chars") or 0)
+            except Exception:
+                base_map[uid] = 0
+
+        create_map: Dict[str, Dict[str, int]] = {}
+        try:
+            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
+        except Exception as exc:
+            logger.warning("Failed to aggregate mymodel_create_answers for ranking: %s", exc)
+            create_map = {}
+
+        all_uids = sorted(set(list(base_map.keys()) + list(create_map.keys())))
+        vis = await _fetch_ranking_visibility_map(all_uids)
+
+        combined: List[Dict[str, Any]] = []
+        for uid in all_uids:
+            if not vis.get(uid, True):
+                continue
+            base_chars = int(base_map.get(uid, 0) or 0)
+            extra_chars = int((create_map.get(uid) or {}).get("chars", 0) or 0)
+            total = base_chars + extra_chars
+            if total <= 0:
+                continue
+            combined.append({"user_id": uid, "total_chars": total})
+
+        combined.sort(key=lambda x: (-int(x.get("total_chars") or 0), str(x.get("user_id") or "")))
+        combined = combined[: int(p_limit)]
+
+        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        profiles = await _fetch_profiles_map(user_ids)
+
+        items: List[Dict[str, Any]] = []
+        for i, r in enumerate(combined, 1):
+            uid = str(r.get("user_id") or "").strip()
             chars = int(r.get("total_chars") or 0)
             prof = profiles.get(uid) or {}
             items.append(
                 {
-                    "rank": rank,
+                    "rank": i,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
                     "total_chars": chars,
                     "value": chars,
                 }
             )
+
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
 
+
+
+    @app.get("/ranking/mymodel_questions")
+    async def ranking_mymodel_questions(
+        range: str = Query(default="year"),
+        limit: Optional[int] = Query(default=30),
+        authorization: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        await _require_user_id(authorization)
+        p_range = _normalize_range(range)
+        p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+        # "問い所持数" is represented by the number of answered MyModel Create items.
+        # - day/week/month: answers updated within the range (JST 00:00 boundary)
+        # - year: total (all-time)
+        create_map: Dict[str, Dict[str, int]] = {}
+        try:
+            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
+        except Exception as exc:
+            logger.warning(
+                "Failed to aggregate mymodel_create_answers for mymodel questions ranking: %s",
+                exc,
+            )
+            create_map = {}
+
+        all_uids = sorted(set(list(create_map.keys())))
+        vis = await _fetch_ranking_visibility_map(all_uids)
+
+        combined: List[Dict[str, Any]] = []
+        for uid in all_uids:
+            if not vis.get(uid, True):
+                continue
+            cnt = int((create_map.get(uid) or {}).get("count", 0) or 0)
+            if cnt <= 0:
+                continue
+            combined.append({"user_id": uid, "mymodel_questions_total": cnt})
+
+        combined.sort(
+            key=lambda x: (
+                -int(x.get("mymodel_questions_total") or 0),
+                str(x.get("user_id") or ""),
+            )
+        )
+        combined = combined[: int(p_limit)]
+
+        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        profiles = await _fetch_profiles_map(user_ids)
+
+        items: List[Dict[str, Any]] = []
+        for i, r in enumerate(combined, 1):
+            uid = str(r.get("user_id") or "").strip()
+            cnt = int(r.get("mymodel_questions_total") or 0)
+            prof = profiles.get(uid) or {}
+            items.append(
+                {
+                    "rank": i,
+                    "user_id": uid,
+                    "display_name": prof.get("display_name"),
+                    "mymodel_questions_total": cnt,
+                    "value": cnt,
+                }
+            )
+
+        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
     @app.get("/ranking/mymodel_used")
     async def ranking_mymodel_used(
         range: str = Query(default="week"),

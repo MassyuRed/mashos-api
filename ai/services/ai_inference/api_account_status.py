@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -45,6 +45,12 @@ logger = logging.getLogger("account_status_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# MyModel Create answers table (used to extend input_count_total / input_chars_total)
+MYMODEL_CREATE_ANSWERS_TABLE = (
+    os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_create_answers")
+    or "mymodel_create_answers"
+).strip() or "mymodel_create_answers"
 
 # RPC function name (overrideable)
 ACCOUNT_STATUS_RPC = (
@@ -103,6 +109,53 @@ def _to_int(v: Any) -> int:
         return 0
 
 
+async def _fetch_mymodel_create_totals(*, user_id: str) -> Tuple[int, int]:
+    """Return (count, chars) for MyModel Create answers of the target user (all-time)."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return 0, 0
+
+    # Answers are state rows; count answered questions and sum answer_text length.
+    url = f"{SUPABASE_URL}/rest/v1/{MYMODEL_CREATE_ANSWERS_TABLE}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            url,
+            headers=_sb_headers_json(),
+            params={
+                "select": "answer_text",
+                "user_id": f"eq.{uid}",
+                "limit": "1000",
+            },
+        )
+
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase %s select failed (create totals): %s %s",
+            MYMODEL_CREATE_ANSWERS_TABLE,
+            resp.status_code,
+            (resp.text or "")[:800],
+        )
+        return 0, 0
+
+    rows = resp.json()
+    if not isinstance(rows, list):
+        return 0, 0
+
+    cnt = 0
+    chars = 0
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        s = r.get("answer_text")
+        txt = "" if s is None else str(s)
+        if not txt.strip():
+            continue
+        cnt += 1
+        chars += len(txt)
+
+    return cnt, chars
+
+
 def register_account_status_routes(app: FastAPI) -> None:
     """Register /account/status endpoint."""
 
@@ -146,13 +199,22 @@ def register_account_status_routes(app: FastAPI) -> None:
         elif isinstance(data, dict):
             row = data
 
+        # Extend input stats with MyModel Create answers (all-time totals).
+        create_cnt = 0
+        create_chars = 0
+        try:
+            create_cnt, create_chars = await _fetch_mymodel_create_totals(user_id=tgt)
+        except Exception as exc:
+            logger.warning("Failed to fetch MyModel Create totals for account/status: %s", exc)
+            create_cnt, create_chars = 0, 0
+
         return AccountStatusResponse(
             status="ok",
             target_user_id=tgt,
             login_days_total=_to_int(row.get("login_days_total")),
             login_streak_max=_to_int(row.get("login_streak_max")),
-            input_count_total=_to_int(row.get("input_count_total")),
-            input_chars_total=_to_int(row.get("input_chars_total")),
+            input_count_total=_to_int(row.get("input_count_total")) + int(create_cnt or 0),
+            input_chars_total=_to_int(row.get("input_chars_total")) + int(create_chars or 0),
             mymodel_questions_total=_to_int(row.get("mymodel_questions_total")),
             mymodel_views_total=_to_int(row.get("mymodel_views_total")),
             mymodel_resonances_total=_to_int(row.get("mymodel_resonances_total")),
