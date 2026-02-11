@@ -79,6 +79,27 @@ class FriendRemoveResponse(BaseModel):
     friend_user_id: str
 
 
+
+
+class FriendNotificationSettingUpsertBody(BaseModel):
+    is_enabled: bool = Field(..., description="true: receive notifications from this friend, false: mute")
+
+
+class FriendNotificationSettingItem(BaseModel):
+    friend_user_id: str = Field(..., description="Friend (owner) user id")
+    is_enabled: bool = Field(..., description="Whether notifications are enabled for this friend")
+
+
+class FriendNotificationSettingResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    friend_user_id: str
+    is_enabled: bool
+
+
+class FriendNotificationSettingsResponse(BaseModel):
+    status: str = Field(..., description="ok")
+    settings: List[FriendNotificationSettingItem]
+
 # ----------------------------
 # Supabase helpers
 # ----------------------------
@@ -422,6 +443,48 @@ def register_friend_routes(app: FastAPI) -> None:
 
         return FriendRequestActionResponse(status="ok", request_id=request_id)
 
+
+
+    @app.post("/friends/requests/{request_id}/cancel", response_model=FriendRequestActionResponse)
+    async def cancel_friend_request(
+        request_id: int = Path(..., ge=1),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendRequestActionResponse:
+        """Requester cancels (withdraws) a pending friend request.
+
+        Behavior:
+        - Only requester_user_id can cancel.
+        - Only pending requests can be canceled.
+        - Implementation deletes the pending row (robust against status enum/constraints).
+        """
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        req = await _get_friend_request_by_id(request_id)
+
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="Friend request is not pending")
+
+        requester_user_id = str(req.get("requester_user_id"))
+        if requester_user_id != me:
+            raise HTTPException(status_code=403, detail="You are not allowed to cancel this request")
+
+        # Delete request row (idempotent best-effort)
+        resp = await _sb_delete(
+            "/rest/v1/friend_requests",
+            params={"id": f"eq.{request_id}"},
+            prefer="return=minimal",
+        )
+        if resp.status_code not in (200, 204):
+            if resp.status_code == 404:
+                return FriendRequestActionResponse(status="ok", request_id=request_id)
+            logger.error("Supabase delete friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to cancel friend request")
+
+        return FriendRequestActionResponse(status="ok", request_id=request_id)
+
     @app.post("/friends/remove", response_model=FriendRemoveResponse)
     async def remove_friend(
         body: FriendRemoveBody,
@@ -440,3 +503,147 @@ def register_friend_routes(app: FastAPI) -> None:
 
         await _delete_friendships_bidirectional(me, friend_user_id)
         return FriendRemoveResponse(status="ok", friend_user_id=friend_user_id)
+
+
+    @app.get("/friends/notification-settings", response_model=FriendNotificationSettingsResponse)
+    async def list_friend_notification_settings(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendNotificationSettingsResponse:
+        """List per-friend notification settings for the caller (viewer).
+
+        Note:
+        - Missing rows should be treated as enabled (true) by the client.
+        - This endpoint returns only explicitly saved settings rows.
+        """
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+
+        resp = await _sb_get(
+            "/rest/v1/friend_notification_settings",
+            params={
+                "select": "owner_user_id,is_enabled",
+                "viewer_user_id": f"eq.{me}",
+                "order": "owner_user_id.asc",
+            },
+        )
+
+        # If the table isn't provisioned yet, tell the client explicitly.
+        if resp.status_code == 404:
+            raise HTTPException(status_code=501, detail="friend_notification_settings table is not configured")
+
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase select friend_notification_settings failed: %s %s",
+                resp.status_code,
+                resp.text[:1500],
+            )
+            raise HTTPException(status_code=502, detail="Failed to query notification settings")
+
+        rows = resp.json()
+        settings: List[FriendNotificationSettingItem] = []
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                fid = r.get("owner_user_id")
+                enabled = r.get("is_enabled")
+                if isinstance(fid, str) and fid:
+                    settings.append(
+                        FriendNotificationSettingItem(
+                            friend_user_id=fid,
+                            is_enabled=(True if enabled is None else bool(enabled)),
+                        )
+                    )
+
+        return FriendNotificationSettingsResponse(status="ok", settings=settings)
+
+    @app.post("/friends/notification-settings/{friend_user_id}", response_model=FriendNotificationSettingResponse)
+    async def set_friend_notification_setting(
+        body: FriendNotificationSettingUpsertBody,
+        friend_user_id: str = Path(..., min_length=1, max_length=128),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendNotificationSettingResponse:
+        """Upsert per-friend notification setting (viewer -> owner)."""
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        owner_user_id = (friend_user_id or "").strip()
+        if not owner_user_id:
+            raise HTTPException(status_code=400, detail="friend_user_id is required")
+        if owner_user_id == me:
+            raise HTTPException(status_code=400, detail="You cannot set notification setting for yourself")
+
+        is_enabled = bool(body.is_enabled)
+        now = datetime.now(timezone.utc).isoformat()
+
+        # 1) Check existing row
+        resp_get = await _sb_get(
+            "/rest/v1/friend_notification_settings",
+            params={
+                "select": "viewer_user_id,owner_user_id,is_enabled",
+                "viewer_user_id": f"eq.{me}",
+                "owner_user_id": f"eq.{owner_user_id}",
+                "limit": "1",
+            },
+        )
+
+        if resp_get.status_code == 404:
+            raise HTTPException(status_code=501, detail="friend_notification_settings table is not configured")
+        if resp_get.status_code >= 300:
+            logger.error(
+                "Supabase get friend_notification_settings failed: %s %s",
+                resp_get.status_code,
+                resp_get.text[:1500],
+            )
+            raise HTTPException(status_code=502, detail="Failed to query notification settings")
+
+        rows = resp_get.json()
+        exists = bool(isinstance(rows, list) and rows)
+
+        if exists:
+            resp_upd = await _sb_patch(
+                "/rest/v1/friend_notification_settings",
+                params={
+                    "viewer_user_id": f"eq.{me}",
+                    "owner_user_id": f"eq.{owner_user_id}",
+                },
+                json={"is_enabled": is_enabled, "updated_at": now},
+                prefer="return=minimal",
+            )
+            if resp_upd.status_code not in (200, 204):
+                logger.error(
+                    "Supabase update friend_notification_settings failed: %s %s",
+                    resp_upd.status_code,
+                    resp_upd.text[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to update notification setting")
+        else:
+            resp_ins = await _sb_post(
+                "/rest/v1/friend_notification_settings",
+                json={
+                    "viewer_user_id": me,
+                    "owner_user_id": owner_user_id,
+                    "is_enabled": is_enabled,
+                    "updated_at": now,
+                },
+                prefer="return=minimal",
+            )
+            if resp_ins.status_code not in (200, 201, 204):
+                logger.error(
+                    "Supabase insert friend_notification_settings failed: %s %s",
+                    resp_ins.status_code,
+                    resp_ins.text[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to save notification setting")
+
+        return FriendNotificationSettingResponse(
+            status="ok",
+            friend_user_id=owner_user_id,
+            is_enabled=is_enabled,
+        )
+

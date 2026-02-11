@@ -788,6 +788,87 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
     return list(viewer_ids_set)
 
 
+
+async def _filter_viewer_ids_by_friend_notification_settings(
+    *,
+    viewer_user_ids: List[str],
+    owner_user_id: str,
+) -> List[str]:
+    """Apply per-friend notification mute settings (viewer-side).
+
+    Expected table (Supabase):
+        friend_notification_settings
+            - viewer_user_id (who receives notifications)
+            - owner_user_id  (who triggers notifications)
+            - is_enabled     (bool, true=receive, false=mute)
+
+    Rule:
+        - If a row exists with is_enabled=false for (viewer, owner), exclude that viewer.
+        - Missing row => enabled (do not exclude).
+    Backward compatibility:
+        - If the table/columns are missing, filtering is skipped (treat as all enabled).
+    """
+    _ensure_supabase_config()
+    if not owner_user_id:
+        return viewer_user_ids or []
+
+    ids = [
+        uid
+        for uid in (viewer_user_ids or [])
+        if isinstance(uid, str) and uid.strip() and uid != owner_user_id
+    ]
+    if not ids:
+        return []
+
+    url = f"{SUPABASE_URL}/rest/v1/friend_notification_settings"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
+
+    quoted = ",".join([f"\"{uid}\"" for uid in ids])
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # Fetch only disabled rows
+            resp = await client.get(
+                url,
+                headers=headers,
+                params={
+                    "select": "viewer_user_id",
+                    "owner_user_id": f"eq.{owner_user_id}",
+                    "viewer_user_id": f"in.({quoted})",
+                    "is_enabled": "eq.false",
+                },
+            )
+
+        # If table doesn't exist / columns missing, skip filtering (treat as enabled)
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase select friend_notification_settings failed (skip filtering): status=%s body=%s",
+                resp.status_code,
+                resp.text[:500],
+            )
+            return ids
+
+        rows = resp.json()
+        disabled = set()
+        if isinstance(rows, list):
+            for r in rows:
+                if isinstance(r, dict):
+                    uid = r.get("viewer_user_id")
+                    if isinstance(uid, str) and uid:
+                        disabled.add(uid)
+
+        if not disabled:
+            return ids
+        return [uid for uid in ids if uid not in disabled]
+    except Exception as exc:
+        logger.warning("Failed to apply friend_notification_settings (skip filtering): %s", exc)
+        return ids
+
+
+
 async def _fetch_profile_display_name(user_id: str) -> str:
     """profiles テーブルから display_name を取得する。レコードが無い場合は 'Friend' を返す。"""
     _ensure_supabase_config()
@@ -1352,6 +1433,14 @@ async def _notify_friends_about_emotion(
     viewer_user_ids = await _fetch_friend_viewer_ids(owner_user_id)
     if not viewer_user_ids:
         # フレンドがいない場合は何もしない
+        return
+
+    # Per-friend notification settings (viewer-side mute)
+    viewer_user_ids = await _filter_viewer_ids_by_friend_notification_settings(
+        viewer_user_ids=viewer_user_ids,
+        owner_user_id=owner_user_id,
+    )
+    if not viewer_user_ids:
         return
 
     owner_name = await _fetch_profile_display_name(owner_user_id)
