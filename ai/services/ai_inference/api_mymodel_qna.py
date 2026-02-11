@@ -140,6 +140,16 @@ class QnaResonanceResponse(BaseModel):
 
 
 
+
+class QnaUnreadResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    viewer_user_id: str
+    target_user_id: str
+    total_items: int = 0
+    unread_count: int = 0
+    has_unread: bool = False
+
+
 class QnaTrendingItem(BaseModel):
     question_id: int
     title: str
@@ -1044,6 +1054,117 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             total_items=len(items),
         )
         return QnaListResponse(items=items, meta=meta)
+
+    @app.get("/mymodel/qna/unread", response_model=QnaUnreadResponse)
+    async def qna_unread(
+        target_user_id: Optional[str] = Query(
+            default=None,
+            description="Owner of the MyModel (defaults to viewer)",
+        ),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaUnreadResponse:
+        """Lightweight unread badge endpoint (for bottom tab prefetch)."""
+
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization header with Bearer token is required",
+            )
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        tgt = str(target_user_id or viewer_user_id).strip()
+        if not tgt:
+            raise HTTPException(status_code=400, detail="target_user_id is required")
+
+        # External access control (same as /mymodel/qna/list)
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(
+                viewer_user_id=viewer_user_id, owner_user_id=tgt
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=403, detail="You are not allowed to query this MyProfile"
+                )
+
+        try:
+            _, _, _, effective_tier = await _resolve_tiers(
+                viewer_user_id=viewer_user_id, target_user_id=tgt
+            )
+
+            # Fetch Create questions (effective tier)
+            qrows = await _fetch_create_questions(build_tier=effective_tier)
+
+            question_ids: List[int] = []
+            for r in qrows or []:
+                try:
+                    qid = int((r or {}).get("id"))
+                except Exception:
+                    continue
+                question_ids.append(qid)
+
+            if not question_ids:
+                return QnaUnreadResponse(
+                    status="ok",
+                    viewer_user_id=viewer_user_id,
+                    target_user_id=tgt,
+                    total_items=0,
+                    unread_count=0,
+                    has_unread=False,
+                )
+
+            # Fetch target answers and keep only answered items
+            answers = await _fetch_create_answers(
+                user_id=tgt, question_ids=set(question_ids)
+            )
+
+            q_instance_ids: Set[str] = set()
+            for qid in question_ids:
+                a = answers.get(qid)
+                ans = str((a or {}).get("answer_text") or "").strip()
+                if not ans:
+                    continue
+                q_instance_ids.add(_instance_id_for_target_question(tgt, qid))
+
+            if not q_instance_ids:
+                return QnaUnreadResponse(
+                    status="ok",
+                    viewer_user_id=viewer_user_id,
+                    target_user_id=tgt,
+                    total_items=0,
+                    unread_count=0,
+                    has_unread=False,
+                )
+
+            read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
+            unread_count = sum(1 for iid in q_instance_ids if iid not in read_set)
+
+            return QnaUnreadResponse(
+                status="ok",
+                viewer_user_id=viewer_user_id,
+                target_user_id=tgt,
+                total_items=len(q_instance_ids),
+                unread_count=unread_count,
+                has_unread=unread_count > 0,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("qna_unread failed: %s", exc)
+            # Fail-soft: badge endpoint should never crash the app
+            return QnaUnreadResponse(
+                status="ok",
+                viewer_user_id=viewer_user_id,
+                target_user_id=tgt,
+                total_items=0,
+                unread_count=0,
+                has_unread=False,
+            )
+
+
 
 
     @app.get("/mymodel/qna/trending", response_model=QnaTrendingResponse)
