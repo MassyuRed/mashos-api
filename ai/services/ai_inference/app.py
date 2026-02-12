@@ -33,6 +33,7 @@ from api_emotion_submit import (
     _ensure_supabase_config,
 )
 from api_emotion_secret import register_emotion_secret_routes
+from api_emotion_history_search import register_emotion_history_search_routes
 from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
 from api_deep_insight import register_deep_insight_routes
@@ -95,6 +96,7 @@ install_active_user_touch_middleware(app)
 
 register_emotion_submit_routes(app)
 register_emotion_secret_routes(app)
+register_emotion_history_search_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
 register_deep_insight_routes(app)
