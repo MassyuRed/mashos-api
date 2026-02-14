@@ -36,6 +36,7 @@ from api_emotion_secret import register_emotion_secret_routes
 from api_emotion_history_search import register_emotion_history_search_routes
 from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
+from api_public_profile import register_public_profile_routes
 from api_deep_insight import register_deep_insight_routes
 from api_subscription import register_subscription_routes
 from api_myweb_reports import register_myweb_report_routes
@@ -99,6 +100,7 @@ register_emotion_secret_routes(app)
 register_emotion_history_search_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
+register_public_profile_routes(app)
 register_deep_insight_routes(app)
 register_subscription_routes(app)
 register_myweb_report_routes(app)
