@@ -245,6 +245,9 @@ STRENGTH_LABEL_JA: Dict[str, str] = {"weak": "弱", "medium": "中", "strong": "
 # 強度スコア（structure_engine/extract.py と同じ定義）
 STRENGTH_SCORE: Dict[str, float] = {"weak": 1.0, "medium": 2.0, "strong": 3.0}
 
+# 「自己理解」はプライベート用途：フレンド通知/フレンドログ（friend_emotion_feed）対象外
+SELF_INSIGHT_EMOTION_TYPE = "自己理解"
+
 
 def _ensure_supabase_config() -> None:
     """Supabase 接続情報が無い場合は 500 を返す。"""
@@ -1430,6 +1433,24 @@ async def _notify_friends_about_emotion(
     if not owner_user_id:
         return
 
+    # --- Privacy rule ---
+    # 「自己理解」はフレンド通知で飛ばさず、フレンドログにも表示しない。
+    # ただし他の感情が一緒に入力されている場合は、それらだけ通知/ログ対象にする。
+    filtered_details: List[Dict[str, Any]] = []
+    for it in emotion_details or []:
+        if not isinstance(it, dict):
+            continue
+        t = str(it.get("type") or "").strip()
+        if not t:
+            continue
+        if t == SELF_INSIGHT_EMOTION_TYPE:
+            continue
+        filtered_details.append(it)
+
+    # 通知対象が 0 件なら何もしない
+    if not filtered_details:
+        return
+
     viewer_user_ids = await _fetch_friend_viewer_ids(owner_user_id)
     if not viewer_user_ids:
         # フレンドがいない場合は何もしない
@@ -1448,7 +1469,7 @@ async def _notify_friends_about_emotion(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
         owner_name=owner_name,
-        items=emotion_details,
+        items=filtered_details,
         created_at=created_at,
     )
 
@@ -1458,7 +1479,7 @@ async def _notify_friends_about_emotion(
             viewer_user_ids=viewer_user_ids,
             owner_user_id=owner_user_id,
             owner_name=owner_name,
-            emotion_details=emotion_details,
+            emotion_details=filtered_details,
             created_at=created_at,
         )
     except Exception as exc:

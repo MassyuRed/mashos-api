@@ -60,6 +60,16 @@ RESONANCES_TABLE = os.getenv(
     "COCOLON_MYMODEL_QNA_RESONANCES_TABLE", "mymodel_qna_resonances"
 )
 
+
+# Echoes / Discoveries tables (overrideable)
+ECHOES_TABLE = os.getenv("COCOLON_MYMODEL_QNA_ECHOES_TABLE", "mymodel_qna_echoes")
+DISCOVERY_LOGS_TABLE = os.getenv(
+    "COCOLON_MYMODEL_QNA_DISCOVERY_LOGS_TABLE", "mymodel_qna_discovery_logs"
+)
+
+# History limits
+FREE_HISTORY_LIMIT = int(os.getenv("COCOLON_MYMODEL_QNA_FREE_HISTORY_LIMIT", "5") or "5")
+
 # Ranking logs tables (overrideable)
 VIEW_LOGS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_VIEW_LOGS_TABLE", "mymodel_qna_view_logs")
 RESONANCE_LOGS_TABLE = os.getenv(
@@ -82,6 +92,7 @@ class QnaListItem(BaseModel):
     generated_at: Optional[str] = None
     views: int = 0
     resonances: int = 0
+    discoveries: int = 0
     is_new: bool = False
 
 
@@ -107,6 +118,7 @@ class QnaDetailResponse(BaseModel):
     q_instance_id: str
     views: int = 0
     resonances: int = 0
+    discoveries: int = 0
     is_new: bool = False
     is_resonated: bool = False
 
@@ -137,6 +149,79 @@ class QnaResonanceResponse(BaseModel):
     resonated: bool
     views: int
     resonances: int
+
+
+# --- Echoes / Discoveries (Cocolon) ---
+
+class QnaEchoesSubmitRequest(BaseModel):
+    q_instance_id: str = Field(..., description="<target_user_id>:<question_id>")
+    q_key: Optional[str] = Field(None, description="Optional; derived if omitted")
+    strength: str = Field(..., description="small | medium | large")
+
+
+class QnaEchoesSubmitResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    strength: str
+    resonated: bool = True
+    views: int = 0
+    resonances: int = 0
+
+
+class QnaEchoesHistoryItem(BaseModel):
+    strength: str
+    created_at: str
+
+
+class QnaEchoesHistoryResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    subscription_tier: str
+    total: int = 0
+    count_small: int = 0
+    count_medium: int = 0
+    count_large: int = 0
+    my_strength: Optional[str] = None
+    limit: int = 0
+    is_limited: bool = False
+    items: List[QnaEchoesHistoryItem] = Field(default_factory=list)
+
+
+class QnaDiscoverySubmitRequest(BaseModel):
+    q_instance_id: str = Field(..., description="<target_user_id>:<question_id>")
+    q_key: Optional[str] = Field(None, description="Optional; derived if omitted")
+    category: str = Field(
+        ..., description="new_perspective | different_fun | well_worded | not_sorted | shocked"
+    )
+    memo: Optional[str] = Field(None, description="Optional memo text")
+
+
+class QnaDiscoverySubmitResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    id: Optional[str] = None
+
+
+class QnaDiscoveryHistoryItem(BaseModel):
+    id: str
+    category: str
+    memo: Optional[str] = None
+    created_at: str
+
+
+class QnaDiscoveryHistoryResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    subscription_tier: str
+    total: int = 0
+    limit: int = 0
+    is_limited: bool = False
+    items: List[QnaDiscoveryHistoryItem] = Field(default_factory=list)
+
 
 
 
@@ -212,6 +297,55 @@ async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> http
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.get(url, headers=_sb_headers_json(), params=params)
+
+
+async def _sb_get_with_prefer(
+    path: str, *, params: Optional[Dict[str, str]] = None, prefer: Optional[str] = None
+) -> httpx.Response:
+    """GET with optional Prefer header (e.g., count=exact)."""
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.get(url, headers=_sb_headers_json(prefer=prefer), params=params)
+
+
+def _parse_content_range_total(content_range: Optional[str]) -> int:
+    """Parse total count from PostgREST Content-Range header.
+
+    Examples:
+    - "0-0/12" -> 12
+    - "*/12"   -> 12
+    """
+    if not content_range:
+        return 0
+    try:
+        if "/" not in content_range:
+            return 0
+        total_part = content_range.split("/", 1)[1].strip()
+        if not total_part or total_part == "*":
+            return 0
+        return int(total_part)
+    except Exception:
+        return 0
+
+
+async def _sb_count_rows(path: str, *, params: Dict[str, str]) -> int:
+    """Count rows via PostgREST (Prefer: count=exact).
+
+    Note: Uses limit=0 to avoid transferring row payloads.
+    """
+    p: Dict[str, str] = {"select": "*", "limit": "0"}
+    for k, v in (params or {}).items():
+        if v is None:
+            continue
+        p[str(k)] = str(v)
+    resp = await _sb_get_with_prefer(path, params=p, prefer="count=exact")
+    if resp.status_code >= 300:
+        logger.error("Supabase count failed: %s %s", resp.status_code, (resp.text or "")[:800])
+        raise HTTPException(status_code=502, detail="Failed to count rows")
+    cr = resp.headers.get("content-range") or resp.headers.get("Content-Range")
+    return _parse_content_range_total(cr)
+
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
@@ -604,6 +738,62 @@ async def _fetch_instance_metrics(q_instance_ids: Set[str]) -> Dict[str, Dict[st
             out[iid] = r
     return out
 
+
+
+async def _fetch_discovery_counts_for_instances(q_instance_ids: Set[str]) -> Dict[str, int]:
+    """Fetch discovery (気づき) counts aggregated by q_instance_id.
+
+    Implementation notes:
+    - Discoveries are stored as rows in DISCOVERY_LOGS_TABLE.
+    - PostgREST has no guaranteed group-by in all setups, so we fetch q_instance_id rows and count in Python.
+    - Chunking is used to keep query strings reasonable.
+
+    Fail-soft: returns empty dict on errors.
+    """
+    ids = [str(x).strip() for x in (q_instance_ids or set()) if str(x).strip()]
+    if not ids:
+        return {}
+
+    out: Dict[str, int] = {}
+
+    # Keep the IN(...) filter size modest
+    chunk_size = 120
+    # Safety cap to avoid transferring too many rows at once (rare in practice)
+    max_rows = 50000
+
+    for i in range(0, len(ids), chunk_size):
+        chunk = set(ids[i : i + chunk_size])
+        try:
+            resp = await _sb_get(
+                f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+                params={
+                    "select": "q_instance_id",
+                    "q_instance_id": _quoted_in(chunk),
+                    "limit": str(max_rows),
+                },
+            )
+            if resp.status_code >= 300:
+                logger.warning(
+                    "Supabase %s select failed (discoveries): %s %s",
+                    DISCOVERY_LOGS_TABLE,
+                    resp.status_code,
+                    (resp.text or "")[:800],
+                )
+                continue
+
+            rows = resp.json()
+            if not isinstance(rows, list):
+                continue
+
+            for r in rows:
+                iid = str((r or {}).get("q_instance_id") or "").strip()
+                if not iid:
+                    continue
+                out[iid] = int(out.get(iid) or 0) + 1
+        except Exception as exc:
+            logger.warning("discoveries count fetch failed: %s", exc)
+
+    return out
 async def _fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
     if not viewer_user_id or not q_instance_ids:
         return set()
@@ -923,7 +1113,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     async def qna_list(
         target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
         sort: str = Query(default="newest", description="newest | popular"),
-        metric: str = Query(default="views", description="views | resonances (only for popular)"),
+        metric: str = Query(default="views", description="views | resonances | discoveries (only for popular)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaListResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -1030,14 +1220,29 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 it.resonances = 0
             it.is_new = it.q_instance_id not in read_set
 
+
         # Sort
         sort_key = str(sort or "newest").strip().lower()
         metric_key = str(metric or "views").strip().lower()
 
         if sort_key == "popular":
-            if metric_key not in ("views", "resonances"):
+            if metric_key not in ("views", "resonances", "discoveries"):
                 metric_key = "views"
-            if metric_key == "resonances":
+
+            if metric_key == "discoveries":
+                # Discoveries are stored as rows in the discovery logs table.
+                disc_map = await _fetch_discovery_counts_for_instances(q_instance_ids)
+                for it in items:
+                    try:
+                        it.discoveries = int(disc_map.get(it.q_instance_id) or 0)
+                    except Exception:
+                        it.discoveries = 0
+
+                items.sort(
+                    key=lambda x: (x.discoveries, x.resonances, x.views, x.generated_at or ""),
+                    reverse=True,
+                )
+            elif metric_key == "resonances":
                 items.sort(key=lambda x: (x.resonances, x.views, x.generated_at or ""), reverse=True)
             else:
                 items.sort(key=lambda x: (x.views, x.resonances, x.generated_at or ""), reverse=True)
@@ -1588,6 +1793,19 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         except Exception:
             resonances = 0
 
+
+        discoveries = 0
+        try:
+            # Discoveries are stored as rows in the discovery logs table.
+            discoveries = await _sb_count_rows(
+                f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+                params={"q_instance_id": f"eq.{q_instance_id}"},
+            )
+        except Exception as exc:
+            # Fail-soft: discoveries are non-critical for reading the Q&A
+            logger.warning("discoveries count failed (detail): %s", exc)
+            discoveries = 0
+
         read_set = await _fetch_reads(viewer_user_id, {str(q_instance_id)})
         is_new = str(q_instance_id) not in read_set
         is_resonated = await _is_resonated(viewer_user_id, str(q_instance_id))
@@ -1599,6 +1817,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             q_instance_id=str(q_instance_id),
             views=views,
             resonances=resonances,
+            discoveries=int(discoveries or 0),
             is_new=is_new,
             is_resonated=bool(is_resonated),
         )
@@ -1719,61 +1938,32 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 resonances=res_cnt,
             )
 
+        # NOTE:
+        # Resonance (+1) is confirmed only after Echoes submission.
+        # This endpoint is kept for backward compatibility, but it does not turn resonance "on".
         already = await _is_resonated(viewer_user_id, req.q_instance_id)
-        if already:
-            # Return current counts
-            metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
-            m = metrics.get(str(req.q_instance_id)) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
-            return QnaResonanceResponse(
-                status="already",
-                q_key=qk,
-                q_instance_id=req.q_instance_id,
-                resonated=False,
-                views=views,
-                resonances=res_cnt,
-            )
 
-        # Insert resonance record (best-effort). If insert fails, we still fail-soft.
-        payload = {
-            "viewer_user_id": str(viewer_user_id),
-            "q_instance_id": str(req.q_instance_id),
-            "q_key": str(qk),
-            "created_at": _now_iso(),
-        }
-        resp = await _sb_post(
-            f"/rest/v1/{RESONANCES_TABLE}",
-            json=payload,
-            prefer="resolution=merge-duplicates,return=minimal",
-        )
-        if resp.status_code >= 300:
-            logger.warning("Supabase %s insert failed: %s %s", RESONANCES_TABLE, resp.status_code, resp.text[:800])
+        # Return current counts without changing state.
+        metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
+        m = metrics.get(str(req.q_instance_id)) or {}
+        try:
+            views = int(m.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            res_cnt = int(m.get("resonances") or 0)
+        except Exception:
+            res_cnt = 0
 
-        # Ranking resonance log (best-effort)
-        await _insert_resonance_log(
-            target_user_id=tgt,
-            viewer_user_id=viewer_user_id,
-            question_id=int(qid),
-            q_key=qk,
-            q_instance_id=req.q_instance_id,
-        )
-
-        counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1)
         return QnaResonanceResponse(
-            status="ok",
+            status="already" if already else "noop",
             q_key=qk,
             q_instance_id=req.q_instance_id,
-            resonated=True,
-            views=int(counts.get("views") or 0),
-            resonances=int(counts.get("resonances") or 0),
+            resonated=bool(already),
+            views=views,
+            resonances=res_cnt,
         )
+
 
 
     @app.post("/mymodel/qna/resonance/toggle", response_model=QnaResonanceResponse)
@@ -1783,8 +1973,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     ) -> QnaResonanceResponse:
         """Toggle resonance for a Q&A.
 
-        - If not resonated yet: create resonance (+1)
         - If already resonated: cancel resonance (-1)
+        - If not resonated yet: no-op (use /mymodel/qna/echoes/submit to confirm resonance)
 
         Notes:
         - Self-resonance is not allowed.
@@ -1884,44 +2074,455 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 resonances=int(counts.get("resonances") or 0),
             )
 
-        # Add resonance (strict: don't increment if record insert fails)
+                # NOTE:
+        # Resonance (+1) is confirmed only after Echoes submission.
+        # This endpoint therefore only supports "off" (cancel) and is a no-op when already off.
+        metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
+        m = metrics.get(str(req.q_instance_id)) or {}
+        try:
+            views = int(m.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            res_cnt = int(m.get("resonances") or 0)
+        except Exception:
+            res_cnt = 0
+        return QnaResonanceResponse(
+            status="noop",
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+            resonated=False,
+            views=views,
+            resonances=res_cnt,
+        )
+
+# ---------------------------------------------------------
+    # Echoes (響き) API
+    # ---------------------------------------------------------
+
+    @app.post("/mymodel/qna/echoes/submit", response_model=QnaEchoesSubmitResponse)
+    async def qna_echoes_submit(
+        req: QnaEchoesSubmitRequest,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaEchoesSubmitResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(req.q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        # Self Echoes is not allowed (same as resonance)
+        if tgt == viewer_user_id:
+            raise HTTPException(status_code=400, detail="Self echoes is not allowed")
+
+        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        strength = str(req.strength or "").strip().lower()
+        if strength not in ("small", "medium", "large"):
+            raise HTTPException(status_code=400, detail="Invalid strength (small|medium|large)")
+
         payload = {
             "viewer_user_id": str(viewer_user_id),
-            "q_instance_id": str(req.q_instance_id),
+            "target_user_id": str(tgt),
+            "question_id": int(qid),
             "q_key": str(qk),
+            "q_instance_id": str(req.q_instance_id),
+            "strength": strength,
             "created_at": _now_iso(),
         }
+
         resp = await _sb_post(
-            f"/rest/v1/{RESONANCES_TABLE}",
+            f"/rest/v1/{ECHOES_TABLE}",
             json=payload,
             prefer="resolution=merge-duplicates,return=minimal",
         )
         if resp.status_code >= 300:
+            logger.error("Supabase %s upsert failed: %s %s", ECHOES_TABLE, resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Failed to submit echoes")
+
+                # Echoes送信 = 共鳴確定（共鳴数は Echoes 送信後に増える）
+        resonated = await _is_resonated(viewer_user_id, req.q_instance_id)
+
+        views = 0
+        res_cnt = 0
+
+        if not resonated:
+            payload_res = {
+                "viewer_user_id": str(viewer_user_id),
+                "q_instance_id": str(req.q_instance_id),
+                "q_key": str(qk),
+                "created_at": _now_iso(),
+            }
+            resp2 = await _sb_post(
+                f"/rest/v1/{RESONANCES_TABLE}",
+                json=payload_res,
+                prefer="resolution=merge-duplicates,return=minimal",
+            )
+            if resp2.status_code >= 300:
+                logger.error(
+                    "Supabase %s insert failed (echoes->resonance): %s %s",
+                    RESONANCES_TABLE,
+                    resp2.status_code,
+                    (resp2.text or "")[:800],
+                )
+                raise HTTPException(status_code=502, detail="Failed to confirm resonance")
+
+            # Ranking resonance log (best-effort)
+            await _insert_resonance_log(
+                target_user_id=tgt,
+                viewer_user_id=viewer_user_id,
+                question_id=int(qid),
+                q_key=qk,
+                q_instance_id=req.q_instance_id,
+            )
+
+            counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1)
+            views = int(counts.get("views") or 0)
+            res_cnt = int(counts.get("resonances") or 0)
+            resonated = True
+        else:
+            metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
+            m = metrics.get(str(req.q_instance_id)) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                res_cnt = int(m.get("resonances") or 0)
+            except Exception:
+                res_cnt = 0
+
+        return QnaEchoesSubmitResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+            strength=strength,
+            resonated=bool(resonated),
+            views=int(views or 0),
+            resonances=int(res_cnt or 0),
+        )
+
+    @app.get("/mymodel/qna/echoes/history", response_model=QnaEchoesHistoryResponse)
+    async def qna_echoes_history(
+        q_instance_id: str = Query(..., description="<target_user_id>:<question_id>"),
+        q_key: Optional[str] = Query(default=None, description="Optional; derived if omitted"),
+        limit: Optional[int] = Query(default=None, description="Max items (Plus/Premium only)"),
+        offset: Optional[int] = Query(default=None, description="Offset (Plus/Premium only)"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaEchoesHistoryResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        qk = str(q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        # Entitlement (Free: latest N only; Plus/Premium: pagination)
+        viewer_tier = SubscriptionTier.FREE
+        try:
+            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
+        except Exception as exc:
+            logger.warning("viewer subscription tier resolve failed (echoes history): %s", exc)
+            viewer_tier = SubscriptionTier.FREE
+
+        is_free = viewer_tier == SubscriptionTier.FREE
+        eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
+        eff_limit = max(1, min(eff_limit, 1000))
+        eff_offset = 0 if is_free else int(offset or 0)
+        eff_offset = max(0, eff_offset)
+
+        # Counts (total + breakdown)
+        total = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "q_instance_id": f"eq.{q_instance_id}",
+            },
+        )
+        cnt_small = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "q_instance_id": f"eq.{q_instance_id}",
+                "strength": "eq.small",
+            },
+        )
+        cnt_medium = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "q_instance_id": f"eq.{q_instance_id}",
+                "strength": "eq.medium",
+            },
+        )
+        cnt_large = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "q_instance_id": f"eq.{q_instance_id}",
+                "strength": "eq.large",
+            },
+        )
+
+        # Items (anonymized: do not include viewer_user_id)
+        resp = await _sb_get(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "select": "strength,created_at",
+                "q_instance_id": f"eq.{q_instance_id}",
+                "order": "created_at.desc",
+                "limit": str(eff_limit),
+                "offset": str(eff_offset),
+            },
+        )
+        if resp.status_code >= 300:
+            logger.error("Supabase %s select failed: %s %s", ECHOES_TABLE, resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Failed to load echoes history")
+
+        rows = resp.json()
+        items: List[QnaEchoesHistoryItem] = []
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                st = str(r.get("strength") or "").strip()
+                ca = str(r.get("created_at") or "").strip()
+                if not st or not ca:
+                    continue
+                items.append(QnaEchoesHistoryItem(strength=st, created_at=ca))
+
+        # My strength (optional)
+        my_strength: Optional[str] = None
+        try:
+            resp_my = await _sb_get(
+                f"/rest/v1/{ECHOES_TABLE}",
+                params={
+                    "select": "strength,created_at",
+                    "viewer_user_id": f"eq.{viewer_user_id}",
+                    "q_instance_id": f"eq.{q_instance_id}",
+                    "order": "created_at.desc",
+                    "limit": "1",
+                },
+            )
+            if resp_my.status_code < 300:
+                rr = resp_my.json()
+                if isinstance(rr, list) and rr:
+                    my_strength = str((rr[0] or {}).get("strength") or "").strip() or None
+        except Exception:
+            my_strength = None
+
+        return QnaEchoesHistoryResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=q_instance_id,
+            subscription_tier=str(viewer_tier.value),
+            total=int(total or 0),
+            count_small=int(cnt_small or 0),
+            count_medium=int(cnt_medium or 0),
+            count_large=int(cnt_large or 0),
+            my_strength=my_strength,
+            limit=int(eff_limit),
+            is_limited=bool(is_free),
+            items=items,
+        )
+
+    # ---------------------------------------------------------
+    # Discoveries (気づき) API
+    # ---------------------------------------------------------
+
+    @app.post("/mymodel/qna/discoveries/submit", response_model=QnaDiscoverySubmitResponse)
+    async def qna_discovery_submit(
+        req: QnaDiscoverySubmitRequest,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaDiscoverySubmitResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(req.q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        # Self discovery is not allowed (Discoveries are for "other people's reflections")
+        if tgt == viewer_user_id:
+            raise HTTPException(status_code=400, detail="Self discoveries is not allowed")
+
+        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        category = str(req.category or "").strip()
+        allowed_cats = {"new_perspective", "different_fun", "well_worded", "not_sorted", "shocked"}
+        if category not in allowed_cats:
+            raise HTTPException(status_code=400, detail="Invalid category")
+
+        memo = None
+        if req.memo is not None:
+            memo = str(req.memo)
+            # Keep it conservative (UI may enforce its own limits)
+            if len(memo) > 2000:
+                raise HTTPException(status_code=400, detail="Memo too long")
+
+        payload = {
+            "viewer_user_id": str(viewer_user_id),
+            "target_user_id": str(tgt),
+            "question_id": int(qid),
+            "q_key": str(qk),
+            "q_instance_id": str(req.q_instance_id),
+            "category": category,
+            "memo": memo,
+            "created_at": _now_iso(),
+        }
+
+        resp = await _sb_post(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            json=payload,
+            prefer="return=representation",
+        )
+        if resp.status_code >= 300:
             logger.error(
                 "Supabase %s insert failed: %s %s",
-                RESONANCES_TABLE,
+                DISCOVERY_LOGS_TABLE,
                 resp.status_code,
                 (resp.text or "")[:800],
             )
-            raise HTTPException(status_code=502, detail="Failed to add resonance")
+            raise HTTPException(status_code=502, detail="Failed to submit discovery")
 
-        # Ranking resonance log (best-effort)
-        await _insert_resonance_log(
-            target_user_id=tgt,
-            viewer_user_id=viewer_user_id,
-            question_id=int(qid),
-            q_key=qk,
-            q_instance_id=req.q_instance_id,
+        inserted_id: Optional[str] = None
+        try:
+            data = resp.json()
+            if isinstance(data, list) and data:
+                inserted_id = str((data[0] or {}).get("id") or "").strip() or None
+        except Exception:
+            inserted_id = None
+
+        return QnaDiscoverySubmitResponse(status="ok", q_key=qk, q_instance_id=req.q_instance_id, id=inserted_id)
+
+    @app.get("/mymodel/qna/discoveries/history", response_model=QnaDiscoveryHistoryResponse)
+    async def qna_discovery_history(
+        q_instance_id: str = Query(..., description="<target_user_id>:<question_id>"),
+        q_key: Optional[str] = Query(default=None, description="Optional; derived if omitted"),
+        limit: Optional[int] = Query(default=None, description="Max items (Plus/Premium only)"),
+        offset: Optional[int] = Query(default=None, description="Offset (Plus/Premium only)"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaDiscoveryHistoryResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control (viewer must be able to view the reflection to see their discoveries)
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        qk = str(q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        viewer_tier = SubscriptionTier.FREE
+        try:
+            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
+        except Exception as exc:
+            logger.warning("viewer subscription tier resolve failed (discoveries history): %s", exc)
+            viewer_tier = SubscriptionTier.FREE
+
+        is_free = viewer_tier == SubscriptionTier.FREE
+        eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
+        eff_limit = max(1, min(eff_limit, 1000))
+        eff_offset = 0 if is_free else int(offset or 0)
+        eff_offset = max(0, eff_offset)
+
+        total = await _sb_count_rows(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{q_instance_id}",
+            },
         )
 
-        counts = await _inc_metric(
-            q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=1
+        resp = await _sb_get(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "select": "id,category,memo,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{q_instance_id}",
+                "order": "created_at.desc",
+                "limit": str(eff_limit),
+                "offset": str(eff_offset),
+            },
         )
-        return QnaResonanceResponse(
-            status="on",
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase %s select failed: %s %s",
+                DISCOVERY_LOGS_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to load discoveries history")
+
+        rows = resp.json()
+        items: List[QnaDiscoveryHistoryItem] = []
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                iid = str(r.get("id") or "").strip()
+                if not iid:
+                    continue
+                cat = str(r.get("category") or "").strip()
+                memo = r.get("memo")
+                memo_s = None if memo is None else str(memo)
+                ca = str(r.get("created_at") or "").strip()
+                items.append(QnaDiscoveryHistoryItem(id=iid, category=cat, memo=memo_s, created_at=ca))
+
+        return QnaDiscoveryHistoryResponse(
+            status="ok",
             q_key=qk,
-            q_instance_id=req.q_instance_id,
-            resonated=True,
-            views=int(counts.get("views") or 0),
-            resonances=int(counts.get("resonances") or 0),
+            q_instance_id=q_instance_id,
+            subscription_tier=str(viewer_tier.value),
+            total=int(total or 0),
+            limit=int(eff_limit),
+            is_limited=bool(is_free),
+            items=items,
         )
+
