@@ -169,6 +169,20 @@ class QnaEchoesSubmitResponse(BaseModel):
     resonances: int = 0
 
 
+class QnaEchoesDeleteRequest(BaseModel):
+    q_instance_id: str = Field(..., description="<target_user_id>:<question_id>")
+    q_key: Optional[str] = Field(None, description="Optional; derived if omitted")
+
+
+class QnaEchoesDeleteResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    resonated: bool = False
+    views: int = 0
+    resonances: int = 0
+
+
 class QnaEchoesHistoryItem(BaseModel):
     strength: str
     created_at: str
@@ -203,6 +217,18 @@ class QnaDiscoverySubmitResponse(BaseModel):
     q_key: str
     q_instance_id: str
     id: Optional[str] = None
+
+
+class QnaDiscoveryDeleteRequest(BaseModel):
+    q_instance_id: str = Field(..., description="<target_user_id>:<question_id>")
+    q_key: Optional[str] = Field(None, description="Optional; derived if omitted")
+
+
+class QnaDiscoveryDeleteResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    q_key: str
+    q_instance_id: str
+    discoveries: int = 0
 
 
 class QnaDiscoveryHistoryItem(BaseModel):
@@ -1963,139 +1989,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             views=views,
             resonances=res_cnt,
         )
-
-
-
-    @app.post("/mymodel/qna/resonance/toggle", response_model=QnaResonanceResponse)
-    async def qna_resonance_toggle(
-        req: QnaResonanceRequest,
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaResonanceResponse:
-        """Toggle resonance for a Q&A.
-
-        - If already resonated: cancel resonance (-1)
-        - If not resonated yet: no-op (use /mymodel/qna/echoes/submit to confirm resonance)
-
-        Notes:
-        - Self-resonance is not allowed.
-        - This endpoint is introduced for the "共鳴済み ↔ 共鳴" UI toggle.
-        """
-
-        token = _extract_bearer_token(authorization) if authorization else None
-        if not token:
-            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
-        viewer_user_id = await _resolve_user_id_from_token(token)
-        if not viewer_user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        try:
-            tgt, qid = _parse_instance_id(req.q_instance_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
-
-        # External access control
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
-
-        # Self resonance is not allowed.
-        if tgt == viewer_user_id:
-            metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
-            m = metrics.get(str(req.q_instance_id)) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                res_cnt = int(m.get("resonances") or 0)
-            except Exception:
-                res_cnt = 0
-            return QnaResonanceResponse(
-                status="self",
-                q_key=qk,
-                q_instance_id=req.q_instance_id,
-                resonated=False,
-                views=views,
-                resonances=res_cnt,
-            )
-
-        already = await _is_resonated(viewer_user_id, req.q_instance_id)
-
-        if already:
-            # Cancel: delete resonance record (strict)
-            params_del = {
-                "viewer_user_id": f"eq.{viewer_user_id}",
-                "q_instance_id": f"eq.{req.q_instance_id}",
-            }
-
-            resp_del = await _sb_delete(
-                f"/rest/v1/{RESONANCES_TABLE}",
-                params=params_del,
-                prefer="return=minimal",
-            )
-            if resp_del.status_code >= 300:
-                logger.error(
-                    "Supabase %s delete failed: %s %s",
-                    RESONANCES_TABLE,
-                    resp_del.status_code,
-                    (resp_del.text or "")[:800],
-                )
-                raise HTTPException(status_code=502, detail="Failed to cancel resonance")
-
-            # Also delete ranking resonance log (best-effort; enables re-resonance to count again)
-            try:
-                resp_del2 = await _sb_delete(
-                    f"/rest/v1/{RESONANCE_LOGS_TABLE}",
-                    params=params_del,
-                    prefer="return=minimal",
-                )
-                if resp_del2.status_code >= 300:
-                    logger.warning(
-                        "Supabase %s delete failed: %s %s",
-                        RESONANCE_LOGS_TABLE,
-                        resp_del2.status_code,
-                        (resp_del2.text or "")[:800],
-                    )
-            except Exception as exc:
-                logger.warning("Supabase %s delete failed: %s", RESONANCE_LOGS_TABLE, exc)
-
-            counts = await _inc_metric(
-                q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=-1
-            )
-            return QnaResonanceResponse(
-                status="off",
-                q_key=qk,
-                q_instance_id=req.q_instance_id,
-                resonated=False,
-                views=int(counts.get("views") or 0),
-                resonances=int(counts.get("resonances") or 0),
-            )
-
-                # NOTE:
-        # Resonance (+1) is confirmed only after Echoes submission.
-        # This endpoint therefore only supports "off" (cancel) and is a no-op when already off.
-        metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
-        m = metrics.get(str(req.q_instance_id)) or {}
-        try:
-            views = int(m.get("views") or 0)
-        except Exception:
-            views = 0
-        try:
-            res_cnt = int(m.get("resonances") or 0)
-        except Exception:
-            res_cnt = 0
-        return QnaResonanceResponse(
-            status="noop",
-            q_key=qk,
-            q_instance_id=req.q_instance_id,
-            resonated=False,
-            views=views,
-            resonances=res_cnt,
-        )
-
 # ---------------------------------------------------------
     # Echoes (響き) API
     # ---------------------------------------------------------
@@ -2211,6 +2104,102 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             q_instance_id=req.q_instance_id,
             strength=strength,
             resonated=bool(resonated),
+            views=int(views or 0),
+            resonances=int(res_cnt or 0),
+        )
+
+    @app.post("/mymodel/qna/echoes/delete", response_model=QnaEchoesDeleteResponse)
+    async def qna_echoes_delete(
+        req: QnaEchoesDeleteRequest,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaEchoesDeleteResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(req.q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        # Self Echoes is not allowed
+        if tgt == viewer_user_id:
+            raise HTTPException(status_code=400, detail="Self echoes is not allowed")
+
+        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        # Delete Echoes row (idempotent)
+        resp_del = await _sb_delete(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{req.q_instance_id}",
+            },
+            prefer="return=minimal",
+        )
+        if resp_del.status_code >= 300:
+            logger.error(
+                "Supabase %s delete failed (echoes): %s %s",
+                ECHOES_TABLE,
+                resp_del.status_code,
+                (resp_del.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to delete echoes")
+
+        # If resonance was confirmed, delete resonance row + decrement metric
+        was_resonated = await _is_resonated(viewer_user_id, req.q_instance_id)
+
+        resp_del2 = await _sb_delete(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{req.q_instance_id}",
+            },
+            prefer="return=minimal",
+        )
+        if resp_del2.status_code >= 300:
+            logger.error(
+                "Supabase %s delete failed (resonances): %s %s",
+                RESONANCES_TABLE,
+                resp_del2.status_code,
+                (resp_del2.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to delete resonance state")
+
+        views = 0
+        res_cnt = 0
+
+        if was_resonated:
+            counts = await _inc_metric(q_key=qk, q_instance_id=req.q_instance_id, field="resonances", delta=-1)
+            views = int(counts.get("views") or 0)
+            res_cnt = int(counts.get("resonances") or 0)
+        else:
+            metrics = await _fetch_instance_metrics({str(req.q_instance_id)})
+            m = metrics.get(str(req.q_instance_id)) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                res_cnt = int(m.get("resonances") or 0)
+            except Exception:
+                res_cnt = 0
+
+        return QnaEchoesDeleteResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+            resonated=False,
             views=int(views or 0),
             resonances=int(res_cnt or 0),
         )
@@ -2429,6 +2418,72 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             inserted_id = None
 
         return QnaDiscoverySubmitResponse(status="ok", q_key=qk, q_instance_id=req.q_instance_id, id=inserted_id)
+
+    @app.post("/mymodel/qna/discoveries/delete", response_model=QnaDiscoveryDeleteResponse)
+    async def qna_discovery_delete(
+        req: QnaDiscoveryDeleteRequest,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaDiscoveryDeleteResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        try:
+            tgt, qid = _parse_instance_id(req.q_instance_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
+        # External access control
+        if tgt != viewer_user_id:
+            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
+            if not allowed:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        # Self discovery is not allowed
+        if tgt == viewer_user_id:
+            raise HTTPException(status_code=400, detail="Self discoveries is not allowed")
+
+        qk = str(req.q_key or "").strip() or _q_key_for_question_id(int(qid))
+
+        # Delete discovery row(s) (idempotent)
+        resp_del = await _sb_delete(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{req.q_instance_id}",
+            },
+            prefer="return=minimal",
+        )
+        if resp_del.status_code >= 300:
+            logger.error(
+                "Supabase %s delete failed (discoveries): %s %s",
+                DISCOVERY_LOGS_TABLE,
+                resp_del.status_code,
+                (resp_del.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to delete discovery")
+
+        # Return updated global count for this reflection
+        discoveries = 0
+        try:
+            discoveries = await _sb_count_rows(
+                f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+                params={"q_instance_id": f"eq.{req.q_instance_id}"},
+            )
+        except Exception as exc:
+            logger.warning("discoveries count failed (delete): %s", exc)
+            discoveries = 0
+
+        return QnaDiscoveryDeleteResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=req.q_instance_id,
+            discoveries=int(discoveries or 0),
+        )
 
     @app.get("/mymodel/qna/discoveries/history", response_model=QnaDiscoveryHistoryResponse)
     async def qna_discovery_history(

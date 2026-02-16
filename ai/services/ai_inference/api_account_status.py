@@ -71,6 +71,7 @@ class AccountStatusResponse(BaseModel):
     mymodel_questions_total: int = 0
     mymodel_views_total: int = 0
     mymodel_resonances_total: int = 0
+    mymodel_discoveries_total: int = 0
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
@@ -218,4 +219,5 @@ def register_account_status_routes(app: FastAPI) -> None:
             mymodel_questions_total=_to_int(row.get("mymodel_questions_total")),
             mymodel_views_total=_to_int(row.get("mymodel_views_total")),
             mymodel_resonances_total=_to_int(row.get("mymodel_resonances_total")),
+            mymodel_discoveries_total=_to_int(row.get("mymodel_discoveries_total")),
         )

@@ -44,6 +44,7 @@ from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
 from api_ranking_mymodel_views import register_ranking_mymodel_views_routes
 from api_ranking_mymodel_resonances import register_ranking_mymodel_resonances_routes
+from api_ranking_mymodel_discoveries import register_ranking_mymodel_discoveries_routes
 
 # Optional: login streak routes may live in a dedicated module in some deployments.
 try:
@@ -125,6 +126,9 @@ if not _route_exists("/ranking/mymodel_views", "GET"):
 
 if not _route_exists("/ranking/mymodel_resonances", "GET"):
     register_ranking_mymodel_resonances_routes(app)
+
+if not _route_exists("/ranking/mymodel_discoveries", "GET"):
+    register_ranking_mymodel_discoveries_routes(app)
 
 # /ranking/login_streak may already exist in api_ranking.py; register it here only if missing.
 if not _route_exists("/ranking/login_streak", "GET"):
