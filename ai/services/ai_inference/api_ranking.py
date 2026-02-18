@@ -305,7 +305,7 @@ async def _fetch_ranking_visibility_map(user_ids: List[str]) -> Dict[str, bool]:
 
 
 async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Filter ranking rows by is_ranking_visible and re-number ranks.
+    """Filter ranking rows by is_ranking_visible.
 
     This keeps server-side aggregation intact but hides users who opted out.
     """
@@ -321,7 +321,7 @@ async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List
         if vis.get(str(r.get("user_id") or "").strip(), True)
     ]
 
-    # Stable ordering by original rank, then re-assign sequential ranks.
+    # Stable ordering by original rank (keep server-side ranking incl. ties).
     def _rk(v: Dict[str, Any]) -> int:
         try:
             return int(v.get("rank") or 0)
@@ -329,9 +329,6 @@ async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List
             return 0
 
     filtered.sort(key=_rk)
-    for i, r in enumerate(filtered, 1):
-        r["rank"] = i
-
     return filtered
 
 
@@ -381,59 +378,25 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
-        # Base ranking (existing SQL RPC) + MyModel Create answers aggregation.
-        # We prefetch more than requested and re-rank after merging so users who only used
-        # MyModel Create can also appear in the final top-N.
+        # Use server-side ranking (RPC) and keep ranks (incl. ties).
+        # Prefetch > limit so visibility filtering can still return up to limit items.
         prefetch_limit = max(int(p_limit), 300)
-        rows_base = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": prefetch_limit})
+        rows = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": prefetch_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
+        rows = rows[: int(p_limit)]
 
-        base_map: Dict[str, int] = {}
-        for r in rows_base:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            try:
-                base_map[uid] = int(r.get("input_count") or 0)
-            except Exception:
-                base_map[uid] = 0
-
-        create_map: Dict[str, Dict[str, int]] = {}
-        try:
-            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
-        except Exception as exc:
-            logger.warning("Failed to aggregate mymodel_create_answers for ranking: %s", exc)
-            create_map = {}
-
-        all_uids = sorted(set(list(base_map.keys()) + list(create_map.keys())))
-        vis = await _fetch_ranking_visibility_map(all_uids)
-
-        combined: List[Dict[str, Any]] = []
-        for uid in all_uids:
-            if not vis.get(uid, True):
-                continue
-            base_cnt = int(base_map.get(uid, 0) or 0)
-            extra_cnt = int((create_map.get(uid) or {}).get("count", 0) or 0)
-            total = base_cnt + extra_cnt
-            if total <= 0:
-                continue
-            combined.append({"user_id": uid, "input_count": total})
-
-        combined.sort(key=lambda x: (-int(x.get("input_count") or 0), str(x.get("user_id") or "")))
-        combined = combined[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
 
         items: List[Dict[str, Any]] = []
-        for i, r in enumerate(combined, 1):
+        for r in rows:
             uid = str(r.get("user_id") or "").strip()
+            rank = int(r.get("rank") or 0)
             cnt = int(r.get("input_count") or 0)
             prof = profiles.get(uid) or {}
             items.append(
                 {
-                    "rank": i,
+                    "rank": rank,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
                     "input_count": cnt,
@@ -453,56 +416,25 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
+        # Use server-side ranking (RPC) and keep ranks (incl. ties).
+        # Prefetch > limit so visibility filtering can still return up to limit items.
         prefetch_limit = max(int(p_limit), 300)
-        rows_base = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": prefetch_limit})
+        rows = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": prefetch_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
+        rows = rows[: int(p_limit)]
 
-        base_map: Dict[str, int] = {}
-        for r in rows_base:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            try:
-                base_map[uid] = int(r.get("total_chars") or 0)
-            except Exception:
-                base_map[uid] = 0
-
-        create_map: Dict[str, Dict[str, int]] = {}
-        try:
-            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
-        except Exception as exc:
-            logger.warning("Failed to aggregate mymodel_create_answers for ranking: %s", exc)
-            create_map = {}
-
-        all_uids = sorted(set(list(base_map.keys()) + list(create_map.keys())))
-        vis = await _fetch_ranking_visibility_map(all_uids)
-
-        combined: List[Dict[str, Any]] = []
-        for uid in all_uids:
-            if not vis.get(uid, True):
-                continue
-            base_chars = int(base_map.get(uid, 0) or 0)
-            extra_chars = int((create_map.get(uid) or {}).get("chars", 0) or 0)
-            total = base_chars + extra_chars
-            if total <= 0:
-                continue
-            combined.append({"user_id": uid, "total_chars": total})
-
-        combined.sort(key=lambda x: (-int(x.get("total_chars") or 0), str(x.get("user_id") or "")))
-        combined = combined[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
 
         items: List[Dict[str, Any]] = []
-        for i, r in enumerate(combined, 1):
+        for r in rows:
             uid = str(r.get("user_id") or "").strip()
+            rank = int(r.get("rank") or 0)
             chars = int(r.get("total_chars") or 0)
             prof = profiles.get(uid) or {}
             items.append(
                 {
-                    "rank": i,
+                    "rank": rank,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
                     "total_chars": chars,
@@ -524,50 +456,25 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
-        # "問い所持数" is represented by the number of answered MyModel Create items.
-        # - day/week/month: answers updated within the range (JST 00:00 boundary)
-        # - year: total (all-time)
-        create_map: Dict[str, Dict[str, int]] = {}
-        try:
-            create_map = await _fetch_mymodel_create_agg(p_range=p_range)
-        except Exception as exc:
-            logger.warning(
-                "Failed to aggregate mymodel_create_answers for mymodel questions ranking: %s",
-                exc,
-            )
-            create_map = {}
+        # Use server-side ranking (RPC) and keep ranks (incl. ties).
+        # Prefetch > limit so visibility filtering can still return up to limit items.
+        prefetch_limit = max(int(p_limit), 300)
+        rows = await _rpc("rank_mymodel_questions", {"p_range": p_range, "p_limit": prefetch_limit})
+        rows = await _filter_rows_by_ranking_visibility(rows)
+        rows = rows[: int(p_limit)]
 
-        all_uids = sorted(set(list(create_map.keys())))
-        vis = await _fetch_ranking_visibility_map(all_uids)
-
-        combined: List[Dict[str, Any]] = []
-        for uid in all_uids:
-            if not vis.get(uid, True):
-                continue
-            cnt = int((create_map.get(uid) or {}).get("count", 0) or 0)
-            if cnt <= 0:
-                continue
-            combined.append({"user_id": uid, "mymodel_questions_total": cnt})
-
-        combined.sort(
-            key=lambda x: (
-                -int(x.get("mymodel_questions_total") or 0),
-                str(x.get("user_id") or ""),
-            )
-        )
-        combined = combined[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in combined]
+        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
 
         items: List[Dict[str, Any]] = []
-        for i, r in enumerate(combined, 1):
+        for r in rows:
             uid = str(r.get("user_id") or "").strip()
+            rank = int(r.get("rank") or 0)
             cnt = int(r.get("mymodel_questions_total") or 0)
             prof = profiles.get(uid) or {}
             items.append(
                 {
-                    "rank": i,
+                    "rank": rank,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
                     "mymodel_questions_total": cnt,

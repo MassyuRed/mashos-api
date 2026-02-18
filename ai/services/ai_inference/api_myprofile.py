@@ -147,6 +147,7 @@ class MyProfileFollowListItem(BaseModel):
     display_name: Optional[str] = None
     friend_code: Optional[str] = None
     myprofile_code: Optional[str] = None
+    is_private_account: bool = False
 
 
 class MyProfileFollowListResponse(BaseModel):
@@ -1298,6 +1299,47 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     if isinstance(p, dict) and p.get("id") is not None:
                         profiles_map[str(p.get("id"))] = p
 
+
+        # 2.5) visibility bulk fetch (private account flag)
+        # account_visibility_settings は存在しない場合があるため、未取得は False（公開扱い）
+        private_map: Dict[str, bool] = {pid: False for pid in ids}
+        try:
+            chunk_size_vis = 200
+            for j in range(0, len(ids), chunk_size_vis):
+                chunk = ids[j : j + chunk_size_vis]
+                in_expr_vis = ",".join(chunk)
+                resp_vis = await _sb_get(
+                    f"/rest/v1/{VISIBILITY_TABLE}",
+                    params={
+                        "select": "user_id,is_private_account",
+                        "user_id": f"in.({in_expr_vis})",
+                    },
+                )
+                if resp_vis.status_code >= 300:
+                    logger.warning(
+                        "Supabase visibility list failed: %s %s",
+                        resp_vis.status_code,
+                        (resp_vis.text or "")[:800],
+                    )
+                    continue
+                vrows = resp_vis.json()
+                if not isinstance(vrows, list):
+                    continue
+                for v in vrows:
+                    if not isinstance(v, dict):
+                        continue
+                    vid = str(v.get("user_id") or "").strip()
+                    if not vid:
+                        continue
+                    flag = v.get("is_private_account")
+                    if flag is True:
+                        private_map[vid] = True
+                    elif flag is False:
+                        private_map[vid] = False
+        except Exception as exc:
+            logger.warning("Visibility prefetch failed: %s", exc)
+            private_map = {pid: False for pid in ids}
+
         # 3) order restore
         ordered: list[MyProfileFollowListItem] = []
         for pid in ids:
@@ -1310,6 +1352,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
                     friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
                     myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
+                    is_private_account=bool(private_map.get(pid, False)),
                 )
             )
 
