@@ -303,6 +303,55 @@ async def _fetch_ranking_visibility_map(user_ids: List[str]) -> Dict[str, bool]:
 
     return out
 
+async def _fetch_private_account_map(user_ids: List[str]) -> Dict[str, bool]:
+    """Return map user_id -> is_private_account.
+
+    Missing settings rows are treated as public (False).
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    # Default public unless explicitly set to private.
+    out: Dict[str, bool] = {uid: False for uid in ids}
+
+    # Chunk to avoid huge query strings.
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_private_account",
+                "user_id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase visibility settings fetch failed (private flag): %s %s",
+                resp.status_code,
+                (resp.text or "")[:500],
+            )
+            continue
+        rows = resp.json()
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+            flag = r.get("is_private_account")
+            if flag is True:
+                out[uid] = True
+            elif flag is False:
+                out[uid] = False
+
+    return out
+
+
 
 async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Filter ranking rows by is_ranking_visible.
@@ -387,6 +436,7 @@ def register_ranking_routes(app: FastAPI) -> None:
 
         user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
+        private_map = await _fetch_private_account_map(user_ids)
 
         items: List[Dict[str, Any]] = []
         for r in rows:
@@ -437,6 +487,7 @@ def register_ranking_routes(app: FastAPI) -> None:
                     "rank": rank,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
+                    "is_private_account": bool(private_map.get(uid, False)),
                     "total_chars": chars,
                     "value": chars,
                 }
