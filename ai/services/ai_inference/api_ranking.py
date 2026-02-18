@@ -475,6 +475,7 @@ def register_ranking_routes(app: FastAPI) -> None:
 
         user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
         profiles = await _fetch_profiles_map(user_ids)
+        private_map = await _fetch_private_account_map(user_ids)
 
         items: List[Dict[str, Any]] = []
         for r in rows:
