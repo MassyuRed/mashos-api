@@ -157,6 +157,7 @@ class QnaEchoesSubmitRequest(BaseModel):
     q_instance_id: str = Field(..., description="<target_user_id>:<question_id>")
     q_key: Optional[str] = Field(None, description="Optional; derived if omitted")
     strength: str = Field(..., description="small | medium | large")
+    memo: Optional[str] = Field(None, description="Optional memo text")
 
 
 class QnaEchoesSubmitResponse(BaseModel):
@@ -164,6 +165,7 @@ class QnaEchoesSubmitResponse(BaseModel):
     q_key: str
     q_instance_id: str
     strength: str
+    memo: Optional[str] = None
     resonated: bool = True
     views: int = 0
     resonances: int = 0
@@ -198,6 +200,7 @@ class QnaEchoesHistoryResponse(BaseModel):
     count_medium: int = 0
     count_large: int = 0
     my_strength: Optional[str] = None
+    my_memo: Optional[str] = None
     limit: int = 0
     is_limited: bool = False
     items: List[QnaEchoesHistoryItem] = Field(default_factory=list)
@@ -2027,6 +2030,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if strength not in ("small", "medium", "large"):
             raise HTTPException(status_code=400, detail="Invalid strength (small|medium|large)")
 
+        memo = None
+        if req.memo is not None:
+            memo = str(req.memo)
+            # Keep it conservative (UI may enforce its own limits)
+            if len(memo) > 2000:
+                raise HTTPException(status_code=400, detail="Memo too long")
+            if not memo.strip():
+                memo = None
+
         payload = {
             "viewer_user_id": str(viewer_user_id),
             "target_user_id": str(tgt),
@@ -2034,6 +2046,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             "q_key": str(qk),
             "q_instance_id": str(req.q_instance_id),
             "strength": strength,
+            "memo": memo,
             "created_at": _now_iso(),
         }
 
@@ -2103,6 +2116,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             q_key=qk,
             q_instance_id=req.q_instance_id,
             strength=strength,
+            memo=memo,
             resonated=bool(resonated),
             views=int(views or 0),
             resonances=int(res_cnt or 0),
@@ -2303,13 +2317,14 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                     continue
                 items.append(QnaEchoesHistoryItem(strength=st, created_at=ca))
 
-        # My strength (optional)
+        # My strength / memo (optional)
         my_strength: Optional[str] = None
+        my_memo: Optional[str] = None
         try:
             resp_my = await _sb_get(
                 f"/rest/v1/{ECHOES_TABLE}",
                 params={
-                    "select": "strength,created_at",
+                    "select": "strength,memo,created_at",
                     "viewer_user_id": f"eq.{viewer_user_id}",
                     "q_instance_id": f"eq.{q_instance_id}",
                     "order": "created_at.desc",
@@ -2319,9 +2334,13 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             if resp_my.status_code < 300:
                 rr = resp_my.json()
                 if isinstance(rr, list) and rr:
-                    my_strength = str((rr[0] or {}).get("strength") or "").strip() or None
+                    row0 = rr[0] if isinstance(rr[0], dict) else {}
+                    my_strength = str((row0 or {}).get("strength") or "").strip() or None
+                    memo_raw = (row0 or {}).get("memo")
+                    my_memo = None if memo_raw is None else str(memo_raw)
         except Exception:
             my_strength = None
+            my_memo = None
 
         return QnaEchoesHistoryResponse(
             status="ok",
@@ -2333,6 +2352,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             count_medium=int(cnt_medium or 0),
             count_large=int(cnt_large or 0),
             my_strength=my_strength,
+            my_memo=my_memo,
             limit=int(eff_limit),
             is_limited=bool(is_free),
             items=items,
