@@ -252,6 +252,26 @@ class QnaDiscoveryHistoryResponse(BaseModel):
     items: List[QnaDiscoveryHistoryItem] = Field(default_factory=list)
 
 
+class QnaSavedReflectionItem(BaseModel):
+    q_instance_id: str
+    q_key: str
+    title: str
+    owner_user_id: str
+    owner_display_name: Optional[str] = None
+    saved_at: str
+
+
+class QnaSavedReflectionsResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    order: str = Field("newest", description="newest | oldest")
+    total_items: int = 0
+    limit: int = 0
+    offset: int = 0
+    items: List[QnaSavedReflectionItem] = Field(default_factory=list)
+
+
+
+
 
 
 
@@ -1996,6 +2016,201 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     # Echoes (響き) API
     # ---------------------------------------------------------
 
+
+    @app.get("/mymodel/qna/echoes/reflections", response_model=QnaSavedReflectionsResponse)
+    async def qna_echoes_reflections(
+        order: str = Query(default="newest", description="newest | oldest"),
+        limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
+        offset: int = Query(default=0, ge=0, description="Offset (best-effort)"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaSavedReflectionsResponse:
+        """List reflections that the viewer has Echoes-saved (履歴ありのみ).
+
+        Notes:
+        - Ordering is by the viewer's saved timestamp (created_at in echoes table).
+        - Only reflections currently accessible to the viewer (myprofile_links) are returned.
+        - Titles are filtered by the viewer's view_tier (light|standard).
+        """
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        order_key = str(order or "newest").strip().lower()
+        if order_key not in ("newest", "oldest"):
+            order_key = "newest"
+        sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
+
+        # Viewer tier -> view_tier (light|standard) to avoid leaking inaccessible questions.
+        viewer_tier = SubscriptionTier.FREE
+        try:
+            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
+        except Exception:
+            viewer_tier = SubscriptionTier.FREE
+        view_tier = _view_tier_for_subscription(viewer_tier)
+
+        # Load questions allowed for this view_tier.
+        try:
+            qrows = await _fetch_create_questions(build_tier=view_tier)
+        except Exception as exc:
+            logger.error("failed to fetch create questions (echoes reflections): %s", exc)
+            raise HTTPException(status_code=502, detail="Failed to load questions")
+
+        qmap: Dict[int, str] = {}
+        for r in qrows or []:
+            try:
+                qid = int((r or {}).get("id"))
+            except Exception:
+                continue
+            txt = str((r or {}).get("question_text") or "").strip()
+            if txt:
+                qmap[int(qid)] = txt
+
+        if not qmap:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        # Only reflections currently accessible to the viewer.
+        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        if not followed_set:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        scan_limit = int(min(max(int(limit) * 5, 50), 2000))
+
+        resp = await _sb_get(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "order": sb_order,
+                "limit": str(scan_limit),
+                "offset": str(int(offset)),
+            },
+        )
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase %s select failed (echoes reflections): %s %s",
+                ECHOES_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to load echoes reflections")
+
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        # Deduplicate by q_instance_id (keep first in the requested order).
+        picked: List[Dict[str, Any]] = []
+        seen_iids: Set[str] = set()
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            iid = str((r or {}).get("q_instance_id") or "").strip()
+            if not iid or iid in seen_iids:
+                continue
+            seen_iids.add(iid)
+            picked.append(r)
+            if len(picked) >= int(limit):
+                break
+
+        # Collect owner ids for profile lookup.
+        owner_ids: Set[str] = set()
+        prepared: List[Tuple[str, str, int, str, str]] = []
+        # tuple: (q_instance_id, owner_user_id, question_id, q_key, saved_at)
+
+        for r in picked:
+            iid = str((r or {}).get("q_instance_id") or "").strip()
+            tgt = str((r or {}).get("target_user_id") or "").strip()
+            if not iid or not tgt:
+                continue
+            if tgt not in followed_set:
+                continue
+
+            qid_val = None
+            try:
+                qid_val = int((r or {}).get("question_id") or 0)
+            except Exception:
+                qid_val = None
+
+            if not qid_val:
+                try:
+                    _, qid2 = _parse_instance_id(iid)
+                    qid_val = int(qid2)
+                except Exception:
+                    qid_val = None
+
+            if not qid_val or int(qid_val) not in qmap:
+                continue
+
+            qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
+            saved_at = str((r or {}).get("created_at") or "").strip()
+            if not saved_at:
+                continue
+
+            owner_ids.add(tgt)
+            prepared.append((iid, tgt, int(qid_val), qk, saved_at))
+
+        if not prepared:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
+
+        items: List[QnaSavedReflectionItem] = []
+        for iid, tgt, qid_val, qk, saved_at in prepared:
+            p = profiles_map.get(str(tgt)) or {}
+            dn = p.get("display_name") if isinstance(p, dict) else None
+            dn_s = dn.strip() if isinstance(dn, str) else None
+            items.append(
+                QnaSavedReflectionItem(
+                    q_instance_id=iid,
+                    q_key=qk,
+                    title=str(qmap.get(int(qid_val)) or ""),
+                    owner_user_id=tgt,
+                    owner_display_name=dn_s,
+                    saved_at=saved_at,
+                )
+            )
+
+        return QnaSavedReflectionsResponse(
+            status="ok",
+            order=order_key,
+            total_items=len(items),
+            limit=int(limit),
+            offset=int(offset),
+            items=items,
+        )
+
     @app.post("/mymodel/qna/echoes/submit", response_model=QnaEchoesSubmitResponse)
     async def qna_echoes_submit(
         req: QnaEchoesSubmitRequest,
@@ -2361,6 +2576,200 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     # ---------------------------------------------------------
     # Discoveries (気づき) API
     # ---------------------------------------------------------
+
+
+    @app.get("/mymodel/qna/discoveries/reflections", response_model=QnaSavedReflectionsResponse)
+    async def qna_discoveries_reflections(
+        order: str = Query(default="newest", description="newest | oldest"),
+        limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
+        offset: int = Query(default=0, ge=0, description="Offset (best-effort)"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaSavedReflectionsResponse:
+        """List reflections that the viewer has Discoveries-saved (履歴ありのみ).
+
+        Notes:
+        - Ordering is by the viewer's saved timestamp (created_at in discovery logs table).
+        - Only reflections currently accessible to the viewer (myprofile_links) are returned.
+        - Titles are filtered by the viewer's view_tier (light|standard).
+        """
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        order_key = str(order or "newest").strip().lower()
+        if order_key not in ("newest", "oldest"):
+            order_key = "newest"
+        sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
+
+        # Viewer tier -> view_tier (light|standard) to avoid leaking inaccessible questions.
+        viewer_tier = SubscriptionTier.FREE
+        try:
+            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
+        except Exception:
+            viewer_tier = SubscriptionTier.FREE
+        view_tier = _view_tier_for_subscription(viewer_tier)
+
+        # Load questions allowed for this view_tier.
+        try:
+            qrows = await _fetch_create_questions(build_tier=view_tier)
+        except Exception as exc:
+            logger.error("failed to fetch create questions (discoveries reflections): %s", exc)
+            raise HTTPException(status_code=502, detail="Failed to load questions")
+
+        qmap: Dict[int, str] = {}
+        for r in qrows or []:
+            try:
+                qid = int((r or {}).get("id"))
+            except Exception:
+                continue
+            txt = str((r or {}).get("question_text") or "").strip()
+            if txt:
+                qmap[int(qid)] = txt
+
+        if not qmap:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        # Only reflections currently accessible to the viewer.
+        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
+        if not followed_set:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        scan_limit = int(min(max(int(limit) * 5, 50), 2000))
+
+        resp = await _sb_get(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "order": sb_order,
+                "limit": str(scan_limit),
+                "offset": str(int(offset)),
+            },
+        )
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase %s select failed (discoveries reflections): %s %s",
+                DISCOVERY_LOGS_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            raise HTTPException(status_code=502, detail="Failed to load discoveries reflections")
+
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        # Deduplicate by q_instance_id (keep first in the requested order).
+        picked: List[Dict[str, Any]] = []
+        seen_iids: Set[str] = set()
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            iid = str((r or {}).get("q_instance_id") or "").strip()
+            if not iid or iid in seen_iids:
+                continue
+            seen_iids.add(iid)
+            picked.append(r)
+            if len(picked) >= int(limit):
+                break
+
+        owner_ids: Set[str] = set()
+        prepared: List[Tuple[str, str, int, str, str]] = []
+        # tuple: (q_instance_id, owner_user_id, question_id, q_key, saved_at)
+
+        for r in picked:
+            iid = str((r or {}).get("q_instance_id") or "").strip()
+            tgt = str((r or {}).get("target_user_id") or "").strip()
+            if not iid or not tgt:
+                continue
+            if tgt not in followed_set:
+                continue
+
+            qid_val = None
+            try:
+                qid_val = int((r or {}).get("question_id") or 0)
+            except Exception:
+                qid_val = None
+
+            if not qid_val:
+                try:
+                    _, qid2 = _parse_instance_id(iid)
+                    qid_val = int(qid2)
+                except Exception:
+                    qid_val = None
+
+            if not qid_val or int(qid_val) not in qmap:
+                continue
+
+            qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
+            saved_at = str((r or {}).get("created_at") or "").strip()
+            if not saved_at:
+                continue
+
+            owner_ids.add(tgt)
+            prepared.append((iid, tgt, int(qid_val), qk, saved_at))
+
+        if not prepared:
+            return QnaSavedReflectionsResponse(
+                status="ok",
+                order=order_key,
+                total_items=0,
+                limit=int(limit),
+                offset=int(offset),
+                items=[],
+            )
+
+        profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
+
+        items: List[QnaSavedReflectionItem] = []
+        for iid, tgt, qid_val, qk, saved_at in prepared:
+            p = profiles_map.get(str(tgt)) or {}
+            dn = p.get("display_name") if isinstance(p, dict) else None
+            dn_s = dn.strip() if isinstance(dn, str) else None
+            items.append(
+                QnaSavedReflectionItem(
+                    q_instance_id=iid,
+                    q_key=qk,
+                    title=str(qmap.get(int(qid_val)) or ""),
+                    owner_user_id=tgt,
+                    owner_display_name=dn_s,
+                    saved_at=saved_at,
+                )
+            )
+
+        return QnaSavedReflectionsResponse(
+            status="ok",
+            order=order_key,
+            total_items=len(items),
+            limit=int(limit),
+            offset=int(offset),
+            items=items,
+        )
 
     @app.post("/mymodel/qna/discoveries/submit", response_model=QnaDiscoverySubmitResponse)
     async def qna_discovery_submit(
