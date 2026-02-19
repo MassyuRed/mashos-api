@@ -2337,7 +2337,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                     row0 = rr[0] if isinstance(rr[0], dict) else {}
                     my_strength = str((row0 or {}).get("strength") or "").strip() or None
                     memo_raw = (row0 or {}).get("memo")
-                    my_memo = None if memo_raw is None else str(memo_raw)
+                    my_memo = None if memo_raw is None else (str(memo_raw).strip() or None)
         except Exception:
             my_strength = None
             my_memo = None
