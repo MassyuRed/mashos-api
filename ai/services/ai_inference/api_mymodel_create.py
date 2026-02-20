@@ -197,6 +197,28 @@ async def _fetch_questions(*, build_tier: str) -> List[Dict[str, Any]]:
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
+async def _fetch_questions_all_active() -> List[Dict[str, Any]]:
+    """Fetch all active questions across tiers.
+
+    Notes:
+    - We intentionally ignore build_tier here so the client can paginate/lock pages.
+    - Ordering is server-managed by sort_order (then id for stability).
+    """
+    resp = await _sb_get(
+        f"/rest/v1/{QUESTIONS_TABLE}",
+        params={
+            "select": "id,question_text,sort_order,tier,is_active",
+            "is_active": "eq.true",
+            "order": "sort_order.asc,id.asc",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error("Supabase %s select failed: %s %s", QUESTIONS_TABLE, resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to load create questions")
+    rows = resp.json()
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
 async def _fetch_answers(*, user_id: str, question_ids: Optional[Set[int]] = None) -> Dict[int, Dict[str, Any]]:
     uid = str(user_id or "").strip()
     if not uid:
@@ -261,7 +283,8 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         if tier_norm not in ("light", "standard"):
             tier_norm = "light"
 
-        questions = await _fetch_questions(build_tier=tier_norm)
+                # Always return the full active question set across tiers (UI handles gating/pagination).
+        questions = await _fetch_questions_all_active()
         qids: Set[int] = set()
         for q in questions:
             try:
