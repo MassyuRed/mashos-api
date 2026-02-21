@@ -1438,3 +1438,281 @@ def build_myprofile_monthly_report(
 
     return ("\n".join(lines).strip() + "\n", meta)
 
+# =============================================================================
+# Phase 6: ASTOR heavy processing -> separate worker support
+# -----------------------------------------------------------------------------
+# This section adds a small "latest report refresh" helper that:
+# - determines MyProfile report_mode from subscription tier
+# - applies throttle (min interval) to avoid repeated heavy generation
+# - uses generation_lock to avoid duplicate generation
+# - upserts into Supabase table: myprofile_reports (report_type='latest')
+#
+# Intended to be called from a background worker process (Render worker).
+# =============================================================================
+
+import asyncio as _asyncio
+import logging as _logging
+from datetime import datetime as _datetime, timezone as _timezone, timedelta as _timedelta
+from typing import Any as _Any, Dict as _Dict, Optional as _Optional
+
+from supabase_client import (
+    ensure_supabase_config as _ensure_supabase_config_shared,
+    sb_get as _sb_get_shared,
+    sb_post as _sb_post_shared,
+)
+
+_logger = _logging.getLogger("astor_myprofile_report")
+
+# For app compatibility: latest uses fixed period_start/end and reuses one row.
+LATEST_REPORT_PERIOD_START = "1970-01-01T00:00:00.000Z"
+LATEST_REPORT_PERIOD_END = "1970-01-01T00:00:00.000Z"
+
+# Env (optional):
+# - MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS=90
+# - MYPROFILE_LATEST_PERIOD=28d  (例: 7d / 28d / 30d)
+try:
+    MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS = int(
+        os.getenv("MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS", "90") or "90"
+    )
+except Exception:
+    MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS = 90
+
+MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28d").strip() or "28d"
+
+
+def _now_iso_z() -> str:
+    return (
+        _datetime.now(_timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _parse_iso(iso: _Optional[str]) -> _Optional[_datetime]:
+    if not iso:
+        return None
+    try:
+        s = str(iso).strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = _datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_timezone.utc)
+        return dt.astimezone(_timezone.utc)
+    except Exception:
+        return None
+
+
+async def _fetch_myprofile_latest_generated_at(user_id: str) -> _Optional[str]:
+    """Fetch generated_at from myprofile_reports(latest)."""
+    _ensure_supabase_config_shared()
+
+    params = {
+        "select": "generated_at",
+        "user_id": f"eq.{user_id}",
+        "report_type": "eq.latest",
+        "period_start": f"eq.{LATEST_REPORT_PERIOD_START}",
+        "period_end": f"eq.{LATEST_REPORT_PERIOD_END}",
+        "limit": "1",
+    }
+    resp = await _sb_get_shared("/rest/v1/myprofile_reports", params=params, timeout=5.0)
+    if resp.status_code not in (200, 206):
+        _logger.warning(
+            "Fetch myprofile_reports(latest) failed: %s %s",
+            resp.status_code,
+            (resp.text or "")[:500],
+        )
+        return None
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+    if isinstance(data, list) and data:
+        if isinstance(data[0], dict):
+            return data[0].get("generated_at")
+    if isinstance(data, dict):
+        return data.get("generated_at")
+    return None
+
+
+async def _upsert_myprofile_latest_report_row(payload: _Dict[str, _Any]) -> None:
+    """Upsert myprofile_reports(latest). Raises on failure."""
+    _ensure_supabase_config_shared()
+
+    params = {"on_conflict": "user_id,report_type,period_start,period_end"}
+    prefer = "resolution=merge-duplicates,return=minimal"
+    resp = await _sb_post_shared(
+        "/rest/v1/myprofile_reports",
+        json=payload,
+        params=params,
+        prefer=prefer,
+        timeout=10.0,
+    )
+    if resp.status_code not in (200, 201, 204):
+        raise RuntimeError(
+            f"Upsert myprofile_reports(latest) failed: HTTP {resp.status_code} {(resp.text or '')[:800]}"
+        )
+
+
+async def refresh_myprofile_latest_report(
+    *,
+    user_id: str,
+    trigger: str = "worker",
+    force: bool = False,
+) -> _Dict[str, _Any]:
+    """Generate + upsert the latest MyProfile report (preview).
+
+    Returns a small dict for logging/observability:
+      - status: ok / skipped_throttle / skipped_locked / empty
+      - report_mode, generated_at (when ok)
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    # ---- throttle ----
+    if not force:
+        min_interval = int(MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS or 0)
+        if min_interval > 0:
+            try:
+                last_iso = await _fetch_myprofile_latest_generated_at(uid)
+                last_dt = _parse_iso(last_iso)
+                if last_dt is not None:
+                    now_dt = _datetime.now(_timezone.utc)
+                    if (now_dt - last_dt).total_seconds() < float(min_interval):
+                        return {
+                            "status": "skipped_throttle",
+                            "user_id": uid,
+                            "last_generated_at": last_iso,
+                            "min_interval_sec": min_interval,
+                        }
+            except Exception:
+                # If we can't read last time, continue generation.
+                pass
+
+    # ---- determine report_mode (fail-closed) ----
+    # Spec v2: Plus=standard, Premium=structural, Free=not entitled (keep "light" for compatibility).
+    report_mode = "light"
+    try:
+        from subscription_store import get_subscription_tier_for_user
+        from subscription import SubscriptionTier
+
+        tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+        if tier == SubscriptionTier.PREMIUM:
+            report_mode = "structural"
+        elif tier == SubscriptionTier.PLUS:
+            report_mode = "standard"
+        else:
+            report_mode = "light"
+    except Exception:
+        report_mode = "light"
+
+    # ---- generation lock (best-effort) ----
+    lock_key = None
+    lock_owner = None
+    lock_acquired = True
+    try:
+        from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock
+
+        lock_key = build_lock_key(
+            namespace="myprofile",
+            user_id=uid,
+            report_type="latest",
+            period_start=LATEST_REPORT_PERIOD_START,
+            period_end=LATEST_REPORT_PERIOD_END,
+        )
+        lock_owner = make_owner_id(f"myprofile_latest:{trigger}")
+        ttl = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYPROFILE_LATEST", "180") or "180")
+        lr = await try_acquire_lock(
+            lock_key=lock_key,
+            ttl_seconds=ttl,
+            owner_id=lock_owner,
+            context={
+                "namespace": "myprofile",
+                "user_id": uid,
+                "report_type": "latest",
+                "period": MYPROFILE_LATEST_PERIOD,
+                "report_mode": report_mode,
+                "source": trigger,
+            },
+        )
+        lock_acquired = bool(getattr(lr, "acquired", False))
+        lock_owner = getattr(lr, "owner_id", lock_owner)
+    except Exception:
+        lock_acquired = True
+
+    if not lock_acquired:
+        return {"status": "skipped_locked", "user_id": uid}
+
+    try:
+        # ---- generate latest text (rule-based; no LLM) ----
+        now_dt = _datetime.now(_timezone.utc).replace(microsecond=0)
+
+        # build_myprofile_monthly_report is sync; run in a thread to keep worker loop responsive.
+        text, meta = await _asyncio.to_thread(
+            build_myprofile_monthly_report,
+            user_id=uid,
+            period=MYPROFILE_LATEST_PERIOD or "28d",
+            report_mode=report_mode,
+            include_secret=True,
+            now=now_dt,
+            prev_report_text=None,
+        )
+
+        text = str(text or "").strip()
+        if not text:
+            return {"status": "empty", "user_id": uid}
+
+        # snapshot window (for debugging / UI hints)
+        snap = {"period": MYPROFILE_LATEST_PERIOD}
+        try:
+            days = 28
+            try:
+                days = int(parse_period_days(MYPROFILE_LATEST_PERIOD))
+            except Exception:
+                pass
+            end_dt = _datetime.now(_timezone.utc).replace(microsecond=0)
+            start_dt = end_dt - _timedelta(days=max(days, 1))
+            snap = {
+                "start": start_dt.isoformat().replace("+00:00", "Z"),
+                "end": end_dt.isoformat().replace("+00:00", "Z"),
+                "period": MYPROFILE_LATEST_PERIOD,
+            }
+        except Exception:
+            pass
+
+        generated_at = _now_iso_z()
+
+        payload = {
+            "user_id": uid,
+            "report_type": "latest",
+            "period_start": LATEST_REPORT_PERIOD_START,
+            "period_end": LATEST_REPORT_PERIOD_END,
+            "title": "自己構造レポート（最新版）",
+            "content_text": text,
+            "content_json": {
+                **(meta or {}),
+                "source": trigger,
+                "snapshot": snap,
+                "generated_at_server": generated_at,
+            },
+            "generated_at": generated_at,
+        }
+
+        await _upsert_myprofile_latest_report_row(payload)
+
+        return {
+            "status": "ok",
+            "user_id": uid,
+            "report_mode": report_mode,
+            "generated_at": generated_at,
+        }
+    finally:
+        try:
+            from generation_lock import release_lock
+
+            if lock_key:
+                await release_lock(lock_key=lock_key, owner_id=lock_owner)
+        except Exception:
+            pass

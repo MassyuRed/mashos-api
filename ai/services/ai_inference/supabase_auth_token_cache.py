@@ -39,6 +39,9 @@ from typing import Optional, Tuple
 
 import httpx
 
+# Shared HTTP client (connection pooled)
+from supabase_client import get_async_client
+
 logger = logging.getLogger("supabase_auth_token_cache")
 
 
@@ -139,8 +142,8 @@ async def _verify_with_supabase(access_token: str) -> Optional[str]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url, headers=headers)
+        client = await get_async_client()
+        resp = await client.get(url, headers=headers, timeout=_TIMEOUT)
     except Exception as exc:
         logger.debug("Supabase auth verify request failed: %s", exc)
         return None

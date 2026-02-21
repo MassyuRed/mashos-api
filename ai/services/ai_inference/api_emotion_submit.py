@@ -57,6 +57,12 @@ except ImportError:  # pragma: no cover
 
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_auth_headers as _sb_auth_headers_shared,
+    sb_get as _sb_get_shared,
+)
+
 logger = logging.getLogger("emotion_submit")
 
 astor_engine = AstorEngine()
@@ -272,14 +278,11 @@ async def _resolve_user_id_from_token(access_token: str) -> str:
     - 200 以外の場合は 401 を返す。
     """
     _ensure_supabase_config()
-    url = f"{SUPABASE_URL}/auth/v1/user"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-    }
-
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(url, headers=headers)
+    resp = await _sb_get_shared(
+        "/auth/v1/user",
+        headers=_sb_auth_headers_shared(access_token),
+        timeout=5.0,
+    )
 
     if resp.status_code != 200:
         logger.warning(
@@ -441,6 +444,12 @@ except Exception:
     MYPROFILE_LATEST_REFRESH_MIN_INTERVAL_SECONDS = 90
 
 MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28d").strip()
+
+# --- Phase 6: ASTOR heavy processing -> worker queue ---
+# When enabled, the API will enqueue heavy MyProfile report generation to Supabase table `astor_jobs`.
+# The worker process will consume the job and update `myprofile_reports` (report_type='latest').
+ASTOR_WORKER_QUEUE_ENABLED = _env_truthy("ASTOR_WORKER_QUEUE_ENABLED", "false")
+ASTOR_WORKER_QUEUE_FALLBACK_LOCAL = _env_truthy("ASTOR_WORKER_QUEUE_FALLBACK_LOCAL", "true")
 
 async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
     """myprofile_reports(latest) の generated_at を取得する（無ければ None）。"""
@@ -1536,11 +1545,34 @@ async def _post_submit_background_async(
         except Exception as exc:
             logger.error("ASTOR EmotionIngest failed (bg): %s", exc)
 
-        # 3) MyProfile 最新レポート（プレビュー）を自動更新（失敗しても致命的ではない）
+        # 3) MyProfile 最新レポート（プレビュー）は重いので「別ワーカー」に委譲（Phase 6）
+        #    - Supabase のジョブキュー( astor_jobs )へ enqueue
+        #    - Worker 側が myprofile_reports(latest) を生成/更新する
         try:
-            await _auto_refresh_myprofile_latest_report(user_id)
+            if ASTOR_WORKER_QUEUE_ENABLED:
+                from astor_job_queue import enqueue_job as _enqueue_job
+
+                await _enqueue_job(
+                    job_key=f"myprofile_latest_refresh:{user_id}",
+                    job_type="myprofile_latest_refresh_v1",
+                    user_id=user_id,
+                    payload={
+                        "trigger": "emotion_submit",
+                        "requested_at": created_at,
+                    },
+                    priority=50,
+                )
+            else:
+                # Fallback: 旧方式（同一プロセス内）で実行
+                await _auto_refresh_myprofile_latest_report(user_id)
         except Exception as exc:
-            logger.error("MyProfile latest auto-refresh failed (bg): %s", exc)
+            logger.error("MyProfile latest refresh failed/enqueue failed (bg): %s", exc)
+            # enqueue に失敗しても、環境次第では旧方式で回収できるようにする
+            if ASTOR_WORKER_QUEUE_FALLBACK_LOCAL:
+                try:
+                    await _auto_refresh_myprofile_latest_report(user_id)
+                except Exception as _exc2:
+                    logger.error("MyProfile latest auto-refresh fallback failed (bg): %s", _exc2)
     except Exception as exc:
         logger.error("ASTOR background pipeline failed (bg): %s", exc)
 

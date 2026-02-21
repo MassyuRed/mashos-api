@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -38,6 +39,12 @@ from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
     _resolve_user_id_from_token,
+)
+
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_post_rpc as _sb_post_rpc_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
 )
 
 
@@ -52,6 +59,66 @@ ACCOUNT_STATUS_RPC = (
     os.getenv("COCOLON_ACCOUNT_STATUS_RPC", "account_status_summary_v2")
     or "account_status_summary_v2"
 ).strip()
+# ----------------------------
+# In-memory cache (per process)
+# ----------------------------
+# Account screen tends to request status repeatedly while navigating.
+# This small TTL cache reduces RPC pressure and stabilizes perceived latency.
+ACCOUNT_STATUS_CACHE_TTL_SECONDS = float(
+    os.getenv("COCOLON_ACCOUNT_STATUS_CACHE_TTL_SECONDS", "30") or "30"
+)
+ACCOUNT_STATUS_CACHE_MAX_ITEMS = int(
+    os.getenv("COCOLON_ACCOUNT_STATUS_CACHE_MAX_ITEMS", "2000") or "2000"
+)
+
+# target_user_id -> (expires_at_epoch, payload_dict)
+_status_cache: Dict[str, Tuple[float, Dict[str, int]]] = {}
+
+
+def _cache_get(target_user_id: str) -> Optional[Dict[str, int]]:
+    if ACCOUNT_STATUS_CACHE_TTL_SECONDS <= 0:
+        return None
+    tgt = str(target_user_id or "").strip()
+    if not tgt:
+        return None
+    now = time.time()
+    item = _status_cache.get(tgt)
+    if not item:
+        return None
+    exp, payload = item
+    if exp <= now:
+        # Expired
+        _status_cache.pop(tgt, None)
+        return None
+    return payload
+
+
+def _cache_put(target_user_id: str, payload: Dict[str, int]) -> None:
+    if ACCOUNT_STATUS_CACHE_TTL_SECONDS <= 0:
+        return
+    tgt = str(target_user_id or "").strip()
+    if not tgt:
+        return
+    now = time.time()
+    _status_cache[tgt] = (now + float(ACCOUNT_STATUS_CACHE_TTL_SECONDS), dict(payload or {}))
+
+    # Opportunistic eviction (keep it simple and safe)
+    if len(_status_cache) <= ACCOUNT_STATUS_CACHE_MAX_ITEMS:
+        return
+
+    # 1) drop expired first
+    for k, (exp, _p) in list(_status_cache.items()):
+        if exp <= now:
+            _status_cache.pop(k, None)
+
+    # 2) if still too large, drop oldest insertions
+    while len(_status_cache) > ACCOUNT_STATUS_CACHE_MAX_ITEMS:
+        try:
+            oldest_key = next(iter(_status_cache))
+        except StopIteration:
+            break
+        _status_cache.pop(oldest_key, None)
+
 
 
 class AccountStatusResponse(BaseModel):
@@ -70,22 +137,11 @@ class AccountStatusResponse(BaseModel):
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 async def _sb_post_rpc(fn: str, payload: Dict[str, Any]) -> Any:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}/rest/v1/rpc/{fn}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(), json=payload)
+    return await _sb_post_rpc_shared(fn, payload, timeout=8.0)
 
 
 async def _require_user_id(authorization: Optional[str]) -> str:
@@ -130,6 +186,10 @@ def register_account_status_routes(app: FastAPI) -> None:
             or str(viewed_user_id or "").strip()
             or str(viewer_user_id)
         )
+        # Fast path: serve from cache
+        cached = _cache_get(tgt)
+        if cached is not None:
+            return AccountStatusResponse(status="ok", target_user_id=tgt, **cached)
 
         # Call RPC (preferred, fast)
         resp = await _sb_post_rpc(ACCOUNT_STATUS_RPC, {"p_target_user_id": tgt})
@@ -155,15 +215,25 @@ def register_account_status_routes(app: FastAPI) -> None:
         elif isinstance(data, dict):
             row = data
 
+        payload = {
+            "login_days_total": _to_int(row.get("login_days_total")),
+            "login_streak_max": _to_int(row.get("login_streak_max")),
+            "input_count_total": _to_int(row.get("input_count_total")),
+            "input_chars_total": _to_int(row.get("input_chars_total")),
+            "mymodel_questions_total": _to_int(row.get("mymodel_questions_total")),
+            "mymodel_views_total": _to_int(row.get("mymodel_views_total")),
+            "mymodel_resonances_total": _to_int(row.get("mymodel_resonances_total")),
+            "mymodel_discoveries_total": _to_int(row.get("mymodel_discoveries_total")),
+        }
+
+        # Update cache (best-effort)
+        try:
+            _cache_put(tgt, payload)
+        except Exception:
+            pass
+
         return AccountStatusResponse(
             status="ok",
             target_user_id=tgt,
-            login_days_total=_to_int(row.get("login_days_total")),
-            login_streak_max=_to_int(row.get("login_streak_max")),
-            input_count_total=_to_int(row.get("input_count_total")),
-            input_chars_total=_to_int(row.get("input_chars_total")),
-            mymodel_questions_total=_to_int(row.get("mymodel_questions_total")),
-            mymodel_views_total=_to_int(row.get("mymodel_views_total")),
-            mymodel_resonances_total=_to_int(row.get("mymodel_resonances_total")),
-            mymodel_discoveries_total=_to_int(row.get("mymodel_discoveries_total")),
+            **payload,
         )

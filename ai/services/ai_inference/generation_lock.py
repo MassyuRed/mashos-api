@@ -30,7 +30,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Tuple, TypeVar
 import httpx
 from fastapi import HTTPException
 
-from api_emotion_submit import _ensure_supabase_config
+from supabase_client import ensure_supabase_config as _ensure_supabase_config
 
 # Phase11: observability (structured logs)
 try:

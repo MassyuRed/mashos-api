@@ -45,6 +45,16 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
 )
 
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_delete as _sb_delete_shared,
+    sb_get as _sb_get_shared,
+    sb_patch as _sb_patch_shared,
+    sb_post as _sb_post_shared,
+    sb_post_rpc as _sb_post_rpc_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
+)
+
 # Phase10: generation lock (dedupe concurrent generation)
 try:
     from generation_lock import (
@@ -65,6 +75,9 @@ logger = logging.getLogger("myprofile_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# Phase2: Follow list RPC name (Supabase SQL function)
+MYPROFILE_FOLLOW_LIST_RPC = (os.getenv("COCOLON_MYPROFILE_FOLLOW_LIST_RPC", "myprofile_follow_list_v1") or "myprofile_follow_list_v1").strip()
 
 # Phase10 lock tuning (env)
 MYPROFILE_LATEST_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYPROFILE_LATEST", "180") or "180")
@@ -276,34 +289,22 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    # Keep legacy helper name but delegate to the shared client headers.
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers_json(), params=params)
+    return await _sb_get_shared(path, params=params)
 
 
 async def _sb_count(path: str, *, params: Dict[str, str]) -> int:
     """Return exact row count for a given REST endpoint query (PostgREST count header)."""
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        resp = await client.get(
-            url,
-            headers=_sb_headers_json(prefer="count=exact"),
-            params=params,
-        )
+    # Use the shared pooled client, but keep behavior (raise on failure).
+    resp = await _sb_get_shared(
+        path,
+        params=params,
+        prefer="count=exact",
+    )
 
     if resp.status_code >= 300:
         logger.error("Supabase count failed: %s %s", resp.status_code, resp.text[:1500])
@@ -327,24 +328,20 @@ async def _sb_count(path: str, *, params: Dict[str, str]) -> int:
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json)
+    return await _sb_post_shared(path, json=json, prefer=prefer)
 
 
 async def _sb_patch(path: str, *, params: Dict[str, str], json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+    return await _sb_patch_shared(path, params=params, json=json, prefer=prefer)
 
 
 async def _sb_delete(path: str, *, params: Dict[str, str]) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.delete(url, headers=_sb_headers_json(), params=params)
+    return await _sb_delete_shared(path, params=params)
+
+
+async def _sb_post_rpc(fn: str, *, payload: Dict[str, Any]) -> httpx.Response:
+    """Call a Supabase RPC function via POST /rest/v1/rpc/<fn> (service_role)."""
+    return await _sb_post_rpc_shared(fn, payload)
 
 
 async def _lookup_profile_by_myprofile_code(myprofile_code: str) -> Optional[Dict[str, Any]]:
@@ -1226,133 +1223,41 @@ def register_myprofile_routes(app: FastAPI) -> None:
         # authorization is accepted for future-proofing, but currently optional
         _ = authorization  # noqa: F841
 
-        # 1) link table -> ordered ids
-        if t == "following":
-            resp = await _sb_get(
-                "/rest/v1/myprofile_links",
-                params={
-                    "select": "owner_user_id,created_at",
-                    "viewer_user_id": f"eq.{uid}",
-                    "order": "created_at.desc",
-                    "limit": str(int(limit)),
-                },
-            )
-            key = "owner_user_id"
-        else:
-            resp = await _sb_get(
-                "/rest/v1/myprofile_links",
-                params={
-                    "select": "viewer_user_id,created_at",
-                    "owner_user_id": f"eq.{uid}",
-                    "order": "created_at.desc",
-                    "limit": str(int(limit)),
-                },
-            )
-            key = "viewer_user_id"
-
+        # Phase2: Fetch follow list via Supabase RPC (single roundtrip)
+        fn = (MYPROFILE_FOLLOW_LIST_RPC or "myprofile_follow_list_v1").strip() or "myprofile_follow_list_v1"
+        payload = {
+            "p_target_user_id": uid,
+            "p_tab": t,
+            "p_limit": int(limit),
+        }
+        resp = await _sb_post_rpc(fn, payload=payload)
         if resp.status_code >= 300:
-            logger.error("Supabase myprofile_links list failed: %s %s", resp.status_code, resp.text[:1500])
+            logger.error(
+                "Supabase rpc %s failed: %s %s",
+                fn,
+                resp.status_code,
+                (resp.text or "")[:1500],
+            )
             raise HTTPException(status_code=502, detail="Failed to load follow list")
 
-        link_rows = resp.json()
-        ids_raw: list[str] = []
-        if isinstance(link_rows, list):
-            for r in link_rows:
-                if isinstance(r, dict):
-                    v = str(r.get(key) or "").strip()
-                    if v:
-                        ids_raw.append(v)
+        data = resp.json()
+        if not isinstance(data, list):
+            data = []
 
-        # dedupe while preserving order
-        ids: list[str] = []
-        seen = set()
-        for x in ids_raw:
-            if x not in seen:
-                ids.append(x)
-                seen.add(x)
-
-        if not ids:
-            return MyProfileFollowListResponse(status="ok", target_user_id=uid, tab=t, rows=[])
-
-        # 2) profiles bulk fetch (chunked to keep URLs reasonable)
-        profiles_map: Dict[str, Dict[str, Any]] = {}
-        chunk_size = 200
-        for i in range(0, len(ids), chunk_size):
-            chunk = ids[i : i + chunk_size]
-            in_expr = ",".join(chunk)
-
-            resp2 = await _sb_get(
-                "/rest/v1/profiles",
-                params={
-                    "select": "id,display_name,friend_code,myprofile_code",
-                    "id": f"in.({in_expr})",
-                    "limit": str(len(chunk)),
-                },
-            )
-            if resp2.status_code >= 300:
-                logger.error("Supabase profiles list failed: %s %s", resp2.status_code, resp2.text[:1500])
-                raise HTTPException(status_code=502, detail="Failed to load profiles")
-
-            rows2 = resp2.json()
-            if isinstance(rows2, list):
-                for p in rows2:
-                    if isinstance(p, dict) and p.get("id") is not None:
-                        profiles_map[str(p.get("id"))] = p
-
-
-        # 2.5) visibility bulk fetch (private account flag)
-        # account_visibility_settings は存在しない場合があるため、未取得は False（公開扱い）
-        private_map: Dict[str, bool] = {pid: False for pid in ids}
-        try:
-            chunk_size_vis = 200
-            for j in range(0, len(ids), chunk_size_vis):
-                chunk = ids[j : j + chunk_size_vis]
-                in_expr_vis = ",".join(chunk)
-                resp_vis = await _sb_get(
-                    f"/rest/v1/{VISIBILITY_TABLE}",
-                    params={
-                        "select": "user_id,is_private_account",
-                        "user_id": f"in.({in_expr_vis})",
-                    },
-                )
-                if resp_vis.status_code >= 300:
-                    logger.warning(
-                        "Supabase visibility list failed: %s %s",
-                        resp_vis.status_code,
-                        (resp_vis.text or "")[:800],
-                    )
-                    continue
-                vrows = resp_vis.json()
-                if not isinstance(vrows, list):
-                    continue
-                for v in vrows:
-                    if not isinstance(v, dict):
-                        continue
-                    vid = str(v.get("user_id") or "").strip()
-                    if not vid:
-                        continue
-                    flag = v.get("is_private_account")
-                    if flag is True:
-                        private_map[vid] = True
-                    elif flag is False:
-                        private_map[vid] = False
-        except Exception as exc:
-            logger.warning("Visibility prefetch failed: %s", exc)
-            private_map = {pid: False for pid in ids}
-
-        # 3) order restore
         ordered: list[MyProfileFollowListItem] = []
-        for pid in ids:
-            p = profiles_map.get(pid)
-            if not p:
+        for r in data:
+            if not isinstance(r, dict):
+                continue
+            pid = str(r.get("id") or "").strip()
+            if not pid:
                 continue
             ordered.append(
                 MyProfileFollowListItem(
-                    id=str(p.get("id")),
-                    display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
-                    friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
-                    myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
-                    is_private_account=bool(private_map.get(pid, False)),
+                    id=pid,
+                    display_name=(r.get("display_name") if isinstance(r.get("display_name"), str) else None),
+                    friend_code=(r.get("friend_code") if isinstance(r.get("friend_code"), str) else None),
+                    myprofile_code=(r.get("myprofile_code") if isinstance(r.get("myprofile_code"), str) else None),
+                    is_private_account=bool(r.get("is_private_account") or False),
                 )
             )
 

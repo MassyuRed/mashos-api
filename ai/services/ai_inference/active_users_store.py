@@ -40,6 +40,12 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_post as _sb_post_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
+)
+
 logger = logging.getLogger("active_users_store")
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
@@ -102,14 +108,8 @@ def _iso_z(dt: datetime) -> str:
 
 
 def _sb_headers(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    # Keep legacy helper but delegate to shared header builder.
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 def _normalize_tier(raw: Optional[str]) -> str:
@@ -217,17 +217,16 @@ async def touch_active_user(
         payload["subscription_tier"] = tier
         payload["subscription_tier_updated_at"] = ts
 
-    url = f"{SUPABASE_URL}/rest/v1/{ACTIVE_USERS_TABLE}"
     params = {"on_conflict": "user_id"}
 
     try:
-        async with httpx.AsyncClient(timeout=ACTIVE_USERS_TOUCH_TIMEOUT_SECONDS) as client:
-            resp = await client.post(
-                url,
-                headers=_sb_headers(prefer="resolution=merge-duplicates,return=minimal"),
-                params=params,
-                json=payload,
-            )
+        resp = await _sb_post_shared(
+            f"/rest/v1/{ACTIVE_USERS_TABLE}",
+            params=params,
+            json=payload,
+            prefer="resolution=merge-duplicates,return=minimal",
+            timeout=ACTIVE_USERS_TOUCH_TIMEOUT_SECONDS,
+        )
 
         if resp.status_code not in (200, 201, 204):
             logger.warning(

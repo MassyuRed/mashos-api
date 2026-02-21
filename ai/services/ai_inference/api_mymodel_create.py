@@ -42,6 +42,15 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
+
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_delete as _sb_delete_shared,
+    sb_get as _sb_get_shared,
+    sb_post as _sb_post_shared,
+    sb_service_role_headers as _sb_headers_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
+)
 from active_users_store import touch_active_user
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
@@ -131,47 +140,23 @@ class MyModelCreateAnswersResponse(BaseModel):
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 def _sb_headers(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    return _sb_headers_shared(prefer=prefer)
 
 
 async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers(), params=params)
+    return await _sb_get_shared(path, params=params, headers=_sb_headers(), timeout=8.0)
 
 
 async def _sb_post(path: str, *, params: Optional[Dict[str, str]] = None, json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+    return await _sb_post_shared(path, params=params, json=json, prefer=prefer, timeout=10.0)
 
 
 async def _sb_delete(path: str, *, params: Dict[str, str]) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.delete(url, headers=_sb_headers(), params=params)
+    return await _sb_delete_shared(path, params=params, headers=_sb_headers(), timeout=8.0)
 
 
 def _now_iso() -> str:

@@ -38,6 +38,13 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
 )
 
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_get as _sb_get_shared,
+    sb_post as _sb_post_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
+)
+
 
 logger = logging.getLogger("ranking_api")
 
@@ -156,29 +163,15 @@ async def _fetch_mymodel_create_agg(*, p_range: str) -> Dict[str, Dict[str, int]
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json)
+    return await _sb_post_shared(path, json=json, prefer=prefer, timeout=8.0)
 
 
 async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers_json(), params=params)
+    return await _sb_get_shared(path, params=params, timeout=8.0)
 
 
 async def _require_user_id(authorization: Optional[str]) -> str:
@@ -226,160 +219,6 @@ async def _rpc(fn: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
-async def _fetch_profiles_map(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
-    if not ids:
-        return {}
-    # PostgREST in.(...) expects comma separated values.
-    in_list = ",".join(ids)
-    resp = await _sb_get(
-        "/rest/v1/profiles",
-        params={
-            "select": "id,display_name",
-            "id": f"in.({in_list})",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.warning("Supabase profiles fetch failed: %s %s", resp.status_code, resp.text[:800])
-        return {}
-    rows = resp.json()
-    out: Dict[str, Dict[str, Any]] = {}
-    if isinstance(rows, list):
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            rid = str(r.get("id") or "").strip()
-            if not rid:
-                continue
-            out[rid] = r
-    return out
-
-
-async def _fetch_ranking_visibility_map(user_ids: List[str]) -> Dict[str, bool]:
-    """Return map user_id -> is_ranking_visible.
-
-    Missing settings rows are treated as visible (True).
-    """
-    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
-    if not ids:
-        return {}
-
-    # Default visible unless explicitly disabled.
-    out: Dict[str, bool] = {uid: True for uid in ids}
-
-    # Chunk to avoid huge query strings.
-    chunk_size = 200
-    for i in range(0, len(ids), chunk_size):
-        chunk = ids[i : i + chunk_size]
-        in_list = ",".join(chunk)
-        resp = await _sb_get(
-            f"/rest/v1/{VISIBILITY_TABLE}",
-            params={
-                "select": "user_id,is_ranking_visible",
-                "user_id": f"in.({in_list})",
-            },
-        )
-        if resp.status_code >= 300:
-            logger.warning(
-                "Supabase visibility settings fetch failed (ranking filter): %s %s",
-                resp.status_code,
-                (resp.text or "")[:500],
-            )
-            continue
-        rows = resp.json()
-        if not isinstance(rows, list):
-            continue
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            flag = r.get("is_ranking_visible")
-            if flag is False:
-                out[uid] = False
-            elif flag is True:
-                out[uid] = True
-
-    return out
-
-async def _fetch_private_account_map(user_ids: List[str]) -> Dict[str, bool]:
-    """Return map user_id -> is_private_account.
-
-    Missing settings rows are treated as public (False).
-    """
-    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
-    if not ids:
-        return {}
-
-    # Default public unless explicitly set to private.
-    out: Dict[str, bool] = {uid: False for uid in ids}
-
-    # Chunk to avoid huge query strings.
-    chunk_size = 200
-    for i in range(0, len(ids), chunk_size):
-        chunk = ids[i : i + chunk_size]
-        in_list = ",".join(chunk)
-        resp = await _sb_get(
-            f"/rest/v1/{VISIBILITY_TABLE}",
-            params={
-                "select": "user_id,is_private_account",
-                "user_id": f"in.({in_list})",
-            },
-        )
-        if resp.status_code >= 300:
-            logger.warning(
-                "Supabase visibility settings fetch failed (private flag): %s %s",
-                resp.status_code,
-                (resp.text or "")[:500],
-            )
-            continue
-        rows = resp.json()
-        if not isinstance(rows, list):
-            continue
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            flag = r.get("is_private_account")
-            if flag is True:
-                out[uid] = True
-            elif flag is False:
-                out[uid] = False
-
-    return out
-
-
-
-async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Filter ranking rows by is_ranking_visible.
-
-    This keeps server-side aggregation intact but hides users who opted out.
-    """
-    raw_rows = [r for r in (rows or []) if isinstance(r, dict)]
-    user_ids = [str(r.get("user_id") or "").strip() for r in raw_rows]
-    user_ids = [uid for uid in user_ids if uid]
-    if not user_ids:
-        return raw_rows
-
-    vis = await _fetch_ranking_visibility_map(user_ids)
-    filtered = [
-        r for r in raw_rows
-        if vis.get(str(r.get("user_id") or "").strip(), True)
-    ]
-
-    # Stable ordering by original rank (keep server-side ranking incl. ties).
-    def _rk(v: Dict[str, Any]) -> int:
-        try:
-            return int(v.get("rank") or 0)
-        except Exception:
-            return 0
-
-    filtered.sort(key=_rk)
-    return filtered
-
 
 def register_ranking_routes(app: FastAPI) -> None:
     """Register ranking endpoints on the given FastAPI app."""
@@ -416,7 +255,6 @@ def register_ranking_routes(app: FastAPI) -> None:
             rank = int(r.get("rank") or 0)
             items.append({"rank": rank, "emotion": emotion, "count": count, "value": count})
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
-
     @app.get("/ranking/input_count")
     async def ranking_input_count(
         range: str = Query(default="week"),
@@ -427,35 +265,40 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
-        # Use server-side ranking (RPC) and keep ranks (incl. ties).
-        # Prefetch > limit so visibility filtering can still return up to limit items.
-        prefetch_limit = max(int(p_limit), 300)
-        rows = await _rpc("rank_input_count", {"p_range": p_range, "p_limit": prefetch_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        rows = rows[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
-        private_map = await _fetch_private_account_map(user_ids)
+        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        rows = await _rpc("rank_input_count_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []
         for r in rows:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
-            cnt = int(r.get("input_count") or 0)
-            prof = profiles.get(uid) or {}
+            if not uid:
+                continue
+            try:
+                rk = int(r.get("rank") or 0)
+            except Exception:
+                rk = 0
+            try:
+                cnt = int(r.get("input_count") or 0)
+            except Exception:
+                cnt = 0
+
+            dn = r.get("display_name")
+            if dn is not None and not isinstance(dn, str):
+                dn = str(dn)
+
             items.append(
                 {
-                    "rank": rank,
+                    "rank": rk,
                     "user_id": uid,
-                    "display_name": prof.get("display_name"),
+                    "display_name": dn,
                     "input_count": cnt,
                     "value": cnt,
                 }
             )
 
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
-
     @app.get("/ranking/input_length")
     async def ranking_input_length(
         range: str = Query(default="week"),
@@ -466,38 +309,43 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
-        # Use server-side ranking (RPC) and keep ranks (incl. ties).
-        # Prefetch > limit so visibility filtering can still return up to limit items.
-        prefetch_limit = max(int(p_limit), 300)
-        rows = await _rpc("rank_input_length", {"p_range": p_range, "p_limit": prefetch_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        rows = rows[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
-        private_map = await _fetch_private_account_map(user_ids)
+        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        rows = await _rpc("rank_input_length_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []
         for r in rows:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
-            chars = int(r.get("total_chars") or 0)
-            prof = profiles.get(uid) or {}
+            if not uid:
+                continue
+            try:
+                rk = int(r.get("rank") or 0)
+            except Exception:
+                rk = 0
+            try:
+                chars = int(r.get("total_chars") or 0)
+            except Exception:
+                chars = 0
+
+            dn = r.get("display_name")
+            if dn is not None and not isinstance(dn, str):
+                dn = str(dn)
+
+            is_private = bool(r.get("is_private_account") or False)
+
             items.append(
                 {
-                    "rank": rank,
+                    "rank": rk,
                     "user_id": uid,
-                    "display_name": prof.get("display_name"),
-                    "is_private_account": bool(private_map.get(uid, False)),
+                    "display_name": dn,
+                    "is_private_account": is_private,
                     "total_chars": chars,
                     "value": chars,
                 }
             )
 
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
-
-
-
     @app.get("/ranking/mymodel_questions")
     async def ranking_mymodel_questions(
         range: str = Query(default="year"),
@@ -508,27 +356,34 @@ def register_ranking_routes(app: FastAPI) -> None:
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
 
-        # Use server-side ranking (RPC) and keep ranks (incl. ties).
-        # Prefetch > limit so visibility filtering can still return up to limit items.
-        prefetch_limit = max(int(p_limit), 300)
-        rows = await _rpc("rank_mymodel_questions", {"p_range": p_range, "p_limit": prefetch_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        rows = rows[: int(p_limit)]
-
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
+        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        rows = await _rpc("rank_mymodel_questions_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []
         for r in rows:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
-            cnt = int(r.get("mymodel_questions_total") or 0)
-            prof = profiles.get(uid) or {}
+            if not uid:
+                continue
+            try:
+                rk = int(r.get("rank") or 0)
+            except Exception:
+                rk = 0
+            try:
+                cnt = int(r.get("mymodel_questions_total") or 0)
+            except Exception:
+                cnt = 0
+
+            dn = r.get("display_name")
+            if dn is not None and not isinstance(dn, str):
+                dn = str(dn)
+
             items.append(
                 {
-                    "rank": rank,
+                    "rank": rk,
                     "user_id": uid,
-                    "display_name": prof.get("display_name"),
+                    "display_name": dn,
                     "mymodel_questions_total": cnt,
                     "value": cnt,
                 }
@@ -544,23 +399,38 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-        rows = await _rpc("rank_mymodel_used", {"p_range": p_range, "p_limit": p_limit})
-        rows = await _filter_rows_by_ranking_visibility(rows)
-        user_ids = [str(r.get("user_id") or "").strip() for r in rows if isinstance(r, dict)]
-        profiles = await _fetch_profiles_map(user_ids)
+
+        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        rows = await _rpc("rank_mymodel_used_v2", {"p_range": p_range, "p_limit": int(p_limit)})
+
         items: List[Dict[str, Any]] = []
         for r in rows:
+            if not isinstance(r, dict):
+                continue
             uid = str(r.get("user_id") or "").strip()
-            rank = int(r.get("rank") or 0)
-            used = int(r.get("used_count") or 0)
-            prof = profiles.get(uid) or {}
+            if not uid:
+                continue
+            try:
+                rk = int(r.get("rank") or 0)
+            except Exception:
+                rk = 0
+            try:
+                used = int(r.get("used_count") or 0)
+            except Exception:
+                used = 0
+
+            dn = r.get("display_name")
+            if dn is not None and not isinstance(dn, str):
+                dn = str(dn)
+
             items.append(
                 {
-                    "rank": rank,
+                    "rank": rk,
                     "user_id": uid,
-                    "display_name": prof.get("display_name"),
+                    "display_name": dn,
                     "used_count": used,
                     "value": used,
                 }
             )
+
         return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}

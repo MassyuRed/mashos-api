@@ -46,6 +46,16 @@ from api_mymodel_create import _fetch_questions as _fetch_create_questions
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    sb_delete as _sb_delete_shared,
+    sb_get as _sb_get_shared,
+    sb_patch as _sb_patch_shared,
+    sb_post as _sb_post_shared,
+    sb_post_rpc as _sb_post_rpc_shared,
+    sb_service_role_headers_json as _sb_headers_json_shared,
+)
+
 
 logger = logging.getLogger("mymodel.qna")
 
@@ -78,6 +88,17 @@ RESONANCE_LOGS_TABLE = os.getenv(
 
 
 VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
+
+# RPC function names (overrideable)
+QNA_LIST_RPC = (
+    os.getenv("COCOLON_MYMODEL_QNA_LIST_RPC", "mymodel_qna_list_v1")
+    or "mymodel_qna_list_v1"
+).strip()
+QNA_UNREAD_RPC = (
+    os.getenv("COCOLON_MYMODEL_QNA_UNREAD_RPC", "mymodel_qna_unread_v1")
+    or "mymodel_qna_unread_v1"
+).strip()
+QNA_LIST_RPC_LIMIT = int(os.getenv("COCOLON_MYMODEL_QNA_LIST_RPC_LIMIT", "2000") or "2000")
 
 
 # ----------------------------
@@ -330,32 +351,18 @@ class QnaRecommendUsersResponse(BaseModel):
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
-    _ensure_supabase_config()
-    h = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        h["Prefer"] = prefer
-    return h
+    return _sb_headers_json_shared(prefer=prefer)
 
 
 async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers_json(), params=params)
+    return await _sb_get_shared(path, params=params, timeout=8.0)
 
 
 async def _sb_get_with_prefer(
     path: str, *, params: Optional[Dict[str, str]] = None, prefer: Optional[str] = None
 ) -> httpx.Response:
     """GET with optional Prefer header (e.g., count=exact)."""
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers_json(prefer=prefer), params=params)
+    return await _sb_get_shared(path, params=params, prefer=prefer, timeout=8.0)
 
 
 def _parse_content_range_total(content_range: Optional[str]) -> int:
@@ -398,28 +405,25 @@ async def _sb_count_rows(path: str, *, params: Dict[str, str]) -> int:
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json)
+    return await _sb_post_shared(path, json=json, prefer=prefer, timeout=8.0)
+
+
+async def _sb_post_rpc(fn: str, payload: Dict[str, Any]) -> httpx.Response:
+    """POST to Supabase RPC endpoint (service_role)."""
+    return await _sb_post_rpc_shared(fn, payload, timeout=8.0)
+
 
 
 async def _sb_patch(
     path: str, *, params: Dict[str, str], json: Any, prefer: Optional[str] = None
 ) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+    return await _sb_patch_shared(path, params=params, json=json, prefer=prefer, timeout=8.0)
 
 
 async def _sb_delete(
     path: str, *, params: Dict[str, str], prefer: Optional[str] = None
 ) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.delete(url, headers=_sb_headers_json(prefer=prefer), params=params)
+    return await _sb_delete_shared(path, params=params, prefer=prefer, timeout=8.0)
 
 
 # ----------------------------
@@ -1189,90 +1193,81 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             viewer_user_id=viewer_user_id, target_user_id=tgt
         )
 
-        # Fetch Create questions (effective tier)
+        # Fetch answered reflections with JOINed metrics / discoveries / reads in a single RPC call.
         try:
-            qrows = await _fetch_create_questions(build_tier=effective_tier)
+            resp = await _sb_post_rpc(
+                QNA_LIST_RPC,
+                {
+                    "p_viewer_user_id": str(viewer_user_id),
+                    "p_target_user_id": str(tgt),
+                    "p_effective_tier": str(effective_tier or "").strip() or None,
+                    "p_limit": int(QNA_LIST_RPC_LIMIT),
+                },
+            )
         except Exception as exc:
-            logger.error("failed to fetch create questions: %s", exc)
-            raise HTTPException(status_code=502, detail="Failed to load questions")
+            logger.error("Supabase rpc %s failed (network): %s", QNA_LIST_RPC, exc)
+            raise HTTPException(status_code=502, detail="Failed to load reflections")
 
-        question_ids: List[int] = []
-        qtext: Dict[int, str] = {}
-        for r in qrows or []:
-            try:
-                qid = int(r.get("id"))
-            except Exception:
-                continue
-            txt = str(r.get("question_text") or "").strip()
-            if not txt:
-                continue
-            question_ids.append(qid)
-            qtext[qid] = txt
-
-        if not question_ids:
-            meta = QnaListMeta(
-                viewer_user_id=viewer_user_id,
-                target_user_id=tgt,
-                subscription_tier=subscription_tier,
-                view_tier=view_tier,
-                build_tier=build_tier,
-                effective_tier=effective_tier,
-                total_items=0,
+        if resp.status_code >= 300:
+            logger.error(
+                "Supabase rpc %s failed: %s %s",
+                QNA_LIST_RPC,
+                resp.status_code,
+                (resp.text or "")[:1500],
             )
-            return QnaListResponse(items=[], meta=meta)
+            raise HTTPException(status_code=502, detail="Failed to load reflections")
 
-        # Fetch target answers
-        answers = await _fetch_create_answers(user_id=tgt, question_ids=set(question_ids))
+        rows: Any = []
+        try:
+            rows = resp.json()
+        except Exception:
+            rows = []
 
-        # Only answered items (avoid blank experiences)
         items: List[QnaListItem] = []
-        q_keys: Set[str] = set()
-        q_instance_ids: Set[str] = set()
 
-        for qid in question_ids:
-            a = answers.get(qid)
-            ans = str((a or {}).get("answer_text") or "").strip()
-            if not ans:
-                continue
-            qk = _q_key_for_question_id(qid)
-            qid2 = _instance_id_for_target_question(tgt, qid)
-            q_keys.add(qk)
-            q_instance_ids.add(qid2)
-            generated_at = None
-            try:
-                generated_at = str((a or {}).get("updated_at") or "").strip() or None
-            except Exception:
-                generated_at = None
-            items.append(
-                QnaListItem(
-                    title=qtext.get(qid, ""),
-                    q_key=qk,
-                    q_instance_id=qid2,
-                    generated_at=generated_at,
-                    views=0,
-                    resonances=0,
-                    is_new=False,
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+
+                title = str(r.get("title") or "").strip()
+                q_key = str(r.get("q_key") or "").strip()
+                q_instance_id = str(r.get("q_instance_id") or "").strip()
+                if not title or not q_key or not q_instance_id:
+                    continue
+
+                gen_raw = r.get("generated_at")
+                generated_at = None if gen_raw is None else (str(gen_raw).strip() or None)
+
+                try:
+                    views = int(r.get("views") or 0)
+                except Exception:
+                    views = 0
+                try:
+                    resonances = int(r.get("resonances") or 0)
+                except Exception:
+                    resonances = 0
+                try:
+                    discoveries = int(r.get("discoveries") or 0)
+                except Exception:
+                    discoveries = 0
+
+                is_new = True if r.get("is_new") is True else False
+
+                items.append(
+                    QnaListItem(
+                        title=title,
+                        q_key=q_key,
+                        q_instance_id=q_instance_id,
+                        generated_at=generated_at,
+                        views=views,
+                        resonances=resonances,
+                        discoveries=discoveries,
+                        is_new=is_new,
+                    )
                 )
-            )
 
-        metrics_map = await _fetch_instance_metrics(q_instance_ids)
-        read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
-
-        # Attach metrics + new
-        for it in items:
-            m = metrics_map.get(it.q_instance_id) or {}
-            try:
-                it.views = int(m.get("views") or 0)
-            except Exception:
-                it.views = 0
-            try:
-                it.resonances = int(m.get("resonances") or 0)
-            except Exception:
-                it.resonances = 0
-            it.is_new = it.q_instance_id not in read_set
-
-
-        # Sort
+        # Sort (same behavior as v1)
         sort_key = str(sort or "newest").strip().lower()
         metric_key = str(metric or "views").strip().lower()
 
@@ -1281,14 +1276,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 metric_key = "views"
 
             if metric_key == "discoveries":
-                # Discoveries are stored as rows in the discovery logs table.
-                disc_map = await _fetch_discovery_counts_for_instances(q_instance_ids)
-                for it in items:
-                    try:
-                        it.discoveries = int(disc_map.get(it.q_instance_id) or 0)
-                    except Exception:
-                        it.discoveries = 0
-
                 items.sort(
                     key=lambda x: (x.discoveries, x.resonances, x.views, x.generated_at or ""),
                     reverse=True,
@@ -1301,7 +1288,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             items.sort(key=lambda x: (x.generated_at or ""), reverse=True)
 
         meta = QnaListMeta(
-            viewer_user_id=viewer_user_id,
+            viewer_user_id=str(viewer_user_id),
             target_user_id=tgt,
             subscription_tier=subscription_tier,
             view_tier=view_tier,
@@ -1351,60 +1338,60 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 viewer_user_id=viewer_user_id, target_user_id=tgt
             )
 
-            # Fetch Create questions (effective tier)
-            qrows = await _fetch_create_questions(build_tier=effective_tier)
-
-            question_ids: List[int] = []
-            for r in qrows or []:
-                try:
-                    qid = int((r or {}).get("id"))
-                except Exception:
-                    continue
-                question_ids.append(qid)
-
-            if not question_ids:
-                return QnaUnreadResponse(
-                    status="ok",
-                    viewer_user_id=viewer_user_id,
-                    target_user_id=tgt,
-                    total_items=0,
-                    unread_count=0,
-                    has_unread=False,
-                )
-
-            # Fetch target answers and keep only answered items
-            answers = await _fetch_create_answers(
-                user_id=tgt, question_ids=set(question_ids)
+            # Single RPC for unread counts (answered reflections only).
+            resp = await _sb_post_rpc(
+                QNA_UNREAD_RPC,
+                {
+                    "p_viewer_user_id": str(viewer_user_id),
+                    "p_target_user_id": str(tgt),
+                    "p_effective_tier": str(effective_tier or "").strip() or None,
+                },
             )
 
-            q_instance_ids: Set[str] = set()
-            for qid in question_ids:
-                a = answers.get(qid)
-                ans = str((a or {}).get("answer_text") or "").strip()
-                if not ans:
-                    continue
-                q_instance_ids.add(_instance_id_for_target_question(tgt, qid))
-
-            if not q_instance_ids:
+            if resp.status_code >= 300:
+                logger.warning(
+                    "Supabase rpc %s failed (unread): %s %s",
+                    QNA_UNREAD_RPC,
+                    resp.status_code,
+                    (resp.text or "")[:800],
+                )
                 return QnaUnreadResponse(
                     status="ok",
-                    viewer_user_id=viewer_user_id,
+                    viewer_user_id=str(viewer_user_id),
                     target_user_id=tgt,
                     total_items=0,
                     unread_count=0,
                     has_unread=False,
                 )
 
-            read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
-            unread_count = sum(1 for iid in q_instance_ids if iid not in read_set)
+            data: Any = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = None
+
+            row: Dict[str, Any] = {}
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                row = data[0]
+            elif isinstance(data, dict):
+                row = data
+
+            try:
+                total_items = int(row.get("total_items") or 0)
+            except Exception:
+                total_items = 0
+            try:
+                unread_count = int(row.get("unread_count") or 0)
+            except Exception:
+                unread_count = 0
 
             return QnaUnreadResponse(
                 status="ok",
-                viewer_user_id=viewer_user_id,
+                viewer_user_id=str(viewer_user_id),
                 target_user_id=tgt,
-                total_items=len(q_instance_ids),
-                unread_count=unread_count,
-                has_unread=unread_count > 0,
+                total_items=int(total_items or 0),
+                unread_count=int(unread_count or 0),
+                has_unread=int(unread_count or 0) > 0,
             )
         except HTTPException:
             raise
@@ -1413,15 +1400,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             # Fail-soft: badge endpoint should never crash the app
             return QnaUnreadResponse(
                 status="ok",
-                viewer_user_id=viewer_user_id,
+                viewer_user_id=str(viewer_user_id),
                 target_user_id=tgt,
                 total_items=0,
                 unread_count=0,
                 has_unread=False,
             )
-
-
-
 
     @app.get("/mymodel/qna/trending", response_model=QnaTrendingResponse)
     async def qna_trending(

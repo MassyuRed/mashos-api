@@ -39,11 +39,21 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
 from subscription import SubscriptionTier, TierLike, normalize_subscription_tier
+
+# Shared Supabase HTTP client (connection pooled)
+from supabase_client import (
+    ensure_supabase_config as _ensure_supabase_config_shared,
+    sb_auth_headers as _sb_auth_headers_shared,
+    sb_get as _sb_get_shared,
+    sb_patch as _sb_patch_shared,
+    sb_service_role_headers as _sb_headers_shared,
+)
 
 logger = logging.getLogger("subscription_store")
 
@@ -55,17 +65,50 @@ PROFILES_TABLE = os.getenv("COCOLON_SUBSCRIPTION_TABLE", "profiles")
 TIER_COLUMN = os.getenv("COCOLON_SUBSCRIPTION_TIER_COLUMN", "subscription_tier")
 
 
+# In-memory tier cache (best-effort)
+# - Speeds up endpoints that call tier lookups multiple times (e.g., QnA list/unread).
+# - Process-local (not shared across instances).
+TIER_CACHE_TTL_SECONDS = int(os.getenv("COCOLON_SUBSCRIPTION_TIER_CACHE_TTL_SECONDS", "60") or "60")
+TIER_CACHE_MAX_ITEMS = int(os.getenv("COCOLON_SUBSCRIPTION_TIER_CACHE_MAX_ITEMS", "5000") or "5000")
+_tier_cache: Dict[str, Tuple[float, SubscriptionTier]] = {}
+
+
+def _tier_cache_get(user_id: str) -> Optional[SubscriptionTier]:
+    if int(TIER_CACHE_TTL_SECONDS) <= 0:
+        return None
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    now = time.time()
+    ent = _tier_cache.get(uid)
+    if not ent:
+        return None
+    exp, tier = ent
+    if exp <= now:
+        _tier_cache.pop(uid, None)
+        return None
+    return tier
+
+
+def _tier_cache_set(user_id: str, tier: SubscriptionTier) -> None:
+    if int(TIER_CACHE_TTL_SECONDS) <= 0:
+        return
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+    # Simple bound to avoid unbounded memory (safe for MVP).
+    if int(TIER_CACHE_MAX_ITEMS) > 0 and len(_tier_cache) >= int(TIER_CACHE_MAX_ITEMS):
+        _tier_cache.clear()
+    _tier_cache[uid] = (time.time() + float(int(TIER_CACHE_TTL_SECONDS)), tier)
+
+
 def _ensure_supabase_config() -> None:
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        raise RuntimeError("Supabase configuration missing: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+    # Delegate to the shared config check (single source of truth)
+    _ensure_supabase_config_shared()
 
 
 def _sb_headers() -> Dict[str, str]:
-    _ensure_supabase_config()
-    return {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
+    return _sb_headers_shared()
 
 
 async def _fetch_profile_row(user_id: str) -> Optional[Dict[str, Any]]:
@@ -78,18 +121,20 @@ async def _fetch_profile_row(user_id: str) -> Optional[Dict[str, Any]]:
     if not uid:
         return None
 
-    url = f"{SUPABASE_URL}/rest/v1/{PROFILES_TABLE}"
     params = {
-        # Use '*' so the code does not hard-fail if the column is not added yet.
-        # (We still strongly recommend adding the column.)
+        # Keep '*' to be schema-tolerant (column might not exist in some envs).
         "select": "*",
         "id": f"eq.{uid}",
         "limit": "1",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, headers=_sb_headers(), params=params)
+        resp = await _sb_get_shared(
+            f"/rest/v1/{PROFILES_TABLE}",
+            params=params,
+            headers=_sb_headers(),
+            timeout=5.0,
+        )
     except Exception as exc:
         logger.warning("Supabase profile fetch failed (network): %s", exc)
         return None
@@ -126,12 +171,22 @@ async def get_subscription_tier_for_user(user_id: str, *, default: SubscriptionT
 
     This is intentionally fail-closed.
     """
-    row = await _fetch_profile_row(user_id)
+    uid = str(user_id or "").strip()
+    if not uid:
+        return default
+
+    cached = _tier_cache_get(uid)
+    if cached is not None:
+        return cached
+
+    row = await _fetch_profile_row(uid)
     if not row:
+        _tier_cache_set(uid, default)
         return default
 
     raw = row.get(TIER_COLUMN)
     tier = normalize_subscription_tier(raw, default=default)
+    _tier_cache_set(uid, tier)
     return tier
 
 
@@ -149,15 +204,12 @@ async def get_subscription_tier_from_access_token(
     if not tok:
         return default
 
-    url = f"{SUPABASE_URL}/auth/v1/user"
-    headers = {
-        "Authorization": f"Bearer {tok}",
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, headers=headers)
+        resp = await _sb_get_shared(
+            "/auth/v1/user",
+            headers=_sb_auth_headers_shared(tok),
+            timeout=5.0,
+        )
     except Exception as exc:
         logger.warning("Supabase auth user lookup failed (network): %s", exc)
         return default
@@ -198,20 +250,21 @@ async def _patch_profile_row(user_id: str, patch: Dict[str, Any]) -> Optional[Di
     if not uid:
         return None
 
-    url = f"{SUPABASE_URL}/rest/v1/{PROFILES_TABLE}"
-    params = {
-        "id": f"eq.{uid}",
-    }
+    params = {"id": f"eq.{uid}"}
     headers = {
         **_sb_headers(),
         "Content-Type": "application/json",
-        # Return the updated row (helpful for debugging)
         "Prefer": "return=representation",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            resp = await client.patch(url, headers=headers, params=params, json=patch)
+        resp = await _sb_patch_shared(
+            f"/rest/v1/{PROFILES_TABLE}",
+            params=params,
+            json=patch,
+            headers=headers,
+            timeout=6.0,
+        )
     except Exception as exc:
         logger.warning("Supabase profile update failed (network): %s", exc)
         return None
@@ -267,5 +320,7 @@ async def set_subscription_tier_for_user(
             "Failed to update subscription tier in Supabase. "
             "Ensure public.profiles has column 'subscription_tier' and SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are set."
         )
+
+    _tier_cache_set(uid, t)
 
     return t
