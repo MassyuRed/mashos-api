@@ -218,6 +218,174 @@ async def _rpc(fn: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [x for x in data if isinstance(x, dict)]
     return []
 
+# ---------------------------------------------------------------------------
+# Compatibility helpers for other ranking modules
+# ---------------------------------------------------------------------------
+# Some ranking endpoints live in separate modules (e.g. api_ranking_mymodel_views.py)
+# and import these helper functions from api_ranking. During Phase3, several endpoints
+# moved to server-side enriched RPCs (v2), but the helper functions must remain to
+# keep those modules working (and to avoid ImportError at startup).
+
+
+async def _fetch_profiles_map(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch profiles (id, display_name) for a list of user ids.
+
+    Returns: { user_id: {"id": ..., "display_name": ...}, ... }
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+
+    # Chunk to avoid overly long query strings.
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            "/rest/v1/profiles",
+            params={
+                "select": "id,display_name",
+                "id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning("Supabase profiles fetch failed: %s %s", resp.status_code, resp.text[:800])
+            continue
+
+        rows = resp.json()
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                rid = str(r.get("id") or "").strip()
+                if not rid:
+                    continue
+                out[rid] = r
+
+    return out
+
+
+async def _fetch_private_account_map(user_ids: List[str]) -> Dict[str, bool]:
+    """Return map user_id -> is_private_account.
+
+    Missing settings rows are treated as public (False).
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    # Default public unless explicitly set to private.
+    out: Dict[str, bool] = {uid: False for uid in ids}
+
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_private_account",
+                "user_id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s fetch failed (private map): %s %s",
+                VISIBILITY_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            continue
+
+        rows = resp.json()
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                uid = str(r.get("user_id") or "").strip()
+                if not uid:
+                    continue
+                out[uid] = bool(r.get("is_private_account") or False)
+
+    return out
+
+
+async def _fetch_ranking_visibility_map(user_ids: List[str]) -> Dict[str, bool]:
+    """Return map user_id -> is_ranking_visible.
+
+    Missing settings rows are treated as visible (True).
+    """
+    ids = [str(x).strip() for x in (user_ids or []) if str(x).strip()]
+    if not ids:
+        return {}
+
+    # Default visible unless explicitly disabled.
+    out: Dict[str, bool] = {uid: True for uid in ids}
+
+    chunk_size = 200
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        in_list = ",".join(chunk)
+        resp = await _sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_ranking_visible",
+                "user_id": f"in.({in_list})",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s fetch failed (ranking visibility): %s %s",
+                VISIBILITY_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            continue
+
+        rows = resp.json()
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                uid = str(r.get("user_id") or "").strip()
+                if not uid:
+                    continue
+                # Treat missing/NULL as visible.
+                val = r.get("is_ranking_visible")
+                if val is None:
+                    continue
+                out[uid] = bool(val)
+
+    return out
+
+
+async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter ranking rows by is_ranking_visible.
+
+    This keeps server-side aggregation intact but hides users who opted out.
+    """
+    raw_rows = [r for r in (rows or []) if isinstance(r, dict)]
+    user_ids = [str((r or {}).get("user_id") or "").strip() for r in raw_rows]
+    user_ids = [uid for uid in user_ids if uid]
+    if not user_ids:
+        return raw_rows
+
+    vis = await _fetch_ranking_visibility_map(user_ids)
+    filtered = [r for r in raw_rows if vis.get(str((r or {}).get("user_id") or "").strip(), True)]
+
+    # Stable ordering by original rank (keep server-side ranking incl. ties).
+    def _rk(v: Dict[str, Any]) -> int:
+        try:
+            return int(v.get("rank") or 0)
+        except Exception:
+            return 0
+
+    filtered.sort(key=_rk)
+    return filtered
+
+
 
 
 def register_ranking_routes(app: FastAPI) -> None:
