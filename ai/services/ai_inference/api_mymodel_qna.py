@@ -484,8 +484,10 @@ def _build_tier_for_subscription(tier: SubscriptionTier) -> str:
 
 
 def _view_tier_for_subscription(tier: SubscriptionTier) -> str:
-    # Spec: Free => Light, Plus/Premium => Standard (Premium extra is TODO)
-    return "light" if tier == SubscriptionTier.FREE else "standard"
+    # Viewing (Reflections) is open for all tiers.
+    # Subscription affects **creation/build** side only, not the viewer's readable range.
+    # Therefore we always allow the viewer to see up to the target's build_tier.
+    return "standard"
 
 
 def _effective_tier(*, view_tier: str, build_tier: str) -> str:
