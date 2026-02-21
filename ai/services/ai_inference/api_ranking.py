@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from collections import OrderedDict
+from threading import Lock
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -60,6 +63,68 @@ MYMODEL_CREATE_ANSWERS_TABLE = (
 ).strip() or "mymodel_create_answers"
 
 _JST = ZoneInfo("Asia/Tokyo")
+
+
+# ---------------------------------------------------------------------------
+# Ranking TTL cache (process-local)
+# ---------------------------------------------------------------------------
+# This reduces repeated RPC calls when the ranking screen is opened frequently.
+# Note: This cache is per Render instance/process (not shared across instances).
+def _env_int(name: str, default: int) -> int:
+    try:
+        v = os.getenv(name, str(default))
+        return int(v) if v is not None and str(v).strip() != "" else int(default)
+    except Exception:
+        return int(default)
+
+
+_RANKING_CACHE_TTL_SECONDS = _env_int("COCOLON_RANKING_CACHE_TTL_SECONDS", 30)
+_RANKING_CACHE_MAX_ITEMS = _env_int("COCOLON_RANKING_CACHE_MAX_ITEMS", 256)
+
+# key -> (expires_at_monotonic, response_dict)
+_ranking_cache: "OrderedDict[str, tuple[float, Dict[str, Any]]]" = OrderedDict()
+_ranking_cache_lock = Lock()
+
+
+def _ranking_cache_get(key: str) -> Optional[Dict[str, Any]]:
+    if _RANKING_CACHE_TTL_SECONDS <= 0:
+        return None
+    now = time.monotonic()
+    with _ranking_cache_lock:
+        ent = _ranking_cache.get(key)
+        if not ent:
+            return None
+        exp, val = ent
+        if exp <= now:
+            _ranking_cache.pop(key, None)
+            return None
+        # LRU refresh
+        try:
+            _ranking_cache.move_to_end(key)
+        except Exception:
+            pass
+        return val
+
+
+def _ranking_cache_set(key: str, value: Dict[str, Any]) -> None:
+    if _RANKING_CACHE_TTL_SECONDS <= 0:
+        return
+    now = time.monotonic()
+    exp = now + float(_RANKING_CACHE_TTL_SECONDS)
+    with _ranking_cache_lock:
+        _ranking_cache[key] = (exp, value)
+        try:
+            _ranking_cache.move_to_end(key)
+        except Exception:
+            pass
+        # prune (LRU)
+        if _RANKING_CACHE_MAX_ITEMS > 0:
+            while len(_ranking_cache) > _RANKING_CACHE_MAX_ITEMS:
+                try:
+                    _ranking_cache.popitem(last=False)
+                except Exception:
+                    break
+
 
 
 def _canonical_range(v: str) -> str:
@@ -399,6 +464,12 @@ def register_ranking_routes(app: FastAPI) -> None:
         # Auth required (prevents public scraping)
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
+
+        cache_key = f"ranking:emotions:{p_range}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         rows = await _rpc("rank_emotions", {"p_range": p_range})
         items: List[Dict[str, Any]] = []
         for r in rows:
@@ -406,7 +477,9 @@ def register_ranking_routes(app: FastAPI) -> None:
             count = int(r.get("count") or 0)
             rank = int(r.get("rank") or 0)
             items.append({"rank": rank, "emotion": emotion, "count": count, "value": count})
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
 
     @app.get("/ranking/emotions/self")
     async def ranking_emotions_self(
@@ -415,6 +488,12 @@ def register_ranking_routes(app: FastAPI) -> None:
     ) -> Dict[str, Any]:
         user_id = await _require_user_id(authorization)
         p_range = _normalize_range(range)
+
+        cache_key = f"ranking:emotions_self:{user_id}:{p_range}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         rows = await _rpc("rank_user_emotions", {"p_user_id": user_id, "p_range": p_range})
         items: List[Dict[str, Any]] = []
         for r in rows:
@@ -422,7 +501,9 @@ def register_ranking_routes(app: FastAPI) -> None:
             count = int(r.get("count") or 0)
             rank = int(r.get("rank") or 0)
             items.append({"rank": rank, "emotion": emotion, "count": count, "value": count})
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
     @app.get("/ranking/input_count")
     async def ranking_input_count(
         range: str = Query(default="week"),
@@ -432,6 +513,11 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+        cache_key = f"ranking:input_count:{p_range}:{int(p_limit)}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_input_count_v2", {"p_range": p_range, "p_limit": int(p_limit)})
@@ -466,7 +552,9 @@ def register_ranking_routes(app: FastAPI) -> None:
                 }
             )
 
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
     @app.get("/ranking/input_length")
     async def ranking_input_length(
         range: str = Query(default="week"),
@@ -476,6 +564,11 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+        cache_key = f"ranking:input_length:{p_range}:{int(p_limit)}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_input_length_v2", {"p_range": p_range, "p_limit": int(p_limit)})
@@ -513,7 +606,9 @@ def register_ranking_routes(app: FastAPI) -> None:
                 }
             )
 
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
     @app.get("/ranking/mymodel_questions")
     async def ranking_mymodel_questions(
         range: str = Query(default="year"),
@@ -523,6 +618,11 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+        cache_key = f"ranking:mymodel_questions:{p_range}:{int(p_limit)}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_mymodel_questions_v2", {"p_range": p_range, "p_limit": int(p_limit)})
@@ -557,7 +657,9 @@ def register_ranking_routes(app: FastAPI) -> None:
                 }
             )
 
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
     @app.get("/ranking/mymodel_used")
     async def ranking_mymodel_used(
         range: str = Query(default="week"),
@@ -567,6 +669,11 @@ def register_ranking_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+        cache_key = f"ranking:mymodel_used:{p_range}:{int(p_limit)}"
+        cached = _ranking_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_mymodel_used_v2", {"p_range": p_range, "p_limit": int(p_limit)})
@@ -601,4 +708,6 @@ def register_ranking_routes(app: FastAPI) -> None:
                 }
             )
 
-        return {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        _ranking_cache_set(cache_key, resp_out)
+        return resp_out
