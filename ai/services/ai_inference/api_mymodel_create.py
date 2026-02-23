@@ -69,7 +69,7 @@ ANSWERS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_crea
 # UI strings (server-managed)
 # ----------------------------
 
-PLACEHOLDER_DEFAULT = (os.getenv("COCOLON_MYMODEL_CREATE_PLACEHOLDER_DEFAULT", "一言でも大丈夫です") or "").strip() or "一言でも大丈夫です"
+PLACEHOLDER_DEFAULT = (os.getenv("COCOLON_MYMODEL_CREATE_PLACEHOLDER_DEFAULT", "ここに書いてください。") or "").strip() or "ここに書いてください。"
 EDIT_LOCKED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_EDIT_LOCKED_MESSAGE", "編集はPlus会員以上で利用できます") or "").strip() or "編集はPlus会員以上で利用できます"
 CREATE_COMPLETED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_COMPLETED_MESSAGE", "MyModelが作成されました") or "").strip() or "MyModelが作成されました"
 
