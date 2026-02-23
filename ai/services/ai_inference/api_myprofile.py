@@ -196,6 +196,21 @@ class MyProfileIncomingFollowRequestsResponse(BaseModel):
     requests: list[MyProfileIncomingFollowRequestItem]
 
 
+
+class MyProfileOutgoingFollowRequestItem(BaseModel):
+    request_id: str
+    target_user_id: str
+    target_display_name: Optional[str] = None
+    target_myprofile_code: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class MyProfileOutgoingFollowRequestsResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    total_items: int
+    requests: list[MyProfileOutgoingFollowRequestItem]
+
+
 # ----------------------------
 # MyProfile Latest report (ensure / refresh)
 # ----------------------------
@@ -1123,6 +1138,59 @@ def register_myprofile_routes(app: FastAPI) -> None:
             )
 
         return MyProfileIncomingFollowRequestsResponse(status="ok", total_items=len(items), requests=items)
+
+
+    @app.get("/myprofile/follow-requests/outgoing", response_model=MyProfileOutgoingFollowRequestsResponse)
+    async def outgoing_follow_requests(
+        limit: int = Query(default=100, ge=1, le=300, description="Max number of requests"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileOutgoingFollowRequestsResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+
+        resp = await _sb_get(
+            f"/rest/v1/{FOLLOW_REQUESTS_TABLE}",
+            params={
+                "select": "id,target_user_id,created_at",
+                "requester_user_id": f"eq.{me}",
+                "order": "created_at.desc",
+                "limit": str(int(limit)),
+            },
+        )
+        if resp.status_code >= 300:
+            logger.error("Supabase follow_requests outgoing failed: %s %s", resp.status_code, resp.text[:1500])
+            raise HTTPException(status_code=502, detail="Failed to load follow requests")
+
+        rows = resp.json()
+        if not isinstance(rows, list):
+            rows = []
+
+        target_ids = [str((r or {}).get("target_user_id") or "").strip() for r in rows if isinstance(r, dict)]
+        profiles_map = await _fetch_profiles_basic_map(target_ids)
+
+        items: list[MyProfileOutgoingFollowRequestItem] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            req_id = str(r.get("id") or "").strip()
+            target_id = str(r.get("target_user_id") or "").strip()
+            if not req_id or not target_id:
+                continue
+            p = profiles_map.get(target_id) or {}
+            items.append(
+                MyProfileOutgoingFollowRequestItem(
+                    request_id=req_id,
+                    target_user_id=target_id,
+                    target_display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
+                    target_myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
+                    created_at=(str(r.get("created_at")) if r.get("created_at") is not None else None),
+                )
+            )
+
+        return MyProfileOutgoingFollowRequestsResponse(status="ok", total_items=len(items), requests=items)
 
 
     @app.post("/myprofile/follow-requests/approve")

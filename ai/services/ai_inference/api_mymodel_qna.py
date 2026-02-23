@@ -341,7 +341,7 @@ class QnaHoldersResponse(BaseModel):
 
 class QnaRecommendUsersResponse(BaseModel):
     status: str = Field("ok", description="ok")
-    days: int = Field(3, description="Activity window in days")
+    days: int = Field(7, description="Activity window in days")
     total_items: int
     users: List[QnaHolderUser]
 
@@ -1410,12 +1410,14 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     @app.get("/mymodel/qna/trending", response_model=QnaTrendingResponse)
     async def qna_trending(
         limit: int = Query(default=5, ge=1, le=20, description="Number of trending questions to return"),
+        mode: str = Query(default="overall", description="overall | resonance | views"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaTrendingResponse:
         """Return trending questions (global popularity by q_key).
 
         Notes:
         - Uses global metrics rows where q_instance_id IS NULL.
+        - Filters to recent activity window (updated_at) to keep results fresh.
         - Returned questions are filtered by viewer's view_tier (light|standard).
         """
 
@@ -1435,6 +1437,14 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             viewer_tier = SubscriptionTier.FREE
 
         view_tier = _view_tier_for_subscription(viewer_tier)
+
+        mode_key = str(mode or "overall").strip().lower()
+        if mode_key not in ("overall", "resonance", "views"):
+            mode_key = "overall"
+
+        # Fixed window for now (Mash decision): "今週の空気感"
+        window_days = 7
+        since_iso = (datetime.now(timezone.utc) - timedelta(days=int(window_days))).isoformat()
 
         # Load questions allowed for this view_tier.
         try:
@@ -1458,6 +1468,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if not qmap_by_key:
             return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
 
+        order = "resonances.desc,views.desc"
+        if mode_key == "views":
+            order = "views.desc,resonances.desc"
+
         # Fetch top global metrics and then filter to allowed q_keys.
         scan_limit = int(max(50, min(500, int(limit) * 25)))
         resp = await _sb_get(
@@ -1465,7 +1479,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             params={
                 "select": "q_key,views,resonances",
                 "q_instance_id": "is.null",
-                "order": "resonances.desc,views.desc",
+                "updated_at": f"gte.{since_iso}",
+                "order": order,
                 "limit": str(scan_limit),
             },
         )
@@ -1481,7 +1496,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
 
         rows = resp.json()
-        items: List[QnaTrendingItem] = []
+
+        # Collect candidates (bounded by scan_limit)
+        candidates: List[Tuple[int, str, str, int, int]] = []
+        # tuple: (question_id, title, q_key, views, resonances)
 
         if isinstance(rows, list):
             for r in rows:
@@ -1500,17 +1518,32 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 except Exception:
                     res_cnt = 0
 
-                items.append(
-                    QnaTrendingItem(
-                        question_id=int(qid),
-                        title=title,
-                        q_key=qk,
-                        views=views,
-                        resonances=res_cnt,
-                    )
+                candidates.append((int(qid), str(title), qk, int(views), int(res_cnt)))
+
+        if not candidates:
+            return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
+
+        # Ranking (mode)
+        if mode_key == "views":
+            candidates.sort(key=lambda x: (x[3], x[4]), reverse=True)
+        elif mode_key == "resonance":
+            candidates.sort(key=lambda x: (x[4], x[3]), reverse=True)
+        else:
+            # overall: views + (resonances * 3)
+            w_res = 3
+            candidates.sort(key=lambda x: (x[3] + (x[4] * w_res), x[4], x[3]), reverse=True)
+
+        items: List[QnaTrendingItem] = []
+        for qid, title, qk, views, res_cnt in candidates[: int(limit)]:
+            items.append(
+                QnaTrendingItem(
+                    question_id=int(qid),
+                    title=str(title),
+                    q_key=str(qk),
+                    views=int(views or 0),
+                    resonances=int(res_cnt or 0),
                 )
-                if len(items) >= int(limit):
-                    break
+            )
 
         return QnaTrendingResponse(
             status="ok",
@@ -1518,6 +1551,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             total_items=len(items),
             items=items,
         )
+
 
     @app.get("/mymodel/qna/holders", response_model=QnaHoldersResponse)
     async def qna_holders(
@@ -1709,7 +1743,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     @app.get("/mymodel/recommend/users", response_model=QnaRecommendUsersResponse)
     async def recommend_users(
         limit: int = Query(default=5, ge=1, le=20, description="Number of users to return"),
-        days: int = Query(default=3, ge=1, le=30, description="Activity window in days"),
+        days: int = Query(default=7, ge=1, le=30, description="Activity window in days"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaRecommendUsersResponse:
         """Recommend active users not yet followed by the viewer.
