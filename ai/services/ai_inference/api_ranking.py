@@ -278,10 +278,65 @@ async def _rpc(fn: str, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     if resp.status_code >= 300:
         logger.error("Supabase rpc %s failed: %s %s", fn, resp.status_code, resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to fetch ranking")
+
     data = resp.json()
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    return []
+    rows: List[Dict[str, Any]] = [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+    # Ensure rows include is_private_account for UI (shield icon).
+    # Some RPCs (or older ranking modules) may not join visibility settings.
+    try:
+        # Only fill missing/NULL values.
+        ids: List[str] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            uid = str(r.get("user_id") or "").strip()
+            if not uid:
+                continue
+            if ("is_private_account" not in r) or (r.get("is_private_account") is None):
+                ids.append(uid)
+
+        # Deduplicate while keeping order
+        seen = set()
+        ids = [x for x in ids if not (x in seen or seen.add(x))]  # type: ignore
+
+        if ids:
+            # Default public unless explicitly set to private.
+            priv_map: Dict[str, bool] = {uid: False for uid in ids}
+            chunk_size = 200
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i : i + chunk_size]
+                in_list = ",".join(chunk)
+                resp2 = await _sb_get(
+                    f"/rest/v1/{VISIBILITY_TABLE}",
+                    params={
+                        "select": "user_id,is_private_account",
+                        "user_id": f"in.({in_list})",
+                    },
+                )
+                if resp2.status_code >= 300:
+                    continue
+                vis_rows = resp2.json()
+                if isinstance(vis_rows, list):
+                    for vr in vis_rows:
+                        if not isinstance(vr, dict):
+                            continue
+                        vid = str(vr.get("user_id") or "").strip()
+                        if not vid:
+                            continue
+                        priv_map[vid] = bool(vr.get("is_private_account") or False)
+
+            for r in rows:
+                uid = str((r or {}).get("user_id") or "").strip()
+                if not uid:
+                    continue
+                if ("is_private_account" not in r) or (r.get("is_private_account") is None):
+                    r["is_private_account"] = priv_map.get(uid, False)
+    except Exception:
+        # Best-effort; do not fail ranking on visibility join errors.
+        pass
+
+    return rows
 
 # ---------------------------------------------------------------------------
 # Compatibility helpers for other ranking modules
@@ -662,11 +717,14 @@ def register_ranking_routes(app: FastAPI) -> None:
             if dn is not None and not isinstance(dn, str):
                 dn = str(dn)
 
+            is_private = bool(r.get("is_private_account") or False)
+
             items.append(
                 {
                     "rank": rk,
                     "user_id": uid,
                     "display_name": dn,
+                    "is_private_account": is_private,
                     "mymodel_questions_total": cnt,
                     "value": cnt,
                 }
@@ -713,11 +771,14 @@ def register_ranking_routes(app: FastAPI) -> None:
             if dn is not None and not isinstance(dn, str):
                 dn = str(dn)
 
+            is_private = bool(r.get("is_private_account") or False)
+
             items.append(
                 {
                     "rank": rk,
                     "user_id": uid,
                     "display_name": dn,
+                    "is_private_account": is_private,
                     "used_count": used,
                     "value": used,
                 }
