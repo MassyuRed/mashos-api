@@ -90,11 +90,13 @@ def register_ranking_mymodel_resonances_routes(app: FastAPI) -> None:
                 cnt = 0
 
             prof = profiles.get(uid) or {}
+            is_private = bool(r.get("is_private_account") or False)
             items.append(
                 {
                     "rank": rk or (len(items) + 1),
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
+                    "is_private_account": is_private,
                     "resonance_count": cnt,
                     "value": cnt,
                 }

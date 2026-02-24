@@ -39,7 +39,7 @@ from api_emotion_submit import (
 )
 
 
-from api_ranking import _filter_rows_by_ranking_visibility
+from api_ranking import _filter_rows_by_ranking_visibility, _rpc as _rpc_shared
 
 
 logger = logging.getLogger("ranking_api")
@@ -339,7 +339,7 @@ def register_ranking_login_streak_routes(app: FastAPI) -> None:
         await _require_user_id(authorization)
         p_range = _normalize_range(range)
         p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-        rows = await _rpc("rank_login_streak", {"p_range": p_range, "p_limit": p_limit})
+        rows = await _rpc_shared("rank_login_streak", {"p_range": p_range, "p_limit": p_limit})
 
         # Hide users who opted out of ranking display
         rows = await _filter_rows_by_ranking_visibility(rows)
@@ -377,11 +377,14 @@ def register_ranking_login_streak_routes(app: FastAPI) -> None:
             last_login_date = str(last_login_date or "")
 
             prof = profiles.get(uid) or {}
+
+            is_private = bool(r.get("is_private_account") or False)
             items.append(
                 {
                     "rank": rank,
                     "user_id": uid,
                     "display_name": prof.get("display_name"),
+                    "is_private_account": is_private,
                     "streak_days": streak_days,
                     "last_login_date": last_login_date or None,
                     "value": streak_days,
