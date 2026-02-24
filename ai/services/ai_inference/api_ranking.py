@@ -448,6 +448,18 @@ async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List
             return 0
 
     filtered.sort(key=_rk)
+
+    # Re-number ranks after filtering to avoid gaps (e.g., starting from 2nd place).
+    # Preserve ties based on the original rank value.
+    rank_map: Dict[int, int] = {}
+    next_rank = 1
+    for r in filtered:
+        orig = _rk(r)
+        if orig not in rank_map:
+            rank_map[orig] = next_rank
+            next_rank += 1
+        r["rank"] = rank_map[orig]
+
     return filtered
 
 
@@ -542,11 +554,14 @@ def register_ranking_routes(app: FastAPI) -> None:
             if dn is not None and not isinstance(dn, str):
                 dn = str(dn)
 
+            is_private = bool(r.get("is_private_account") or False)
+
             items.append(
                 {
                     "rank": rk,
                     "user_id": uid,
                     "display_name": dn,
+                    "is_private_account": is_private,
                     "input_count": cnt,
                     "value": cnt,
                 }
