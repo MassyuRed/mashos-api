@@ -1846,6 +1846,9 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
+        is_secret = True if a.get("is_secret") is True else False
+        if tgt != viewer_user_id and is_secret:
+            raise HTTPException(status_code=404, detail="Answer not found")
         body = str(a.get("answer_text") or "").strip()
         if not body:
             raise HTTPException(status_code=404, detail="Answer not found")
