@@ -517,6 +517,45 @@ def _parse_instance_id(q_instance_id: str) -> Tuple[str, int]:
     return target_user_id, qid
 
 
+def _is_secret_flag(value: Any) -> bool:
+    """Return True if the value should be treated as secret.
+
+    Accepts bool/int/str values defensively.
+    """
+    if value is True:
+        return True
+    if isinstance(value, int):
+        return value == 1
+    if isinstance(value, str):
+        v = value.strip().lower()
+        return v in ("true", "t", "1", "yes", "y")
+    return False
+
+
+async def _fetch_secret_question_ids(*, target_user_id: str, question_ids: Set[int]) -> Set[int]:
+    """Return question_ids that are marked as secret for the target user."""
+    uid = str(target_user_id or "").strip()
+    if not uid:
+        return set()
+
+    ids: Set[int] = set()
+    for x in (question_ids or set()):
+        try:
+            ids.add(int(x))
+        except Exception:
+            continue
+    if not ids:
+        return set()
+
+    answers = await _fetch_create_answers(user_id=uid, question_ids=ids)
+    secret_ids: Set[int] = set()
+    for qid in ids:
+        a = answers.get(int(qid)) if isinstance(answers, dict) else None
+        if isinstance(a, dict) and _is_secret_flag(a.get("is_secret")):
+            secret_ids.add(int(qid))
+    return secret_ids
+
+
 def _q_key_for_question_id(question_id: int) -> str:
     return f"create:{int(question_id)}"
 
@@ -1287,6 +1326,36 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         else:
             items.sort(key=lambda x: (x.generated_at or ""), reverse=True)
 
+        # MyModel Create "secret" answers are never visible (to self or others).
+        if items:
+            try:
+                qids: Set[int] = set()
+                qid_by_instance: Dict[str, int] = {}
+                for it in items:
+                    try:
+                        _, qid_val = _parse_instance_id(it.q_instance_id)
+                        qids.add(int(qid_val))
+                        qid_by_instance[str(it.q_instance_id)] = int(qid_val)
+                    except Exception:
+                        continue
+
+                secret_qids = (
+                    await _fetch_secret_question_ids(target_user_id=str(tgt), question_ids=qids)
+                    if qids
+                    else set()
+                )
+                if secret_qids:
+                    items = [
+                        it
+                        for it in items
+                        if qid_by_instance.get(str(it.q_instance_id)) not in secret_qids
+                    ]
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.error("secret filter failed (list): %s", exc)
+                raise HTTPException(status_code=502, detail="Failed to load reflections")
+
         meta = QnaListMeta(
             viewer_user_id=str(viewer_user_id),
             target_user_id=tgt,
@@ -1846,8 +1915,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
-        is_secret = True if a.get("is_secret") is True else False
-        if tgt != viewer_user_id and is_secret:
+        is_secret = _is_secret_flag(a.get("is_secret"))
+        if is_secret:
             raise HTTPException(status_code=404, detail="Answer not found")
         body = str(a.get("answer_text") or "").strip()
         if not body:
@@ -2206,6 +2275,37 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 offset=int(offset),
                 items=[],
             )
+
+        # MyModel Create "secret" answers are never visible (to self or others).
+        if prepared:
+            qids_by_owner: Dict[str, Set[int]] = {}
+            for _, owner_uid, qid_val, _, _ in prepared:
+                qids_by_owner.setdefault(str(owner_uid), set()).add(int(qid_val))
+
+            secret_pairs: Set[Tuple[str, int]] = set()
+            for owner_id, qids in qids_by_owner.items():
+                try:
+                    secret_qids = await _fetch_secret_question_ids(
+                        target_user_id=str(owner_id), question_ids=set(qids)
+                    )
+                except Exception as exc:
+                    logger.warning("secret check failed (saved reflections): %s", exc)
+                    secret_qids = set(qids)  # fail-closed for this owner
+                for qid_val in (secret_qids or set()):
+                    secret_pairs.add((str(owner_id), int(qid_val)))
+
+            if secret_pairs:
+                prepared = [t for t in prepared if (str(t[1]), int(t[2])) not in secret_pairs]
+                if not prepared:
+                    return QnaSavedReflectionsResponse(
+                        status="ok",
+                        order=order_key,
+                        total_items=0,
+                        limit=int(limit),
+                        offset=int(offset),
+                        items=[],
+                    )
+                owner_ids = {t[1] for t in prepared}
 
         profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
 
@@ -2766,6 +2866,37 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 offset=int(offset),
                 items=[],
             )
+
+        # MyModel Create "secret" answers are never visible (to self or others).
+        if prepared:
+            qids_by_owner: Dict[str, Set[int]] = {}
+            for _, owner_uid, qid_val, _, _ in prepared:
+                qids_by_owner.setdefault(str(owner_uid), set()).add(int(qid_val))
+
+            secret_pairs: Set[Tuple[str, int]] = set()
+            for owner_id, qids in qids_by_owner.items():
+                try:
+                    secret_qids = await _fetch_secret_question_ids(
+                        target_user_id=str(owner_id), question_ids=set(qids)
+                    )
+                except Exception as exc:
+                    logger.warning("secret check failed (saved reflections): %s", exc)
+                    secret_qids = set(qids)  # fail-closed for this owner
+                for qid_val in (secret_qids or set()):
+                    secret_pairs.add((str(owner_id), int(qid_val)))
+
+            if secret_pairs:
+                prepared = [t for t in prepared if (str(t[1]), int(t[2])) not in secret_pairs]
+                if not prepared:
+                    return QnaSavedReflectionsResponse(
+                        status="ok",
+                        order=order_key,
+                        total_items=0,
+                        limit=int(limit),
+                        offset=int(offset),
+                        items=[],
+                    )
+                owner_ids = {t[1] for t in prepared}
 
         profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
 
