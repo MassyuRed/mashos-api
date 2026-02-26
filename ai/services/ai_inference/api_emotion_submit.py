@@ -451,6 +451,15 @@ MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28
 ASTOR_WORKER_QUEUE_ENABLED = _env_truthy("ASTOR_WORKER_QUEUE_ENABLED", "false")
 ASTOR_WORKER_QUEUE_FALLBACK_LOCAL = _env_truthy("ASTOR_WORKER_QUEUE_FALLBACK_LOCAL", "true")
 
+# Phase X: Central material snapshots (debounced)
+# - Enqueue snapshot_generate_v1 after inputs are saved, so worker can build internal/public snapshots.
+ASTOR_SNAPSHOT_ENQUEUE_ENABLED = _env_truthy("ASTOR_SNAPSHOT_ENQUEUE_ENABLED", "true")
+try:
+    ASTOR_SNAPSHOT_DEBOUNCE_SECONDS = int(os.getenv("ASTOR_SNAPSHOT_DEBOUNCE_SECONDS", "300") or "300")
+except Exception:
+    ASTOR_SNAPSHOT_DEBOUNCE_SECONDS = 300
+
+
 async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
     """myprofile_reports(latest) の generated_at を取得する（無ければ None）。"""
     _ensure_supabase_config()
@@ -1562,6 +1571,28 @@ async def _post_submit_background_async(
                     },
                     priority=50,
                 )
+                # 4) Central material snapshots (internal/public) are generated in worker (debounced)
+                try:
+                    if ASTOR_SNAPSHOT_ENQUEUE_ENABLED:
+                        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+                        delay = max(1, int(ASTOR_SNAPSHOT_DEBOUNCE_SECONDS or 300))
+                        run_after_iso = (now_dt + timedelta(seconds=delay)).isoformat().replace("+00:00", "Z")
+                        await _enqueue_job(
+                            job_key=f"snapshot:{user_id}:global:internal",
+                            job_type="snapshot_generate_v1",
+                            user_id=user_id,
+                            payload={
+                                "trigger": "emotion_submit",
+                                "requested_at": created_at,
+                                "scope": "global",
+                                "debounce_seconds": delay,
+                            },
+                            priority=20,
+                            run_after_iso=run_after_iso,
+                        )
+                except Exception as exc:
+                    logger.error("Snapshot enqueue failed (bg): %s", exc)
+
             else:
                 # Fallback: 旧方式（同一プロセス内）で実行
                 await _auto_refresh_myprofile_latest_report(user_id)

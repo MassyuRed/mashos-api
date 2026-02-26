@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 from typing import Any, Optional
 
@@ -29,6 +30,8 @@ from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
     _resolve_user_id_from_token,
+    ASTOR_WORKER_QUEUE_ENABLED,
+    ASTOR_SNAPSHOT_ENQUEUE_ENABLED,
     astor_engine,
 )
 
@@ -165,6 +168,37 @@ def register_emotion_secret_routes(app: FastAPI) -> None:
         if not updated_row:
             raise HTTPException(status_code=404, detail="Emotion record not found")
 
+
+        # 5) secret 切替は public_snapshot に直結するため、中央材料庁（snapshot）を即時更新する
+        #    - privacy/safety の観点で「待たない」方針（emotion/submit のような長いデバウンスは不要）
+        #    - job_key により自然に coalesce される（同一userの snapshot は1行に集約）
+        if ASTOR_WORKER_QUEUE_ENABLED and ASTOR_SNAPSHOT_ENQUEUE_ENABLED:
+            try:
+                from astor_job_queue import enqueue_job as _enqueue_job
+
+                now_iso = (
+                    datetime.now(timezone.utc)
+                    .replace(microsecond=0)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                )
+                await _enqueue_job(
+                    job_key=f"snapshot:{user_id}:global:internal",
+                    job_type="snapshot_generate_v1",
+                    user_id=user_id,
+                    payload={
+                        "trigger": "emotion_secret",
+                        "requested_at": now_iso,
+                        "scope": "global",
+                        "emotion_id": payload.emotion_id,
+                        "emotion_created_at": ts or None,
+                        "is_secret": bool(payload.is_secret),
+                    },
+                    priority=40,
+                )
+            except Exception as exc:
+                # enqueue 失敗は API の成功/失敗を左右しない（best-effort）
+                logger.error("Snapshot enqueue failed (emotion_secret): %s", exc)
         return EmotionSecretUpdateResponse(
             status="ok",
             id=updated_row.get("id", payload.emotion_id),
