@@ -517,6 +517,42 @@ async def _worker_loop() -> None:
                         error="updated_while_running",
                         delay_seconds=1,
                     )
+                else:
+                    # Enqueue inspection jobs for publish gating (best-effort).
+                    # This connects: generate_emotion_report_v1 -> inspect_emotion_report_v1
+                    try:
+                        gen_list = (gen_res or {}).get("generated") or []
+                        if isinstance(gen_list, list) and gen_list:
+                            scope = str((claimed.payload or {}).get("scope") or "global").strip() or "global"
+
+                            # Provide expected public hash to inspection when available (avoid NEEDS_REVIEW due to missing meta).
+                            expected_public_hash = None
+                            try:
+                                expected_public_hash = await _fetch_latest_public_source_hash(claimed.user_id, scope=scope)
+                            except Exception:
+                                expected_public_hash = None
+
+                            for it in gen_list:
+                                if not isinstance(it, dict):
+                                    continue
+                                rid = str(it.get("report_id") or "").strip()
+                                if not rid:
+                                    continue
+                                await enqueue_job(
+                                    job_key=f"inspect_emotion_report:{claimed.user_id}:{rid}",
+                                    job_type="inspect_emotion_report_v1",
+                                    user_id=claimed.user_id,
+                                    payload={
+                                        "report_id": rid,
+                                        "scope": scope,
+                                        "expected_public_source_hash": expected_public_hash,
+                                        "trigger": "generate_emotion_report_v1",
+                                    },
+                                    priority=30,
+                                )
+                    except Exception as exc:
+                        logger.error("Inspect enqueue failed: %s", exc)
+
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
 
             elif claimed.job_type == "inspect_emotion_report_v1":
