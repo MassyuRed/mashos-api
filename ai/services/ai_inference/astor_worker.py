@@ -677,19 +677,6 @@ async def _worker_loop() -> None:
 
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
-                done = await mark_done_if_unchanged(
-                    job_key=claimed.job_key,
-                    worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
-                )
-                if not done:
-                    # The job was updated while running; queue it again for a fresh run.
-                    await requeue(
-                        job_key=claimed.job_key,
-                        worker_id=worker_id,
-                        error="updated_while_running",
-                        delay_seconds=1,
-                    )
                 # Enqueue inspection jobs for publish gating (best-effort).
                 try:
                     gen_list = (gen_res or {}).get("generated") or []
@@ -717,6 +704,19 @@ async def _worker_loop() -> None:
                 except Exception as exc:
                     logger.error("Inspect enqueue failed (v2): %s", exc)
 
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    # The job was updated while running; queue it again for a fresh run.
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
             elif claimed.job_type == "inspect_emotion_report_v1":
                 insp_res = await _handle_inspect_emotion_report_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))
