@@ -690,33 +690,32 @@ async def _worker_loop() -> None:
                         error="updated_while_running",
                         delay_seconds=1,
                     )
-                else:
-                    # Enqueue inspection jobs for publish gating (best-effort).
-                    try:
-                        gen_list = (gen_res or {}).get("generated") or []
-                        if isinstance(gen_list, list) and gen_list:
-                            for it in gen_list:
-                                if not isinstance(it, dict):
-                                    continue
-                                rid = str(it.get("report_id") or "").strip()
-                                if not rid:
-                                    continue
-                                scope = str(it.get("scope") or "").strip() or SNAPSHOT_SCOPE_DEFAULT
-                                expected_public_hash = it.get("public_source_hash")
-                                await enqueue_job(
-                                    job_key=f"inspect_emotion_report:{claimed.user_id}:{rid}",
-                                    job_type="inspect_emotion_report_v1",
-                                    user_id=claimed.user_id,
-                                    payload={
-                                        "report_id": rid,
-                                        "scope": scope,
-                                        "expected_public_source_hash": expected_public_hash,
-                                        "trigger": "generate_emotion_report_v2",
-                                    },
-                                    priority=30,
-                                )
-                    except Exception as exc:
-                        logger.error("Inspect enqueue failed (v2): %s", exc)
+                # Enqueue inspection jobs for publish gating (best-effort).
+                try:
+                    gen_list = (gen_res or {}).get("generated") or []
+                    if isinstance(gen_list, list) and gen_list:
+                        for it in gen_list:
+                            if not isinstance(it, dict):
+                                continue
+                            rid = str(it.get("report_id") or "").strip()
+                            if not rid:
+                                continue
+                            scope = str(it.get("scope") or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+                            expected_public_hash = it.get("public_source_hash")
+                            await enqueue_job(
+                                job_key=f"inspect_emotion_report:{claimed.user_id}:{rid}",
+                                job_type="inspect_emotion_report_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "report_id": rid,
+                                    "scope": scope,
+                                    "expected_public_source_hash": expected_public_hash,
+                                    "trigger": "generate_emotion_report_v2",
+                                },
+                                priority=30,
+                            )
+                except Exception as exc:
+                    logger.error("Inspect enqueue failed (v2): %s", exc)
 
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
             elif claimed.job_type == "inspect_emotion_report_v1":
