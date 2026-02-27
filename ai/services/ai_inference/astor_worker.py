@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -56,7 +56,6 @@ from astor_material_snapshots import (
 # Phase X+: emotion structure reports (MyWeb weekly/monthly)
 from api_myweb_reports import (
     _build_target_period as _myweb_build_target_period,
-    _generate_and_save as _myweb_generate_and_save,
     _generate_and_save_from_snapshot as _myweb_generate_and_save_from_snapshot,
 )  # type: ignore
 
@@ -132,45 +131,6 @@ async def _handle_snapshot_generate_v1(*, user_id: str, payload: dict) -> dict:
             await release_lock(lock_key=lock_key, owner_id=owner_id)
         except Exception:
             pass
-
-
-
-async def _handle_generate_emotion_report_v1(*, user_id: str, payload: dict) -> dict:
-    """Generate emotion structure reports (MyWeb weekly/monthly) for a user (v1).
-
-    v1 方針:
-    - 既存の MyWeb 週報/月報ロジックを利用して生成→myweb_reports へ upsert する。
-    - Snapshot を“入力”として使うのは v2 以降（まずは snapshot をトリガー/冪等の基準にする）。
-    """
-    uid = str(user_id or "").strip()
-    if not uid:
-        raise ValueError("user_id is required")
-
-    types = (payload or {}).get("types") or ["weekly", "monthly"]
-    include_astor = bool((payload or {}).get("include_astor", True))
-
-    now_utc = datetime.now(timezone.utc)
-
-    generated = []
-    errors = {}
-    for t in types:
-        rt = str(t or "").strip()
-        if not rt:
-            continue
-        try:
-            target = _myweb_build_target_period(rt, now_utc)
-            _text, _json, _astor_text, meta = await _myweb_generate_and_save(uid, target, include_astor=include_astor)
-            rid = None
-            if isinstance(meta, dict):
-                rid = meta.get("report_id")
-            generated.append({"report_type": rt, "report_id": rid, "status": "ok"})
-        except Exception as exc:
-            errors[rt] = str(exc)
-
-    if not generated:
-        raise RuntimeError(f"generate_emotion_report_v1 failed: {errors}")
-
-    return {"status": "ok", "user_id": uid, "generated": generated, "errors": (errors or None)}
 
 
 
@@ -401,7 +361,7 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
     )
     if need_regen:
         try:
-            # Use v2 regeneration for emotion_period-scoped artifacts; keep v1 for global.
+            # Use v2 regeneration for emotion_period-scoped artifacts (v1 is deprecated).
             if scope.startswith("emotion_weekly:") or scope.startswith("emotion_monthly:"):
                 regen_hash = str(current_hash or expected_hash or "")
                 await enqueue_job(
@@ -409,15 +369,6 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
                     job_type="generate_emotion_report_v2",
                     user_id=uid,
                     payload={"trigger": "inspect_mismatch", "requested_at": inspected_at, "scope": scope, "include_astor": True},
-                    priority=20,
-                    debounce_seconds=10,
-                )
-            else:
-                await enqueue_job(
-                    job_key=f"emotion_report_refresh:{uid}",
-                    job_type="generate_emotion_report_v1",
-                    user_id=uid,
-                    payload={"trigger": "inspect_mismatch", "requested_at": inspected_at},
                     priority=20,
                     debounce_seconds=10,
                 )
@@ -456,7 +407,7 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
 async def _worker_loop() -> None:
     worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{os.getpid()}"
     poll_interval = float(os.getenv("ASTOR_WORKER_POLL_INTERVAL_SECONDS", "1.0") or "1.0")
-    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1,generate_emotion_report_v2,inspect_emotion_report_v1"))
+    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v2,inspect_emotion_report_v1"))
 
     logger = logging.getLogger("astor_worker")
     logger.info("ASTOR worker started. worker_id=%s job_types=%s poll=%.2fs", worker_id, job_types, poll_interval)
@@ -551,24 +502,9 @@ async def _worker_loop() -> None:
                             public = (snap_res or {}).get("public") or {}
                             scope = str((claimed.payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
                             if bool(internal.get("inserted")) or bool(public.get("inserted")):
-                                # Only the global snapshot triggers report generation in v1.
-                                # emotion_period snapshots are for v2+ (snapshot-as-input) and should NOT enqueue reports yet.
+                                # Global snapshot committed -> auto-enqueue emotion_period snapshots (weekly/monthly).
+                                # emotion_period snapshot committed -> enqueue snapshot-driven MyWeb generation (v2).
                                 if scope == SNAPSHOT_SCOPE_DEFAULT:
-                                    internal_hash = str(internal.get("source_hash") or "")
-                                    await enqueue_job(
-                                        job_key=f"emotion_report_refresh:{claimed.user_id}",
-                                        job_type="generate_emotion_report_v1",
-                                        user_id=claimed.user_id,
-                                        payload={
-                                            "trigger": "snapshot_generate_v1",
-                                            "requested_at": (claimed.payload or {}).get("requested_at"),
-                                            "scope": scope,
-                                            "source_hash": internal_hash,
-                                            "types": ["weekly", "monthly"],
-                                            "include_astor": True,
-                                        },
-                                        priority=10,
-                                    )
 
                                     # Auto-enqueue emotion_period snapshots (weekly/monthly) for future snapshot-driven analysis.
                                     try:
@@ -621,60 +557,6 @@ async def _worker_loop() -> None:
                         except Exception as exc:
                             logger.error("Downstream enqueue failed: %s", exc)
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, snap_res)
-            elif claimed.job_type == "generate_emotion_report_v1":
-                gen_res = await _handle_generate_emotion_report_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))
-                done = await mark_done_if_unchanged(
-                    job_key=claimed.job_key,
-                    worker_id=worker_id,
-                    expected_updated_at=claimed.updated_at,
-                )
-                if not done:
-                    # The job was updated while running; queue it again for a fresh run.
-                    await requeue(
-                        job_key=claimed.job_key,
-                        worker_id=worker_id,
-                        error="updated_while_running",
-                        delay_seconds=1,
-                    )
-                else:
-                    # Enqueue inspection jobs for publish gating (best-effort).
-                    # This connects: generate_emotion_report_v1 -> inspect_emotion_report_v1
-                    try:
-                        gen_list = (gen_res or {}).get("generated") or []
-                        if isinstance(gen_list, list) and gen_list:
-                            scope = str((claimed.payload or {}).get("scope") or "global").strip() or "global"
-
-                            # Provide expected public hash to inspection when available (avoid NEEDS_REVIEW due to missing meta).
-                            expected_public_hash = None
-                            try:
-                                expected_public_hash = await _fetch_latest_public_source_hash(claimed.user_id, scope=scope)
-                            except Exception:
-                                expected_public_hash = None
-
-                            for it in gen_list:
-                                if not isinstance(it, dict):
-                                    continue
-                                rid = str(it.get("report_id") or "").strip()
-                                if not rid:
-                                    continue
-                                await enqueue_job(
-                                    job_key=f"inspect_emotion_report:{claimed.user_id}:{rid}",
-                                    job_type="inspect_emotion_report_v1",
-                                    user_id=claimed.user_id,
-                                    payload={
-                                        "report_id": rid,
-                                        "scope": scope,
-                                        "expected_public_source_hash": expected_public_hash,
-                                        "trigger": "generate_emotion_report_v1",
-                                    },
-                                    priority=30,
-                                )
-                    except Exception as exc:
-                        logger.error("Inspect enqueue failed: %s", exc)
-
-                logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
-
-
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
