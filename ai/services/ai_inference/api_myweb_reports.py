@@ -1210,14 +1210,96 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                         )
                         continue
                     raise HTTPException(status_code=409, detail="Report generation is in progress")
-
                 try:
-                    _text, _cjson, _astor_text, meta = await _generate_and_save(
-                        user_id,
-                        target,
-                        include_astor=req.include_astor,
-                    )
+                    if rt in ("weekly", "monthly"):
+                        # v2: snapshot-driven generation (emotion_period scope)
+                        if rt == "weekly":
+                            dist_jst = target.dist_utc.astimezone(JST)
+                            scope = f"emotion_weekly:{dist_jst.year:04d}-{dist_jst.month:02d}-{dist_jst.day:02d}"
+                        else:
+                            end_jst = target.period_end_utc.astimezone(JST)
+                            scope = f"emotion_monthly:{end_jst.year:04d}-{end_jst.month:02d}"
+
+                        try:
+                            _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
+                                user_id,
+                                scope=scope,
+                                include_astor=req.include_astor,
+                            )
+                        except HTTPException as he:
+                            # If snapshot is missing, enqueue snapshot generation and retry once (best-effort).
+                            if int(getattr(he, "status_code", 0) or 0) == 404:
+                                try:
+                                    from astor_job_queue import enqueue_job as _enqueue_job
+
+                                    await _enqueue_job(
+                                        job_key=f"snapshot_generate_v1:{user_id}:{scope}",
+                                        job_type="snapshot_generate_v1",
+                                        user_id=user_id,
+                                        payload={
+                                            "scope": scope,
+                                            "trigger": "on_demand_myweb_reports_ensure",
+                                            "requested_at": datetime.now(timezone.utc)
+                                            .isoformat(timespec="seconds")
+                                            .replace("+00:00", "Z"),
+                                        },
+                                        priority=12,
+                                        debounce_seconds=10,
+                                    )
+                                except Exception as exc:
+                                    logger.error("Failed to enqueue snapshot_generate_v1: %s", exc)
+
+                                if poll_until is not None and MYWEB_LOCK_WAIT_SECONDS > 0:
+                                    try:
+                                        await poll_until(
+                                            lambda: _fetch_latest_snapshot_row(
+                                                user_id, scope=scope, snapshot_type="public"
+                                            ),
+                                            timeout_seconds=MYWEB_LOCK_WAIT_SECONDS,
+                                        )
+                                    except Exception:
+                                        pass
+
+                                _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
+                                    user_id,
+                                    scope=scope,
+                                    include_astor=req.include_astor,
+                                )
+                            else:
+                                raise
+
+                        # Enqueue inspection (best-effort) for API-generated artifacts.
+                        try:
+                            rid = (meta or {}).get("report_id") if isinstance(meta, dict) else None
+                            expected_public_hash = (meta or {}).get("public_source_hash") if isinstance(meta, dict) else None
+                            if rid:
+                                from astor_job_queue import enqueue_job as _enqueue_job
+
+                                await _enqueue_job(
+                                    job_key=f"inspect_emotion_report:{rid}",
+                                    job_type="inspect_emotion_report_v1",
+                                    user_id=user_id,
+                                    payload={
+                                        "report_id": rid,
+                                        "report_type": rt,
+                                        "period_start": target.period_start_iso,
+                                        "period_end": target.period_end_iso,
+                                        "scope": scope,
+                                        "expected_public_source_hash": expected_public_hash,
+                                    },
+                                    priority=10,
+                                )
+                        except Exception as exc:
+                            logger.error("Failed to enqueue inspect_emotion_report_v1: %s", exc)
+                    else:
+                        _text, _cjson, _astor_text, meta = await _generate_and_save(
+                            user_id,
+                            target,
+                            include_astor=req.include_astor,
+                        )
                 finally:
+                    if lock_key and release_lock is not None:
+                        await release_lock(lock_key=lock_key, owner_id=lock_owner)
                     if lock_key and release_lock is not None:
                         await release_lock(lock_key=lock_key, owner_id=lock_owner)
                 results.append(
