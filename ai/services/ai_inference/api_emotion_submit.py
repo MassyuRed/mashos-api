@@ -1644,21 +1644,43 @@ def _start_post_submit_background_tasks(
     is_secret: bool,
     notify_friends: bool,
 ) -> None:
+    """Post-submit tasks runner (best-effort).
+
+    重要:
+    - 以前は別スレッド + asyncio.run() で実行していたが、
+      それだと「別イベントループ」になり、共有モジュール内の asyncio primitives
+      （例: asyncio.Event / asyncio.Lock など）が別ループに束縛されている場合に
+      `... is bound to a different event loop` が発生する。
+    - FastAPI の request handler と同じイベントループ上で create_task し、
+      enqueue / lock / httpx 等の async 処理を安全に流す。
+    """
     try:
-        t = threading.Thread(
-            target=_post_submit_background_thread_entry,
-            kwargs={
-                "user_id": user_id,
-                "emotion_details": emotion_details,
-                "created_at": created_at,
-                "avg_strength": avg_strength,
-                "memo": memo,
-                "is_secret": is_secret,
-                "notify_friends": notify_friends,
-            },
-            daemon=True,
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(
+            _post_submit_background_async(
+                user_id=user_id,
+                emotion_details=emotion_details,
+                created_at=created_at,
+                avg_strength=avg_strength,
+                memo=memo,
+                is_secret=is_secret,
+                notify_friends=notify_friends,
+            )
         )
-        t.start()
+
+        def _done(t) -> None:
+            try:
+                exc = t.exception()
+                if exc:
+                    logger.error("post-submit background task failed: %s", exc)
+            except Exception:
+                # cancelled / already logged / etc.
+                pass
+
+        task.add_done_callback(_done)
+    except RuntimeError as exc:
+        # No running loop (should not happen under FastAPI request handling)
+        logger.error("Failed to start post-submit background tasks (no running event loop): %s", exc)
     except Exception as exc:
         logger.error("Failed to start post-submit background tasks: %s", exc)
 
