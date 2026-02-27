@@ -76,6 +76,10 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 REPORTS_TABLE = os.getenv("MYWEB_REPORTS_TABLE", "myweb_reports").strip() or "myweb_reports"
 
+# Governance / snapshots
+MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
+SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
+
 # Phase10 lock tuning (env)
 MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120") or "120")
 MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
@@ -126,7 +130,7 @@ class MyWebEnsureItem(BaseModel):
     period_start: str
     period_end: str
     title: str
-    report_id: Optional[int] = None
+    report_id: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -135,6 +139,27 @@ class MyWebEnsureResponse(BaseModel):
     now_iso: str
     results: List[MyWebEnsureItem]
 
+
+
+
+class MyWebReportRecord(BaseModel):
+    id: str = Field(..., description="myweb_reports.id (UUID)")
+    report_type: str = Field(..., description="daily/weekly/monthly")
+    period_start: str = Field(..., description="UTC ISO (Z)")
+    period_end: str = Field(..., description="UTC ISO (Z)")
+    title: Optional[str] = Field(default=None)
+    content_text: Optional[str] = Field(default=None)
+    content_json: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[str] = Field(default=None)
+    updated_at: Optional[str] = Field(default=None)
+
+
+class MyWebReadyReportsResponse(BaseModel):
+    status: str = Field(default="ok")
+    user_id: str = Field(..., description="viewer user_id")
+    report_type: str = Field(..., description="requested type")
+    viewer_tier: str = Field(..., description="free/plus/premium")
+    items: List[MyWebReportRecord] = Field(default_factory=list)
 
 @dataclass(frozen=True)
 class TargetPeriod:
@@ -176,6 +201,46 @@ async def _sb_post(path: str, *, params: List[Tuple[str, str]], json_body: Any, 
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=10.0) as client:
         return await client.post(url, headers=_sb_headers(prefer=prefer), params=params, json=json_body)
+
+
+
+async def _fetch_latest_snapshot_hash(user_id: str, *, scope: str, snapshot_type: str) -> Optional[str]:
+    """Fetch latest material snapshot source_hash (best-effort).
+
+    - Returns None if snapshots table is missing or no rows.
+    - This API uses service_role and is meant for internal governance checks.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+    st = str(snapshot_type or "").strip() or "public"
+
+    try:
+        resp = await _sb_get(
+            f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
+            params=[
+                ("select", "source_hash,created_at"),
+                ("user_id", f"eq.{uid}"),
+                ("scope", f"eq.{sc}"),
+                ("snapshot_type", f"eq.{st}"),
+                ("order", "created_at.desc"),
+                ("limit", "1"),
+            ],
+        )
+    except Exception:
+        return None
+
+    if resp.status_code not in (200, 206):
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if isinstance(rows, list) and rows:
+        sh = str((rows[0] or {}).get("source_hash") or "").strip()
+        return sh or None
+    return None
 
 
 def _parse_now_utc(now_iso: Optional[str]) -> datetime:
@@ -325,7 +390,7 @@ async def _fetch_emotion_rows(user_id: str, start_iso: str, end_iso: str) -> Lis
         return []
 
 
-async def _report_exists(user_id: str, report_type: str, start_iso: str, end_iso: str) -> Optional[int]:
+async def _report_exists(user_id: str, report_type: str, start_iso: str, end_iso: str) -> Optional[str]:
     resp = await _sb_get(
         f"/rest/v1/{REPORTS_TABLE}",
         params=[
@@ -344,13 +409,13 @@ async def _report_exists(user_id: str, report_type: str, start_iso: str, end_iso
         rows = resp.json()
         if isinstance(rows, list) and rows:
             rid = rows[0].get("id")
-            return int(rid) if rid is not None else None
+            return str(rid) if rid is not None else None
         return None
     except Exception:
         return None
 
 
-async def _upsert_report(payload: Dict[str, Any]) -> Optional[int]:
+async def _upsert_report(payload: Dict[str, Any]) -> Optional[str]:
     resp = await _sb_post(
         f"/rest/v1/{REPORTS_TABLE}",
         params=[("on_conflict", "user_id,report_type,period_start,period_end")],
@@ -364,7 +429,7 @@ async def _upsert_report(payload: Dict[str, Any]) -> Optional[int]:
         rows = resp.json()
         if isinstance(rows, list) and rows:
             rid = rows[0].get("id")
-            return int(rid) if rid is not None else None
+            return str(rid) if rid is not None else None
         return None
     except Exception:
         return None
@@ -596,7 +661,9 @@ async def _generate_and_save(
     include_astor: bool,
 ) -> Tuple[str, Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
     # 1) fetch emotions
-    rows = await _fetch_emotion_rows(user_id, target.period_start_iso, target.period_end_iso)
+    rows_all = await _fetch_emotion_rows(user_id, target.period_start_iso, target.period_end_iso)
+    # NOTE: public output should exclude secret materials (governance v1)
+    rows = [r for r in (rows_all or []) if not bool((r or {}).get("is_secret"))]
 
     # 2) metrics
     content_json: Dict[str, Any] = {}
@@ -694,6 +761,40 @@ async def _generate_and_save(
     except Exception:
         pass
 
+    # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
+    # We store publish status and the public-material fingerprint so the inspector / API can
+    # decide whether this artifact is safe to return.
+    try:
+        scope = SNAPSHOT_SCOPE_DEFAULT
+        public_hash = None
+        try:
+            public_hash = await _fetch_latest_snapshot_hash(user_id, scope=scope, snapshot_type="public")
+        except Exception:
+            public_hash = None
+
+        # normalize tier string (for audit/debug)
+        tier_str = None
+        try:
+            tier_str = tier_enum.value if tier_enum is not None and hasattr(tier_enum, "value") else (str(tier_enum) if tier_enum is not None else None)
+        except Exception:
+            tier_str = None
+
+        pub = content_json.get("publish") if isinstance(content_json.get("publish"), dict) else {}
+        pub.update(
+            {
+                "status": "DRAFT",
+                "scope": scope,
+                "snapshotType": "public",
+                "publicSourceHash": public_hash,
+                "generatedForTier": tier_str,
+                "secretExcluded": True,
+                "inspectedAt": None,
+            }
+        )
+        content_json["publish"] = pub
+    except Exception:
+        pass
+
     payload = {
         "user_id": user_id,
         "report_type": target.report_type,
@@ -706,7 +807,32 @@ async def _generate_and_save(
     }
     rid = await _upsert_report(payload)
     payload["_id"] = rid
+
+    # Enqueue inspection (best-effort). This keeps DRAFT/READY gating consistent whether
+    # the report was generated by API (on-demand) or by worker.
+    try:
+        if rid:
+            from astor_job_queue import enqueue_job as _enqueue_job
+
+            await _enqueue_job(
+                job_key=f"inspect_emotion_report:{rid}",
+                job_type="inspect_emotion_report_v1",
+                user_id=user_id,
+                payload={
+                    "report_id": rid,
+                    "report_type": target.report_type,
+                    "period_start": target.period_start_iso,
+                    "period_end": target.period_end_iso,
+                    "scope": SNAPSHOT_SCOPE_DEFAULT,
+                    "expected_public_source_hash": (content_json.get("publish") or {}).get("publicSourceHash") if isinstance(content_json.get("publish"), dict) else None,
+                },
+                priority=10,
+            )
+    except Exception as exc:
+        logger.error("Failed to enqueue inspect_emotion_report_v1: %s", exc)
+
     return text, content_json, astor_text, {"report_id": rid}
+
 
 
 def register_myweb_report_routes(app: FastAPI) -> None:
@@ -873,3 +999,141 @@ def register_myweb_report_routes(app: FastAPI) -> None:
             now_iso=now_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
             results=results,
         )
+
+
+    @app.get("/myweb/reports/ready", response_model=MyWebReadyReportsResponse)
+    async def myweb_reports_ready(
+        report_type: Literal["daily", "weekly", "monthly"] = "weekly",
+        limit: int = 10,
+        authorization: Optional[str] = Header(default=None),
+    ) -> MyWebReadyReportsResponse:
+        """Return READY (or PUBLISHED) MyWeb reports only.
+
+        Minimal decide_publish:
+        - status in (READY, PUBLISHED)
+        - retention window by current subscription tier
+        - strip premium-only fields based on current tier
+        """
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        user_id = await _resolve_user_id_from_token(access_token)
+
+        # Resolve current tier (default: free)
+        tier_enum = None
+        tier_str = "free"
+        if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+            try:
+                tier_enum = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
+                tier_str = tier_enum.value if hasattr(tier_enum, "value") else str(tier_enum)
+            except Exception:
+                tier_str = "free"
+
+        def _parse_dt(iso: str) -> Optional[datetime]:
+            s = (iso or "").strip()
+            if not s:
+                return None
+            try:
+                if s.endswith("Z"):
+                    s = s[:-1] + "+00:00"
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except Exception:
+                return None
+
+        # Retention boundaries
+        now_utc = datetime.now(timezone.utc)
+        now_jst = now_utc.astimezone(JST)
+        cur_month_start_jst = datetime(now_jst.year, now_jst.month, 1, tzinfo=JST)
+        if now_jst.month == 1:
+            prev_year, prev_month = now_jst.year - 1, 12
+        else:
+            prev_year, prev_month = now_jst.year, now_jst.month - 1
+        prev_month_start_jst = datetime(prev_year, prev_month, 1, tzinfo=JST)
+
+        cur_month_start_utc = cur_month_start_jst.astimezone(timezone.utc)
+        prev_month_start_utc = prev_month_start_jst.astimezone(timezone.utc)
+        plus_window_start_utc = (now_utc - timedelta(days=365))
+
+        def _retention_ok(period_end_iso: str) -> bool:
+            dt = _parse_dt(period_end_iso)
+            if not dt:
+                return False
+            if tier_str == "premium":
+                return True
+            if tier_str == "plus":
+                return dt >= plus_window_start_utc
+            # free: previous calendar month only
+            return (dt >= prev_month_start_utc) and (dt < cur_month_start_utc)
+
+        def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
+            out = dict(cj or {})
+            if tier_str == "free":
+                for k in ("astorText", "astorMeta", "astorError", "structuralReport"):
+                    out.pop(k, None)
+            elif tier_str == "plus":
+                out.pop("structuralReport", None)
+            return out
+
+        lim = max(1, min(int(limit or 10), 50))
+        # Fetch more than requested to allow filtering by status/retention.
+        fetch_limit = max(lim * 4, 30)
+
+        resp = await _sb_get(
+            f"/rest/v1/{REPORTS_TABLE}",
+            params=[
+                ("select", "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"),
+                ("user_id", f"eq.{user_id}"),
+                ("report_type", f"eq.{report_type}"),
+                ("order", "period_start.desc"),
+                ("limit", str(fetch_limit)),
+            ],
+        )
+        if resp.status_code not in (200, 206):
+            logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Supabase query failed")
+        try:
+            rows = resp.json()
+        except Exception:
+            rows = []
+
+        items: List[MyWebReportRecord] = []
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                cj = r.get("content_json") if isinstance(r.get("content_json"), dict) else {}
+                pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
+                st = str(pub.get("status") or "").strip().upper()
+                if st not in ("READY", "PUBLISHED"):
+                    continue
+                pe = str(r.get("period_end") or "")
+                if not _retention_ok(pe):
+                    continue
+
+                items.append(
+                    MyWebReportRecord(
+                        id=str(r.get("id") or ""),
+                        report_type=str(r.get("report_type") or ""),
+                        period_start=str(r.get("period_start") or ""),
+                        period_end=str(r.get("period_end") or ""),
+                        title=r.get("title"),
+                        content_text=r.get("content_text"),
+                        content_json=_shape_content_json(cj),
+                        generated_at=r.get("generated_at"),
+                        updated_at=r.get("updated_at"),
+                    )
+                )
+                if len(items) >= lim:
+                    break
+
+        return MyWebReadyReportsResponse(
+            user_id=user_id,
+            report_type=str(report_type),
+            viewer_tier=str(tier_str),
+            items=items,
+        )
+

@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1,inspect_emotion_report_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -25,9 +25,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import signal
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from astor_job_queue import (
     fetch_next_queued_job,
@@ -37,6 +38,8 @@ from astor_job_queue import (
     requeue,
     mark_failed,
 )
+from supabase_client import sb_get, sb_patch  # type: ignore
+
 
 # NOTE:
 # In your repo, the module is expected to be `astor_myprofile_report.py`.
@@ -44,7 +47,11 @@ from astor_job_queue import (
 from astor_myprofile_report import refresh_myprofile_latest_report  # type: ignore
 
 # Phase X: material snapshots (central input snapshots)
-from astor_material_snapshots import generate_and_store_material_snapshots  # type: ignore
+from astor_material_snapshots import (
+    generate_and_store_material_snapshots,
+    fetch_emotion_meta_for_hash,
+    compute_source_hash_from_emotion_meta,
+)  # type: ignore
 
 # Phase X+: emotion structure reports (MyWeb weekly/monthly)
 from api_myweb_reports import (
@@ -54,6 +61,10 @@ from api_myweb_reports import (
 
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
+
+MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
+MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
+SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
 
 
 def _parse_job_types(raw: str) -> List[str]:
@@ -153,10 +164,233 @@ async def _handle_generate_emotion_report_v1(*, user_id: str, payload: dict) -> 
         raise RuntimeError(f"generate_emotion_report_v1 failed: {errors}")
 
     return {"status": "ok", "user_id": uid, "generated": generated, "errors": (errors or None)}
+
+
+# ----------------------------
+# Inspection: Emotion report (MyWeb) publish gating
+# ----------------------------
+
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Very loose phone detector (JP + general digit sequences)
+_PHONE_RE = re.compile(r"(?:\b0\d{1,4}[- ]?\d{1,4}[- ]?\d{4}\b|\b\d{10,11}\b)")
+
+
+def _now_iso_z() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _detect_pii(text: str) -> List[str]:
+    t = str(text or "")
+    flags: List[str] = []
+    try:
+        if _EMAIL_RE.search(t):
+            flags.append("email")
+    except Exception:
+        pass
+    try:
+        if _PHONE_RE.search(t):
+            flags.append("phone")
+    except Exception:
+        pass
+    return flags
+
+
+async def _fetch_latest_public_source_hash(user_id: str, *, scope: str) -> Optional[str]:
+    """Best-effort: prefer material_snapshots.latest(public), else compute from emotions meta."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+
+    # 1) Try snapshots table (fast path)
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
+            params={
+                "select": "source_hash,created_at",
+                "user_id": f"eq.{uid}",
+                "scope": f"eq.{sc}",
+                "snapshot_type": "eq.public",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+            timeout=8.0,
+        )
+        if resp.status_code in (200, 206):
+            rows = resp.json()
+            if isinstance(rows, list) and rows:
+                sh = str((rows[0] or {}).get("source_hash") or "").strip()
+                if sh:
+                    return sh
+    except Exception:
+        pass
+
+    # 2) Fallback: compute from emotion meta (may be heavier)
+    try:
+        meta = await fetch_emotion_meta_for_hash(uid)
+        return compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
+    except Exception:
+        return None
+
+
+async def _fetch_myweb_report_row(report_id: str, *, user_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(report_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not rid or not uid:
+        return None
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{MYWEB_REPORTS_TABLE}",
+            params={
+                "select": "id,user_id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at",
+                "id": f"eq.{rid}",
+                "user_id": f"eq.{uid}",
+                "limit": "1",
+            },
+            timeout=10.0,
+        )
+        if resp.status_code not in (200, 206):
+            return None
+        rows = resp.json()
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            return rows[0]
+    except Exception:
+        return None
+    return None
+
+
+async def _patch_myweb_report_content_json(report_id: str, *, content_json: Dict[str, Any]) -> bool:
+    rid = str(report_id or "").strip()
+    if not rid:
+        return False
+    try:
+        resp = await sb_patch(
+            f"/rest/v1/{MYWEB_REPORTS_TABLE}",
+            params={"id": f"eq.{rid}"},
+            json={
+                "content_json": content_json,
+                "updated_at": _now_iso_z(),
+            },
+            prefer="return=minimal",
+            timeout=10.0,
+        )
+        return resp.status_code in (200, 204)
+    except Exception:
+        return False
+
+
+async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Inspect a generated emotion report and set publish.status.
+
+    Expected payload:
+    - report_id (required)
+    - scope (optional, default SNAPSHOT_SCOPE_DEFAULT)
+    - expected_public_source_hash (optional)
+    """
+    uid = str(user_id or "").strip()
+    report_id = str((payload or {}).get("report_id") or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    if not report_id:
+        raise ValueError("payload.report_id is required")
+
+    row = await _fetch_myweb_report_row(report_id, user_id=uid)
+    if not row:
+        return {"status": "missing", "user_id": uid, "report_id": report_id}
+
+    cj = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
+    pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
+
+    scope = str((payload or {}).get("scope") or pub.get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+    expected_hash = (payload or {}).get("expected_public_source_hash") or pub.get("publicSourceHash")
+    secret_excluded = bool(pub.get("secretExcluded"))  # should be True for publishable artifacts
+
+    # --- public alignment ---
+    current_hash = await _fetch_latest_public_source_hash(uid, scope=scope)
+    hash_match = bool(expected_hash and current_hash and str(expected_hash) == str(current_hash))
+
+    flags: List[str] = []
+    if not secret_excluded:
+        flags.append("secret_excluded_missing")
+    if not expected_hash:
+        flags.append("expected_public_source_hash_missing")
+    if not current_hash:
+        flags.append("current_public_source_hash_missing")
+    if expected_hash and current_hash and not hash_match:
+        flags.append("public_snapshot_mismatch")
+
+    # --- PII check (rule-based, minimal) ---
+    text_parts: List[str] = []
+    try:
+        if isinstance(row.get("content_text"), str):
+            text_parts.append(row.get("content_text") or "")
+    except Exception:
+        pass
+    try:
+        if isinstance(cj.get("astorText"), str):
+            text_parts.append(cj.get("astorText") or "")
+    except Exception:
+        pass
+    pii_flags = _detect_pii("\n".join(text_parts))
+    for pf in pii_flags:
+        flags.append(f"pii:{pf}")
+
+    inspected_at = _now_iso_z()
+
+    status = "READY"
+    if flags:
+        status = "NEEDS_REVIEW"
+
+    # If missing governance meta or public mismatch, request regeneration (best-effort)
+    need_regen = any(
+        f in flags for f in ("secret_excluded_missing", "expected_public_source_hash_missing", "public_snapshot_mismatch")
+    )
+    if need_regen:
+        try:
+            await enqueue_job(
+                job_key=f"emotion_report_refresh:{uid}",
+                job_type="generate_emotion_report_v1",
+                user_id=uid,
+                payload={"trigger": "inspect_mismatch", "requested_at": inspected_at},
+                priority=20,
+                debounce_seconds=10,
+            )
+        except Exception:
+            pass
+
+    pub2 = dict(pub or {})
+    pub2.update(
+        {
+            "status": status,
+            "inspectedAt": inspected_at,
+            "latestPublicSourceHash": current_hash,
+            "hashMatch": bool(hash_match),
+            "inspectionFlags": flags,
+            "inspector": {"job_type": "inspect_emotion_report_v1"},
+        }
+    )
+    cj2 = dict(cj or {})
+    cj2["publish"] = pub2
+
+    patched = await _patch_myweb_report_content_json(report_id, content_json=cj2)
+    return {
+        "status": status,
+        "user_id": uid,
+        "report_id": report_id,
+        "patched": bool(patched),
+        "scope": scope,
+        "expected_public_source_hash": expected_hash,
+        "latest_public_source_hash": current_hash,
+        "hash_match": bool(hash_match),
+        "flags": flags,
+    }
+
+
+
 async def _worker_loop() -> None:
     worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{os.getpid()}"
     poll_interval = float(os.getenv("ASTOR_WORKER_POLL_INTERVAL_SECONDS", "1.0") or "1.0")
-    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1"))
+    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v1,inspect_emotion_report_v1"))
 
     logger = logging.getLogger("astor_worker")
     logger.info("ASTOR worker started. worker_id=%s job_types=%s poll=%.2fs", worker_id, job_types, poll_interval)
@@ -285,6 +519,27 @@ async def _worker_loop() -> None:
                     )
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, gen_res)
 
+            elif claimed.job_type == "inspect_emotion_report_v1":
+                insp_res = await _handle_inspect_emotion_report_v1(user_id=claimed.user_id, payload=(claimed.payload or {}))
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
 
             else:
                 await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=f"Unknown job_type: {claimed.job_type}")
