@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -66,6 +66,27 @@ try:
 except Exception:
     SNAPSHOT_META_MAX_ROWS = 20000
 
+
+
+# --- Emotion period scopes (weekly/monthly) ---
+# JST fixed (UTC+9) to match MyWeb report definitions.
+JST_OFFSET = timedelta(hours=9)
+JST = timezone(JST_OFFSET)
+DAY = timedelta(days=1)
+
+# Strength weights (match client / api_myweb_reports)
+STRENGTH_SCORE: Dict[str, int] = {"weak": 1, "medium": 2, "strong": 3}
+
+# Emotion mapping (JP labels -> keys)
+JP_TO_KEY: Dict[str, str] = {
+    "喜び": "joy",
+    "悲しみ": "sadness",
+    "不安": "anxiety",
+    "怒り": "anger",
+    "平穏": "calm",
+}
+EMOTION_KEYS: Tuple[str, ...] = ("joy", "sadness", "anxiety", "anger", "calm")
+KEY_TO_JP: Dict[str, str] = {v: k for k, v in JP_TO_KEY.items()}
 
 def _now_iso_z() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -120,7 +141,7 @@ async def _sb_post_json(path: str, *, json_body: Any, timeout: float = 8.0, pref
     return resp
 
 
-async def fetch_emotion_meta_for_hash(user_id: str) -> List[Dict[str, Any]]:
+async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] = None, end_iso: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch (id, created_at, is_secret) rows for hashing.
 
     Uses pagination and caps at SNAPSHOT_META_MAX_ROWS to avoid runaway loads.
@@ -139,15 +160,26 @@ async def fetch_emotion_meta_for_hash(user_id: str) -> List[Dict[str, Any]]:
         if limit <= 0:
             break
 
-        rows = await _sb_get_json(
-            "/rest/v1/emotions",
-            params=[
-                ("select", "id,created_at,is_secret"),
-                ("user_id", f"eq.{uid}"),
+        
+        params: List[Tuple[str, str]] = [
+            ("select", "id,created_at,is_secret"),
+            ("user_id", f"eq.{uid}"),
+        ]
+        if start_iso:
+            params.append(("created_at", f"gte.{start_iso}"))
+        if end_iso:
+            params.append(("created_at", f"lte.{end_iso}"))
+        params.extend(
+            [
                 ("order", "created_at.asc"),
                 ("limit", str(limit)),
                 ("offset", str(offset)),
-            ],
+            ]
+        )
+
+        rows = await _sb_get_json(
+            "/rest/v1/emotions",
+            params=params,
         )
         if not rows:
             break
@@ -243,6 +275,441 @@ def build_snapshot_payload(
     }
 
 
+
+def _iso_ms_z(dt: datetime) -> str:
+    """UTC ISO string with milliseconds (JS-like)."""
+    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _jst_midnight_utc(year: int, month: int, day: int) -> datetime:
+    """JSTの指定日 00:00 を UTC datetime で返す。"""
+    jst_dt = datetime(year, month, day, 0, 0, 0, 0, tzinfo=JST)
+    return jst_dt.astimezone(timezone.utc)
+
+
+def _is_emotion_period_scope(scope: str) -> bool:
+    sc = str(scope or "").strip()
+    return bool(sc.startswith("emotion_weekly:") or sc.startswith("emotion_monthly:"))
+
+
+def _parse_emotion_period_scope(scope: str) -> Dict[str, Any]:
+    """Parse emotion period scope and return period boundaries.
+
+    Supported scopes:
+    - emotion_weekly:YYYY-MM-DD  (dist boundary date in JST, typically Sunday 00:00 JST)
+    - emotion_monthly:YYYY-MM    (report month, used for 28-day monthly window)
+    """
+    sc = str(scope or "").strip()
+    if sc.startswith("emotion_weekly:"):
+        s = sc.split(":", 1)[1].strip()
+        try:
+            y, m, d = [int(x) for x in s.split("-")]
+        except Exception:
+            raise ValueError(f"Invalid weekly scope: {sc}")
+        dist_utc = _jst_midnight_utc(y, m, d)
+        period_start_utc = dist_utc - 7 * DAY
+        period_end_utc = dist_utc - timedelta(milliseconds=1)
+        return {
+            "kind": "weekly",
+            "scope": sc,
+            "timezone": "Asia/Tokyo",
+            "dist_jst": f"{y:04d}-{m:02d}-{d:02d}",
+            "dist_utc": dist_utc,
+            "period_start_utc": period_start_utc,
+            "period_end_utc": period_end_utc,
+            "period_start_iso": _iso_ms_z(period_start_utc),
+            "period_end_iso": _iso_ms_z(period_end_utc),
+        }
+
+    if sc.startswith("emotion_monthly:"):
+        s = sc.split(":", 1)[1].strip()
+        try:
+            y, m = [int(x) for x in s.split("-")]
+        except Exception:
+            raise ValueError(f"Invalid monthly scope: {sc}")
+
+        # dist = next month 1st 00:00 JST
+        if m == 12:
+            ny, nm = y + 1, 1
+        else:
+            ny, nm = y, m + 1
+        dist_utc = _jst_midnight_utc(ny, nm, 1)
+        period_start_utc = dist_utc - 28 * DAY
+        period_end_utc = dist_utc - timedelta(milliseconds=1)
+        return {
+            "kind": "monthly_28d",
+            "scope": sc,
+            "timezone": "Asia/Tokyo",
+            "report_month": f"{y:04d}-{m:02d}",
+            "dist_jst": f"{ny:04d}-{nm:02d}-01",
+            "dist_utc": dist_utc,
+            "period_start_utc": period_start_utc,
+            "period_end_utc": period_end_utc,
+            "period_start_iso": _iso_ms_z(period_start_utc),
+            "period_end_iso": _iso_ms_z(period_end_utc),
+        }
+
+    raise ValueError(f"Unsupported scope: {sc}")
+
+
+async def fetch_emotions_in_range(
+    user_id: str,
+    *,
+    start_iso: str,
+    end_iso: str,
+    include_secret: bool,
+    page_size: int = 1000,
+    max_rows: int = 20000,
+) -> List[Dict[str, Any]]:
+    """Fetch emotion rows in a period range (for aggregation / period snapshots).
+
+    Uses pagination and caps at max_rows to avoid runaway loads.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    offset = 0
+    ps = max(1, int(page_size or 1000))
+    mx = max(ps, int(max_rows or 20000))
+
+    while True:
+        limit = min(ps, mx - len(out))
+        if limit <= 0:
+            break
+
+        params: List[Tuple[str, str]] = [
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+            ("user_id", f"eq.{uid}"),
+            ("created_at", f"gte.{start_iso}"),
+            ("created_at", f"lte.{end_iso}"),
+            ("order", "created_at.asc"),
+            ("limit", str(limit)),
+            ("offset", str(offset)),
+        ]
+        if not include_secret:
+            params.append(("is_secret", "eq.false"))
+
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        if not rows:
+            break
+
+        out.extend(rows)
+        if len(rows) < limit:
+            break
+
+        offset += limit
+
+    return out
+
+
+def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Normalize emotion details into [{type, strength}, ...]. (Match MyWeb logic)"""
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        out = []
+        for it in details:
+            if isinstance(it, dict):
+                t = str(it.get("type") or "").strip()
+                s = str(it.get("strength") or "medium").strip().lower()
+                if not t:
+                    continue
+                if s not in STRENGTH_SCORE:
+                    s = "medium"
+                out.append({"type": t, "strength": s})
+        return out
+
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        out = []
+        for t in emos:
+            tt = str(t or "").strip()
+            if not tt:
+                continue
+            out.append({"type": tt, "strength": "medium"})
+        return out
+
+    return []
+
+
+def _map_key(jp: str) -> Optional[str]:
+    return JP_TO_KEY.get(str(jp).strip())
+
+
+def _parse_created_at_utc(row: Dict[str, Any]) -> Optional[datetime]:
+    """Parse row.created_at into timezone-aware UTC datetime."""
+    try:
+        t = row.get("created_at")
+        if not t:
+            return None
+        s = str(t)
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _build_days_fixed7(rows: List[Dict[str, Any]], period_start_utc: datetime) -> List[Dict[str, Any]]:
+    buckets: List[Dict[str, Any]] = []
+    for i in range(7):
+        utc_start = period_start_utc + i * DAY
+        j = utc_start.astimezone(JST)
+        date_key = f"{j.year:04d}-{j.month:02d}-{j.day:02d}"
+        buckets.append(
+            {
+                "dateKey": date_key,
+                "label": f"{j.month}/{j.day}",
+                "utcStartMs": int(utc_start.timestamp() * 1000),
+                "joy": 0,
+                "sadness": 0,
+                "anxiety": 0,
+                "anger": 0,
+                "calm": 0,
+                "dominantKey": None,
+            }
+        )
+
+    for row in rows:
+        dt = _parse_created_at_utc(row)
+        if dt is None:
+            continue
+
+        idx = int(((dt - period_start_utc).total_seconds()) // 86400)
+        if idx < 0 or idx >= 7:
+            continue
+        bucket = buckets[idx]
+        for it in _normalize_details(row):
+            k = _map_key(it.get("type", ""))
+            if not k:
+                continue
+            w = STRENGTH_SCORE.get(str(it.get("strength", "medium")).lower(), 0)
+            bucket[k] += w
+
+    # dominant key per day
+    for b in buckets:
+        dom = None
+        maxv = 0
+        for k in EMOTION_KEYS:
+            v = int(b.get(k, 0))
+            if v > maxv:
+                maxv = v
+                dom = k if v > 0 else None
+        b["dominantKey"] = dom
+
+    return buckets
+
+
+def _build_weeks_fixed4(rows: List[Dict[str, Any]], period_start_utc: datetime) -> List[Dict[str, Any]]:
+    buckets: List[Dict[str, Any]] = [
+        {"index": 0, "label": "第1週", "joy": 0, "sadness": 0, "anxiety": 0, "anger": 0, "calm": 0, "total": 0},
+        {"index": 1, "label": "第2週", "joy": 0, "sadness": 0, "anxiety": 0, "anger": 0, "calm": 0, "total": 0},
+        {"index": 2, "label": "第3週", "joy": 0, "sadness": 0, "anxiety": 0, "anger": 0, "calm": 0, "total": 0},
+        {"index": 3, "label": "第4週", "joy": 0, "sadness": 0, "anxiety": 0, "anger": 0, "calm": 0, "total": 0},
+    ]
+
+    for row in rows:
+        dt = _parse_created_at_utc(row)
+        if dt is None:
+            continue
+
+        idx_raw = int(((dt - period_start_utc).total_seconds()) // (7 * 86400))
+        idx = max(0, min(3, idx_raw))
+        bucket = buckets[idx]
+
+        for it in _normalize_details(row):
+            k = _map_key(it.get("type", ""))
+            if not k:
+                continue
+            w = STRENGTH_SCORE.get(str(it.get("strength", "medium")).lower(), 0)
+            bucket[k] += w
+            bucket["total"] += w
+
+    return buckets
+
+
+def _compute_weekly_metrics(days: List[Dict[str, Any]]) -> Dict[str, Any]:
+    totals = {k: 0 for k in EMOTION_KEYS}
+    for d in days:
+        for k in EMOTION_KEYS:
+            totals[k] += int(d.get(k, 0))
+    total_all = sum(totals.values())
+    share_pct = {k: 0 for k in EMOTION_KEYS}
+    if total_all > 0:
+        for k in EMOTION_KEYS:
+            share_pct[k] = int(round((totals[k] / total_all) * 100))
+    top = sorted([[k, totals[k]] for k in EMOTION_KEYS], key=lambda x: x[1], reverse=True)
+    return {
+        "totals": totals,
+        "totalAll": total_all,
+        "sharePct": share_pct,
+        "top": top,
+        "hasData": total_all > 0,
+    }
+
+
+def _compute_monthly_metrics(weeks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    totals = {k: 0 for k in EMOTION_KEYS}
+    for w in weeks:
+        for k in EMOTION_KEYS:
+            totals[k] += int(w.get(k, 0))
+    total_all = sum(totals.values())
+    share_pct = {k: 0 for k in EMOTION_KEYS}
+    if total_all > 0:
+        for k in EMOTION_KEYS:
+            share_pct[k] = int(round((totals[k] / total_all) * 100))
+    return {
+        "weeks": weeks,
+        "totals": totals,
+        "totalAll": total_all,
+        "sharePct": share_pct,
+        "hasData": total_all > 0,
+    }
+
+
+def build_emotion_period_payload(
+    *,
+    scope: str,
+    snapshot_type: str,
+    source_hash: str,
+    total_rows: int,
+    public_rows: int,
+    secret_rows: int,
+    period_meta: Dict[str, Any],
+    views: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build payload for emotion period snapshots (weekly/monthly)."""
+    return {
+        "version": "emotion_period.v1",
+        "scope": scope,
+        "snapshot_type": snapshot_type,
+        "source_hash": source_hash,
+        "generated_at": _now_iso_z(),
+        "period": period_meta,
+        "summary": {
+            "emotions_total": int(total_rows),
+            "emotions_public": int(public_rows),
+            "emotions_secret": int(secret_rows),
+        },
+        "views": views or {},
+    }
+
+
+async def _generate_and_store_emotion_period_snapshots(
+    *,
+    user_id: str,
+    scope: str,
+    trigger: str,
+) -> Dict[str, Any]:
+    """Generate internal/public emotion period snapshots (weekly/monthly) and store them."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    sc = str(scope or "").strip()
+    info = _parse_emotion_period_scope(sc)
+    period_start_iso = str(info.get("period_start_iso") or "").strip()
+    period_end_iso = str(info.get("period_end_iso") or "").strip()
+    period_start_utc = info.get("period_start_utc")
+    if not isinstance(period_start_utc, datetime):
+        raise ValueError(f"Invalid period_start_utc for scope: {sc}")
+
+    # 1) Fetch meta rows for hashing within the period (includes secret flag)
+    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
+    total_rows = len(meta)
+    secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
+    public_rows = total_rows - secret_rows
+
+    # 2) Compute hashes for this scope
+    internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=meta)
+    public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
+
+    # 3) Fetch rows for aggregation (bounded)
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
+    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+
+    # 4) Build views (match MyWeb structure)
+    kind = str(info.get("kind") or "")
+    if kind == "weekly":
+        internal_days = _build_days_fixed7(internal_rows, period_start_utc)
+        public_days = _build_days_fixed7(public_rows_data, period_start_utc)
+        internal_metrics = _compute_weekly_metrics(internal_days)
+        public_metrics = _compute_weekly_metrics(public_days)
+        internal_views = {"days": internal_days, "metrics": internal_metrics}
+        public_views = {"days": public_days, "metrics": public_metrics}
+        period_meta = {
+            "type": "weekly",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+        }
+    else:
+        internal_weeks = _build_weeks_fixed4(internal_rows, period_start_utc)
+        public_weeks = _build_weeks_fixed4(public_rows_data, period_start_utc)
+        internal_metrics = _compute_monthly_metrics(internal_weeks)
+        public_metrics = _compute_monthly_metrics(public_weeks)
+        internal_views = {"weeks": internal_weeks, "metrics": internal_metrics}
+        public_views = {"weeks": public_weeks, "metrics": public_metrics}
+        period_meta = {
+            "type": "monthly_28d",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportMonth": info.get("report_month"),
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+        }
+
+    internal_payload = build_emotion_period_payload(
+        scope=sc,
+        snapshot_type="internal",
+        source_hash=internal_hash,
+        total_rows=total_rows,
+        public_rows=public_rows,
+        secret_rows=secret_rows,
+        period_meta=period_meta,
+        views=internal_views,
+    )
+    public_payload = build_emotion_period_payload(
+        scope=sc,
+        snapshot_type="public",
+        source_hash=public_hash,
+        total_rows=total_rows,
+        public_rows=public_rows,
+        secret_rows=secret_rows,
+        period_meta=period_meta,
+        views=public_views,
+    )
+
+    # 5) Store snapshots
+    inserted_internal = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="internal", source_hash=internal_hash, payload=internal_payload)
+    inserted_public = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="public", source_hash=public_hash, payload=public_payload)
+
+    logger.info(
+        "emotion_period snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s",
+        uid,
+        sc,
+        internal_hash[:10],
+        public_hash[:10],
+        trigger,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": sc,
+        "trigger": trigger,
+        "internal": {"source_hash": internal_hash, "inserted": bool(inserted_internal)},
+        "public": {"source_hash": public_hash, "inserted": bool(inserted_public)},
+        "counts": {"total": total_rows, "public": public_rows, "secret": secret_rows},
+        "period": period_meta,
+    }
+
+
 async def _fetch_latest_snapshot_hash(user_id: str, *, scope: str, snapshot_type: str) -> Optional[str]:
     """Fetch latest snapshot source_hash (if table exists)."""
     uid = str(user_id or "").strip()
@@ -335,6 +802,11 @@ async def generate_and_store_material_snapshots(
         raise RuntimeError("Supabase config missing")
 
     sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+
+
+    # emotion_period snapshots (weekly/monthly): build period material snapshots (days/weeks/metrics)
+    if _is_emotion_period_scope(sc):
+        return await _generate_and_store_emotion_period_snapshots(user_id=uid, scope=sc, trigger=trigger)
 
     # 1) Fetch meta rows for hashing (includes secret flag)
     meta = await fetch_emotion_meta_for_hash(uid)

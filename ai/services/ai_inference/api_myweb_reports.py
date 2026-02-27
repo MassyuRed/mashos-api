@@ -231,6 +231,112 @@ async def _fetch_latest_snapshot_hash(user_id: str, *, scope: str, snapshot_type
     except Exception:
         return None
 
+
+async def _fetch_latest_snapshot_row(
+    user_id: str,
+    *,
+    scope: str,
+    snapshot_type: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch latest material snapshot row (payload + source_hash).
+
+    Returns None if snapshots table is missing or no rows.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+    st = str(snapshot_type or "").strip() or "public"
+
+    try:
+        resp = await _sb_get(
+            f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
+            params=[
+                ("select", "source_hash,created_at,payload"),
+                ("user_id", f"eq.{uid}"),
+                ("scope", f"eq.{sc}"),
+                ("snapshot_type", f"eq.{st}"),
+                ("order", "created_at.desc"),
+                ("limit", "1"),
+            ],
+        )
+    except Exception:
+        return None
+
+    if resp.status_code not in (200, 206):
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def _parse_iso_utc(iso: str) -> Optional[datetime]:
+    s = str(iso or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _infer_myweb_report_type_from_scope(scope: str) -> Optional[str]:
+    sc = str(scope or "").strip()
+    if sc.startswith("emotion_weekly:"):
+        return "weekly"
+    if sc.startswith("emotion_monthly:"):
+        return "monthly"
+    return None
+
+
+def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, period_end_iso: str) -> TargetPeriod:
+    ps = _parse_iso_utc(period_start_iso)
+    pe = _parse_iso_utc(period_end_iso)
+    if ps is None or pe is None:
+        raise HTTPException(status_code=500, detail="Invalid snapshot period ISO")
+
+    # dist_utc is the boundary instant; our stored period_end is dist - 1ms
+    dist_utc = pe + timedelta(milliseconds=1)
+
+    if report_type == "weekly":
+        s = _format_jst_md(ps)
+        e = _format_jst_md(pe)
+        title_range = f"{s} ～ {e}"
+        title = f"週報：{title_range}（7日分）"
+        meta = {"titleRange": title_range}
+    elif report_type == "monthly":
+        end_jst = pe.astimezone(JST)
+        title_month = f"{end_jst.year}/{end_jst.month}"
+        title = f"月報：{title_month}（28日分）"
+        meta = {"titleMonth": title_month}
+    else:
+        # daily is not supported in snapshot-driven mode
+        title = ""
+        meta = {}
+
+    def iso(dt: datetime) -> str:
+        return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+    return TargetPeriod(
+        report_type=str(report_type),
+        dist_utc=dist_utc,
+        period_start_utc=ps,
+        period_end_utc=pe,
+        period_start_iso=iso(ps),
+        period_end_iso=iso(pe),
+        title=title,
+        title_meta=meta,
+    )
+
     if resp.status_code not in (200, 206):
         return None
     try:
@@ -833,6 +939,159 @@ async def _generate_and_save(
 
     return text, content_json, astor_text, {"report_id": rid}
 
+
+
+async def _generate_and_save_from_snapshot(
+    user_id: str,
+    *,
+    scope: str,
+    include_astor: bool,
+) -> Tuple[str, Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
+    """Generate weekly/monthly MyWeb report using emotion_period material snapshot (v2).
+
+    This is an internal helper for astor_worker.
+    - Reads material_snapshots (snapshot_type=public) for the given scope.
+    - Does NOT read the emotions table.
+    - Does NOT enqueue inspection (worker handles it).
+    """
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip()
+    if not uid:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    if not sc:
+        raise HTTPException(status_code=400, detail="scope is required")
+
+    report_type = _infer_myweb_report_type_from_scope(sc)
+    if report_type not in ("weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="Unsupported scope for snapshot-driven generation")
+
+    snap = await _fetch_latest_snapshot_row(uid, scope=sc, snapshot_type="public")
+    if not snap:
+        raise HTTPException(status_code=404, detail="material snapshot not found")
+
+    snap_hash = str((snap or {}).get("source_hash") or "").strip() or None
+    payload = (snap or {}).get("payload") if isinstance((snap or {}).get("payload"), dict) else {}
+    period = payload.get("period") if isinstance(payload.get("period"), dict) else {}
+    views = payload.get("views") if isinstance(payload.get("views"), dict) else {}
+
+    period_start_iso = str(period.get("periodStartIso") or "").strip()
+    period_end_iso = str(period.get("periodEndIso") or "").strip()
+    if not period_start_iso or not period_end_iso:
+        raise HTTPException(status_code=500, detail="snapshot period meta missing")
+
+    target = _build_target_period_from_snapshot(report_type, period_start_iso, period_end_iso)
+
+    # 2) metrics from snapshot
+    content_json: Dict[str, Any] = {}
+    astor_text: Optional[str] = None
+    astor_report: Optional[Dict[str, Any]] = None
+    astor_meta: Optional[Dict[str, Any]] = None
+    astor_error: Optional[str] = None
+
+    metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+    content_json["metrics"] = metrics
+
+    if report_type == "weekly":
+        days = views.get("days") if isinstance(views.get("days"), list) else []
+        content_json["days"] = days
+    else:
+        weeks = views.get("weeks") if isinstance(views.get("weeks"), list) else []
+        content_json["weeks"] = weeks
+
+    # MyWeb report v3: Standard / Structural (tier-gated)
+    tier_enum = None
+    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+        try:
+            tier_enum = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+        except Exception:
+            tier_enum = SubscriptionTier.FREE
+    is_premium = bool(tier_enum == SubscriptionTier.PREMIUM) if SubscriptionTier is not None else False
+    is_plus_or_higher = (
+        bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
+    )
+
+    # Optional ASTOR insight (kept same behavior as v1; may read additional materials)
+    if include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
+        try:
+            period_days = 7 if report_type == "weekly" else 28
+            astor_text, astor_report = generate_myweb_insight_payload(user_id=uid, period_days=period_days, lang="ja")
+            astor_meta = {"engine": "astor_myweb_insight", "period_days": period_days, "version": "0.3"}
+        except Exception as e:
+            astor_error = str(e)
+
+    if astor_text:
+        content_json["astorText"] = astor_text
+        if astor_meta:
+            content_json["astorMeta"] = astor_meta
+    if astor_error:
+        content_json["astorError"] = astor_error
+
+    text = _render_simple_report_text(
+        report_type,
+        target.title,
+        target.period_start_iso,
+        target.period_end_iso,
+        metrics,
+        astor_text=astor_text,
+    )
+
+    # --- MyWeb report v3 structure (Standard / Structural) ---
+    try:
+        content_json.setdefault("reportVersion", "myweb.report.v3")
+        content_json["standardReport"] = {
+            "version": "myweb.standard.v1",
+            "contentText": text,
+        }
+        if astor_report and is_premium:
+            content_json["structuralReport"] = astor_report
+    except Exception:
+        pass
+
+    # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
+    try:
+        # normalize tier string (for audit/debug)
+        tier_str = None
+        try:
+            tier_str = (
+                tier_enum.value
+                if tier_enum is not None and hasattr(tier_enum, "value")
+                else (str(tier_enum) if tier_enum is not None else None)
+            )
+        except Exception:
+            tier_str = None
+
+        pub = content_json.get("publish") if isinstance(content_json.get("publish"), dict) else {}
+        pub.update(
+            {
+                "status": "DRAFT",
+                "scope": sc,
+                "snapshotType": "public",
+                "publicSourceHash": snap_hash,
+                "generatedForTier": tier_str,
+                "secretExcluded": True,
+                "inspectedAt": None,
+            }
+        )
+        content_json["publish"] = pub
+    except Exception:
+        pass
+
+    payload_upsert = {
+        "user_id": uid,
+        "report_type": report_type,
+        "period_start": target.period_start_iso,
+        "period_end": target.period_end_iso,
+        "title": target.title,
+        "content_text": text,
+        "content_json": content_json,
+        "generated_at": target.dist_utc.astimezone(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+    }
+    rid = await _upsert_report(payload_upsert)
+    payload_upsert["_id"] = rid
+
+    return text, content_json, astor_text, {"report_id": rid, "report_type": report_type, "scope": sc, "public_source_hash": snap_hash}
 
 
 def register_myweb_report_routes(app: FastAPI) -> None:
