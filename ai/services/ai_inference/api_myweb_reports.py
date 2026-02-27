@@ -728,6 +728,300 @@ def _dominant_label(metrics: Dict[str, Any]) -> str:
     return "—"
 
 
+def _render_weekly_standard_v3_text(
+    *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    metrics: Dict[str, Any],
+    days: List[Dict[str, Any]],
+    supplement_text: Optional[str] = None,
+) -> str:
+    """Render Weekly Standard report text.
+
+    This keeps the output observational and user-facing (no system notes).
+    """
+
+    def _range_line() -> Optional[str]:
+        try:
+            s = datetime.fromisoformat(period_start_iso.replace("Z", "+00:00")).astimezone(JST)
+            e = datetime.fromisoformat(period_end_iso.replace("Z", "+00:00")).astimezone(JST)
+            return f"対象期間（JST）: {s.year}/{s.month}/{s.day} 00:00 〜 {e.year}/{e.month}/{e.day} 23:59"
+        except Exception:
+            return None
+
+    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
+    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
+    top = metrics.get("top") if isinstance(metrics.get("top"), list) else []
+    total_all = int(metrics.get("totalAll") or 0)
+    dominant = _dominant_label(metrics)
+
+    # Peak day (by total weight)
+    peak_day_label: Optional[str] = None
+    peak_total = -1
+    dom_keys: List[Optional[str]] = []
+    for d in (days or []):
+        try:
+            day_total = sum(int(d.get(k, 0) or 0) for k in EMOTION_KEYS)
+        except Exception:
+            day_total = 0
+        if day_total > peak_total:
+            peak_total = day_total
+            peak_day_label = str(d.get("label") or "").strip() or None
+        dk = str(d.get("dominantKey") or "").strip() or None
+        dom_keys.append(dk)
+
+    # Dominant switches (rough rhythm)
+    switches = 0
+    last = None
+    for dk in dom_keys:
+        if dk and last and dk != last:
+            switches += 1
+        if dk:
+            last = dk
+
+    # Two most prominent emotions (user-facing)
+    top_pairs: List[Tuple[str, int]] = []
+    for it in top:
+        if isinstance(it, list) and len(it) == 2:
+            k = str(it[0] or "").strip()
+            try:
+                v = int(it[1] or 0)
+            except Exception:
+                v = 0
+            if k:
+                top_pairs.append((k, v))
+    top_pairs = top_pairs[:2]
+
+    def _pct(k: str) -> Optional[int]:
+        try:
+            return int(share.get(k, 0))
+        except Exception:
+            return None
+
+    lines: List[str] = []
+    lines.append(title)
+    rng = _range_line()
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    # 1) Summary
+    lines.append("【観測サマリー】")
+    if total_all <= 0:
+        lines.append("今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。")
+    else:
+        s1 = f"今週は「{dominant}」が中心に現れていました。"
+        if top_pairs:
+            k1, _v1 = top_pairs[0]
+            p1 = _pct(k1)
+            if p1 is not None and p1 > 0:
+                s1 += f"（全体の約{p1}%）"
+        lines.append(s1)
+        if len(top_pairs) >= 2:
+            k2, _v2 = top_pairs[1]
+            p2 = _pct(k2)
+            if p2 is not None and p2 > 0:
+                lines.append(f"次に目立ったのは「{KEY_TO_JP.get(k2, k2)}」で、約{p2}%でした。")
+    lines.append("")
+
+    # 2) Pattern detection
+    lines.append("【パターン検出】")
+    if total_all <= 0:
+        lines.append("大きな揺れは観測されませんでした（入力量が少ないため）。")
+    else:
+        if peak_day_label:
+            lines.append(f"感情の動きが強めに出たのは {peak_day_label} でした。")
+        if switches >= 3:
+            lines.append("日ごとの中心感情が切り替わりやすく、揺れが出やすい週だったかもしれません。")
+        elif switches == 0:
+            lines.append("中心感情は大きくは切り替わらず、一定のリズムで推移していました。")
+        else:
+            lines.append("中心感情はときどき切り替わりつつ、全体としてはまとまりのある動きでした。")
+    lines.append("")
+
+    # 3) Movement
+    lines.append("【感情の動き】")
+    for k in EMOTION_KEYS:
+        try:
+            v = int(totals.get(k, 0) or 0)
+        except Exception:
+            v = 0
+        if v > 0:
+            lines.append(f"- {KEY_TO_JP.get(k, k)}: {v}")
+    if total_all <= 0:
+        lines.append("（今週は合計が0のため、グラフ中心で確認するのが良さそうです）")
+    lines.append("")
+
+    # 4) Hint
+    lines.append("【感情観測ヒント】")
+    lines.append("ピークが出た日の『思考メモ（出来事の受け止め方）』を短く振り返ると、次の観測がしやすくなります。")
+    lines.append("同じ感情が続いた日は『何が安心材料だったか／何が引き金だったか』を一言で残すのがおすすめです。")
+    lines.append("")
+
+    # Optional supplement
+    if supplement_text:
+        st = str(supplement_text or "").strip()
+        if st:
+            lines.append("【補足】")
+            lines.append(st)
+            lines.append("")
+
+    # 5) Note
+    lines.append("【注記】")
+    lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
+
+    return "\n".join(lines).strip()
+
+
+def _render_monthly_standard_v3_text(
+    *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    metrics: Dict[str, Any],
+    weeks: List[Dict[str, Any]],
+    supplement_text: Optional[str] = None,
+) -> str:
+    """Render Monthly Standard report text (28d / 4-week buckets)."""
+
+    def _range_line() -> Optional[str]:
+        try:
+            s = datetime.fromisoformat(period_start_iso.replace("Z", "+00:00")).astimezone(JST)
+            e = datetime.fromisoformat(period_end_iso.replace("Z", "+00:00")).astimezone(JST)
+            return f"対象期間（JST）: {s.year}/{s.month}/{s.day} 00:00 〜 {e.year}/{e.month}/{e.day} 23:59"
+        except Exception:
+            return None
+
+    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
+    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
+    total_all = int(metrics.get("totalAll") or 0)
+    dominant = _dominant_label(metrics)
+
+    # Week summaries
+    week_summaries: List[str] = []
+    week_doms: List[str] = []
+    calm_by_week: List[int] = []
+    for w in (weeks or []):
+        label = str(w.get("label") or "").strip() or "週"
+        wt = 0
+        best_k = None
+        best_v = 0
+        for k in EMOTION_KEYS:
+            try:
+                v = int(w.get(k, 0) or 0)
+            except Exception:
+                v = 0
+            wt += v
+            if v > best_v:
+                best_v = v
+                best_k = k
+        calm_by_week.append(int(w.get("calm", 0) or 0))
+        dom_jp = KEY_TO_JP.get(best_k, best_k) if best_k else "—"
+        week_doms.append(str(dom_jp))
+        if wt <= 0:
+            week_summaries.append(f"- {label}: 入力量が少なめでした")
+        else:
+            week_summaries.append(f"- {label}: 「{dom_jp}」が中心（合計 {wt}）")
+
+    # Simple "reset" signal: calm increasing in later weeks
+    reset_hint = None
+    if len(calm_by_week) >= 4:
+        try:
+            first_half = calm_by_week[0] + calm_by_week[1]
+            second_half = calm_by_week[2] + calm_by_week[3]
+            if second_half > first_half and second_half > 0:
+                reset_hint = "後半にかけて『平穏』が増え、整え直しの動きが出ていた可能性があります。"
+        except Exception:
+            reset_hint = None
+
+    def _pct(k: str) -> Optional[int]:
+        try:
+            return int(share.get(k, 0))
+        except Exception:
+            return None
+
+    lines: List[str] = []
+    lines.append(title)
+    rng = _range_line()
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    lines.append("【観測サマリー】")
+    if total_all <= 0:
+        lines.append("今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。")
+    else:
+        s1 = f"今月は「{dominant}」が中心に現れていました。"
+        # Try show share of dominant by key (reverse map JP -> key when possible)
+        dom_key = None
+        for k, jp in KEY_TO_JP.items():
+            if jp == dominant:
+                dom_key = k
+                break
+        if dom_key:
+            p1 = _pct(dom_key)
+            if p1 is not None and p1 > 0:
+                s1 += f"（全体の約{p1}%）"
+        lines.append(s1)
+    lines.append("")
+
+    lines.append("【今月の傾向】")
+    if total_all <= 0:
+        lines.append("入力が少ないため、傾向の比較は控えめにしておきます。")
+    else:
+        # Very simple repetition hint: dominant appears in many weeks
+        dom_count = sum(1 for d in week_doms if d == dominant)
+        if dom_count >= 3:
+            lines.append(f"週をまたいで「{dominant}」が繰り返し中心になっていました。")
+        elif dom_count == 2:
+            lines.append(f"「{dominant}」が中心の週が複数あり、同じ流れが戻ってきやすい月だったかもしれません。")
+        else:
+            lines.append("週ごとに中心感情が変わりやすく、状況に合わせて揺れやすい月だったかもしれません。")
+    lines.append("")
+
+    lines.append("【週ごとの推移】")
+    if week_summaries:
+        lines.extend(week_summaries)
+    else:
+        lines.append("週ごとの集計が取得できませんでした。")
+    lines.append("")
+
+    lines.append("【整え直しの動き】")
+    if reset_hint:
+        lines.append(reset_hint)
+    else:
+        lines.append("落ち着き（平穏）の出方や戻り方を、週ごとのグラフで合わせて確認すると傾向がつかみやすいです。")
+    lines.append("")
+
+    lines.append("【感情の動き】")
+    for k in EMOTION_KEYS:
+        try:
+            v = int(totals.get(k, 0) or 0)
+        except Exception:
+            v = 0
+        if v > 0:
+            lines.append(f"- {KEY_TO_JP.get(k, k)}: {v}")
+    lines.append("")
+
+    lines.append("【感情観測ヒント】")
+    lines.append("繰り返し出た感情がある場合、その週に共通していた『思考のパターン』を一言でメモすると、次月の比較がしやすくなります。")
+    lines.append("月の中で切り替わりが多い場合は、切り替わり直前にあった出来事や受け止め方を短く残すのがおすすめです。")
+    lines.append("")
+
+    if supplement_text:
+        st = str(supplement_text or "").strip()
+        if st:
+            lines.append("【補足】")
+            lines.append(st)
+            lines.append("")
+
+    lines.append("【注記】")
+    lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
+
+    return "\n".join(lines).strip()
+
+
 def _render_simple_report_text(
     report_type: str,
     title: str,
@@ -766,6 +1060,14 @@ async def _generate_and_save(
     *,
     include_astor: bool,
 ) -> Tuple[str, Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
+    # NOTE: Legacy direct-read generation is deprecated for weekly/monthly.
+    #       Weekly/Monthly must be generated via snapshot-driven path (_generate_and_save_from_snapshot).
+    if target.report_type in ("weekly", "monthly"):
+        raise HTTPException(
+            status_code=410,
+            detail="Legacy weekly/monthly generation is disabled; use snapshot-driven generation",
+        )
+
     # 1) fetch emotions
     rows_all = await _fetch_emotion_rows(user_id, target.period_start_iso, target.period_end_iso)
     # NOTE: public output should exclude secret materials (governance v1)
@@ -818,13 +1120,13 @@ async def _generate_and_save(
                 content_json["astorMeta"] = astor_meta
         if astor_error:
             content_json["astorError"] = astor_error
-        text = _render_simple_report_text(
-            "weekly",
-            target.title,
-            target.period_start_iso,
-            target.period_end_iso,
-            metrics,
-            astor_text=astor_text,
+        text = _render_weekly_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            metrics=metrics,
+            days=days,
+            supplement_text=astor_text,
         )
     else:
         weeks = _build_weeks_fixed4(rows, target.period_start_utc)
@@ -844,13 +1146,13 @@ async def _generate_and_save(
                 content_json["astorMeta"] = astor_meta
         if astor_error:
             content_json["astorError"] = astor_error
-        text = _render_simple_report_text(
-            "monthly",
-            target.title,
-            target.period_start_iso,
-            target.period_end_iso,
-            metrics,
-            astor_text=astor_text,
+        text = _render_monthly_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            metrics=metrics,
+            weeks=weeks,
+            supplement_text=astor_text,
         )
 
     # 3) upsert
@@ -1026,14 +1328,24 @@ async def _generate_and_save_from_snapshot(
     if astor_error:
         content_json["astorError"] = astor_error
 
-    text = _render_simple_report_text(
-        report_type,
-        target.title,
-        target.period_start_iso,
-        target.period_end_iso,
-        metrics,
-        astor_text=astor_text,
-    )
+    if report_type == "weekly":
+        text = _render_weekly_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            metrics=metrics,
+            days=days,
+            supplement_text=astor_text,
+        )
+    else:
+        text = _render_monthly_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            metrics=metrics,
+            weeks=weeks,
+            supplement_text=astor_text,
+        )
 
     # --- MyWeb report v3 structure (Standard / Structural) ---
     try:
