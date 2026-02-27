@@ -157,6 +157,9 @@ SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
 
 
 def _to_iso_z(dt: _dt.datetime) -> str:
+    # Ensure tz-aware (treat naive timestamps as UTC to avoid compare errors downstream)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_dt.timezone.utc)
     dtu = dt.astimezone(_dt.timezone.utc)
     return dtu.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -288,7 +291,12 @@ def _parse_ts(ts: Any) -> Optional[_dt.datetime]:
     if not ts:
         return None
     try:
-        return _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        dt = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        # Supabase may return naive timestamps depending on column type / serializer.
+        # Normalize to tz-aware UTC to avoid mixing naive/aware datetimes.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_dt.timezone.utc)
+        return dt
     except Exception:
         return None
 
@@ -1048,6 +1056,8 @@ def build_myprofile_monthly_report(
     # Legacy deep enhancer is not used for Spec v2; keep the variable for meta only.
     use_mashlogic = False
     now_dt = now or _dt.datetime.utcnow().replace(microsecond=0, tzinfo=_dt.timezone.utc)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=_dt.timezone.utc)
 
     end = now_dt
     start = end - _dt.timedelta(days=max(days, 1))
