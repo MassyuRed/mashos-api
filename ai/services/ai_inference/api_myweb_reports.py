@@ -1761,6 +1761,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
     async def myweb_reports_ready(
         report_type: Literal["daily", "weekly", "monthly"] = "weekly",
         limit: int = 10,
+        debug: int = 0,
         authorization: Optional[str] = Header(default=None),
     ) -> MyWebReadyReportsResponse:
         """Return READY (or PUBLISHED) MyWeb reports only.
@@ -1862,20 +1863,47 @@ def register_myweb_report_routes(app: FastAPI) -> None:
         except Exception:
             rows = []
 
+        raw_count = len(rows) if isinstance(rows, list) else 0
+        filter_counts = {
+            "non_dict": 0,
+            "bad_status": 0,
+            "bad_retention": 0,
+            "passed": 0,
+        }
+        sample_rows: List[Dict[str, Any]] = []
+
         items: List[MyWebReportRecord] = []
         if isinstance(rows, list):
             for r in rows:
                 if not isinstance(r, dict):
+                    filter_counts["non_dict"] += 1
                     continue
                 cj = r.get("content_json") if isinstance(r.get("content_json"), dict) else {}
                 pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
                 st = str(pub.get("status") or "").strip().upper()
-                if st not in ("READY", "PUBLISHED"):
-                    continue
                 pe = str(r.get("period_end") or "")
+
+                if debug:
+                    sample_rows.append(
+                        {
+                            "id": str(r.get("id") or ""),
+                            "report_type": str(r.get("report_type") or ""),
+                            "period_end": pe,
+                            "publish_status": st,
+                            "has_content_json_dict": isinstance(r.get("content_json"), dict),
+                        }
+                    )
+                    if len(sample_rows) > 5:
+                        sample_rows = sample_rows[:5]
+
+                if st not in ("READY", "PUBLISHED"):
+                    filter_counts["bad_status"] += 1
+                    continue
                 if not _retention_ok(pe):
+                    filter_counts["bad_retention"] += 1
                     continue
 
+                filter_counts["passed"] += 1
                 items.append(
                     MyWebReportRecord(
                         id=str(r.get("id") or ""),
@@ -1891,6 +1919,17 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                 )
                 if len(items) >= lim:
                     break
+
+        if debug:
+            logger.warning(
+                "myweb/ready debug user_id=%s report_type=%s tier=%s raw_count=%s filter_counts=%s sample_rows=%s",
+                user_id,
+                report_type,
+                tier_str,
+                raw_count,
+                filter_counts,
+                sample_rows,
+            )
 
         return MyWebReadyReportsResponse(
             user_id=user_id,
