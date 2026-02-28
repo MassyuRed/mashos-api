@@ -415,6 +415,8 @@ def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
                 s = str(it.get("strength") or "medium").strip().lower()
                 if not t:
                     continue
+                if t == "自己理解":
+                    continue
                 if s not in STRENGTH_SCORE:
                     s = "medium"
                 out.append({"type": t, "strength": s})
@@ -426,6 +428,8 @@ def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         for t in emos:
             tt = str(t or "").strip()
             if not tt:
+                continue
+            if tt == "自己理解":
                 continue
             out.append({"type": tt, "strength": "medium"})
         return out
@@ -620,17 +624,48 @@ async def _generate_and_store_emotion_period_snapshots(
 
     # 1) Fetch meta rows for hashing within the period (includes secret flag)
     meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
+
+    # 2) Fetch rows for aggregation (bounded)
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
+    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+
+    # 2.5) Exclude "自己理解" rows from emotion structure materials (MyWeb).
+    #      InputScreen provides SELF_INSIGHT as a dedicated emotion button.
+    def _is_self_insight_only(row: Dict[str, Any]) -> bool:
+        # Treat as self-insight-only only when all emotion labels are "自己理解".
+        details = row.get("emotion_details")
+        if isinstance(details, list):
+            types = []
+            for it in details:
+                if not isinstance(it, dict):
+                    continue
+                t = str(it.get("type") or "").strip()
+                if t:
+                    types.append(t)
+            if types:
+                return all(t == "自己理解" for t in types)
+
+        emos = row.get("emotions")
+        if isinstance(emos, list):
+            types = [str(t or "").strip() for t in emos if str(t or "").strip()]
+            if types:
+                return all(t == "自己理解" for t in types)
+
+        return False
+
+    exclude_ids = {str(r.get("id") or "") for r in internal_rows if _is_self_insight_only(r)}
+    if exclude_ids:
+        meta = [r for r in meta if str(r.get("id") or "") not in exclude_ids]
+        internal_rows = [r for r in internal_rows if str(r.get("id") or "") not in exclude_ids]
+        public_rows_data = [r for r in public_rows_data if str(r.get("id") or "") not in exclude_ids]
+
+    # 3) Compute counts / hashes for this scope (after filtering)
     total_rows = len(meta)
     secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
     public_rows = total_rows - secret_rows
 
-    # 2) Compute hashes for this scope
     internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=meta)
     public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
-
-    # 3) Fetch rows for aggregation (bounded)
-    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
-    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
 
     # 4) Build views (match MyWeb structure)
     kind = str(info.get("kind") or "")
