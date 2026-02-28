@@ -1810,8 +1810,14 @@ def register_myweb_report_routes(app: FastAPI) -> None:
             prev_year, prev_month = now_jst.year, now_jst.month - 1
         prev_month_start_jst = datetime(prev_year, prev_month, 1, tzinfo=JST)
 
-        cur_month_start_utc = cur_month_start_jst.astimezone(timezone.utc)
+        if cur_month_start_jst.month == 12:
+            next_year, next_month = cur_month_start_jst.year + 1, 1
+        else:
+            next_year, next_month = cur_month_start_jst.year, cur_month_start_jst.month + 1
+        next_month_start_jst = datetime(next_year, next_month, 1, tzinfo=JST)
+
         prev_month_start_utc = prev_month_start_jst.astimezone(timezone.utc)
+        next_month_start_utc = next_month_start_jst.astimezone(timezone.utc)
         plus_window_start_utc = (now_utc - timedelta(days=365))
 
         def _retention_ok(period_end_iso: str) -> bool:
@@ -1822,8 +1828,8 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                 return True
             if tier_str == "plus":
                 return dt >= plus_window_start_utc
-            # free: previous calendar month only
-            return (dt >= prev_month_start_utc) and (dt < cur_month_start_utc)
+            # free: current + previous calendar months
+            return (dt >= prev_month_start_utc) and (dt < next_month_start_utc)
 
         def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
             out = dict(cj or {})
