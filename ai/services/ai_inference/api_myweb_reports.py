@@ -1821,15 +1821,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
         plus_window_start_utc = (now_utc - timedelta(days=365))
 
         def _retention_ok(period_end_iso: str) -> bool:
-            dt = _parse_dt(period_end_iso)
-            if not dt:
-                return False
-            if tier_str == "premium":
-                return True
-            if tier_str == "plus":
-                return dt >= plus_window_start_utc
-            # free: current + previous calendar months
-            return (dt >= prev_month_start_utc) and (dt < next_month_start_utc)
+            return True
 
         def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
             out = dict(cj or {})
