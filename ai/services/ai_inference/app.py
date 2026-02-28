@@ -965,21 +965,13 @@ def healthz() -> Dict[str, Any]:
     return {"status": "ok", "app": APP_NAME}
 
 
-@app.post("/internal/rollover")
-async def internal_rollover(
-    authorization: Optional[str] = Header(default=None, alias="Authorization"),
-) -> Dict[str, Any]:
-    """Single daily cron entry (JST 0:00) that fans out daily/weekly/monthly rollover jobs.
+async def _run_rollover_once() -> Dict[str, Any]:
+    """Execute one rollover cycle and return a structured summary.
 
-    Behavior:
-    - Every day: enqueue emotion_daily snapshot for the previous JST day.
-    - Sunday JST 00:00: additionally enqueue weekly emotion snapshot.
-    - 1st JST 00:00: additionally enqueue monthly emotion snapshot.
-    - Self-structure monthly is exposed as a month-start hook via URL env, because
-      its existing persistence path is outside this file.
+    This helper is shared by:
+    - POST /internal/rollover (token-protected manual/internal trigger)
+    - CLI command: python app.py rollover (Render Cron command mode)
     """
-    _require_internal_rollover_auth(authorization)
-
     now_utc = datetime.now(timezone.utc)
     requested_at = _iso_z(now_utc)
     plan = _build_rollover_plan(now_utc)
@@ -1048,6 +1040,35 @@ async def internal_rollover(
         "self_structure_monthly": self_structure_monthly,
         "errors": errors[:100],
     }
+
+
+@app.post("/internal/rollover")
+async def internal_rollover(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
+    """Single daily cron entry (JST 0:00) that fans out daily/weekly/monthly rollover jobs.
+
+    Behavior:
+    - Every day: enqueue emotion_daily snapshot for the previous JST day.
+    - Sunday JST 00:00: additionally enqueue weekly emotion snapshot.
+    - 1st JST 00:00: additionally enqueue monthly emotion snapshot.
+    - Self-structure monthly is exposed as a month-start hook via URL env, because
+      its existing persistence path is outside this file.
+    """
+    _require_internal_rollover_auth(authorization)
+    return await _run_rollover_once()
+
+
+def _run_rollover_cli() -> int:
+    """Render Cron command entrypoint: python app.py rollover"""
+    import asyncio
+    try:
+        result = asyncio.run(_run_rollover_once())
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except Exception:
+        logger.exception("rollover CLI failed")
+        return 1
 
 
 @app.get("/mymodel/templates")
@@ -1231,6 +1252,11 @@ async def infer(
     return InferResponse(output=output, meta=meta)
 # ---------- Entrypoint ----------
 if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) > 1 and str(sys.argv[1]).strip().lower() == "rollover":
+        raise SystemExit(_run_rollover_cli())
+
     import uvicorn
     uvicorn.run("app:app", host=HOST, port=PORT, log_level="info")
 
