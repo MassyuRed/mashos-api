@@ -536,9 +536,14 @@ async def _worker_loop() -> None:
                                         logger.error("Emotion period snapshot enqueue failed: %s", exc)
                                 else:
                                     # emotion_period snapshot committed -> enqueue snapshot-driven MyWeb generation (v2)
-                                    if EMOTION_REPORT_V2_ENABLED and (scope.startswith("emotion_weekly:") or scope.startswith("emotion_monthly:")):
+                                    if EMOTION_REPORT_V2_ENABLED and (
+                                        scope.startswith("emotion_daily:")
+                                        or scope.startswith("emotion_weekly:")
+                                        or scope.startswith("emotion_monthly:")
+                                    ):
                                         try:
                                             pub_hash = str(public.get("source_hash") or "")
+                                            include_astor = not scope.startswith("emotion_daily:")
                                             await enqueue_job(
                                                 job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
                                                 job_type="generate_emotion_report_v2",
@@ -547,7 +552,7 @@ async def _worker_loop() -> None:
                                                     "trigger": "snapshot_generate_v1",
                                                     "requested_at": (claimed.payload or {}).get("requested_at"),
                                                     "scope": scope,
-                                                    "include_astor": True,
+                                                    "include_astor": include_astor,
                                                     "source_hash": pub_hash,
                                                 },
                                                 priority=12,

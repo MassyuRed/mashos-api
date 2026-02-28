@@ -291,6 +291,8 @@ def _parse_iso_utc(iso: str) -> Optional[datetime]:
 
 def _infer_myweb_report_type_from_scope(scope: str) -> Optional[str]:
     sc = str(scope or "").strip()
+    if sc.startswith("emotion_daily:"):
+        return "daily"
     if sc.startswith("emotion_weekly:"):
         return "weekly"
     if sc.startswith("emotion_monthly:"):
@@ -307,7 +309,11 @@ def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, 
     # dist_utc is the boundary instant; our stored period_end is dist - 1ms
     dist_utc = pe + timedelta(milliseconds=1)
 
-    if report_type == "weekly":
+    if report_type == "daily":
+        title_date = _format_jst_md(ps)
+        title = f"日報：{title_date}（1日分）"
+        meta = {"titleDate": title_date}
+    elif report_type == "weekly":
         s = _format_jst_md(ps)
         e = _format_jst_md(pe)
         title_range = f"{s} ～ {e}"
@@ -319,9 +325,7 @@ def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, 
         title = f"月報：{title_month}（28日分）"
         meta = {"titleMonth": title_month}
     else:
-        # daily is not supported in snapshot-driven mode
-        title = ""
-        meta = {}
+        raise HTTPException(status_code=400, detail="Unsupported report type for snapshot-driven generation")
 
     def iso(dt: datetime) -> str:
         return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -1022,6 +1026,87 @@ def _render_monthly_standard_v3_text(
     return "\n".join(lines).strip()
 
 
+def _render_daily_motion_line(movement: Dict[str, Any]) -> str:
+    key = str((movement or {}).get("key") or "").strip()
+    if key == "swing":
+        return "前日と中心感情が入れ替わりました（揺れ）"
+    if key == "up":
+        return "前日より観測量が増えています（上昇）"
+    if key == "down":
+        return "前日より観測量が落ち着いています（減少）"
+    return "前日とほぼ同じ観測量でした（安定）"
+
+
+def _render_daily_hint_line(metrics: Dict[str, Any], movement: Dict[str, Any]) -> str:
+    total_all = int((metrics or {}).get("totalAll") or 0)
+    if total_all <= 0:
+        return "入力が少ない日は、一言だけでも残しておくと次の比較がしやすくなります。"
+
+    motion_key = str((movement or {}).get("key") or "").strip()
+    if motion_key == "swing":
+        return "感情の中心が動いた日でした。切り替わりのきっかけを短く残すと流れが見えやすくなります。"
+
+    top = (metrics or {}).get("top") if isinstance((metrics or {}).get("top"), list) else []
+    dominant_key = None
+    if top and isinstance(top[0], list) and len(top[0]) >= 1:
+        dominant_key = str(top[0][0] or "").strip() or None
+
+    if dominant_key == "joy":
+        return "前向きなエネルギーが出やすい一日でした。何が追い風だったか一言残すと再現しやすくなります。"
+    if dominant_key == "sadness":
+        return "気持ちが内側に向きやすい一日でした。負荷になった場面を短く残すと次の比較がしやすくなります。"
+    if dominant_key == "anxiety":
+        return "緊張や気がかりが前に出やすい一日でした。引き金になった出来事を一言残すと流れが見えやすくなります。"
+    if dominant_key == "anger":
+        return "反応が強く出やすい一日でした。どこで負荷がかかったかを短く残すと切り分けしやすくなります。"
+    if dominant_key == "calm":
+        return "整っている時間が比較的多い一日でした。落ち着けた条件を残しておくと次にも活かしやすくなります。"
+    return "その日の中心感情ときっかけを一言で残すと、次の比較がしやすくなります。"
+
+
+def _render_daily_standard_v3_text(
+    *,
+    metrics: Dict[str, Any],
+    summary: Dict[str, Any],
+    movement: Dict[str, Any],
+) -> str:
+    top = (metrics or {}).get("top") if isinstance((metrics or {}).get("top"), list) else []
+    share = (metrics or {}).get("sharePct") if isinstance((metrics or {}).get("sharePct"), dict) else {}
+
+    dominant_key = None
+    if top and isinstance(top[0], list) and len(top[0]) >= 1:
+        dominant_key = str(top[0][0] or "").strip() or None
+
+    dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+    try:
+        dominant_pct = int(share.get(dominant_key, 0)) if dominant_key else 0
+    except Exception:
+        dominant_pct = 0
+
+    input_count = 0
+    try:
+        input_count = int((summary or {}).get("emotions_public"))
+    except Exception:
+        input_count = 0
+    if input_count <= 0:
+        try:
+            input_count = int((summary or {}).get("emotions_total") or 0)
+        except Exception:
+            input_count = 0
+
+    lines: List[str] = []
+    lines.append("【昨日の観測サマリー】")
+    lines.append(f"・最も強かった感情: {dominant_label}（{dominant_pct}%）")
+    lines.append(f"・総入力: {input_count}件")
+    lines.append("")
+    lines.append("【昨日の動き】")
+    lines.append(f"・{_render_daily_motion_line(movement)}")
+    lines.append("")
+    lines.append("【ひとこと視点】")
+    lines.append(f"・{_render_daily_hint_line(metrics, movement)}")
+    return "\n".join(lines).strip()
+
+
 def _render_simple_report_text(
     report_type: str,
     title: str,
@@ -1249,7 +1334,7 @@ async def _generate_and_save_from_snapshot(
     scope: str,
     include_astor: bool,
 ) -> Tuple[str, Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
-    """Generate weekly/monthly MyWeb report using emotion_period material snapshot (v2).
+    """Generate daily/weekly/monthly MyWeb reports from emotion_period snapshots (v2).
 
     This is an internal helper for astor_worker.
     - Reads material_snapshots (snapshot_type=public) for the given scope.
@@ -1264,7 +1349,7 @@ async def _generate_and_save_from_snapshot(
         raise HTTPException(status_code=400, detail="scope is required")
 
     report_type = _infer_myweb_report_type_from_scope(sc)
-    if report_type not in ("weekly", "monthly"):
+    if report_type not in ("daily", "weekly", "monthly"):
         raise HTTPException(status_code=400, detail="Unsupported scope for snapshot-driven generation")
 
     snap = await _fetch_latest_snapshot_row(uid, scope=sc, snapshot_type="public")
@@ -1274,6 +1359,7 @@ async def _generate_and_save_from_snapshot(
     snap_hash = str((snap or {}).get("source_hash") or "").strip() or None
     payload = (snap or {}).get("payload") if isinstance((snap or {}).get("payload"), dict) else {}
     period = payload.get("period") if isinstance(payload.get("period"), dict) else {}
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     views = payload.get("views") if isinstance(payload.get("views"), dict) else {}
 
     period_start_iso = str(period.get("periodStartIso") or "").strip()
@@ -1293,7 +1379,13 @@ async def _generate_and_save_from_snapshot(
     metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
     content_json["metrics"] = metrics
 
-    if report_type == "weekly":
+    if report_type == "daily":
+        day = views.get("day") if isinstance(views.get("day"), dict) else {}
+        movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
+        content_json["summary"] = summary
+        content_json["day"] = day
+        content_json["movement"] = movement
+    elif report_type == "weekly":
         days = views.get("days") if isinstance(views.get("days"), list) else []
         content_json["days"] = days
     else:
@@ -1302,18 +1394,20 @@ async def _generate_and_save_from_snapshot(
 
     # MyWeb report v3: Standard / Structural (tier-gated)
     tier_enum = None
-    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+    is_premium = False
+    is_plus_or_higher = False
+    if report_type in ("weekly", "monthly") and SubscriptionTier is not None and get_subscription_tier_for_user is not None:
         try:
             tier_enum = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
         except Exception:
             tier_enum = SubscriptionTier.FREE
-    is_premium = bool(tier_enum == SubscriptionTier.PREMIUM) if SubscriptionTier is not None else False
-    is_plus_or_higher = (
-        bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
-    )
+        is_premium = bool(tier_enum == SubscriptionTier.PREMIUM) if SubscriptionTier is not None else False
+        is_plus_or_higher = (
+            bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
+        )
 
     # Optional ASTOR insight (kept same behavior as v1; may read additional materials)
-    if include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
+    if report_type in ("weekly", "monthly") and include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
         try:
             period_days = 7 if report_type == "weekly" else 28
             astor_text, astor_report = generate_myweb_insight_payload(user_id=uid, period_days=period_days, lang="ja")
@@ -1328,7 +1422,13 @@ async def _generate_and_save_from_snapshot(
     if astor_error:
         content_json["astorError"] = astor_error
 
-    if report_type == "weekly":
+    if report_type == "daily":
+        text = _render_daily_standard_v3_text(
+            metrics=metrics,
+            summary=summary,
+            movement=movement,
+        )
+    elif report_type == "weekly":
         text = _render_weekly_standard_v3_text(
             title=target.title,
             period_start_iso=target.period_start_iso,
@@ -1523,9 +1623,12 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                         continue
                     raise HTTPException(status_code=409, detail="Report generation is in progress")
                 try:
-                    if rt in ("weekly", "monthly"):
+                    if rt in ("daily", "weekly", "monthly"):
                         # v2: snapshot-driven generation (emotion_period scope)
-                        if rt == "weekly":
+                        if rt == "daily":
+                            start_jst = target.period_start_utc.astimezone(JST)
+                            scope = f"emotion_daily:{start_jst.year:04d}-{start_jst.month:02d}-{start_jst.day:02d}"
+                        elif rt == "weekly":
                             dist_jst = target.dist_utc.astimezone(JST)
                             scope = f"emotion_weekly:{dist_jst.year:04d}-{dist_jst.month:02d}-{dist_jst.day:02d}"
                         else:

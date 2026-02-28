@@ -289,17 +289,48 @@ def _jst_midnight_utc(year: int, month: int, day: int) -> datetime:
 
 def _is_emotion_period_scope(scope: str) -> bool:
     sc = str(scope or "").strip()
-    return bool(sc.startswith("emotion_weekly:") or sc.startswith("emotion_monthly:"))
+    return bool(
+        sc.startswith("emotion_daily:")
+        or sc.startswith("emotion_weekly:")
+        or sc.startswith("emotion_monthly:")
+    )
 
 
 def _parse_emotion_period_scope(scope: str) -> Dict[str, Any]:
     """Parse emotion period scope and return period boundaries.
 
     Supported scopes:
+    - emotion_daily:YYYY-MM-DD   (target day in JST)
     - emotion_weekly:YYYY-MM-DD  (dist boundary date in JST, typically Sunday 00:00 JST)
     - emotion_monthly:YYYY-MM    (report month, used for 28-day monthly window)
     """
     sc = str(scope or "").strip()
+    if sc.startswith("emotion_daily:"):
+        s = sc.split(":", 1)[1].strip()
+        try:
+            y, m, d = [int(x) for x in s.split("-")]
+        except Exception:
+            raise ValueError(f"Invalid daily scope: {sc}")
+
+        period_start_utc = _jst_midnight_utc(y, m, d)
+        period_end_utc = (period_start_utc + DAY) - timedelta(milliseconds=1)
+        prev_period_start_utc = period_start_utc - DAY
+        prev_period_end_utc = period_start_utc - timedelta(milliseconds=1)
+        return {
+            "kind": "daily",
+            "scope": sc,
+            "timezone": "Asia/Tokyo",
+            "report_date": f"{y:04d}-{m:02d}-{d:02d}",
+            "period_start_utc": period_start_utc,
+            "period_end_utc": period_end_utc,
+            "period_start_iso": _iso_ms_z(period_start_utc),
+            "period_end_iso": _iso_ms_z(period_end_utc),
+            "prev_period_start_utc": prev_period_start_utc,
+            "prev_period_end_utc": prev_period_end_utc,
+            "prev_period_start_iso": _iso_ms_z(prev_period_start_utc),
+            "prev_period_end_iso": _iso_ms_z(prev_period_end_utc),
+        }
+
     if sc.startswith("emotion_weekly:"):
         s = sc.split(":", 1)[1].strip()
         try:
@@ -508,6 +539,39 @@ def _build_days_fixed7(rows: List[Dict[str, Any]], period_start_utc: datetime) -
     return buckets
 
 
+def _build_day_single(rows: List[Dict[str, Any]], period_start_utc: datetime) -> Dict[str, Any]:
+    j = period_start_utc.astimezone(JST)
+    bucket: Dict[str, Any] = {
+        "dateKey": f"{j.year:04d}-{j.month:02d}-{j.day:02d}",
+        "label": f"{j.month}/{j.day}",
+        "utcStartMs": int(period_start_utc.timestamp() * 1000),
+        "joy": 0,
+        "sadness": 0,
+        "anxiety": 0,
+        "anger": 0,
+        "calm": 0,
+        "dominantKey": None,
+    }
+
+    for row in rows:
+        for it in _normalize_details(row):
+            k = _map_key(it.get("type", ""))
+            if not k:
+                continue
+            w = STRENGTH_SCORE.get(str(it.get("strength", "medium")).lower(), 0)
+            bucket[k] += w
+
+    dom = None
+    maxv = 0
+    for k in EMOTION_KEYS:
+        v = int(bucket.get(k, 0))
+        if v > maxv:
+            maxv = v
+            dom = k if v > 0 else None
+    bucket["dominantKey"] = dom
+    return bucket
+
+
 def _build_weeks_fixed4(rows: List[Dict[str, Any]], period_start_utc: datetime) -> List[Dict[str, Any]]:
     buckets: List[Dict[str, Any]] = [
         {"index": 0, "label": "第1週", "joy": 0, "sadness": 0, "anxiety": 0, "anger": 0, "calm": 0, "total": 0},
@@ -575,6 +639,65 @@ def _compute_monthly_metrics(weeks: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _compute_daily_metrics(day: Dict[str, Any]) -> Dict[str, Any]:
+    totals = {k: int(day.get(k, 0)) for k in EMOTION_KEYS}
+    total_all = sum(totals.values())
+    share_pct = {k: 0 for k in EMOTION_KEYS}
+    if total_all > 0:
+        for k in EMOTION_KEYS:
+            share_pct[k] = int(round((totals[k] / total_all) * 100))
+    top = sorted([[k, totals[k]] for k in EMOTION_KEYS], key=lambda x: x[1], reverse=True)
+    return {
+        "totals": totals,
+        "totalAll": total_all,
+        "sharePct": share_pct,
+        "top": top,
+        "hasData": total_all > 0,
+    }
+
+
+def _compute_daily_movement(today_metrics: Dict[str, Any], prev_metrics: Dict[str, Any], *, dominant_today: Optional[str], dominant_yesterday: Optional[str]) -> Dict[str, Any]:
+    total_today = int((today_metrics or {}).get("totalAll") or 0)
+    total_yesterday = int((prev_metrics or {}).get("totalAll") or 0)
+    diff_total = total_today - total_yesterday
+    abs_diff = abs(diff_total)
+
+    dominant_changed = bool(dominant_today and dominant_yesterday and dominant_today != dominant_yesterday)
+    if dominant_changed:
+        motion_key = "swing"
+        motion_label = "揺れ"
+    else:
+        ratio = (abs_diff / max(total_yesterday, 1)) if abs_diff > 0 else 0.0
+        if abs_diff <= 1 or ratio <= 0.2:
+            motion_key = "stable"
+            motion_label = "安定"
+        elif diff_total > 0:
+            motion_key = "up"
+            motion_label = "上昇"
+        elif diff_total < 0:
+            motion_key = "down"
+            motion_label = "減少"
+        else:
+            motion_key = "stable"
+            motion_label = "安定"
+
+    return {
+        "ruleVersion": "daily_motion.v1",
+        "key": motion_key,
+        "label": motion_label,
+        "totalToday": total_today,
+        "totalYesterday": total_yesterday,
+        "diffTotal": diff_total,
+        "dominantToday": dominant_today,
+        "dominantYesterday": dominant_yesterday,
+        "thresholds": {
+            "absStableMax": 1,
+            "ratioStableMax": 0.2,
+            "dominantChangeFirst": True,
+        },
+    }
+
+
 def build_emotion_period_payload(
     *,
     scope: str,
@@ -609,25 +732,38 @@ async def _generate_and_store_emotion_period_snapshots(
     scope: str,
     trigger: str,
 ) -> Dict[str, Any]:
-    """Generate internal/public emotion period snapshots (weekly/monthly) and store them."""
+    """Generate internal/public emotion period snapshots (daily/weekly/monthly) and store them."""
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
 
     sc = str(scope or "").strip()
     info = _parse_emotion_period_scope(sc)
+    kind = str(info.get("kind") or "")
     period_start_iso = str(info.get("period_start_iso") or "").strip()
     period_end_iso = str(info.get("period_end_iso") or "").strip()
     period_start_utc = info.get("period_start_utc")
     if not isinstance(period_start_utc, datetime):
         raise ValueError(f"Invalid period_start_utc for scope: {sc}")
 
-    # 1) Fetch meta rows for hashing within the period (includes secret flag)
+    prev_period_start_iso = str(info.get("prev_period_start_iso") or "").strip()
+    prev_period_end_iso = str(info.get("prev_period_end_iso") or "").strip()
+    prev_period_start_utc = info.get("prev_period_start_utc")
+
+    # 1) Fetch meta rows for hashing within the target period (includes secret flag)
     meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
 
     # 2) Fetch rows for aggregation (bounded)
     internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
     public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+
+    prev_meta: List[Dict[str, Any]] = []
+    prev_internal_rows: List[Dict[str, Any]] = []
+    prev_public_rows_data: List[Dict[str, Any]] = []
+    if kind == "daily" and prev_period_start_iso and prev_period_end_iso:
+        prev_meta = await fetch_emotion_meta_for_hash(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso)
+        prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=True)
+        prev_public_rows_data = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=False)
 
     # 2.5) Exclude "自己理解" rows from emotion structure materials (MyWeb).
     #      InputScreen provides SELF_INSIGHT as a dedicated emotion button.
@@ -659,17 +795,75 @@ async def _generate_and_store_emotion_period_snapshots(
         internal_rows = [r for r in internal_rows if str(r.get("id") or "") not in exclude_ids]
         public_rows_data = [r for r in public_rows_data if str(r.get("id") or "") not in exclude_ids]
 
+    prev_exclude_ids = {str(r.get("id") or "") for r in prev_internal_rows if _is_self_insight_only(r)}
+    if prev_exclude_ids:
+        prev_meta = [r for r in prev_meta if str(r.get("id") or "") not in prev_exclude_ids]
+        prev_internal_rows = [r for r in prev_internal_rows if str(r.get("id") or "") not in prev_exclude_ids]
+        prev_public_rows_data = [r for r in prev_public_rows_data if str(r.get("id") or "") not in prev_exclude_ids]
+
     # 3) Compute counts / hashes for this scope (after filtering)
     total_rows = len(meta)
     secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
     public_rows = total_rows - secret_rows
 
-    internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=meta)
-    public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
+    hash_meta = meta
+    if kind == "daily" and prev_meta:
+        hash_meta = sorted(
+            [*prev_meta, *meta],
+            key=lambda r: (str(r.get("created_at") or ""), str(r.get("id") or "")),
+        )
+
+    internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=hash_meta)
+    public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=hash_meta)
 
     # 4) Build views (match MyWeb structure)
-    kind = str(info.get("kind") or "")
-    if kind == "weekly":
+    if kind == "daily":
+        if not isinstance(prev_period_start_utc, datetime):
+            raise ValueError(f"Invalid prev_period_start_utc for scope: {sc}")
+
+        internal_day = _build_day_single(internal_rows, period_start_utc)
+        public_day = _build_day_single(public_rows_data, period_start_utc)
+        prev_internal_day = _build_day_single(prev_internal_rows, prev_period_start_utc)
+        prev_public_day = _build_day_single(prev_public_rows_data, prev_period_start_utc)
+
+        internal_metrics = _compute_daily_metrics(internal_day)
+        public_metrics = _compute_daily_metrics(public_day)
+        prev_internal_metrics = _compute_daily_metrics(prev_internal_day)
+        prev_public_metrics = _compute_daily_metrics(prev_public_day)
+
+        internal_movement = _compute_daily_movement(
+            internal_metrics,
+            prev_internal_metrics,
+            dominant_today=internal_day.get("dominantKey"),
+            dominant_yesterday=prev_internal_day.get("dominantKey"),
+        )
+        public_movement = _compute_daily_movement(
+            public_metrics,
+            prev_public_metrics,
+            dominant_today=public_day.get("dominantKey"),
+            dominant_yesterday=prev_public_day.get("dominantKey"),
+        )
+
+        internal_views = {
+            "day": internal_day,
+            "metrics": internal_metrics,
+            "movement": internal_movement,
+        }
+        public_views = {
+            "day": public_day,
+            "metrics": public_metrics,
+            "movement": public_movement,
+        }
+        period_meta = {
+            "type": "daily",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportDate": info.get("report_date"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+            "previousPeriodStartIso": prev_period_start_iso,
+            "previousPeriodEndIso": prev_period_end_iso,
+        }
+    elif kind == "weekly":
         internal_days = _build_days_fixed7(internal_rows, period_start_utc)
         public_days = _build_days_fixed7(public_rows_data, period_start_utc)
         internal_metrics = _compute_weekly_metrics(internal_days)
