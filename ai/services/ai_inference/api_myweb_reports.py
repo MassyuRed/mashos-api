@@ -1275,7 +1275,7 @@ async def _generate_and_save(
         pub = content_json.get("publish") if isinstance(content_json.get("publish"), dict) else {}
         pub.update(
             {
-                "status": "DRAFT",
+                "status": "READY",
                 "scope": scope,
                 "snapshotType": "public",
                 "publicSourceHash": public_hash,
@@ -1475,7 +1475,7 @@ async def _generate_and_save_from_snapshot(
         pub = content_json.get("publish") if isinstance(content_json.get("publish"), dict) else {}
         pub.update(
             {
-                "status": "DRAFT",
+                "status": "READY",
                 "scope": sc,
                 "snapshotType": "public",
                 "publicSourceHash": snap_hash,
