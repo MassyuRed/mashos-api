@@ -17,6 +17,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import httpx
@@ -39,7 +40,7 @@ from api_myprofile import register_myprofile_routes
 from api_public_profile import register_public_profile_routes
 from api_deep_insight import register_deep_insight_routes
 from api_subscription import register_subscription_routes
-from api_myweb_reports import register_myweb_report_routes
+from api_myweb_reports import register_myweb_report_routes, _build_target_period as _myweb_build_target_period
 from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
 from api_ranking_mymodel_views import register_ranking_mymodel_views_routes
@@ -70,6 +71,11 @@ from astor_myprofile_report import (
 )
 from astor_core import AstorEngine, AstorRequest, AstorMode
 
+try:
+    from astor_job_queue import enqueue_job  # type: ignore
+except Exception:
+    enqueue_job = None  # type: ignore
+
 APP_NAME = os.getenv("MYMODEL_APP_NAME", "Cocolon MyModel")
 PORT = int(os.getenv("MYMODEL_PORT", "8765"))
 HOST = os.getenv("MYMODEL_HOST", "0.0.0.0")
@@ -80,6 +86,20 @@ ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_RAW.split(",")] if ALLOWED
 # Supabase (for MyProfileID access control)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# Internal rollover (Cron -> single server entry)
+INTERNAL_ROLLOVER_TOKEN = (
+    os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip()
+    or os.getenv("CRON_INTERNAL_TOKEN", "").strip()
+    or os.getenv("INTERNAL_API_TOKEN", "").strip()
+)
+ACTIVE_USERS_TABLE = (os.getenv("ACTIVE_USERS_TABLE") or "active_users").strip() or "active_users"
+try:
+    ROLLOVER_ACTIVE_USERS_LIMIT = int(os.getenv("ROLLOVER_ACTIVE_USERS_LIMIT", "10000") or "10000")
+except Exception:
+    ROLLOVER_ACTIVE_USERS_LIMIT = 10000
+ROLLOVER_SELF_STRUCTURE_MONTHLY_URL = os.getenv("ROLLOVER_SELF_STRUCTURE_MONTHLY_URL", "").strip()
+JST = timezone(timedelta(hours=9))
 
 # ---------- App ----------
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -259,6 +279,139 @@ async def _fetch_latest_monthly_report_text(*, user_id: str) -> Optional[str]:
     except Exception as exc:
         logger.warning("Failed to fetch previous monthly report: %s", exc)
     return None
+
+def _iso_z(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _require_internal_rollover_auth(authorization: Optional[str]) -> None:
+    expected = str(INTERNAL_ROLLOVER_TOKEN or "").strip()
+    if not expected:
+        raise HTTPException(status_code=500, detail="Internal rollover token is not configured")
+
+    actual = _extract_bearer_token(authorization) if authorization else None
+    if not actual or str(actual).strip() != expected:
+        raise HTTPException(status_code=401, detail="Invalid internal rollover token")
+
+
+async def _fetch_active_user_ids(*, limit: int = ROLLOVER_ACTIVE_USERS_LIMIT) -> List[str]:
+    resp = await _sb_get(
+        f"/rest/v1/{ACTIVE_USERS_TABLE}",
+        params={
+            "select": "user_id",
+            "limit": str(max(1, int(limit or 1))),
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error(
+            "Supabase active_users select failed: %s %s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        raise HTTPException(status_code=502, detail="Failed to fetch active users")
+
+    rows = resp.json()
+    out: List[str] = []
+    seen = set()
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            uid = str(row.get("user_id") or "").strip()
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            out.append(uid)
+    return out
+
+
+def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
+    now_jst = now_utc.astimezone(JST)
+
+    daily_target = _myweb_build_target_period("daily", now_utc)
+    daily_day_jst = daily_target.period_start_utc.astimezone(JST)
+    daily_scope = f"emotion_daily:{daily_day_jst.year:04d}-{daily_day_jst.month:02d}-{daily_day_jst.day:02d}"
+
+    weekly_scope: Optional[str] = None
+    if now_jst.weekday() == 6:
+        weekly_target = _myweb_build_target_period("weekly", now_utc)
+        weekly_dist_jst = weekly_target.dist_utc.astimezone(JST)
+        weekly_scope = f"emotion_weekly:{weekly_dist_jst.year:04d}-{weekly_dist_jst.month:02d}-{weekly_dist_jst.day:02d}"
+
+    monthly_scope: Optional[str] = None
+    run_self_structure_monthly = False
+    if now_jst.day == 1:
+        monthly_target = _myweb_build_target_period("monthly", now_utc)
+        monthly_end_jst = monthly_target.period_end_utc.astimezone(JST)
+        monthly_scope = f"emotion_monthly:{monthly_end_jst.year:04d}-{monthly_end_jst.month:02d}"
+        run_self_structure_monthly = True
+
+    return {
+        "now_jst": now_jst.isoformat(),
+        "daily_scope": daily_scope,
+        "weekly_scope": weekly_scope,
+        "monthly_scope": monthly_scope,
+        "run_self_structure_monthly": run_self_structure_monthly,
+    }
+
+
+async def _enqueue_rollover_snapshot_job(*, user_id: str, scope: str, requested_at: str) -> None:
+    if not callable(enqueue_job):
+        raise HTTPException(status_code=500, detail="astor_job_queue.enqueue_job is unavailable")
+
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip()
+    if not uid or not sc:
+        raise HTTPException(status_code=400, detail="user_id and scope are required")
+
+    await enqueue_job(
+        job_key=f"snapshot_generate_v1:{uid}:{sc}",
+        job_type="snapshot_generate_v1",
+        user_id=uid,
+        payload={
+            "scope": sc,
+            "trigger": "internal_rollover",
+            "requested_at": requested_at,
+        },
+        priority=12,
+    )
+
+
+async def _trigger_self_structure_monthly_rollover(*, requested_at: str) -> Dict[str, Any]:
+    url = str(ROLLOVER_SELF_STRUCTURE_MONTHLY_URL or "").strip()
+    if not url:
+        return {
+            "due": True,
+            "status": "skipped",
+            "reason": "ROLLOVER_SELF_STRUCTURE_MONTHLY_URL is not configured",
+        }
+
+    headers = {"Content-Type": "application/json"}
+    if INTERNAL_ROLLOVER_TOKEN:
+        headers["Authorization"] = f"Bearer {INTERNAL_ROLLOVER_TOKEN}"
+
+    body = {
+        "trigger": "internal_rollover",
+        "requested_at": requested_at,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+    except Exception as exc:
+        return {
+            "due": True,
+            "status": "failed",
+            "reason": str(exc),
+        }
+
+    return {
+        "due": True,
+        "status": "ok" if 200 <= resp.status_code < 300 else "failed",
+        "http_status": int(resp.status_code),
+        "body": (resp.text or "")[:500],
+    }
+
 
 def load_default_features() -> Dict[str, Any]:
     """Attempt to load default features from common repo layouts."""
@@ -811,6 +964,90 @@ async def myweb_insight_monthly_get(
 def healthz() -> Dict[str, Any]:
     return {"status": "ok", "app": APP_NAME}
 
+
+@app.post("/internal/rollover")
+async def internal_rollover(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> Dict[str, Any]:
+    """Single daily cron entry (JST 0:00) that fans out daily/weekly/monthly rollover jobs.
+
+    Behavior:
+    - Every day: enqueue emotion_daily snapshot for the previous JST day.
+    - Sunday JST 00:00: additionally enqueue weekly emotion snapshot.
+    - 1st JST 00:00: additionally enqueue monthly emotion snapshot.
+    - Self-structure monthly is exposed as a month-start hook via URL env, because
+      its existing persistence path is outside this file.
+    """
+    _require_internal_rollover_auth(authorization)
+
+    now_utc = datetime.now(timezone.utc)
+    requested_at = _iso_z(now_utc)
+    plan = _build_rollover_plan(now_utc)
+    user_ids = await _fetch_active_user_ids()
+
+    enqueued = {
+        "daily": 0,
+        "weekly": 0,
+        "monthly": 0,
+    }
+    errors: List[Dict[str, str]] = []
+
+    for uid in user_ids:
+        try:
+            await _enqueue_rollover_snapshot_job(
+                user_id=uid,
+                scope=str(plan["daily_scope"]),
+                requested_at=requested_at,
+            )
+            enqueued["daily"] += 1
+        except Exception as exc:
+            errors.append({"user_id": uid, "scope": str(plan["daily_scope"]), "error": str(exc)})
+
+        weekly_scope = str(plan.get("weekly_scope") or "").strip()
+        if weekly_scope:
+            try:
+                await _enqueue_rollover_snapshot_job(
+                    user_id=uid,
+                    scope=weekly_scope,
+                    requested_at=requested_at,
+                )
+                enqueued["weekly"] += 1
+            except Exception as exc:
+                errors.append({"user_id": uid, "scope": weekly_scope, "error": str(exc)})
+
+        monthly_scope = str(plan.get("monthly_scope") or "").strip()
+        if monthly_scope:
+            try:
+                await _enqueue_rollover_snapshot_job(
+                    user_id=uid,
+                    scope=monthly_scope,
+                    requested_at=requested_at,
+                )
+                enqueued["monthly"] += 1
+            except Exception as exc:
+                errors.append({"user_id": uid, "scope": monthly_scope, "error": str(exc)})
+
+    self_structure_monthly: Dict[str, Any]
+    if bool(plan.get("run_self_structure_monthly")):
+        self_structure_monthly = await _trigger_self_structure_monthly_rollover(requested_at=requested_at)
+    else:
+        self_structure_monthly = {"due": False, "status": "not_due"}
+
+    return {
+        "status": "ok",
+        "requested_at": requested_at,
+        "rollover": {
+            "now_jst": plan.get("now_jst"),
+            "daily_scope": plan.get("daily_scope"),
+            "weekly_scope": plan.get("weekly_scope"),
+            "monthly_scope": plan.get("monthly_scope"),
+            "self_structure_monthly_due": bool(plan.get("run_self_structure_monthly")),
+        },
+        "active_users": len(user_ids),
+        "enqueued": enqueued,
+        "self_structure_monthly": self_structure_monthly,
+        "errors": errors[:100],
+    }
 
 
 @app.get("/mymodel/templates")
