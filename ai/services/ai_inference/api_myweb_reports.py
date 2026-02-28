@@ -1873,8 +1873,8 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                 if st not in ("READY", "PUBLISHED"):
                     continue
                 pe = str(r.get("period_end") or "")
-                if not _retention_ok(pe):
-                    continue
+                # if not _retention_ok(pe):
+                #     continue
 
                 items.append(
                     MyWebReportRecord(
