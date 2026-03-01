@@ -14,8 +14,8 @@ Key rules (2026-02)
   - Users may leave questions unanswered.
   - Create is considered "started" when at least one answer exists.
   - Answers are always readable.
-  - Editing existing answers is Plus/Premium only.
-    (New answers for previously-unanswered questions are allowed for any tier.)
+  - Editing existing answers is allowed for any tier.
+  - Free / Plus / Premium differ only in how many questions are available.
 
 Supabase tables (default names)
   - mymodel_create_questions
@@ -294,12 +294,11 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             if is_answered:
                 answered_count += 1
 
-            # Editing existing answers is subscription-only.
-            # Unanswered questions are always editable (so user can add new answers).
-            editable = (paid if is_answered else True)
+            # Existing / unanswered answers are editable for all tiers.
+            editable = True
             updated_at = (str(ans.get("updated_at") or "").strip() if isinstance(ans, dict) else "") or None
 
-            edit_block_reason = EDIT_LOCKED_MESSAGE if (is_answered and not paid) else None
+            edit_block_reason = None
 
             items.append(
                 MyModelCreateQuestionItem(
@@ -326,8 +325,8 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 "user_id": user_id,
                 "build_tier": tier_norm,
                 "subscription_tier": tier_enum.value,
-                "can_edit_existing": bool(paid),  # legacy
-                "can_edit_answers": bool(paid),
+                "can_edit_existing": True,  # legacy
+                "can_edit_answers": True,
                 "total_questions": int(total),
                 "answered_count": int(answered_count),
                 "unanswered_count": int(max(0, total - answered_count)),
@@ -431,27 +430,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 if not has_prev:
                     skipped_empty_ids.add(qid)
                     continue
-                if not paid:
-                    skipped_locked_ids.add(qid)
-                    continue
                 delete_ids.add(qid)
-                continue
-
-            # If already answered, editing text is subscription-only.
-            if has_prev and not paid:
-                # Allow secret-only updates when text is unchanged.
-                if new_text_stripped == prev_text:
-                    if (new_secret_opt is not None) and (desired_secret != prev_secret):
-                        saved_payload.append(
-                            {
-                                "user_id": user_id,
-                                "question_id": qid,
-                                "is_secret": bool(desired_secret),
-                            }
-                        )
-                    continue
-                # Allow no-op if the text is unchanged.
-                skipped_locked_ids.add(qid)
                 continue
 
             # Upsert row
@@ -558,8 +537,8 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             meta={
                 "user_id": user_id,
                 "subscription_tier": tier_enum.value,
-                "can_edit_existing": bool(paid),  # legacy
-                "can_edit_answers": bool(paid),
+                "can_edit_existing": True,  # legacy
+                "can_edit_answers": True,
                 "saved_at": now_iso,
                 "engine": "mymodel.create.answers.v1",
                 # Optional: expose which ids were blocked (helps client debug)
