@@ -72,6 +72,7 @@ ANSWERS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_crea
 PLACEHOLDER_DEFAULT = (os.getenv("COCOLON_MYMODEL_CREATE_PLACEHOLDER_DEFAULT", "ここに書いてください。") or "").strip() or "ここに書いてください。"
 EDIT_LOCKED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_EDIT_LOCKED_MESSAGE", "編集はPlus会員以上で利用できます") or "").strip() or "編集はPlus会員以上で利用できます"
 CREATE_COMPLETED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_COMPLETED_MESSAGE", "MyModelが作成されました") or "").strip() or "MyModelが作成されました"
+FREE_ACCESSIBLE_QUESTION_COUNT = 5
 
 
 def _ui_texts() -> Dict[str, str]:
@@ -315,9 +316,12 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 )
             )
 
-        total = len(items)
+        answered_count_all = int(answered_count)
+        accessible_items = items if paid else items[:FREE_ACCESSIBLE_QUESTION_COUNT]
+        total = len(accessible_items)
+        answered_count = sum(1 for item in accessible_items if bool(getattr(item, "answered", False)))
         has_unanswered = (answered_count < total) if total > 0 else True
-        is_created = answered_count > 0
+        is_created = answered_count_all > 0
 
         return MyModelCreateQuestionsResponse(
             questions=items,
@@ -490,29 +494,32 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         # Optional: return updated create-state so RN can update badge without an extra GET.
         create_state: Optional[Dict[str, Any]] = None
         try:
-            qs_light = await _fetch_questions(build_tier="light")
-            qids_light: Set[int] = set()
-            for q in qs_light:
+            qs_all = await _fetch_questions_all_active()
+            accessible_questions = qs_all if paid else qs_all[:FREE_ACCESSIBLE_QUESTION_COUNT]
+            accessible_qids: Set[int] = set()
+            for q in accessible_questions:
                 try:
-                    qids_light.add(int(q.get("id")))
+                    accessible_qids.add(int(q.get("id")))
                 except Exception:
                     continue
-            ans_light = await _fetch_answers(user_id=user_id, question_ids=qids_light)
-            answered_light = 0
-            for _, row in (ans_light or {}).items():
+            ans_accessible = await _fetch_answers(user_id=user_id, question_ids=accessible_qids)
+            answered_accessible = 0
+            for _, row in (ans_accessible or {}).items():
                 if isinstance(row, dict) and str(row.get("answer_text") or "").strip():
-                    answered_light += 1
-            total_light = len(qids_light)
-            has_unanswered_light = (answered_light < total_light) if total_light > 0 else True
+                    answered_accessible += 1
+            total_accessible = len(accessible_qids)
+            has_unanswered_accessible = (
+                (answered_accessible < total_accessible) if total_accessible > 0 else True
+            )
             create_state = {
                 "build_tier": "light",
-                "total_questions": int(total_light),
-                "answered_count": int(answered_light),
-                "unanswered_count": int(max(0, total_light - answered_light)),
-                "has_unanswered": bool(has_unanswered_light),
-                "is_created": bool(answered_light > 0),
-                "show_incomplete_badge": bool(has_unanswered_light),
-                "incomplete_badge_count": int(max(0, total_light - answered_light)),
+                "total_questions": int(total_accessible),
+                "answered_count": int(answered_accessible),
+                "unanswered_count": int(max(0, total_accessible - answered_accessible)),
+                "has_unanswered": bool(has_unanswered_accessible),
+                "is_created": bool(answered_accessible > 0),
+                "show_incomplete_badge": bool(has_unanswered_accessible),
+                "incomplete_badge_count": int(max(0, total_accessible - answered_accessible)),
             }
         except Exception as exc:
             logger.warning("Failed to compute create_state: %s", exc)
