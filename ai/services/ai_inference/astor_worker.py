@@ -59,6 +59,8 @@ from api_myweb_reports import (
     _generate_and_save_from_snapshot as _myweb_generate_and_save_from_snapshot,
 )  # type: ignore
 
+from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # type: ignore
+
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
 
@@ -70,6 +72,8 @@ SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip
 JST = timezone(timedelta(hours=9))
 
 EMOTION_REPORT_V2_ENABLED = (os.getenv("ASTOR_ENABLE_EMOTION_REPORT_V2", "false").strip().lower() == "true")
+
+WORKER_LOGGER = logging.getLogger("astor_worker")
 
 
 
@@ -293,6 +297,61 @@ async def _patch_myweb_report_content_json(report_id: str, *, content_json: Dict
         return False
 
 
+def _build_myweb_ready_push_payload(report_type: str) -> Dict[str, Any]:
+    rt = str(report_type or "").strip().lower()
+    body = "新しいレポートが届きました"
+    if rt == "daily":
+        body = "今日の自己観測が届きました"
+    elif rt == "weekly":
+        body = "今週の自己観測レポートが完成しました"
+    elif rt == "monthly":
+        body = "今月の自己構造レポートが完成しました"
+
+    return {
+        "title": "Cocolon",
+        "body": body,
+        "data": {
+            "type": "myweb_report",
+            "screen": "MyWeb",
+            "report_type": (rt or "unknown"),
+        },
+    }
+
+
+async def _send_myweb_report_ready_push(*, user_id: str, report_row: Dict[str, Any]) -> bool:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+
+    token_map = await _fetch_push_tokens_for_users([uid])
+    tokens = [str(tok or "").strip() for tok in list((token_map or {}).values()) if str(tok or "").strip()]
+    if not tokens:
+        return False
+
+    push_payload = _build_myweb_ready_push_payload(str((report_row or {}).get("report_type") or ""))
+    data_payload = dict((push_payload or {}).get("data") or {})
+
+    report_id = str((report_row or {}).get("id") or "").strip()
+    if report_id:
+        data_payload["report_id"] = report_id
+
+    period_start = (report_row or {}).get("period_start")
+    if period_start:
+        data_payload["period_start"] = str(period_start)
+
+    period_end = (report_row or {}).get("period_end")
+    if period_end:
+        data_payload["period_end"] = str(period_end)
+
+    await _send_fcm_push(
+        tokens=tokens,
+        title=str((push_payload or {}).get("title") or "Cocolon"),
+        body=str((push_payload or {}).get("body") or "新しいレポートが届きました"),
+        data=data_payload,
+    )
+    return True
+
+
 async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Inspect a generated emotion report and set publish.status.
 
@@ -314,6 +373,7 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
 
     cj = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
     pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
+    previous_status = str(pub.get("status") or "").strip().upper()
 
     scope = str((payload or {}).get("scope") or pub.get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
     expected_hash = (payload or {}).get("expected_public_source_hash") or pub.get("publicSourceHash")
@@ -390,6 +450,19 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
     cj2["publish"] = pub2
 
     patched = await _patch_myweb_report_content_json(report_id, content_json=cj2)
+
+    ready_push_sent = False
+    if patched and status == "READY" and previous_status != "READY":
+        try:
+            ready_push_sent = await _send_myweb_report_ready_push(user_id=uid, report_row=row)
+        except Exception as exc:
+            WORKER_LOGGER.warning(
+                "MyWeb READY push failed. user=%s report_id=%s err=%s",
+                uid,
+                report_id,
+                exc,
+            )
+
     return {
         "status": status,
         "user_id": uid,
@@ -400,6 +473,8 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
         "latest_public_source_hash": current_hash,
         "hash_match": bool(hash_match),
         "flags": flags,
+        "previous_status": (previous_status or None),
+        "ready_push_sent": bool(ready_push_sent),
     }
 
 
