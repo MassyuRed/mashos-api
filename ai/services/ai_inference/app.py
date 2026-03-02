@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import httpx
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from middleware_active_user_touch import install_active_user_touch_middleware
 from pydantic import BaseModel, Field
@@ -100,6 +100,10 @@ except Exception:
     ROLLOVER_ACTIVE_USERS_LIMIT = 10000
 ROLLOVER_SELF_STRUCTURE_MONTHLY_URL = os.getenv("ROLLOVER_SELF_STRUCTURE_MONTHLY_URL", "").strip()
 JST = timezone(timedelta(hours=9))
+GLOBAL_SUMMARY_TABLE = (os.getenv("GLOBAL_SUMMARY_TABLE") or "daily_global_activity").strip() or "daily_global_activity"
+GLOBAL_SUMMARY_REFRESH_RPC = (os.getenv("GLOBAL_SUMMARY_REFRESH_RPC") or "refresh_daily_global_activity").strip() or "refresh_daily_global_activity"
+GLOBAL_SUMMARY_DB_TZ = "Asia/Tokyo"
+GLOBAL_SUMMARY_RESPONSE_TZ = "+09:00"
 
 # ---------- App ----------
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -196,6 +200,16 @@ class InferResponse(BaseModel):
     meta: Dict[str, Any] = {}
 
 
+class GlobalSummaryResponse(BaseModel):
+    date: str
+    tz: str = GLOBAL_SUMMARY_RESPONSE_TZ
+    emotion_users: int = 0
+    reflection_views: int = 0
+    echo_count: int = 0
+    discovery_count: int = 0
+    updated_at: Optional[str] = None
+
+
 # ---------- Rules & Utilities ----------
 DATE_WORDS = re.compile(r"(いつ|何日|何時|何年度|何年|昨日|明日|先週|来週|先月|来月|去年|来年)")
 ISO_DATE = re.compile(r"\b\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}\b")
@@ -224,6 +238,146 @@ async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> http
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.get(url, headers=_sb_headers_json(), params=params)
+
+
+async def _sb_post(
+    path: str, *, json: Any, params: Optional[Dict[str, str]] = None, prefer: Optional[str] = None
+) -> httpx.Response:
+    _ensure_supabase_config()
+    url = f"{SUPABASE_URL}{path}"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        return await client.post(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+
+
+async def _sb_post_rpc(fn: str, payload: Dict[str, Any]) -> httpx.Response:
+    return await _sb_post(f"/rest/v1/rpc/{fn}", json=payload)
+
+
+def _normalize_global_summary_tz(raw_tz: Optional[str]) -> Tuple[str, str]:
+    s = str(raw_tz or "").strip()
+    if not s:
+        return (GLOBAL_SUMMARY_DB_TZ, GLOBAL_SUMMARY_RESPONSE_TZ)
+
+    normalized = s.replace(" ", "")
+    if normalized in {"Asia/Tokyo", "asia/tokyo", "JST", "jst", "+09:00", "+0900", "09:00"}:
+        return (GLOBAL_SUMMARY_DB_TZ, GLOBAL_SUMMARY_RESPONSE_TZ)
+
+    raise HTTPException(status_code=400, detail="Only Asia/Tokyo (+09:00) is supported currently")
+
+
+def _resolve_global_summary_date(raw_date: Optional[str]) -> str:
+    s = str(raw_date or "").strip()
+    if not s:
+        return datetime.now(JST).date().isoformat()
+
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+
+
+def _global_summary_zero(*, activity_date: str, response_tz: str) -> GlobalSummaryResponse:
+    return GlobalSummaryResponse(
+        date=activity_date,
+        tz=response_tz,
+        emotion_users=0,
+        reflection_views=0,
+        echo_count=0,
+        discovery_count=0,
+        updated_at=None,
+    )
+
+
+def _parse_global_summary_row(row: Dict[str, Any], *, fallback_date: str, response_tz: str) -> GlobalSummaryResponse:
+    try:
+        emotion_users = int((row or {}).get("emotion_users") or 0)
+    except Exception:
+        emotion_users = 0
+    try:
+        reflection_views = int((row or {}).get("reflection_view_count") or 0)
+    except Exception:
+        reflection_views = 0
+    try:
+        echo_count = int((row or {}).get("echo_count") or 0)
+    except Exception:
+        echo_count = 0
+    try:
+        discovery_count = int((row or {}).get("discovery_count") or 0)
+    except Exception:
+        discovery_count = 0
+
+    date_value = str((row or {}).get("activity_date") or fallback_date).strip() or fallback_date
+    updated_at_raw = (row or {}).get("updated_at")
+    updated_at = None if updated_at_raw is None else (str(updated_at_raw).strip() or None)
+
+    return GlobalSummaryResponse(
+        date=date_value,
+        tz=response_tz,
+        emotion_users=emotion_users,
+        reflection_views=reflection_views,
+        echo_count=echo_count,
+        discovery_count=discovery_count,
+        updated_at=updated_at,
+    )
+
+
+async def _fetch_global_summary_row(*, activity_date: str, db_tz: str) -> Optional[Dict[str, Any]]:
+    resp = await _sb_get(
+        f"/rest/v1/{GLOBAL_SUMMARY_TABLE}",
+        params={
+            "select": "activity_date,tz,emotion_users,reflection_view_count,echo_count,discovery_count,updated_at",
+            "activity_date": f"eq.{activity_date}",
+            "tz": f"eq.{db_tz}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase %s select failed (global summary): %s %s",
+            GLOBAL_SUMMARY_TABLE,
+            resp.status_code,
+            (resp.text or "")[:800],
+        )
+        return None
+
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+async def _refresh_global_summary_row(*, activity_date: str, db_tz: str) -> Optional[Dict[str, Any]]:
+    try:
+        resp = await _sb_post_rpc(
+            GLOBAL_SUMMARY_REFRESH_RPC,
+            {
+                "p_activity_date": activity_date,
+                "p_tz": db_tz,
+            },
+        )
+    except Exception as exc:
+        logger.warning("global summary refresh RPC failed (network): %s", exc)
+        return None
+
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase rpc %s failed (global summary refresh): %s %s",
+            GLOBAL_SUMMARY_REFRESH_RPC,
+            resp.status_code,
+            (resp.text or "")[:800],
+        )
+        return None
+
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0]
+    return None
 
 
 async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
@@ -958,6 +1112,30 @@ async def myweb_insight_monthly_get(
     """
     req = MyWebInsightRequest(user_id=None, period="30d")
     return await myweb_insight(req, authorization=authorization)
+
+
+@app.get("/global_summary", response_model=GlobalSummaryResponse)
+async def global_summary(
+    date: Optional[str] = Query(default=None, description="YYYY-MM-DD. Defaults to today in JST."),
+    tz: Optional[str] = Query(default=GLOBAL_SUMMARY_RESPONSE_TZ, description="Currently fixed to +09:00 / Asia/Tokyo."),
+) -> GlobalSummaryResponse:
+    db_tz, response_tz = _normalize_global_summary_tz(tz)
+    activity_date = _resolve_global_summary_date(date)
+
+    try:
+        row = await _fetch_global_summary_row(activity_date=activity_date, db_tz=db_tz)
+        if row is None:
+            row = await _refresh_global_summary_row(activity_date=activity_date, db_tz=db_tz)
+
+        if row is None:
+            return _global_summary_zero(activity_date=activity_date, response_tz=response_tz)
+
+        return _parse_global_summary_row(row, fallback_date=activity_date, response_tz=response_tz)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("global_summary failed: %s", exc)
+        return _global_summary_zero(activity_date=activity_date, response_tz=response_tz)
 
 
 @app.get("/healthz")
