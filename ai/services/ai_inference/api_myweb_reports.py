@@ -1871,6 +1871,17 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                 st = str(pub.get("status") or "").strip().upper()
                 if st not in ("READY", "PUBLISHED"):
                     continue
+
+                # 日報は「前日の入力が0件」の場合は配布しない
+                if report_type == "daily":
+                    metrics = cj.get("metrics") if isinstance(cj.get("metrics"), dict) else {}
+                    try:
+                        daily_total_all = int(metrics.get("totalAll") or 0)
+                    except Exception:
+                        daily_total_all = 0
+                    if daily_total_all <= 0:
+                        continue
+
                 pe = str(r.get("period_end") or "")
                 if not _retention_ok(pe):
                     continue
