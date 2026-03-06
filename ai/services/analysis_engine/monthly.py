@@ -5,6 +5,89 @@ from .models import WeeklySnapshot, MonthlyReport, Narrative, LABELS
 from .weekly import aggregate_time_bucket_rows
 
 
+def _attach_monthly_time_bucket_aliases(report: MonthlyReport, time_buckets: List[Dict[str, Any]]) -> MonthlyReport:
+    """Keep monthly serialization compatible even if models.py is not updated yet.
+
+    - Always expose both `time_buckets` and `timeBuckets` in `to_dict()`
+    - Attach the attribute on the instance when possible
+    """
+    try:
+        setattr(report, "time_buckets", time_buckets)
+    except Exception:
+        pass
+
+    def _to_dict_with_aliases() -> Dict[str, Any]:
+        base = {}
+        try:
+            from dataclasses import asdict
+            base = asdict(report)
+        except Exception:
+            try:
+                base = dict(vars(report))
+            except Exception:
+                base = {}
+
+        weeks = []
+        for w in getattr(report, "weeks", []) or []:
+            try:
+                weeks.append(w.to_dict())
+            except Exception:
+                try:
+                    weeks.append(dict(vars(w)))
+                except Exception:
+                    weeks.append({})
+        base["weeks"] = weeks
+        base["time_buckets"] = time_buckets
+        base["timeBuckets"] = time_buckets
+        return base
+
+    try:
+        setattr(report, "to_dict", _to_dict_with_aliases)
+    except Exception:
+        pass
+    return report
+
+
+
+def _make_monthly_report(*, time_buckets: List[Dict[str, Any]], **kwargs: Any) -> MonthlyReport:
+    """Construct MonthlyReport with backward compatibility for older models.py."""
+    try:
+        report = MonthlyReport(time_buckets=time_buckets, **kwargs)
+    except TypeError:
+        report = MonthlyReport(**kwargs)
+    return _attach_monthly_time_bucket_aliases(report, time_buckets)
+
+
+
+def _extract_week_time_buckets(week: WeeklySnapshot) -> List[Dict[str, Any]]:
+    """Accept both snake_case and camelCase time bucket payloads from weekly snapshots."""
+    try:
+        rows = getattr(week, "time_buckets", None)
+        if isinstance(rows, list):
+            return rows
+    except Exception:
+        pass
+    try:
+        rows = getattr(week, "timeBuckets", None)
+        if isinstance(rows, list):
+            return rows
+    except Exception:
+        pass
+    try:
+        payload = week.to_dict()
+        if isinstance(payload, dict):
+            rows = payload.get("time_buckets")
+            if isinstance(rows, list):
+                return rows
+            rows = payload.get("timeBuckets")
+            if isinstance(rows, list):
+                return rows
+    except Exception:
+        pass
+    return []
+
+
+
 def _cosine_distance(vec_a: Dict[str, float], vec_b: Dict[str, float]) -> float:
     dot = sum(vec_a.get(l, 0.0) * vec_b.get(l, 0.0) for l in LABELS)
     na = math.sqrt(sum(vec_a.get(l, 0.0) ** 2 for l in LABELS))
@@ -14,6 +97,7 @@ def _cosine_distance(vec_a: Dict[str, float], vec_b: Dict[str, float]) -> float:
     cos = dot / (na * nb)
     cos = max(min(cos, 1.0), -1.0)
     return 1.0 - cos
+
 
 
 def assemble_monthly(weeks: List[WeeklySnapshot], period: str) -> MonthlyReport:
@@ -30,13 +114,14 @@ def assemble_monthly(weeks: List[WeeklySnapshot], period: str) -> MonthlyReport:
         motif_trend.append({"name": name, "wk_counts": [w.motif_counts.get(name, 0) for w in weeks]})
 
     distances = []
-    for i in range(3):
+    for i in range(max(0, len(weeks) - 1)):
         distances.append(_cosine_distance(weeks[i].share, weeks[i + 1].share))
     center_shift = {"distances": distances, "metric": "cosine"}
 
-    time_buckets = aggregate_time_bucket_rows([getattr(w, "time_buckets", []) for w in weeks])
+    # Standard monthly time buckets = aggregate all weekly time buckets into one monthly view.
+    time_buckets = aggregate_time_bucket_rows([_extract_week_time_buckets(w) for w in weeks])
 
-    return MonthlyReport(
+    return _make_monthly_report(
         period=period,
         weeks=weeks,
         share_trend=share_trend,
@@ -49,14 +134,17 @@ def assemble_monthly(weeks: List[WeeklySnapshot], period: str) -> MonthlyReport:
     )
 
 
+
 def _label_ja(l: str) -> str:
     return {"joy": "喜び", "sadness": "悲しみ", "anxiety": "不安", "anger": "怒り", "peace": "平穏"}.get(l, l)
+
 
 
 def _top_label(share: Dict[str, float]) -> Optional[str]:
     if not share:
         return None
     return sorted(share.items(), key=lambda kv: kv[1], reverse=True)[0][0]
+
 
 
 def narrate_monthly(report: MonthlyReport) -> Narrative:

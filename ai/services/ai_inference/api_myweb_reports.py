@@ -1101,6 +1101,649 @@ def _build_standard_report_payload(
     return standard_report
 
 
+
+def _emotion_label_ja(label: Any) -> str:
+    s = str(label or "").strip()
+    return KEY_TO_JP.get(s, s)
+
+
+def _format_minutes_ja(value: Any) -> Optional[str]:
+    try:
+        v = float(value)
+    except Exception:
+        return None
+    if v < 0:
+        return None
+    mins = int(round(v))
+    if mins >= 60:
+        hours = mins // 60
+        rem = mins % 60
+        if rem == 0:
+            return f"{hours}時間"
+        return f"{hours}時間{rem}分"
+    return f"{mins}分"
+
+
+def _localize_transition_key(value: Any) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    if "->" in s:
+        left, right = s.split("->", 1)
+        return f"{_emotion_label_ja(left)} → {_emotion_label_ja(right)}"
+    if "→" in s:
+        left, right = s.split("→", 1)
+        return f"{_emotion_label_ja(left)} → {_emotion_label_ja(right)}"
+    return _emotion_label_ja(s)
+
+
+def _normalize_transition_matrix(raw: Any) -> Dict[str, Dict[str, int]]:
+    out: Dict[str, Dict[str, int]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for from_label, row in raw.items():
+        f = str(from_label or "").strip()
+        if not f:
+            continue
+        out[f] = {}
+        row_dict = row if isinstance(row, dict) else {}
+        for to_label in EMOTION_KEYS:
+            out[f][to_label] = _coerce_int(row_dict.get(to_label), 0)
+        for to_label, value in row_dict.items():
+            t = str(to_label or "").strip()
+            if t and t not in out[f]:
+                out[f][t] = _coerce_int(value, 0)
+    return out
+
+
+def _localize_transition_matrix(matrix: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, int]]:
+    localized: Dict[str, Dict[str, int]] = {}
+    for from_label, row in (matrix or {}).items():
+        localized[_emotion_label_ja(from_label)] = {
+            _emotion_label_ja(to_label): _coerce_int(value, 0)
+            for to_label, value in (row or {}).items()
+        }
+    return localized
+
+
+def _normalize_transition_edges(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        from_label = str(item.get("from_label") or item.get("fromLabel") or "").strip()
+        to_label = str(item.get("to_label") or item.get("toLabel") or "").strip()
+        if not from_label or not to_label:
+            continue
+        out.append(
+            {
+                "fromLabel": from_label,
+                "toLabel": to_label,
+                "fromLabelJa": _emotion_label_ja(from_label),
+                "toLabelJa": _emotion_label_ja(to_label),
+                "routeLabel": f"{_emotion_label_ja(from_label)} → {_emotion_label_ja(to_label)}",
+                "count": _coerce_int(item.get("count"), 0),
+                "share": _coerce_float(item.get("share"), 0.0),
+                "meanMinutes": item.get("mean_minutes") if item.get("mean_minutes") is not None else item.get("meanMinutes"),
+                "medianMinutes": item.get("median_minutes") if item.get("median_minutes") is not None else item.get("medianMinutes"),
+                "p75Minutes": item.get("p75_minutes") if item.get("p75_minutes") is not None else item.get("p75Minutes"),
+                "meanIntensityFrom": item.get("mean_intensity_from") if item.get("mean_intensity_from") is not None else item.get("meanIntensityFrom"),
+                "meanIntensityTo": item.get("mean_intensity_to") if item.get("mean_intensity_to") is not None else item.get("meanIntensityTo"),
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: (_coerce_int(x.get("count"), 0), _coerce_float(x.get("share"), 0.0)), reverse=True)
+    return out
+
+
+def _normalize_recovery_time_rows(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        from_label = str(item.get("from_label") or item.get("fromLabel") or "").strip()
+        to_label = str(item.get("to_label") or item.get("toLabel") or "").strip()
+        if not from_label or not to_label:
+            continue
+        out.append(
+            {
+                "fromLabel": from_label,
+                "toLabel": to_label,
+                "fromLabelJa": _emotion_label_ja(from_label),
+                "toLabelJa": _emotion_label_ja(to_label),
+                "routeLabel": f"{_emotion_label_ja(from_label)} → {_emotion_label_ja(to_label)}",
+                "count": _coerce_int(item.get("count"), 0),
+                "meanMinutes": item.get("mean_minutes") if item.get("mean_minutes") is not None else item.get("meanMinutes"),
+                "medianMinutes": item.get("median_minutes") if item.get("median_minutes") is not None else item.get("medianMinutes"),
+                "minMinutes": item.get("min_minutes") if item.get("min_minutes") is not None else item.get("minMinutes"),
+                "maxMinutes": item.get("max_minutes") if item.get("max_minutes") is not None else item.get("maxMinutes"),
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: (_coerce_int(x.get("count"), 0), -_coerce_float(x.get("meanMinutes"), 0.0)), reverse=True)
+    return out
+
+
+def _normalize_memo_triggers(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        keyword = str(item.get("keyword") or "").strip()
+        if not keyword:
+            continue
+        related_emotions = [_emotion_label_ja(x) for x in list(item.get("related_emotions") or item.get("relatedEmotions") or []) if str(x or "").strip()]
+        related_transitions = [_localize_transition_key(x) for x in list(item.get("related_transitions") or item.get("relatedTransitions") or []) if str(x or "").strip()]
+        out.append(
+            {
+                "keyword": keyword,
+                "count": _coerce_int(item.get("count"), 0),
+                "relatedEmotions": related_emotions[:5],
+                "relatedTransitions": related_transitions[:5],
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: _coerce_int(x.get("count"), 0), reverse=True)
+    return out
+
+
+def _normalize_control_patterns(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        pattern_id = str(item.get("pattern_id") or item.get("patternId") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not pattern_id and not label:
+            continue
+        rep_edges = _normalize_transition_edges(list(item.get("representative_edges") or item.get("representativeEdges") or []))
+        memo_triggers = _normalize_memo_triggers(list(item.get("memo_triggers") or item.get("memoTriggers") or []))
+        transition_keys_raw = [str(x).strip() for x in list(item.get("transition_keys") or item.get("transitionKeys") or []) if str(x).strip()]
+        out.append(
+            {
+                "patternId": pattern_id or label or "pattern",
+                "label": label or "制御傾向",
+                "description": str(item.get("description") or "").strip() or None,
+                "size": _coerce_int(item.get("size"), 0),
+                "score": _coerce_float(item.get("score"), 0.0),
+                "transitionKeys": transition_keys_raw,
+                "transitionRouteLabels": [_localize_transition_key(x) for x in transition_keys_raw],
+                "representativeEdges": rep_edges[:3],
+                "memoTriggers": memo_triggers[:3],
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: (_coerce_int(x.get("size"), 0), _coerce_float(x.get("score"), 0.0)), reverse=True)
+    return out[:5]
+
+
+def _extract_deep_control_model_payload(analysis_payload: Dict[str, Any]) -> Dict[str, Any]:
+    payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    deep_model = payload.get("deep_control_model") if isinstance(payload.get("deep_control_model"), dict) else {}
+    return deep_model if deep_model else payload
+
+
+def _build_structural_summary_object(
+    *,
+    report_type: str,
+    deep_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload = _extract_deep_control_model_payload(deep_payload)
+    transition_edges = _normalize_transition_edges(
+        payload.get("transition_edges") or payload.get("transitionEdges") or []
+    )
+    patterns = _normalize_control_patterns(payload.get("control_patterns") or payload.get("controlPatterns") or [])
+    recovery_rows = _normalize_recovery_time_rows(payload.get("recovery_time") or payload.get("recoveryTime") or [])
+    memo_triggers = _normalize_memo_triggers(payload.get("memo_triggers") or payload.get("memoTriggers") or [])
+    summary_raw = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    pattern_count = _coerce_int(summary_raw.get("patternCount"), len(patterns))
+    transition_count = _coerce_int(summary_raw.get("transitionCount"), len(transition_edges))
+
+    top_edge = transition_edges[0] if transition_edges else {}
+    top_route = str(top_edge.get("routeLabel") or "").strip()
+    top_edge_count = _coerce_int(top_edge.get("count"), 0)
+    top_pattern = patterns[0] if patterns else {}
+    top_pattern_label = str(top_pattern.get("label") or "").strip()
+    top_pattern_routes = " / ".join(list(top_pattern.get("transitionRouteLabels") or [])[:2])
+    top_recovery = recovery_rows[0] if recovery_rows else {}
+    top_recovery_route = str(top_recovery.get("routeLabel") or "").strip()
+    top_recovery_mean = _format_minutes_ja(top_recovery.get("meanMinutes"))
+    top_keyword = str((memo_triggers[0] or {}).get("keyword") or "").strip() if memo_triggers else ""
+
+    structural_comment = ""
+    gentle_comment = ""
+    next_points: List[str] = []
+    evidence_items: List[Dict[str, str]] = []
+
+    if report_type == "daily":
+        if top_route:
+            structural_comment = f"昨日は {top_route} の切り替わりが目立ちました。"
+            if top_edge_count > 0:
+                structural_comment += f" この流れは {top_edge_count} 回観測されています。"
+        elif transition_count > 0:
+            structural_comment = f"昨日は {transition_count} 件の感情の切り替わりが観測されました。"
+        else:
+            structural_comment = "昨日は深い制御傾向をまとめるには入力が少なめでした。"
+
+        if top_recovery_route and top_recovery_mean:
+            structural_comment += f" {top_recovery_route} は平均 {top_recovery_mean} で起きています。"
+
+        if top_keyword:
+            gentle_comment = f"「{top_keyword}」という思考語が、昨日の感情の切り替わりと近い位置に現れやすい傾向があります。"
+        elif top_recovery_route:
+            gentle_comment = f"{top_recovery_route} が起きた前後の考え方を短く振り返ると、昨日の流れが見えやすくなります。"
+
+        if transition_count > 0:
+            evidence_items.append({"text": f"昨日は感情の切り替わりが合計 {transition_count} 件観測されました。"})
+        if top_route and top_edge_count > 0:
+            evidence_items.append({"text": f"{top_route} は昨日の中で最も多い流れでした。"})
+        if top_keyword:
+            evidence_items.append({"text": f"思考メモでは「{top_keyword}」が切り替わりの手がかりとして多く見られました。"})
+        if top_recovery_route and top_recovery_mean:
+            evidence_items.append({"text": f"{top_recovery_route} の平均切り替わり時間は {top_recovery_mean} でした。"})
+
+        if top_route:
+            next_points.append(f"{top_route} が起きた前後で、何を考えていたかを一言で残してみてください。")
+        if top_keyword:
+            next_points.append(f"「{top_keyword}」が出た場面で、感情がどう動いたかを見返してみてください。")
+
+    elif report_type == "weekly":
+        if patterns:
+            structural_comment = f"今週は {pattern_count or len(patterns)} 個の制御傾向が観測されました。"
+            if top_pattern_label:
+                structural_comment += f" 最も目立つのは「{top_pattern_label}」です。"
+            if top_pattern_routes:
+                structural_comment += f" 代表的な流れは {top_pattern_routes} でした。"
+        elif top_route:
+            structural_comment = f"今週は {top_route} の切り替わりが目立ちました。"
+        elif transition_count > 0:
+            structural_comment = f"今週は {transition_count} 件の感情の切り替わりが観測されました。"
+        else:
+            structural_comment = "今週は深い制御傾向をまとめるには入力が少なめでした。"
+
+        if top_recovery_route and top_recovery_mean:
+            gentle_comment = f"{top_recovery_route} は平均 {top_recovery_mean} で起きており、今週の整え直し方の特徴として見られます。"
+        if top_keyword:
+            if gentle_comment:
+                gentle_comment += f" また、「{top_keyword}」という思考語が切り替わりの手がかりとして現れやすい傾向もありました。"
+            else:
+                gentle_comment = f"「{top_keyword}」という思考語が、今週の感情の切り替わりと近い位置に現れやすい傾向があります。"
+
+        if transition_count > 0:
+            evidence_items.append({"text": f"今週は感情の切り替わりが合計 {transition_count} 件観測されました。"})
+        if pattern_count > 0:
+            evidence_items.append({"text": f"制御傾向は {pattern_count} 個まとまりとして見られました。"})
+        if top_route and top_edge_count > 0:
+            evidence_items.append({"text": f"{top_route} は今週の中で目立つ流れでした。"})
+        if top_keyword:
+            evidence_items.append({"text": f"思考メモでは「{top_keyword}」がトリガー候補として多く見られました。"})
+
+        if top_pattern_label:
+            next_points.append(f"「{top_pattern_label}」が強く出た日の前後を見返して、共通点を探してみてください。")
+        if top_keyword:
+            next_points.append(f"「{top_keyword}」が出た場面で、感情がどの流れに向かいやすいかを見比べてみてください。")
+        elif top_route:
+            next_points.append(f"{top_route} が起きた前後に、どんな出来事や受け止め方があったかを振り返ってみてください。")
+
+    else:
+        if patterns:
+            structural_comment = f"今月は {pattern_count or len(patterns)} 個の感情制御モデルが観測されました。"
+            if top_pattern_label:
+                structural_comment += f" 最も目立つのは「{top_pattern_label}」です。"
+            if top_pattern_routes:
+                structural_comment += f" 代表的な流れは {top_pattern_routes} でした。"
+            if len(patterns) >= 2:
+                structural_comment += " 複数の制御傾向が併存している月です。"
+        elif top_route:
+            structural_comment = f"今月は {top_route} の切り替わりが目立ちました。"
+        elif transition_count > 0:
+            structural_comment = f"今月は {transition_count} 件の感情の切り替わりが観測されました。"
+        else:
+            structural_comment = "今月は感情制御モデルをまとめるには入力が少なめでした。"
+
+        if top_recovery_route and top_recovery_mean:
+            gentle_comment = f"{top_recovery_route} は平均 {top_recovery_mean} で起きており、今月の整え直し方のひとつとして見られます。"
+        if top_keyword:
+            if gentle_comment:
+                gentle_comment += f" また、「{top_keyword}」という思考語がモデルの切り替わりに関わる手がかりとして現れやすい傾向がありました。"
+            else:
+                gentle_comment = f"「{top_keyword}」という思考語が、今月の感情制御モデルに関わる手がかりとして現れやすい傾向があります。"
+
+        if transition_count > 0:
+            evidence_items.append({"text": f"今月は感情の切り替わりが合計 {transition_count} 件観測されました。"})
+        if pattern_count > 0:
+            evidence_items.append({"text": f"感情制御モデルは {pattern_count} 個のまとまりとして観測されました。"})
+        if top_route and top_edge_count > 0:
+            evidence_items.append({"text": f"{top_route} は今月の中で代表的な流れでした。"})
+        if top_keyword:
+            evidence_items.append({"text": f"思考メモでは「{top_keyword}」がモデル形成の手がかりとして多く見られました。"})
+
+        if top_pattern_label:
+            next_points.append(f"「{top_pattern_label}」が出やすい週や時間帯を見比べると、今月の制御モデルがつかみやすくなります。")
+        if top_keyword:
+            next_points.append(f"「{top_keyword}」が出た場面で、どの流れに入りやすいかを来月も見比べてみてください。")
+        elif top_route:
+            next_points.append(f"{top_route} が起きる前後で、思考や時間帯の共通点を見返してみてください。")
+
+    return {
+        "structuralComment": structural_comment.strip() or None,
+        "gentleComment": gentle_comment.strip() or None,
+        "nextPoints": [str(x).strip() for x in next_points if str(x).strip()][:4],
+        "evidence": {
+            "items": [item for item in evidence_items if isinstance(item, dict) and str(item.get("text") or "").strip()][:4]
+        },
+        "source": "api_deep_summary",
+    }
+
+
+def _render_structural_text_from_summary(
+    *,
+    title: str,
+    report_type: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    summary: Dict[str, Any],
+    patterns: List[Dict[str, Any]],
+    recovery_rows: List[Dict[str, Any]],
+    memo_triggers: List[Dict[str, Any]],
+) -> str:
+    structural_comment = str((summary or {}).get("structuralComment") or "").strip()
+    gentle_comment = str((summary or {}).get("gentleComment") or "").strip()
+    next_points = (summary or {}).get("nextPoints") if isinstance((summary or {}).get("nextPoints"), list) else []
+    evidence = (summary or {}).get("evidence") if isinstance((summary or {}).get("evidence"), dict) else {}
+    evidence_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
+
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    if report_type == "daily":
+        lines.append("【昨日の制御観測】")
+        if structural_comment:
+            lines.append(structural_comment)
+        else:
+            lines.append("昨日の制御観測はまだ十分に生成されていません。")
+        lines.append("")
+
+        if recovery_rows:
+            lines.append("【昨日の切り替わり時間】")
+            for row in recovery_rows[:2]:
+                mean_text = _format_minutes_ja(row.get("meanMinutes"))
+                if mean_text:
+                    lines.append(f"- {row.get('routeLabel')}: 平均 {mean_text}")
+            lines.append("")
+
+        if memo_triggers:
+            lines.append("【昨日の思考の手がかり】")
+            for memo in memo_triggers[:2]:
+                keyword = str(memo.get("keyword") or "").strip()
+                related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
+                if keyword and related:
+                    lines.append(f"- 「{keyword}」: {related}")
+                elif keyword:
+                    lines.append(f"- 「{keyword}」")
+            lines.append("")
+
+        if evidence_items:
+            lines.append("【昨日の観測ポイント】")
+            for item in evidence_items[:3]:
+                if isinstance(item, dict):
+                    t = str(item.get("text") or "").strip()
+                    if t:
+                        lines.append(f"- {t}")
+            lines.append("")
+
+        if gentle_comment:
+            lines.append("【やさしい視点】")
+            lines.append(gentle_comment)
+            lines.append("")
+
+        if next_points:
+            lines.append("【次に見るところ】")
+            for point in next_points[:3]:
+                s = str(point or "").strip()
+                if s:
+                    lines.append(f"- {s}")
+            lines.append("")
+
+        lines.append("【注記】")
+        lines.append("このレポートは、昨日の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+        return "\n".join(lines).strip()
+
+    if report_type == "weekly":
+        lines.append("【今週の制御パターン】")
+        if structural_comment:
+            lines.append(structural_comment)
+        else:
+            lines.append("今週の制御パターンはまだ十分に生成されていません。")
+        lines.append("")
+
+        if patterns:
+            lines.append("【主な制御傾向】")
+            for pattern in patterns[:3]:
+                label = str(pattern.get("label") or "").strip() or "制御傾向"
+                desc = str(pattern.get("description") or "").strip()
+                routes = " / ".join(list(pattern.get("transitionRouteLabels") or [])[:2])
+                if desc:
+                    lines.append(f"- {label}: {desc}")
+                elif routes:
+                    lines.append(f"- {label}: {routes}")
+                else:
+                    lines.append(f"- {label}")
+            lines.append("")
+
+        if recovery_rows:
+            lines.append("【今週の切り替わり時間】")
+            for row in recovery_rows[:3]:
+                mean_text = _format_minutes_ja(row.get("meanMinutes"))
+                if mean_text:
+                    lines.append(f"- {row.get('routeLabel')}: 平均 {mean_text}")
+            lines.append("")
+
+        if memo_triggers:
+            lines.append("【思考トリガー】")
+            for memo in memo_triggers[:3]:
+                keyword = str(memo.get("keyword") or "").strip()
+                related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
+                if keyword and related:
+                    lines.append(f"- 「{keyword}」: {related}")
+                elif keyword:
+                    lines.append(f"- 「{keyword}」")
+            lines.append("")
+
+        if evidence_items:
+            lines.append("【観測ポイント】")
+            for item in evidence_items[:3]:
+                if isinstance(item, dict):
+                    t = str(item.get("text") or "").strip()
+                    if t:
+                        lines.append(f"- {t}")
+            lines.append("")
+
+        if gentle_comment:
+            lines.append("【やさしい視点】")
+            lines.append(gentle_comment)
+            lines.append("")
+
+        if next_points:
+            lines.append("【次の観測】")
+            for point in next_points[:4]:
+                s = str(point or "").strip()
+                if s:
+                    lines.append(f"- {s}")
+            lines.append("")
+
+        lines.append("【注記】")
+        lines.append("このレポートは、今週の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+        return "\n".join(lines).strip()
+
+    lines.append("【今月の感情制御モデル】")
+    if structural_comment:
+        lines.append(structural_comment)
+    else:
+        lines.append("今月の感情制御モデルはまだ十分に生成されていません。")
+    lines.append("")
+
+    if patterns:
+        lines.append("【主な制御モデル】")
+        for pattern in patterns[:5]:
+            label = str(pattern.get("label") or "").strip() or "制御傾向"
+            desc = str(pattern.get("description") or "").strip()
+            routes = " / ".join(list(pattern.get("transitionRouteLabels") or [])[:2])
+            if desc:
+                lines.append(f"- {label}: {desc}")
+            elif routes:
+                lines.append(f"- {label}: {routes}")
+            else:
+                lines.append(f"- {label}")
+        lines.append("")
+
+    if recovery_rows:
+        lines.append("【モデルごとの切り替わり時間】")
+        for row in recovery_rows[:4]:
+            mean_text = _format_minutes_ja(row.get("meanMinutes"))
+            if mean_text:
+                lines.append(f"- {row.get('routeLabel')}: 平均 {mean_text}")
+        lines.append("")
+
+    if memo_triggers:
+        lines.append("【モデルに関わる思考トリガー】")
+        for memo in memo_triggers[:4]:
+            keyword = str(memo.get("keyword") or "").strip()
+            related = " / ".join(list(memo.get("relatedTransitions") or [])[:2])
+            if keyword and related:
+                lines.append(f"- 「{keyword}」: {related}")
+            elif keyword:
+                lines.append(f"- 「{keyword}」")
+        lines.append("")
+
+    if evidence_items:
+        lines.append("【観測ポイント】")
+        for item in evidence_items[:4]:
+            if isinstance(item, dict):
+                t = str(item.get("text") or "").strip()
+                if t:
+                    lines.append(f"- {t}")
+        lines.append("")
+
+    if gentle_comment:
+        lines.append("【やさしい視点】")
+        lines.append(gentle_comment)
+        lines.append("")
+
+    if next_points:
+        lines.append("【次の観測】")
+        for point in next_points[:4]:
+            s = str(point or "").strip()
+            if s:
+                lines.append(f"- {s}")
+        lines.append("")
+
+    lines.append("【注記】")
+    lines.append("このレポートは、今月の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+    return "\n".join(lines).strip()
+
+
+def _build_structural_report_payload(
+    *,
+    report_type: str,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    deep_analysis_payload: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    payload = deep_analysis_payload if isinstance(deep_analysis_payload, dict) else {}
+    if not payload:
+        return None
+
+    deep_model = _extract_deep_control_model_payload(payload)
+    transition_matrix = _normalize_transition_matrix(
+        deep_model.get("transition_matrix") or deep_model.get("transitionMatrix") or payload.get("transitionMatrix") or {}
+    )
+    transition_edges = _normalize_transition_edges(
+        deep_model.get("transition_edges") or deep_model.get("transitionEdges") or payload.get("transitionEdges") or []
+    )
+    recovery_rows = _normalize_recovery_time_rows(
+        deep_model.get("recovery_time") or deep_model.get("recoveryTime") or payload.get("recoveryTime") or []
+    )
+    memo_triggers = _normalize_memo_triggers(
+        deep_model.get("memo_triggers") or deep_model.get("memoTriggers") or payload.get("memoTriggers") or []
+    )
+    control_patterns = _normalize_control_patterns(
+        deep_model.get("control_patterns") or deep_model.get("controlPatterns") or payload.get("controlPatterns") or []
+    )
+    summary_raw = deep_model.get("summary") if isinstance(deep_model.get("summary"), dict) else {}
+    meta_raw = deep_model.get("meta") if isinstance(deep_model.get("meta"), dict) else {}
+
+    summary = _build_structural_summary_object(
+        report_type=report_type,
+        deep_payload=payload,
+    )
+    content_text = _render_structural_text_from_summary(
+        title=title,
+        report_type=report_type,
+        period_start_iso=period_start_iso,
+        period_end_iso=period_end_iso,
+        summary=summary,
+        patterns=control_patterns,
+        recovery_rows=recovery_rows,
+        memo_triggers=memo_triggers,
+    )
+
+    metrics = {
+        "transitionCount": _coerce_int(summary_raw.get("transitionCount"), len(transition_edges)),
+        "edgeCount": _coerce_int(summary_raw.get("edgeCount"), len(transition_edges)),
+        "memoKeywordCount": _coerce_int(summary_raw.get("memoKeywordCount"), len(memo_triggers)),
+        "patternCount": _coerce_int(summary_raw.get("patternCount"), len(control_patterns)),
+    }
+    features = {
+        "emotionLabels": {k: KEY_TO_JP.get(k, k) for k in EMOTION_KEYS},
+        "controlPatterns": control_patterns,
+        "memoTriggers": memo_triggers,
+        "meta": meta_raw,
+        "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
+        "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
+    }
+    if transition_matrix:
+        features["transitionMatrixJa"] = _localize_transition_matrix(transition_matrix)
+
+    structural_report: Dict[str, Any] = {
+        "version": "myweb.structural.v1",
+        "displayMode": "text" if report_type == "daily" else "graph_text",
+        "reportType": str(report_type or ""),
+        "contentText": content_text,
+        "summary": summary,
+        "metrics": metrics,
+        "features": features,
+        "transitionMatrix": transition_matrix,
+        "transitionMatrixJa": _localize_transition_matrix(transition_matrix),
+        "transitionEdges": transition_edges,
+        "recoveryTime": recovery_rows,
+        "memoTriggers": memo_triggers,
+        "controlPatterns": control_patterns,
+        "analysisPayload": payload,
+    }
+    return structural_report
+
+
 def _parse_iso_utc(iso: str) -> Optional[datetime]:
     s = str(iso or "").strip()
     if not s:
@@ -2077,7 +2720,7 @@ async def _generate_and_save(
             "contentText": text,
         }
         if astor_report and is_premium:
-            content_json["structuralReport"] = astor_report
+            content_json["deepReport"] = astor_report
     except Exception:
         pass
 
@@ -2242,9 +2885,11 @@ async def _generate_and_save_from_snapshot(
             bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
         )
 
-    # analysis_results → Standard report source
+    # analysis_results → Standard / Deep report source
     analysis_row: Optional[Dict[str, Any]] = None
     analysis_payload: Dict[str, Any] = {}
+    deep_analysis_row: Optional[Dict[str, Any]] = None
+    deep_analysis_payload: Dict[str, Any] = {}
     if snap_id:
         analysis_row = await _fetch_analysis_result(
             uid,
@@ -2255,6 +2900,16 @@ async def _generate_and_save_from_snapshot(
         )
         if analysis_row and isinstance(analysis_row.get("payload"), dict):
             analysis_payload = analysis_row.get("payload") or {}
+
+        deep_analysis_row = await _fetch_analysis_result(
+            uid,
+            snapshot_id=snap_id,
+            analysis_type="emotion_structure",
+            analysis_stage="deep",
+            scope=report_type,
+        )
+        if deep_analysis_row and isinstance(deep_analysis_row.get("payload"), dict):
+            deep_analysis_payload = deep_analysis_row.get("payload") or {}
 
     # Optional ASTOR insight (kept same behavior as v1; may read additional materials)
     if report_type in ("weekly", "monthly") and include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
@@ -2308,6 +2963,15 @@ async def _generate_and_save_from_snapshot(
             "snapshot_id": snap_id,
             "source_hash": str((analysis_row or {}).get("source_hash") or "") or snap_hash,
         }
+    if deep_analysis_row:
+        content_json["deepAnalysisMeta"] = {
+            "analysis_result_id": str((deep_analysis_row or {}).get("id") or "") or None,
+            "analysis_type": str((deep_analysis_row or {}).get("analysis_type") or "emotion_structure"),
+            "analysis_stage": str((deep_analysis_row or {}).get("analysis_stage") or "deep"),
+            "analysis_version": str((deep_analysis_row or {}).get("analysis_version") or ""),
+            "snapshot_id": snap_id,
+            "source_hash": str((deep_analysis_row or {}).get("source_hash") or "") or snap_hash,
+        }
 
     # --- MyWeb report v3 structure (Light / Standard / Structural) ---
     try:
@@ -2325,8 +2989,18 @@ async def _generate_and_save_from_snapshot(
         if isinstance(standard_report, dict):
             content_json["standardReport"] = standard_report
             standard_text = str(standard_report.get("contentText") or light_text or "")
-        if astor_report and is_premium:
-            content_json["structuralReport"] = astor_report
+
+        structural_report = _build_structural_report_payload(
+            report_type=report_type,
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            deep_analysis_payload=deep_analysis_payload,
+        )
+        if isinstance(structural_report, dict):
+            content_json["deepReport"] = structural_report
+        elif astor_report:
+            content_json["deepReport"] = astor_report
     except Exception:
         standard_text = light_text
 
