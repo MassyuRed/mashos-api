@@ -75,6 +75,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 REPORTS_TABLE = os.getenv("MYWEB_REPORTS_TABLE", "myweb_reports").strip() or "myweb_reports"
+ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
 
 # Governance / snapshots
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -252,7 +253,7 @@ async def _fetch_latest_snapshot_row(
         resp = await _sb_get(
             f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
             params=[
-                ("select", "source_hash,created_at,payload"),
+                ("select", "id,source_hash,created_at,payload"),
                 ("user_id", f"eq.{uid}"),
                 ("scope", f"eq.{sc}"),
                 ("snapshot_type", f"eq.{st}"),
@@ -272,6 +273,124 @@ async def _fetch_latest_snapshot_row(
     if isinstance(rows, list) and rows and isinstance(rows[0], dict):
         return rows[0]
     return None
+
+
+async def _fetch_analysis_result(
+    user_id: str,
+    *,
+    snapshot_id: str,
+    analysis_type: str,
+    analysis_stage: str = "standard",
+    scope: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    sid = str(snapshot_id or "").strip()
+    at = str(analysis_type or "").strip()
+    stage = str(analysis_stage or "").strip() or "standard"
+    if not uid or not sid or not at:
+        return None
+
+    params: List[Tuple[str, str]] = [
+        ("select", "id,target_user_id,snapshot_id,analysis_type,scope,analysis_stage,analysis_version,source_hash,payload,created_at,updated_at"),
+        ("target_user_id", f"eq.{uid}"),
+        ("snapshot_id", f"eq.{sid}"),
+        ("analysis_type", f"eq.{at}"),
+        ("analysis_stage", f"eq.{stage}"),
+        ("order", "updated_at.desc"),
+        ("limit", "1"),
+    ]
+    sc = str(scope or "").strip()
+    if sc:
+        params.append(("scope", f"eq.{sc}"))
+
+    try:
+        resp = await _sb_get(f"/rest/v1/{ANALYSIS_RESULTS_TABLE}", params=params)
+    except Exception:
+        return None
+
+    if resp.status_code not in (200, 206):
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def _range_line_jst(period_start_iso: str, period_end_iso: str) -> Optional[str]:
+    try:
+        s = datetime.fromisoformat(period_start_iso.replace("Z", "+00:00")).astimezone(JST)
+        e = datetime.fromisoformat(period_end_iso.replace("Z", "+00:00")).astimezone(JST)
+        return f"対象期間（JST）: {s.year}/{s.month}/{s.day} 00:00 〜 {e.year}/{e.month}/{e.day} 23:59"
+    except Exception:
+        return None
+
+
+def _render_analysis_standard_text(
+    *,
+    title: str,
+    report_type: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    analysis_payload: Dict[str, Any],
+) -> str:
+    payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    narrative = payload.get("narrative") if isinstance(payload.get("narrative"), dict) else {}
+    structural_comment = str(narrative.get("structural_comment") or "").strip()
+    gentle_comment = str(narrative.get("gentle_comment") or "").strip()
+    next_points = narrative.get("next_points") if isinstance(narrative.get("next_points"), list) else []
+    evidence = narrative.get("evidence") if isinstance(narrative.get("evidence"), dict) else {}
+    evidence_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
+
+    if report_type == "daily":
+        summary_title = "【今日の構造サマリー】"
+    elif report_type == "weekly":
+        summary_title = "【今週の構造サマリー】"
+    else:
+        summary_title = "【今月の構造サマリー】"
+
+    lines: List[str] = []
+    lines.append(title)
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    lines.append(summary_title)
+    if structural_comment:
+        lines.append(structural_comment)
+    else:
+        lines.append("今回の構造サマリーはまだ十分に生成されていません。")
+    lines.append("")
+
+    if evidence_items:
+        lines.append("【観測ポイント】")
+        for it in evidence_items[:4]:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("text") or "").strip()
+            if t:
+                lines.append(f"- {t}")
+        lines.append("")
+
+    if gentle_comment:
+        lines.append("【やさしい視点】")
+        lines.append(gentle_comment)
+        lines.append("")
+
+    if next_points:
+        lines.append("【次の観測】")
+        for p in next_points[:4]:
+            s = str(p or "").strip()
+            if s:
+                lines.append(f"- {s}")
+        lines.append("")
+
+    lines.append("【注記】")
+    lines.append("このレポートは、analysis_engine による構造観測をもとにまとめたものです。診断や断定を目的としたものではありません。")
+    return "\n".join(lines).strip()
 
 
 def _parse_iso_utc(iso: str) -> Optional[datetime]:
@@ -1356,6 +1475,7 @@ async def _generate_and_save_from_snapshot(
     if not snap:
         raise HTTPException(status_code=404, detail="material snapshot not found")
 
+    snap_id = str((snap or {}).get("id") or "").strip() or None
     snap_hash = str((snap or {}).get("source_hash") or "").strip() or None
     payload = (snap or {}).get("payload") if isinstance((snap or {}).get("payload"), dict) else {}
     period = payload.get("period") if isinstance(payload.get("period"), dict) else {}
@@ -1385,18 +1505,26 @@ async def _generate_and_save_from_snapshot(
         content_json["summary"] = summary
         content_json["day"] = day
         content_json["movement"] = movement
+        days = []
+        weeks = []
     elif report_type == "weekly":
         days = views.get("days") if isinstance(views.get("days"), list) else []
         content_json["days"] = days
+        weeks = []
+        day = {}
+        movement = {}
     else:
         weeks = views.get("weeks") if isinstance(views.get("weeks"), list) else []
         content_json["weeks"] = weeks
+        days = []
+        day = {}
+        movement = {}
 
-    # MyWeb report v3: Standard / Structural (tier-gated)
+    # Current tier (used for premium structural report gating only).
     tier_enum = None
     is_premium = False
     is_plus_or_higher = False
-    if report_type in ("weekly", "monthly") and SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
         try:
             tier_enum = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
         except Exception:
@@ -1405,6 +1533,20 @@ async def _generate_and_save_from_snapshot(
         is_plus_or_higher = (
             bool(tier_enum in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)) if SubscriptionTier is not None else False
         )
+
+    # analysis_results → Standard report source
+    analysis_row: Optional[Dict[str, Any]] = None
+    analysis_payload: Dict[str, Any] = {}
+    if snap_id:
+        analysis_row = await _fetch_analysis_result(
+            uid,
+            snapshot_id=snap_id,
+            analysis_type="emotion_structure",
+            analysis_stage="standard",
+            scope=report_type,
+        )
+        if analysis_row and isinstance(analysis_row.get("payload"), dict):
+            analysis_payload = analysis_row.get("payload") or {}
 
     # Optional ASTOR insight (kept same behavior as v1; may read additional materials)
     if report_type in ("weekly", "monthly") and include_astor and is_plus_or_higher and generate_myweb_insight_payload is not None:
@@ -1422,37 +1564,59 @@ async def _generate_and_save_from_snapshot(
     if astor_error:
         content_json["astorError"] = astor_error
 
+    # Light text is always stored in legacy content_text.
     if report_type == "daily":
-        text = _render_daily_standard_v3_text(
+        light_text = _render_daily_standard_v3_text(
             metrics=metrics,
             summary=summary,
             movement=movement,
         )
     elif report_type == "weekly":
-        text = _render_weekly_standard_v3_text(
+        light_text = _render_weekly_standard_v3_text(
             title=target.title,
             period_start_iso=target.period_start_iso,
             period_end_iso=target.period_end_iso,
             metrics=metrics,
             days=days,
-            supplement_text=astor_text,
+            supplement_text=None,
         )
     else:
-        text = _render_monthly_standard_v3_text(
+        light_text = _render_monthly_standard_v3_text(
             title=target.title,
             period_start_iso=target.period_start_iso,
             period_end_iso=target.period_end_iso,
             metrics=metrics,
             weeks=weeks,
-            supplement_text=astor_text,
+            supplement_text=None,
         )
 
-    # --- MyWeb report v3 structure (Standard / Structural) ---
+    standard_text = light_text
+    if analysis_payload:
+        try:
+            standard_text = _render_analysis_standard_text(
+                title=target.title,
+                report_type=report_type,
+                period_start_iso=target.period_start_iso,
+                period_end_iso=target.period_end_iso,
+                analysis_payload=analysis_payload,
+            )
+            content_json["analysisMeta"] = {
+                "analysis_result_id": str((analysis_row or {}).get("id") or "") or None,
+                "analysis_type": str((analysis_row or {}).get("analysis_type") or "emotion_structure"),
+                "analysis_stage": str((analysis_row or {}).get("analysis_stage") or "standard"),
+                "analysis_version": str((analysis_row or {}).get("analysis_version") or ""),
+                "snapshot_id": snap_id,
+                "source_hash": str((analysis_row or {}).get("source_hash") or "") or snap_hash,
+            }
+        except Exception:
+            standard_text = light_text
+
+    # --- MyWeb report v3 structure (Light / Standard / Structural) ---
     try:
         content_json.setdefault("reportVersion", "myweb.report.v3")
         content_json["standardReport"] = {
-            "version": "myweb.standard.v1",
-            "contentText": text,
+            "version": "myweb.standard.v2" if analysis_payload else "myweb.standard.v1",
+            "contentText": standard_text,
         }
         if astor_report and is_premium:
             content_json["structuralReport"] = astor_report
@@ -1461,7 +1625,6 @@ async def _generate_and_save_from_snapshot(
 
     # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
     try:
-        # normalize tier string (for audit/debug)
         tier_str = None
         try:
             tier_str = (
@@ -1494,7 +1657,7 @@ async def _generate_and_save_from_snapshot(
         "period_start": target.period_start_iso,
         "period_end": target.period_end_iso,
         "title": target.title,
-        "content_text": text,
+        "content_text": light_text,
         "content_json": content_json,
         "generated_at": target.dist_utc.astimezone(timezone.utc)
         .isoformat(timespec="milliseconds")
@@ -1503,7 +1666,7 @@ async def _generate_and_save_from_snapshot(
     rid = await _upsert_report(payload_upsert)
     payload_upsert["_id"] = rid
 
-    return text, content_json, astor_text, {"report_id": rid, "report_type": report_type, "scope": sc, "public_source_hash": snap_hash}
+    return light_text, content_json, astor_text, {"report_id": rid, "report_type": report_type, "scope": sc, "public_source_hash": snap_hash}
 
 
 def register_myweb_report_routes(app: FastAPI) -> None:
@@ -1833,7 +1996,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
         def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
             out = dict(cj or {})
             if tier_str == "free":
-                for k in ("astorText", "astorMeta", "astorError", "structuralReport"):
+                for k in ("astorText", "astorMeta", "astorError", "structuralReport", "standardReport", "standard_report", "standardText", "standard_text", "analysisMeta"):
                     out.pop(k, None)
             elif tier_str == "plus":
                 out.pop("structuralReport", None)

@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -27,6 +27,8 @@ import logging
 import os
 import re
 import signal
+import sys
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -38,7 +40,7 @@ from astor_job_queue import (
     requeue,
     mark_failed,
 )
-from supabase_client import sb_get, sb_patch  # type: ignore
+from supabase_client import sb_get, sb_patch, sb_post  # type: ignore
 
 
 # NOTE:
@@ -51,6 +53,8 @@ from astor_material_snapshots import (
     generate_and_store_material_snapshots,
     fetch_emotion_meta_for_hash,
     compute_source_hash_from_emotion_meta,
+    fetch_emotions_in_range,
+    _parse_emotion_period_scope,
 )  # type: ignore
 
 # Phase X+: emotion structure reports (MyWeb weekly/monthly)
@@ -64,9 +68,33 @@ from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # t
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
 
+# analysis_engine (sibling package under ai/services/analysis_engine)
+try:
+    from analysis_engine import (
+        build_weekly_features,
+        narrate_weekly,
+        assemble_monthly,
+        narrate_monthly,
+        narrate_daily,
+    )
+except Exception:
+    _services_root = Path(__file__).resolve().parent.parent
+    if str(_services_root) not in sys.path:
+        sys.path.insert(0, str(_services_root))
+    from analysis_engine import (  # type: ignore
+        build_weekly_features,
+        narrate_weekly,
+        assemble_monthly,
+        narrate_monthly,
+        narrate_daily,
+    )
+
+from analysis_engine_adapter import build_emotion_entries_from_rows  # type: ignore
+
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
 SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
+ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
 
 # JST (UTC+9) fixed for MyWeb periods
 JST = timezone(timedelta(hours=9))
@@ -479,10 +507,213 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
 
 
 
+def _scope_from_emotion_period_scope(scope: str) -> str:
+    sc = str(scope or "").strip()
+    if sc.startswith("emotion_daily:"):
+        return "daily"
+    if sc.startswith("emotion_weekly:"):
+        return "weekly"
+    if sc.startswith("emotion_monthly:"):
+        return "monthly"
+    return "unknown"
+
+
+async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip()
+    if not uid or not sc:
+        return None
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
+            params={
+                "select": "id,user_id,scope,snapshot_type,source_hash,payload,created_at",
+                "user_id": f"eq.{uid}",
+                "scope": f"eq.{sc}",
+                "snapshot_type": "eq.public",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+            timeout=10.0,
+        )
+        if resp.status_code not in (200, 206):
+            return None
+        rows = resp.json()
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            return rows[0]
+    except Exception:
+        return None
+    return None
+
+
+async def _upsert_analysis_result(*, row: Dict[str, Any]) -> bool:
+    resp = await sb_post(
+        f"/rest/v1/{ANALYSIS_RESULTS_TABLE}",
+        json=row,
+        params={"on_conflict": "target_user_id,snapshot_id,analysis_type,analysis_stage"},
+        prefer="resolution=merge-duplicates,return=minimal",
+        timeout=10.0,
+    )
+    return resp.status_code in (200, 201, 204)
+
+
+def _entries_in_window(entries: List[Any], start_dt: datetime, end_dt: datetime) -> List[Any]:
+    out: List[Any] = []
+    for e in entries or []:
+        try:
+            s = str(getattr(e, "timestamp", "") or "")
+            if not s:
+                continue
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(timezone.utc)
+        except Exception:
+            continue
+        if start_dt <= dt < end_dt:
+            out.append(e)
+    return out
+
+
+def _normalize_entries_to_jst(entries: List[Any]) -> List[Any]:
+    out: List[Any] = []
+    for e in entries or []:
+        try:
+            s = str(getattr(e, "timestamp", "") or "")
+            if not s:
+                out.append(e)
+                continue
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            jst_dt = dt.astimezone(JST)
+            try:
+                e.timestamp = jst_dt.isoformat()
+            except Exception:
+                pass
+            try:
+                e.date = jst_dt.date().isoformat()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        out.append(e)
+    return out
+
+
+async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    scope = str((payload or {}).get("scope") or "").strip()
+    if not scope:
+        raise ValueError("payload.scope is required")
+
+    scope_kind = _scope_from_emotion_period_scope(scope)
+    if scope_kind not in ("daily", "weekly", "monthly"):
+        raise ValueError(f"unsupported scope for emotion structure analysis: {scope}")
+
+    snap = await _fetch_latest_public_snapshot_row(user_id=uid, scope=scope)
+    if not snap:
+        raise RuntimeError("public emotion_period snapshot not found")
+
+    period_info = _parse_emotion_period_scope(scope)
+    start_iso = str(period_info.get("period_start_iso") or "").strip()
+    end_iso = str(period_info.get("period_end_iso") or "").strip()
+    if not start_iso or not end_iso:
+        raise RuntimeError("snapshot period meta missing")
+
+    rows = await fetch_emotions_in_range(
+        uid,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        include_secret=False,
+    )
+    entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
+
+    period_label = f"{start_iso}..{end_iso}"
+
+    analysis_payload: Dict[str, Any] = {
+        "engine": "analysis_engine",
+        "analysis_type": "emotion_structure",
+        "scope": scope_kind,
+        "analysis_stage": "standard",
+        "analysis_version": "emotion_structure.standard.v1",
+        "source_hash": str(snap.get("source_hash") or ""),
+        "snapshot_ref": {
+            "snapshot_id": str(snap.get("id") or ""),
+            "scope": scope,
+            "snapshot_type": "public",
+        },
+        "period": {
+            "start_iso": start_iso,
+            "end_iso": end_iso,
+        },
+        "entry_count": len(entries),
+    }
+
+    if scope_kind == "daily":
+        narrative = narrate_daily(entries, period=period_label)
+        analysis_payload["narrative"] = narrative.to_dict()
+    elif scope_kind == "weekly":
+        weekly_snapshot = build_weekly_features(entries, period=period_label)
+        narrative = narrate_weekly(weekly_snapshot, baseline=None)
+        analysis_payload["weekly_snapshot"] = weekly_snapshot.to_dict()
+        analysis_payload["narrative"] = narrative.to_dict()
+    else:
+        period_start_utc = period_info.get("period_start_utc")
+        if not isinstance(period_start_utc, datetime):
+            raise RuntimeError("invalid monthly period_start_utc")
+
+        weeks = []
+        for i in range(4):
+            w_start = period_start_utc + timedelta(days=7 * i)
+            w_end = w_start + timedelta(days=7)
+            w_entries = _entries_in_window(entries, w_start, w_end)
+            weeks.append(build_weekly_features(w_entries, period=f"{w_start.date().isoformat()}..{(w_end - timedelta(days=1)).date().isoformat()}"))
+
+        monthly_report = assemble_monthly(weeks, period=period_label)
+        narrative = narrate_monthly(monthly_report)
+        analysis_payload["monthly_report"] = monthly_report.to_dict()
+        analysis_payload["narrative"] = narrative.to_dict()
+
+    row = {
+        "target_user_id": uid,
+        "snapshot_id": str(snap.get("id") or ""),
+        "analysis_type": "emotion_structure",
+        "scope": scope_kind,
+        "analysis_stage": "standard",
+        "analysis_version": "emotion_structure.standard.v1",
+        "source_hash": str(snap.get("source_hash") or "") or None,
+        "payload": analysis_payload,
+        "updated_at": _now_iso_z(),
+    }
+    ok = await _upsert_analysis_result(row=row)
+    if not ok:
+        raise RuntimeError("analysis_results upsert failed")
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": scope,
+        "scope_kind": scope_kind,
+        "snapshot_id": str(snap.get("id") or ""),
+        "source_hash": str(snap.get("source_hash") or ""),
+        "entry_count": len(entries),
+        "analysis_stage": "standard",
+        "analysis_version": "emotion_structure.standard.v1",
+    }
+
+
 async def _worker_loop() -> None:
     worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{os.getpid()}"
     poll_interval = float(os.getenv("ASTOR_WORKER_POLL_INTERVAL_SECONDS", "1.0") or "1.0")
-    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,generate_emotion_report_v2,inspect_emotion_report_v1"))
+    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,generate_emotion_report_v2,inspect_emotion_report_v1"))
 
     logger = logging.getLogger("astor_worker")
     logger.info("ASTOR worker started. worker_id=%s job_types=%s poll=%.2fs", worker_id, job_types, poll_interval)
@@ -610,33 +841,77 @@ async def _worker_loop() -> None:
                                     except Exception as exc:
                                         logger.error("Emotion period snapshot enqueue failed: %s", exc)
                                 else:
-                                    # emotion_period snapshot committed -> enqueue snapshot-driven MyWeb generation (v2)
-                                    if EMOTION_REPORT_V2_ENABLED and (
+                                    # emotion_period snapshot committed -> enqueue emotion structure analysis (standard) and MyWeb generation (v2)
+                                    if (
                                         scope.startswith("emotion_daily:")
                                         or scope.startswith("emotion_weekly:")
                                         or scope.startswith("emotion_monthly:")
                                     ):
                                         try:
                                             pub_hash = str(public.get("source_hash") or "")
-                                            include_astor = not scope.startswith("emotion_daily:")
                                             await enqueue_job(
-                                                job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
-                                                job_type="generate_emotion_report_v2",
+                                                job_key=f"analysis_emotion_structure_standard:{claimed.user_id}:{scope}:{pub_hash}",
+                                                job_type="analyze_emotion_structure_standard_v1",
                                                 user_id=claimed.user_id,
                                                 payload={
                                                     "trigger": "snapshot_generate_v1",
                                                     "requested_at": (claimed.payload or {}).get("requested_at"),
                                                     "scope": scope,
-                                                    "include_astor": include_astor,
                                                     "source_hash": pub_hash,
                                                 },
-                                                priority=12,
+                                                priority=18,
                                             )
                                         except Exception as exc:
                                             logger.error("Downstream enqueue v2 failed: %s", exc)
                         except Exception as exc:
                             logger.error("Downstream enqueue failed: %s", exc)
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, snap_res)
+            elif claimed.job_type == "analyze_emotion_structure_standard_v1":
+                analysis_res = await _handle_analyze_emotion_structure_standard_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        if EMOTION_REPORT_V2_ENABLED:
+                            scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
+                            pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
+                            if scope and pub_hash:
+                                include_astor = not scope.startswith("emotion_daily:")
+                                await enqueue_job(
+                                    job_key=f"emotion_report_v2_refresh:{claimed.user_id}:{scope}:{pub_hash}",
+                                    job_type="generate_emotion_report_v2",
+                                    user_id=claimed.user_id,
+                                    payload={
+                                        "trigger": "analyze_emotion_structure_standard_v1",
+                                        "requested_at": (claimed.payload or {}).get("requested_at"),
+                                        "scope": scope,
+                                        "include_astor": include_astor,
+                                        "source_hash": pub_hash,
+                                    },
+                                    priority=12,
+                                )
+                    except Exception as exc:
+                        logger.error("Emotion report enqueue after analysis failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    analysis_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
