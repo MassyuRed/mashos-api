@@ -115,6 +115,29 @@ def _parse_job_types(raw: str) -> List[str]:
     return xs
 
 
+# Always include the core job types required by the current pipeline even when
+# ASTOR_WORKER_JOB_TYPES is left at an older/stale value in Render.
+_REQUIRED_WORKER_JOB_TYPES: List[str] = [
+    "myprofile_latest_refresh_v1",
+    "snapshot_generate_v1",
+    "analyze_emotion_structure_standard_v1",
+    "generate_emotion_report_v2",
+    "inspect_emotion_report_v1",
+]
+
+
+def _merge_required_job_types(job_types: List[str]) -> List[str]:
+    merged: List[str] = []
+    seen = set()
+    for jt in list(job_types or []) + list(_REQUIRED_WORKER_JOB_TYPES):
+        s = str(jt or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        merged.append(s)
+    return merged
+
+
 
 async def _handle_snapshot_generate_v1(*, user_id: str, payload: dict) -> dict:
     """Generate internal/public material snapshots for a user (v1).
@@ -714,7 +737,14 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
 async def _worker_loop() -> None:
     worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{os.getpid()}"
     poll_interval = float(os.getenv("ASTOR_WORKER_POLL_INTERVAL_SECONDS", "1.0") or "1.0")
-    job_types = _parse_job_types(os.getenv("ASTOR_WORKER_JOB_TYPES", "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,generate_emotion_report_v2,inspect_emotion_report_v1"))
+    job_types = _merge_required_job_types(
+        _parse_job_types(
+            os.getenv(
+                "ASTOR_WORKER_JOB_TYPES",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
+            )
+        )
+    )
 
     logger = logging.getLogger("astor_worker")
     logger.info("ASTOR worker started. worker_id=%s job_types=%s poll=%.2fs", worker_id, job_types, poll_interval)
