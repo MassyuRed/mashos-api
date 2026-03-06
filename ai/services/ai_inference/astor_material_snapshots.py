@@ -41,6 +41,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+# Downstream jobs are best-effort.
+try:
+    from astor_job_queue import enqueue_job  # type: ignore
+except Exception:  # pragma: no cover
+    enqueue_job = None  # type: ignore
+
 
 logger = logging.getLogger("astor_material_snapshots")
 
@@ -139,6 +145,52 @@ async def _sb_post_json(path: str, *, json_body: Any, timeout: float = 8.0, pref
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json_body)
     return resp
+
+
+async def _fetch_latest_snapshot_meta(
+    user_id: str,
+    *,
+    scope: str,
+    snapshot_type: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch latest snapshot row meta (id/source_hash/created_at) for downstream jobs."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+    st = str(snapshot_type or "").strip() or "public"
+
+    rows = await _sb_get_json(
+        f"/rest/v1/{MATERIAL_SNAPSHOTS_TABLE}",
+        params=[
+            ("select", "id,source_hash,created_at"),
+            ("user_id", f"eq.{uid}"),
+            ("scope", f"eq.{sc}"),
+            ("snapshot_type", f"eq.{st}"),
+            ("order", "created_at.desc"),
+            ("limit", "1"),
+        ],
+        timeout=8.0,
+    )
+    if rows:
+        return rows[0]
+    return None
+
+
+def _latest_weekly_scope_for_now(now_utc: Optional[datetime] = None) -> str:
+    dt = (now_utc or datetime.now(timezone.utc)).astimezone(JST)
+    days_back = (dt.weekday() + 1) % 7  # Sunday=0 boundary
+    last_sun = dt.date() - timedelta(days=days_back)
+    return f"emotion_weekly:{last_sun.year:04d}-{last_sun.month:02d}-{last_sun.day:02d}"
+
+
+def _latest_monthly_scope_for_now(now_utc: Optional[datetime] = None) -> str:
+    dt = (now_utc or datetime.now(timezone.utc)).astimezone(JST)
+    if dt.month == 1:
+        y, m = dt.year - 1, 12
+    else:
+        y, m = dt.year, dt.month - 1
+    return f"emotion_monthly:{y:04d}-{m:02d}"
 
 
 async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] = None, end_iso: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -918,6 +970,30 @@ async def _generate_and_store_emotion_period_snapshots(
     inserted_internal = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="internal", source_hash=internal_hash, payload=internal_payload)
     inserted_public = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="public", source_hash=public_hash, payload=public_payload)
 
+    # 5.5) Downstream: enqueue emotion structure analysis (standard) for latest public snapshot.
+    #      Best-effort and safe to call multiple times because job_key coalesces.
+    try:
+        if callable(enqueue_job):
+            latest_public = await _fetch_latest_snapshot_meta(uid, scope=sc, snapshot_type="public")
+            latest_public_hash = str((latest_public or {}).get("source_hash") or "").strip()
+            latest_public_snapshot_id = str((latest_public or {}).get("id") or "").strip()
+            if latest_public_hash:
+                await enqueue_job(
+                    job_key=f"analysis_emotion_structure_standard:{uid}:{sc}:{latest_public_hash}",
+                    job_type="analyze_emotion_structure_standard_v1",
+                    user_id=uid,
+                    payload={
+                        "trigger": "material_snapshot_emotion_period",
+                        "scope": sc,
+                        "source_hash": latest_public_hash,
+                        "snapshot_id": latest_public_snapshot_id,
+                        "requested_at": _now_iso_z(),
+                    },
+                    priority=18,
+                )
+    except Exception as exc:
+        logger.error("Failed to enqueue analyze_emotion_structure_standard_v1: %s", exc)
+
     logger.info(
         "emotion_period snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s",
         uid,
@@ -1074,6 +1150,39 @@ async def generate_and_store_material_snapshots(
     # 5) Store snapshots
     inserted_internal = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="internal", source_hash=internal_hash, payload=internal_payload)
     inserted_public = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="public", source_hash=public_hash, payload=public_payload)
+
+    # 5.5) Downstream: when global snapshot is refreshed, enqueue latest weekly/monthly emotion_period snapshots.
+    #      Best-effort and safe to call repeatedly because job_key coalesces.
+    try:
+        if sc == SNAPSHOT_SCOPE_DEFAULT and callable(enqueue_job):
+            requested_at = _now_iso_z()
+            weekly_scope = _latest_weekly_scope_for_now()
+            monthly_scope = _latest_monthly_scope_for_now()
+
+            await enqueue_job(
+                job_key=f"snapshot_generate_v1:{uid}:{weekly_scope}",
+                job_type="snapshot_generate_v1",
+                user_id=uid,
+                payload={
+                    "scope": weekly_scope,
+                    "trigger": "material_snapshot_global",
+                    "requested_at": requested_at,
+                },
+                priority=12,
+            )
+            await enqueue_job(
+                job_key=f"snapshot_generate_v1:{uid}:{monthly_scope}",
+                job_type="snapshot_generate_v1",
+                user_id=uid,
+                payload={
+                    "scope": monthly_scope,
+                    "trigger": "material_snapshot_global",
+                    "requested_at": requested_at,
+                },
+                priority=12,
+            )
+    except Exception as exc:
+        logger.error("Failed to enqueue downstream emotion_period snapshots: %s", exc)
 
     logger.info(
         "material_snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s",
