@@ -2104,13 +2104,9 @@ def register_myweb_report_routes(app: FastAPI) -> None:
             return prev_month_start_utc <= pe < next_month_start_utc
 
         def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
-            out = dict(cj or {})
-            if tier_str == "free":
-                for k in ("astorText", "astorMeta", "astorError", "structuralReport", "standardReport", "standard_report", "standardText", "standard_text", "analysisMeta"):
-                    out.pop(k, None)
-            elif tier_str == "plus":
-                out.pop("structuralReport", None)
-            return out
+            # 生成物は全ユーザー分を保持し、表示制御は RN / クライアント側で行う。
+            # そのため、ready API では content_json を tier によって削らない。
+            return dict(cj or {})
 
         lim = max(1, min(int(limit or 10), 50))
         # Fetch more than requested to allow filtering by status/retention.
