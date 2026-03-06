@@ -351,6 +351,28 @@ def _render_analysis_standard_text(
     else:
         summary_title = "【今月の構造サマリー】"
 
+    if not structural_comment:
+        if report_type == "weekly":
+            ws = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+            try:
+                n_events = int(ws.get("n_events") or 0)
+            except Exception:
+                n_events = 0
+            if n_events > 0:
+                structural_comment = f"この期間は {n_events} 件の感情入力が構造分析に使われました。数値とグラフから、感情の傾向と推移を観測できます。"
+        elif report_type == "monthly":
+            mr = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
+            weeks = mr.get("weeks") if isinstance(mr.get("weeks"), list) else []
+            if weeks:
+                structural_comment = "この期間は週ごとの構造変化をまとめています。数値とグラフから、感情の傾向と推移を観測できます。"
+        elif report_type == "daily":
+            try:
+                n_entries = int(payload.get("entry_count") or 0)
+            except Exception:
+                n_entries = 0
+            if n_entries > 0:
+                structural_comment = f"この日は {n_entries} 件の感情入力が構造分析に使われました。時間帯ごとの変化を中心に観測できます。"
+
     lines: List[str] = []
     lines.append(title)
     rng = _range_line_jst(period_start_iso, period_end_iso)
@@ -393,6 +415,93 @@ def _render_analysis_standard_text(
     return "\n".join(lines).strip()
 
 
+def _build_standard_report_payload(
+    *,
+    report_type: str,
+    analysis_payload: Dict[str, Any],
+    content_text: str,
+) -> Dict[str, Any]:
+    payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    narrative = payload.get("narrative") if isinstance(payload.get("narrative"), dict) else {}
+
+    standard_report: Dict[str, Any] = {
+        "version": "myweb.standard.v2" if payload else "myweb.standard.v1",
+        "displayMode": "graph_text",
+        "reportType": str(report_type or ""),
+        "contentText": str(content_text or ""),
+    }
+
+    if not payload:
+        return standard_report
+
+    summary = {
+        "structuralComment": str(narrative.get("structural_comment") or "").strip() or None,
+        "gentleComment": str(narrative.get("gentle_comment") or "").strip() or None,
+        "nextPoints": narrative.get("next_points") if isinstance(narrative.get("next_points"), list) else [],
+        "evidence": (narrative.get("evidence") if isinstance(narrative.get("evidence"), dict) else {}),
+    }
+
+    metrics: Dict[str, Any] = {}
+    features: Dict[str, Any] = {}
+    timeline: Any = []
+
+    if report_type == "daily":
+        try:
+            entry_count = int(payload.get("entry_count") or 0)
+        except Exception:
+            entry_count = 0
+        metrics = {
+            "entryCount": entry_count,
+        }
+        features = {
+            "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
+            "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
+        }
+        timeline = payload.get("timeline") if isinstance(payload.get("timeline"), list) else []
+    elif report_type == "weekly":
+        ws = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+        metrics = {
+            "eventCount": ws.get("n_events"),
+            "alternationRate": ws.get("alternation_rate"),
+            "entropy": ws.get("entropy"),
+            "giniSimpson": ws.get("gini_simpson"),
+            "share": ws.get("share") if isinstance(ws.get("share"), dict) else {},
+            "counts": ws.get("counts") if isinstance(ws.get("counts"), dict) else {},
+            "weightedCounts": ws.get("wcounts") if isinstance(ws.get("wcounts"), dict) else {},
+        }
+        features = {
+            "runStats": ws.get("run_stats") if isinstance(ws.get("run_stats"), dict) else {},
+            "intensity": ws.get("intensity") if isinstance(ws.get("intensity"), dict) else {},
+            "motifs": ws.get("motifs") if isinstance(ws.get("motifs"), list) else [],
+            "motifCounts": ws.get("motif_counts") if isinstance(ws.get("motif_counts"), dict) else {},
+            "center2d": ws.get("center2d") if isinstance(ws.get("center2d"), dict) else {},
+            "keywords": ws.get("keywords") if isinstance(ws.get("keywords"), list) else [],
+            "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
+            "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
+        }
+        timeline = ws.get("daily_share") if isinstance(ws.get("daily_share"), list) else []
+    elif report_type == "monthly":
+        mr = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
+        metrics = {
+            "shareTrend": mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else [],
+            "alternationTrend": mr.get("alternation_trend") if isinstance(mr.get("alternation_trend"), list) else [],
+            "intensityStdTrend": mr.get("intensity_std_trend") if isinstance(mr.get("intensity_std_trend"), list) else [],
+            "centerShift": mr.get("center_shift") if isinstance(mr.get("center_shift"), dict) else {},
+        }
+        features = {
+            "motifTrend": mr.get("motif_trend") if isinstance(mr.get("motif_trend"), list) else [],
+            "weeks": mr.get("weeks") if isinstance(mr.get("weeks"), list) else [],
+            "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
+            "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
+        }
+        timeline = mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else []
+
+    standard_report["metrics"] = metrics
+    standard_report["features"] = features
+    standard_report["timeline"] = timeline
+    standard_report["summary"] = summary
+    standard_report["analysisPayload"] = payload
+    return standard_report
 def _parse_iso_utc(iso: str) -> Optional[datetime]:
     s = str(iso or "").strip()
     if not s:
@@ -1614,10 +1723,11 @@ async def _generate_and_save_from_snapshot(
     # --- MyWeb report v3 structure (Light / Standard / Structural) ---
     try:
         content_json.setdefault("reportVersion", "myweb.report.v3")
-        content_json["standardReport"] = {
-            "version": "myweb.standard.v2" if analysis_payload else "myweb.standard.v1",
-            "contentText": standard_text,
-        }
+        content_json["standardReport"] = _build_standard_report_payload(
+            report_type=report_type,
+            analysis_payload=analysis_payload,
+            content_text=standard_text,
+        )
         if astor_report and is_premium:
             content_json["structuralReport"] = astor_report
     except Exception:
