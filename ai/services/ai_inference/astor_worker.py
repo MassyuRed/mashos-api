@@ -808,62 +808,68 @@ async def _worker_loop() -> None:
                             internal = (snap_res or {}).get("internal") or {}
                             public = (snap_res or {}).get("public") or {}
                             scope = str((claimed.payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
-                            if bool(internal.get("inserted")) or bool(public.get("inserted")):
-                                # Global snapshot committed -> auto-enqueue emotion_period snapshots (weekly/monthly).
-                                # emotion_period snapshot committed -> enqueue snapshot-driven MyWeb generation (v2).
-                                if scope == SNAPSHOT_SCOPE_DEFAULT:
+                            # NOTE:
+                            # Downstream jobs must be enqueued even when the snapshot row was not newly inserted.
+                            # Otherwise, after deploying a new analysis/report pipeline, existing unchanged snapshots
+                            # would never trigger downstream processing.
+                            # Job coalescing is handled by astor_job_queue via job_key.
+                            if scope == SNAPSHOT_SCOPE_DEFAULT:
 
-                                    # Auto-enqueue emotion_period snapshots (weekly/monthly) for future snapshot-driven analysis.
+                                # Auto-enqueue emotion_period snapshots (weekly/monthly) for future snapshot-driven analysis.
+                                # We intentionally keep daily out of this branch to preserve the existing daily
+                                # distribution timing path.
+                                try:
+                                    now_utc = datetime.now(timezone.utc)
+                                    weekly_target = _myweb_build_target_period("weekly", now_utc)
+                                    weekly_dist_jst = weekly_target.dist_utc.astimezone(JST)
+                                    weekly_scope = f"emotion_weekly:{weekly_dist_jst.year:04d}-{weekly_dist_jst.month:02d}-{weekly_dist_jst.day:02d}"
+
+                                    monthly_target = _myweb_build_target_period("monthly", now_utc)
+                                    monthly_end_jst = monthly_target.period_end_utc.astimezone(JST)
+                                    monthly_scope = f"emotion_monthly:{monthly_end_jst.year:04d}-{monthly_end_jst.month:02d}"
+
+                                    req_at = (claimed.payload or {}).get("requested_at")
+                                    await enqueue_job(
+                                        job_key=f"snapshot_generate_v1:{claimed.user_id}:{weekly_scope}",
+                                        job_type="snapshot_generate_v1",
+                                        user_id=claimed.user_id,
+                                        payload={"scope": weekly_scope, "trigger": "auto_emotion_period", "requested_at": req_at},
+                                        priority=12,
+                                    )
+                                    await enqueue_job(
+                                        job_key=f"snapshot_generate_v1:{claimed.user_id}:{monthly_scope}",
+                                        job_type="snapshot_generate_v1",
+                                        user_id=claimed.user_id,
+                                        payload={"scope": monthly_scope, "trigger": "auto_emotion_period", "requested_at": req_at},
+                                        priority=12,
+                                    )
+                                except Exception as exc:
+                                    logger.error("Emotion period snapshot enqueue failed: %s", exc)
+                            else:
+                                # emotion_period snapshot committed (or already existed) -> enqueue emotion structure analysis.
+                                if (
+                                    scope.startswith("emotion_daily:")
+                                    or scope.startswith("emotion_weekly:")
+                                    or scope.startswith("emotion_monthly:")
+                                ):
                                     try:
-                                        now_utc = datetime.now(timezone.utc)
-                                        weekly_target = _myweb_build_target_period("weekly", now_utc)
-                                        weekly_dist_jst = weekly_target.dist_utc.astimezone(JST)
-                                        weekly_scope = f"emotion_weekly:{weekly_dist_jst.year:04d}-{weekly_dist_jst.month:02d}-{weekly_dist_jst.day:02d}"
-
-                                        monthly_target = _myweb_build_target_period("monthly", now_utc)
-                                        monthly_end_jst = monthly_target.period_end_utc.astimezone(JST)
-                                        monthly_scope = f"emotion_monthly:{monthly_end_jst.year:04d}-{monthly_end_jst.month:02d}"
-
-                                        req_at = (claimed.payload or {}).get("requested_at")
+                                        pub_hash = str(public.get("source_hash") or "")
+                                        if not pub_hash:
+                                            raise RuntimeError("public source_hash missing for emotion_period scope")
                                         await enqueue_job(
-                                            job_key=f"snapshot_generate_v1:{claimed.user_id}:{weekly_scope}",
-                                            job_type="snapshot_generate_v1",
+                                            job_key=f"analysis_emotion_structure_standard:{claimed.user_id}:{scope}:{pub_hash}",
+                                            job_type="analyze_emotion_structure_standard_v1",
                                             user_id=claimed.user_id,
-                                            payload={"scope": weekly_scope, "trigger": "auto_emotion_period", "requested_at": req_at},
-                                            priority=12,
-                                        )
-                                        await enqueue_job(
-                                            job_key=f"snapshot_generate_v1:{claimed.user_id}:{monthly_scope}",
-                                            job_type="snapshot_generate_v1",
-                                            user_id=claimed.user_id,
-                                            payload={"scope": monthly_scope, "trigger": "auto_emotion_period", "requested_at": req_at},
-                                            priority=12,
+                                            payload={
+                                                "trigger": "snapshot_generate_v1",
+                                                "requested_at": (claimed.payload or {}).get("requested_at"),
+                                                "scope": scope,
+                                                "source_hash": pub_hash,
+                                            },
+                                            priority=18,
                                         )
                                     except Exception as exc:
-                                        logger.error("Emotion period snapshot enqueue failed: %s", exc)
-                                else:
-                                    # emotion_period snapshot committed -> enqueue emotion structure analysis (standard) and MyWeb generation (v2)
-                                    if (
-                                        scope.startswith("emotion_daily:")
-                                        or scope.startswith("emotion_weekly:")
-                                        or scope.startswith("emotion_monthly:")
-                                    ):
-                                        try:
-                                            pub_hash = str(public.get("source_hash") or "")
-                                            await enqueue_job(
-                                                job_key=f"analysis_emotion_structure_standard:{claimed.user_id}:{scope}:{pub_hash}",
-                                                job_type="analyze_emotion_structure_standard_v1",
-                                                user_id=claimed.user_id,
-                                                payload={
-                                                    "trigger": "snapshot_generate_v1",
-                                                    "requested_at": (claimed.payload or {}).get("requested_at"),
-                                                    "scope": scope,
-                                                    "source_hash": pub_hash,
-                                                },
-                                                priority=18,
-                                            )
-                                        except Exception as exc:
-                                            logger.error("Downstream enqueue v2 failed: %s", exc)
+                                        logger.error("Downstream analysis enqueue failed: %s", exc)
                         except Exception as exc:
                             logger.error("Downstream enqueue failed: %s", exc)
                 logger.info("job done. key=%s type=%s user=%s res=%s", claimed.job_key, claimed.job_type, claimed.user_id, snap_res)
