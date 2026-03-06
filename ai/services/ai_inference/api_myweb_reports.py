@@ -844,7 +844,7 @@ def _render_standard_text_from_summary(
         lines.append("")
 
     lines.append("【注記】")
-    lines.append("このレポートは、analysis_engine と snapshot の観測結果をもとにまとめたものです。診断や断定を目的としたものではありません。")
+    lines.append("このレポートは、入力から見える変化や傾向をまとめた『観測』であり、診断や断定を目的としたものではありません。")
     return "\n".join(lines).strip()
 
 
@@ -931,7 +931,7 @@ def _render_analysis_standard_text(
         lines.append("")
 
     lines.append("【注記】")
-    lines.append("このレポートは、analysis_engine による構造観測をもとにまとめたものです。診断や断定を目的としたものではありません。")
+    lines.append("このレポートは、入力から見える変化や傾向をまとめた『観測』であり、診断や断定を目的としたものではありません。")
     return "\n".join(lines).strip()
 
 
@@ -1961,7 +1961,7 @@ def _render_simple_report_text(
     lines.append(f"中心に出ている傾向: {_dominant_label(metrics)}")
     lines.append("")
     if report_type in ("weekly", "monthly") and astor_text:
-        lines.append("【ASTOR 構造洞察（補足）】")
+        lines.append("【構造洞察（補足）】")
         lines.append(astor_text.strip())
     return "\n".join(lines).strip()
 

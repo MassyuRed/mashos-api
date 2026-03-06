@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional, Tuple, Iterable
 import math, statistics, collections
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from .models import EmotionEntry, WeeklySnapshot, Narrative, LABELS, BaselineProfile
 
 # Geometry for 2D center (regular pentagon)
@@ -34,6 +34,49 @@ STOPWORDS = set(["する","ある","こと","それ","これ","あれ","今日",
 # "calm" so the downstream API / RN can render Standard without extra mapping.
 TIME_BUCKET_ORDER = ("0-6", "6-12", "12-18", "18-24")
 TIME_BUCKET_LABELS = ("joy", "sadness", "anxiety", "anger", "calm")
+
+JST = timezone(timedelta(hours=9))
+
+
+def _attach_time_bucket_aliases(snapshot: WeeklySnapshot, time_buckets: List[Dict[str, Any]]) -> WeeklySnapshot:
+    """Keep weekly snapshot serialization compatible even if models.py is not updated yet.
+
+    - Always expose both `time_buckets` and `timeBuckets` in `to_dict()`
+    - Attach the attribute on the instance when possible
+    """
+    try:
+        setattr(snapshot, "time_buckets", time_buckets)
+    except Exception:
+        pass
+
+    def _to_dict_with_aliases() -> Dict[str, Any]:
+        base = {}
+        try:
+            from dataclasses import asdict
+            base = asdict(snapshot)
+        except Exception:
+            try:
+                base = dict(vars(snapshot))
+            except Exception:
+                base = {}
+        base["time_buckets"] = time_buckets
+        base["timeBuckets"] = time_buckets
+        return base
+
+    try:
+        setattr(snapshot, "to_dict", _to_dict_with_aliases)
+    except Exception:
+        pass
+    return snapshot
+
+
+def _make_weekly_snapshot(*, time_buckets: List[Dict[str, Any]], **kwargs: Any) -> WeeklySnapshot:
+    """Construct WeeklySnapshot with backward compatibility for older models.py."""
+    try:
+        snapshot = WeeklySnapshot(time_buckets=time_buckets, **kwargs)
+    except TypeError:
+        snapshot = WeeklySnapshot(**kwargs)
+    return _attach_time_bucket_aliases(snapshot, time_buckets)
 
 
 def _safe_div(a: float, b: float) -> float:
@@ -95,7 +138,7 @@ def _parse_iso_datetime(iso_str: str) -> Optional[datetime]:
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        return dt.astimezone(JST)
     except Exception:
         return None
 
@@ -220,7 +263,7 @@ def build_weekly_features(entries: List[EmotionEntry], period: str) -> WeeklySna
     N = len(entries)
     time_buckets = build_time_bucket_rows(entries)
     if N == 0:
-        return WeeklySnapshot(
+        return _make_weekly_snapshot(
             period=period,
             n_events=0,
             counts=counts,
@@ -298,7 +341,7 @@ def build_weekly_features(entries: List[EmotionEntry], period: str) -> WeeklySna
 
     keywords = _keywords_from_memo(entries, top_k=5)
 
-    return WeeklySnapshot(
+    return _make_weekly_snapshot(
         period=period,
         n_events=N,
         counts=counts,
