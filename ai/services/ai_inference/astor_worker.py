@@ -69,18 +69,19 @@ from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # t
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
 
 # analysis_engine (sibling package under ai/services/analysis_engine)
+# NOTE:
+# Render では package export (__init__.py) が古い/未反映でも動くように、
+# まず sibling package の parent を sys.path へ追加し、submodule 直 import を優先する。
+_services_root = Path(__file__).resolve().parent.parent
+if str(_services_root) not in sys.path:
+    sys.path.insert(0, str(_services_root))
+
 try:
-    from analysis_engine import (
-        build_weekly_features,
-        narrate_weekly,
-        assemble_monthly,
-        narrate_monthly,
-        narrate_daily,
-    )
+    from analysis_engine.weekly import build_weekly_features, narrate_weekly  # type: ignore
+    from analysis_engine.monthly import assemble_monthly, narrate_monthly  # type: ignore
+    from analysis_engine.daily import narrate_daily  # type: ignore
 except Exception:
-    _services_root = Path(__file__).resolve().parent.parent
-    if str(_services_root) not in sys.path:
-        sys.path.insert(0, str(_services_root))
+    # Fallback: package __init__ export が正しく入っている環境では従来 import も許可
     from analysis_engine import (  # type: ignore
         build_weekly_features,
         narrate_weekly,
