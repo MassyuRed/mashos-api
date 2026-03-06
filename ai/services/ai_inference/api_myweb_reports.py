@@ -105,6 +105,38 @@ JP_TO_KEY: Dict[str, str] = {
 EMOTION_KEYS: Tuple[str, ...] = ("joy", "sadness", "anxiety", "anger", "calm")
 KEY_TO_JP: Dict[str, str] = {v: k for k, v in JP_TO_KEY.items()}
 
+TIME_BUCKET_ORDER: Tuple[str, ...] = ("0-6", "6-12", "12-18", "18-24")
+TIME_BUCKET_LABELS: Dict[str, str] = {
+    "0-6": "0-6",
+    "6-12": "6-12",
+    "12-18": "12-18",
+    "18-24": "18-24",
+}
+_TIME_BUCKET_ALIASES: Dict[str, str] = {
+    "0-6": "0-6",
+    "00-06": "0-6",
+    "00:00-06:00": "0-6",
+    "0_6": "0-6",
+    "night": "0-6",
+    "late_night": "0-6",
+    "overnight": "0-6",
+    "6-12": "6-12",
+    "06-12": "6-12",
+    "06:00-12:00": "6-12",
+    "6_12": "6-12",
+    "morning": "6-12",
+    "12-18": "12-18",
+    "12:00-18:00": "12-18",
+    "12_18": "12-18",
+    "afternoon": "12-18",
+    "daytime": "12-18",
+    "18-24": "18-24",
+    "18:00-24:00": "18-24",
+    "18_24": "18-24",
+    "evening": "18-24",
+    "night_evening": "18-24",
+}
+
 
 class MyWebEnsureRequest(BaseModel):
     types: Optional[List[Literal["daily", "weekly", "monthly"]]] = Field(
@@ -327,6 +359,494 @@ def _range_line_jst(period_start_iso: str, period_end_iso: str) -> Optional[str]
     except Exception:
         return None
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(round(float(value)))
+    except Exception:
+        return int(default)
+
+
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _normalize_time_bucket_key(value: Any) -> Optional[str]:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    return _TIME_BUCKET_ALIASES.get(s, _TIME_BUCKET_ALIASES.get(s.lower()))
+
+
+def _coerce_emotion_map(raw: Any) -> Dict[str, int]:
+    out = {k: 0 for k in EMOTION_KEYS}
+    if not isinstance(raw, dict):
+        return out
+    for k in EMOTION_KEYS:
+        out[k] = _coerce_int(raw.get(k), 0)
+    return out
+
+
+def _dominant_key_from_map(raw: Any) -> Optional[str]:
+    m = _coerce_emotion_map(raw)
+    best_key: Optional[str] = None
+    best_value = 0
+    for k in EMOTION_KEYS:
+        v = _coerce_int(m.get(k), 0)
+        if v > best_value:
+            best_value = v
+            best_key = k if v > 0 else None
+    return best_key
+
+
+def _first_non_empty_emotion_map(*raw_maps: Any) -> Dict[str, int]:
+    for raw in raw_maps:
+        if not isinstance(raw, dict):
+            continue
+        m = _coerce_emotion_map(raw)
+        if sum(m.values()) > 0:
+            return m
+    return {}
+
+
+def _pick_top_share_items(share_map: Dict[str, int], *, limit: int = 2) -> List[Tuple[str, int]]:
+    if not isinstance(share_map, dict):
+        return []
+    items: List[Tuple[str, int]] = []
+    for k in EMOTION_KEYS:
+        try:
+            v = int(share_map.get(k, 0) or 0)
+        except Exception:
+            v = 0
+        if v > 0:
+            items.append((k, v))
+    items.sort(key=lambda x: x[1], reverse=True)
+    return items[: max(1, int(limit or 1))]
+
+
+def _default_time_bucket_row(bucket_key: str) -> Dict[str, Any]:
+    return {
+        "bucket": bucket_key,
+        "label": TIME_BUCKET_LABELS.get(bucket_key, bucket_key),
+        "inputCount": 0,
+        "weightedTotal": 0,
+        "counts": {k: 0 for k in EMOTION_KEYS},
+        "weightedCounts": {k: 0 for k in EMOTION_KEYS},
+        "sharePct": {k: 0 for k in EMOTION_KEYS},
+        "dominantKey": None,
+    }
+
+
+def _normalize_time_bucket_rows(raw: Any) -> List[Dict[str, Any]]:
+    if raw is None:
+        return []
+
+    items: List[Tuple[str, Any]] = []
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            items.append((str(key), value))
+    elif isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                key = str(entry.get("bucket") or entry.get("key") or entry.get("label") or "")
+                items.append((key, entry))
+    else:
+        return []
+
+    bucket_map: Dict[str, Dict[str, Any]] = {}
+    for raw_key, value in items:
+        bucket_key = _normalize_time_bucket_key(raw_key)
+        if bucket_key is None and isinstance(value, dict):
+            bucket_key = _normalize_time_bucket_key(
+                value.get("bucket") or value.get("key") or value.get("label")
+            )
+        if bucket_key is None:
+            continue
+
+        row = _default_time_bucket_row(bucket_key)
+        data = value if isinstance(value, dict) else {}
+
+        counts = _coerce_emotion_map(
+            data.get("counts")
+            or data.get("rawCounts")
+            or data.get("inputCounts")
+            or data.get("input_counts")
+        )
+        weighted_counts = _coerce_emotion_map(
+            data.get("weightedCounts")
+            or data.get("weighted_counts")
+            or data.get("weights")
+            or data.get("emotionWeights")
+            or data.get("weighted")
+        )
+        share_pct = _coerce_emotion_map(data.get("sharePct") or data.get("share_pct"))
+
+        input_count = _coerce_int(
+            data.get("inputCount")
+            or data.get("input_count")
+            or data.get("count")
+            or data.get("events")
+            or 0
+        )
+        weighted_total = _coerce_int(
+            data.get("weightedTotal") or data.get("weighted_total") or 0
+        )
+        if weighted_total <= 0:
+            weighted_total = sum(weighted_counts.values())
+        if input_count <= 0:
+            input_count = sum(counts.values())
+
+        if not any(share_pct.values()) and weighted_total > 0:
+            share_pct = {
+                k: int(round((_coerce_int(weighted_counts.get(k), 0) / weighted_total) * 100))
+                for k in EMOTION_KEYS
+            }
+
+        dominant_key = str(
+            data.get("dominantKey")
+            or data.get("dominant_key")
+            or data.get("dominant")
+            or ""
+        ).strip() or _dominant_key_from_map(weighted_counts)
+
+        row.update(
+            {
+                "inputCount": input_count,
+                "weightedTotal": weighted_total,
+                "counts": counts,
+                "weightedCounts": weighted_counts,
+                "sharePct": share_pct,
+                "dominantKey": dominant_key or None,
+            }
+        )
+        bucket_map[bucket_key] = row
+
+    if not bucket_map:
+        return []
+
+    return [bucket_map.get(bucket_key, _default_time_bucket_row(bucket_key)) for bucket_key in TIME_BUCKET_ORDER]
+
+
+def _extract_time_bucket_rows(*, snapshot_views: Dict[str, Any], analysis_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    views = snapshot_views if isinstance(snapshot_views, dict) else {}
+    payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    weekly_snapshot = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+    monthly_report = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
+
+    candidates = [
+        views.get("timeBuckets"),
+        views.get("time_buckets"),
+        payload.get("timeBuckets"),
+        payload.get("time_buckets"),
+        weekly_snapshot.get("timeBuckets"),
+        weekly_snapshot.get("time_buckets"),
+        monthly_report.get("timeBuckets"),
+        monthly_report.get("time_buckets"),
+    ]
+    for candidate in candidates:
+        rows = _normalize_time_bucket_rows(candidate)
+        if rows:
+            return rows
+    return []
+
+
+def _find_peak_time_bucket(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    best: Optional[Dict[str, Any]] = None
+    best_count = -1
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        count = _coerce_int(row.get("inputCount"), 0)
+        if count > best_count:
+            best = row
+            best_count = count
+    if best_count <= 0:
+        return None
+    return best
+
+
+def _build_standard_summary_object(
+    *,
+    report_type: str,
+    analysis_payload: Dict[str, Any],
+    snapshot_summary: Dict[str, Any],
+    snapshot_views: Dict[str, Any],
+    light_text: str,
+) -> Dict[str, Any]:
+    payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    views = snapshot_views if isinstance(snapshot_views, dict) else {}
+    snap_summary = snapshot_summary if isinstance(snapshot_summary, dict) else {}
+
+    movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
+    day = views.get("day") if isinstance(views.get("day"), dict) else {}
+    weekly_snapshot = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+    monthly_report = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
+    time_buckets = _extract_time_bucket_rows(snapshot_views=views, analysis_payload=payload)
+    peak_bucket = _find_peak_time_bucket(time_buckets)
+
+    evidence_items: List[Dict[str, str]] = []
+    next_points: List[str] = []
+    structural_comment = ""
+    gentle_comment = ""
+
+    if report_type == "daily":
+        metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        share_map = _first_non_empty_emotion_map(metrics.get("sharePct"))
+        top_items = _pick_top_share_items(share_map, limit=2)
+        dominant_key = str(metrics.get("dominantKey") or "").strip() or (top_items[0][0] if top_items else None)
+        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+        total_all = _coerce_int(metrics.get("totalAll"), 0)
+        movement_key = str(movement.get("key") or "").strip()
+
+        if total_all > 0:
+            structural_comment = f"昨日は「{dominant_label}」が中心に現れていました。"
+            if peak_bucket and peak_bucket.get("inputCount"):
+                peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+                peak_dom = KEY_TO_JP.get(str(peak_bucket.get("dominantKey") or ""), str(peak_bucket.get("dominantKey") or ""))
+                if peak_dom and peak_dom != "":
+                    structural_comment += f"入力は {peak_label} に集まりやすく、{peak_label} では「{peak_dom}」の比重が高めでした。"
+            if movement_key == "swing":
+                structural_comment += "前日から中心感情の切り替わりも見られます。"
+        else:
+            structural_comment = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
+
+        if peak_bucket and peak_bucket.get("inputCount"):
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            gentle_comment = f"{peak_label} の前後で何を考えていたかを短く振り返ると、感情の流れが見えやすくなります。"
+            next_points.append(f"{peak_label} の入力前後にあった出来事や受け止め方を一言残してみてください。")
+        elif dominant_key:
+            gentle_comment = f"「{dominant_label}」が強く出た場面の共通点を一言で残すと、次の比較がしやすくなります。"
+            next_points.append(f"「{dominant_label}」が強く出た時間帯の共通点を探してみてください。")
+
+        if dominant_key and top_items:
+            evidence_items.append({"text": f"昨日は「{dominant_label}」の比重が最も高めでした。"})
+        if peak_bucket and peak_bucket.get("inputCount"):
+            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
+        if movement_key:
+            evidence_items.append({"text": f"前日比では「{_render_daily_motion_line(movement)}」の動きが見られます。"})
+
+    elif report_type == "weekly":
+        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        share_map = _first_non_empty_emotion_map(weekly_snapshot.get("share"), snapshot_metrics.get("sharePct"))
+        weighted_counts = _first_non_empty_emotion_map(weekly_snapshot.get("wcounts"), snapshot_metrics.get("totals"))
+        top_items = _pick_top_share_items(share_map, limit=2)
+        dominant_key = _dominant_key_from_map(weighted_counts) or (top_items[0][0] if top_items else None)
+        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+        n_events = _coerce_int(weekly_snapshot.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
+        alternation_rate = _coerce_float(weekly_snapshot.get("alternation_rate"), 0.0)
+
+        if dominant_key:
+            structural_comment = f"今週は「{dominant_label}」が中心に現れていました。"
+        elif n_events > 0:
+            structural_comment = f"今週は {n_events} 件の入力をもとに、感情の傾向を観測できます。"
+        else:
+            structural_comment = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
+
+        if peak_bucket and peak_bucket.get("inputCount"):
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            peak_dom_key = str(peak_bucket.get("dominantKey") or "").strip() or None
+            peak_dom_label = KEY_TO_JP.get(peak_dom_key, peak_dom_key) if peak_dom_key else None
+            structural_comment += f" 入力は {peak_label} に集まりやすく"
+            if peak_dom_label:
+                structural_comment += f"、{peak_label} では「{peak_dom_label}」の比重が高めでした。"
+            else:
+                structural_comment += "、時間帯ごとの偏りも見られます。"
+
+        if alternation_rate >= 0.55:
+            structural_comment += " 感情の切り替わりは比較的多めでした。"
+        elif 0 < alternation_rate <= 0.25:
+            structural_comment += " 感情の切り替わりは比較的穏やかでした。"
+
+        if peak_bucket and peak_bucket.get("inputCount"):
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            gentle_comment = f"{peak_label} の前後で何を考えていたかを短く振り返ると、週の流れが見えやすくなります。"
+            next_points.append(f"{peak_label} に入力が集まる日の共通点を一言で残してみてください。")
+        elif dominant_key:
+            gentle_comment = f"「{dominant_label}」が強く出た日を見返すと、今週の感情の流れをつかみやすくなります。"
+            next_points.append(f"「{dominant_label}」が強く出た日の前後を振り返ってみてください。")
+
+        if dominant_key:
+            evidence_items.append({"text": f"全体では「{dominant_label}」の比重が最も高めでした。"})
+        if len(top_items) >= 2:
+            second_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0])
+            evidence_items.append({"text": f"次に目立ったのは「{second_label}」で、全体の約{top_items[1][1]}%でした。"})
+        if peak_bucket and peak_bucket.get("inputCount"):
+            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
+        if alternation_rate > 0:
+            evidence_items.append({"text": f"感情の切り替わり率は {alternation_rate:.2f} でした。"})
+
+    else:
+        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        weeks = views.get("weeks") if isinstance(views.get("weeks"), list) else []
+        share_map = _first_non_empty_emotion_map(snapshot_metrics.get("sharePct"))
+        totals_map = _first_non_empty_emotion_map(snapshot_metrics.get("totals"))
+        dominant_key = _dominant_key_from_map(totals_map) or _dominant_key_from_map(share_map)
+        dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+
+        peak_week = None
+        peak_week_total = -1
+        week_dominants: List[str] = []
+        calm_first_half = 0
+        calm_second_half = 0
+        for idx, week in enumerate(weeks or []):
+            if not isinstance(week, dict):
+                continue
+            total = _coerce_int(week.get("total"), 0)
+            if total <= 0:
+                total = sum(_coerce_int(week.get(k), 0) for k in EMOTION_KEYS)
+            if total > peak_week_total:
+                peak_week_total = total
+                peak_week = week
+            week_dom_key = _dominant_key_from_map(week)
+            week_dominants.append(str(week_dom_key or ""))
+            if idx < 2:
+                calm_first_half += _coerce_int(week.get("calm"), 0)
+            else:
+                calm_second_half += _coerce_int(week.get("calm"), 0)
+
+        if dominant_key:
+            structural_comment = f"今月は「{dominant_label}」が月全体の中心でした。"
+        else:
+            structural_comment = "今月は週ごとの変化を見ながら、月全体の傾向を観測できます。"
+
+        if peak_week and peak_week_total > 0:
+            peak_week_label = str(peak_week.get("label") or "ある週")
+            peak_week_dom = KEY_TO_JP.get(_dominant_key_from_map(peak_week), _dominant_key_from_map(peak_week))
+            if peak_week_dom:
+                structural_comment += f" {peak_week_label} は「{peak_week_dom}」の比重が高く、動きが強めの週でした。"
+            else:
+                structural_comment += f" {peak_week_label} に動きが集まりやすい月でした。"
+
+        if peak_bucket and peak_bucket.get("inputCount"):
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            structural_comment += f" 時間帯では {peak_label} の入力が最も多めでした。"
+
+        if calm_second_half > calm_first_half and calm_second_half > 0:
+            structural_comment += " 後半にかけて「平穏」が増え、整え直しの動きも見られます。"
+
+        if dominant_key:
+            gentle_comment = f"週ごとの違いと時間帯の偏りを見比べると、「{dominant_label}」がどの場面で強く出やすいかを追いやすくなります。"
+        else:
+            gentle_comment = "週ごとの変化と時間帯の偏りを並べて見ると、月の流れがつかみやすくなります。"
+
+        if peak_week and peak_week_total > 0:
+            next_points.append(f"{peak_week.get('label') or '動きが強い週'} の前後で、気持ちの切り替わりが起きた場面を振り返ってみてください。")
+        if peak_bucket and peak_bucket.get("inputCount"):
+            next_points.append(f"{peak_bucket.get('label') or peak_bucket.get('bucket')} の入力前後に、どんな受け止め方が多いかを見比べてみてください。")
+
+        if dominant_key:
+            evidence_items.append({"text": f"月全体では「{dominant_label}」の比重が最も高めでした。"})
+        if peak_week and peak_week_total > 0:
+            evidence_items.append({"text": f"{peak_week.get('label') or 'ある週'} は合計 {peak_week_total} と、今月で最も動きが強めでした。"})
+        if peak_bucket and peak_bucket.get("inputCount"):
+            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
+        if calm_second_half > calm_first_half and calm_second_half > 0:
+            evidence_items.append({"text": "後半にかけて『平穏』の比重が増えていました。"})
+
+    return {
+        "structuralComment": structural_comment.strip() or None,
+        "gentleComment": gentle_comment.strip() or None,
+        "nextPoints": [str(x).strip() for x in next_points if str(x).strip()][:4],
+        "evidence": {
+            "items": [item for item in evidence_items if isinstance(item, dict) and str(item.get("text") or "").strip()][:4]
+        },
+        "compositionMode": "additive" if report_type == "daily" else "replace",
+        "source": "api_hybrid_summary",
+    }
+
+
+def _render_standard_text_from_summary(
+    *,
+    title: str,
+    report_type: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    summary: Dict[str, Any],
+    light_text: str = "",
+) -> str:
+    structural_comment = str((summary or {}).get("structuralComment") or "").strip()
+    gentle_comment = str((summary or {}).get("gentleComment") or "").strip()
+    next_points = (summary or {}).get("nextPoints") if isinstance((summary or {}).get("nextPoints"), list) else []
+    evidence = (summary or {}).get("evidence") if isinstance((summary or {}).get("evidence"), dict) else {}
+    evidence_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
+
+    if report_type == "daily" and str(light_text or "").strip():
+        lines: List[str] = [str(light_text).strip()]
+        extra_added = False
+        if structural_comment or evidence_items or gentle_comment or next_points:
+            lines.append("")
+            lines.append("【もう少し詳しく】")
+            extra_added = True
+        if structural_comment:
+            lines.append(structural_comment)
+        if evidence_items:
+            for item in evidence_items[:3]:
+                if isinstance(item, dict):
+                    t = str(item.get("text") or "").strip()
+                    if t:
+                        lines.append(f"・{t}")
+        if gentle_comment:
+            lines.append(gentle_comment)
+        if next_points:
+            lines.append("")
+            lines.append("【次の観測】")
+            for point in next_points[:2]:
+                s = str(point or "").strip()
+                if s:
+                    lines.append(f"・{s}")
+        if extra_added:
+            lines.append("")
+            lines.append("【注記】")
+            lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
+        return "\n".join(lines).strip()
+
+    if report_type == "daily":
+        summary_title = "【今日の構造サマリー】"
+    elif report_type == "weekly":
+        summary_title = "【今週の構造サマリー】"
+    else:
+        summary_title = "【今月の構造サマリー】"
+
+    lines = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+    lines.append(summary_title)
+    if structural_comment:
+        lines.append(structural_comment)
+    else:
+        lines.append("今回の構造サマリーはまだ十分に生成されていません。")
+    lines.append("")
+
+    if evidence_items:
+        lines.append("【観測ポイント】")
+        for item in evidence_items[:4]:
+            if isinstance(item, dict):
+                t = str(item.get("text") or "").strip()
+                if t:
+                    lines.append(f"- {t}")
+        lines.append("")
+
+    if gentle_comment:
+        lines.append("【やさしい視点】")
+        lines.append(gentle_comment)
+        lines.append("")
+
+    if next_points:
+        lines.append("【次の観測】")
+        for point in next_points[:4]:
+            s = str(point or "").strip()
+            if s:
+                lines.append(f"- {s}")
+        lines.append("")
+
+    lines.append("【注記】")
+    lines.append("このレポートは、analysis_engine と snapshot の観測結果をもとにまとめたものです。診断や断定を目的としたものではありません。")
+    return "\n".join(lines).strip()
+
 
 def _render_analysis_standard_text(
     *,
@@ -418,58 +938,88 @@ def _render_analysis_standard_text(
 def _build_standard_report_payload(
     *,
     report_type: str,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
     analysis_payload: Dict[str, Any],
-    content_text: str,
+    snapshot_summary: Optional[Dict[str, Any]] = None,
+    snapshot_views: Optional[Dict[str, Any]] = None,
+    light_text: str = "",
 ) -> Dict[str, Any]:
     payload = analysis_payload if isinstance(analysis_payload, dict) else {}
+    views = snapshot_views if isinstance(snapshot_views, dict) else {}
+    snap_summary = snapshot_summary if isinstance(snapshot_summary, dict) else {}
     narrative = payload.get("narrative") if isinstance(payload.get("narrative"), dict) else {}
 
+    has_snapshot_views = bool(views)
+    has_payload = bool(payload)
     standard_report: Dict[str, Any] = {
-        "version": "myweb.standard.v2" if payload else "myweb.standard.v1",
-        "displayMode": "graph_text",
+        "version": "myweb.standard.v3" if (has_payload or has_snapshot_views) else "myweb.standard.v1",
+        "displayMode": "text" if report_type == "daily" else "graph_text",
         "reportType": str(report_type or ""),
-        "contentText": str(content_text or ""),
     }
 
-    if not payload:
-        return standard_report
-
-    summary = {
-        "structuralComment": str(narrative.get("structural_comment") or "").strip() or None,
-        "gentleComment": str(narrative.get("gentle_comment") or "").strip() or None,
-        "nextPoints": narrative.get("next_points") if isinstance(narrative.get("next_points"), list) else [],
-        "evidence": (narrative.get("evidence") if isinstance(narrative.get("evidence"), dict) else {}),
-    }
+    summary = _build_standard_summary_object(
+        report_type=report_type,
+        analysis_payload=payload,
+        snapshot_summary=snap_summary,
+        snapshot_views=views,
+        light_text=light_text,
+    )
+    standard_text = _render_standard_text_from_summary(
+        title=title,
+        report_type=report_type,
+        period_start_iso=period_start_iso,
+        period_end_iso=period_end_iso,
+        summary=summary,
+        light_text=light_text,
+    )
+    standard_report["contentText"] = str(standard_text or light_text or "")
 
     metrics: Dict[str, Any] = {}
     features: Dict[str, Any] = {}
     timeline: Any = []
+    time_buckets = _extract_time_bucket_rows(snapshot_views=views, analysis_payload=payload)
 
     if report_type == "daily":
-        try:
-            entry_count = int(payload.get("entry_count") or 0)
-        except Exception:
-            entry_count = 0
+        metrics_src = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        day = views.get("day") if isinstance(views.get("day"), dict) else {}
+        movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
+        entry_count = _coerce_int(payload.get("entry_count") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         metrics = {
             "entryCount": entry_count,
+            "share": metrics_src.get("sharePct") if isinstance(metrics_src.get("sharePct"), dict) else {},
+            "weightedCounts": metrics_src.get("totals") if isinstance(metrics_src.get("totals"), dict) else {},
+            "totalAll": metrics_src.get("totalAll"),
         }
         features = {
+            "day": day,
+            "movement": movement,
             "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
             "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
         }
+        if time_buckets:
+            features["timeBuckets"] = time_buckets
+            features["timeBucketMode"] = "weighted_count"
+            features["timeBucketScope"] = "snapshot"
         timeline = payload.get("timeline") if isinstance(payload.get("timeline"), list) else []
+
     elif report_type == "weekly":
         ws = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
+        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        days = views.get("days") if isinstance(views.get("days"), list) else []
         metrics = {
-            "eventCount": ws.get("n_events"),
+            "eventCount": ws.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"),
             "alternationRate": ws.get("alternation_rate"),
             "entropy": ws.get("entropy"),
             "giniSimpson": ws.get("gini_simpson"),
-            "share": ws.get("share") if isinstance(ws.get("share"), dict) else {},
-            "counts": ws.get("counts") if isinstance(ws.get("counts"), dict) else {},
-            "weightedCounts": ws.get("wcounts") if isinstance(ws.get("wcounts"), dict) else {},
+            "share": ws.get("share") if isinstance(ws.get("share"), dict) else (snapshot_metrics.get("sharePct") if isinstance(snapshot_metrics.get("sharePct"), dict) else {}),
+            "counts": ws.get("counts") if isinstance(ws.get("counts"), dict) else (snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {}),
+            "weightedCounts": ws.get("wcounts") if isinstance(ws.get("wcounts"), dict) else (snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {}),
+            "totalAll": snapshot_metrics.get("totalAll"),
         }
         features = {
+            "days": days,
             "runStats": ws.get("run_stats") if isinstance(ws.get("run_stats"), dict) else {},
             "intensity": ws.get("intensity") if isinstance(ws.get("intensity"), dict) else {},
             "motifs": ws.get("motifs") if isinstance(ws.get("motifs"), list) else [],
@@ -479,29 +1029,78 @@ def _build_standard_report_payload(
             "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
             "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
         }
-        timeline = ws.get("daily_share") if isinstance(ws.get("daily_share"), list) else []
+        if time_buckets:
+            features["timeBuckets"] = time_buckets
+            features["timeBucketMode"] = "weighted_count"
+            features["timeBucketScope"] = "snapshot"
+            metrics["timeBucketInputTotal"] = sum(_coerce_int(row.get("inputCount"), 0) for row in time_buckets)
+        timeline = ws.get("daily_share") if isinstance(ws.get("daily_share"), list) else days
+
     elif report_type == "monthly":
         mr = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
+        snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+        weeks = views.get("weeks") if isinstance(views.get("weeks"), list) else []
+        weekly_breakdown: List[Dict[str, Any]] = []
+        for week in weeks:
+            if not isinstance(week, dict):
+                continue
+            week_total = _coerce_int(week.get("total"), 0)
+            if week_total <= 0:
+                week_total = sum(_coerce_int(week.get(k), 0) for k in EMOTION_KEYS)
+            week_dom = _dominant_key_from_map(week)
+            weekly_breakdown.append(
+                {
+                    "label": str(week.get("label") or "週"),
+                    "total": week_total,
+                    "dominantKey": week_dom,
+                    "dominantLabel": KEY_TO_JP.get(week_dom, week_dom) if week_dom else None,
+                }
+            )
+
         metrics = {
+            "share": snapshot_metrics.get("sharePct") if isinstance(snapshot_metrics.get("sharePct"), dict) else {},
+            "counts": snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {},
+            "weightedCounts": snapshot_metrics.get("totals") if isinstance(snapshot_metrics.get("totals"), dict) else {},
+            "totalAll": snapshot_metrics.get("totalAll"),
             "shareTrend": mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else [],
             "alternationTrend": mr.get("alternation_trend") if isinstance(mr.get("alternation_trend"), list) else [],
             "intensityStdTrend": mr.get("intensity_std_trend") if isinstance(mr.get("intensity_std_trend"), list) else [],
             "centerShift": mr.get("center_shift") if isinstance(mr.get("center_shift"), dict) else {},
         }
         features = {
+            "weeks": weeks,
+            "weeklyBreakdown": weekly_breakdown,
             "motifTrend": mr.get("motif_trend") if isinstance(mr.get("motif_trend"), list) else [],
-            "weeks": mr.get("weeks") if isinstance(mr.get("weeks"), list) else [],
             "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
             "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
         }
-        timeline = mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else []
+        if time_buckets:
+            features["timeBuckets"] = time_buckets
+            features["timeBucketMode"] = "weighted_count"
+            features["timeBucketScope"] = "snapshot"
+            metrics["timeBucketInputTotal"] = sum(_coerce_int(row.get("inputCount"), 0) for row in time_buckets)
+        timeline = mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else weeks
+
+    if not summary.get("structuralComment") and isinstance(narrative.get("structural_comment"), str):
+        summary["structuralComment"] = str(narrative.get("structural_comment") or "").strip() or None
+    if not summary.get("gentleComment") and isinstance(narrative.get("gentle_comment"), str):
+        summary["gentleComment"] = str(narrative.get("gentle_comment") or "").strip() or None
+    if not summary.get("nextPoints") and isinstance(narrative.get("next_points"), list):
+        summary["nextPoints"] = narrative.get("next_points")
+    if not summary.get("evidence") and isinstance(narrative.get("evidence"), dict):
+        summary["evidence"] = narrative.get("evidence")
 
     standard_report["metrics"] = metrics
     standard_report["features"] = features
     standard_report["timeline"] = timeline
     standard_report["summary"] = summary
-    standard_report["analysisPayload"] = payload
+    if time_buckets:
+        standard_report["timeBuckets"] = time_buckets
+    if payload:
+        standard_report["analysisPayload"] = payload
     return standard_report
+
+
 def _parse_iso_utc(iso: str) -> Optional[datetime]:
     s = str(iso or "").strip()
     if not s:
@@ -1700,38 +2299,36 @@ async def _generate_and_save_from_snapshot(
         )
 
     standard_text = light_text
-    if analysis_payload:
-        try:
-            standard_text = _render_analysis_standard_text(
-                title=target.title,
-                report_type=report_type,
-                period_start_iso=target.period_start_iso,
-                period_end_iso=target.period_end_iso,
-                analysis_payload=analysis_payload,
-            )
-            content_json["analysisMeta"] = {
-                "analysis_result_id": str((analysis_row or {}).get("id") or "") or None,
-                "analysis_type": str((analysis_row or {}).get("analysis_type") or "emotion_structure"),
-                "analysis_stage": str((analysis_row or {}).get("analysis_stage") or "standard"),
-                "analysis_version": str((analysis_row or {}).get("analysis_version") or ""),
-                "snapshot_id": snap_id,
-                "source_hash": str((analysis_row or {}).get("source_hash") or "") or snap_hash,
-            }
-        except Exception:
-            standard_text = light_text
+    if analysis_row:
+        content_json["analysisMeta"] = {
+            "analysis_result_id": str((analysis_row or {}).get("id") or "") or None,
+            "analysis_type": str((analysis_row or {}).get("analysis_type") or "emotion_structure"),
+            "analysis_stage": str((analysis_row or {}).get("analysis_stage") or "standard"),
+            "analysis_version": str((analysis_row or {}).get("analysis_version") or ""),
+            "snapshot_id": snap_id,
+            "source_hash": str((analysis_row or {}).get("source_hash") or "") or snap_hash,
+        }
 
     # --- MyWeb report v3 structure (Light / Standard / Structural) ---
     try:
         content_json.setdefault("reportVersion", "myweb.report.v3")
-        content_json["standardReport"] = _build_standard_report_payload(
+        standard_report = _build_standard_report_payload(
             report_type=report_type,
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
             analysis_payload=analysis_payload,
-            content_text=standard_text,
+            snapshot_summary=summary,
+            snapshot_views=views,
+            light_text=light_text,
         )
+        if isinstance(standard_report, dict):
+            content_json["standardReport"] = standard_report
+            standard_text = str(standard_report.get("contentText") or light_text or "")
         if astor_report and is_premium:
             content_json["structuralReport"] = astor_report
     except Exception:
-        pass
+        standard_text = light_text
 
     # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
     try:

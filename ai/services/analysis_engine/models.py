@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Any
@@ -33,6 +32,7 @@ class WeeklySnapshot:
     center2d: Dict[str, float]
     keywords: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    time_buckets: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)
@@ -47,6 +47,7 @@ class MonthlyReport:
     motif_trend: List[Dict[str, Any]]
     center_shift: Dict[str, Any]
     summary: Dict[str, Any] = field(default_factory=dict)
+    time_buckets: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self):
         d = asdict(self)

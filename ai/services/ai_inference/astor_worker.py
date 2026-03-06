@@ -687,7 +687,10 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
     elif scope_kind == "weekly":
         weekly_snapshot = build_weekly_features(entries, period=period_label)
         narrative = narrate_weekly(weekly_snapshot, baseline=None)
-        analysis_payload["weekly_snapshot"] = weekly_snapshot.to_dict()
+        weekly_snapshot_dict = weekly_snapshot.to_dict()
+        analysis_payload["weekly_snapshot"] = weekly_snapshot_dict
+        if isinstance(weekly_snapshot_dict.get("time_buckets"), list):
+            analysis_payload["time_buckets"] = weekly_snapshot_dict.get("time_buckets") or []
         analysis_payload["narrative"] = narrative.to_dict()
     else:
         period_start_utc = period_info.get("period_start_utc")
@@ -703,7 +706,10 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
 
         monthly_report = assemble_monthly(weeks, period=period_label)
         narrative = narrate_monthly(monthly_report)
-        analysis_payload["monthly_report"] = monthly_report.to_dict()
+        monthly_report_dict = monthly_report.to_dict()
+        analysis_payload["monthly_report"] = monthly_report_dict
+        if isinstance(monthly_report_dict.get("time_buckets"), list):
+            analysis_payload["time_buckets"] = monthly_report_dict.get("time_buckets") or []
         analysis_payload["narrative"] = narrative.to_dict()
 
     row = {
