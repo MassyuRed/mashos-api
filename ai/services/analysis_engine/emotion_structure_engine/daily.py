@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Dict, Optional
 from collections import defaultdict
 from datetime import datetime
-from .models import EmotionEntry, Narrative, LABELS
+from ..models import EmotionEntry, Narrative, LABELS
 
 # DailyReport (MyNews) — soft, readable, and no numeric exposure.
 # Policy:

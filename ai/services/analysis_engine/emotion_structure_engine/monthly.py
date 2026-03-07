@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 import math
-from .models import WeeklySnapshot, MonthlyReport, Narrative, LABELS
+from ..models import WeeklySnapshot, MonthlyReport, Narrative, LABELS
 from .weekly import aggregate_time_bucket_rows
 
 

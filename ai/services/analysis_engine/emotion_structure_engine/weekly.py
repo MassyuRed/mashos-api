@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Optional, Tuple, Iterable
 import math, statistics, collections
 from datetime import datetime, timezone, timedelta
-from .models import EmotionEntry, WeeklySnapshot, Narrative, LABELS, BaselineProfile
+from ..models import EmotionEntry, WeeklySnapshot, Narrative, LABELS, BaselineProfile
 
 # Geometry for 2D center (regular pentagon)
 DEG = math.pi / 180.0
