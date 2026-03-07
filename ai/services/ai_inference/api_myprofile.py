@@ -337,6 +337,70 @@ def _subscription_mode_input(x: Optional[str]) -> Optional[str]:
         return "structural"
     return s
 
+def _extract_report_content_json(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    cj = (row or {}).get("content_json")
+    return cj if isinstance(cj, dict) else {}
+
+
+def _extract_saved_report_mode(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    cj = _extract_report_content_json(row)
+    mode = cj.get("report_mode") or cj.get("reportMode")
+    if not mode:
+        return None
+    return _canonicalize_report_mode_value(mode)
+
+
+def _row_matches_requested_mode(row: Optional[Dict[str, Any]], requested_mode: str) -> bool:
+    saved = _extract_saved_report_mode(row)
+    if not saved:
+        return False
+    return _canonicalize_report_mode_value(saved) == _canonicalize_report_mode_value(requested_mode)
+
+
+def _extract_saved_self_structure_ref_source_hash(
+    row: Optional[Dict[str, Any]],
+    stage: str,
+) -> Optional[str]:
+    cj = _extract_report_content_json(row)
+    refs = cj.get("analysis_refs") if isinstance(cj.get("analysis_refs"), dict) else {}
+    ss = refs.get("self_structure") if isinstance(refs.get("self_structure"), dict) else {}
+    stage_key = "deep" if _canonicalize_report_mode_value(stage) == "deep" else "standard"
+    node = ss.get(stage_key) if isinstance(ss.get(stage_key), dict) else {}
+    sh = node.get("source_hash") if isinstance(node, dict) else None
+    s = str(sh or "").strip()
+    return s or None
+
+
+async def _fetch_latest_self_structure_analysis_row(
+    user_id: str,
+    stage: str,
+) -> Optional[Dict[str, Any]]:
+    stage_key = "deep" if _canonicalize_report_mode_value(stage) == "deep" else "standard"
+    resp = await _sb_get(
+        "/rest/v1/analysis_results",
+        params={
+            "select": "id,snapshot_id,source_hash,created_at,updated_at,analysis_type,scope,analysis_stage",
+            "target_user_id": f"eq.{user_id}",
+            "analysis_type": "eq.self_structure",
+            "scope": "eq.global",
+            "analysis_stage": f"eq.{stage_key}",
+            "order": "updated_at.desc,created_at.desc",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.error(
+            "Supabase analysis_results(self_structure) select failed: %s %s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        raise HTTPException(status_code=502, detail="Failed to load self structure analysis")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
 # ----------------------------
 # Supabase helpers
 # ----------------------------
@@ -1453,43 +1517,37 @@ def register_myprofile_routes(app: FastAPI) -> None:
             logger.warning("Failed to resolve subscription tier/report_mode (deny): %s", exc)
             raise HTTPException(status_code=403, detail="MyProfile report is not available")
 
-        # ---- Fetch patterns updated_at (B1) ----
-        patterns_updated_at: Optional[str] = None
+        # ---- Fetch latest self-structure analysis refs (stale source-of-truth) ----
+        latest_analysis_rows: Dict[str, Optional[Dict[str, Any]]] = {}
+        latest_analysis_updated_at: Optional[str] = None
         try:
-            resp = await _sb_get(
-                f"/rest/v1/{ASTOR_STRUCTURE_PATTERNS_TABLE}",
-                params={
-                    "select": "updated_at",
-                    "user_id": f"eq.{uid}",
-                    "limit": "1",
-                },
-            )
-            if resp.status_code < 300:
-                rows = resp.json()
-                if isinstance(rows, list) and rows:
-                    patterns_updated_at = rows[0].get("updated_at")
+            latest_analysis_rows["standard"] = await _fetch_latest_self_structure_analysis_row(uid, "standard")
+            if effective_report_mode == "deep":
+                latest_analysis_rows["deep"] = await _fetch_latest_self_structure_analysis_row(uid, "deep")
+        except HTTPException:
+            raise
         except Exception as exc:
-            logger.warning("Failed to fetch structure patterns updated_at: %s", exc)
+            logger.warning("Failed to fetch self structure analysis refs: %s", exc)
+            latest_analysis_rows = {}
 
-        # Spec v2: MyProfile（月次/最新）は raw logs（思考/行動）を主材料にするため、
-        # patterns が無い場合は emotions の最新 created_at を更新指標として使う。
-        if not patterns_updated_at:
+        def _parse_iso(iso: Optional[str]) -> Optional[datetime]:
+            if not iso:
+                return None
             try:
-                resp = await _sb_get(
-                    "/rest/v1/emotions",
-                    params={
-                        "select": "created_at",
-                        "user_id": f"eq.{uid}",
-                        "order": "created_at.desc",
-                        "limit": "1",
-                    },
-                )
-                if resp.status_code < 300:
-                    rows = resp.json()
-                    if isinstance(rows, list) and rows:
-                        patterns_updated_at = rows[0].get("created_at")
+                s = str(iso).replace("Z", "+00:00")
+                return datetime.fromisoformat(s)
             except Exception:
-                pass
+                return None
+
+        latest_analysis_dt: Optional[datetime] = None
+        for _stage_row in latest_analysis_rows.values():
+            if not isinstance(_stage_row, dict):
+                continue
+            cand_iso = _stage_row.get("updated_at") or _stage_row.get("created_at")
+            cand_dt = _parse_iso(cand_iso)
+            if cand_dt and (latest_analysis_dt is None or cand_dt > latest_analysis_dt):
+                latest_analysis_dt = cand_dt
+                latest_analysis_updated_at = cand_iso
 
         # ---- Fetch latest report row ----
         latest_row: Optional[Dict[str, Any]] = None
@@ -1524,20 +1582,13 @@ def register_myprofile_routes(app: FastAPI) -> None:
             logger.error("Failed to load latest MyProfile report: %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load latest MyProfile report")
 
-        def _parse_iso(iso: Optional[str]) -> Optional[datetime]:
-            if not iso:
-                return None
-            try:
-                s = str(iso).replace("Z", "+00:00")
-                return datetime.fromisoformat(s)
-            except Exception:
-                return None
-
-        patterns_dt = _parse_iso(patterns_updated_at)
         latest_dt = _parse_iso(latest_generated_at)
+        patterns_updated_at = latest_analysis_updated_at
 
         stale = False
         reason = "up_to_date"
+
+        required_analysis_stages = ["standard"] + (["deep"] if effective_report_mode == "deep" else [])
 
         if force:
             stale = True
@@ -1545,15 +1596,32 @@ def register_myprofile_routes(app: FastAPI) -> None:
         elif not latest_row or not str(latest_row.get("content_text") or "").strip():
             stale = True
             reason = "missing"
-        elif patterns_dt and latest_dt:
-            if patterns_dt > (latest_dt + timedelta(seconds=1)):
-                stale = True
-                reason = "stale_patterns"
-        elif patterns_dt and not latest_dt:
+        elif not _row_matches_requested_mode(latest_row, effective_report_mode):
             stale = True
-            reason = "stale_patterns"
-        elif not patterns_dt:
-            reason = "no_patterns"
+            reason = "mode_mismatch"
+        else:
+            analysis_missing = False
+            analysis_changed = False
+            for stage_key in required_analysis_stages:
+                live_row = latest_analysis_rows.get(stage_key)
+                if not live_row:
+                    analysis_missing = True
+                    continue
+                saved_hash = _extract_saved_self_structure_ref_source_hash(latest_row, stage_key)
+                live_hash = str(live_row.get("source_hash") or "").strip() or None
+                if (not saved_hash) or saved_hash != live_hash:
+                    analysis_changed = True
+            if analysis_missing or analysis_changed:
+                stale = True
+                reason = "stale_analysis"
+            elif latest_analysis_dt and latest_dt and latest_analysis_dt > (latest_dt + timedelta(seconds=1)):
+                stale = True
+                reason = "stale_analysis"
+            elif latest_analysis_dt and not latest_dt:
+                stale = True
+                reason = "stale_analysis"
+            elif not latest_analysis_dt:
+                reason = "no_analysis"
 
         if ensure and stale:
             # ---- Phase10: generation lock (avoid duplicate compute) ----
@@ -1617,6 +1685,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
                         timeout_seconds=MYPROFILE_LATEST_LOCK_WAIT_SECONDS,
                     )
                 row = waited or latest_row
+                if row and (not _row_matches_requested_mode(row, effective_report_mode)):
+                    row = None
                 return MyProfileLatestEnsureResponse(
                     refreshed=False,
                     reason="in_progress",
@@ -1661,6 +1731,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                         **(meta or {}),
                         "source": "on_demand_myprofile_latest",
                         "report_type": "latest",
+                        "report_mode": effective_report_mode,
                         "snapshot_period": effective_period,
                         "generated_at_server": generated_at,
                     },
@@ -1889,8 +1960,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
             return None
 
         existing_row = await _fetch_report_for_period(period_start_iso, period_end_iso)
+        existing_row_mode_matches = _row_matches_requested_mode(existing_row, effective_report_mode)
 
-        if existing_row and (not force):
+        if existing_row and (not force) and existing_row_mode_matches:
             return MyProfileMonthlyEnsureResponse(
                 refreshed=False,
                 reason="up_to_date",
@@ -1946,6 +2018,8 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     timeout_seconds=MYPROFILE_MONTHLY_LOCK_WAIT_SECONDS,
                 )
             row = waited_row or existing_row
+            if row and (not _row_matches_requested_mode(row, effective_report_mode)):
+                row = None
             if row:
                 return MyProfileMonthlyEnsureResponse(
                     refreshed=False,
@@ -2016,6 +2090,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 **(report_meta or {}),
                 "source": "myprofile.monthly.ensure",
                 "report_type": "monthly",
+                "report_mode": effective_report_mode,
                 "distribution_utc": _to_iso_z(dist_utc),
                 "distribution_jst": dist_jst.isoformat(),
                 "generated_at_server": _to_iso_z(datetime.now(timezone.utc)),
@@ -2049,7 +2124,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 )
                 raise HTTPException(status_code=502, detail="Failed to save monthly MyProfile report")
 
-            reason = "force" if force else ("missing" if not existing_row else "force")
+            reason = "force" if force else ("missing" if not existing_row else ("mode_mismatch" if not existing_row_mode_matches else "force"))
 
             return MyProfileMonthlyEnsureResponse(
                 refreshed=True,
