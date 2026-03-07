@@ -236,7 +236,7 @@ class MyProfileLatestEnsureResponse(BaseModel):
         ...,
         description="missing | stale_patterns | force | up_to_date | no_patterns",
     )
-    report_mode: str = Field(..., description="standard | structural")
+    report_mode: str = Field(..., description="standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     patterns_updated_at: Optional[str] = Field(
         default=None, description="updated_at of structure patterns"
@@ -273,7 +273,7 @@ class MyProfileMonthlyEnsureBody(BaseModel):
     )
     report_mode: Optional[str] = Field(
         default=None,
-        description="Requested report mode (standard|structural). Tier-gated.",
+        description="Requested report mode (standard|deep). Tier-gated.",
     )
     include_secret: bool = Field(
         default=True,
@@ -289,7 +289,7 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
     reason: str = Field(..., description="missing | force | up_to_date")
-    report_mode: str = Field(..., description="standard | structural")
+    report_mode: str = Field(..., description="standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     period_start: str = Field(..., description="period_start (ISO)")
     period_end: str = Field(..., description="period_end (ISO)")
@@ -297,6 +297,45 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
     title: Optional[str] = Field(default=None, description="report title")
     content_text: Optional[str] = Field(default=None, description="report body")
     meta: Optional[Dict[str, Any]] = Field(default=None, description="metadata JSON")
+
+
+# ----------------------------
+# Report mode compatibility helpers
+# ----------------------------
+
+def _canonicalize_report_mode_value(x: Any) -> str:
+    """
+    Normalize external/internal MyProfile report mode into one of: standard | deep.
+
+    Backward-compat:
+    - structural -> deep
+    - light -> standard
+    """
+    s = str(x or "").strip().lower()
+    if not s:
+        return "standard"
+    if s == "structural":
+        return "deep"
+    if s == "light":
+        return "standard"
+    if s in ("standard", "deep"):
+        return s
+    return s
+
+
+def _subscription_mode_input(x: Optional[str]) -> Optional[str]:
+    """
+    Convert API-facing mode aliases to the subscription module's expected inputs.
+
+    If the subscription module still uses "structural", map incoming "deep" -> "structural"
+    before normalize_myprofile_mode() is called.
+    """
+    s = str(x or "").strip().lower()
+    if not s:
+        return None
+    if s == "deep":
+        return "structural"
+    return s
 
 # ----------------------------
 # Supabase helpers
@@ -1352,7 +1391,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
         ),
         report_mode: Optional[str] = Query(
             default=None,
-            description="Requested report mode (standard|structural). Tier-gated.",
+            description="Requested report mode (standard|deep). Tier-gated.",
         ),
     ) -> MyProfileLatestEnsureResponse:
         access_token = _extract_bearer_token(authorization)
@@ -1387,22 +1426,27 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
 
             default_mode = MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD
-            mode_enum = normalize_myprofile_mode(report_mode, default=default_mode)
+            requested_mode = _subscription_mode_input(report_mode)
+            mode_enum = normalize_myprofile_mode(requested_mode, default=default_mode)
 
             # "light" is kept only for backward-compat input; disallow for MyProfile.
             if mode_enum == MyProfileMode.LIGHT:
                 raise HTTPException(status_code=403, detail="report_mode 'light' is not available")
 
             if not is_myprofile_mode_allowed(tier, mode_enum):
-                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier) if m != MyProfileMode.LIGHT]
+                allowed = [
+                    _canonicalize_report_mode_value(m.value)
+                    for m in allowed_myprofile_modes_for_tier(tier)
+                    if m != MyProfileMode.LIGHT
+                ]
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        f"report_mode '{mode_enum.value}' is not allowed for tier '{tier.value}'. "
+                        f"report_mode '{_canonicalize_report_mode_value(mode_enum.value)}' is not allowed for tier '{tier.value}'. "
                         f"Allowed: {', '.join(allowed)}"
                     ),
                 )
-            effective_report_mode = mode_enum.value
+            effective_report_mode = _canonicalize_report_mode_value(mode_enum.value)
         except HTTPException:
             raise
         except Exception as exc:
@@ -1596,6 +1640,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     include_secret=True,
                     now=now,
                     prev_report_text=None,
+                    prev_report_json=None,
+                    report_type="latest",
+                    distribution_utc=now.isoformat().replace("+00:00", "Z"),
                 )
                 text = str(text or "").strip()
                 if not text:
@@ -1613,6 +1660,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     "content_json": {
                         **(meta or {}),
                         "source": "on_demand_myprofile_latest",
+                        "report_type": "latest",
                         "snapshot_period": effective_period,
                         "generated_at_server": generated_at,
                     },
@@ -1737,21 +1785,26 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
 
             default_mode = MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD
-            mode_enum = normalize_myprofile_mode(body.report_mode, default=default_mode)
+            requested_mode = _subscription_mode_input(body.report_mode)
+            mode_enum = normalize_myprofile_mode(requested_mode, default=default_mode)
 
             if mode_enum == MyProfileMode.LIGHT:
                 raise HTTPException(status_code=403, detail="report_mode 'light' is not available")
 
             if not is_myprofile_mode_allowed(tier, mode_enum):
-                allowed = [m.value for m in allowed_myprofile_modes_for_tier(tier) if m != MyProfileMode.LIGHT]
+                allowed = [
+                    _canonicalize_report_mode_value(m.value)
+                    for m in allowed_myprofile_modes_for_tier(tier)
+                    if m != MyProfileMode.LIGHT
+                ]
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        f"report_mode '{mode_enum.value}' is not allowed for tier '{tier.value}'. "
+                        f"report_mode '{_canonicalize_report_mode_value(mode_enum.value)}' is not allowed for tier '{tier.value}'. "
                         f"Allowed: {', '.join(allowed)}"
                     ),
                 )
-            effective_report_mode = mode_enum.value
+            effective_report_mode = _canonicalize_report_mode_value(mode_enum.value)
         except HTTPException:
             raise
         except Exception as exc:
@@ -1910,6 +1963,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
 
         # ---- previous distributed report (for diff summary) ----
         prev_report_text: Optional[str] = None
+        prev_report_json: Optional[Dict[str, Any]] = None
         try:
             prev_month_end_jst = dist_jst - timedelta(days=1)
             prev_dist_jst = datetime(prev_month_end_jst.year, prev_month_end_jst.month, 1, 0, 0, 0, 0, tzinfo=JST)
@@ -1922,10 +1976,14 @@ def register_myprofile_routes(app: FastAPI) -> None:
             prev_pe = _to_iso_z(prev_period_end_utc)
 
             prev_row = await _fetch_report_for_period(prev_ps, prev_pe)
-            if prev_row and prev_row.get("content_text"):
-                prev_report_text = str(prev_row.get("content_text"))
+            if prev_row:
+                if prev_row.get("content_text"):
+                    prev_report_text = str(prev_row.get("content_text"))
+                if isinstance(prev_row.get("content_json"), dict):
+                    prev_report_json = dict(prev_row.get("content_json") or {})
         except Exception:
             prev_report_text = None
+            prev_report_json = None
 
         # ---- generate + save (server-side) ----
         try:
@@ -1940,6 +1998,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     include_secret=include_secret,
                     now=dist_utc,
                     prev_report_text=prev_report_text,
+                    prev_report_json=prev_report_json,
+                    report_type="monthly",
+                    distribution_utc=_to_iso_z(dist_utc),
                 )
             except Exception as exc:
                 logger.error("Failed to build monthly MyProfile report: %s", exc)
@@ -1954,6 +2015,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
             content_json = {
                 **(report_meta or {}),
                 "source": "myprofile.monthly.ensure",
+                "report_type": "monthly",
                 "distribution_utc": _to_iso_z(dist_utc),
                 "distribution_jst": dist_jst.isoformat(),
                 "generated_at_server": _to_iso_z(datetime.now(timezone.utc)),
