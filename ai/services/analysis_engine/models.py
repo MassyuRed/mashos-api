@@ -185,3 +185,226 @@ class DeepControlModel:
         d["memoTriggers"] = d.get("memo_triggers")
         d["controlPatterns"] = d.get("control_patterns")
         return d
+
+# ============================================================================
+# Self structure analysis models
+# ============================================================================
+# These dataclasses are shared by:
+# - analysis_engine/self_structure_engine/signal_extraction.py
+# - analysis_engine/self_structure_engine/fusion.py
+# - analysis_engine/self_structure_engine/builders.py
+#
+# They are intentionally kept here so the self structure engine can reuse the
+# existing analysis_engine.models module without introducing a second models
+# file for common transport objects.
+# ============================================================================
+
+
+@dataclass
+class SelfStructureInput:
+    source_type: str
+    source_id: str
+    timestamp: str  # ISO-8601
+    text_primary: str = ""
+    text_secondary: str = ""
+    prompt_key: Optional[str] = None
+    question_text: Optional[str] = None
+    emotion_signals: List[str] = field(default_factory=list)
+    action_signals: List[str] = field(default_factory=list)
+    social_signals: List[str] = field(default_factory=list)
+    source_weight: float = 1.0
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class TargetCandidate:
+    key: str
+    label_ja: str
+    target_type: str   # person / environment / activity / concept / self
+    domain: str
+    score: float
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class TagScore:
+    key: str
+    label_ja: str
+    score: float
+    matched_terms: List[str] = field(default_factory=list)
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class RoleScore:
+    role_key: str
+    score: float
+    reasons: List[str] = field(default_factory=list)
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class SurfaceSignals:
+    has_negation: bool = False
+    has_intent: bool = False
+    has_execution: bool = False
+    has_inability: bool = False
+    has_reason_marker: bool = False
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class SignalExtractionResult:
+    source_type: str
+    source_id: str
+    timestamp: str
+
+    reliability: str
+    surface: SurfaceSignals = field(default_factory=SurfaceSignals)
+
+    primary_target: Optional[TargetCandidate] = None
+    secondary_targets: List[TargetCandidate] = field(default_factory=list)
+
+    thinking_tags: List[TagScore] = field(default_factory=list)
+    action_tags: List[TagScore] = field(default_factory=list)
+
+    role_scores: List[RoleScore] = field(default_factory=list)
+
+    raw_text_primary: str = ""
+    raw_text_secondary: str = ""
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class PatternScore:
+    key: str
+    label_ja: str
+    score: float
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class TargetRoleScore:
+    target_key: str
+    target_label_ja: str
+    target_type: str
+    role_key: str
+    role_label_ja: str
+    score: float
+    evidence_count: int
+    last_seen: Optional[str] = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class WorldRoleEvidence:
+    world_kind: str   # self / real / desired
+    role_key: str
+    role_label_ja: str
+    score: float
+    target_key: Optional[str] = None
+    reason: Optional[str] = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class RoleGap:
+    target_key: Optional[str]
+    left_kind: str    # self / real / desired
+    left_role: str
+    right_kind: str
+    right_role: str
+    gap_score: float
+    note: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class UnknownNeed:
+    kind: str
+    priority: float
+    target_key: Optional[str]
+    reason: str
+    hint: Optional[str] = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class TargetSignature:
+    target_key: str
+    target_label_ja: str
+    target_type: str
+    top_role_key: str
+    top_role_score: float
+    top_cluster_key: Optional[str] = None
+    top_thinking_keys: List[str] = field(default_factory=list)
+    top_action_keys: List[str] = field(default_factory=list)
+    evidence_count: int = 0
+    last_seen: Optional[str] = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass
+class FusionResult:
+    stage: str
+
+    template_role_scores: List[PatternScore] = field(default_factory=list)
+    cluster_scores: List[PatternScore] = field(default_factory=list)
+
+    target_role_scores: List[TargetRoleScore] = field(default_factory=list)
+
+    thinking_patterns: List[PatternScore] = field(default_factory=list)
+    action_patterns: List[PatternScore] = field(default_factory=list)
+
+    self_world_roles: List[WorldRoleEvidence] = field(default_factory=list)
+    real_world_roles: List[WorldRoleEvidence] = field(default_factory=list)
+    desired_roles: List[WorldRoleEvidence] = field(default_factory=list)
+    role_gaps: List[RoleGap] = field(default_factory=list)
+
+    target_signatures: List[TargetSignature] = field(default_factory=list)
+    role_history: List[Dict[str, Any]] = field(default_factory=list)
+    unknowns: List[UnknownNeed] = field(default_factory=list)
+
+    standard_view: Dict[str, Any] = field(default_factory=dict)
+    deep_view: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self):
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BuildContext:
+    target_user_id: str
+    snapshot_id: str
+    scope: str                 # "global"
+    source_hash: str
+    analysis_type: str         # "self_structure"
+    analysis_version: str      # e.g. "self_structure_v1"
+    generated_at: str
+
+    def to_dict(self):
+        return asdict(self)

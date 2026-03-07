@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -79,21 +79,41 @@ _services_root = Path(__file__).resolve().parent.parent
 if str(_services_root) not in sys.path:
     sys.path.insert(0, str(_services_root))
 
+# Emotion structure engine
 try:
-    from analysis_engine.weekly import build_weekly_features, narrate_weekly  # type: ignore
-    from analysis_engine.monthly import assemble_monthly, narrate_monthly  # type: ignore
-    from analysis_engine.daily import narrate_daily  # type: ignore
+    from analysis_engine.emotion_structure_engine.weekly import build_weekly_features, narrate_weekly  # type: ignore
+    from analysis_engine.emotion_structure_engine.monthly import assemble_monthly, narrate_monthly  # type: ignore
+    from analysis_engine.emotion_structure_engine.daily import narrate_daily  # type: ignore
 except Exception:
-    # Fallback: package __init__ export が正しく入っている環境では従来 import も許可
-    from analysis_engine import (  # type: ignore
-        build_weekly_features,
-        narrate_weekly,
-        assemble_monthly,
-        narrate_monthly,
-        narrate_daily,
-    )
+    # Backward-compatible fallback for older flat layouts.
+    try:
+        from analysis_engine.weekly import build_weekly_features, narrate_weekly  # type: ignore
+        from analysis_engine.monthly import assemble_monthly, narrate_monthly  # type: ignore
+        from analysis_engine.daily import narrate_daily  # type: ignore
+    except Exception:
+        # Fallback: package __init__ export が正しく入っている環境では従来 import も許可
+        from analysis_engine import (  # type: ignore
+            build_weekly_features,
+            narrate_weekly,
+            assemble_monthly,
+            narrate_monthly,
+            narrate_daily,
+        )
+
+# Self structure engine
+from analysis_engine.self_structure_engine.signal_extraction import extract_signal_results  # type: ignore
+from analysis_engine.self_structure_engine.fusion import fuse_signal_results  # type: ignore
+from analysis_engine.self_structure_engine.builders import (  # type: ignore
+    build_self_structure_standard_row,
+    build_self_structure_deep_row,
+)
+from analysis_engine.models import BuildContext, SelfStructureInput  # type: ignore
 
 from analysis_engine_adapter import build_emotion_entries_from_rows  # type: ignore
+try:
+    from analysis_engine_adapter import build_self_structure_inputs_from_snapshot_payload  # type: ignore
+except Exception:  # pragma: no cover - backward compatibility while adapter lands
+    build_self_structure_inputs_from_snapshot_payload = None  # type: ignore
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -128,6 +148,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "snapshot_generate_v1",
     "analyze_emotion_structure_standard_v1",
     "analyze_emotion_structure_deep_v1",
+    "analyze_self_structure_standard_v1",
+    "analyze_self_structure_deep_v1",
     "generate_emotion_report_v2",
     "inspect_emotion_report_v1",
 ]
@@ -549,10 +571,11 @@ def _scope_from_emotion_period_scope(scope: str) -> str:
     return "unknown"
 
 
-async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
+async def _fetch_latest_snapshot_row(*, user_id: str, scope: str, snapshot_type: str) -> Optional[Dict[str, Any]]:
     uid = str(user_id or "").strip()
     sc = str(scope or "").strip()
-    if not uid or not sc:
+    st = str(snapshot_type or "").strip()
+    if not uid or not sc or not st:
         return None
     try:
         resp = await sb_get(
@@ -561,7 +584,7 @@ async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Opti
                 "select": "id,user_id,scope,snapshot_type,source_hash,payload,created_at",
                 "user_id": f"eq.{uid}",
                 "scope": f"eq.{sc}",
-                "snapshot_type": "eq.public",
+                "snapshot_type": f"eq.{st}",
                 "order": "created_at.desc",
                 "limit": "1",
             },
@@ -577,6 +600,14 @@ async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Opti
     return None
 
 
+async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
+    return await _fetch_latest_snapshot_row(user_id=user_id, scope=scope, snapshot_type="public")
+
+
+async def _fetch_latest_internal_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
+    return await _fetch_latest_snapshot_row(user_id=user_id, scope=scope, snapshot_type="internal")
+
+
 async def _upsert_analysis_result(*, row: Dict[str, Any]) -> bool:
     resp = await sb_post(
         f"/rest/v1/{ANALYSIS_RESULTS_TABLE}",
@@ -586,6 +617,263 @@ async def _upsert_analysis_result(*, row: Dict[str, Any]) -> bool:
         timeout=10.0,
     )
     return resp.status_code in (200, 201, 204)
+
+
+
+def _coerce_str_list(value: Any) -> List[str]:
+    if isinstance(value, list):
+        out: List[str] = []
+        for item in value:
+            s = str(item or "").strip()
+            if s:
+                out.append(s)
+        return out
+    if isinstance(value, str):
+        s = value.strip()
+        return [s] if s else []
+    return []
+
+
+_SOURCE_TYPE_ALIASES: Dict[str, str] = {
+    "emotion": "emotion_input",
+    "emotion_input": "emotion_input",
+    "mymodel": "mymodel_create",
+    "my_model_create": "mymodel_create",
+    "mymodel_create": "mymodel_create",
+    "deepinsight": "deep_insight",
+    "deep_insight": "deep_insight",
+    "echo": "echo",
+    "echoes": "echo",
+    "discovery": "discovery",
+    "discoveries": "discovery",
+}
+
+
+def _normalize_self_structure_source_type(raw: Any, default: str = "emotion_input") -> str:
+    s = str(raw or "").strip().lower()
+    if not s:
+        return default
+    return _SOURCE_TYPE_ALIASES.get(s, s)
+
+
+_SOURCE_VIEW_KEYS: List[tuple[str, str]] = [
+    ("emotion_input", "emotion_inputs"),
+    ("emotion_input", "emotion_input"),
+    ("mymodel_create", "mymodel_creates"),
+    ("mymodel_create", "mymodel_create"),
+    ("deep_insight", "deep_insights"),
+    ("deep_insight", "deep_insight"),
+    ("echo", "echoes"),
+    ("echo", "echo"),
+    ("discovery", "discoveries"),
+    ("discovery", "discovery"),
+]
+
+
+def _extract_self_structure_view_from_snapshot(snapshot_row: Dict[str, Any]) -> Any:
+    payload = snapshot_row.get("payload")
+    if isinstance(payload, dict):
+        if "self_structure_view" in payload:
+            return payload.get("self_structure_view")
+        if "items" in payload:
+            return payload
+        for _, key in _SOURCE_VIEW_KEYS:
+            if key in payload:
+                return payload
+    if isinstance(payload, list):
+        return payload
+    raise RuntimeError("self_structure_view not found in snapshot payload")
+
+
+def _default_snapshot_timestamp(snapshot_row: Dict[str, Any]) -> str:
+    return str(snapshot_row.get("created_at") or _now_iso_z())
+
+
+def _coerce_self_structure_item(raw: Dict[str, Any], *, default_source_type: str, default_ts: str, idx: int) -> SelfStructureInput:
+    source_type = _normalize_self_structure_source_type(raw.get("source_type"), default=default_source_type)
+    source_id = str(raw.get("source_id") or raw.get("id") or f"{source_type}:{idx}").strip()
+    timestamp = str(raw.get("timestamp") or raw.get("created_at") or raw.get("updated_at") or default_ts).strip() or default_ts
+
+    text_primary = str(
+        raw.get("text_primary")
+        or raw.get("text")
+        or raw.get("memo")
+        or raw.get("answer")
+        or raw.get("content")
+        or raw.get("body")
+        or raw.get("message")
+        or ""
+    )
+    text_secondary = str(
+        raw.get("text_secondary")
+        or raw.get("memo_action")
+        or raw.get("action_text")
+        or raw.get("notes")
+        or raw.get("note")
+        or ""
+    )
+
+    prompt_key = raw.get("prompt_key") or raw.get("question_key") or raw.get("q_key")
+    question_text = raw.get("question_text") or raw.get("question") or raw.get("prompt") or raw.get("prompt_text")
+
+    try:
+        source_weight = float(raw.get("source_weight") or 1.0)
+    except Exception:
+        source_weight = 1.0
+
+    return SelfStructureInput(
+        source_type=source_type,
+        source_id=source_id,
+        timestamp=timestamp,
+        text_primary=text_primary,
+        text_secondary=text_secondary,
+        prompt_key=(str(prompt_key).strip() if prompt_key is not None and str(prompt_key).strip() else None),
+        question_text=(str(question_text).strip() if question_text is not None and str(question_text).strip() else None),
+        emotion_signals=_coerce_str_list(raw.get("emotion_signals")),
+        action_signals=_coerce_str_list(raw.get("action_signals")),
+        social_signals=_coerce_str_list(raw.get("social_signals")),
+        source_weight=source_weight,
+    )
+
+
+def _build_self_structure_inputs_from_snapshot_payload(snapshot_view: Any, *, snapshot_row: Optional[Dict[str, Any]] = None) -> List[SelfStructureInput]:
+    if callable(build_self_structure_inputs_from_snapshot_payload):
+        try:
+            items = build_self_structure_inputs_from_snapshot_payload(snapshot_view)  # type: ignore[misc]
+            if isinstance(items, list):
+                return items
+        except Exception:
+            WORKER_LOGGER.exception("self_structure adapter failed; falling back to local coercion")
+
+    default_ts = _default_snapshot_timestamp(snapshot_row or {})
+    out: List[SelfStructureInput] = []
+
+    if isinstance(snapshot_view, list):
+        for idx, it in enumerate(snapshot_view):
+            if isinstance(it, SelfStructureInput):
+                out.append(it)
+            elif isinstance(it, dict):
+                out.append(_coerce_self_structure_item(it, default_source_type="emotion_input", default_ts=default_ts, idx=idx))
+        return out
+
+    if isinstance(snapshot_view, dict):
+        if isinstance(snapshot_view.get("items"), list):
+            for idx, it in enumerate(snapshot_view.get("items") or []):
+                if isinstance(it, SelfStructureInput):
+                    out.append(it)
+                elif isinstance(it, dict):
+                    out.append(_coerce_self_structure_item(
+                        it,
+                        default_source_type=_normalize_self_structure_source_type(it.get("source_type"), default="emotion_input"),
+                        default_ts=default_ts,
+                        idx=idx,
+                    ))
+            return out
+
+        running_idx = 0
+        for default_source_type, key in _SOURCE_VIEW_KEYS:
+            items = snapshot_view.get(key)
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                if isinstance(it, SelfStructureInput):
+                    out.append(it)
+                elif isinstance(it, dict):
+                    out.append(_coerce_self_structure_item(it, default_source_type=default_source_type, default_ts=default_ts, idx=running_idx))
+                running_idx += 1
+        return out
+
+    return out
+
+
+def _build_self_structure_build_context(*, user_id: str, snapshot_row: Dict[str, Any], stage: str) -> BuildContext:
+    stg = str(stage or "standard").strip().lower() or "standard"
+    if stg not in ("standard", "deep"):
+        raise ValueError(f"unsupported self structure stage: {stage}")
+    return BuildContext(
+        target_user_id=str(user_id or "").strip(),
+        snapshot_id=str(snapshot_row.get("id") or "").strip(),
+        scope=str(snapshot_row.get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT,
+        source_hash=str(snapshot_row.get("source_hash") or "").strip(),
+        analysis_type="self_structure",
+        analysis_version=f"self_structure.{stg}.v1",
+        generated_at=_now_iso_z(),
+    )
+
+
+async def _handle_analyze_self_structure_standard_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+    if scope != SNAPSHOT_SCOPE_DEFAULT:
+        raise ValueError(f"unsupported scope for self structure standard analysis: {scope}")
+
+    snap = await _fetch_latest_internal_snapshot_row(user_id=uid, scope=scope)
+    if not snap:
+        raise RuntimeError("internal global snapshot not found")
+
+    view = _extract_self_structure_view_from_snapshot(snap)
+    inputs = _build_self_structure_inputs_from_snapshot_payload(view, snapshot_row=snap)
+    results = extract_signal_results(inputs, stage="standard")
+    fusion = fuse_signal_results(results, stage="standard")
+    ctx = _build_self_structure_build_context(user_id=uid, snapshot_row=snap, stage="standard")
+    row = build_self_structure_standard_row(ctx=ctx, fusion=fusion, results=results)
+    row["updated_at"] = _now_iso_z()
+    ok = await _upsert_analysis_result(row=row)
+    if not ok:
+        raise RuntimeError("analysis_results upsert failed")
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": scope,
+        "snapshot_id": str(snap.get("id") or ""),
+        "source_hash": str(snap.get("source_hash") or ""),
+        "analysis_stage": "standard",
+        "analysis_version": ctx.analysis_version,
+        "evidence_count": len(results),
+        "top_role_count": len(list(getattr(fusion, "template_role_scores", []) or [])),
+    }
+
+
+async def _handle_analyze_self_structure_deep_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+    if scope != SNAPSHOT_SCOPE_DEFAULT:
+        raise ValueError(f"unsupported scope for self structure deep analysis: {scope}")
+
+    snap = await _fetch_latest_internal_snapshot_row(user_id=uid, scope=scope)
+    if not snap:
+        raise RuntimeError("internal global snapshot not found")
+
+    view = _extract_self_structure_view_from_snapshot(snap)
+    inputs = _build_self_structure_inputs_from_snapshot_payload(view, snapshot_row=snap)
+    results = extract_signal_results(inputs, stage="deep")
+    fusion = fuse_signal_results(results, stage="deep")
+    ctx = _build_self_structure_build_context(user_id=uid, snapshot_row=snap, stage="deep")
+    row = build_self_structure_deep_row(ctx=ctx, fusion=fusion, results=results)
+    row["updated_at"] = _now_iso_z()
+    ok = await _upsert_analysis_result(row=row)
+    if not ok:
+        raise RuntimeError("analysis_results upsert failed")
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": scope,
+        "snapshot_id": str(snap.get("id") or ""),
+        "source_hash": str(snap.get("source_hash") or ""),
+        "analysis_stage": "deep",
+        "analysis_version": ctx.analysis_version,
+        "evidence_count": len(results),
+        "gap_count": len(list(getattr(fusion, "role_gaps", []) or [])),
+        "unknown_count": len(list(getattr(fusion, "unknowns", []) or [])),
+    }
 
 
 def _entries_in_window(entries: List[Any], start_dt: datetime, end_dt: datetime) -> List[Any]:
@@ -1204,7 +1492,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
             )
         )
     )
@@ -1307,6 +1595,26 @@ async def _worker_loop() -> None:
                             # would never trigger downstream processing.
                             # Job coalescing is handled by astor_job_queue via job_key.
                             if scope == SNAPSHOT_SCOPE_DEFAULT:
+                                # Global internal snapshot committed -> enqueue self structure standard analysis.
+                                try:
+                                    internal_hash = str(internal.get("source_hash") or "")
+                                    if internal_hash:
+                                        await enqueue_job(
+                                            job_key=f"analysis_self_structure_standard:{claimed.user_id}:global:{internal_hash}",
+                                            job_type="analyze_self_structure_standard_v1",
+                                            user_id=claimed.user_id,
+                                            payload={
+                                                "trigger": "snapshot_generate_v1",
+                                                "requested_at": (claimed.payload or {}).get("requested_at"),
+                                                "scope": SNAPSHOT_SCOPE_DEFAULT,
+                                                "source_hash": internal_hash,
+                                            },
+                                            priority=18,
+                                        )
+                                    else:
+                                        raise RuntimeError("internal source_hash missing for global scope")
+                                except Exception as exc:
+                                    logger.error("Self structure downstream enqueue failed: %s", exc)
 
                                 # Auto-enqueue emotion_period snapshots (weekly/monthly) for future snapshot-driven analysis.
                                 # We intentionally keep daily out of this branch to preserve the existing daily
@@ -1463,6 +1771,73 @@ async def _worker_loop() -> None:
                                 )
                     except Exception as exc:
                         logger.error("Emotion report enqueue after deep analysis failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    analysis_res,
+                )
+            elif claimed.job_type == "analyze_self_structure_standard_v1":
+                analysis_res = await _handle_analyze_self_structure_standard_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+                        src_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
+                        if scope == SNAPSHOT_SCOPE_DEFAULT and src_hash:
+                            await enqueue_job(
+                                job_key=f"analysis_self_structure_deep:{claimed.user_id}:{scope}:{src_hash}",
+                                job_type="analyze_self_structure_deep_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "trigger": "analyze_self_structure_standard_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                    "scope": scope,
+                                    "source_hash": src_hash,
+                                },
+                                priority=17,
+                            )
+                    except Exception as exc:
+                        logger.error("Self structure deep enqueue after standard failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    analysis_res,
+                )
+            elif claimed.job_type == "analyze_self_structure_deep_v1":
+                analysis_res = await _handle_analyze_self_structure_deep_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
                 logger.info(
                     "job done. key=%s type=%s user=%s res=%s",
                     claimed.job_key,

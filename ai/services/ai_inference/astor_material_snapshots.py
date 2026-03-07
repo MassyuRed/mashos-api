@@ -74,6 +74,31 @@ except Exception:
 
 
 
+try:
+    SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE = int(os.getenv("SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE", "1000") or "1000")
+except Exception:
+    SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE = 1000
+
+try:
+    SNAPSHOT_SELF_STRUCTURE_MAX_ROWS = int(os.getenv("SNAPSHOT_SELF_STRUCTURE_MAX_ROWS", "20000") or "20000")
+except Exception:
+    SNAPSHOT_SELF_STRUCTURE_MAX_ROWS = 20000
+
+MYMODEL_CREATE_ANSWERS_TABLE = (os.getenv("MYMODEL_CREATE_ANSWERS_TABLE") or "mymodel_create_answers").strip()
+MYMODEL_CREATE_USER_ID_COLUMN = (os.getenv("MYMODEL_CREATE_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+
+DEEP_INSIGHT_INPUTS_TABLE = (os.getenv("DEEP_INSIGHT_INPUTS_TABLE") or "deep_insight_answers").strip()
+DEEP_INSIGHT_USER_ID_COLUMN = (os.getenv("DEEP_INSIGHT_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+
+ECHO_INPUTS_TABLE = (os.getenv("ECHO_INPUTS_TABLE") or "mymodel_echoes").strip()
+ECHO_USER_ID_COLUMN = (os.getenv("ECHO_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+
+DISCOVERY_INPUTS_TABLE = (os.getenv("DISCOVERY_INPUTS_TABLE") or "mymodel_discoveries").strip()
+DISCOVERY_USER_ID_COLUMN = (os.getenv("DISCOVERY_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+
+
+
+
 # --- Emotion period scopes (weekly/monthly) ---
 # JST fixed (UTC+9) to match MyWeb report definitions.
 JST_OFFSET = timedelta(hours=9)
@@ -303,29 +328,459 @@ def build_snapshot_payload(
     scope: str,
     snapshot_type: str,
     source_hash: str,
-    total_rows: int,
-    public_rows: int,
-    secret_rows: int,
-    recent_emotions: List[Dict[str, Any]],
+    summary: Dict[str, Any],
+    views: Dict[str, Any],
 ) -> Dict[str, Any]:
-    return {
-        "version": "v1",
+    payload: Dict[str, Any] = {
+        "version": "v2",
         "scope": scope,
         "snapshot_type": snapshot_type,
         "source_hash": source_hash,
         "generated_at": _now_iso_z(),
-        "summary": {
-            "emotions_total": int(total_rows),
-            "emotions_public": int(public_rows),
-            "emotions_secret": int(secret_rows),
-            "recent_limit": int(SNAPSHOT_RECENT_EMOTIONS_LIMIT),
-        },
-        "views": {
-            # 部署別配給ビュー（まずは emotions だけ）
-            "emotions_recent": recent_emotions,
+        "summary": summary or {},
+        "views": views or {},
+    }
+    # Worker compatibility: expose aliases at payload root as well.
+    if isinstance(views, dict):
+        if "self_structure_view" in views:
+            payload["self_structure_view"] = views.get("self_structure_view")
+        if "emotions_recent" in views:
+            payload["emotions_recent"] = views.get("emotions_recent")
+    return payload
+
+
+async def _safe_optional_sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0) -> List[Dict[str, Any]]:
+    try:
+        return await _sb_get_json(path, params=params, timeout=timeout)
+    except Exception as exc:
+        logger.debug("optional Supabase GET failed: path=%s err=%s", path, exc)
+        return []
+
+
+def _row_is_secret(row: Dict[str, Any]) -> bool:
+    v = row.get("is_secret")
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    s = str(v or "").strip().lower()
+    return s in ("1", "true", "t", "yes", "y", "on")
+
+
+def _row_created_at(row: Dict[str, Any]) -> str:
+    return str(row.get("created_at") or row.get("updated_at") or "")
+
+
+def _row_updated_at(row: Dict[str, Any]) -> str:
+    return str(row.get("updated_at") or row.get("created_at") or "")
+
+
+def _row_timestamp(row: Dict[str, Any]) -> str:
+    return str(row.get("created_at") or row.get("updated_at") or _now_iso_z())
+
+
+def _pick_first_text(row: Dict[str, Any], keys: List[str]) -> str:
+    for k in keys:
+        v = row.get(k)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s:
+            return s
+    return ""
+
+
+def _normalize_emotion_signals_all(row: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        for it in details:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("type") or "").strip()
+            if t:
+                out.append(t)
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        for it in emos:
+            s = str(it or "").strip()
+            if s:
+                out.append(s)
+    seen = set()
+    uniq: List[str] = []
+    for s in out:
+        if s in seen:
+            continue
+        seen.add(s)
+        uniq.append(s)
+    return uniq
+
+
+def compute_source_hash_from_material_meta(
+    *,
+    user_id: str,
+    scope: str,
+    snapshot_type: str,
+    meta_rows: List[Dict[str, Any]],
+) -> str:
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
+    st = str(snapshot_type or "").strip() or "internal"
+
+    h = hashlib.sha256()
+    h.update(f"v2|{uid}|{sc}|{st}|".encode("utf-8"))
+
+    rows = sorted(
+        meta_rows or [],
+        key=lambda r: (
+            str(r.get("material_kind") or ""),
+            str(r.get("created_at") or ""),
+            str(r.get("updated_at") or ""),
+            str(r.get("id") or ""),
+        ),
+    )
+    for r in rows:
+        is_secret = _row_is_secret(r)
+        if st == "public" and is_secret:
+            continue
+        h.update(
+            (
+                str(r.get("material_kind") or "") + "|"
+                + str(r.get("id") or "") + "|"
+                + str(r.get("created_at") or "") + "|"
+                + str(r.get("updated_at") or "") + "|"
+                + ("1" if is_secret else "0") + "\n"
+            ).encode("utf-8")
+        )
+
+    return h.hexdigest()
+
+
+async def _fetch_optional_rows_by_user(
+    *,
+    table: str,
+    user_id: str,
+    user_id_column: str = "user_id",
+    include_secret: bool = True,
+    page_size: int = SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE,
+    max_rows: int = SNAPSHOT_SELF_STRUCTURE_MAX_ROWS,
+) -> List[Dict[str, Any]]:
+    tbl = str(table or "").strip()
+    uid = str(user_id or "").strip()
+    col = str(user_id_column or "user_id").strip() or "user_id"
+    if not tbl or not uid:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    offset = 0
+    ps = max(1, int(page_size or 1000))
+    mx = max(ps, int(max_rows or 20000))
+
+    while True:
+        limit = min(ps, mx - len(out))
+        if limit <= 0:
+            break
+
+        rows = await _safe_optional_sb_get_json(
+            f"/rest/v1/{tbl}",
+            params=[
+                ("select", "*"),
+                (col, f"eq.{uid}"),
+                ("order", "created_at.asc"),
+                ("limit", str(limit)),
+                ("offset", str(offset)),
+            ],
+            timeout=10.0,
+        )
+        if not rows:
+            break
+
+        if not include_secret:
+            rows = [r for r in rows if not _row_is_secret(r)]
+
+        out.extend(rows)
+        if len(rows) < limit:
+            break
+        offset += limit
+
+    out.sort(key=lambda r: (_row_created_at(r), str(r.get("id") or "")))
+    return out
+
+
+async def fetch_emotions_for_self_structure(
+    user_id: str,
+    *,
+    include_secret: bool,
+    page_size: int = SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE,
+    max_rows: int = SNAPSHOT_SELF_STRUCTURE_MAX_ROWS,
+) -> List[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    offset = 0
+    ps = max(1, int(page_size or 1000))
+    mx = max(ps, int(max_rows or 20000))
+
+    while True:
+        limit = min(ps, mx - len(out))
+        if limit <= 0:
+            break
+
+        params: List[Tuple[str, str]] = [
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+            ("user_id", f"eq.{uid}"),
+            ("order", "created_at.asc"),
+            ("limit", str(limit)),
+            ("offset", str(offset)),
+        ]
+        if not include_secret:
+            params.append(("is_secret", "eq.false"))
+
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        if not rows:
+            break
+
+        out.extend(rows)
+        if len(rows) < limit:
+            break
+        offset += limit
+
+    return out
+
+
+async def fetch_mymodel_create_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
+    return await _fetch_optional_rows_by_user(
+        table=MYMODEL_CREATE_ANSWERS_TABLE,
+        user_id=user_id,
+        user_id_column=MYMODEL_CREATE_USER_ID_COLUMN,
+        include_secret=include_secret,
+    )
+
+
+async def fetch_deep_insight_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
+    return await _fetch_optional_rows_by_user(
+        table=DEEP_INSIGHT_INPUTS_TABLE,
+        user_id=user_id,
+        user_id_column=DEEP_INSIGHT_USER_ID_COLUMN,
+        include_secret=include_secret,
+    )
+
+
+async def fetch_echo_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
+    return await _fetch_optional_rows_by_user(
+        table=ECHO_INPUTS_TABLE,
+        user_id=user_id,
+        user_id_column=ECHO_USER_ID_COLUMN,
+        include_secret=include_secret,
+    )
+
+
+async def fetch_discovery_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
+    return await _fetch_optional_rows_by_user(
+        table=DISCOVERY_INPUTS_TABLE,
+        user_id=user_id,
+        user_id_column=DISCOVERY_USER_ID_COLUMN,
+        include_secret=include_secret,
+    )
+
+
+def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    mk = str(material_kind or "").strip()
+    out: List[Dict[str, Any]] = []
+    for r in rows or []:
+        out.append(
+            {
+                "material_kind": mk,
+                "id": str(r.get("id") or ""),
+                "created_at": _row_created_at(r),
+                "updated_at": _row_updated_at(r),
+                "is_secret": _row_is_secret(r),
+            }
+        )
+    return out
+
+
+def _dedupe_material_meta_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for r in rows or []:
+        key = (str(r.get("material_kind") or ""), str(r.get("id") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
+def _emotion_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "emotion_input",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "text_primary": str(row.get("memo") or ""),
+        "text_secondary": str(row.get("memo_action") or ""),
+        "prompt_key": None,
+        "question_text": None,
+        "emotion_signals": _normalize_emotion_signals_all(row),
+        "action_signals": [],
+        "social_signals": [],
+        "source_weight": 1.0,
+    }
+
+
+def _mymodel_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "mymodel_create",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
+        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "emotion_signals": [],
+        "action_signals": [],
+        "social_signals": [],
+        "source_weight": 0.9,
+    }
+
+
+def _deep_insight_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "deep_insight",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
+        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "emotion_signals": [],
+        "action_signals": [],
+        "social_signals": [],
+        "source_weight": 1.1,
+    }
+
+
+def _echo_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "echo",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "text_primary": _pick_first_text(row, ["text", "content", "body", "memo", "comment_text"]),
+        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "emotion_signals": [],
+        "action_signals": [],
+        "social_signals": ["echo"],
+        "source_weight": 0.4,
+    }
+
+
+def _discovery_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "discovery",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "text_primary": _pick_first_text(row, ["text", "content", "body", "memo", "comment_text"]),
+        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "emotion_signals": [],
+        "action_signals": [],
+        "social_signals": ["discovery"],
+        "source_weight": 0.4,
+    }
+
+
+def build_self_structure_view(
+    *,
+    emotion_rows: List[Dict[str, Any]],
+    mymodel_rows: List[Dict[str, Any]],
+    deep_insight_rows: List[Dict[str, Any]],
+    echo_rows: List[Dict[str, Any]],
+    discovery_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+
+    for row in emotion_rows or []:
+        items.append(_emotion_row_to_self_structure_item(row))
+    for row in mymodel_rows or []:
+        items.append(_mymodel_row_to_self_structure_item(row))
+    for row in deep_insight_rows or []:
+        items.append(_deep_insight_row_to_self_structure_item(row))
+    for row in echo_rows or []:
+        items.append(_echo_row_to_self_structure_item(row))
+    for row in discovery_rows or []:
+        items.append(_discovery_row_to_self_structure_item(row))
+
+    items.sort(key=lambda r: (str(r.get("timestamp") or ""), str(r.get("source_id") or "")))
+    timestamps = [str(it.get("timestamp") or "") for it in items if str(it.get("timestamp") or "").strip()]
+    source_counts = {
+        "emotion_input": len(emotion_rows or []),
+        "mymodel_create": len(mymodel_rows or []),
+        "deep_insight": len(deep_insight_rows or []),
+        "echo": len(echo_rows or []),
+        "discovery": len(discovery_rows or []),
+    }
+
+    return {
+        "version": "self_structure_view.v1",
+        "items": items,
+        "source_counts": source_counts,
+        "time_span_start": timestamps[0] if timestamps else None,
+        "time_span_end": timestamps[-1] if timestamps else None,
+    }
+
+
+def _build_global_views(
+    *,
+    recent_emotions: List[Dict[str, Any]],
+    self_structure_view: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "emotions_recent": recent_emotions or [],
+        "self_structure_view": self_structure_view or {
+            "version": "self_structure_view.v1",
+            "items": [],
+            "source_counts": {},
+            "time_span_start": None,
+            "time_span_end": None,
         },
     }
 
+
+def _build_global_summary(
+    *,
+    material_meta: List[Dict[str, Any]],
+    emotion_total_rows: int,
+    emotion_public_rows: int,
+    emotion_secret_rows: int,
+    self_structure_view: Dict[str, Any],
+) -> Dict[str, Any]:
+    source_counts: Dict[str, int] = {}
+    secret_total = 0
+    for r in material_meta or []:
+        mk = str(r.get("material_kind") or "")
+        source_counts[mk] = source_counts.get(mk, 0) + 1
+        if _row_is_secret(r):
+            secret_total += 1
+
+    total_materials = len(material_meta or [])
+    public_materials = total_materials - secret_total
+
+    return {
+        "materials_total": int(total_materials),
+        "materials_public": int(public_materials),
+        "materials_secret": int(secret_total),
+        "source_counts": source_counts,
+        "emotions_total": int(emotion_total_rows),
+        "emotions_public": int(emotion_public_rows),
+        "emotions_secret": int(emotion_secret_rows),
+        "recent_limit": int(SNAPSHOT_RECENT_EMOTIONS_LIMIT),
+        "self_structure_items": int(len((self_structure_view or {}).get("items") or [])),
+    }
 
 
 def _iso_ms_z(dt: datetime) -> str:
@@ -1090,15 +1545,9 @@ async def generate_and_store_material_snapshots(
 ) -> Dict[str, Any]:
     """Generate internal/public snapshots for a user and store them.
 
-    Returns:
-    {
-      "status": "ok",
-      "user_id": ...,
-      "scope": ...,
-      "internal": {"source_hash": ..., "inserted": bool},
-      "public": {"source_hash": ..., "inserted": bool},
-      "counts": {...}
-    }
+    Global snapshots now include:
+    - views.emotions_recent
+    - views.self_structure_view
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -1108,51 +1557,113 @@ async def generate_and_store_material_snapshots(
 
     sc = str(scope or "").strip() or SNAPSHOT_SCOPE_DEFAULT
 
-
-    # emotion_period snapshots (weekly/monthly): build period material snapshots (days/weeks/metrics)
     if _is_emotion_period_scope(sc):
         return await _generate_and_store_emotion_period_snapshots(user_id=uid, scope=sc, trigger=trigger)
 
-    # 1) Fetch meta rows for hashing (includes secret flag)
-    meta = await fetch_emotion_meta_for_hash(uid)
-    total_rows = len(meta)
-    secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
-    public_rows = total_rows - secret_rows
+    # Legacy emotion stats / recent view
+    emotion_meta = await fetch_emotion_meta_for_hash(uid)
+    emotion_total_rows = len(emotion_meta)
+    emotion_secret_rows = sum(1 for r in emotion_meta if _row_is_secret(r))
+    emotion_public_rows = emotion_total_rows - emotion_secret_rows
 
-    # 2) Compute hashes
-    internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=meta)
-    public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=meta)
-
-    # 3) Fetch recent rows for payload (bounded)
     internal_recent = await fetch_recent_emotions(uid, include_secret=True)
     public_recent = await fetch_recent_emotions(uid, include_secret=False)
 
-    # 4) Build payloads
+    # Global cumulative materials for self structure analysis
+    internal_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=True)
+    public_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=False)
+
+    internal_mymodel_rows = await fetch_mymodel_create_rows_for_self_structure(uid, include_secret=True)
+    public_mymodel_rows = await fetch_mymodel_create_rows_for_self_structure(uid, include_secret=False)
+
+    internal_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=True)
+    public_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=False)
+
+    internal_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=True)
+    public_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=False)
+
+    internal_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=True)
+    public_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=False)
+
+    internal_self_structure_view = build_self_structure_view(
+        emotion_rows=internal_emotion_rows,
+        mymodel_rows=internal_mymodel_rows,
+        deep_insight_rows=internal_deep_rows,
+        echo_rows=internal_echo_rows,
+        discovery_rows=internal_discovery_rows,
+    )
+    public_self_structure_view = build_self_structure_view(
+        emotion_rows=public_emotion_rows,
+        mymodel_rows=public_mymodel_rows,
+        deep_insight_rows=public_deep_rows,
+        echo_rows=public_echo_rows,
+        discovery_rows=public_discovery_rows,
+    )
+
+    internal_material_meta: List[Dict[str, Any]] = []
+    internal_material_meta.extend(_material_meta_rows_from_rows("emotion_input", internal_emotion_rows))
+    internal_material_meta.extend(_material_meta_rows_from_rows("mymodel_create", internal_mymodel_rows))
+    internal_material_meta.extend(_material_meta_rows_from_rows("deep_insight", internal_deep_rows))
+    internal_material_meta.extend(_material_meta_rows_from_rows("echo", internal_echo_rows))
+    internal_material_meta.extend(_material_meta_rows_from_rows("discovery", internal_discovery_rows))
+    internal_material_meta = _dedupe_material_meta_rows(internal_material_meta)
+
+    internal_hash = compute_source_hash_from_material_meta(
+        user_id=uid,
+        scope=sc,
+        snapshot_type="internal",
+        meta_rows=internal_material_meta,
+    )
+    public_hash = compute_source_hash_from_material_meta(
+        user_id=uid,
+        scope=sc,
+        snapshot_type="public",
+        meta_rows=internal_material_meta,
+    )
+
+    internal_views = _build_global_views(
+        recent_emotions=internal_recent,
+        self_structure_view=internal_self_structure_view,
+    )
+    public_views = _build_global_views(
+        recent_emotions=public_recent,
+        self_structure_view=public_self_structure_view,
+    )
+
+    internal_summary = _build_global_summary(
+        material_meta=internal_material_meta,
+        emotion_total_rows=emotion_total_rows,
+        emotion_public_rows=emotion_public_rows,
+        emotion_secret_rows=emotion_secret_rows,
+        self_structure_view=internal_self_structure_view,
+    )
+    public_summary = _build_global_summary(
+        material_meta=[r for r in internal_material_meta if not _row_is_secret(r)],
+        emotion_total_rows=emotion_total_rows,
+        emotion_public_rows=emotion_public_rows,
+        emotion_secret_rows=emotion_secret_rows,
+        self_structure_view=public_self_structure_view,
+    )
+
     internal_payload = build_snapshot_payload(
         scope=sc,
         snapshot_type="internal",
         source_hash=internal_hash,
-        total_rows=total_rows,
-        public_rows=public_rows,
-        secret_rows=secret_rows,
-        recent_emotions=internal_recent,
+        summary=internal_summary,
+        views=internal_views,
     )
     public_payload = build_snapshot_payload(
         scope=sc,
         snapshot_type="public",
         source_hash=public_hash,
-        total_rows=total_rows,
-        public_rows=public_rows,
-        secret_rows=secret_rows,
-        recent_emotions=public_recent,
+        summary=public_summary,
+        views=public_views,
     )
 
-    # 5) Store snapshots
     inserted_internal = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="internal", source_hash=internal_hash, payload=internal_payload)
     inserted_public = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="public", source_hash=public_hash, payload=public_payload)
 
-    # 5.5) Downstream: when global snapshot is refreshed, enqueue latest weekly/monthly emotion_period snapshots.
-    #      Best-effort and safe to call repeatedly because job_key coalesces.
+    # Keep existing emotion_period downstream only; self structure analysis is enqueued by worker.
     try:
         if sc == SNAPSHOT_SCOPE_DEFAULT and callable(enqueue_job):
             requested_at = _now_iso_z()
@@ -1185,13 +1696,17 @@ async def generate_and_store_material_snapshots(
         logger.error("Failed to enqueue downstream emotion_period snapshots: %s", exc)
 
     logger.info(
-        "material_snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s",
+        "material_snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s self_items=%s",
         uid,
         sc,
         internal_hash[:10],
         public_hash[:10],
         trigger,
+        len((internal_self_structure_view or {}).get("items") or []),
     )
+
+    material_secret_rows = sum(1 for r in internal_material_meta if _row_is_secret(r))
+    material_total_rows = len(internal_material_meta)
 
     return {
         "status": "ok",
@@ -1200,5 +1715,12 @@ async def generate_and_store_material_snapshots(
         "trigger": trigger,
         "internal": {"source_hash": internal_hash, "inserted": bool(inserted_internal)},
         "public": {"source_hash": public_hash, "inserted": bool(inserted_public)},
-        "counts": {"total": total_rows, "public": public_rows, "secret": secret_rows},
+        "counts": {
+            "total": material_total_rows,
+            "public": material_total_rows - material_secret_rows,
+            "secret": material_secret_rows,
+            "source_counts": (internal_self_structure_view or {}).get("source_counts") or {},
+            "self_structure_items": len((internal_self_structure_view or {}).get("items") or []),
+        },
     }
+
