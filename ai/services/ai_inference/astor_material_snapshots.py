@@ -344,6 +344,8 @@ def build_snapshot_payload(
     if isinstance(views, dict):
         if "self_structure_view" in views:
             payload["self_structure_view"] = views.get("self_structure_view")
+        if "premium_reflection_view" in views:
+            payload["premium_reflection_view"] = views.get("premium_reflection_view")
         if "emotions_recent" in views:
             payload["emotions_recent"] = views.get("emotions_recent")
     return payload
@@ -550,6 +552,54 @@ async def fetch_emotions_for_self_structure(
     return out
 
 
+async def fetch_emotions_for_premium_reflection(
+    user_id: str,
+    *,
+    include_secret: bool,
+    page_size: int = SNAPSHOT_SELF_STRUCTURE_PAGE_SIZE,
+    max_rows: int = SNAPSHOT_SELF_STRUCTURE_MAX_ROWS,
+) -> List[Dict[str, Any]]:
+    """Fetch InputScreen rows for Premium Reflections.
+
+    Intentionally uses `select=*` so future category fields added to emotions
+    are automatically available without further snapshot patches.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    offset = 0
+    ps = max(1, int(page_size or 1000))
+    mx = max(ps, int(max_rows or 20000))
+
+    while True:
+        limit = min(ps, mx - len(out))
+        if limit <= 0:
+            break
+
+        params: List[Tuple[str, str]] = [
+            ("select", "*"),
+            ("user_id", f"eq.{uid}"),
+            ("order", "created_at.asc"),
+            ("limit", str(limit)),
+            ("offset", str(offset)),
+        ]
+        if not include_secret:
+            params.append(("is_secret", "eq.false"))
+
+        rows = await _sb_get_json("/rest/v1/emotions", params=params, timeout=10.0)
+        if not rows:
+            break
+
+        out.extend(rows)
+        if len(rows) < limit:
+            break
+        offset += limit
+
+    return out
+
+
 async def fetch_mymodel_create_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
     return await _fetch_optional_rows_by_user(
         table=MYMODEL_CREATE_ANSWERS_TABLE,
@@ -662,6 +712,94 @@ def _deep_insight_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, A
     }
 
 
+def _extract_reflection_category(row: Dict[str, Any]) -> Optional[str]:
+    cat = _pick_first_text(
+        row,
+        [
+            "category",
+            "category_key",
+            "category_name",
+            "input_category",
+            "selected_category",
+            "context_category",
+        ],
+    )
+    return cat or None
+
+
+def _emotion_row_to_premium_reflection_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source_type": "emotion_input",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "category": _extract_reflection_category(row),
+        "text_primary": str(row.get("memo") or ""),
+        "text_secondary": str(row.get("memo_action") or ""),
+        "emotion_signals": _normalize_emotion_signals_all(row),
+        "question_text": None,
+        "source_weight": 1.0,
+    }
+
+
+def _deep_insight_row_to_premium_reflection_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    category = _extract_reflection_category(row) or "deep_insight"
+    return {
+        "source_type": "deep_insight",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": _row_timestamp(row),
+        "category": category,
+        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
+        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+        "emotion_signals": [],
+        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "source_weight": 1.1,
+    }
+
+
+def build_premium_reflection_view(
+    *,
+    emotion_rows: List[Dict[str, Any]],
+    deep_insight_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build public-safe material view for Premium Reflection generation.
+
+    Premium Reflections are generated only from secret-OFF InputScreen rows and
+    secret-OFF DeepInsight inputs, so this view is intentionally public-safe.
+    """
+    items: List[Dict[str, Any]] = []
+
+    for row in emotion_rows or []:
+        items.append(_emotion_row_to_premium_reflection_item(row))
+    for row in deep_insight_rows or []:
+        items.append(_deep_insight_row_to_premium_reflection_item(row))
+
+    items = [
+        it for it in items
+        if str(it.get("text_primary") or "").strip() or str(it.get("text_secondary") or "").strip()
+    ]
+    items.sort(key=lambda r: (str(r.get("timestamp") or ""), str(r.get("source_id") or "")))
+
+    timestamps = [str(it.get("timestamp") or "") for it in items if str(it.get("timestamp") or "").strip()]
+    category_counts: Dict[str, int] = {}
+    for it in items:
+        cat = str(it.get("category") or "").strip()
+        if not cat:
+            continue
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+
+    return {
+        "version": "premium_reflection_view.v1",
+        "items": items,
+        "source_counts": {
+            "emotion_input": len(emotion_rows or []),
+            "deep_insight": len(deep_insight_rows or []),
+        },
+        "category_counts": category_counts,
+        "time_span_start": timestamps[0] if timestamps else None,
+        "time_span_end": timestamps[-1] if timestamps else None,
+    }
+
+
 def _echo_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "source_type": "echo",
@@ -738,6 +876,7 @@ def _build_global_views(
     *,
     recent_emotions: List[Dict[str, Any]],
     self_structure_view: Dict[str, Any],
+    premium_reflection_view: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "emotions_recent": recent_emotions or [],
@@ -745,6 +884,14 @@ def _build_global_views(
             "version": "self_structure_view.v1",
             "items": [],
             "source_counts": {},
+            "time_span_start": None,
+            "time_span_end": None,
+        },
+        "premium_reflection_view": premium_reflection_view or {
+            "version": "premium_reflection_view.v1",
+            "items": [],
+            "source_counts": {},
+            "category_counts": {},
             "time_span_start": None,
             "time_span_end": None,
         },
@@ -758,6 +905,7 @@ def _build_global_summary(
     emotion_public_rows: int,
     emotion_secret_rows: int,
     self_structure_view: Dict[str, Any],
+    premium_reflection_view: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     source_counts: Dict[str, int] = {}
     secret_total = 0
@@ -780,6 +928,7 @@ def _build_global_summary(
         "emotions_secret": int(emotion_secret_rows),
         "recent_limit": int(SNAPSHOT_RECENT_EMOTIONS_LIMIT),
         "self_structure_items": int(len((self_structure_view or {}).get("items") or [])),
+        "premium_reflection_items": int(len(((premium_reflection_view or {}).get("items") or []))),
     }
 
 
@@ -1548,6 +1697,7 @@ async def generate_and_store_material_snapshots(
     Global snapshots now include:
     - views.emotions_recent
     - views.self_structure_view
+    - views.premium_reflection_view
     """
     uid = str(user_id or "").strip()
     if not uid:
@@ -1579,6 +1729,11 @@ async def generate_and_store_material_snapshots(
     internal_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=True)
     public_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=False)
 
+    # Premium Reflections are intentionally built from public-safe materials only
+    # to avoid secret contamination in topic clustering / question / answer generation.
+    premium_reflection_emotion_rows = await fetch_emotions_for_premium_reflection(uid, include_secret=False)
+    premium_reflection_deep_rows = public_deep_rows
+
     internal_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=True)
     public_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=False)
 
@@ -1598,6 +1753,11 @@ async def generate_and_store_material_snapshots(
         deep_insight_rows=public_deep_rows,
         echo_rows=public_echo_rows,
         discovery_rows=public_discovery_rows,
+    )
+
+    premium_reflection_view = build_premium_reflection_view(
+        emotion_rows=premium_reflection_emotion_rows,
+        deep_insight_rows=premium_reflection_deep_rows,
     )
 
     internal_material_meta: List[Dict[str, Any]] = []
@@ -1624,10 +1784,12 @@ async def generate_and_store_material_snapshots(
     internal_views = _build_global_views(
         recent_emotions=internal_recent,
         self_structure_view=internal_self_structure_view,
+        premium_reflection_view=premium_reflection_view,
     )
     public_views = _build_global_views(
         recent_emotions=public_recent,
         self_structure_view=public_self_structure_view,
+        premium_reflection_view=premium_reflection_view,
     )
 
     internal_summary = _build_global_summary(
@@ -1636,6 +1798,7 @@ async def generate_and_store_material_snapshots(
         emotion_public_rows=emotion_public_rows,
         emotion_secret_rows=emotion_secret_rows,
         self_structure_view=internal_self_structure_view,
+        premium_reflection_view=premium_reflection_view,
     )
     public_summary = _build_global_summary(
         material_meta=[r for r in internal_material_meta if not _row_is_secret(r)],
@@ -1643,6 +1806,7 @@ async def generate_and_store_material_snapshots(
         emotion_public_rows=emotion_public_rows,
         emotion_secret_rows=emotion_secret_rows,
         self_structure_view=public_self_structure_view,
+        premium_reflection_view=premium_reflection_view,
     )
 
     internal_payload = build_snapshot_payload(
@@ -1696,13 +1860,14 @@ async def generate_and_store_material_snapshots(
         logger.error("Failed to enqueue downstream emotion_period snapshots: %s", exc)
 
     logger.info(
-        "material_snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s self_items=%s",
+        "material_snapshots generated. user=%s scope=%s internal=%s public=%s trigger=%s self_items=%s premium_items=%s",
         uid,
         sc,
         internal_hash[:10],
         public_hash[:10],
         trigger,
         len((internal_self_structure_view or {}).get("items") or []),
+        len((premium_reflection_view or {}).get("items") or []),
     )
 
     material_secret_rows = sum(1 for r in internal_material_meta if _row_is_secret(r))
@@ -1721,6 +1886,7 @@ async def generate_and_store_material_snapshots(
             "secret": material_secret_rows,
             "source_counts": (internal_self_structure_view or {}).get("source_counts") or {},
             "self_structure_items": len((internal_self_structure_view or {}).get("items") or []),
+            "premium_reflection_items": len((premium_reflection_view or {}).get("items") or []),
         },
     }
 

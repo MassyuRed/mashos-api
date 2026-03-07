@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -115,10 +115,22 @@ try:
 except Exception:  # pragma: no cover - backward compatibility while adapter lands
     build_self_structure_inputs_from_snapshot_payload = None  # type: ignore
 
+
+from astor_reflection_engine import build_generation_plan as build_reflection_generation_plan  # type: ignore
+from astor_reflection_store import (  # type: ignore
+    fetch_active_generated_reflections,
+    stage_generation_plan as stage_reflection_generation_plan,
+    promote_reflection as promote_generated_reflection,
+    reject_reflection as reject_generated_reflection,
+    fail_reflection as fail_generated_reflection,
+)
+
+
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
 SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
 ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
+MYMODEL_REFLECTIONS_TABLE = (os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections").strip() or "mymodel_reflections"
 
 # JST (UTC+9) fixed for MyWeb periods
 JST = timezone(timedelta(hours=9))
@@ -150,6 +162,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "analyze_emotion_structure_deep_v1",
     "analyze_self_structure_standard_v1",
     "analyze_self_structure_deep_v1",
+    "generate_premium_reflections_v1",
+    "inspect_reflection_v1",
     "generate_emotion_report_v2",
     "inspect_emotion_report_v1",
 ]
@@ -606,6 +620,162 @@ async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Opti
 
 async def _fetch_latest_internal_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
     return await _fetch_latest_snapshot_row(user_id=user_id, scope=scope, snapshot_type="internal")
+
+
+
+def _extract_premium_reflection_view_from_snapshot(snapshot_row: Dict[str, Any]) -> Dict[str, Any]:
+    payload = snapshot_row.get("payload")
+    if isinstance(payload, dict):
+        if isinstance(payload.get("premium_reflection_view"), dict):
+            return payload.get("premium_reflection_view") or {}
+        views = payload.get("views")
+        if isinstance(views, dict) and isinstance(views.get("premium_reflection_view"), dict):
+            return views.get("premium_reflection_view") or {}
+    raise RuntimeError("premium_reflection_view not found in snapshot payload")
+
+
+async def _fetch_reflection_row(*, reflection_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    rid = str(reflection_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not rid or not uid:
+        return None
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+            params={
+                "select": "*",
+                "id": f"eq.{rid}",
+                "owner_user_id": f"eq.{uid}",
+                "limit": "1",
+            },
+            timeout=10.0,
+        )
+        if resp.status_code not in (200, 206):
+            return None
+        rows = resp.json()
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            return rows[0]
+    except Exception:
+        return None
+    return None
+
+
+async def _handle_generate_premium_reflections_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    scope = str((payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+    if scope != SNAPSHOT_SCOPE_DEFAULT:
+        raise ValueError(f"unsupported scope for premium reflection generation: {scope}")
+
+    snap = await _fetch_latest_public_snapshot_row(user_id=uid, scope=scope)
+    if not snap:
+        raise RuntimeError("public global snapshot not found")
+
+    latest_hash = str(snap.get("source_hash") or "").strip()
+    requested_hash = str((payload or {}).get("source_hash") or "").strip()
+    if requested_hash and latest_hash and requested_hash != latest_hash:
+        return {
+            "status": "skipped_stale",
+            "user_id": uid,
+            "scope": scope,
+            "requested_source_hash": requested_hash,
+            "latest_source_hash": latest_hash,
+        }
+
+    reflection_view = _extract_premium_reflection_view_from_snapshot(snap)
+    existing_dynamic = await fetch_active_generated_reflections(user_id=uid)
+
+    plan = build_reflection_generation_plan(
+        user_id=uid,
+        snapshot_id=str(snap.get("id") or ""),
+        source_hash=latest_hash,
+        premium_reflection_view=reflection_view,
+        existing_dynamic_reflections=existing_dynamic,
+    )
+
+    staged = await stage_reflection_generation_plan(
+        user_id=uid,
+        snapshot_id=str(snap.get("id") or ""),
+        source_hash=latest_hash,
+        generation_plan=plan,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": scope,
+        "snapshot_id": str(snap.get("id") or ""),
+        "source_hash": latest_hash,
+        "plan": plan.get("stats") or {},
+        "stage": staged,
+    }
+
+
+async def _handle_inspect_reflection_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    rid = str((payload or {}).get("reflection_id") or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    if not rid:
+        raise ValueError("payload.reflection_id is required")
+
+    row = await _fetch_reflection_row(reflection_id=rid, user_id=uid)
+    if not row:
+        return {"status": "missing", "user_id": uid, "reflection_id": rid}
+
+    if str(row.get("source_type") or "").strip() != "generated":
+        raise ValueError("inspect_reflection_v1 supports generated reflections only")
+
+    question = str(row.get("question") or "").strip()
+    answer = str(row.get("answer") or "").strip()
+    row_source_hash = str(row.get("source_hash") or "").strip()
+
+    flags: List[str] = []
+    if not str(row.get("topic_key") or "").strip():
+        flags.append("topic_key_missing")
+    if not str(row.get("category") or "").strip():
+        flags.append("category_missing")
+    if not question:
+        flags.append("question_empty")
+    if not answer:
+        flags.append("answer_empty")
+    elif len(answer) < 2:
+        flags.append("answer_too_short")
+    if not row_source_hash:
+        flags.append("source_hash_missing")
+
+    latest_public_hash = await _fetch_latest_public_source_hash(uid, scope=SNAPSHOT_SCOPE_DEFAULT)
+    if not latest_public_hash:
+        flags.append("latest_public_source_hash_missing")
+    elif row_source_hash and row_source_hash != latest_public_hash:
+        flags.append("public_snapshot_mismatch")
+
+    pii_flags = _detect_pii("\n".join([question, answer]))
+    for pf in pii_flags:
+        flags.append(f"pii:{pf}")
+
+    if flags:
+        reject_res = await reject_generated_reflection(reflection_id=rid)
+        return {
+            "status": "rejected",
+            "user_id": uid,
+            "reflection_id": rid,
+            "flags": flags,
+            "latest_public_source_hash": latest_public_hash,
+            "reject": reject_res,
+        }
+
+    promote_res = await promote_generated_reflection(reflection_id=rid)
+    return {
+        "status": "ready",
+        "user_id": uid,
+        "reflection_id": rid,
+        "flags": [],
+        "latest_public_source_hash": latest_public_hash,
+        "promote": promote_res,
+    }
 
 
 async def _upsert_analysis_result(*, row: Dict[str, Any]) -> bool:
@@ -1492,7 +1662,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
             )
         )
     )
@@ -1615,6 +1785,26 @@ async def _worker_loop() -> None:
                                         raise RuntimeError("internal source_hash missing for global scope")
                                 except Exception as exc:
                                     logger.error("Self structure downstream enqueue failed: %s", exc)
+
+                                try:
+                                    public_hash = str(public.get("source_hash") or "")
+                                    if public_hash:
+                                        await enqueue_job(
+                                            job_key=f"generate_premium_reflections:{claimed.user_id}:global:{public_hash}",
+                                            job_type="generate_premium_reflections_v1",
+                                            user_id=claimed.user_id,
+                                            payload={
+                                                "trigger": "snapshot_generate_v1",
+                                                "requested_at": (claimed.payload or {}).get("requested_at"),
+                                                "scope": SNAPSHOT_SCOPE_DEFAULT,
+                                                "source_hash": public_hash,
+                                            },
+                                            priority=16,
+                                        )
+                                    else:
+                                        raise RuntimeError("public source_hash missing for global scope")
+                                except Exception as exc:
+                                    logger.error("Premium reflection downstream enqueue failed: %s", exc)
 
                                 # Auto-enqueue emotion_period snapshots (weekly/monthly) for future snapshot-driven analysis.
                                 # We intentionally keep daily out of this branch to preserve the existing daily
@@ -1845,6 +2035,75 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     analysis_res,
                 )
+            elif claimed.job_type == "generate_premium_reflections_v1":
+                gen_res = await _handle_generate_premium_reflections_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                gen_status = str((gen_res or {}).get("status") or "")
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                elif gen_status == "ok":
+                    try:
+                        inspection_targets = list((((gen_res or {}).get("stage") or {}).get("inspection_targets") or []))
+                        for reflection_id in inspection_targets:
+                            rid = str(reflection_id or "").strip()
+                            if not rid:
+                                continue
+                            await enqueue_job(
+                                job_key=f"inspect_reflection:{claimed.user_id}:{rid}",
+                                job_type="inspect_reflection_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "reflection_id": rid,
+                                    "trigger": "generate_premium_reflections_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                },
+                                priority=28,
+                            )
+                    except Exception as exc:
+                        logger.error("Reflection inspect enqueue failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    gen_res,
+                )
+            elif claimed.job_type == "inspect_reflection_v1":
+                insp_res = await _handle_inspect_reflection_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
@@ -1919,6 +2178,13 @@ async def _worker_loop() -> None:
                 attempts = int(claimed.attempts or 0)
                 max_attempts = int(claimed.max_attempts or 0) or 8
                 if attempts >= max_attempts:
+                    try:
+                        if claimed.job_type == "inspect_reflection_v1":
+                            reflection_id = str(((claimed.payload or {}).get("reflection_id")) or "").strip()
+                            if reflection_id:
+                                await fail_generated_reflection(reflection_id=reflection_id)
+                    except Exception:
+                        pass
                     await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc))
                 else:
                     # simple backoff: 5s, 10s, 20s, 40s... capped
