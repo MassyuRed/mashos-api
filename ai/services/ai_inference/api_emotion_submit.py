@@ -251,6 +251,19 @@ STRENGTH_LABEL_JA: Dict[str, str] = {"weak": "弱", "medium": "中", "strong": "
 # 強度スコア（structure_engine/extract.py と同じ定義）
 STRENGTH_SCORE: Dict[str, float] = {"weak": 1.0, "medium": 2.0, "strong": 3.0}
 
+# InputScreen category options (memo入力時の領域分類)
+EMOTION_INPUT_CATEGORY_OPTIONS: Tuple[str, ...] = (
+    "生活",
+    "仕事",
+    "趣味",
+    "人間関係",
+    "恋愛",
+    "健康",
+    "学習",
+    "価値観",
+    "人生",
+)
+
 # 「自己理解」はプライベート用途：フレンド通知/フレンドログ（friend_emotion_feed）対象外
 SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 
@@ -348,6 +361,41 @@ def _normalize_emotions(
     return tags, details, avg_strength
 
 
+def _normalize_categories(raw: Optional[Sequence[str]]) -> List[str]:
+    """カテゴリ配列を正規化する。
+
+    - 空文字は除外
+    - 順序を維持して重複除去
+    - 未知のカテゴリが混ざる場合は 400 を返す
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise HTTPException(status_code=400, detail="category must be a list of strings")
+
+    normalized: List[str] = []
+    invalid: List[str] = []
+    seen = set()
+
+    for item in raw:
+        value = str(item or "").strip()
+        if not value:
+            continue
+        if value not in EMOTION_INPUT_CATEGORY_OPTIONS:
+            invalid.append(value)
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+
+    if invalid:
+        sample = ", ".join(invalid[:3])
+        raise HTTPException(status_code=400, detail=f"Invalid category: {sample}")
+
+    return normalized
+
+
 async def _insert_emotion_row(
     *,
     user_id: str,
@@ -356,6 +404,7 @@ async def _insert_emotion_row(
     emotion_strength_avg: Optional[float],
     memo: Optional[str],
     memo_action: Optional[str],
+    category: Optional[List[str]],
     created_at: str,
     is_secret: bool,
 ) -> Dict[str, Any]:
@@ -381,6 +430,8 @@ async def _insert_emotion_row(
     }
     if memo_action is not None:
         payload["memo_action"] = memo_action
+    if category:
+        payload["category"] = category
     if emotion_details:
         payload["emotion_details"] = emotion_details
     if emotion_strength_avg is not None:
@@ -699,6 +750,10 @@ class EmotionSubmitRequest(BaseModel):
         default=None,
         alias="memoAction",
         description="行動内容メモ（実世界の出来事・行動）",
+    )
+    category: Optional[List[str]] = Field(
+        default=None,
+        description="メモ入力時のカテゴリ（生活 / 仕事 / 趣味 / 人間関係 / 恋愛 / 健康 / 学習 / 価値観 / 人生）",
     )
     created_at: Optional[str] = Field(
         default=None,
@@ -1714,11 +1769,18 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             else:
                 raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
-        # 2) emotions を正規化
+        # 2) emotions / category を正規化
         emotions_tags, emotion_details, avg_strength = _normalize_emotions(payload.emotions)
 
         if not emotions_tags:
             raise HTTPException(status_code=400, detail="At least one emotion is required")
+
+        normalized_categories = _normalize_categories(payload.category)
+        has_memo_input = bool(str(payload.memo or "").strip() or str(payload.memo_action or "").strip())
+        if has_memo_input and not normalized_categories:
+            raise HTTPException(status_code=400, detail="category is required when memo or memo_action is present")
+        if not has_memo_input:
+            normalized_categories = []
 
         # 3) created_at を決定
         if payload.created_at:
@@ -1734,6 +1796,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             emotion_strength_avg=avg_strength,
             memo=payload.memo,
             memo_action=payload.memo_action,
+            category=normalized_categories,
             created_at=created_at,
             is_secret=bool(payload.is_secret),
         )

@@ -34,6 +34,7 @@ v1 のスコープ
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -239,7 +240,7 @@ async def fetch_emotion_meta_for_hash(user_id: str, *, start_iso: Optional[str] 
 
         
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,is_secret"),
+            ("select", "id,created_at,is_secret,category"),
             ("user_id", f"eq.{uid}"),
         ]
         if start_iso:
@@ -277,7 +278,7 @@ async def fetch_recent_emotions(user_id: str, *, include_secret: bool) -> List[D
         return []
 
     params: List[Tuple[str, str]] = [
-        ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+        ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
         ("user_id", f"eq.{uid}"),
         ("order", "created_at.desc"),
         ("limit", str(max(1, int(SNAPSHOT_RECENT_EMOTIONS_LIMIT)))),
@@ -318,7 +319,8 @@ def compute_source_hash_from_emotion_meta(
         # public snapshots should exclude secret rows entirely
         if st == "public" and is_secret:
             continue
-        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "\n").encode("utf-8"))
+        category_sig = _category_signature(r.get("category"))
+        h.update((rid + "|" + created_at + "|" + ("1" if is_secret else "0") + "|" + category_sig + "\n").encode("utf-8"))
 
     return h.hexdigest()
 
@@ -392,6 +394,55 @@ def _pick_first_text(row: Dict[str, Any], keys: List[str]) -> str:
     return ""
 
 
+def _normalize_category_values(value: Any) -> List[str]:
+    raw_items: List[str] = []
+
+    if isinstance(value, list):
+        raw_items = [str(x or "").strip() for x in value]
+    elif isinstance(value, (tuple, set)):
+        raw_items = [str(x or "").strip() for x in list(value)]
+    elif isinstance(value, str):
+        s = value.strip()
+        if not s:
+            raw_items = []
+        else:
+            # JSON array fallback
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    raw_items = [str(x or "").strip() for x in parsed]
+                else:
+                    raw_items = [s]
+            except Exception:
+                # PostgREST / PG array-ish fallback: {a,b} or a,b
+                if s.startswith("{") and s.endswith("}"):
+                    inner = s[1:-1]
+                    raw_items = [part.strip().strip('\"') for part in inner.split(",")]
+                elif "," in s:
+                    raw_items = [part.strip() for part in s.split(",")]
+                else:
+                    raw_items = [s]
+    elif value is None:
+        raw_items = []
+    else:
+        raw_items = [str(value).strip()]
+
+    out: List[str] = []
+    seen = set()
+    for item in raw_items:
+        s = str(item or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _category_signature(value: Any) -> str:
+    cats = _normalize_category_values(value)
+    return "|".join(cats)
+
+
 def _normalize_emotion_signals_all(row: Dict[str, Any]) -> List[str]:
     out: List[str] = []
     details = row.get("emotion_details")
@@ -451,7 +502,8 @@ def compute_source_hash_from_material_meta(
                 + str(r.get("id") or "") + "|"
                 + str(r.get("created_at") or "") + "|"
                 + str(r.get("updated_at") or "") + "|"
-                + ("1" if is_secret else "0") + "\n"
+                + ("1" if is_secret else "0") + "|"
+                + str(r.get("content_sig") or "") + "\n"
             ).encode("utf-8")
         )
 
@@ -531,7 +583,7 @@ async def fetch_emotions_for_self_structure(
             break
 
         params: List[Tuple[str, str]] = [
-            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg"),
+            ("select", "id,created_at,emotions,emotion_details,memo,memo_action,is_secret,emotion_strength_avg,category"),
             ("user_id", f"eq.{uid}"),
             ("order", "created_at.asc"),
             ("limit", str(limit)),
@@ -640,15 +692,16 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
     mk = str(material_kind or "").strip()
     out: List[Dict[str, Any]] = []
     for r in rows or []:
-        out.append(
-            {
-                "material_kind": mk,
-                "id": str(r.get("id") or ""),
-                "created_at": _row_created_at(r),
-                "updated_at": _row_updated_at(r),
-                "is_secret": _row_is_secret(r),
-            }
-        )
+        row: Dict[str, Any] = {
+            "material_kind": mk,
+            "id": str(r.get("id") or ""),
+            "created_at": _row_created_at(r),
+            "updated_at": _row_updated_at(r),
+            "is_secret": _row_is_secret(r),
+        }
+        if mk == "emotion_input":
+            row["content_sig"] = _category_signature(r.get("category"))
+        out.append(row)
     return out
 
 
@@ -665,6 +718,7 @@ def _dedupe_material_meta_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 def _emotion_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    categories = _normalize_category_values(row.get("category"))
     return {
         "source_type": "emotion_input",
         "source_id": str(row.get("id") or ""),
@@ -673,6 +727,8 @@ def _emotion_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "text_secondary": str(row.get("memo_action") or ""),
         "prompt_key": None,
         "question_text": None,
+        "category": categories[0] if categories else None,
+        "categories": categories,
         "emotion_signals": _normalize_emotion_signals_all(row),
         "action_signals": [],
         "social_signals": [],
@@ -712,48 +768,68 @@ def _deep_insight_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, A
     }
 
 
-def _extract_reflection_category(row: Dict[str, Any]) -> Optional[str]:
-    cat = _pick_first_text(
-        row,
-        [
-            "category",
-            "category_key",
-            "category_name",
-            "input_category",
-            "selected_category",
-            "context_category",
-        ],
-    )
-    return cat or None
+def _extract_reflection_categories(row: Dict[str, Any]) -> List[str]:
+    for key in [
+        "category",
+        "category_key",
+        "category_name",
+        "input_category",
+        "selected_category",
+        "context_category",
+    ]:
+        if key in row:
+            cats = _normalize_category_values(row.get(key))
+            if cats:
+                return cats
+    return []
 
 
-def _emotion_row_to_premium_reflection_item(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "source_type": "emotion_input",
-        "source_id": str(row.get("id") or ""),
-        "timestamp": _row_timestamp(row),
-        "category": _extract_reflection_category(row),
-        "text_primary": str(row.get("memo") or ""),
-        "text_secondary": str(row.get("memo_action") or ""),
-        "emotion_signals": _normalize_emotion_signals_all(row),
-        "question_text": None,
-        "source_weight": 1.0,
-    }
+def _emotion_row_to_premium_reflection_items(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    categories = _extract_reflection_categories(row)
+    if not categories:
+        return []
+
+    base_source_id = str(row.get("id") or "")
+    out: List[Dict[str, Any]] = []
+    for cat in categories:
+        out.append({
+            "source_type": "emotion_input",
+            "source_id": f"{base_source_id}:{cat}",
+            "material_source_id": base_source_id,
+            "timestamp": _row_timestamp(row),
+            "category": cat,
+            "categories": categories,
+            "text_primary": str(row.get("memo") or ""),
+            "text_secondary": str(row.get("memo_action") or ""),
+            "emotion_signals": _normalize_emotion_signals_all(row),
+            "question_text": None,
+            "source_weight": 1.0,
+        })
+    return out
 
 
-def _deep_insight_row_to_premium_reflection_item(row: Dict[str, Any]) -> Dict[str, Any]:
-    category = _extract_reflection_category(row) or "deep_insight"
-    return {
-        "source_type": "deep_insight",
-        "source_id": str(row.get("id") or ""),
-        "timestamp": _row_timestamp(row),
-        "category": category,
-        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
-        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-        "emotion_signals": [],
-        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
-        "source_weight": 1.1,
-    }
+def _deep_insight_row_to_premium_reflection_items(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+    categories = _extract_reflection_categories(row)
+    if not categories:
+        categories = ["deep_insight"]
+
+    base_source_id = str(row.get("id") or "")
+    out: List[Dict[str, Any]] = []
+    for cat in categories:
+        out.append({
+            "source_type": "deep_insight",
+            "source_id": f"{base_source_id}:{cat}",
+            "material_source_id": base_source_id,
+            "timestamp": _row_timestamp(row),
+            "category": cat,
+            "categories": categories,
+            "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
+            "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
+            "emotion_signals": [],
+            "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+            "source_weight": 1.1,
+        })
+    return out
 
 
 def build_premium_reflection_view(
@@ -769,9 +845,9 @@ def build_premium_reflection_view(
     items: List[Dict[str, Any]] = []
 
     for row in emotion_rows or []:
-        items.append(_emotion_row_to_premium_reflection_item(row))
+        items.extend(_emotion_row_to_premium_reflection_items(row))
     for row in deep_insight_rows or []:
-        items.append(_deep_insight_row_to_premium_reflection_item(row))
+        items.extend(_deep_insight_row_to_premium_reflection_items(row))
 
     items = [
         it for it in items
@@ -1889,4 +1965,7 @@ async def generate_and_store_material_snapshots(
             "premium_reflection_items": len((premium_reflection_view or {}).get("items") or []),
         },
     }
+def _merge_text_parts(parts: List[str]) -> str:
+    cleaned = [str(x).strip() for x in parts if str(x or "").strip()]
+    return "\n".join(cleaned) if cleaned else ""
 

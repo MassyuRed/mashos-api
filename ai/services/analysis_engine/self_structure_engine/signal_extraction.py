@@ -90,7 +90,12 @@ def _to_item_dict(item: SelfStructureInput | Mapping[str, Any]) -> dict[str, Any
     if isinstance(item, Mapping):
         return dict(item)
     if is_dataclass(item):
-        return asdict(item)
+        data = asdict(item)
+        if hasattr(item, "__dict__"):
+            for k, v in vars(item).items():
+                if k not in data:
+                    data[k] = v
+        return data
     if hasattr(item, "__dict__"):
         return dict(vars(item))
     raise TypeError(f"Unsupported item type for signal extraction: {type(item)!r}")
@@ -107,6 +112,45 @@ def _safe_text(value: Any) -> str:
     if value is None:
         return ""
     return normalize_text(str(value))
+
+
+def _safe_category_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _normalize_categories(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        vals = [_safe_category_text(value)]
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        vals = [_safe_category_text(v) for v in value]
+    else:
+        vals = [_safe_category_text(value)]
+    out: List[str] = []
+    seen = set()
+    for v in vals:
+        if not v:
+            continue
+        if v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
+
+def _set_category_attrs(obj: Any, categories: Sequence[str]) -> None:
+    vals = list(categories or [])
+    try:
+        setattr(obj, "categories", vals)
+    except Exception:
+        pass
+    try:
+        setattr(obj, "category", vals[0] if len(vals) == 1 else vals)
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -126,6 +170,14 @@ def get_secondary_text(item: SelfStructureInput | Mapping[str, Any]) -> str:
 def get_question_text(item: SelfStructureInput | Mapping[str, Any]) -> str:
     data = _to_item_dict(item)
     return _safe_text(data.get("question_text", ""))
+
+
+def get_categories(item: SelfStructureInput | Mapping[str, Any]) -> List[str]:
+    data = _to_item_dict(item)
+    raw = data.get("categories")
+    if raw is None:
+        raw = data.get("category")
+    return _normalize_categories(raw)
 
 
 def build_analysis_text(item: SelfStructureInput | Mapping[str, Any]) -> str:
@@ -148,14 +200,19 @@ def build_target_text(item: SelfStructureInput | Mapping[str, Any]) -> str:
     For declarative sources, `question_text` can help recover the implicit
     target (e.g. the answer says "まとめ役" while the question says "職場では...").
     This is used only for target inference, not for thinking/action tags.
+
+    Category labels are included here as domain hints, but intentionally
+    excluded from build_analysis_text() so they do not distort reliability
+    scoring or raw thinking/action extraction.
     """
     data = _to_item_dict(item)
     source_type = normalize_text(data.get("source_type", ""))
     primary = get_primary_text(data)
     secondary = get_secondary_text(data)
     question = get_question_text(data)
+    categories = get_categories(data)
 
-    parts = [primary, secondary]
+    parts = [*categories, primary, secondary]
     if source_type in {"deep_insight", "mymodel_create"} and question:
         parts.append(question)
 
@@ -314,6 +371,7 @@ def extract_signal_result(
     source_type = normalize_text(data.get("source_type", ""))
     source_id = str(data.get("source_id", "") or "")
     timestamp = str(data.get("timestamp", "") or "")
+    categories = get_categories(data)
 
     text_primary = get_primary_text(data)
     text_secondary = get_secondary_text(data)
@@ -322,6 +380,7 @@ def extract_signal_result(
     target_text = build_target_text(data)
 
     surface = detect_surface_signals(analysis_text)
+    _set_category_attrs(surface, categories)
     reliability = estimate_reliability(
         text=analysis_text,
         source_type=source_type,
@@ -355,7 +414,7 @@ def extract_signal_result(
         reliability=reliability,
     )
 
-    return SignalExtractionResult(
+    result = SignalExtractionResult(
         source_type=source_type,
         source_id=source_id,
         timestamp=timestamp,
@@ -369,6 +428,8 @@ def extract_signal_result(
         raw_text_primary=text_primary,
         raw_text_secondary=text_secondary,
     )
+    _set_category_attrs(result, categories)
+    return result
 
 
 def extract_signal_results(
@@ -387,6 +448,7 @@ __all__ = [
     "get_primary_text",
     "get_secondary_text",
     "get_question_text",
+    "get_categories",
     "build_analysis_text",
     "build_target_text",
     "extract_target_candidates",

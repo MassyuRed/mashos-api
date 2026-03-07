@@ -122,6 +122,66 @@ def _coerce_str_list(value: Any) -> List[str]:
     return [s] if s else []
 
 
+def _normalize_category_values(value: Any) -> List[str]:
+    """Normalize category payload into a de-duplicated string list.
+
+    Supports:
+    - text[]-like list/tuple
+    - JSON-ish scalar strings
+    - comma / slash separated fallback strings
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple)):
+        raw_items = list(value)
+    else:
+        s = _safe_str(value)
+        if not s:
+            return []
+        # Conservative split fallback for hand-entered strings.
+        if "," in s:
+            raw_items = [part.strip() for part in s.split(",")]
+        elif "/" in s:
+            raw_items = [part.strip() for part in s.split("/")]
+        else:
+            raw_items = [s]
+
+    out: List[str] = []
+    seen = set()
+    for item in raw_items:
+        s = _safe_str(item)
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _extract_categories(raw: Mapping[str, Any]) -> List[str]:
+    for key in (
+        "categories",
+        "category",
+        "category_key",
+        "category_name",
+        "input_category",
+        "selected_category",
+        "context_category",
+    ):
+        if key in raw:
+            cats = _normalize_category_values(raw.get(key))
+            if cats:
+                return cats
+    return []
+
+
+def _self_structure_input_supported_fields() -> set[str]:
+    fields_obj = getattr(SelfStructureInput, "__dataclass_fields__", None)
+    if isinstance(fields_obj, dict):
+        return set(fields_obj.keys())
+    return set()
+
+
 def _parse_iso_to_local_date(iso_str: str) -> str:
     s = _safe_str(iso_str)
     if not s:
@@ -350,7 +410,10 @@ def _coerce_self_structure_item(
     prompt_key = _pick_first_text(raw, ["prompt_key", "question_key", "q_key"]) or None
     question_text = _pick_first_text(raw, ["question_text", "question", "prompt", "prompt_text", "title"]) or None
 
-    return SelfStructureInput(
+    categories = _extract_categories(raw)
+    category = categories[0] if categories else None
+
+    kwargs = dict(
         source_type=source_type,
         source_id=source_id,
         timestamp=timestamp,
@@ -363,6 +426,27 @@ def _coerce_self_structure_item(
         social_signals=_coerce_str_list(raw.get("social_signals")),
         source_weight=_coerce_source_weight(source_type, raw.get("source_weight")),
     )
+
+    supported_fields = _self_structure_input_supported_fields()
+    if category is not None and "category" in supported_fields:
+        kwargs["category"] = category
+    if categories and "categories" in supported_fields:
+        kwargs["categories"] = categories
+
+    item = SelfStructureInput(**kwargs)
+
+    # Forward-compatible escape hatch: keep category data attached even when the
+    # current transport dataclass has not yet been expanded. Later layers can
+    # read these via getattr(..., "category", None) / getattr(..., "categories", []).
+    try:
+        if category is not None:
+            setattr(item, "category", category)
+        if categories:
+            setattr(item, "categories", categories)
+    except Exception:
+        pass
+
+    return item
 
 
 def build_self_structure_inputs_from_items(
