@@ -54,6 +54,7 @@ from supabase_client import (
 from active_users_store import touch_active_user
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
+from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 
 
 logger = logging.getLogger("mymodel_create_api")
@@ -533,6 +534,17 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             {"question_id": int(qid), "reason": "無効な質問IDです"}
             for qid in sorted(skipped_invalid_ids)
         ]
+
+        if int(saved or 0) > 0 or int(deleted or 0) > 0:
+            try:
+                await enqueue_global_snapshot_refresh(
+                    user_id=user_id,
+                    trigger="mymodel_create_answers",
+                    requested_at=now_iso,
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("snapshot enqueue failed (mymodel_create_answers): %s", exc)
 
         return MyModelCreateAnswersResponse(
             status=status,

@@ -91,11 +91,25 @@ MYMODEL_CREATE_USER_ID_COLUMN = (os.getenv("MYMODEL_CREATE_USER_ID_COLUMN") or "
 DEEP_INSIGHT_INPUTS_TABLE = (os.getenv("DEEP_INSIGHT_INPUTS_TABLE") or "deep_insight_answers").strip()
 DEEP_INSIGHT_USER_ID_COLUMN = (os.getenv("DEEP_INSIGHT_USER_ID_COLUMN") or "user_id").strip() or "user_id"
 
-ECHO_INPUTS_TABLE = (os.getenv("ECHO_INPUTS_TABLE") or "mymodel_echoes").strip()
-ECHO_USER_ID_COLUMN = (os.getenv("ECHO_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+ECHO_INPUTS_TABLE = (
+    os.getenv("ECHO_INPUTS_TABLE")
+    or os.getenv("COCOLON_MYMODEL_QNA_ECHOES_TABLE")
+    or "mymodel_qna_echoes"
+).strip()
+ECHO_USER_ID_COLUMN = (
+    os.getenv("ECHO_USER_ID_COLUMN")
+    or "viewer_user_id"
+).strip() or "viewer_user_id"
 
-DISCOVERY_INPUTS_TABLE = (os.getenv("DISCOVERY_INPUTS_TABLE") or "mymodel_discoveries").strip()
-DISCOVERY_USER_ID_COLUMN = (os.getenv("DISCOVERY_USER_ID_COLUMN") or "user_id").strip() or "user_id"
+DISCOVERY_INPUTS_TABLE = (
+    os.getenv("DISCOVERY_INPUTS_TABLE")
+    or os.getenv("COCOLON_MYMODEL_QNA_DISCOVERY_LOGS_TABLE")
+    or "mymodel_qna_discovery_logs"
+).strip()
+DISCOVERY_USER_ID_COLUMN = (
+    os.getenv("DISCOVERY_USER_ID_COLUMN")
+    or "viewer_user_id"
+).strip() or "viewer_user_id"
 
 
 
@@ -348,6 +362,8 @@ def build_snapshot_payload(
             payload["self_structure_view"] = views.get("self_structure_view")
         if "premium_reflection_view" in views:
             payload["premium_reflection_view"] = views.get("premium_reflection_view")
+        if "reflection_reaction_view" in views:
+            payload["reflection_reaction_view"] = views.get("reflection_reaction_view")
         if "emotions_recent" in views:
             payload["emotions_recent"] = views.get("emotions_recent")
     return payload
@@ -701,6 +717,30 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
         }
         if mk == "emotion_input":
             row["content_sig"] = _category_signature(r.get("category"))
+        elif mk == "echo":
+            row["content_sig"] = "|".join([
+                str(r.get("q_instance_id") or ""),
+                str(r.get("q_key") or ""),
+                str(r.get("strength") or ""),
+                str(r.get("memo") or ""),
+                str(r.get("context_source_type") or ""),
+                str(r.get("context_question") or ""),
+                str(r.get("context_answer") or ""),
+                str(r.get("context_topic_key") or ""),
+                str(r.get("context_category") or ""),
+            ])
+        elif mk == "discovery":
+            row["content_sig"] = "|".join([
+                str(r.get("q_instance_id") or ""),
+                str(r.get("q_key") or ""),
+                str(r.get("category") or ""),
+                str(r.get("memo") or ""),
+                str(r.get("context_source_type") or ""),
+                str(r.get("context_question") or ""),
+                str(r.get("context_answer") or ""),
+                str(r.get("context_topic_key") or ""),
+                str(r.get("context_category") or ""),
+            ])
         out.append(row)
     return out
 
@@ -877,34 +917,104 @@ def build_premium_reflection_view(
 
 
 def _echo_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    strength = str(row.get("strength") or "").strip().lower()
+    signals = ["echo"]
+    if strength in {"small", "medium", "large"}:
+        signals.append(f"echo_{strength}")
+
     return {
         "source_type": "echo",
         "source_id": str(row.get("id") or ""),
         "timestamp": _row_timestamp(row),
-        "text_primary": _pick_first_text(row, ["text", "content", "body", "memo", "comment_text"]),
-        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
-        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "text_primary": _pick_first_text(row, ["memo", "text", "content", "body", "comment_text"]),
+        "text_secondary": _pick_first_text(row, ["context_answer", "text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["context_topic_key", "prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["context_question", "question_text", "question", "prompt", "title"]) or None,
         "emotion_signals": [],
         "action_signals": [],
-        "social_signals": ["echo"],
+        "social_signals": signals,
         "source_weight": 0.4,
     }
 
 
 def _discovery_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    category = str(row.get("category") or "").strip()
+    signals = ["discovery"]
+    if category:
+        signals.append(f"discovery_{category}")
+
     return {
         "source_type": "discovery",
         "source_id": str(row.get("id") or ""),
         "timestamp": _row_timestamp(row),
-        "text_primary": _pick_first_text(row, ["text", "content", "body", "memo", "comment_text"]),
-        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
-        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
+        "text_primary": _pick_first_text(row, ["memo", "text", "content", "body", "comment_text"]),
+        "text_secondary": _pick_first_text(row, ["context_answer", "text_secondary", "context_text", "notes"]),
+        "prompt_key": _pick_first_text(row, ["context_topic_key", "prompt_key", "question_key", "q_key"]) or None,
+        "question_text": _pick_first_text(row, ["context_question", "question_text", "question", "prompt", "title"]) or None,
         "emotion_signals": [],
         "action_signals": [],
-        "social_signals": ["discovery"],
+        "social_signals": signals,
         "source_weight": 0.4,
+    }
+
+
+def build_reflection_reaction_view(
+    *,
+    echo_rows: List[Dict[str, Any]],
+    discovery_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+
+    for row in echo_rows or []:
+        items.append({
+            "reaction_type": "echo",
+            "source_id": str(row.get("id") or ""),
+            "viewer_user_id": str(row.get("viewer_user_id") or ""),
+            "target_user_id": str(row.get("target_user_id") or ""),
+            "q_instance_id": str(row.get("q_instance_id") or ""),
+            "q_key": str(row.get("q_key") or ""),
+            "reaction_strength": str(row.get("strength") or "").strip() or None,
+            "reaction_category": None,
+            "reaction_memo": _pick_first_text(row, ["memo", "text", "content", "body", "comment_text"]) or None,
+            "context_source_type": str(row.get("context_source_type") or "").strip() or None,
+            "context_question": _pick_first_text(row, ["context_question", "question_text", "question", "prompt", "title"]) or None,
+            "context_answer": _pick_first_text(row, ["context_answer", "text_secondary", "context_text", "notes"]) or None,
+            "context_topic_key": _pick_first_text(row, ["context_topic_key", "prompt_key", "question_key", "q_key"]) or None,
+            "context_category": str(row.get("context_category") or "").strip() or None,
+            "timestamp": _row_timestamp(row),
+        })
+
+    for row in discovery_rows or []:
+        items.append({
+            "reaction_type": "discovery",
+            "source_id": str(row.get("id") or ""),
+            "viewer_user_id": str(row.get("viewer_user_id") or ""),
+            "target_user_id": str(row.get("target_user_id") or ""),
+            "q_instance_id": str(row.get("q_instance_id") or ""),
+            "q_key": str(row.get("q_key") or ""),
+            "reaction_strength": None,
+            "reaction_category": str(row.get("category") or "").strip() or None,
+            "reaction_memo": _pick_first_text(row, ["memo", "text", "content", "body", "comment_text"]) or None,
+            "context_source_type": str(row.get("context_source_type") or "").strip() or None,
+            "context_question": _pick_first_text(row, ["context_question", "question_text", "question", "prompt", "title"]) or None,
+            "context_answer": _pick_first_text(row, ["context_answer", "text_secondary", "context_text", "notes"]) or None,
+            "context_topic_key": _pick_first_text(row, ["context_topic_key", "prompt_key", "question_key", "q_key"]) or None,
+            "context_category": str(row.get("context_category") or "").strip() or None,
+            "timestamp": _row_timestamp(row),
+        })
+
+    items.sort(key=lambda r: (str(r.get("timestamp") or ""), str(r.get("source_id") or "")))
+    timestamps = [str(it.get("timestamp") or "") for it in items if str(it.get("timestamp") or "").strip()]
+
+    return {
+        "version": "reflection_reaction_view.v1",
+        "items": items,
+        "source_counts": {
+            "echo": len(echo_rows or []),
+            "discovery": len(discovery_rows or []),
+        },
+        "time_span_start": timestamps[0] if timestamps else None,
+        "time_span_end": timestamps[-1] if timestamps else None,
     }
 
 
@@ -953,6 +1063,7 @@ def _build_global_views(
     recent_emotions: List[Dict[str, Any]],
     self_structure_view: Dict[str, Any],
     premium_reflection_view: Optional[Dict[str, Any]] = None,
+    reflection_reaction_view: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "emotions_recent": recent_emotions or [],
@@ -968,6 +1079,13 @@ def _build_global_views(
             "items": [],
             "source_counts": {},
             "category_counts": {},
+            "time_span_start": None,
+            "time_span_end": None,
+        },
+        "reflection_reaction_view": reflection_reaction_view or {
+            "version": "reflection_reaction_view.v1",
+            "items": [],
+            "source_counts": {},
             "time_span_start": None,
             "time_span_end": None,
         },
@@ -1836,6 +1954,15 @@ async def generate_and_store_material_snapshots(
         deep_insight_rows=premium_reflection_deep_rows,
     )
 
+    internal_reflection_reaction_view = build_reflection_reaction_view(
+        echo_rows=internal_echo_rows,
+        discovery_rows=internal_discovery_rows,
+    )
+    public_reflection_reaction_view = build_reflection_reaction_view(
+        echo_rows=public_echo_rows,
+        discovery_rows=public_discovery_rows,
+    )
+
     internal_material_meta: List[Dict[str, Any]] = []
     internal_material_meta.extend(_material_meta_rows_from_rows("emotion_input", internal_emotion_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("mymodel_create", internal_mymodel_rows))
@@ -1861,11 +1988,13 @@ async def generate_and_store_material_snapshots(
         recent_emotions=internal_recent,
         self_structure_view=internal_self_structure_view,
         premium_reflection_view=premium_reflection_view,
+        reflection_reaction_view=internal_reflection_reaction_view,
     )
     public_views = _build_global_views(
         recent_emotions=public_recent,
         self_structure_view=public_self_structure_view,
         premium_reflection_view=premium_reflection_view,
+        reflection_reaction_view=public_reflection_reaction_view,
     )
 
     internal_summary = _build_global_summary(

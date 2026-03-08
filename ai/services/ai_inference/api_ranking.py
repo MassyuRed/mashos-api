@@ -47,6 +47,7 @@ from supabase_client import (
     sb_post as _sb_post_shared,
     sb_service_role_headers_json as _sb_headers_json_shared,
 )
+from astor_ranking_boards import fetch_latest_ready_ranking_board, select_board_rows
 
 
 logger = logging.getLogger("ranking_api")
@@ -520,6 +521,105 @@ async def _filter_rows_by_ranking_visibility(rows: List[Dict[str, Any]]) -> List
 
 
 
+async def _fetch_ready_board_rows(metric_key: str, range_key: str) -> Optional[List[Dict[str, Any]]]:
+    try:
+        board = await fetch_latest_ready_ranking_board(metric_key)
+    except Exception as exc:
+        logger.warning("ranking board fetch failed: metric=%s err=%s", metric_key, exc)
+        return None
+    if not board:
+        return None
+    try:
+        rows = select_board_rows(board, range_key)
+    except Exception as exc:
+        logger.warning("ranking board row selection failed: metric=%s range=%s err=%s", metric_key, range_key, exc)
+        return None
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or 0)
+    except Exception:
+        return int(default)
+
+
+def _coerce_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _pick_first_int(row: Dict[str, Any], keys: List[str], *, default: int = 0) -> int:
+    for key in keys:
+        if row.get(key) is not None:
+            return _coerce_int(row.get(key), default)
+    return int(default)
+
+
+def _publish_emotion_items_from_board_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        emotion = _coerce_text(r.get("emotion"))
+        if not emotion:
+            continue
+        count = _pick_first_int(r, ["count", "value"], default=0)
+        rank = _coerce_int(r.get("rank"), len(items) + 1)
+        items.append({
+            "rank": rank,
+            "emotion": emotion,
+            "count": count,
+            "value": count,
+        })
+    items.sort(key=lambda x: (int(x.get("rank") or 0), str(x.get("emotion") or "")))
+    return items
+
+
+async def _publish_user_metric_items_from_board_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    value_keys: List[str],
+    primary_value_key: str,
+) -> List[Dict[str, Any]]:
+    raw_rows = [dict(r) for r in (rows or []) if isinstance(r, dict)]
+    if not raw_rows:
+        return []
+
+    filtered = await _filter_rows_by_ranking_visibility(raw_rows)
+    if not filtered:
+        return []
+
+    user_ids = [str((r or {}).get("user_id") or "").strip() for r in filtered]
+    user_ids = [uid for uid in user_ids if uid]
+    profiles_map = await _fetch_profiles_map(user_ids)
+    private_map = await _fetch_private_account_map(user_ids)
+
+    items: List[Dict[str, Any]] = []
+    for r in filtered:
+        uid = str((r or {}).get("user_id") or "").strip()
+        if not uid:
+            continue
+        rank = _coerce_int(r.get("rank"), len(items) + 1)
+        value = _pick_first_int(r, value_keys + ["value"], default=0)
+        profile = profiles_map.get(uid) if isinstance(profiles_map.get(uid), dict) else {}
+        dn = _coerce_text((profile or {}).get("display_name"))
+        is_private = bool(private_map.get(uid, bool(r.get("is_private_account") or False)))
+
+        items.append({
+            "rank": rank,
+            "user_id": uid,
+            "display_name": dn,
+            "is_private_account": is_private,
+            primary_value_key: value,
+            "value": value,
+        })
+
+    return items
+
+
 def register_ranking_routes(app: FastAPI) -> None:
     """Register ranking endpoints on the given FastAPI app."""
 
@@ -536,6 +636,13 @@ def register_ranking_routes(app: FastAPI) -> None:
         cached = _ranking_cache_get(cache_key)
         if cached is not None:
             return cached
+
+        board_rows = await _fetch_ready_board_rows("emotions", p_range)
+        if board_rows is not None:
+            items = _publish_emotion_items_from_board_rows(board_rows)
+            resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "items": items}
+            _ranking_cache_set(cache_key, resp_out)
+            return resp_out
 
         rows = await _rpc("rank_emotions", {"p_range": p_range})
         items: List[Dict[str, Any]] = []
@@ -586,7 +693,21 @@ def register_ranking_routes(app: FastAPI) -> None:
         if cached is not None:
             return cached
 
-        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        try:
+            board_rows = await _fetch_ready_board_rows("input_count", p_range)
+            if board_rows is not None:
+                items = await _publish_user_metric_items_from_board_rows(
+                    board_rows,
+                    value_keys=["input_count", "count"],
+                    primary_value_key="input_count",
+                )
+                resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
+                _ranking_cache_set(cache_key, resp_out)
+                return resp_out
+        except Exception as exc:
+            logger.warning("ranking board publish failed: metric=input_count range=%s err=%s", p_range, exc)
+
+        # Phase3 fallback: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_input_count_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []
@@ -640,7 +761,21 @@ def register_ranking_routes(app: FastAPI) -> None:
         if cached is not None:
             return cached
 
-        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        try:
+            board_rows = await _fetch_ready_board_rows("input_length", p_range)
+            if board_rows is not None:
+                items = await _publish_user_metric_items_from_board_rows(
+                    board_rows,
+                    value_keys=["total_chars", "input_length", "chars"],
+                    primary_value_key="total_chars",
+                )
+                resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
+                _ranking_cache_set(cache_key, resp_out)
+                return resp_out
+        except Exception as exc:
+            logger.warning("ranking board publish failed: metric=input_length range=%s err=%s", p_range, exc)
+
+        # Phase3 fallback: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_input_length_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []
@@ -694,7 +829,21 @@ def register_ranking_routes(app: FastAPI) -> None:
         if cached is not None:
             return cached
 
-        # Phase3: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
+        try:
+            board_rows = await _fetch_ready_board_rows("mymodel_questions", p_range)
+            if board_rows is not None:
+                items = await _publish_user_metric_items_from_board_rows(
+                    board_rows,
+                    value_keys=["mymodel_questions_total", "questions_total"],
+                    primary_value_key="mymodel_questions_total",
+                )
+                resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
+                _ranking_cache_set(cache_key, resp_out)
+                return resp_out
+        except Exception as exc:
+            logger.warning("ranking board publish failed: metric=mymodel_questions range=%s err=%s", p_range, exc)
+
+        # Phase3 fallback: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
         rows = await _rpc("rank_mymodel_questions_v2", {"p_range": p_range, "p_limit": int(p_limit)})
 
         items: List[Dict[str, Any]] = []

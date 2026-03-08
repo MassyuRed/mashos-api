@@ -45,6 +45,7 @@ from api_mymodel_create import _fetch_answers as _fetch_create_answers
 from api_mymodel_create import _fetch_questions as _fetch_create_questions
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
+from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -3317,7 +3318,10 @@ async def _resolve_qna_context_for_reaction(
 ) -> Dict[str, Any]:
     iid = str(q_instance_id or "").strip()
     if _is_generated_reflection_instance_id(iid):
-        row = await _resolve_generated_reflection_access(viewer_user_id=viewer_user_id, q_instance_id=iid)
+        row = await _resolve_generated_reflection_access(
+            viewer_user_id=viewer_user_id,
+            q_instance_id=iid,
+        )
         owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
         return {
             "kind": "generated",
@@ -3325,6 +3329,11 @@ async def _resolve_qna_context_for_reaction(
             "question_id": 0,
             "q_key": str(q_key or "").strip() or _build_generated_q_key(row),
             "row": row,
+            "context_source_type": str((row or {}).get("source_type") or "generated").strip() or "generated",
+            "context_question": str((row or {}).get("question") or "").strip() or None,
+            "context_answer": str((row or {}).get("answer") or "").strip() or None,
+            "context_topic_key": str((row or {}).get("topic_key") or "").strip() or None,
+            "context_category": str((row or {}).get("category") or "").strip() or None,
         }
 
     try:
@@ -3337,12 +3346,39 @@ async def _resolve_qna_context_for_reaction(
         if not allowed:
             raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
 
+    _, _, _, effective_tier = await _resolve_tiers(
+        viewer_user_id=viewer_user_id,
+        target_user_id=tgt,
+    )
+    qrows = await _fetch_create_questions(build_tier=effective_tier)
+    qmap = {
+        int(r.get("id")): str(r.get("question_text") or "").strip()
+        for r in (qrows or [])
+        if r.get("id") is not None
+    }
+    title = qmap.get(int(qid))
+    if not title:
+        raise HTTPException(status_code=404, detail="Question not found")
+
+    answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
+    a = answers.get(int(qid)) or {}
+    if _is_secret_flag(a.get("is_secret")):
+        raise HTTPException(status_code=404, detail="Answer not found")
+    body = str(a.get("answer_text") or "").strip()
+    if not body:
+        raise HTTPException(status_code=404, detail="Answer not found")
+
     return {
         "kind": "create",
         "target_user_id": str(tgt),
         "question_id": int(qid),
         "q_key": str(q_key or "").strip() or _q_key_for_question_id(int(qid)),
         "row": None,
+        "context_source_type": "create",
+        "context_question": title or None,
+        "context_answer": body or None,
+        "context_topic_key": None,
+        "context_category": None,
     }
 
 
@@ -3990,6 +4026,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 raise HTTPException(status_code=400, detail="Memo too long")
             if not memo.strip():
                 memo = None
+        requested_at = _now_iso()
         payload = {
             "viewer_user_id": str(viewer_user_id),
             "target_user_id": str(tgt),
@@ -3998,7 +4035,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             "q_instance_id": iid,
             "strength": strength,
             "memo": memo,
-            "created_at": _now_iso(),
+            "context_source_type": ctx.get("context_source_type"),
+            "context_question": ctx.get("context_question"),
+            "context_answer": ctx.get("context_answer"),
+            "context_topic_key": ctx.get("context_topic_key"),
+            "context_category": ctx.get("context_category"),
+            "created_at": requested_at,
         }
         resp = await _sb_post(f"/rest/v1/{ECHOES_TABLE}", json=payload, prefer="resolution=merge-duplicates,return=minimal")
         if resp.status_code >= 300:
@@ -4030,6 +4072,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 res_cnt = int(m.get("resonances") or 0)
             except Exception:
                 res_cnt = 0
+        try:
+            await enqueue_global_snapshot_refresh(
+                user_id=viewer_user_id,
+                trigger="qna_echoes_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("snapshot enqueue failed (qna_echoes_submit): %s", exc)
         return QnaEchoesSubmitResponse(status="ok", q_key=qk, q_instance_id=iid, strength=strength, memo=memo, resonated=bool(resonated), views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.post("/mymodel/qna/echoes/delete", response_model=QnaEchoesDeleteResponse)
@@ -4073,6 +4124,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 res_cnt = int(m.get("resonances") or 0)
             except Exception:
                 res_cnt = 0
+        try:
+            await enqueue_global_snapshot_refresh(
+                user_id=viewer_user_id,
+                trigger="qna_echoes_delete",
+                requested_at=_now_iso(),
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("snapshot enqueue failed (qna_echoes_delete): %s", exc)
         return QnaEchoesDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, resonated=False, views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.get("/mymodel/qna/echoes/history", response_model=QnaEchoesHistoryResponse)
@@ -4278,6 +4338,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             memo = str(req.memo)
             if len(memo) > 2000:
                 raise HTTPException(status_code=400, detail="Memo too long")
+        requested_at = _now_iso()
         payload = {
             "viewer_user_id": str(viewer_user_id),
             "target_user_id": str(tgt),
@@ -4286,7 +4347,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             "q_instance_id": iid,
             "category": category,
             "memo": memo,
-            "created_at": _now_iso(),
+            "context_source_type": ctx.get("context_source_type"),
+            "context_question": ctx.get("context_question"),
+            "context_answer": ctx.get("context_answer"),
+            "context_topic_key": ctx.get("context_topic_key"),
+            "context_category": ctx.get("context_category"),
+            "created_at": requested_at,
         }
         resp = await _sb_post(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", json=payload, prefer="return=representation")
         if resp.status_code >= 300:
@@ -4299,6 +4365,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 inserted_id = str((data[0] or {}).get("id") or "").strip() or None
         except Exception:
             inserted_id = None
+        try:
+            await enqueue_global_snapshot_refresh(
+                user_id=viewer_user_id,
+                trigger="qna_discoveries_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("snapshot enqueue failed (qna_discoveries_submit): %s", exc)
         return QnaDiscoverySubmitResponse(status="ok", q_key=qk, q_instance_id=iid, id=inserted_id)
 
     @app.post("/mymodel/qna/discoveries/delete", response_model=QnaDiscoveryDeleteResponse)
@@ -4327,6 +4402,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             discoveries = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"q_instance_id": f"eq.{iid}"})
         except Exception as exc:
             logger.warning("discoveries count failed (delete): %s", exc)
+        try:
+            await enqueue_global_snapshot_refresh(
+                user_id=viewer_user_id,
+                trigger="qna_discoveries_delete",
+                requested_at=_now_iso(),
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("snapshot enqueue failed (qna_discoveries_delete): %s", exc)
         return QnaDiscoveryDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, discoveries=int(discoveries or 0))
 
     @app.get("/mymodel/qna/discoveries/history", response_model=QnaDiscoveryHistoryResponse)

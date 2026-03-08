@@ -30,6 +30,7 @@ from astor_core import AstorEngine, AstorRequest, AstorMode
 from astor_deep_insight import DeepInsightTemplateStore
 from astor_deep_insight_question_store import DeepInsightServedStore
 from astor_deep_insight_store import DeepInsightAnswerStore
+from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from ui_text_templates import render_deep_insight_question_text
@@ -456,6 +457,17 @@ def register_deep_insight_routes(app: FastAPI) -> None:
             )
 
         saved = answer_store.append_answers(user_id, packed)
+
+        if int(saved or 0) > 0:
+            try:
+                await enqueue_global_snapshot_refresh(
+                    user_id=user_id,
+                    trigger="deep_insight_answers",
+                    requested_at=now_iso,
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("snapshot enqueue failed (deep_insight_answers): %s", exc)
 
         return DeepInsightAnswersResponse(
             status="ok",

@@ -125,6 +125,21 @@ from astor_reflection_store import (  # type: ignore
     fail_reflection as fail_generated_reflection,
 )
 
+from astor_ranking_boards import (  # type: ignore
+    RANKING_BOARDS_TABLE,
+    RANKING_BOARD_VERSION,
+    BOARD_STATUS_READY,
+    fail_ranking_board,
+    promote_ranking_board,
+    select_board_rows,
+    upsert_ranking_board_draft,
+)
+from astor_ranking_kernel import (  # type: ignore
+    SUPPORTED_RANKING_METRICS,
+    RANKING_RANGE_KEYS as RANKING_BOARD_RANGE_KEYS,
+    generate_ranking_board,
+)
+
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -166,6 +181,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "inspect_reflection_v1",
     "generate_emotion_report_v2",
     "inspect_emotion_report_v1",
+    "refresh_ranking_board_v1",
+    "inspect_ranking_board_v1",
 ]
 
 
@@ -787,6 +804,214 @@ async def _upsert_analysis_result(*, row: Dict[str, Any]) -> bool:
         timeout=10.0,
     )
     return resp.status_code in (200, 201, 204)
+
+
+async def _fetch_ranking_board_row_by_id(board_id: str) -> Optional[Dict[str, Any]]:
+    bid = str(board_id or "").strip()
+    if not bid:
+        return None
+    resp = await sb_get(
+        f"/rest/v1/{RANKING_BOARDS_TABLE}",
+        params={
+            "select": "id,metric_key,status,payload,source_hash,version,meta,created_at,updated_at,published_at",
+            "id": f"eq.{bid}",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(
+            f"fetch ranking_board by id failed: {resp.status_code} {(resp.text or '')[:800]}"
+        )
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+try:
+    _ASTOR_RANKING_BOARD_MAX_ROWS = int(os.getenv("ASTOR_RANKING_BOARD_MAX_ROWS", "200") or "200")
+except Exception:
+    _ASTOR_RANKING_BOARD_MAX_ROWS = 200
+
+
+_SUPPORTED_RANKING_METRIC_SET = {
+    str(x or "").strip()
+    for x in (SUPPORTED_RANKING_METRICS or [])
+    if str(x or "").strip()
+}
+
+
+def _coerce_ranking_int(value: Any) -> Optional[int]:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except Exception:
+        try:
+            return int(float(str(value)))
+        except Exception:
+            return None
+
+
+def _validate_ranking_board_payload(metric_key: str, payload: Any) -> List[str]:
+    flags: List[str] = []
+    mk = str(metric_key or "").strip()
+    if not mk:
+        flags.append("metric_key_missing")
+        return flags
+    if mk not in _SUPPORTED_RANKING_METRIC_SET:
+        flags.append(f"unsupported_metric:{mk}")
+
+    if not isinstance(payload, dict):
+        flags.append("payload_missing")
+        return flags
+
+    version = str(payload.get("version") or "").strip()
+    if version != RANKING_BOARD_VERSION:
+        flags.append(f"version_mismatch:{version or 'missing'}")
+
+    ranges = payload.get("ranges")
+    if not isinstance(ranges, dict):
+        flags.append("ranges_missing")
+        return flags
+
+    for rk in list(RANKING_BOARD_RANGE_KEYS or []):
+        if rk not in ranges:
+            flags.append(f"range_missing:{rk}")
+            continue
+
+        rows = select_board_rows(payload, rk)
+        if not isinstance(rows, list):
+            flags.append(f"range_not_list:{rk}")
+            continue
+        if len(rows) > _ASTOR_RANKING_BOARD_MAX_ROWS:
+            flags.append(f"range_too_large:{rk}:{len(rows)}")
+
+        seen_user_ids = set()
+        for idx, row in enumerate(rows):
+            if not isinstance(row, dict):
+                flags.append(f"row_not_object:{rk}:{idx}")
+                continue
+
+            if _coerce_ranking_int(row.get("rank")) is None:
+                flags.append(f"rank_invalid:{rk}:{idx}")
+
+            if mk == "emotions":
+                emotion = str(row.get("emotion") or "").strip()
+                if not emotion:
+                    flags.append(f"emotion_missing:{rk}:{idx}")
+                if (
+                    _coerce_ranking_int(row.get("value")) is None
+                    and _coerce_ranking_int(row.get("count")) is None
+                ):
+                    flags.append(f"value_missing:{rk}:{idx}")
+            else:
+                uid = str(row.get("user_id") or "").strip()
+                if not uid:
+                    flags.append(f"user_id_missing:{rk}:{idx}")
+                elif uid in seen_user_ids:
+                    flags.append(f"duplicate_user_id:{rk}:{uid}")
+                else:
+                    seen_user_ids.add(uid)
+                if _coerce_ranking_int(row.get("value")) is None:
+                    flags.append(f"value_missing:{rk}:{idx}")
+
+    return flags
+
+
+async def _handle_refresh_ranking_board_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    metric_key = str((payload or {}).get("metric_key") or "").strip()
+    if not metric_key:
+        raise ValueError("payload.metric_key is required")
+
+    trigger = str((payload or {}).get("trigger") or "worker").strip() or "worker"
+    requested_at = str((payload or {}).get("requested_at") or _now_iso_z()).strip() or _now_iso_z()
+
+    board_payload = await generate_ranking_board(metric_key)
+    board_row = await upsert_ranking_board_draft(
+        metric_key,
+        board_payload,
+        meta={
+            "trigger": trigger,
+            "requested_at": requested_at,
+            "job_type": "refresh_ranking_board_v1",
+            "kernel": "rpc_kernel_v1",
+        },
+        version=1,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "metric_key": metric_key,
+        "board_id": str((board_row or {}).get("id") or ""),
+        "board_status": str((board_row or {}).get("status") or ""),
+        "source_hash": str((board_row or {}).get("source_hash") or ""),
+    }
+
+
+async def _handle_inspect_ranking_board_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    board_id = str((payload or {}).get("board_id") or "").strip()
+    if not board_id:
+        raise ValueError("payload.board_id is required")
+
+    board_row = await _fetch_ranking_board_row_by_id(board_id)
+    if not board_row:
+        return {"status": "missing", "user_id": uid, "board_id": board_id}
+
+    metric_key = str(board_row.get("metric_key") or (payload or {}).get("metric_key") or "").strip()
+    board_payload = board_row.get("payload") if isinstance(board_row.get("payload"), dict) else {}
+    flags = _validate_ranking_board_payload(metric_key, board_payload)
+
+    if flags:
+        failed = await fail_ranking_board(
+            board_id,
+            "ranking board inspection failed",
+            flags={
+                "issues": flags,
+                "metric_key": metric_key,
+                "inspector": "inspect_ranking_board_v1",
+            },
+        )
+        return {
+            "status": "failed",
+            "user_id": uid,
+            "board_id": board_id,
+            "metric_key": metric_key,
+            "source_hash": str(board_row.get("source_hash") or ""),
+            "flags": flags,
+            "board_status": str((failed or {}).get("status") or ""),
+        }
+
+    promoted = await promote_ranking_board(
+        board_id,
+        extra_meta={
+            "inspection": {
+                "checked_at": _now_iso_z(),
+                "inspector": "inspect_ranking_board_v1",
+                "metric_key": metric_key,
+                "flags": [],
+            }
+        },
+    )
+    return {
+        "status": "ready",
+        "user_id": uid,
+        "board_id": board_id,
+        "metric_key": metric_key,
+        "source_hash": str(board_row.get("source_hash") or ""),
+        "board_status": str((promoted or {}).get("status") or ""),
+        "flags": [],
+    }
 
 
 
@@ -1662,7 +1887,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1",
             )
         )
     )
@@ -2104,6 +2329,75 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     insp_res,
                 )
+            elif claimed.job_type == "refresh_ranking_board_v1":
+                ranking_res = await _handle_refresh_ranking_board_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        board_id = str((ranking_res or {}).get("board_id") or "").strip()
+                        metric_key = str((ranking_res or {}).get("metric_key") or (claimed.payload or {}).get("metric_key") or "").strip()
+                        board_status = str((ranking_res or {}).get("board_status") or "").strip().lower()
+                        if board_id and metric_key and board_status != BOARD_STATUS_READY:
+                            await enqueue_job(
+                                job_key=f"inspect_ranking_board:{metric_key}:{board_id}",
+                                job_type="inspect_ranking_board_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "board_id": board_id,
+                                    "metric_key": metric_key,
+                                    "source_hash": (ranking_res or {}).get("source_hash"),
+                                    "trigger": "refresh_ranking_board_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                },
+                                priority=24,
+                            )
+                    except Exception as exc:
+                        logger.error("Ranking inspect enqueue failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    ranking_res,
+                )
+            elif claimed.job_type == "inspect_ranking_board_v1":
+                insp_res = await _handle_inspect_ranking_board_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
@@ -2183,6 +2477,17 @@ async def _worker_loop() -> None:
                             reflection_id = str(((claimed.payload or {}).get("reflection_id")) or "").strip()
                             if reflection_id:
                                 await fail_generated_reflection(reflection_id=reflection_id)
+                        elif claimed.job_type == "inspect_ranking_board_v1":
+                            board_id = str(((claimed.payload or {}).get("board_id")) or "").strip()
+                            if board_id:
+                                await fail_ranking_board(
+                                    board_id,
+                                    str(exc),
+                                    flags={
+                                        "job_type": "inspect_ranking_board_v1",
+                                        "phase": "worker_exception",
+                                    },
+                                )
                     except Exception:
                         pass
                     await mark_failed(job_key=claimed.job_key, worker_id=worker_id, error=str(exc))

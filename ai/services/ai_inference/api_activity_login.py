@@ -36,6 +36,8 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
 )
 
+from astor_ranking_enqueue import enqueue_ranking_board_refresh
+
 
 logger = logging.getLogger("activity.login")
 
@@ -137,4 +139,17 @@ def register_activity_login_routes(app: FastAPI) -> None:
 
         login_date = _today_jst_date_iso()
         stored = await _sb_upsert_login_day(user_id=str(user_id), login_date_iso=login_date)
+
+        if stored:
+            try:
+                await enqueue_ranking_board_refresh(
+                    metric_key="login_streak",
+                    user_id=str(user_id),
+                    trigger="activity_login",
+                    requested_at=_iso_z(datetime.now(timezone.utc)),
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("ranking enqueue failed (activity_login): %s", exc)
+
         return ActivityLoginResponse(status="ok", login_date=login_date, stored=bool(stored))

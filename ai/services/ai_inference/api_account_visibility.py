@@ -37,6 +37,7 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
+from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 
 logger = logging.getLogger("account_visibility_api")
 
@@ -250,6 +251,10 @@ def register_account_visibility_routes(app: FastAPI) -> None:
         if body.is_private_account is not None:
             payload["is_private_account"] = bool(body.is_private_account)
 
+        ranking_visibility_touched = (
+            "is_ranking_visible" in payload or "is_private_account" in payload
+        )
+
         if not payload:
             return JSONResponse(
                 status_code=400,
@@ -274,6 +279,34 @@ def register_account_visibility_routes(app: FastAPI) -> None:
         if not row:
             # Defensive: read again / create
             row = await _get_or_create_settings(me)
+
+        if ranking_visibility_touched:
+            try:
+                await enqueue_ranking_board_refresh_many(
+                    metric_keys=[
+                        "input_count",
+                        "input_length",
+                        "mymodel_questions",
+                        "login_streak",
+                        "mymodel_views",
+                        "mymodel_resonances",
+                        "mymodel_discoveries",
+                    ],
+                    user_id=me,
+                    trigger="account_visibility_patch",
+                    requested_at=(
+                        str(row.get("updated_at"))
+                        if row.get("updated_at") is not None
+                        else None
+                    ),
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ranking refresh enqueue skipped after visibility patch (user_id=%s): %s",
+                    me,
+                    exc,
+                )
 
         return AccountVisibilityResponse(
             user_id=str(row.get("user_id") or me),
