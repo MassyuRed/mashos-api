@@ -153,6 +153,21 @@ from astor_account_status_kernel import (  # type: ignore
     generate_account_status_summary,
 )
 
+from astor_friend_feed_store import (  # type: ignore
+    FRIEND_FEED_SUMMARIES_TABLE,
+    FRIEND_FEED_VERSION,
+    FRIEND_FEED_MAX_ITEMS,
+    ALLOWED_STRENGTHS as FRIEND_FEED_ALLOWED_STRENGTHS,
+    STATUS_READY as FRIEND_FEED_STATUS_READY,
+    fail_friend_feed_summary,
+    promote_friend_feed_summary,
+    select_friend_feed_items,
+    upsert_friend_feed_draft,
+)
+from astor_friend_feed_kernel import (  # type: ignore
+    generate_friend_feed,
+)
+
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -198,6 +213,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "inspect_ranking_board_v1",
     "refresh_account_status_v1",
     "inspect_account_status_v1",
+    "refresh_friend_feed_v1",
+    "inspect_friend_feed_v1",
 ]
 
 
@@ -1189,6 +1206,192 @@ async def _handle_inspect_account_status_v1(*, user_id: str, payload: Dict[str, 
     }
 
 
+async def _fetch_friend_feed_summary_row_by_id(summary_id: str) -> Optional[Dict[str, Any]]:
+    sid = str(summary_id or "").strip()
+    if not sid:
+        return None
+    resp = await sb_get(
+        f"/rest/v1/{FRIEND_FEED_SUMMARIES_TABLE}",
+        params={
+            "select": "id,viewer_user_id,status,payload,source_hash,version,meta,created_at,updated_at,published_at",
+            "id": f"eq.{sid}",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(
+            f"fetch friend_feed_summary by id failed: {resp.status_code} {(resp.text or '')[:800]}"
+        )
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def _validate_friend_feed_payload(payload: Any) -> List[str]:
+    flags: List[str] = []
+    if not isinstance(payload, dict):
+        flags.append("payload_missing")
+        return flags
+
+    version = str(payload.get("version") or "").strip()
+    if version != FRIEND_FEED_VERSION:
+        flags.append(f"version_mismatch:{version or 'missing'}")
+
+    viewer_user_id = str(payload.get("viewer_user_id") or "").strip()
+    if not viewer_user_id:
+        flags.append("viewer_user_id_missing")
+
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        flags.append("items_missing")
+        return flags
+
+    items = select_friend_feed_items(payload)
+    if len(raw_items) > FRIEND_FEED_MAX_ITEMS or len(items) > FRIEND_FEED_MAX_ITEMS:
+        flags.append(f"items_too_many:{max(len(raw_items), len(items))}")
+
+    for idx, row in enumerate(items):
+        if not isinstance(row, dict):
+            flags.append(f"item_not_object:{idx}")
+            continue
+
+        item_id = str(row.get("id") or "").strip()
+        if not item_id:
+            flags.append(f"item_id_missing:{idx}")
+
+        owner_name = str(row.get("owner_name") or "").strip()
+        if not owner_name:
+            flags.append(f"owner_name_missing:{idx}")
+
+        created_at = str(row.get("created_at") or "").strip()
+        if not created_at:
+            flags.append(f"created_at_missing:{idx}")
+
+        emotions = row.get("items")
+        if not isinstance(emotions, list):
+            flags.append(f"emotion_items_missing:{idx}")
+            continue
+
+        for jdx, emo in enumerate(emotions):
+            if not isinstance(emo, dict):
+                flags.append(f"emotion_item_not_object:{idx}:{jdx}")
+                continue
+            emotion_type = str(emo.get("type") or "").strip()
+            if not emotion_type:
+                flags.append(f"emotion_type_missing:{idx}:{jdx}")
+            strength = str(emo.get("strength") or "").strip().lower()
+            if strength and strength not in FRIEND_FEED_ALLOWED_STRENGTHS:
+                flags.append(f"emotion_strength_invalid:{idx}:{jdx}:{strength}")
+
+    return flags
+
+
+async def _handle_refresh_friend_feed_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    viewer_user_id = str((payload or {}).get("viewer_user_id") or uid).strip()
+    if not viewer_user_id:
+        raise ValueError("payload.viewer_user_id is required")
+
+    trigger = str((payload or {}).get("trigger") or "worker").strip() or "worker"
+    requested_at = str((payload or {}).get("requested_at") or _now_iso_z()).strip() or _now_iso_z()
+    owner_user_id = str((payload or {}).get("owner_user_id") or "").strip()
+
+    summary_payload = await generate_friend_feed(viewer_user_id)
+    meta: Dict[str, Any] = {
+        "trigger": trigger,
+        "requested_at": requested_at,
+        "job_type": "refresh_friend_feed_v1",
+        "kernel": "friend_feed_source_v1",
+    }
+    if owner_user_id:
+        meta["owner_user_id"] = owner_user_id
+
+    summary_row = await upsert_friend_feed_draft(
+        viewer_user_id,
+        summary_payload,
+        meta=meta,
+        version=1,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "viewer_user_id": viewer_user_id,
+        "summary_id": str((summary_row or {}).get("id") or ""),
+        "summary_status": str((summary_row or {}).get("status") or ""),
+        "source_hash": str((summary_row or {}).get("source_hash") or ""),
+    }
+
+
+async def _handle_inspect_friend_feed_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    summary_id = str((payload or {}).get("summary_id") or "").strip()
+    if not summary_id:
+        raise ValueError("payload.summary_id is required")
+
+    summary_row = await _fetch_friend_feed_summary_row_by_id(summary_id)
+    if not summary_row:
+        return {"status": "missing", "user_id": uid, "summary_id": summary_id}
+
+    viewer_user_id = str(summary_row.get("viewer_user_id") or (payload or {}).get("viewer_user_id") or "").strip()
+    summary_payload = summary_row.get("payload") if isinstance(summary_row.get("payload"), dict) else {}
+    flags = _validate_friend_feed_payload(summary_payload)
+
+    if viewer_user_id and isinstance(summary_payload, dict):
+        payload_viewer = str(summary_payload.get("viewer_user_id") or "").strip()
+        if payload_viewer and payload_viewer != viewer_user_id:
+            flags.append("viewer_user_id_mismatch")
+
+    if flags:
+        failed = await fail_friend_feed_summary(
+            summary_id,
+            "friend feed summary inspection failed",
+            flags={
+                "issues": flags,
+                "viewer_user_id": viewer_user_id,
+                "inspector": "inspect_friend_feed_v1",
+            },
+        )
+        return {
+            "status": "failed",
+            "user_id": uid,
+            "viewer_user_id": viewer_user_id,
+            "summary_id": summary_id,
+            "source_hash": str(summary_row.get("source_hash") or ""),
+            "flags": flags,
+            "summary_status": str((failed or {}).get("status") or ""),
+        }
+
+    promoted = await promote_friend_feed_summary(
+        summary_id,
+        extra_meta={
+            "inspection": {
+                "checked_at": _now_iso_z(),
+                "inspector": "inspect_friend_feed_v1",
+                "viewer_user_id": viewer_user_id,
+                "flags": [],
+            }
+        },
+    )
+    return {
+        "status": "ready",
+        "user_id": uid,
+        "viewer_user_id": viewer_user_id,
+        "summary_id": summary_id,
+        "source_hash": str(summary_row.get("source_hash") or ""),
+        "summary_status": str((promoted or {}).get("status") or ""),
+        "flags": [],
+    }
+
+
 def _coerce_str_list(value: Any) -> List[str]:
     if isinstance(value, list):
         out: List[str] = []
@@ -2061,7 +2264,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1",
             )
         )
     )
@@ -2641,6 +2844,75 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     insp_res,
                 )
+            elif claimed.job_type == "refresh_friend_feed_v1":
+                friend_feed_res = await _handle_refresh_friend_feed_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        summary_id = str((friend_feed_res or {}).get("summary_id") or "").strip()
+                        viewer_user_id = str((friend_feed_res or {}).get("viewer_user_id") or (claimed.payload or {}).get("viewer_user_id") or claimed.user_id or "").strip()
+                        summary_status = str((friend_feed_res or {}).get("summary_status") or "").strip().lower()
+                        if summary_id and viewer_user_id and summary_status != FRIEND_FEED_STATUS_READY:
+                            await enqueue_job(
+                                job_key=f"inspect_friend_feed:{viewer_user_id}:{summary_id}",
+                                job_type="inspect_friend_feed_v1",
+                                user_id=viewer_user_id,
+                                payload={
+                                    "summary_id": summary_id,
+                                    "viewer_user_id": viewer_user_id,
+                                    "source_hash": (friend_feed_res or {}).get("source_hash"),
+                                    "trigger": "refresh_friend_feed_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                },
+                                priority=24,
+                            )
+                    except Exception as exc:
+                        logger.error("Friend feed inspect enqueue failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    friend_feed_res,
+                )
+            elif claimed.job_type == "inspect_friend_feed_v1":
+                insp_res = await _handle_inspect_friend_feed_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
@@ -2739,6 +3011,17 @@ async def _worker_loop() -> None:
                                     str(exc),
                                     flags={
                                         "job_type": "inspect_account_status_v1",
+                                        "phase": "worker_exception",
+                                    },
+                                )
+                        elif claimed.job_type == "inspect_friend_feed_v1":
+                            summary_id = str(((claimed.payload or {}).get("summary_id")) or "").strip()
+                            if summary_id:
+                                await fail_friend_feed_summary(
+                                    summary_id,
+                                    str(exc),
+                                    flags={
+                                        "job_type": "inspect_friend_feed_v1",
                                         "phase": "worker_exception",
                                     },
                                 )
