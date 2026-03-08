@@ -70,6 +70,32 @@ def _build_timeout() -> httpx.Timeout:
     return httpx.Timeout(t)
 
 
+def _build_retry_count() -> int:
+    try:
+        retry_count = int(os.getenv("SUPABASE_HTTP_RETRY_COUNT", "1") or "1")
+    except Exception:
+        retry_count = 1
+    return max(0, retry_count)
+
+
+def _build_retry_backoff_seconds() -> float:
+    try:
+        delay = float(os.getenv("SUPABASE_HTTP_RETRY_BACKOFF_SECONDS", "0.75") or "0.75")
+    except Exception:
+        delay = 0.75
+    return max(0.1, delay)
+
+
+def _is_retryable_method(method: str) -> bool:
+    return str(method or "").upper() in {"GET", "HEAD", "OPTIONS"}
+
+
+def _retry_delay_seconds(attempt_index: int) -> float:
+    base = _build_retry_backoff_seconds()
+    exp = max(0, int(attempt_index))
+    return min(4.0, base * (2 ** exp))
+
+
 async def get_async_client() -> httpx.AsyncClient:
     """Return a shared AsyncClient (connection pooled)."""
 
@@ -180,14 +206,35 @@ async def sb_request(
     h = _merge_prefer(h, prefer)
 
     client = await get_async_client()
-    return await client.request(
-        method=str(method or "GET").upper(),
-        url=url,
-        headers=h,
-        params=params,
-        json=json,
-        timeout=timeout,
-    )
+    method_upper = str(method or "GET").upper()
+    retry_count = _build_retry_count()
+
+    for attempt in range(retry_count + 1):
+        try:
+            return await client.request(
+                method=method_upper,
+                url=url,
+                headers=h,
+                params=params,
+                json=json,
+                timeout=timeout,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if (not _is_retryable_method(method_upper)) or attempt >= retry_count:
+                raise
+            delay = _retry_delay_seconds(attempt)
+            logger.warning(
+                "Supabase request retrying after transport error. method=%s path=%s attempt=%s/%s delay=%.2fs err=%r",
+                method_upper,
+                p,
+                attempt + 1,
+                retry_count + 1,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+
+    raise RuntimeError("Supabase request retry loop exited unexpectedly")
 
 
 async def sb_get(

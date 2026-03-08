@@ -35,6 +35,8 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
+import httpx
+
 from astor_job_queue import (
     fetch_next_queued_job,
     claim_job,
@@ -2146,6 +2148,42 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
     }
 
 
+def _worker_poll_backoff_seconds(base_seconds: float, consecutive_errors: int) -> float:
+    base = max(0.5, float(base_seconds or 1.0))
+    steps = min(max(int(consecutive_errors) - 1, 0), 5)
+    return min(30.0, base * (2 ** steps))
+
+
+async def _sleep_after_worker_poll_error(
+    *,
+    logger: logging.Logger,
+    stage: str,
+    worker_id: str,
+    poll_interval: float,
+    consecutive_errors: int,
+    exc: Exception,
+) -> None:
+    delay = _worker_poll_backoff_seconds(poll_interval, consecutive_errors)
+    if isinstance(exc, (httpx.HTTPError, asyncio.TimeoutError)):
+        logger.warning(
+            "worker %s failed. worker_id=%s consecutive_errors=%s retry_in=%.2fs err=%r",
+            stage,
+            worker_id,
+            consecutive_errors,
+            delay,
+            exc,
+        )
+    else:
+        logger.exception(
+            "worker %s failed unexpectedly. worker_id=%s consecutive_errors=%s retry_in=%.2fs",
+            stage,
+            worker_id,
+            consecutive_errors,
+            delay,
+        )
+    await asyncio.sleep(delay)
+
+
 async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     uid = str(user_id or "").strip()
     if not uid:
@@ -2291,13 +2329,43 @@ async def _worker_loop() -> None:
     except Exception:
         pass
 
+    consecutive_poll_errors = 0
+
     while not stop_event.is_set():
-        job = await fetch_next_queued_job(job_types=job_types)
+        try:
+            job = await fetch_next_queued_job(job_types=job_types)
+            consecutive_poll_errors = 0
+        except Exception as exc:
+            consecutive_poll_errors += 1
+            await _sleep_after_worker_poll_error(
+                logger=logger,
+                stage="fetch_next_queued_job",
+                worker_id=worker_id,
+                poll_interval=poll_interval,
+                consecutive_errors=consecutive_poll_errors,
+                exc=exc,
+            )
+            continue
+
         if not job:
             await asyncio.sleep(max(0.1, poll_interval))
             continue
 
-        claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts)
+        try:
+            claimed = await claim_job(job_key=job.job_key, worker_id=worker_id, attempts=job.attempts)
+            consecutive_poll_errors = 0
+        except Exception as exc:
+            consecutive_poll_errors += 1
+            await _sleep_after_worker_poll_error(
+                logger=logger,
+                stage="claim_job",
+                worker_id=worker_id,
+                poll_interval=poll_interval,
+                consecutive_errors=consecutive_poll_errors,
+                exc=exc,
+            )
+            continue
+
         if not claimed:
             # someone else claimed; try again
             await asyncio.sleep(0)
