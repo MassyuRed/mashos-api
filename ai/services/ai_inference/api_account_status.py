@@ -18,6 +18,7 @@ Auth
     (Future: allow per-user privacy toggle.)
 
 Data source
+  - READY account_status_summaries artifact (preferred)
   - Supabase PostgREST RPC (service role): account_status_summary_v2(p_target_user_id)
 
 Notes
@@ -40,9 +41,14 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
+from astor_account_status_store import (
+    extract_account_status_totals,
+    fetch_latest_ready_account_status_summary,
+)
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
+    sb_get,
     sb_post_rpc as _sb_post_rpc_shared,
     sb_service_role_headers_json as _sb_headers_json_shared,
 )
@@ -59,6 +65,10 @@ ACCOUNT_STATUS_RPC = (
     os.getenv("COCOLON_ACCOUNT_STATUS_RPC", "account_status_summary_v2")
     or "account_status_summary_v2"
 ).strip()
+VISIBILITY_TABLE = (
+    os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings")
+    or "account_visibility_settings"
+).strip() or "account_visibility_settings"
 # ----------------------------
 # In-memory cache (per process)
 # ----------------------------
@@ -120,7 +130,6 @@ def _cache_put(target_user_id: str, payload: Dict[str, int]) -> None:
         _status_cache.pop(oldest_key, None)
 
 
-
 class AccountStatusResponse(BaseModel):
     status: str = Field("ok", description="ok")
     target_user_id: str = Field(..., description="Target user UUID")
@@ -134,6 +143,10 @@ class AccountStatusResponse(BaseModel):
     mymodel_views_total: int = 0
     mymodel_resonances_total: int = 0
     mymodel_discoveries_total: int = 0
+
+    # Visibility flags (current settings, joined at read time)
+    is_private_account: bool = False
+    is_friend_code_public: bool = True
 
 
 def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
@@ -161,6 +174,57 @@ def _to_int(v: Any) -> int:
         return 0
 
 
+async def _fetch_visibility_flags(target_user_id: str) -> Dict[str, bool]:
+    tgt = str(target_user_id or "").strip()
+    defaults = {
+        "is_private_account": False,
+        "is_friend_code_public": True,
+    }
+    if not tgt:
+        return defaults
+
+    try:
+        resp = await sb_get(
+            f"/rest/v1/{VISIBILITY_TABLE}",
+            params={
+                "select": "user_id,is_private_account,is_friend_code_public",
+                "user_id": f"eq.{tgt}",
+                "limit": "1",
+            },
+            timeout=8.0,
+        )
+        if resp.status_code not in (200, 206):
+            logger.warning(
+                "Supabase %s fetch failed: %s %s",
+                VISIBILITY_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            return defaults
+
+        data = resp.json()
+        row: Dict[str, Any] = {}
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            row = data[0]
+        elif isinstance(data, dict):
+            row = data
+
+        if not isinstance(row, dict) or not row:
+            return defaults
+
+        return {
+            "is_private_account": bool(row.get("is_private_account") or False),
+            "is_friend_code_public": (
+                bool(row.get("is_friend_code_public"))
+                if row.get("is_friend_code_public") is not None
+                else True
+            ),
+        }
+    except Exception as exc:
+        logger.warning("Failed to fetch visibility flags for %s: %s", tgt, exc)
+        return defaults
+
+
 ### NOTE
 # MyModel Create was previously added here with a Python-side query (limit=1000).
 # This caused inevitable drift vs. rankings and could undercount once Create grows.
@@ -186,54 +250,80 @@ def register_account_status_routes(app: FastAPI) -> None:
             or str(viewed_user_id or "").strip()
             or str(viewer_user_id)
         )
-        # Fast path: serve from cache
-        cached = _cache_get(tgt)
-        if cached is not None:
-            return AccountStatusResponse(status="ok", target_user_id=tgt, **cached)
+        is_self_request = str(tgt) == str(viewer_user_id)
 
-        # Call RPC (preferred, fast)
-        resp = await _sb_post_rpc(ACCOUNT_STATUS_RPC, {"p_target_user_id": tgt})
-        if resp.status_code >= 300:
-            logger.error(
-                "Supabase rpc %s failed: %s %s",
-                ACCOUNT_STATUS_RPC,
-                resp.status_code,
-                (resp.text or "")[:1500],
-            )
-            raise HTTPException(status_code=502, detail="Failed to fetch account status")
+        visibility = await _fetch_visibility_flags(tgt)
 
-        data = None
+        # Fast path: serve totals from cache for non-self requests only.
+        # Visibility flags are joined at read time and are not cached here.
+        if not is_self_request:
+            cached = _cache_get(tgt)
+            if cached is not None:
+                return AccountStatusResponse(
+                    status="ok",
+                    target_user_id=tgt,
+                    is_private_account=bool(visibility.get("is_private_account") or False),
+                    is_friend_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
+                    **cached,
+                )
+
+        payload: Optional[Dict[str, int]] = None
+
+        # Preferred path: latest READY artifact
         try:
-            data = resp.json()
-        except Exception:
+            ready_summary = await fetch_latest_ready_account_status_summary(tgt)
+            if ready_summary:
+                payload = extract_account_status_totals(ready_summary)
+        except Exception as exc:
+            logger.warning("Failed to fetch READY account_status summary for %s: %s", tgt, exc)
+
+        # Fallback: live RPC
+        if payload is None:
+            resp = await _sb_post_rpc(ACCOUNT_STATUS_RPC, {"p_target_user_id": tgt})
+            if resp.status_code >= 300:
+                logger.error(
+                    "Supabase rpc %s failed: %s %s",
+                    ACCOUNT_STATUS_RPC,
+                    resp.status_code,
+                    (resp.text or "")[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to fetch account status")
+
             data = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = None
 
-        row: Dict[str, Any] = {}
-        if isinstance(data, list) and data:
-            if isinstance(data[0], dict):
-                row = data[0]
-        elif isinstance(data, dict):
-            row = data
+            row: Dict[str, Any] = {}
+            if isinstance(data, list) and data:
+                if isinstance(data[0], dict):
+                    row = data[0]
+            elif isinstance(data, dict):
+                row = data
 
-        payload = {
-            "login_days_total": _to_int(row.get("login_days_total")),
-            "login_streak_max": _to_int(row.get("login_streak_max")),
-            "input_count_total": _to_int(row.get("input_count_total")),
-            "input_chars_total": _to_int(row.get("input_chars_total")),
-            "mymodel_questions_total": _to_int(row.get("mymodel_questions_total")),
-            "mymodel_views_total": _to_int(row.get("mymodel_views_total")),
-            "mymodel_resonances_total": _to_int(row.get("mymodel_resonances_total")),
-            "mymodel_discoveries_total": _to_int(row.get("mymodel_discoveries_total")),
-        }
+            payload = {
+                "login_days_total": _to_int(row.get("login_days_total")),
+                "login_streak_max": _to_int(row.get("login_streak_max")),
+                "input_count_total": _to_int(row.get("input_count_total")),
+                "input_chars_total": _to_int(row.get("input_chars_total")),
+                "mymodel_questions_total": _to_int(row.get("mymodel_questions_total")),
+                "mymodel_views_total": _to_int(row.get("mymodel_views_total")),
+                "mymodel_resonances_total": _to_int(row.get("mymodel_resonances_total")),
+                "mymodel_discoveries_total": _to_int(row.get("mymodel_discoveries_total")),
+            }
 
-        # Update cache (best-effort)
-        try:
-            _cache_put(tgt, payload)
-        except Exception:
-            pass
+        # Update cache (best-effort) for non-self only
+        if not is_self_request:
+            try:
+                _cache_put(tgt, payload)
+            except Exception:
+                pass
 
         return AccountStatusResponse(
             status="ok",
             target_user_id=tgt,
+            is_private_account=bool(visibility.get("is_private_account") or False),
+            is_friend_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
             **payload,
         )

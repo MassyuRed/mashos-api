@@ -31,6 +31,8 @@ from astor_deep_insight import DeepInsightTemplateStore
 from astor_deep_insight_question_store import DeepInsightServedStore
 from astor_deep_insight_store import DeepInsightAnswerStore
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
+from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
+from astor_account_status_enqueue import enqueue_account_status_refresh
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from ui_text_templates import render_deep_insight_question_text
@@ -468,6 +470,27 @@ def register_deep_insight_routes(app: FastAPI) -> None:
                 )
             except Exception as exc:
                 logger.warning("snapshot enqueue failed (deep_insight_answers): %s", exc)
+
+            try:
+                await enqueue_ranking_board_refresh_many(
+                    metric_keys=["input_count", "input_length"],
+                    user_id=user_id,
+                    trigger="deep_insight_answers",
+                    requested_at=now_iso,
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("ranking enqueue failed (deep_insight_answers): %s", exc)
+
+            try:
+                await enqueue_account_status_refresh(
+                    target_user_id=user_id,
+                    trigger="deep_insight_answers",
+                    requested_at=now_iso,
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("account status enqueue failed (deep_insight_answers): %s", exc)
 
         return DeepInsightAnswersResponse(
             status="ok",

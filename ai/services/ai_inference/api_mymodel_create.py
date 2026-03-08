@@ -55,6 +55,7 @@ from active_users_store import touch_active_user
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
+from astor_account_status_enqueue import enqueue_account_status_refresh
 
 
 logger = logging.getLogger("mymodel_create_api")
@@ -545,6 +546,16 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 )
             except Exception as exc:
                 logger.warning("snapshot enqueue failed (mymodel_create_answers): %s", exc)
+
+            try:
+                await enqueue_account_status_refresh(
+                    target_user_id=user_id,
+                    trigger="mymodel_create_answers",
+                    requested_at=now_iso,
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("account status enqueue failed (mymodel_create_answers): %s", exc)
 
         return MyModelCreateAnswersResponse(
             status=status,

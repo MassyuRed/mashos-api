@@ -46,6 +46,8 @@ from api_mymodel_create import _fetch_questions as _fetch_create_questions
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
+from astor_ranking_enqueue import enqueue_ranking_board_refresh
+from astor_account_status_enqueue import enqueue_account_status_refresh
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -3835,6 +3837,27 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if qid > 0:
             await _insert_view_log(target_user_id=tgt, viewer_user_id=viewer_user_id, question_id=int(qid), q_key=qk, q_instance_id=iid)
         counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="views", delta=1)
+        requested_at = _now_iso()
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_views",
+                user_id=viewer_user_id,
+                trigger="qna_view",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_view): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_view",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_view): %s", exc)
         return QnaViewResponse(status="ok", q_key=qk, q_instance_id=iid, views=int(counts.get("views") or 0), resonances=int(counts.get("resonances") or 0), is_new=False)
 
     @app.post("/mymodel/qna/resonance", response_model=QnaResonanceResponse)
@@ -4081,6 +4104,26 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("snapshot enqueue failed (qna_echoes_submit): %s", exc)
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_resonances",
+                user_id=viewer_user_id,
+                trigger="qna_echoes_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_echoes_submit): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_echoes_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_echoes_submit): %s", exc)
         return QnaEchoesSubmitResponse(status="ok", q_key=qk, q_instance_id=iid, strength=strength, memo=memo, resonated=bool(resonated), views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.post("/mymodel/qna/echoes/delete", response_model=QnaEchoesDeleteResponse)
@@ -4124,15 +4167,36 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 res_cnt = int(m.get("resonances") or 0)
             except Exception:
                 res_cnt = 0
+        requested_at = _now_iso()
         try:
             await enqueue_global_snapshot_refresh(
                 user_id=viewer_user_id,
                 trigger="qna_echoes_delete",
-                requested_at=_now_iso(),
+                requested_at=requested_at,
                 debounce=True,
             )
         except Exception as exc:
             logger.warning("snapshot enqueue failed (qna_echoes_delete): %s", exc)
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_resonances",
+                user_id=viewer_user_id,
+                trigger="qna_echoes_delete",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_echoes_delete): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_echoes_delete",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_echoes_delete): %s", exc)
         return QnaEchoesDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, resonated=False, views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.get("/mymodel/qna/echoes/history", response_model=QnaEchoesHistoryResponse)
@@ -4374,6 +4438,26 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("snapshot enqueue failed (qna_discoveries_submit): %s", exc)
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_discoveries",
+                user_id=viewer_user_id,
+                trigger="qna_discoveries_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_discoveries_submit): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_discoveries_submit",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_discoveries_submit): %s", exc)
         return QnaDiscoverySubmitResponse(status="ok", q_key=qk, q_instance_id=iid, id=inserted_id)
 
     @app.post("/mymodel/qna/discoveries/delete", response_model=QnaDiscoveryDeleteResponse)
@@ -4402,15 +4486,36 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             discoveries = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"q_instance_id": f"eq.{iid}"})
         except Exception as exc:
             logger.warning("discoveries count failed (delete): %s", exc)
+        requested_at = _now_iso()
         try:
             await enqueue_global_snapshot_refresh(
                 user_id=viewer_user_id,
                 trigger="qna_discoveries_delete",
-                requested_at=_now_iso(),
+                requested_at=requested_at,
                 debounce=True,
             )
         except Exception as exc:
             logger.warning("snapshot enqueue failed (qna_discoveries_delete): %s", exc)
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_discoveries",
+                user_id=viewer_user_id,
+                trigger="qna_discoveries_delete",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_discoveries_delete): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_discoveries_delete",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_discoveries_delete): %s", exc)
         return QnaDiscoveryDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, discoveries=int(discoveries or 0))
 
     @app.get("/mymodel/qna/discoveries/history", response_model=QnaDiscoveryHistoryResponse)

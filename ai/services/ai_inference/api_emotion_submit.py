@@ -57,6 +57,7 @@ except ImportError:  # pragma: no cover
 
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
+from astor_account_status_enqueue import enqueue_account_status_refresh
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -1659,6 +1660,16 @@ async def _post_submit_background_async(
                     )
                 except Exception as exc:
                     logger.error("Ranking board enqueue failed (bg): %s", exc)
+
+                try:
+                    await enqueue_account_status_refresh(
+                        target_user_id=user_id,
+                        trigger="emotion_submit",
+                        requested_at=created_at,
+                        debounce=True,
+                    )
+                except Exception as exc:
+                    logger.error("Account status enqueue failed (bg): %s", exc)
 
             else:
                 # Fallback: 旧方式（同一プロセス内）で実行

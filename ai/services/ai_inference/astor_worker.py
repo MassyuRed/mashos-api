@@ -140,6 +140,19 @@ from astor_ranking_kernel import (  # type: ignore
     generate_ranking_board,
 )
 
+from astor_account_status_store import (  # type: ignore
+    ACCOUNT_STATUS_SUMMARIES_TABLE,
+    ACCOUNT_STATUS_VERSION,
+    STATUS_READY as ACCOUNT_STATUS_STATUS_READY,
+    fail_account_status_summary,
+    promote_account_status_summary,
+    upsert_account_status_draft,
+)
+from astor_account_status_kernel import (  # type: ignore
+    SUPPORTED_ACCOUNT_STATUS_TOTAL_KEYS,
+    generate_account_status_summary,
+)
+
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -183,6 +196,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "inspect_emotion_report_v1",
     "refresh_ranking_board_v1",
     "inspect_ranking_board_v1",
+    "refresh_account_status_v1",
+    "inspect_account_status_v1",
 ]
 
 
@@ -1013,6 +1028,165 @@ async def _handle_inspect_ranking_board_v1(*, user_id: str, payload: Dict[str, A
         "flags": [],
     }
 
+
+
+async def _fetch_account_status_summary_row_by_id(summary_id: str) -> Optional[Dict[str, Any]]:
+    sid = str(summary_id or "").strip()
+    if not sid:
+        return None
+    resp = await sb_get(
+        f"/rest/v1/{ACCOUNT_STATUS_SUMMARIES_TABLE}",
+        params={
+            "select": "id,target_user_id,status,payload,source_hash,version,meta,created_at,updated_at,published_at",
+            "id": f"eq.{sid}",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(
+            f"fetch account_status_summary by id failed: {resp.status_code} {(resp.text or '')[:800]}"
+        )
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def _validate_account_status_payload(payload: Any) -> List[str]:
+    flags: List[str] = []
+    if not isinstance(payload, dict):
+        flags.append("payload_missing")
+        return flags
+
+    version = str(payload.get("version") or "").strip()
+    if version != ACCOUNT_STATUS_VERSION:
+        flags.append(f"version_mismatch:{version or 'missing'}")
+
+    target_user_id = str(payload.get("target_user_id") or "").strip()
+    if not target_user_id:
+        flags.append("target_user_id_missing")
+
+    totals = payload.get("totals")
+    if not isinstance(totals, dict):
+        flags.append("totals_missing")
+        return flags
+
+    for key in list(SUPPORTED_ACCOUNT_STATUS_TOTAL_KEYS or []):
+        if key not in totals:
+            flags.append(f"total_missing:{key}")
+            continue
+        coerced = _coerce_ranking_int(totals.get(key))
+        if coerced is None:
+            flags.append(f"total_invalid:{key}")
+        elif coerced < 0:
+            flags.append(f"total_negative:{key}")
+
+    return flags
+
+
+async def _handle_refresh_account_status_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    target_user_id = str((payload or {}).get("target_user_id") or uid).strip()
+    if not target_user_id:
+        raise ValueError("payload.target_user_id is required")
+
+    trigger = str((payload or {}).get("trigger") or "worker").strip() or "worker"
+    requested_at = str((payload or {}).get("requested_at") or _now_iso_z()).strip() or _now_iso_z()
+    actor_user_id = str((payload or {}).get("actor_user_id") or uid).strip() or uid
+
+    summary_payload = await generate_account_status_summary(target_user_id)
+    meta: Dict[str, Any] = {
+        "trigger": trigger,
+        "requested_at": requested_at,
+        "job_type": "refresh_account_status_v1",
+        "kernel": "rpc_kernel_v1",
+    }
+    if actor_user_id:
+        meta["actor_user_id"] = actor_user_id
+
+    summary_row = await upsert_account_status_draft(
+        target_user_id,
+        summary_payload,
+        meta=meta,
+        version=1,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "target_user_id": target_user_id,
+        "summary_id": str((summary_row or {}).get("id") or ""),
+        "summary_status": str((summary_row or {}).get("status") or ""),
+        "source_hash": str((summary_row or {}).get("source_hash") or ""),
+    }
+
+
+async def _handle_inspect_account_status_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    summary_id = str((payload or {}).get("summary_id") or "").strip()
+    if not summary_id:
+        raise ValueError("payload.summary_id is required")
+
+    summary_row = await _fetch_account_status_summary_row_by_id(summary_id)
+    if not summary_row:
+        return {"status": "missing", "user_id": uid, "summary_id": summary_id}
+
+    target_user_id = str(summary_row.get("target_user_id") or (payload or {}).get("target_user_id") or "").strip()
+    summary_payload = summary_row.get("payload") if isinstance(summary_row.get("payload"), dict) else {}
+    flags = _validate_account_status_payload(summary_payload)
+
+    if target_user_id and isinstance(summary_payload, dict):
+        payload_target = str(summary_payload.get("target_user_id") or "").strip()
+        if payload_target and payload_target != target_user_id:
+            flags.append("target_user_id_mismatch")
+
+    if flags:
+        failed = await fail_account_status_summary(
+            summary_id,
+            "account status summary inspection failed",
+            flags={
+                "issues": flags,
+                "target_user_id": target_user_id,
+                "inspector": "inspect_account_status_v1",
+            },
+        )
+        return {
+            "status": "failed",
+            "user_id": uid,
+            "target_user_id": target_user_id,
+            "summary_id": summary_id,
+            "source_hash": str(summary_row.get("source_hash") or ""),
+            "flags": flags,
+            "summary_status": str((failed or {}).get("status") or ""),
+        }
+
+    promoted = await promote_account_status_summary(
+        summary_id,
+        extra_meta={
+            "inspection": {
+                "checked_at": _now_iso_z(),
+                "inspector": "inspect_account_status_v1",
+                "target_user_id": target_user_id,
+                "flags": [],
+            }
+        },
+    )
+    return {
+        "status": "ready",
+        "user_id": uid,
+        "target_user_id": target_user_id,
+        "summary_id": summary_id,
+        "source_hash": str(summary_row.get("source_hash") or ""),
+        "summary_status": str((promoted or {}).get("status") or ""),
+        "flags": [],
+    }
 
 
 def _coerce_str_list(value: Any) -> List[str]:
@@ -1887,7 +2061,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1",
             )
         )
     )
@@ -2398,6 +2572,75 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     insp_res,
                 )
+            elif claimed.job_type == "refresh_account_status_v1":
+                account_status_res = await _handle_refresh_account_status_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        summary_id = str((account_status_res or {}).get("summary_id") or "").strip()
+                        target_user_id = str((account_status_res or {}).get("target_user_id") or (claimed.payload or {}).get("target_user_id") or claimed.user_id or "").strip()
+                        summary_status = str((account_status_res or {}).get("summary_status") or "").strip().lower()
+                        if summary_id and target_user_id and summary_status != ACCOUNT_STATUS_STATUS_READY:
+                            await enqueue_job(
+                                job_key=f"inspect_account_status:{target_user_id}:{summary_id}",
+                                job_type="inspect_account_status_v1",
+                                user_id=target_user_id,
+                                payload={
+                                    "summary_id": summary_id,
+                                    "target_user_id": target_user_id,
+                                    "source_hash": (account_status_res or {}).get("source_hash"),
+                                    "trigger": "refresh_account_status_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                },
+                                priority=24,
+                            )
+                    except Exception as exc:
+                        logger.error("Account status inspect enqueue failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    account_status_res,
+                )
+            elif claimed.job_type == "inspect_account_status_v1":
+                insp_res = await _handle_inspect_account_status_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
@@ -2485,6 +2728,17 @@ async def _worker_loop() -> None:
                                     str(exc),
                                     flags={
                                         "job_type": "inspect_ranking_board_v1",
+                                        "phase": "worker_exception",
+                                    },
+                                )
+                        elif claimed.job_type == "inspect_account_status_v1":
+                            summary_id = str(((claimed.payload or {}).get("summary_id")) or "").strip()
+                            if summary_id:
+                                await fail_account_status_summary(
+                                    summary_id,
+                                    str(exc),
+                                    flags={
+                                        "job_type": "inspect_account_status_v1",
                                         "phase": "worker_exception",
                                     },
                                 )

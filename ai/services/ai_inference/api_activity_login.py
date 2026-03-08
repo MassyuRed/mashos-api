@@ -37,6 +37,7 @@ from api_emotion_submit import (
 )
 
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
+from astor_account_status_enqueue import enqueue_account_status_refresh
 
 
 logger = logging.getLogger("activity.login")
@@ -151,5 +152,15 @@ def register_activity_login_routes(app: FastAPI) -> None:
                 )
             except Exception as exc:
                 logger.warning("ranking enqueue failed (activity_login): %s", exc)
+
+            try:
+                await enqueue_account_status_refresh(
+                    target_user_id=str(user_id),
+                    trigger="activity_login",
+                    requested_at=_iso_z(datetime.now(timezone.utc)),
+                    debounce=True,
+                )
+            except Exception as exc:
+                logger.warning("account status enqueue failed (activity_login): %s", exc)
 
         return ActivityLoginResponse(status="ok", login_date=login_date, stored=bool(stored))
