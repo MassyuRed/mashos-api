@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 from astor_account_status_enqueue import enqueue_account_status_refresh
+from astor_friend_feed_enqueue import enqueue_friend_feed_refresh_many
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -1454,14 +1455,14 @@ async def _insert_friend_emotion_feed_rows(
     owner_name: str,
     items: List[Dict[str, Any]],
     created_at: str,
-) -> None:
+) -> bool:
     """Supabase の friend_emotion_feed テーブルに通知レコードを複数件INSERTする。"""
     _ensure_supabase_config()
     if not viewer_user_ids:
-        return
+        return False
     if not items:
         # items が空配列の場合は通知をスキップ
-        return
+        return False
 
     url = f"{SUPABASE_URL}/rest/v1/friend_emotion_feed"
     headers = {
@@ -1483,7 +1484,7 @@ async def _insert_friend_emotion_feed_rows(
         if vid and vid != owner_user_id
     ]
     if not payload:
-        return
+        return False
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -1494,8 +1495,11 @@ async def _insert_friend_emotion_feed_rows(
                 resp.status_code,
                 resp.text[:2000],
             )
+            return False
+        return True
     except Exception as exc:
         logger.error("Failed to insert friend_emotion_feed rows: %s", exc)
+        return False
 
 
 async def _notify_friends_about_emotion(
@@ -1540,13 +1544,25 @@ async def _notify_friends_about_emotion(
         return
 
     owner_name = await _fetch_profile_display_name(owner_user_id)
-    await _insert_friend_emotion_feed_rows(
+    feed_rows_inserted = await _insert_friend_emotion_feed_rows(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
         owner_name=owner_name,
         items=filtered_details,
         created_at=created_at,
     )
+
+    if feed_rows_inserted:
+        try:
+            await enqueue_friend_feed_refresh_many(
+                viewer_user_ids=viewer_user_ids,
+                trigger="emotion_submit",
+                requested_at=created_at,
+                owner_user_id=owner_user_id,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.error("Friend feed enqueue failed (bg): %s", exc)
 
     # Push notification (FCM). 失敗しても感情ログ本体は成功させたいので best-effort。
     try:
