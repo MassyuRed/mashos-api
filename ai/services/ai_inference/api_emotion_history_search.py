@@ -305,6 +305,7 @@ def _build_postgrest_and_expr(parsed: _ParsedSearch) -> Optional[str]:
             f"memo_action.ilike.{pattern}",
             f"emotions.cs.{{{tok}}}",
             f"emotion_details.cs.{js_type}",
+            f"category.cs.{{{tok}}}",
         ]
         clauses.append(f"or({','.join(or_clauses)})")
 
@@ -357,7 +358,7 @@ def register_emotion_history_search_routes(app: FastAPI) -> None:
         limit_plus = int(payload.limit) + 1
 
         select_cols = (
-            "id,created_at,emotions,emotion_details,emotion_strength_avg,memo,memo_action,is_secret"
+            "id,created_at,emotions,emotion_details,emotion_strength_avg,memo,memo_action,category,is_secret"
         )
 
         params: List[Tuple[str, str]] = [
