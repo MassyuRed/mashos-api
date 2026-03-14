@@ -111,6 +111,8 @@ DISCOVERY_USER_ID_COLUMN = (
     or "viewer_user_id"
 ).strip() or "viewer_user_id"
 
+TODAY_QUESTION_ANSWERS_TABLE = (os.getenv("TODAY_QUESTION_ANSWERS_TABLE") or "today_question_answers").strip() or "today_question_answers"
+
 
 
 
@@ -704,6 +706,15 @@ async def fetch_discovery_rows_for_self_structure(user_id: str, *, include_secre
     )
 
 
+async def fetch_today_question_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
+    return await _fetch_optional_rows_by_user(
+        table=TODAY_QUESTION_ANSWERS_TABLE,
+        user_id=user_id,
+        user_id_column="user_id",
+        include_secret=include_secret,
+    )
+
+
 def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     mk = str(material_kind or "").strip()
     out: List[Dict[str, Any]] = []
@@ -740,6 +751,16 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
                 str(r.get("context_answer") or ""),
                 str(r.get("context_topic_key") or ""),
                 str(r.get("context_category") or ""),
+            ])
+        elif mk == "today_question":
+            row["content_sig"] = "|".join([
+                str(r.get("service_day_key") or ""),
+                str(r.get("question_key") or ""),
+                str(r.get("question_version") or ""),
+                str(r.get("answer_mode") or ""),
+                str(r.get("selected_choice_key") or ""),
+                str(r.get("free_text") or ""),
+                str(r.get("edited_at") or r.get("answered_at") or ""),
             ])
         out.append(row)
     return out
@@ -958,6 +979,54 @@ def _discovery_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+def _today_question_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    selected_hidden = row.get("selected_choice_hidden_meta_snapshot_json")
+    meta: Dict[str, Any] = {}
+    if isinstance(selected_hidden, dict):
+        meta = selected_hidden
+    elif isinstance(selected_hidden, str) and selected_hidden.strip():
+        try:
+            parsed = json.loads(selected_hidden)
+            if isinstance(parsed, dict):
+                meta = parsed
+        except Exception:
+            meta = {}
+
+    analysis_tags = meta.get("analysis_tags")
+    if not isinstance(analysis_tags, list):
+        if isinstance(analysis_tags, str) and analysis_tags.strip():
+            analysis_tags = [analysis_tags.strip()]
+        else:
+            analysis_tags = []
+
+    answer_mode = str(row.get("answer_mode") or "").strip() or "choice"
+    text_primary = ""
+    if answer_mode == "free_text":
+        text_primary = str(row.get("free_text") or "").strip()
+    if not text_primary:
+        text_primary = str(row.get("selected_choice_label_snapshot") or row.get("selected_choice_key") or "").strip()
+
+    return {
+        "source_type": "today_question",
+        "source_id": str(row.get("id") or ""),
+        "timestamp": str(row.get("edited_at") or row.get("answered_at") or row.get("created_at") or _now_iso_z()),
+        "text_primary": text_primary,
+        "text_secondary": str(row.get("question_text_snapshot") or "").strip(),
+        "prompt_key": str(row.get("question_key") or "").strip() or None,
+        "question_text": str(row.get("question_text_snapshot") or "").strip() or None,
+        "emotion_signals": [],
+        "action_signals": [],
+        "social_signals": [],
+        "source_weight": 1.05,
+        "answer_mode": answer_mode,
+        "choice_key": str(row.get("selected_choice_key") or "").strip() or None,
+        "role_hint": str(meta.get("role_hint") or "").strip() or None,
+        "target_hint": str(meta.get("target_hint") or "").strip() or None,
+        "world_kind_hint": str(meta.get("world_kind_hint") or "").strip() or None,
+        "analysis_tags": [str(x).strip() for x in (analysis_tags or []) if str(x).strip()],
+    }
+
+
 def build_reflection_reaction_view(
     *,
     echo_rows: List[Dict[str, Any]],
@@ -1025,6 +1094,7 @@ def build_self_structure_view(
     deep_insight_rows: List[Dict[str, Any]],
     echo_rows: List[Dict[str, Any]],
     discovery_rows: List[Dict[str, Any]],
+    today_question_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     items: List[Dict[str, Any]] = []
 
@@ -1038,6 +1108,8 @@ def build_self_structure_view(
         items.append(_echo_row_to_self_structure_item(row))
     for row in discovery_rows or []:
         items.append(_discovery_row_to_self_structure_item(row))
+    for row in today_question_rows or []:
+        items.append(_today_question_row_to_self_structure_item(row))
 
     items.sort(key=lambda r: (str(r.get("timestamp") or ""), str(r.get("source_id") or "")))
     timestamps = [str(it.get("timestamp") or "") for it in items if str(it.get("timestamp") or "").strip()]
@@ -1047,6 +1119,7 @@ def build_self_structure_view(
         "deep_insight": len(deep_insight_rows or []),
         "echo": len(echo_rows or []),
         "discovery": len(discovery_rows or []),
+        "today_question": len(today_question_rows or []),
     }
 
     return {
@@ -1283,6 +1356,196 @@ async def fetch_emotions_in_range(
         offset += limit
 
     return out
+
+
+def emotion_row_is_self_insight_only(row: Dict[str, Any]) -> bool:
+    """Return True when the row contains only the SELF_INSIGHT label.
+
+    Mixed rows (e.g. 自己理解 + 他感情) are treated as valid emotion inputs.
+    """
+    if not isinstance(row, dict):
+        return False
+
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        types: List[str] = []
+        for it in details:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("type") or "").strip()
+            if t:
+                types.append(t)
+        if types:
+            return all(t == "自己理解" for t in types)
+
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        types = [str(t or "").strip() for t in emos if str(t or "").strip()]
+        if types:
+            return all(t == "自己理解" for t in types)
+
+    return False
+
+
+def filter_self_insight_only_emotion_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop rows that are made only of the SELF_INSIGHT label."""
+    out: List[Dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if emotion_row_is_self_insight_only(row):
+            continue
+        out.append(row)
+    return out
+
+
+async def get_emotion_period_public_input_stats(*, user_id: str, scope: str) -> Dict[str, Any]:
+    """Return public effective input counts for an emotion period scope.
+
+    This is used by report ensure / worker defensive checks to distinguish
+    between a real failure and an intentional skip caused by zero usable input.
+    """
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    if not sc:
+        raise ValueError("scope is required")
+
+    info = _parse_emotion_period_scope(sc)
+    start_iso = str(info.get("period_start_iso") or "").strip()
+    end_iso = str(info.get("period_end_iso") or "").strip()
+    if not start_iso or not end_iso:
+        raise ValueError(f"Invalid emotion period scope: {sc}")
+
+    public_rows = await fetch_emotions_in_range(
+        uid,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        include_secret=False,
+    )
+    filtered_rows = filter_self_insight_only_emotion_rows(public_rows)
+
+    kind = str(info.get("kind") or "")
+    if kind == "daily":
+        period_meta = {
+            "type": "daily",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportDate": info.get("report_date"),
+            "periodStartIso": start_iso,
+            "periodEndIso": end_iso,
+            "previousPeriodStartIso": str(info.get("prev_period_start_iso") or "").strip(),
+            "previousPeriodEndIso": str(info.get("prev_period_end_iso") or "").strip(),
+        }
+    elif kind == "weekly":
+        period_meta = {
+            "type": "weekly",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": start_iso,
+            "periodEndIso": end_iso,
+        }
+    else:
+        period_meta = {
+            "type": "monthly_28d",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportMonth": info.get("report_month"),
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": start_iso,
+            "periodEndIso": end_iso,
+        }
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "scope": sc,
+        "fetched_public_rows": len(public_rows),
+        "effective_public_rows": len(filtered_rows),
+        "has_input": bool(filtered_rows),
+        "period": period_meta,
+    }
+
+
+def _is_self_insight_only_row(row: Dict[str, Any]) -> bool:
+    """Return True only when the row contains no emotion other than 自己理解."""
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        types = []
+        for it in details:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("type") or "").strip()
+            if t:
+                types.append(t)
+        if types:
+            return all(t == "自己理解" for t in types)
+
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        types = [str(t or "").strip() for t in emos if str(t or "").strip()]
+        if types:
+            return all(t == "自己理解" for t in types)
+
+    return False
+
+
+def _exclude_rows_by_ids(rows: List[Dict[str, Any]], excluded_ids: set[str]) -> List[Dict[str, Any]]:
+    if not excluded_ids:
+        return list(rows or [])
+    return [r for r in (rows or []) if str(r.get("id") or "") not in excluded_ids]
+
+
+async def _load_emotion_period_current_materials(*, user_id: str, scope: str) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    sc = str(scope or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    if not sc:
+        raise ValueError("scope is required")
+
+    info = _parse_emotion_period_scope(sc)
+    period_start_iso = str(info.get("period_start_iso") or "").strip()
+    period_end_iso = str(info.get("period_end_iso") or "").strip()
+    if not period_start_iso or not period_end_iso:
+        raise ValueError(f"Invalid period in scope: {sc}")
+
+    meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
+    internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
+    public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
+
+    exclude_ids = {str(r.get("id") or "") for r in internal_rows if _is_self_insight_only_row(r)}
+    if exclude_ids:
+        meta = _exclude_rows_by_ids(meta, exclude_ids)
+        internal_rows = _exclude_rows_by_ids(internal_rows, exclude_ids)
+        public_rows_data = _exclude_rows_by_ids(public_rows_data, exclude_ids)
+
+    total_rows = len(meta)
+    secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
+    public_rows = total_rows - secret_rows
+
+    return {
+        "scope_info": info,
+        "meta": meta,
+        "internal_rows": internal_rows,
+        "public_rows_data": public_rows_data,
+        "counts": {
+            "total": total_rows,
+            "public": public_rows,
+            "secret": secret_rows,
+        },
+    }
+
+
+async def get_emotion_period_public_input_status(*, user_id: str, scope: str) -> Dict[str, Any]:
+    loaded = await _load_emotion_period_current_materials(user_id=user_id, scope=scope)
+    return {
+        "status": "ok",
+        "user_id": str(user_id or "").strip(),
+        "scope": str(scope or "").strip(),
+        "counts": dict(loaded.get("counts") or {}),
+        "period": loaded.get("scope_info") or {},
+        "has_public_input": int(((loaded.get("counts") or {}).get("public") or 0)) > 0,
+    }
 
 
 def _normalize_details(row: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1576,6 +1839,77 @@ def build_emotion_period_payload(
     }
 
 
+def _is_self_insight_only_emotion_row(row: Dict[str, Any]) -> bool:
+    """Return True when the row only contains self-insight labels.
+
+    Emotion structure / MyWeb materials should exclude rows whose effective
+    emotion labels are only ``自己理解`` / ``SelfInsight``.
+    """
+    details = row.get("emotion_details")
+    if isinstance(details, list):
+        types: List[str] = []
+        for it in details:
+            if not isinstance(it, dict):
+                continue
+            t = str(it.get("type") or "").strip()
+            if t:
+                types.append(t)
+        if types:
+            return all(t in {"自己理解", "SelfInsight"} for t in types)
+
+    emos = row.get("emotions")
+    if isinstance(emos, list):
+        types = [str(t or "").strip() for t in emos if str(t or "").strip()]
+        if types:
+            return all(t in {"自己理解", "SelfInsight"} for t in types)
+
+    return False
+
+
+def _exclude_self_insight_only_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], set[str]]:
+    exclude_ids = {str(r.get("id") or "") for r in (rows or []) if _is_self_insight_only_emotion_row(r)}
+    if not exclude_ids:
+        return list(rows or []), set()
+    return [r for r in (rows or []) if str(r.get("id") or "") not in exclude_ids], exclude_ids
+
+
+def _build_emotion_period_meta(
+    *,
+    kind: str,
+    info: Dict[str, Any],
+    period_start_iso: str,
+    period_end_iso: str,
+    prev_period_start_iso: str = "",
+    prev_period_end_iso: str = "",
+) -> Dict[str, Any]:
+    if kind == "daily":
+        return {
+            "type": "daily",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportDate": info.get("report_date"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+            "previousPeriodStartIso": prev_period_start_iso,
+            "previousPeriodEndIso": prev_period_end_iso,
+        }
+    if kind == "weekly":
+        return {
+            "type": "weekly",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+        }
+    return {
+        "type": "monthly_28d",
+        "timezone": info.get("timezone") or "Asia/Tokyo",
+        "reportMonth": info.get("report_month"),
+        "distJst": info.get("dist_jst"),
+        "periodStartIso": period_start_iso,
+        "periodEndIso": period_end_iso,
+    }
+
+
 async def _generate_and_store_emotion_period_snapshots(
     *,
     user_id: str,
@@ -1600,13 +1934,68 @@ async def _generate_and_store_emotion_period_snapshots(
     prev_period_end_iso = str(info.get("prev_period_end_iso") or "").strip()
     prev_period_start_utc = info.get("prev_period_start_utc")
 
-    # 1) Fetch meta rows for hashing within the target period (includes secret flag)
+    # 1) Fetch current-period materials only.
     meta = await fetch_emotion_meta_for_hash(uid, start_iso=period_start_iso, end_iso=period_end_iso)
-
-    # 2) Fetch rows for aggregation (bounded)
     internal_rows = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=True)
     public_rows_data = await fetch_emotions_in_range(uid, start_iso=period_start_iso, end_iso=period_end_iso, include_secret=False)
 
+    # 2) Exclude self-insight-only rows from emotion structure materials.
+    exclude_ids = {str(r.get("id") or "") for r in internal_rows if emotion_row_is_self_insight_only(r)}
+    if exclude_ids:
+        meta = [r for r in meta if str(r.get("id") or "") not in exclude_ids]
+        internal_rows = [r for r in internal_rows if str(r.get("id") or "") not in exclude_ids]
+        public_rows_data = [r for r in public_rows_data if str(r.get("id") or "") not in exclude_ids]
+
+    total_rows = len(meta)
+    secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
+    public_rows = total_rows - secret_rows
+
+    if kind == "daily":
+        base_period_meta = {
+            "type": "daily",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportDate": info.get("report_date"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+            "previousPeriodStartIso": prev_period_start_iso,
+            "previousPeriodEndIso": prev_period_end_iso,
+        }
+    elif kind == "weekly":
+        base_period_meta = {
+            "type": "weekly",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+        }
+    else:
+        base_period_meta = {
+            "type": "monthly_28d",
+            "timezone": info.get("timezone") or "Asia/Tokyo",
+            "reportMonth": info.get("report_month"),
+            "distJst": info.get("dist_jst"),
+            "periodStartIso": period_start_iso,
+            "periodEndIso": period_end_iso,
+        }
+
+    if public_rows <= 0:
+        logger.info(
+            "emotion_period snapshot skipped (no public inputs). user=%s scope=%s trigger=%s",
+            uid,
+            sc,
+            trigger,
+        )
+        return {
+            "status": "skipped_no_input",
+            "user_id": uid,
+            "scope": sc,
+            "trigger": trigger,
+            "skip_reason": "no_public_emotion_entries",
+            "counts": {"total": total_rows, "public": public_rows, "secret": secret_rows},
+            "period": base_period_meta,
+        }
+
+    # 3) Fetch previous period only when needed after the zero-input gate.
     prev_meta: List[Dict[str, Any]] = []
     prev_internal_rows: List[Dict[str, Any]] = []
     prev_public_rows_data: List[Dict[str, Any]] = []
@@ -1615,47 +2004,13 @@ async def _generate_and_store_emotion_period_snapshots(
         prev_internal_rows = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=True)
         prev_public_rows_data = await fetch_emotions_in_range(uid, start_iso=prev_period_start_iso, end_iso=prev_period_end_iso, include_secret=False)
 
-    # 2.5) Exclude "自己理解" rows from emotion structure materials (MyWeb).
-    #      InputScreen provides SELF_INSIGHT as a dedicated emotion button.
-    def _is_self_insight_only(row: Dict[str, Any]) -> bool:
-        # Treat as self-insight-only only when all emotion labels are "自己理解".
-        details = row.get("emotion_details")
-        if isinstance(details, list):
-            types = []
-            for it in details:
-                if not isinstance(it, dict):
-                    continue
-                t = str(it.get("type") or "").strip()
-                if t:
-                    types.append(t)
-            if types:
-                return all(t == "自己理解" for t in types)
+        prev_exclude_ids = {str(r.get("id") or "") for r in prev_internal_rows if emotion_row_is_self_insight_only(r)}
+        if prev_exclude_ids:
+            prev_meta = [r for r in prev_meta if str(r.get("id") or "") not in prev_exclude_ids]
+            prev_internal_rows = [r for r in prev_internal_rows if str(r.get("id") or "") not in prev_exclude_ids]
+            prev_public_rows_data = [r for r in prev_public_rows_data if str(r.get("id") or "") not in prev_exclude_ids]
 
-        emos = row.get("emotions")
-        if isinstance(emos, list):
-            types = [str(t or "").strip() for t in emos if str(t or "").strip()]
-            if types:
-                return all(t == "自己理解" for t in types)
-
-        return False
-
-    exclude_ids = {str(r.get("id") or "") for r in internal_rows if _is_self_insight_only(r)}
-    if exclude_ids:
-        meta = [r for r in meta if str(r.get("id") or "") not in exclude_ids]
-        internal_rows = [r for r in internal_rows if str(r.get("id") or "") not in exclude_ids]
-        public_rows_data = [r for r in public_rows_data if str(r.get("id") or "") not in exclude_ids]
-
-    prev_exclude_ids = {str(r.get("id") or "") for r in prev_internal_rows if _is_self_insight_only(r)}
-    if prev_exclude_ids:
-        prev_meta = [r for r in prev_meta if str(r.get("id") or "") not in prev_exclude_ids]
-        prev_internal_rows = [r for r in prev_internal_rows if str(r.get("id") or "") not in prev_exclude_ids]
-        prev_public_rows_data = [r for r in prev_public_rows_data if str(r.get("id") or "") not in prev_exclude_ids]
-
-    # 3) Compute counts / hashes for this scope (after filtering)
-    total_rows = len(meta)
-    secret_rows = sum(1 for r in meta if bool(r.get("is_secret")))
-    public_rows = total_rows - secret_rows
-
+    # 4) Compute hashes for this scope (after filtering)
     hash_meta = meta
     if kind == "daily" and prev_meta:
         hash_meta = sorted(
@@ -1666,7 +2021,7 @@ async def _generate_and_store_emotion_period_snapshots(
     internal_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="internal", meta_rows=hash_meta)
     public_hash = compute_source_hash_from_emotion_meta(user_id=uid, scope=sc, snapshot_type="public", meta_rows=hash_meta)
 
-    # 4) Build views (match MyWeb structure)
+    # 5) Build views (match MyWeb structure)
     if kind == "daily":
         if not isinstance(prev_period_start_utc, datetime):
             raise ValueError(f"Invalid prev_period_start_utc for scope: {sc}")
@@ -1704,15 +2059,7 @@ async def _generate_and_store_emotion_period_snapshots(
             "metrics": public_metrics,
             "movement": public_movement,
         }
-        period_meta = {
-            "type": "daily",
-            "timezone": info.get("timezone") or "Asia/Tokyo",
-            "reportDate": info.get("report_date"),
-            "periodStartIso": period_start_iso,
-            "periodEndIso": period_end_iso,
-            "previousPeriodStartIso": prev_period_start_iso,
-            "previousPeriodEndIso": prev_period_end_iso,
-        }
+        period_meta = dict(base_period_meta)
     elif kind == "weekly":
         internal_days = _build_days_fixed7(internal_rows, period_start_utc)
         public_days = _build_days_fixed7(public_rows_data, period_start_utc)
@@ -1720,13 +2067,7 @@ async def _generate_and_store_emotion_period_snapshots(
         public_metrics = _compute_weekly_metrics(public_days)
         internal_views = {"days": internal_days, "metrics": internal_metrics}
         public_views = {"days": public_days, "metrics": public_metrics}
-        period_meta = {
-            "type": "weekly",
-            "timezone": info.get("timezone") or "Asia/Tokyo",
-            "distJst": info.get("dist_jst"),
-            "periodStartIso": period_start_iso,
-            "periodEndIso": period_end_iso,
-        }
+        period_meta = dict(base_period_meta)
     else:
         internal_weeks = _build_weeks_fixed4(internal_rows, period_start_utc)
         public_weeks = _build_weeks_fixed4(public_rows_data, period_start_utc)
@@ -1734,14 +2075,7 @@ async def _generate_and_store_emotion_period_snapshots(
         public_metrics = _compute_monthly_metrics(public_weeks)
         internal_views = {"weeks": internal_weeks, "metrics": internal_metrics}
         public_views = {"weeks": public_weeks, "metrics": public_metrics}
-        period_meta = {
-            "type": "monthly_28d",
-            "timezone": info.get("timezone") or "Asia/Tokyo",
-            "reportMonth": info.get("report_month"),
-            "distJst": info.get("dist_jst"),
-            "periodStartIso": period_start_iso,
-            "periodEndIso": period_end_iso,
-        }
+        period_meta = dict(base_period_meta)
 
     internal_payload = build_emotion_period_payload(
         scope=sc,
@@ -1764,11 +2098,11 @@ async def _generate_and_store_emotion_period_snapshots(
         views=public_views,
     )
 
-    # 5) Store snapshots
+    # 6) Store snapshots
     inserted_internal = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="internal", source_hash=internal_hash, payload=internal_payload)
     inserted_public = await _insert_snapshot_row(user_id=uid, scope=sc, snapshot_type="public", source_hash=public_hash, payload=public_payload)
 
-    # 5.5) Downstream: enqueue emotion structure analysis (standard) for latest public snapshot.
+    # 6.5) Downstream: enqueue emotion structure analysis (standard) for latest public snapshot.
     #      Best-effort and safe to call multiple times because job_key coalesces.
     try:
         if callable(enqueue_job):
@@ -1934,12 +2268,16 @@ async def generate_and_store_material_snapshots(
     internal_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=True)
     public_discovery_rows = await fetch_discovery_rows_for_self_structure(uid, include_secret=False)
 
+    internal_today_question_rows = await fetch_today_question_rows_for_self_structure(uid, include_secret=True)
+    public_today_question_rows: List[Dict[str, Any]] = []
+
     internal_self_structure_view = build_self_structure_view(
         emotion_rows=internal_emotion_rows,
         mymodel_rows=internal_mymodel_rows,
         deep_insight_rows=internal_deep_rows,
         echo_rows=internal_echo_rows,
         discovery_rows=internal_discovery_rows,
+        today_question_rows=internal_today_question_rows,
     )
     public_self_structure_view = build_self_structure_view(
         emotion_rows=public_emotion_rows,
@@ -1947,6 +2285,7 @@ async def generate_and_store_material_snapshots(
         deep_insight_rows=public_deep_rows,
         echo_rows=public_echo_rows,
         discovery_rows=public_discovery_rows,
+        today_question_rows=public_today_question_rows,
     )
 
     premium_reflection_view = build_premium_reflection_view(
@@ -1969,6 +2308,7 @@ async def generate_and_store_material_snapshots(
     internal_material_meta.extend(_material_meta_rows_from_rows("deep_insight", internal_deep_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("echo", internal_echo_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("discovery", internal_discovery_rows))
+    internal_material_meta.extend(_material_meta_rows_from_rows("today_question", internal_today_question_rows))
     internal_material_meta = _dedupe_material_meta_rows(internal_material_meta)
 
     internal_hash = compute_source_hash_from_material_meta(

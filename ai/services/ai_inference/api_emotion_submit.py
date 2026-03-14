@@ -41,7 +41,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 # NOTE:
@@ -59,8 +59,11 @@ from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from astor_friend_feed_enqueue import enqueue_friend_feed_refresh_many
+from astor_global_summary_enqueue import enqueue_global_summary_refresh
 
 # Shared Supabase HTTP client (connection pooled)
+from client_compat import extract_client_meta
+
 from supabase_client import (
     sb_auth_headers as _sb_auth_headers_shared,
     sb_get as _sb_get_shared,
@@ -680,6 +683,11 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
 
     text = str(text or "").strip()
     if not text:
+        return
+
+    visibility = meta.get("visibility") if isinstance(meta, dict) else {}
+    has_visible_content = bool((visibility or {}).get("has_visible_content"))
+    if not has_visible_content:
         return
 
     # snapshot window (for debugging / UI hints)
@@ -1687,6 +1695,16 @@ async def _post_submit_background_async(
                 except Exception as exc:
                     logger.error("Account status enqueue failed (bg): %s", exc)
 
+                try:
+                    await enqueue_global_summary_refresh(
+                        trigger="emotion_submit",
+                        requested_at=created_at,
+                        actor_user_id=user_id,
+                        debounce=True,
+                    )
+                except Exception as exc:
+                    logger.error("Global summary enqueue failed (bg): %s", exc)
+
             else:
                 # Fallback: 旧方式（同一プロセス内）で実行
                 await _auto_refresh_myprofile_latest_report(user_id)
@@ -1790,6 +1808,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
 
     @app.post("/emotion/submit", response_model=EmotionSubmitResponse)
     async def emotion_submit(
+        request: Request,
         payload: EmotionSubmitRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> EmotionSubmitResponse:
@@ -1808,6 +1827,8 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             else:
                 raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
+        client_meta = extract_client_meta(request.headers)
+
         # 2) emotions / category を正規化
         emotions_tags, emotion_details, avg_strength = _normalize_emotions(payload.emotions)
 
@@ -1816,10 +1837,16 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
 
         normalized_categories = _normalize_categories(payload.category)
         has_memo_input = bool(str(payload.memo or "").strip() or str(payload.memo_action or "").strip())
-        if has_memo_input and not normalized_categories:
-            raise HTTPException(status_code=400, detail="category is required when memo or memo_action is present")
         if not has_memo_input:
             normalized_categories = []
+        elif not normalized_categories:
+            logger.info(
+                "emotion_submit accepted without category for compatibility: user_id=%s version=%s build=%s platform=%s",
+                user_id,
+                client_meta.get("app_version"),
+                client_meta.get("app_build"),
+                client_meta.get("platform"),
+            )
 
         # 3) created_at を決定
         if payload.created_at:

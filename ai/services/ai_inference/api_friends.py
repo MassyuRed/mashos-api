@@ -104,6 +104,20 @@ class FriendNotificationSettingsResponse(BaseModel):
     status: str = Field(..., description="ok")
     settings: List[FriendNotificationSettingItem]
 
+
+class FriendUnreadStatusResponse(BaseModel):
+    status: str = Field(default="ok", description="ok")
+    feed_unread: bool = Field(default=False, description="Whether friend feed has unread items")
+    requests_unread: bool = Field(default=False, description="Whether incoming friend requests have unread items")
+    incoming_pending_count: int = Field(default=0, description="Incoming pending friend request count")
+    feed_last_read_at: Optional[str] = None
+    requests_last_read_at: Optional[str] = None
+
+
+class FriendUnreadMarkReadResponse(BaseModel):
+    status: str = Field(default="ok", description="ok")
+    last_read_at: Optional[str] = None
+
 # ----------------------------
 # Supabase helpers
 # ----------------------------
@@ -601,6 +615,120 @@ async def _fetch_friend_notification_map(viewer_user_id: str) -> Dict[str, bool]
 # ----------------------------
 
 
+
+
+async def _fetch_last_read_at(table_name: str, user_id: str) -> Optional[str]:
+    resp = await _sb_get(
+        f"/rest/v1/{table_name}",
+        params={
+            "select": "last_read_at",
+            "user_id": f"eq.{user_id}",
+            "limit": "1",
+        },
+    )
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 300:
+        logger.warning("Supabase %s select failed: %s %s", table_name, resp.status_code, resp.text[:1500])
+        return None
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        value = rows[0].get("last_read_at")
+        return str(value).strip() if value else None
+    if isinstance(rows, dict):
+        value = rows.get("last_read_at")
+        return str(value).strip() if value else None
+    return None
+
+
+async def _upsert_last_read_at(table_name: str, user_id: str, last_read_at: str) -> bool:
+    resp = await _sb_post(
+        f"/rest/v1/{table_name}?on_conflict=user_id",
+        json={"user_id": user_id, "last_read_at": last_read_at},
+        prefer="resolution=merge-duplicates,return=minimal",
+    )
+    if resp.status_code == 404:
+        return False
+    return resp.status_code in (200, 201)
+
+
+async def _latest_friend_feed_created_at(user_id: str) -> Optional[str]:
+    resp = await _sb_get(
+        "/rest/v1/friend_emotion_feed",
+        params={
+            "select": "created_at",
+            "viewer_user_id": f"eq.{user_id}",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning("Supabase friend_emotion_feed latest failed: %s %s", resp.status_code, resp.text[:1500])
+        return None
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        value = rows[0].get("created_at")
+        return str(value).strip() if value else None
+    return None
+
+
+async def _latest_friend_request_created_at(user_id: str) -> Optional[str]:
+    resp = await _sb_get(
+        "/rest/v1/friend_requests",
+        params={
+            "select": "created_at",
+            "requested_user_id": f"eq.{user_id}",
+            "status": "eq.pending",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning("Supabase friend_requests latest failed: %s %s", resp.status_code, resp.text[:1500])
+        return None
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        value = rows[0].get("created_at")
+        return str(value).strip() if value else None
+    return None
+
+
+async def _has_newer_friend_feed(user_id: str, last_read_at: str) -> bool:
+    resp = await _sb_get(
+        "/rest/v1/friend_emotion_feed",
+        params={
+            "select": "id,created_at",
+            "viewer_user_id": f"eq.{user_id}",
+            "created_at": f"gt.{last_read_at}",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning("Supabase friend_emotion_feed unread failed: %s %s", resp.status_code, resp.text[:1500])
+        return False
+    rows = resp.json()
+    return bool(isinstance(rows, list) and rows)
+
+
+async def _has_newer_friend_requests(user_id: str, last_read_at: str) -> bool:
+    resp = await _sb_get(
+        "/rest/v1/friend_requests",
+        params={
+            "select": "id,created_at",
+            "requested_user_id": f"eq.{user_id}",
+            "status": "eq.pending",
+            "created_at": f"gt.{last_read_at}",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+    )
+    if resp.status_code >= 300:
+        logger.warning("Supabase friend_requests unread failed: %s %s", resp.status_code, resp.text[:1500])
+        return False
+    rows = resp.json()
+    return bool(isinstance(rows, list) and rows)
+
 def register_friend_routes(app: FastAPI) -> None:
     """Register friend request endpoints on the given FastAPI app."""
 
@@ -884,6 +1012,71 @@ def register_friend_routes(app: FastAPI) -> None:
             "friendNotifMap": friend_notif_map,
             "incomingPendingCount": len(incoming),
         }
+
+
+    @app.get("/friends/unread-status", response_model=FriendUnreadStatusResponse)
+    async def get_friend_unread_status(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendUnreadStatusResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+
+        feed_last_read_at = await _fetch_last_read_at("friend_feed_reads", me)
+        requests_last_read_at = await _fetch_last_read_at("friend_request_reads", me)
+
+        feed_cursor = feed_last_read_at or "1970-01-01T00:00:00Z"
+        requests_cursor = requests_last_read_at or "1970-01-01T00:00:00Z"
+
+        feed_unread = await _has_newer_friend_feed(me, feed_cursor)
+        requests_unread = await _has_newer_friend_requests(me, requests_cursor)
+
+        reqs = await _fetch_manage_requests(me)
+        incoming = list(reqs.get("incoming") or [])
+
+        return FriendUnreadStatusResponse(
+            feed_unread=bool(feed_unread),
+            requests_unread=bool(requests_unread),
+            incoming_pending_count=len(incoming),
+            feed_last_read_at=feed_last_read_at,
+            requests_last_read_at=requests_last_read_at,
+        )
+
+    @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
+    async def post_friend_feed_mark_read(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendUnreadMarkReadResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        last_read_at = await _latest_friend_feed_created_at(me) or datetime.now(timezone.utc).isoformat()
+
+        ok = await _upsert_last_read_at("friend_feed_reads", me, last_read_at)
+        if not ok:
+            raise HTTPException(status_code=502, detail="Failed to mark friend feed as read")
+
+        return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
+
+    @app.post("/friends/unread/read-requests", response_model=FriendUnreadMarkReadResponse)
+    async def post_friend_requests_mark_read(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> FriendUnreadMarkReadResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        me = await _resolve_user_id_from_token(access_token)
+        last_read_at = await _latest_friend_request_created_at(me) or datetime.now(timezone.utc).isoformat()
+
+        ok = await _upsert_last_read_at("friend_request_reads", me, last_read_at)
+        if not ok:
+            raise HTTPException(status_code=502, detail="Failed to mark friend requests as read")
+
+        return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
     @app.get("/friends/notification-settings", response_model=FriendNotificationSettingsResponse)
     async def list_friend_notification_settings(

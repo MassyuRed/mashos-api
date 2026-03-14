@@ -185,7 +185,7 @@ async def _get_profile_row(user_id: str) -> Optional[Dict[str, Any]]:
     resp = await _sb_get(
         "/rest/v1/profiles",
         params={
-            "select": "id,display_name,myprofile_code,friend_code",
+            "select": "id,display_name,myprofile_code,friend_code,push_enabled,tutorial_completed,tutorial_skipped",
             "id": f"eq.{user_id}",
             "limit": "1",
         },

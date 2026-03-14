@@ -47,6 +47,14 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
+from publish_governance import history_retention_bounds_for_query, parse_iso_utc
+
+try:
+    from subscription import SubscriptionTier
+    from subscription_store import get_subscription_tier_for_user
+except Exception:  # pragma: no cover
+    SubscriptionTier = None  # type: ignore
+    get_subscription_tier_for_user = None  # type: ignore
 
 
 logger = logging.getLogger("emotion_history_search")
@@ -239,6 +247,27 @@ class _ParsedSearch:
     date_end_utc: Optional[datetime]
 
 
+def _history_query_end_exclusive(parsed_end_utc: Optional[datetime]) -> Optional[datetime]:
+    if parsed_end_utc is None:
+        return None
+    base = parsed_end_utc if parsed_end_utc.tzinfo is not None else parsed_end_utc.replace(tzinfo=timezone.utc)
+    return base + timedelta(milliseconds=1)
+
+
+def _resolve_history_tier_str(user_id: str) -> str:
+    return "free"
+
+
+async def _resolve_history_tier_str_async(user_id: str) -> str:
+    if SubscriptionTier is None or get_subscription_tier_for_user is None:
+        return "free"
+    try:
+        tier = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
+        return str(getattr(tier, "value", tier) or "free").strip().lower() or "free"
+    except Exception:
+        return "free"
+
+
 def _parse_search_query(raw_query: Optional[str]) -> _ParsedSearch:
     tokens = _tokenize_query(raw_query)
 
@@ -332,10 +361,27 @@ def register_emotion_history_search_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         user_id = await _resolve_user_id_from_token(access_token)
+        tier_str = await _resolve_history_tier_str_async(user_id)
+        now_utc = datetime.now(timezone.utc)
+        retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
 
         parsed = _parse_search_query(payload.query)
+        parsed_end_exclusive = _history_query_end_exclusive(parsed.date_end_utc)
+        effective_start_utc = parsed.date_start_utc
+        retention_start_iso = retention.get("gte_iso")
+        retention_end_iso = retention.get("lt_iso")
+        if retention_start_iso:
+            retention_start_dt = parse_iso_utc(retention_start_iso)
+            if retention_start_dt is not None and (effective_start_utc is None or retention_start_dt > effective_start_utc):
+                effective_start_utc = retention_start_dt
+        effective_end_exclusive = parsed_end_exclusive
+        if retention_end_iso:
+            retention_end_dt = parse_iso_utc(retention_end_iso)
+            if retention_end_dt is not None and (effective_end_exclusive is None or retention_end_dt < effective_end_exclusive):
+                effective_end_exclusive = retention_end_dt
+
         # If date range collapses to empty, return early.
-        if parsed.date_start_utc and parsed.date_end_utc and parsed.date_start_utc > parsed.date_end_utc:
+        if effective_start_utc and effective_end_exclusive and effective_start_utc >= effective_end_exclusive:
             return EmotionHistorySearchResponse(
                 user_id=user_id,
                 items=[],
@@ -349,6 +395,8 @@ def register_emotion_history_search_routes(app: FastAPI) -> None:
                         "secret_filter": payload.secret_filter,
                         "order": payload.order,
                         "date": "empty",
+                        "subscription_tier": tier_str,
+                        "retention": retention,
                     },
                 ),
             )
@@ -368,11 +416,11 @@ def register_emotion_history_search_routes(app: FastAPI) -> None:
             ("limit", str(limit_plus)),
         ]
 
-        # created_at range (UTC ISO)
-        if parsed.date_start_utc is not None:
-            params.append(("created_at", f"gte.{_to_utc_iso(parsed.date_start_utc)}"))
-        if parsed.date_end_utc is not None:
-            params.append(("created_at", f"lte.{_to_utc_iso(parsed.date_end_utc)}"))
+        # created_at range (UTC ISO) after intersecting retention window.
+        if effective_start_utc is not None:
+            params.append(("created_at", f"gte.{_to_utc_iso(effective_start_utc)}"))
+        if effective_end_exclusive is not None:
+            params.append(("created_at", f"lt.{_to_utc_iso(effective_end_exclusive)}"))
 
         # secret filter
         if payload.secret_filter == "public":
@@ -419,11 +467,13 @@ def register_emotion_history_search_routes(app: FastAPI) -> None:
             "order": payload.order,
             "offset": int(payload.offset),
             "limit": int(payload.limit),
+            "subscription_tier": tier_str,
+            "retention": retention,
         }
-        if parsed.date_start_utc is not None or parsed.date_end_utc is not None:
+        if effective_start_utc is not None or effective_end_exclusive is not None:
             applied["created_at_utc"] = {
-                "gte": _to_utc_iso(parsed.date_start_utc) if parsed.date_start_utc else None,
-                "lte": _to_utc_iso(parsed.date_end_utc) if parsed.date_end_utc else None,
+                "gte": _to_utc_iso(effective_start_utc) if effective_start_utc else None,
+                "lt": _to_utc_iso(effective_end_exclusive) if effective_end_exclusive else None,
             }
         if parsed.strength_tokens:
             applied["strength"] = parsed.strength_tokens

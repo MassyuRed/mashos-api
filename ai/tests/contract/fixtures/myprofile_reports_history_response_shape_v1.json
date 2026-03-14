@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "items": [
+    {
+      "id": "<str>",
+      "report_type": "<str>",
+      "title": "<str_or_null>",
+      "period_start": "<str_or_null>",
+      "period_end": "<str_or_null>",
+      "generated_at": "<str_or_null>",
+      "updated_at": "<str_or_null>"
+    }
+  ]
+}

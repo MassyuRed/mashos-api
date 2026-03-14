@@ -14,7 +14,8 @@ Key rules (2026-02)
   - Users may leave questions unanswered.
   - Create is considered "started" when at least one answer exists.
   - Answers are always readable.
-  - Editing existing answers is allowed for any tier.
+  - Editing existing answers is allowed for Plus / Premium only.
+  - Free may still toggle secret memo on already-saved answers.
   - Free / Plus / Premium differ only in how many questions are available.
 
 Supabase tables (default names)
@@ -56,6 +57,11 @@ from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from astor_account_status_enqueue import enqueue_account_status_refresh
+from mymodel_entitlements import (
+    FREE_TEMPLATE_QUESTION_LIMIT,
+    filter_question_rows_for_build_tier,
+    resolve_mymodel_entitlement,
+)
 
 
 logger = logging.getLogger("mymodel_create_api")
@@ -74,7 +80,21 @@ ANSWERS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_crea
 PLACEHOLDER_DEFAULT = (os.getenv("COCOLON_MYMODEL_CREATE_PLACEHOLDER_DEFAULT", "ここに書いてください。") or "").strip() or "ここに書いてください。"
 EDIT_LOCKED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_EDIT_LOCKED_MESSAGE", "編集はPlus会員以上で利用できます") or "").strip() or "編集はPlus会員以上で利用できます"
 CREATE_COMPLETED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_COMPLETED_MESSAGE", "MyModelが作成されました") or "").strip() or "MyModelが作成されました"
-FREE_ACCESSIBLE_QUESTION_COUNT = 5
+INTRO_SUBSCRIPTION_BENEFIT = (
+    os.getenv(
+        "COCOLON_MYMODEL_CREATE_INTRO_SUBSCRIPTION_BENEFIT",
+        "サブスク加入することで、回答後編集と追加の問いが表示されます。",
+    )
+    or ""
+).strip() or "サブスク加入することで、回答後編集と追加の問いが表示されます。"
+INTRO_SECRET_TOGGLE_NOTE = (
+    os.getenv(
+        "COCOLON_MYMODEL_CREATE_INTRO_SECRET_TOGGLE_NOTE",
+        "（シークレットメモのオンオフ切り替えは可能です。）",
+    )
+    or ""
+).strip() or "（シークレットメモのオンオフ切り替えは可能です。）"
+FREE_ACCESSIBLE_QUESTION_COUNT = int(FREE_TEMPLATE_QUESTION_LIMIT)
 
 
 def _ui_texts() -> Dict[str, str]:
@@ -86,6 +106,8 @@ def _ui_texts() -> Dict[str, str]:
         "placeholder_default": PLACEHOLDER_DEFAULT,
         "edit_locked_message": EDIT_LOCKED_MESSAGE,
         "create_completed_message": CREATE_COMPLETED_MESSAGE,
+        "intro_subscription_benefit": INTRO_SUBSCRIPTION_BENEFIT,
+        "intro_secret_toggle_note": INTRO_SECRET_TOGGLE_NOTE,
     }
 
 
@@ -167,25 +189,12 @@ def _now_iso() -> str:
 
 
 async def _fetch_questions(*, build_tier: str) -> List[Dict[str, Any]]:
-    tier = (build_tier or "").strip().lower() or "light"
-    # Questions are server-managed; filter by tier and is_active.
-    resp = await _sb_get(
-        f"/rest/v1/{QUESTIONS_TABLE}",
-        params={
-            "select": "id,question_text,sort_order,tier,is_active",
-            "tier": f"eq.{tier}",
-            "is_active": "eq.true",
-            "order": "sort_order.asc",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.error("Supabase %s select failed: %s %s", QUESTIONS_TABLE, resp.status_code, resp.text[:1500])
-        raise HTTPException(status_code=502, detail="Failed to load create questions")
-    rows = resp.json()
-    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    rows = await _fetch_questions_all_active()
+    return filter_question_rows_for_build_tier(rows, build_tier=build_tier)
 
 
 async def _fetch_questions_all_active() -> List[Dict[str, Any]]:
+
     """Fetch all active questions across tiers.
 
     Notes:
@@ -245,6 +254,12 @@ def _is_paid_tier(tier: SubscriptionTier) -> bool:
     return tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)
 
 
+def _can_edit_answer_text(*, entitlement: Any, is_answered: bool) -> bool:
+    if not is_answered:
+        return True
+    return bool(getattr(entitlement, "can_edit_existing_answers", False))
+
+
 def register_mymodel_create_routes(app: FastAPI) -> None:
     @app.get("/mymodel/create/questions", response_model=MyModelCreateQuestionsResponse)
     async def mymodel_create_questions(
@@ -262,17 +277,12 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             logger.warning("Failed to touch active_users: %s", exc)
 
         tier_enum = await get_subscription_tier_for_user(user_id)
-        paid = _is_paid_tier(tier_enum)
+        entitlement = resolve_mymodel_entitlement(tier_enum)
+        effective_build_tier = entitlement.build_tier
 
-        # NOTE:
-        # - For future: plus/premium may get standard (30) by default.
-        # - For now, we honor the requested build_tier as long as questions exist.
-        tier_norm = (build_tier or "").strip().lower() or "light"
-        if tier_norm not in ("light", "standard"):
-            tier_norm = "light"
-
-                # Always return the full active question set across tiers (UI handles gating/pagination).
-        questions = await _fetch_questions_all_active()
+        # Server-authoritative: returned questions are always limited by the
+        # user's current entitlement, regardless of the requested build_tier.
+        questions = await _fetch_questions(build_tier=effective_build_tier)
         qids: Set[int] = set()
         for q in questions:
             try:
@@ -297,11 +307,9 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             if is_answered:
                 answered_count += 1
 
-            # Existing / unanswered answers are editable for all tiers.
-            editable = True
+            editable = _can_edit_answer_text(entitlement=entitlement, is_answered=is_answered)
             updated_at = (str(ans.get("updated_at") or "").strip() if isinstance(ans, dict) else "") or None
-
-            edit_block_reason = None
+            edit_block_reason = None if editable else EDIT_LOCKED_MESSAGE
 
             items.append(
                 MyModelCreateQuestionItem(
@@ -318,21 +326,19 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 )
             )
 
-        answered_count_all = int(answered_count)
-        accessible_items = items if paid else items[:FREE_ACCESSIBLE_QUESTION_COUNT]
-        total = len(accessible_items)
-        answered_count = sum(1 for item in accessible_items if bool(getattr(item, "answered", False)))
+        total = len(items)
         has_unanswered = (answered_count < total) if total > 0 else True
-        is_created = answered_count_all > 0
+        is_created = answered_count > 0
 
         return MyModelCreateQuestionsResponse(
             questions=items,
             meta={
                 "user_id": user_id,
-                "build_tier": tier_norm,
+                "build_tier": effective_build_tier,
                 "subscription_tier": tier_enum.value,
-                "can_edit_existing": True,  # legacy
+                "can_edit_existing": bool(entitlement.can_edit_existing_answers),
                 "can_edit_answers": True,
+                "can_toggle_secret_without_edit": True,
                 "total_questions": int(total),
                 "answered_count": int(answered_count),
                 "unanswered_count": int(max(0, total - answered_count)),
@@ -361,14 +367,9 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             logger.warning("Failed to touch active_users: %s", exc)
 
         tier_enum = await get_subscription_tier_for_user(user_id)
-        paid = _is_paid_tier(tier_enum)
+        entitlement = resolve_mymodel_entitlement(tier_enum)
+        effective_build_tier = entitlement.build_tier
 
-        # Load allowed question ids (light only for now).
-        # If/when standard is introduced, the client can either:
-        #  - call GET /mymodel/create/questions?build_tier=standard, then POST answers accordingly
-        #  - or keep using light.
-        # Here we accept any question_id that exists in questions table (any tier), to keep the API flexible.
-        # But we still validate ids against the DB.
         raw_ids: Set[int] = set()
         for a in (body.answers or []):
             try:
@@ -376,20 +377,25 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             except Exception:
                 continue
 
-        # Fetch questions for both tiers to validate ids (best-effort).
-        # (Keeps client simple and prevents writing arbitrary question_id.)
+        all_active_questions = await _fetch_questions_all_active()
+        all_active_ids: Set[int] = set()
+        for q in all_active_questions:
+            try:
+                all_active_ids.add(int(q.get("id")))
+            except Exception:
+                continue
+
+        visible_questions = filter_question_rows_for_build_tier(
+            all_active_questions,
+            build_tier=effective_build_tier,
+        )
+        can_edit_existing_answers = bool(entitlement.can_edit_existing_answers)
         allowed_ids: Set[int] = set()
-        try:
-            for tier_name in ("light", "standard"):
-                qs = await _fetch_questions(build_tier=tier_name)
-                for q in qs:
-                    try:
-                        allowed_ids.add(int(q.get("id")))
-                    except Exception:
-                        continue
-        except Exception:
-            # If questions load fails, surface as 502.
-            raise
+        for q in visible_questions:
+            try:
+                allowed_ids.add(int(q.get("id")))
+            except Exception:
+                continue
 
         valid_ids = {qid for qid in raw_ids if qid in allowed_ids}
         existing = await _fetch_answers(user_id=user_id, question_ids=valid_ids)
@@ -408,18 +414,24 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             except Exception:
                 continue
 
-            if qid not in allowed_ids:
+            if qid not in all_active_ids:
                 skipped_invalid_ids.add(qid)
                 continue
-
-            new_text = str(a.answer_text or "")
-            # normalize: trim whitespace but keep internal newlines
-            new_text_stripped = new_text.strip()
+            if qid not in allowed_ids:
+                skipped_locked_ids.add(qid)
+                continue
 
             prev = existing.get(qid)
             prev_text = (str(prev.get("answer_text") or "").strip() if isinstance(prev, dict) else "")
             prev_secret = (bool(prev.get("is_secret")) if isinstance(prev, dict) else False)
             has_prev = bool(prev_text)
+
+            has_answer_text = getattr(a, "answer_text", None) is not None
+            new_text_stripped: Optional[str] = None
+            if has_answer_text:
+                new_text = str(a.answer_text or "")
+                # normalize: trim whitespace but keep internal newlines
+                new_text_stripped = new_text.strip()
 
             # is_secret is optional for backward compatibility.
             # - If omitted on existing answers, keep current secret flag.
@@ -431,12 +443,44 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 else (bool(new_secret_opt) if new_secret_opt is not None else False)
             )
 
+            if has_prev and not can_edit_existing_answers:
+                if has_answer_text and new_text_stripped != prev_text:
+                    skipped_locked_ids.add(qid)
+                    continue
+                if desired_secret == prev_secret:
+                    continue
+                saved_payload.append(
+                    {
+                        "user_id": user_id,
+                        "question_id": qid,
+                        "answer_text": prev_text,
+                        "is_secret": bool(desired_secret),
+                    }
+                )
+                continue
+
+            if has_prev and not has_answer_text:
+                if desired_secret == prev_secret:
+                    continue
+                saved_payload.append(
+                    {
+                        "user_id": user_id,
+                        "question_id": qid,
+                        "answer_text": prev_text,
+                        "is_secret": bool(desired_secret),
+                    }
+                )
+                continue
+
             # Empty/blank => clear
             if not new_text_stripped:
                 if not has_prev:
                     skipped_empty_ids.add(qid)
                     continue
                 delete_ids.add(qid)
+                continue
+
+            if has_prev and new_text_stripped == prev_text and desired_secret == prev_secret:
                 continue
 
             # Upsert row
@@ -451,7 +495,6 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             # If only secret changed (text unchanged), do not bump updated_at.
             if has_prev and new_text_stripped == prev_text and desired_secret != prev_secret:
                 row.pop("updated_at", None)
-                row.pop("answer_text", None)
 
             saved_payload.append(row)
 
@@ -496,10 +539,8 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         # Optional: return updated create-state so RN can update badge without an extra GET.
         create_state: Optional[Dict[str, Any]] = None
         try:
-            qs_all = await _fetch_questions_all_active()
-            accessible_questions = qs_all if paid else qs_all[:FREE_ACCESSIBLE_QUESTION_COUNT]
             accessible_qids: Set[int] = set()
-            for q in accessible_questions:
+            for q in visible_questions:
                 try:
                     accessible_qids.add(int(q.get("id")))
                 except Exception:
@@ -514,7 +555,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 (answered_accessible < total_accessible) if total_accessible > 0 else True
             )
             create_state = {
-                "build_tier": "light",
+                "build_tier": effective_build_tier,
                 "total_questions": int(total_accessible),
                 "answered_count": int(answered_accessible),
                 "unanswered_count": int(max(0, total_accessible - answered_accessible)),
@@ -567,8 +608,9 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             meta={
                 "user_id": user_id,
                 "subscription_tier": tier_enum.value,
-                "can_edit_existing": True,  # legacy
+                "can_edit_existing": bool(entitlement.can_edit_existing_answers),
                 "can_edit_answers": True,
+                "can_toggle_secret_without_edit": True,
                 "saved_at": now_iso,
                 "engine": "mymodel.create.answers.v1",
                 # Optional: expose which ids were blocked (helps client debug)

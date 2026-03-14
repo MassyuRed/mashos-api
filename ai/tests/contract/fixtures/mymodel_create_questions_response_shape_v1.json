@@ -1,0 +1,36 @@
+{
+  "questions": [
+    {
+      "question_id": "<int>",
+      "question_text": "<str>",
+      "answer_text": "<str_or_null>",
+      "answered": "<bool>",
+      "updated_at": "<str_or_null>",
+      "is_secret": "<bool>",
+      "editable": "<bool>",
+      "can_edit": "<bool>",
+      "edit_block_reason": "<str_or_null>",
+      "placeholder": "<str_or_null>"
+    }
+  ],
+  "meta": {
+    "user_id": "<str>",
+    "build_tier": "<str>",
+    "subscription_tier": "<str>",
+    "can_edit_existing": "<bool>",
+    "can_edit_answers": "<bool>",
+    "total_questions": "<int>",
+    "answered_count": "<int>",
+    "unanswered_count": "<int>",
+    "has_unanswered": "<bool>",
+    "is_created": "<bool>",
+    "show_incomplete_badge": "<bool>",
+    "incomplete_badge_count": "<int>",
+    "engine": "<str>",
+    "ui_texts": {
+      "placeholder_default": "<str>",
+      "edit_locked_message": "<str>",
+      "create_completed_message": "<str>"
+    }
+  }
+}

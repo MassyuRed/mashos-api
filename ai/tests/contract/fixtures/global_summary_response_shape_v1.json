@@ -1,0 +1,9 @@
+{
+  "date": "<str>",
+  "tz": "<str>",
+  "emotion_users": "<int>",
+  "reflection_views": "<int>",
+  "echo_count": "<int>",
+  "discovery_count": "<int>",
+  "updated_at": "<str_or_null>"
+}

@@ -1,0 +1,5 @@
+{
+  "notification_enabled": "<bool>",
+  "delivery_time_local": "<str>",
+  "timezone_name": "<str>"
+}

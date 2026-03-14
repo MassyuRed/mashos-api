@@ -32,7 +32,7 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from api_emotion_submit import _ensure_supabase_config
+from api_emotion_submit import _ensure_supabase_config, _fetch_push_tokens_for_users, _send_fcm_push
 
 # Phase11: observability (structured logs + optional slack notifications)
 try:
@@ -118,6 +118,13 @@ except Exception:  # pragma: no cover
     _myweb_generate_and_save = None  # type: ignore
     _myweb_report_exists = None  # type: ignore
 
+# Shared publish visibility guard for past empty MyWeb rows.
+try:
+    from publish_governance import myweb_report_has_visible_content
+except Exception:  # pragma: no cover
+    def myweb_report_has_visible_content(_content_json):  # type: ignore
+        return True
+
 # MyProfile monthly report generator
 try:
     from astor_myprofile_report import build_myprofile_monthly_report, parse_period_days
@@ -133,6 +140,28 @@ except Exception:  # pragma: no cover
     get_subscription_tier_for_user = None  # type: ignore
     allowed_myprofile_modes_for_tier = None  # type: ignore
 
+try:
+    from report_distribution_push_store import ReportDistributionPushStore
+except Exception:  # pragma: no cover
+    ReportDistributionPushStore = None  # type: ignore
+
+try:
+    from report_distribution_settings_store import (
+        ReportDistributionSettingsStore,
+        REPORT_DISTRIBUTION_DEFAULT_DELIVERY_TIME,
+        REPORT_DISTRIBUTION_DEFAULT_NOTIFICATION_ENABLED,
+        REPORT_DISTRIBUTION_DEFAULT_TIMEZONE,
+        is_bundle_due_for_settings,
+    )
+except Exception:  # pragma: no cover
+    ReportDistributionSettingsStore = None  # type: ignore
+    REPORT_DISTRIBUTION_DEFAULT_DELIVERY_TIME = "00:00"  # type: ignore
+    REPORT_DISTRIBUTION_DEFAULT_NOTIFICATION_ENABLED = True  # type: ignore
+    REPORT_DISTRIBUTION_DEFAULT_TIMEZONE = "Asia/Tokyo"  # type: ignore
+
+    def is_bundle_due_for_settings(*, candidate_created_at, settings, now_utc=None):  # type: ignore
+        return True
+
 
 logger = logging.getLogger("cron_distribution")
 
@@ -147,6 +176,8 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 PROFILES_TABLE = (os.getenv("COCOLON_PROFILES_TABLE", "profiles") or "profiles").strip()
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE", "myweb_reports") or "myweb_reports").strip()
 MYPROFILE_REPORTS_TABLE = (os.getenv("MYPROFILE_REPORTS_TABLE", "myprofile_reports") or "myprofile_reports").strip()
+
+MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
 
 CRON_TOKEN_ENV = (
     os.getenv("MASHOS_CRON_TOKEN")
@@ -224,6 +255,26 @@ class CronBatchResponse(BaseModel):
     errors: int
     next_offset: Optional[int] = None
     done: bool
+    error_samples: List[str] = Field(default_factory=list)
+
+
+class ReportDistributionPushBatchRequest(BaseModel):
+    limit: int = Field(default=300, ge=1, le=2000, description="最大bundle件数")
+    dry_run: bool = Field(default=False, description="true の場合、送信・既読化せず候補を見る")
+    now_iso: Optional[str] = Field(default=None, description="テスト用: 現在時刻(UTC ISO)。")
+
+
+class ReportDistributionPushBatchResponse(BaseModel):
+    status: str = "ok"
+    job: str = "report_distribution_push"
+    now_iso: str
+    processed: int
+    sent: int
+    skipped: int
+    errors: int
+    bundles: int
+    sent_users: List[str] = Field(default_factory=list)
+    skipped_users: List[str] = Field(default_factory=list)
     error_samples: List[str] = Field(default_factory=list)
 
 
@@ -549,6 +600,113 @@ async def _myprofile_monthly_exists(
 
 
 
+def _unwrap_myprofile_content_json(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    cj = (row or {}).get("content_json")
+    if not isinstance(cj, dict):
+        return {}
+    if isinstance(cj.get("meta"), dict) and not isinstance(cj.get("version"), str):
+        merged = dict(cj.get("meta") or {})
+        for k, v in cj.items():
+            if k == "meta":
+                continue
+            merged.setdefault(k, v)
+        return merged
+    return cj
+
+
+def _myprofile_monthly_row_is_current_schema(row: Optional[Dict[str, Any]]) -> bool:
+    cj = _unwrap_myprofile_content_json(row)
+    return str(cj.get("version") or "").strip() == MYPROFILE_REPORT_SCHEMA_VERSION
+
+
+def _myprofile_history_fingerprint(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    cj = _unwrap_myprofile_content_json(row)
+    history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
+    s = str(history.get("history_fingerprint") or "").strip()
+    return s or None
+
+
+def _myprofile_has_visible_content(row: Optional[Dict[str, Any]]) -> bool:
+    cj = _unwrap_myprofile_content_json(row)
+    visibility = cj.get("visibility") if isinstance(cj.get("visibility"), dict) else {}
+    if "has_visible_content" in visibility:
+        return bool(visibility.get("has_visible_content"))
+    return bool(str((row or {}).get("content_text") or "").strip())
+
+
+async def _fetch_myprofile_monthly_row(
+    client: httpx.AsyncClient,
+    *,
+    user_id: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    run_id: Optional[str] = None,
+    job: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    params = {
+        "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
+        "user_id": f"eq.{user_id}",
+        "report_type": "eq.monthly",
+        "period_start": f"eq.{period_start_iso}",
+        "period_end": f"eq.{period_end_iso}",
+        "limit": "1",
+    }
+    resp = await _sb_request(
+        client,
+        "GET",
+        url,
+        headers=_sb_headers(),
+        params=params,
+        op="myprofile_monthly_fetch_row",
+        run_id=run_id,
+        job=job,
+    )
+    if resp.status_code >= 300:
+        logger.error("myprofile_reports fetch failed: %s %s", resp.status_code, resp.text[:800])
+        raise HTTPException(status_code=502, detail="Failed to query myprofile_reports")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
+async def _fetch_previous_myprofile_monthly_row(
+    client: httpx.AsyncClient,
+    *,
+    user_id: str,
+    before_period_end_iso: str,
+    run_id: Optional[str] = None,
+    job: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    params = {
+        "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
+        "user_id": f"eq.{user_id}",
+        "report_type": "eq.monthly",
+        "period_end": f"lt.{before_period_end_iso}",
+        "order": "period_end.desc,generated_at.desc",
+        "limit": "1",
+    }
+    resp = await _sb_request(
+        client,
+        "GET",
+        url,
+        headers=_sb_headers(),
+        params=params,
+        op="myprofile_monthly_fetch_previous_row",
+        run_id=run_id,
+        job=job,
+    )
+    if resp.status_code >= 300:
+        logger.error("myprofile_reports previous fetch failed: %s %s", resp.status_code, resp.text[:800])
+        raise HTTPException(status_code=502, detail="Failed to query previous myprofile_reports")
+    rows = resp.json()
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    return None
+
+
 async def _myprofile_monthly_upsert(
     client: httpx.AsyncClient,
     *,
@@ -584,6 +742,32 @@ async def _myprofile_monthly_upsert(
         rid = rows[0].get("id")
         return int(rid) if rid is not None else None
     return None
+
+
+async def _delete_myprofile_monthly_row(
+    client: httpx.AsyncClient,
+    *,
+    row_id: Any,
+    run_id: Optional[str] = None,
+    job: Optional[str] = None,
+) -> None:
+    if row_id is None:
+        return
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    params = {"id": f"eq.{row_id}"}
+    resp = await _sb_request(
+        client,
+        "DELETE",
+        url,
+        headers=_sb_headers(),
+        params=params,
+        op="myprofile_monthly_delete",
+        run_id=run_id,
+        job=job,
+    )
+    if resp.status_code not in (200, 204):
+        logger.error("myprofile_reports delete failed: %s %s", resp.status_code, resp.text[:800])
+        raise HTTPException(status_code=502, detail="Failed to delete stale myprofile monthly report")
 
 
 async def _select_monthly_report_mode(user_id: str) -> str:
@@ -660,6 +844,46 @@ def _count_status(items: List[Dict[str, Any]]) -> Tuple[int, int, int]:
     return gen, ex, err
 
 
+async def _fetch_myweb_report_row(
+    *,
+    user_id: str,
+    report_type: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    run_id: Optional[str] = None,
+    job: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    url = f"{SUPABASE_URL}/rest/v1/{MYWEB_REPORTS_TABLE}"
+    params = {
+        "select": "id,report_type,period_start,period_end,content_json",
+        "user_id": f"eq.{user_id}",
+        "report_type": f"eq.{report_type}",
+        "period_start": f"eq.{period_start_iso}",
+        "period_end": f"eq.{period_end_iso}",
+        "limit": "1",
+    }
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        resp = await _sb_request(
+            client,
+            "GET",
+            url,
+            headers=_sb_headers(),
+            params=params,
+            op="myweb_report_fetch_row",
+            run_id=run_id,
+            job=job,
+        )
+    if resp.status_code >= 300:
+        return None
+    try:
+        rows = resp.json()
+    except Exception:
+        return None
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
 async def _run_myweb_for_users(
     *,
     report_type: Literal["daily", "weekly", "monthly"],
@@ -676,6 +900,7 @@ async def _run_myweb_for_users(
 
     sem = asyncio.Semaphore(max(1, DEFAULT_CONCURRENCY))
     errors: List[str] = []
+    distribution_key = _distribution_key_for_now(now_utc)
 
     async def one(uid: str) -> Dict[str, Any]:
         async with sem:
@@ -683,7 +908,33 @@ async def _run_myweb_for_users(
                 target = _myweb_build_target_period(report_type, now_utc)
                 existing_id = await _myweb_report_exists(uid, report_type, target.period_start_iso, target.period_end_iso)
                 if existing_id is not None and not force:
-                    return {"user_id": uid, "status": "exists"}
+                    existing_row = await _fetch_myweb_report_row(
+                        user_id=uid,
+                        report_type=report_type,
+                        period_start_iso=target.period_start_iso,
+                        period_end_iso=target.period_end_iso,
+                        run_id=run_id,
+                        job=job,
+                    )
+                    if isinstance(existing_row, dict) and not myweb_report_has_visible_content(existing_row.get("content_json")):
+                        return {"user_id": uid, "status": "skipped", "report_id": existing_id, "skip_reason": "no_visible_content"}
+                    if not dry_run:
+                        await _enqueue_report_distribution_candidate(
+                            user_id=uid,
+                            distribution_key=distribution_key,
+                            report_family=f"emotion_{report_type}",
+                            report_table=MYWEB_REPORTS_TABLE,
+                            report_id=existing_id,
+                            report_type=report_type,
+                            period_start=target.period_start_iso,
+                            period_end=target.period_end_iso,
+                            open_target={
+                                "screen": "MyWeb",
+                                "open_mode": "reportHistory",
+                                "report_type": report_type,
+                            },
+                        )
+                    return {"user_id": uid, "status": "exists", "report_id": existing_id}
                 if dry_run:
                     return {"user_id": uid, "status": "generated", "dry_run": True}
 
@@ -731,7 +982,33 @@ async def _run_myweb_for_users(
                 finally:
                     if lock_key and release_lock is not None:
                         await release_lock(lock_key=lock_key, owner_id=lock_owner)
-                return {"user_id": uid, "status": "generated", "report_id": (meta or {}).get("report_id")}
+                meta_dict = dict(meta) if isinstance(meta, dict) else {}
+                meta_status = str(meta_dict.get("status") or "generated").strip() or "generated"
+                report_id = meta_dict.get("report_id")
+                if meta_status == "skipped":
+                    return {
+                        "user_id": uid,
+                        "status": "skipped",
+                        "report_id": None,
+                        "skip_reason": meta_dict.get("skip_reason"),
+                    }
+                if not dry_run:
+                    await _enqueue_report_distribution_candidate(
+                        user_id=uid,
+                        distribution_key=distribution_key,
+                        report_family=f"emotion_{report_type}",
+                        report_table=MYWEB_REPORTS_TABLE,
+                        report_id=report_id,
+                        report_type=report_type,
+                        period_start=target.period_start_iso,
+                        period_end=target.period_end_iso,
+                        open_target={
+                            "screen": "MyWeb",
+                            "open_mode": "reportHistory",
+                            "report_type": report_type,
+                        },
+                    )
+                return {"user_id": uid, "status": "generated", "report_id": report_id}
             except Exception as exc:
                 msg = f"{uid}: {exc}"
                 errors.append(msg)
@@ -759,13 +1036,14 @@ async def _run_myprofile_monthly_for_users(
 
     sem = asyncio.Semaphore(max(1, DEFAULT_CONCURRENCY))
     errors: List[str] = []
+    distribution_key = _distribution_key_for_now(now_utc)
 
     async with httpx.AsyncClient(timeout=12.0) as client:
 
         async def one(uid: str) -> Dict[str, Any]:
             async with sem:
                 try:
-                    existing_id = await _myprofile_monthly_exists(
+                    existing_row = await _fetch_myprofile_monthly_row(
                         client,
                         user_id=uid,
                         period_start_iso=target.period_start_iso,
@@ -773,8 +1051,26 @@ async def _run_myprofile_monthly_for_users(
                         run_id=run_id,
                         job=job,
                     )
-                    if existing_id is not None and not force:
-                        return {"user_id": uid, "status": "exists"}
+                    existing_id = existing_row.get("id") if isinstance(existing_row, dict) else None
+                    existing_row_is_legacy = bool(existing_row is not None and not _myprofile_monthly_row_is_current_schema(existing_row))
+                    if existing_row is not None and not force and _myprofile_monthly_row_is_current_schema(existing_row):
+                        if not dry_run and existing_id is not None:
+                            await _enqueue_report_distribution_candidate(
+                                user_id=uid,
+                                distribution_key=distribution_key,
+                                report_family="self_structure_monthly",
+                                report_table=MYPROFILE_REPORTS_TABLE,
+                                report_id=existing_id,
+                                report_type="monthly",
+                                period_start=target.period_start_iso,
+                                period_end=target.period_end_iso,
+                                open_target={
+                                    "screen": "MyWeb",
+                                    "open_mode": "selfReportHistory",
+                                    "self_report_type": "monthly",
+                                },
+                            )
+                        return {"user_id": uid, "status": "exists", "report_id": existing_id}
 
                     report_mode = await _select_monthly_report_mode(uid)
 
@@ -825,6 +1121,16 @@ async def _run_myprofile_monthly_for_users(
                         return {"user_id": uid, "status": "exists", "skipped": "locked", "report_mode": report_mode}
 
                     try:
+                        prev_saved_row = await _fetch_previous_myprofile_monthly_row(
+                            client,
+                            user_id=uid,
+                            before_period_end_iso=target.period_end_iso,
+                            run_id=run_id,
+                            job=job,
+                        )
+                        prev_report_text = str(prev_saved_row.get("content_text") or "") if isinstance(prev_saved_row, dict) else None
+                        prev_report_json = _unwrap_myprofile_content_json(prev_saved_row) if isinstance(prev_saved_row, dict) else None
+
                         # Generate at dist_utc boundary (end exclusive)
                         text, meta = build_myprofile_monthly_report(
                             user_id=uid,
@@ -832,8 +1138,68 @@ async def _run_myprofile_monthly_for_users(
                             report_mode=report_mode,
                             include_secret=include_secret,
                             now=target.dist_utc,
-                            prev_report_text=None,
+                            prev_report_text=prev_report_text,
+                            prev_report_json=prev_report_json,
+                            report_type="monthly",
+                            distribution_utc=_iso_utc(target.dist_utc),
                         )
+
+                        text = str(text or "").strip()
+                        if not text:
+                            return {"user_id": uid, "status": "skipped", "skipped": "empty"}
+
+                        visibility = meta.get("visibility") if isinstance(meta, dict) else {}
+                        has_visible_content = bool((visibility or {}).get("has_visible_content"))
+                        if not has_visible_content:
+                            if existing_row_is_legacy and existing_id is not None:
+                                await _delete_myprofile_monthly_row(
+                                    client,
+                                    row_id=existing_id,
+                                    run_id=run_id,
+                                    job=job,
+                                )
+                            return {
+                                "user_id": uid,
+                                "status": "skipped",
+                                "skipped": str(((meta.get("history") if isinstance(meta, dict) else {}) or {}).get("skip_reason") or "no_visible_content"),
+                                "report_mode": report_mode,
+                            }
+
+                        history_fingerprint = str(((meta.get("history") if isinstance(meta, dict) else {}) or {}).get("history_fingerprint") or "").strip() or None
+                        prev_history_fingerprint = _myprofile_history_fingerprint(prev_saved_row)
+                        if history_fingerprint and prev_history_fingerprint and history_fingerprint == prev_history_fingerprint:
+                            if existing_row_is_legacy and existing_id is not None:
+                                await _delete_myprofile_monthly_row(
+                                    client,
+                                    row_id=existing_id,
+                                    run_id=run_id,
+                                    job=job,
+                                )
+                            return {
+                                "user_id": uid,
+                                "status": "skipped",
+                                "skipped": "unchanged",
+                                "report_mode": report_mode,
+                            }
+
+                        content_json = {
+                            **(meta or {}),
+                            "source": "cron_myprofile_monthly",
+                            "report_type": "monthly",
+                            "report_mode": report_mode,
+                            "period": period,
+                            "dist_utc": _iso_utc(target.dist_utc),
+                            "include_secret": include_secret,
+                            "period_start": target.period_start_iso,
+                            "period_end": target.period_end_iso,
+                        }
+                        content_json["history"] = {
+                            **(content_json.get("history") if isinstance(content_json.get("history"), dict) else {}),
+                            "archive_eligible": True,
+                            "history_fingerprint": history_fingerprint,
+                            "skip_reason": None,
+                            "history_saved": True,
+                        }
 
                         payload = {
                             "user_id": uid,
@@ -842,17 +1208,27 @@ async def _run_myprofile_monthly_for_users(
                             "period_end": target.period_end_iso,
                             "title": target.title,
                             "content_text": text,
-                            "content_json": {
-                                "meta": meta,
-                                "report_mode": report_mode,
-                                "period": period,
-                                "dist_utc": _iso_utc(target.dist_utc),
-                                "include_secret": include_secret,
-                            },
+                            "content_json": content_json,
                             "generated_at": _iso_utc(target.dist_utc),
                         }
 
                         rid = await _myprofile_monthly_upsert(client, payload=payload, run_id=run_id, job=job)
+                        if not dry_run and rid is not None:
+                            await _enqueue_report_distribution_candidate(
+                                user_id=uid,
+                                distribution_key=distribution_key,
+                                report_family="self_structure_monthly",
+                                report_table=MYPROFILE_REPORTS_TABLE,
+                                report_id=rid,
+                                report_type="monthly",
+                                period_start=target.period_start_iso,
+                                period_end=target.period_end_iso,
+                                open_target={
+                                    "screen": "MyWeb",
+                                    "open_mode": "selfReportHistory",
+                                    "self_report_type": "monthly",
+                                },
+                            )
                         return {"user_id": uid, "status": "generated", "report_id": rid, "report_mode": report_mode}
                     finally:
                         if lock_key and release_lock is not None:
@@ -974,6 +1350,153 @@ async def _maybe_record_cron_failed(
 # Route registration
 # ----------------------------
 
+
+def _distribution_key_for_now(now_utc: datetime) -> str:
+    return now_utc.astimezone(JST).date().isoformat()
+
+
+def _report_distribution_family_priority(family: str) -> int:
+    order = {
+        "emotion_daily": 10,
+        "emotion_weekly": 20,
+        "emotion_monthly": 30,
+        "self_structure_monthly": 40,
+    }
+    return order.get(str(family or "").strip(), 999)
+
+
+def _candidate_report_label(row: Dict[str, Any]) -> str:
+    family = str((row or {}).get("report_family") or "").strip()
+    if family == "emotion_daily":
+        return "日報"
+    if family == "emotion_weekly":
+        return "週報"
+    if family == "emotion_monthly":
+        return "月報"
+    if family == "self_structure_monthly":
+        return "自己構造月報"
+    return "レポート"
+
+
+async def _enqueue_report_distribution_candidate(
+    *,
+    user_id: str,
+    distribution_key: str,
+    report_family: str,
+    report_table: str,
+    report_id: Any,
+    report_type: Optional[str],
+    period_start: Optional[str],
+    period_end: Optional[str],
+    open_target: Dict[str, Any],
+) -> None:
+    if ReportDistributionPushStore is None:
+        return
+    try:
+        store = ReportDistributionPushStore()
+        await store.create_candidate(
+            user_id=str(user_id or "").strip(),
+            distribution_key=str(distribution_key or "").strip(),
+            report_family=str(report_family or "").strip(),
+            report_table=str(report_table or "").strip(),
+            report_id=report_id,
+            report_type=(str(report_type or "").strip() or None),
+            period_start=(str(period_start or "").strip() or None),
+            period_end=(str(period_end or "").strip() or None),
+            open_target=(open_target or {}),
+        )
+    except Exception as exc:
+        logger.warning(
+            "enqueue report_distribution candidate failed. user=%s family=%s err=%s",
+            str(user_id or "").strip(),
+            str(report_family or "").strip(),
+            exc,
+        )
+
+
+def _build_report_distribution_push_payload(bundle_rows: List[Dict[str, Any]], *, distribution_key: str) -> Dict[str, Any]:
+    rows = sorted(bundle_rows or [], key=lambda r: _report_distribution_family_priority(str((r or {}).get("report_family") or "")))
+    families = [str((r or {}).get("report_family") or "").strip() for r in rows if str((r or {}).get("report_family") or "").strip()]
+    labels = [_candidate_report_label(r) for r in rows]
+    unique_labels: List[str] = []
+    for label in labels:
+        if label not in unique_labels:
+            unique_labels.append(label)
+
+    title = "Cocolon"
+    body = "新しいレポートが届きました"
+    open_mode = "home"
+    report_type = ""
+    self_report_type = ""
+
+    if len(families) == 1:
+        family = families[0]
+        if family == "emotion_daily":
+            body = "日報が届きました"
+            open_mode = "reportHistory"
+            report_type = "daily"
+        elif family == "emotion_weekly":
+            body = "週報が届きました"
+            open_mode = "reportHistory"
+            report_type = "weekly"
+        elif family == "emotion_monthly":
+            body = "月報が届きました"
+            open_mode = "reportHistory"
+            report_type = "monthly"
+        elif family == "self_structure_monthly":
+            body = "自己構造月報が届きました"
+            open_mode = "selfReportHistory"
+            self_report_type = "monthly"
+    elif unique_labels:
+        body = f"新しいレポートが届きました（{'・'.join(unique_labels[:4])}）"
+
+    return {
+        "title": title,
+        "body": body,
+        "data": {
+            "type": "report_distribution",
+            "screen": "MyWeb",
+            "distribution_key": str(distribution_key or "").strip(),
+            "bundle_families": ",".join(families),
+            "open_mode": open_mode,
+            "report_type": report_type,
+            "self_report_type": self_report_type,
+        },
+        "families": families,
+    }
+
+
+async def _send_report_distribution_bundle_push(
+    *,
+    user_id: str,
+    distribution_key: str,
+    bundle_rows: List[Dict[str, Any]],
+    dry_run: bool,
+) -> Dict[str, Any]:
+    payload = _build_report_distribution_push_payload(bundle_rows, distribution_key=distribution_key)
+    families = list(payload.get("families") or [])
+    data_payload = dict(payload.get("data") or {})
+    token_map = await _fetch_push_tokens_for_users([str(user_id or "").strip()])
+    token = str((token_map or {}).get(str(user_id or "").strip()) or "").strip()
+
+    send_status = "sent"
+    if dry_run:
+        send_status = "dry_run"
+    elif token:
+        await _send_fcm_push(
+            tokens=[token],
+            title=str(payload.get("title") or "Cocolon"),
+            body=str(payload.get("body") or "新しいレポートが届きました"),
+            data=data_payload,
+        )
+    else:
+        send_status = "skipped_no_token"
+
+    return {
+        "send_status": send_status,
+        "payload": data_payload,
+        "bundle_families": families,
+    }
 
 
 def _build_slack_text_for_cron(
@@ -1866,3 +2389,138 @@ def register_cron_distribution_routes(app: FastAPI) -> None:
             # slack notify (best-effort)
             await _maybe_notify_slack_cron_failure(job=job, run_id=run_id, body=body, err=exc)
             raise
+
+
+    @app.post("/cron/report-distribution/push", response_model=ReportDistributionPushBatchResponse)
+    async def cron_report_distribution_push(
+        body: ReportDistributionPushBatchRequest,
+        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
+    ) -> ReportDistributionPushBatchResponse:
+        _require_cron_token(x_cron_token)
+        now_utc = _parse_now_utc(body.now_iso)
+        if ReportDistributionPushStore is None:
+            raise HTTPException(status_code=500, detail="report_distribution_push_store is not available")
+
+        store = ReportDistributionPushStore()
+        candidate_limit = max(1, min(int(body.limit or 300) * 6, 2000))
+        rows = await store.list_pending_candidates(limit=candidate_limit)
+
+        bundles: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            uid = str(row.get("user_id") or "").strip()
+            dist_key = str(row.get("distribution_key") or "").strip()
+            if not uid or not dist_key:
+                continue
+            bundles.setdefault((uid, dist_key), []).append(row)
+
+        settings_store = ReportDistributionSettingsStore() if ReportDistributionSettingsStore is not None else None
+        settings_map: Dict[str, Dict[str, Any]] = {}
+        if settings_store is not None and bundles:
+            try:
+                settings_map = await settings_store.fetch_settings_map_for_users(sorted({uid for (uid, _dist) in bundles.keys()}))
+            except Exception:
+                logger.exception("report_distribution_push: fetch settings map failed")
+                settings_map = {}
+
+        processed = 0
+        sent = 0
+        skipped = 0
+        errors = 0
+        sent_users: List[str] = []
+        skipped_users: List[str] = []
+        error_samples: List[str] = []
+
+        for (uid, dist_key), bundle_rows in sorted(bundles.items(), key=lambda item: (item[0][1], item[0][0]))[: max(1, int(body.limit or 300))]:
+            processed += 1
+            try:
+                settings = dict((settings_map or {}).get(uid) or {
+                    "notification_enabled": REPORT_DISTRIBUTION_DEFAULT_NOTIFICATION_ENABLED,
+                    "delivery_time_local": REPORT_DISTRIBUTION_DEFAULT_DELIVERY_TIME,
+                    "timezone_name": REPORT_DISTRIBUTION_DEFAULT_TIMEZONE,
+                })
+                created_values = [
+                    str((row or {}).get("created_at") or "").strip()
+                    for row in (bundle_rows or [])
+                    if str((row or {}).get("created_at") or "").strip()
+                ]
+                candidate_created_at = max(created_values) if created_values else None
+
+                if settings_store is not None and not bool(settings.get("notification_enabled", True)):
+                    skipped += 1
+                    skipped_users.append(uid)
+                    if not body.dry_run:
+                        preview_payload = _build_report_distribution_push_payload(bundle_rows, distribution_key=dist_key)
+                        await store.mark_bundle_delivered(
+                            user_id=uid,
+                            distribution_key=dist_key,
+                            bundle_families=[str(x or "").strip() for x in list(preview_payload.get("families") or []) if str(x or "").strip()],
+                            payload={
+                                "sent_at": _iso_utc(now_utc),
+                                "send_status": "suppressed_disabled",
+                                "data": dict(preview_payload.get("data") or {}),
+                                "settings": settings,
+                            },
+                        )
+                    continue
+
+                if settings_store is not None and not is_bundle_due_for_settings(
+                    candidate_created_at=candidate_created_at,
+                    settings=settings,
+                    now_utc=now_utc,
+                ):
+                    skipped += 1
+                    skipped_users.append(uid)
+                    continue
+
+                send_res = await _send_report_distribution_bundle_push(
+                    user_id=uid,
+                    distribution_key=dist_key,
+                    bundle_rows=bundle_rows,
+                    dry_run=bool(body.dry_run),
+                )
+                send_status = str((send_res or {}).get("send_status") or "sent")
+                families = [str(x or "").strip() for x in list((send_res or {}).get("bundle_families") or []) if str(x or "").strip()]
+                payload_json = {
+                    "sent_at": _iso_utc(now_utc),
+                    "send_status": send_status,
+                    "data": dict((send_res or {}).get("payload") or {}),
+                    "settings": settings,
+                }
+                if not body.dry_run:
+                    await store.mark_bundle_delivered(
+                        user_id=uid,
+                        distribution_key=dist_key,
+                        bundle_families=families,
+                        payload=payload_json,
+                    )
+                if send_status == "sent":
+                    sent += 1
+                    sent_users.append(uid)
+                else:
+                    skipped += 1
+                    skipped_users.append(uid)
+            except Exception as exc:
+                errors += 1
+                if len(error_samples) < 10:
+                    error_samples.append(f"{uid}:{dist_key}:{exc}")
+                logger.warning(
+                    "report_distribution_push failed. user=%s distribution_key=%s err=%s",
+                    uid,
+                    dist_key,
+                    exc,
+                )
+
+        return ReportDistributionPushBatchResponse(
+            status="ok",
+            now_iso=_iso_utc(now_utc),
+            processed=processed,
+            sent=sent,
+            skipped=skipped,
+            errors=errors,
+            bundles=processed,
+            sent_users=sent_users,
+            skipped_users=skipped_users,
+            error_samples=error_samples,
+        )

@@ -22,6 +22,7 @@ import datetime as _dt
 import os
 import re
 import json
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -159,6 +160,9 @@ JP_TO_EMO_EN: Dict[str, str] = {
 }
 
 SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
+
+
+MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
 
 
 def _to_iso_z(dt: _dt.datetime) -> str:
@@ -2166,6 +2170,315 @@ def _build_myprofile_report_content_json(
     return content
 
 
+
+
+def _unique_keep_order(values: List[str]) -> List[str]:
+    out: List[str] = []
+    for raw in values:
+        s = str(raw or "").strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _role_label_from_row(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in ("label_ja", "role_label_ja", "template_role_label_ja", "key", "role_key", "template_role"):
+        s = str(row.get(key) or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _role_summary_from_row(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in ("summary_ja", "role_summary_ja", "template_role_summary_ja", "description"):
+        s = str(row.get(key) or "").strip()
+        if s:
+            return s.rstrip("。")
+    return ""
+
+
+def _role_flow_phrase(row: Any) -> str:
+    summary = _role_summary_from_row(row)
+    if not summary:
+        return ""
+    return re.sub(r"役割$", "", summary).strip()
+
+
+def _target_label_from_row(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in ("target_label_ja", "label_ja", "target_key", "key"):
+        s = str(row.get(key) or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _pattern_label_from_row(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in ("label_ja", "key"):
+        s = str(row.get(key) or "").strip()
+        if s:
+            return s
+    return ""
+
+
+def _role_digest(row: Any) -> Dict[str, Any]:
+    return {
+        "label": _role_label_from_row(row),
+        "summary": _role_summary_from_row(row),
+        "score": (row.get("score") if isinstance(row, dict) else None),
+    }
+
+
+def _target_digest(row: Any) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {"label": "", "role_label": "", "score": None}
+    return {
+        "label": _target_label_from_row(row),
+        "role_label": _role_label_from_row(row),
+        "score": row.get("score"),
+        "target_type": row.get("target_type"),
+    }
+
+
+def _pattern_digest(row: Any) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {"label": "", "score": None}
+    return {"label": _pattern_label_from_row(row), "score": row.get("score")}
+
+
+def _generated_role_digest(row: Any) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {"target": "", "role": "", "description": "", "score": None}
+    return {
+        "target": _target_label_from_row(row),
+        "role": _role_label_from_row(row),
+        "description": str(row.get("description") or "").strip(),
+        "score": row.get("score"),
+    }
+
+
+def _basis_snapshot_for_history(basis: Dict[str, Any]) -> Dict[str, Any]:
+    bridge = _take_dict((basis or {}).get("emotion_bridge"))
+    return {
+        "report_mode": (basis or {}).get("report_mode"),
+        "core_role": _role_digest((basis or {}).get("core_role")),
+        "top_roles": [_role_digest(x) for x in _take_list((basis or {}).get("top_roles"))[:3]],
+        "top_targets": [_target_digest(x) for x in _take_list((basis or {}).get("top_targets"))[:3]],
+        "thinking_patterns": [_pattern_digest(x) for x in _take_list((basis or {}).get("thinking_patterns"))[:3]],
+        "action_patterns": [_pattern_digest(x) for x in _take_list((basis or {}).get("action_patterns"))[:3]],
+        "generated_roles": [_generated_role_digest(x) for x in _take_list((basis or {}).get("generated_roles"))[:3]],
+        "emotion_bridge": {
+            "top_emotions": _unique_keep_order([emo_label_ja(x) for x in _take_list(bridge.get("top_emotions"))[:3]]),
+            "movement_summary": _excerpt(str(bridge.get("movement_summary") or "").strip(), 140),
+            "control_note": _excerpt(str(bridge.get("control_note") or "").strip(), 140),
+        },
+    }
+
+
+def _compute_history_fingerprint(
+    *,
+    basis_snapshot: Dict[str, Any],
+    self_structure_refs: Dict[str, Any],
+    emotion_bridge_refs: Dict[str, Any],
+    report_mode: str,
+) -> str:
+    def _hash_ref_block(refs: Dict[str, Any]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for key in ("standard", "deep"):
+            node = refs.get(key) if isinstance(refs.get(key), dict) else {}
+            out[key] = {
+                "source_hash": str(node.get("source_hash") or "").strip(),
+                "analysis_result_id": node.get("analysis_result_id"),
+                "analysis_stage": node.get("analysis_stage"),
+                "scope": node.get("scope"),
+            }
+        return out
+
+    payload = {
+        "report_mode": _normalize_report_mode(report_mode),
+        "basis_snapshot": basis_snapshot,
+        "analysis_refs": {
+            "self_structure": _hash_ref_block(self_structure_refs or {}),
+            "emotion_bridge": _hash_ref_block(emotion_bridge_refs or {}),
+        },
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _build_current_structure_summary_from_basis(basis: Dict[str, Any]) -> str:
+    core_role = _take_dict((basis or {}).get("core_role"))
+    core_label = _role_label_from_row(core_role)
+    if not core_label:
+        top_roles = _take_list((basis or {}).get("top_roles"))
+        if top_roles:
+            core_role = _take_dict(top_roles[0])
+            core_label = _role_label_from_row(core_role)
+    if not core_label:
+        return ""
+
+    role_names = _unique_keep_order([_role_label_from_row(x) for x in _take_list((basis or {}).get("top_roles"))[:3]])
+    secondary = [x for x in role_names if x and x != core_label][:2]
+    flow = _role_flow_phrase(core_role)
+    if secondary:
+        if len(secondary) == 1:
+            first = f"今回の観測では、『{core_label}』を中心に『{secondary[0]}』の役割が重なって表れている可能性があります。"
+        else:
+            first = f"今回の観測では、『{core_label}』を中心に『{secondary[0]}』『{secondary[1]}』の役割が重なって表れている可能性があります。"
+    else:
+        first = f"今回の観測では、『{core_label}』の役割が前に出やすい可能性があります。"
+    if flow:
+        second = f"いまは、{flow}流れが前面に出やすい状態です。"
+    else:
+        second = f"いまは、『{core_label}』らしい反応の出方が中心になっている状態です。"
+    return "\n".join([first, second]).strip()
+
+
+def _build_role_content_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
+    top_roles = _take_list((basis or {}).get("top_roles"))
+    if not top_roles and isinstance((basis or {}).get("core_role"), dict):
+        top_roles = [_take_dict((basis or {}).get("core_role"))]
+
+    lines: List[str] = []
+    seen: List[str] = []
+    for idx, row in enumerate(top_roles[:3]):
+        role_label = _role_label_from_row(row)
+        if not role_label or role_label in seen:
+            continue
+        seen.append(role_label)
+        prefix = "主役割" if idx == 0 else f"補助役割{idx}"
+        lines.append(f"・{prefix}: {role_label}")
+        role_summary = _role_summary_from_row(row)
+        if role_summary:
+            lines.append(f"  {role_summary}です。")
+    return lines
+
+
+def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
+    lines: List[str] = []
+    thinking_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("thinking_patterns"))[:2]])
+    if thinking_labels:
+        quoted = "、".join([f"『{x}』" for x in thinking_labels])
+        lines.append(f"・思考では{quoted}が前に出やすく、まず意味や背景を整理しながら受け止めようとしやすい状態です。")
+
+    action_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("action_patterns"))[:2]])
+    if action_labels:
+        quoted = "、".join([f"『{x}』" for x in action_labels])
+        lines.append(f"・行動では{quoted}が選ばれやすく、反応の出方にもその傾向が表れています。")
+
+    target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
+    if target_labels:
+        quoted = "、".join([f"『{x}』" for x in target_labels])
+        lines.append(f"・主な対象として{quoted}が現れており、その場面でこの役割が立ち上がりやすい可能性があります。")
+
+    generated = _take_list((basis or {}).get("generated_roles"))
+    if generated:
+        row = _take_dict(generated[0])
+        desc = str(row.get("description") or "").strip()
+        target = _target_label_from_row(row)
+        if desc and target:
+            lines.append(f"・『{target}』に向かうときは、{desc}という流れになりやすい状態です。")
+    return lines
+
+
+def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
+    lines: List[str] = []
+    used_targets: List[str] = []
+
+    for row in _take_list((basis or {}).get("target_role_map")):
+        target = _target_label_from_row(row)
+        role_label = _role_label_from_row(row)
+        if not target or target in used_targets:
+            continue
+        used_targets.append(target)
+        if role_label:
+            lines.append(f"・『{target}』の場面では『{role_label}』が前に出やすく、その役割から反応が組み立てられやすい状態です。")
+        else:
+            lines.append(f"・『{target}』の場面で反応が立ち上がりやすい状態です。")
+        if len(lines) >= 2:
+            break
+
+    if not lines:
+        for row in _take_list((basis or {}).get("generated_roles")):
+            target = _target_label_from_row(row)
+            desc = str(row.get("description") or "").strip()
+            if not target:
+                continue
+            used_targets.append(target)
+            if desc:
+                lines.append(f"・『{target}』に対しては、{desc}流れが立ち上がりやすい状態です。")
+            else:
+                lines.append(f"・『{target}』に対して反応が濃く立ち上がりやすい状態です。")
+            if len(lines) >= 2:
+                break
+
+    if not lines:
+        target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
+        for target in target_labels[:2]:
+            lines.append(f"・『{target}』がきっかけになると、役割の出方がはっきりしやすい状態です。")
+    return lines
+
+
+def _build_emotion_connection_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
+    bridge = _take_dict((basis or {}).get("emotion_bridge"))
+    top_emotions = _unique_keep_order([emo_label_ja(x) for x in _take_list(bridge.get("top_emotions"))[:3]])
+    lines: List[str] = []
+    core_label = _role_label_from_row(_take_dict((basis or {}).get("core_role")))
+    if top_emotions:
+        joined = " / ".join(top_emotions[:2])
+        if core_label:
+            lines.append(f"・背景には {joined} の揺れが重なっており、そのときほど『{core_label}』がやや強く表れやすい可能性があります。")
+        else:
+            lines.append(f"・背景には {joined} の揺れが重なっている可能性があります。")
+    movement = str(bridge.get("movement_summary") or "").strip()
+    if movement:
+        lines.append(f"・感情面では、{_excerpt(movement, 110)}")
+    control = str(bridge.get("control_note") or "").strip()
+    if control:
+        lines.append(f"・深い層では、{_excerpt(control, 110)}")
+    return lines[:3]
+
+
+def _build_change_lines_v2(
+    *,
+    prev_report_json: Optional[Dict[str, Any]],
+    basis: Dict[str, Any],
+) -> List[str]:
+    prev_basis = _take_dict((prev_report_json or {}).get("basis_snapshot"))
+    if not prev_basis:
+        return []
+
+    lines: List[str] = []
+    prev_core = _role_label_from_row(_take_dict(prev_basis.get("core_role")))
+    cur_core = _role_label_from_row(_take_dict((basis or {}).get("core_role")))
+    if prev_core and cur_core:
+        if prev_core != cur_core:
+            lines.append(f"・前回は『{prev_core}』が中心でしたが、今回は『{cur_core}』が前に出ています。")
+        else:
+            lines.append(f"・前回から引き続き、『{cur_core}』が中心にあります。")
+
+    prev_targets = _unique_keep_order([_target_label_from_row(x) for x in _take_list(prev_basis.get("top_targets"))[:2]])
+    cur_targets = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
+    if prev_targets and cur_targets:
+        if prev_targets[0] != cur_targets[0]:
+            lines.append(f"・反応が立ち上がりやすい対象は、『{prev_targets[0]}』から『{cur_targets[0]}』へ少し移っています。")
+        else:
+            lines.append(f"・反応が立ち上がりやすい対象は、引き続き『{cur_targets[0]}』です。")
+
+    prev_emotions = _unique_keep_order([str(x) for x in _take_list(_take_dict(prev_basis.get("emotion_bridge")).get("top_emotions"))[:2]])
+    cur_emotions = _unique_keep_order([emo_label_ja(x) for x in _take_list(_take_dict((basis or {}).get("emotion_bridge")).get("top_emotions"))[:2]])
+    if prev_emotions and cur_emotions and prev_emotions[0] != cur_emotions[0]:
+        lines.append(f"・感情の背景は『{prev_emotions[0]}』寄りから『{cur_emotions[0]}』寄りへ動いています。")
+
+    return lines[:3]
+
 def build_myprofile_monthly_report(
     *,
     user_id: str,
@@ -2179,18 +2492,14 @@ def build_myprofile_monthly_report(
     distribution_utc: Optional[str] = None,
     section_text_template_id: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
-    """Build MyProfile report text + metadata.
+    """Build MyProfile report text + metadata from analysis results.
 
-    Primary path:
-      analysis_results(self_structure) + emotion bridge
-
-    Fallback path:
-      legacy raw-log based generator
+    Standard / Deep どちらも同じ本文構造を使い、monthly は latest 相当本文の保存履歴として扱う。
+    入力不足時は legacy 構文へフォールバックせず、no-data を返す。
     """
     uid = str(user_id or "").strip()
     mode = _normalize_report_mode(report_mode)
 
-    # --- template selection ---
     def _resolve_section_template_id(override: Optional[str]) -> str:
         if override:
             return str(override).strip()
@@ -2209,15 +2518,32 @@ def build_myprofile_monthly_report(
         v = phrases.get(key)
         return str(v) if isinstance(v, str) and v else default
 
+    report_title = P("report_title", "【自己構造分析レポート】")
+    no_data_text = P("report_no_data", "データがありません。")
+    summary_title = P("summary_title_current", "【今回の自己構造】")
+    disclaimer_line = P(
+        "summary_disclaimer_current",
+        "※これは固定的な性格診断ではなく、現在の観測から見える役割傾向です。",
+    )
+
     if not uid:
-        report_title = P("report_title", "【自己構造分析レポート（月次）】")
         return (
             f"{report_title}\n\n{P('error_no_user_id', '（ユーザーIDが指定されていないため生成できませんでした）')}",
             {
                 "engine": "astor_myprofile_report",
-                "version": "myprofile.report.v3",
+                "version": MYPROFILE_REPORT_SCHEMA_VERSION,
                 "status": "no_user_id",
                 "section_text_template_id": section_tid,
+                "visibility": {
+                    "has_visible_content": False,
+                    "visible_sections": [],
+                    "hidden_sections": [],
+                },
+                "history": {
+                    "archive_eligible": False,
+                    "history_fingerprint": None,
+                    "skip_reason": "no_user_id",
+                },
             },
         )
 
@@ -2236,20 +2562,6 @@ def build_myprofile_monthly_report(
         as_of=now_dt,
         report_mode=mode,
     )
-
-    # self_structure standard が無ければ legacy fallback
-    if not isinstance((self_set or {}).get("standard_row"), dict):
-        legacy_mode = "structural" if mode == "deep" else mode
-        return _build_myprofile_monthly_report_fallback(
-            user_id=uid,
-            period=period,
-            report_mode=legacy_mode,
-            include_secret=include_secret,
-            now=now_dt,
-            prev_report_text=prev_report_text,
-            section_text_template_id=section_text_template_id,
-        )
-
     emotion_set = _fetch_emotion_bridge_analysis_set(
         user_id=uid,
         as_of=now_dt,
@@ -2269,92 +2581,50 @@ def build_myprofile_monthly_report(
         emotion_bridge_scope=(emotion_set or {}).get("scope"),
     )
 
-    summary_lines = _build_summary_lines_from_basis(basis, phrases=phrases)
-    reaction_lines = _build_reaction_pattern_lines_from_basis(basis, phrases=phrases)
-    stability_lines = _build_stability_lines_from_basis(basis, phrases=phrases)
-    thinking_lines = _build_thinking_habit_lines_from_basis(basis, phrases=phrases)
-    domain_lines = _build_domain_note_lines_from_basis(basis, phrases=phrases)
-    next_lines = _build_next_observation_lines_from_basis(basis, phrases=phrases)
-    diff_lines = _build_diff_lines_from_reports(
-        prev_report_text=prev_report_text,
+    summary_text = _build_current_structure_summary_from_basis(basis)
+    role_lines = _build_role_content_lines_from_basis(basis)
+    background_lines = _build_role_background_lines_from_basis(basis)
+    flow_lines = _build_reaction_flow_lines_from_basis(basis)
+    emotion_lines = _build_emotion_connection_lines_from_basis(basis)
+    change_lines = _build_change_lines_v2(
         prev_report_json=prev_report_json,
-        current_excerpt=basis.get("identity_snapshot_excerpt") or {},
-        phrases=phrases,
+        basis=basis,
     )
-    emotion_lines = _build_emotion_bridge_lines_from_basis(basis, phrases=phrases)
 
-    report_title = P("report_title", "【自己構造分析レポート（月次）】")
-    lines: List[str] = [report_title, ""]
-    lines.append(P("summary_title", "【要点（答え）】"))
-    lines.extend(summary_lines)
-    lines.append(P("summary_disclaimer", "※診断ではなく、観測に基づく仮説です。"))
-    lines.append("")
+    numbered_sections: List[Tuple[str, str, List[str]]] = [
+        ("role_content", P("sec_role_title", "役割内容"), role_lines),
+        ("role_background", P("sec_background_title", "この役割が表れた背景"), background_lines),
+        ("reaction_flow", P("sec_flow_title", "今の反応の流れ"), flow_lines),
+        ("emotion_bridge", P("sec_emotion_title", "感情とのつながり"), emotion_lines),
+        ("diff", P("sec_change_title", "前回からの変化"), change_lines),
+    ]
 
-    lines.append(P("sec1_title", "1. 今月の輪郭（仮説・1〜4行）"))
-    if summary_lines:
-        lines.extend(summary_lines[:2])
-    else:
-        lines.append("今月の輪郭を描けるほどの観測はまだ十分ではありません。")
-    lines.append("")
+    visible_sections = [
+        section_key
+        for section_key, _, lines in numbered_sections
+        if any(str(x or "").strip() for x in lines)
+    ]
+    hidden_sections = [section_key for section_key, _, _ in numbered_sections if section_key not in visible_sections]
+    has_visible_content = bool(summary_text.strip() or visible_sections)
 
-    lines.append(P("sec2_title", "2. 主要な反応パターン（刺激→認知→感情→行動）"))
-    lines.extend(reaction_lines)
-    lines.append("")
-
-    lines.append(P("sec3_title", "3. 安定条件（安心が生まれやすい条件） / 崩れ条件（揺れやすい条件）"))
-    lines.extend(stability_lines)
-    lines.append("")
-
-    lines.append(P("sec4_title", "4. 思考のクセ・判断のクセ（あれば）"))
-    lines.extend(thinking_lines)
-    lines.append("")
-
-    lines.append(P("sec5_title", "5. 領域別メモ（仕事/対人/孤独/挑戦/評価など、見えている範囲で）"))
-    lines.extend(domain_lines)
-    lines.append("")
-
-    lines.append(P("sec6_title", "6. 次の観測ポイント（3つ。行動に落ちる形で）"))
-    lines.extend(next_lines)
-    lines.append("")
-
-    lines.append(P("sec7_title", "7. 前回との差分（変化点 / 更新点 / 揺れ方の違い）"))
-    lines.extend(diff_lines)
-    lines.append("")
-
-    if mode == "deep":
-        lines.append("【Deep追記】")
-        generated = _take_list(basis.get("generated_roles"))
-        if generated:
-            for row in generated[:3]:
-                desc = str(row.get("description") or row.get("template_role_label_ja") or row.get("template_role") or "役割").strip()
-                tlabel = str(row.get("target_label_ja") or row.get("target_key") or "").strip()
-                if tlabel:
-                    lines.append(f"・{tlabel}: {desc}")
-                else:
-                    lines.append(f"・{desc}")
-        gaps = _take_list(basis.get("role_gaps"))
-        if gaps:
-            g = gaps[0]
-            lines.append(
-                f"・乖離候補: {g.get('left_kind') or '自己'}の『{g.get('left_role') or '役割'}』と、"
-                f"{g.get('right_kind') or '現実'}の『{g.get('right_role') or '役割'}』に差がある可能性"
-            )
-        lines.append("")
-
-    lines.append(P("sec8_title", "8. 感情の動きとの接続（短く）"))
-    lines.extend(emotion_lines)
-
-    sections = {
-        "summary": summary_lines,
-        "outline": summary_lines[:2] if summary_lines else [],
-        "reaction_patterns": reaction_lines,
-        "stability": stability_lines,
-        "thinking_habits": thinking_lines,
-        "domains": domain_lines,
-        "next_observations": next_lines,
-        "diff": diff_lines,
+    sections_for_meta: Dict[str, List[str]] = {
+        "current_structure": [summary_text] if summary_text.strip() else [],
+        "role_content": role_lines,
+        "role_background": background_lines,
+        "reaction_flow": flow_lines,
         "emotion_bridge": emotion_lines,
+        "diff": change_lines,
     }
+
+    basis_snapshot = _basis_snapshot_for_history(basis)
+    history_fingerprint = None
+    if has_visible_content:
+        history_fingerprint = _compute_history_fingerprint(
+            basis_snapshot=basis_snapshot,
+            self_structure_refs=_take_dict((self_set or {}).get("refs")),
+            emotion_bridge_refs=_take_dict((emotion_set or {}).get("refs")),
+            report_mode=mode,
+        )
 
     meta = _build_myprofile_report_content_json(
         report_mode=mode,
@@ -2366,13 +2636,40 @@ def build_myprofile_monthly_report(
         self_structure_set=self_set,
         emotion_bridge_set=emotion_set,
         basis=basis,
-        sections=sections,
+        sections=sections_for_meta,
         generated_at_server=_to_iso_z(_dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)),
     )
     meta["engine"] = "astor_myprofile_report"
+    meta["version"] = MYPROFILE_REPORT_SCHEMA_VERSION
     meta["section_text_template_id"] = section_tid
     meta["analysis_source"] = "analysis_results"
     meta["data_scope"] = "self" if include_secret else "public"
+    meta["basis_snapshot"] = basis_snapshot
+    meta["visibility"] = {
+        "has_visible_content": has_visible_content,
+        "visible_sections": (["current_structure"] if summary_text.strip() else []) + visible_sections,
+        "hidden_sections": ([] if summary_text.strip() else ["current_structure"]) + hidden_sections,
+    }
+    meta["history"] = {
+        "archive_eligible": has_visible_content,
+        "history_fingerprint": history_fingerprint,
+        "skip_reason": None if has_visible_content else "no_visible_content",
+    }
+    meta["summaryText"] = summary_text.strip() or None
+
+    if not has_visible_content:
+        return (f"{report_title}\n\n{no_data_text}\n", meta)
+
+    lines: List[str] = [report_title, "", summary_title, summary_text.strip(), disclaimer_line]
+    section_no = 1
+    for _, title, content_lines in numbered_sections:
+        clean_lines = [str(x) for x in content_lines if str(x or "").strip()]
+        if not clean_lines:
+            continue
+        lines.append("")
+        lines.append(f"{section_no}. {title}")
+        lines.extend(clean_lines)
+        section_no += 1
 
     return ("\n".join([str(x) for x in lines if x is not None]).strip() + "\n", meta)
 
@@ -2599,8 +2896,17 @@ async def refresh_myprofile_latest_report(
         )
 
         text = str(text or "").strip()
+        visibility = meta.get("visibility") if isinstance(meta, dict) else {}
+        has_visible_content = bool((visibility or {}).get("has_visible_content"))
         if not text:
             return {"status": "empty", "user_id": uid}
+        if not has_visible_content:
+            return {
+                "status": "no_visible_content",
+                "user_id": uid,
+                "report_mode": report_mode,
+                "skip_reason": ((meta or {}).get("history") or {}).get("skip_reason") if isinstance(meta, dict) else None,
+            }
 
         # snapshot window (for debugging / UI hints)
         snap = {"period": MYPROFILE_LATEST_PERIOD}

@@ -71,6 +71,11 @@ except Exception:  # pragma: no cover
     release_lock = None  # type: ignore
     try_acquire_lock = None  # type: ignore
 
+try:
+    from report_distribution_push_store import ReportDistributionPushStore
+except Exception:  # pragma: no cover
+    ReportDistributionPushStore = None  # type: ignore
+
 logger = logging.getLogger("myprofile_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -234,7 +239,7 @@ class MyProfileLatestEnsureResponse(BaseModel):
     refreshed: bool = Field(..., description="True if report was regenerated & saved")
     reason: str = Field(
         ...,
-        description="missing | stale_patterns | force | up_to_date | no_patterns",
+        description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | in_progress",
     )
     report_mode: str = Field(..., description="standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
@@ -247,8 +252,13 @@ class MyProfileLatestEnsureResponse(BaseModel):
     generated_at: Optional[str] = Field(
         default=None, description="generated_at of returned report (after refresh)"
     )
+    period_start: Optional[str] = Field(default=None, description="content window start (ISO)")
+    period_end: Optional[str] = Field(default=None, description="content window end (ISO)")
     title: Optional[str] = Field(default=None, description="report title")
     content_text: Optional[str] = Field(default=None, description="report body")
+    meta: Optional[Dict[str, Any]] = Field(default=None, description="metadata JSON")
+    has_visible_content: bool = Field(default=True, description="false when the latest view is no-data only")
+    skip_reason: Optional[str] = Field(default=None, description="optional no-save reason")
 
 
 # ----------------------------
@@ -283,12 +293,91 @@ class MyProfileMonthlyEnsureBody(BaseModel):
         default=None,
         description="テスト用: 現在時刻(UTC ISO)。未指定ならサーバ現在時刻。",
     )
+    trigger: Optional[str] = Field(
+        default=None,
+        description="Server trigger name (e.g. internal_rollover). Additive-only metadata.",
+    )
+    requested_at: Optional[str] = Field(
+        default=None,
+        description="Requested-at timestamp (UTC ISO). Additive-only metadata.",
+    )
+    distribution_key: Optional[str] = Field(
+        default=None,
+        description="JST distribution bucket key (YYYY-MM-DD). Additive-only metadata.",
+    )
+    distribution_origin: bool = Field(
+        default=False,
+        description="true の場合、0:00配布由来として通知候補を積む。",
+    )
+
+
+
+
+def _normalize_distribution_key(raw: Any) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    return s if len(s) == 10 else None
+
+
+def _distribution_key_from_requested_at(raw: Any) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        jst = timezone(timedelta(hours=9))
+        return dt.astimezone(jst).date().isoformat()
+    except Exception:
+        return None
+
+
+async def _enqueue_self_structure_monthly_distribution_candidate(
+    *,
+    user_id: str,
+    distribution_key: Optional[str],
+    report_row: Optional[Dict[str, Any]],
+    period_start: Optional[str],
+    period_end: Optional[str],
+) -> bool:
+    if ReportDistributionPushStore is None:
+        return False
+    uid = str(user_id or "").strip()
+    dist_key = _normalize_distribution_key(distribution_key)
+    if not uid or not dist_key:
+        return False
+    row = dict(report_row or {})
+    try:
+        store = ReportDistributionPushStore()
+        await store.create_candidate(
+            user_id=uid,
+            distribution_key=dist_key,
+            report_family="self_structure_monthly",
+            report_table="myprofile_reports",
+            report_id=row.get("id"),
+            report_type="monthly",
+            period_start=str(period_start or row.get("period_start") or "").strip() or None,
+            period_end=str(period_end or row.get("period_end") or "").strip() or None,
+            open_target={
+                "screen": "MyWeb",
+                "open_mode": "selfReportHistory",
+                "self_report_type": "monthly",
+            },
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Failed to enqueue self_structure monthly distribution push candidate: %s", exc)
+        return False
 
 
 class MyProfileMonthlyEnsureResponse(BaseModel):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
-    reason: str = Field(..., description="missing | force | up_to_date")
+    reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | unchanged | in_progress")
     report_mode: str = Field(..., description="standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     period_start: str = Field(..., description="period_start (ISO)")
@@ -297,6 +386,9 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
     title: Optional[str] = Field(default=None, description="report title")
     content_text: Optional[str] = Field(default=None, description="report body")
     meta: Optional[Dict[str, Any]] = Field(default=None, description="metadata JSON")
+    history_saved: bool = Field(default=False, description="true when a monthly snapshot row was persisted")
+    has_visible_content: bool = Field(default=False, description="false when the generated body is no-data only")
+    skip_reason: Optional[str] = Field(default=None, description="optional skip reason for no-save cases")
 
 
 # ----------------------------
@@ -339,7 +431,16 @@ def _subscription_mode_input(x: Optional[str]) -> Optional[str]:
 
 def _extract_report_content_json(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     cj = (row or {}).get("content_json")
-    return cj if isinstance(cj, dict) else {}
+    if not isinstance(cj, dict):
+        return {}
+    if isinstance(cj.get("meta"), dict) and not isinstance(cj.get("version"), str):
+        merged = dict(cj.get("meta") or {})
+        for k, v in cj.items():
+            if k == "meta":
+                continue
+            merged.setdefault(k, v)
+        return merged
+    return cj
 
 
 def _extract_saved_report_mode(row: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -368,6 +469,46 @@ def _extract_saved_self_structure_ref_source_hash(
     node = ss.get(stage_key) if isinstance(ss.get(stage_key), dict) else {}
     sh = node.get("source_hash") if isinstance(node, dict) else None
     s = str(sh or "").strip()
+    return s or None
+
+
+def _extract_saved_report_version(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    cj = _extract_report_content_json(row)
+    s = str(cj.get("version") or "").strip()
+    return s or None
+
+
+def _row_uses_current_myprofile_schema(row: Optional[Dict[str, Any]]) -> bool:
+    return _extract_saved_report_version(row) == MYPROFILE_REPORT_SCHEMA_VERSION
+
+
+def _extract_saved_history_fingerprint(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    cj = _extract_report_content_json(row)
+    history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
+    s = str(history.get("history_fingerprint") or "").strip()
+    return s or None
+
+
+def _extract_saved_has_visible_content(row: Optional[Dict[str, Any]]) -> bool:
+    cj = _extract_report_content_json(row)
+    visibility = cj.get("visibility") if isinstance(cj.get("visibility"), dict) else {}
+    if "has_visible_content" in visibility:
+        return bool(visibility.get("has_visible_content"))
+    return bool(str((row or {}).get("content_text") or "").strip())
+
+
+def _extract_report_window(row: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
+    cj = _extract_report_content_json(row)
+    distribution = cj.get("distribution") if isinstance(cj.get("distribution"), dict) else {}
+    ps = str(distribution.get("period_start") or (row or {}).get("period_start") or "").strip() or None
+    pe = str(distribution.get("period_end") or (row or {}).get("period_end") or "").strip() or None
+    return ps, pe
+
+
+def _extract_saved_skip_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    cj = _extract_report_content_json(row)
+    history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
+    s = str(history.get("skip_reason") or cj.get("skip_reason") or "").strip()
     return s or None
 
 
@@ -1556,7 +1697,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
             resp = await _sb_get(
                 "/rest/v1/myprofile_reports",
                 params={
-                    "select": "id,title,content_text,generated_at,content_json",
+                    "select": "id,title,content_text,generated_at,content_json,period_start,period_end",
                     "user_id": f"eq.{uid}",
                     "report_type": "eq.latest",
                     "order": "generated_at.desc",
@@ -1585,6 +1726,33 @@ def register_myprofile_routes(app: FastAPI) -> None:
         latest_dt = _parse_iso(latest_generated_at)
         patterns_updated_at = latest_analysis_updated_at
 
+        def _latest_response_from_row(
+            row: Optional[Dict[str, Any]],
+            *,
+            refreshed: bool,
+            reason_value: str,
+            generated_at_value: Optional[str] = None,
+        ) -> MyProfileLatestEnsureResponse:
+            report_meta = _extract_report_content_json(row) if row else None
+            period_start_value, period_end_value = _extract_report_window(row)
+            generated_value = generated_at_value or (row.get("generated_at") if row else latest_generated_at)
+            return MyProfileLatestEnsureResponse(
+                refreshed=refreshed,
+                reason=reason_value,
+                report_mode=effective_report_mode,
+                period=effective_period,
+                patterns_updated_at=patterns_updated_at,
+                latest_generated_at=(row.get("generated_at") if row else latest_generated_at),
+                generated_at=generated_value,
+                period_start=period_start_value,
+                period_end=period_end_value,
+                title=(row.get("title") if row else None),
+                content_text=(row.get("content_text") if row else None),
+                meta=report_meta,
+                has_visible_content=_extract_saved_has_visible_content(row) if row else False,
+                skip_reason=_extract_saved_skip_reason(row) if row else None,
+            )
+
         stale = False
         reason = "up_to_date"
 
@@ -1599,6 +1767,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
         elif not _row_matches_requested_mode(latest_row, effective_report_mode):
             stale = True
             reason = "mode_mismatch"
+        elif not _row_uses_current_myprofile_schema(latest_row):
+            stale = True
+            reason = "schema_mismatch"
         else:
             analysis_missing = False
             analysis_changed = False
@@ -1634,7 +1805,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     resp = await _sb_get(
                         "/rest/v1/myprofile_reports",
                         params={
-                            "select": "id,title,content_text,generated_at,content_json",
+                            "select": "id,title,content_text,generated_at,content_json,period_start,period_end",
                             "user_id": f"eq.{uid}",
                             "report_type": "eq.latest",
                             "order": "generated_at.desc",
@@ -1687,16 +1858,10 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 row = waited or latest_row
                 if row and (not _row_matches_requested_mode(row, effective_report_mode)):
                     row = None
-                return MyProfileLatestEnsureResponse(
+                return _latest_response_from_row(
+                    row,
                     refreshed=False,
-                    reason="in_progress",
-                    report_mode=effective_report_mode,
-                    period=effective_period,
-                    patterns_updated_at=patterns_updated_at,
-                    latest_generated_at=(row.get("generated_at") if row else latest_generated_at),
-                    generated_at=(row.get("generated_at") if row else latest_generated_at),
-                    title=(row.get("title") if row else None),
-                    content_text=(row.get("content_text") if row else None),
+                    reason_value="in_progress",
                 )
 
             try:
@@ -1718,7 +1883,30 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 if not text:
                     raise RuntimeError("report text is empty")
 
+                visibility = meta.get("visibility") if isinstance(meta, dict) else {}
+                history_meta = meta.get("history") if isinstance(meta, dict) else {}
+                has_visible_content = bool((visibility or {}).get("has_visible_content"))
                 generated_at = now.isoformat().replace("+00:00", "Z")
+
+                if not has_visible_content:
+                    period_start_value = str(((meta or {}).get("distribution") or {}).get("period_start") or "").strip() or None
+                    period_end_value = str(((meta or {}).get("distribution") or {}).get("period_end") or "").strip() or None
+                    return MyProfileLatestEnsureResponse(
+                        refreshed=False,
+                        reason=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
+                        report_mode=effective_report_mode,
+                        period=effective_period,
+                        patterns_updated_at=patterns_updated_at,
+                        latest_generated_at=latest_generated_at,
+                        generated_at=generated_at,
+                        period_start=period_start_value,
+                        period_end=period_end_value,
+                        title="現在の自己構造",
+                        content_text=text,
+                        meta=meta,
+                        has_visible_content=False,
+                        skip_reason=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
+                    )
 
                 payload = {
                     "user_id": uid,
@@ -1781,8 +1969,13 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     patterns_updated_at=patterns_updated_at,
                     latest_generated_at=latest_generated_at,
                     generated_at=generated_at,
-                    title="自己構造レポート（最新版）",
+                    period_start=str(((meta or {}).get("distribution") or {}).get("period_start") or "").strip() or None,
+                    period_end=str(((meta or {}).get("distribution") or {}).get("period_end") or "").strip() or None,
+                    title="現在の自己構造",
                     content_text=text,
+                    meta=payload.get("content_json"),
+                    has_visible_content=True,
+                    skip_reason=None,
                 )
             except HTTPException:
                 raise
@@ -1795,16 +1988,10 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 if lock_key and release_lock is not None:
                     await release_lock(lock_key=lock_key, owner_id=lock_owner)
 
-        return MyProfileLatestEnsureResponse(
+        return _latest_response_from_row(
+            latest_row,
             refreshed=False,
-            reason=reason,
-            report_mode=effective_report_mode,
-            period=effective_period,
-            patterns_updated_at=patterns_updated_at,
-            latest_generated_at=latest_generated_at,
-            generated_at=latest_generated_at,
-            title=(latest_row.get("title") if latest_row else None),
-            content_text=(latest_row.get("content_text") if latest_row else None),
+            reason_value=reason,
         )
 
 
@@ -1837,6 +2024,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
         force = bool(body.force)
         include_secret = bool(body.include_secret)
         effective_period = (body.period or DEFAULT_MONTHLY_DISTRIBUTION_PERIOD or "28d").strip() or "28d"
+        distribution_origin = bool(body.distribution_origin or str(body.trigger or "").strip() == "internal_rollover")
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
         # Spec v2: free users cannot view MyProfile self-structure reports.
@@ -1930,6 +2118,11 @@ def register_myprofile_routes(app: FastAPI) -> None:
 
         period_start_iso = _to_iso_z(period_start_utc)
         period_end_iso = _to_iso_z(period_end_utc)
+        distribution_key = (
+            _normalize_distribution_key(body.distribution_key)
+            or _distribution_key_from_requested_at(body.requested_at)
+            or dist_jst.date().isoformat()
+        )
 
         title_range = f"{_format_jst_md(period_start_utc)} ～ {_format_jst_md(period_end_utc)}"
         title = f"自己構造レポート：{title_range}（{period_days}日分）"
@@ -1939,7 +2132,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
             resp = await _sb_get(
                 "/rest/v1/myprofile_reports",
                 params={
-                    "select": "id,title,content_text,content_json,generated_at,updated_at",
+                    "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
                     "user_id": f"eq.{uid}",
                     "report_type": "eq.monthly",
                     "period_start": f"eq.{ps}",
@@ -1959,21 +2152,99 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 return rows[0]
             return None
 
-        existing_row = await _fetch_report_for_period(period_start_iso, period_end_iso)
-        existing_row_mode_matches = _row_matches_requested_mode(existing_row, effective_report_mode)
+        async def _fetch_previous_saved_report(before_period_end_iso: str) -> Optional[Dict[str, Any]]:
+            resp = await _sb_get(
+                "/rest/v1/myprofile_reports",
+                params={
+                    "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
+                    "user_id": f"eq.{uid}",
+                    "report_type": "eq.monthly",
+                    "period_end": f"lt.{before_period_end_iso}",
+                    "order": "period_end.desc,generated_at.desc",
+                    "limit": "1",
+                },
+            )
+            if resp.status_code >= 300:
+                logger.error(
+                    "Supabase myprofile_reports(previous monthly) select failed: %s %s",
+                    resp.status_code,
+                    resp.text[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to query previous monthly MyProfile report")
+            rows = resp.json()
+            if isinstance(rows, list) and rows:
+                return rows[0]
+            return None
 
-        if existing_row and (not force) and existing_row_mode_matches:
+        async def _delete_report_row_if_present(row: Optional[Dict[str, Any]]) -> None:
+            if not isinstance(row, dict):
+                return
+            row_id = row.get("id")
+            if row_id is None:
+                return
+            resp = await _sb_delete(
+                "/rest/v1/myprofile_reports",
+                params={"id": f"eq.{row_id}"},
+            )
+            if resp.status_code not in (200, 204):
+                logger.error(
+                    "Supabase myprofile_reports(monthly) delete failed: %s %s",
+                    resp.status_code,
+                    resp.text[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to delete stale monthly MyProfile report")
+
+        def _monthly_response_from_row(
+            row: Optional[Dict[str, Any]],
+            *,
+            refreshed: bool,
+            reason_value: str,
+            generated_at_value: Optional[str] = None,
+            history_saved: bool = False,
+            has_visible_content: Optional[bool] = None,
+            skip_reason_value: Optional[str] = None,
+            meta_override: Optional[Dict[str, Any]] = None,
+            text_override: Optional[str] = None,
+            title_override: Optional[str] = None,
+        ) -> MyProfileMonthlyEnsureResponse:
+            report_meta = meta_override if isinstance(meta_override, dict) else _extract_report_content_json(row)
+            has_visible = _extract_saved_has_visible_content(row) if has_visible_content is None else bool(has_visible_content)
+            skip_reason_final = skip_reason_value if skip_reason_value is not None else _extract_saved_skip_reason(row)
             return MyProfileMonthlyEnsureResponse(
-                refreshed=False,
-                reason="up_to_date",
+                refreshed=refreshed,
+                reason=reason_value,
                 report_mode=effective_report_mode,
                 period=effective_period,
                 period_start=period_start_iso,
                 period_end=period_end_iso,
-                generated_at=existing_row.get("generated_at") or existing_row.get("updated_at"),
-                title=existing_row.get("title") or title,
-                content_text=existing_row.get("content_text"),
-                meta=existing_row.get("content_json"),
+                generated_at=generated_at_value or (row.get("generated_at") if row else None) or (row.get("updated_at") if row else None),
+                title=title_override or (row.get("title") if row else None) or title,
+                content_text=text_override if text_override is not None else (row.get("content_text") if row else None),
+                meta=report_meta,
+                history_saved=history_saved,
+                has_visible_content=has_visible,
+                skip_reason=skip_reason_final,
+            )
+
+        existing_row = await _fetch_report_for_period(period_start_iso, period_end_iso)
+        existing_row_mode_matches = _row_matches_requested_mode(existing_row, effective_report_mode)
+        existing_row_schema_matches = _row_uses_current_myprofile_schema(existing_row)
+        existing_row_is_legacy = bool(existing_row and not existing_row_schema_matches)
+
+        if existing_row and (not force) and existing_row_mode_matches and existing_row_schema_matches:
+            if distribution_origin:
+                await _enqueue_self_structure_monthly_distribution_candidate(
+                    user_id=uid,
+                    distribution_key=distribution_key,
+                    report_row=existing_row,
+                    period_start=period_start_iso,
+                    period_end=period_end_iso,
+                )
+            return _monthly_response_from_row(
+                existing_row,
+                refreshed=False,
+                reason_value="up_to_date",
+                history_saved=True,
             )
 
         # ---- Phase10: generation lock (avoid duplicate compute) ----
@@ -2021,41 +2292,28 @@ def register_myprofile_routes(app: FastAPI) -> None:
             if row and (not _row_matches_requested_mode(row, effective_report_mode)):
                 row = None
             if row:
-                return MyProfileMonthlyEnsureResponse(
+                return _monthly_response_from_row(
+                    row,
                     refreshed=False,
-                    reason="in_progress",
-                    report_mode=effective_report_mode,
-                    period=effective_period,
-                    period_start=period_start_iso,
-                    period_end=period_end_iso,
-                    generated_at=row.get("generated_at") or row.get("updated_at"),
-                    title=row.get("title") or title,
-                    content_text=row.get("content_text"),
-                    meta=row.get("content_json"),
+                    reason_value="in_progress",
+                    history_saved=bool(row),
                 )
             raise HTTPException(status_code=409, detail="Monthly report generation is in progress")
 
-        # ---- previous distributed report (for diff summary) ----
+        # ---- previous saved monthly report (for diff summary / unchanged skip) ----
+        prev_saved_row: Optional[Dict[str, Any]] = None
         prev_report_text: Optional[str] = None
         prev_report_json: Optional[Dict[str, Any]] = None
         try:
-            prev_month_end_jst = dist_jst - timedelta(days=1)
-            prev_dist_jst = datetime(prev_month_end_jst.year, prev_month_end_jst.month, 1, 0, 0, 0, 0, tzinfo=JST)
-            prev_dist_utc = prev_dist_jst.astimezone(timezone.utc)
-
-            prev_period_end_utc = prev_dist_utc - timedelta(milliseconds=1)
-            prev_period_start_utc = prev_dist_utc - timedelta(days=max(period_days, 1))
-
-            prev_ps = _to_iso_z(prev_period_start_utc)
-            prev_pe = _to_iso_z(prev_period_end_utc)
-
-            prev_row = await _fetch_report_for_period(prev_ps, prev_pe)
-            if prev_row:
-                if prev_row.get("content_text"):
-                    prev_report_text = str(prev_row.get("content_text"))
-                if isinstance(prev_row.get("content_json"), dict):
-                    prev_report_json = dict(prev_row.get("content_json") or {})
+            prev_saved_row = await _fetch_previous_saved_report(period_end_iso)
+            if prev_saved_row:
+                if prev_saved_row.get("content_text"):
+                    prev_report_text = str(prev_saved_row.get("content_text"))
+                prev_cj = _extract_report_content_json(prev_saved_row)
+                if prev_cj:
+                    prev_report_json = dict(prev_cj)
         except Exception:
+            prev_saved_row = None
             prev_report_text = None
             prev_report_json = None
 
@@ -2085,6 +2343,11 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 raise HTTPException(status_code=500, detail="Monthly MyProfile report text was empty")
 
             generated_at = _to_iso_z(dist_utc)
+            visibility = report_meta.get("visibility") if isinstance(report_meta, dict) else {}
+            history_meta = report_meta.get("history") if isinstance(report_meta, dict) else {}
+            has_visible_content = bool((visibility or {}).get("has_visible_content"))
+            history_fingerprint = str((history_meta or {}).get("history_fingerprint") or "").strip() or None
+            prev_history_fingerprint = _extract_saved_history_fingerprint(prev_saved_row)
 
             content_json = {
                 **(report_meta or {}),
@@ -2097,6 +2360,46 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 "period_start": period_start_iso,
                 "period_end": period_end_iso,
                 "period_days": period_days,
+            }
+
+            if not has_visible_content:
+                if existing_row_is_legacy:
+                    await _delete_report_row_if_present(existing_row)
+                return _monthly_response_from_row(
+                    None,
+                    refreshed=False,
+                    reason_value=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
+                    generated_at_value=generated_at,
+                    history_saved=False,
+                    has_visible_content=False,
+                    skip_reason_value=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
+                    meta_override=content_json,
+                    text_override=report_text,
+                    title_override=title,
+                )
+
+            if history_fingerprint and prev_history_fingerprint and history_fingerprint == prev_history_fingerprint:
+                if existing_row_is_legacy:
+                    await _delete_report_row_if_present(existing_row)
+                return _monthly_response_from_row(
+                    None,
+                    refreshed=False,
+                    reason_value="unchanged",
+                    generated_at_value=generated_at,
+                    history_saved=False,
+                    has_visible_content=True,
+                    skip_reason_value="unchanged",
+                    meta_override=content_json,
+                    text_override=report_text,
+                    title_override=title,
+                )
+
+            content_json["history"] = {
+                **(content_json.get("history") if isinstance(content_json.get("history"), dict) else {}),
+                "archive_eligible": True,
+                "history_fingerprint": history_fingerprint,
+                "skip_reason": None,
+                "history_saved": True,
             }
 
             payload = {
@@ -2124,19 +2427,30 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 )
                 raise HTTPException(status_code=502, detail="Failed to save monthly MyProfile report")
 
-            reason = "force" if force else ("missing" if not existing_row else ("mode_mismatch" if not existing_row_mode_matches else "force"))
+            saved_rows = resp2.json()
+            saved_row = saved_rows[0] if isinstance(saved_rows, list) and saved_rows and isinstance(saved_rows[0], dict) else payload
+            if distribution_origin:
+                await _enqueue_self_structure_monthly_distribution_candidate(
+                    user_id=uid,
+                    distribution_key=distribution_key,
+                    report_row=saved_row,
+                    period_start=period_start_iso,
+                    period_end=period_end_iso,
+                )
 
-            return MyProfileMonthlyEnsureResponse(
+            reason = "force" if force else ("missing" if not existing_row else ("mode_mismatch" if not existing_row_mode_matches else ("schema_mismatch" if not existing_row_schema_matches else "force")))
+
+            return _monthly_response_from_row(
+                saved_row,
                 refreshed=True,
-                reason=reason,
-                report_mode=effective_report_mode,
-                period=effective_period,
-                period_start=period_start_iso,
-                period_end=period_end_iso,
-                generated_at=generated_at,
-                title=title,
-                content_text=report_text,
-                meta=content_json,
+                reason_value=reason,
+                generated_at_value=generated_at,
+                history_saved=True,
+                has_visible_content=True,
+                skip_reason_value=None,
+                meta_override=content_json,
+                text_override=report_text,
+                title_override=title,
             )
         finally:
             if lock_key and release_lock is not None:

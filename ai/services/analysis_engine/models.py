@@ -213,6 +213,12 @@ class SelfStructureInput:
     action_signals: List[str] = field(default_factory=list)
     social_signals: List[str] = field(default_factory=list)
     source_weight: float = 1.0
+    answer_mode: Optional[str] = None
+    choice_key: Optional[str] = None
+    role_hint: Optional[str] = None
+    target_hint: Optional[str] = None
+    world_kind_hint: Optional[str] = None
+    analysis_tags: List[str] = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)

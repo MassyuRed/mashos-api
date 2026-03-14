@@ -213,8 +213,20 @@ def build_target_text(item: SelfStructureInput | Mapping[str, Any]) -> str:
     categories = get_categories(data)
 
     parts = [*categories, primary, secondary]
-    if source_type in {"deep_insight", "mymodel_create"} and question:
+    if source_type in {"deep_insight", "mymodel_create", "today_question"} and question:
         parts.append(question)
+    target_hint = normalize_text(data.get("target_hint", ""))
+    role_hint = normalize_text(data.get("role_hint", ""))
+    world_kind_hint = normalize_text(data.get("world_kind_hint", ""))
+    analysis_tags = data.get("analysis_tags") or []
+    if target_hint:
+        parts.append(target_hint)
+    if world_kind_hint:
+        parts.append(world_kind_hint)
+    if role_hint:
+        parts.append(role_hint)
+    if isinstance(analysis_tags, list):
+        parts.extend([normalize_text(x) for x in analysis_tags if normalize_text(x)])
 
     return normalize_text("\n".join(x for x in parts if x))
 

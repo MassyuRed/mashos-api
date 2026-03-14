@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "viewer_tier": "<str>",
+  "ids_by_type": {
+    "daily": "<list>",
+    "weekly": "<list>",
+    "monthly": "<list>",
+    "selfStructure": "<list>"
+  },
+  "read_ids": "<list>",
+  "unread_by_type": {
+    "daily": "<bool>",
+    "weekly": "<bool>",
+    "monthly": "<bool>",
+    "selfStructure": "<bool>"
+  }
+}

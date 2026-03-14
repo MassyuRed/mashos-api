@@ -45,9 +45,15 @@ from api_mymodel_create import _fetch_answers as _fetch_create_answers
 from api_mymodel_create import _fetch_questions as _fetch_create_questions
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
+from publish_governance import history_retention_bounds_for_query, normalize_tier_str
+from mymodel_entitlements import resolve_mymodel_entitlement
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
 from astor_account_status_enqueue import enqueue_account_status_refresh
+from astor_global_summary_enqueue import (
+    enqueue_global_summary_refresh,
+    enqueue_global_summary_refresh_many,
+)
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -80,8 +86,27 @@ DISCOVERY_LOGS_TABLE = os.getenv(
     "COCOLON_MYMODEL_QNA_DISCOVERY_LOGS_TABLE", "mymodel_qna_discovery_logs"
 )
 
-# History limits
+# History limits (legacy env kept for backward compatibility; detail endpoints now paginate by retention window)
 FREE_HISTORY_LIMIT = int(os.getenv("COCOLON_MYMODEL_QNA_FREE_HISTORY_LIMIT", "5") or "5")
+
+
+def _viewer_history_retention(viewer_tier: Any, *, now_utc: Optional[datetime] = None) -> Tuple[str, Dict[str, Any]]:
+    tier_str = normalize_tier_str(getattr(viewer_tier, "value", viewer_tier))
+    bounds = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+    return tier_str, bounds
+
+
+def _apply_created_at_retention_params(params: Dict[str, str], bounds: Dict[str, Any]) -> Dict[str, str]:
+    out = dict(params or {})
+    gte_iso = str(bounds.get("gte_iso") or "").strip()
+    lt_iso = str(bounds.get("lt_iso") or "").strip()
+    if gte_iso and lt_iso:
+        out["and"] = f"(created_at.gte.{gte_iso},created_at.lt.{lt_iso})"
+    elif gte_iso:
+        out["created_at"] = f"gte.{gte_iso}"
+    elif lt_iso:
+        out["created_at"] = f"lt.{lt_iso}"
+    return out
 
 # Ranking logs tables (overrideable)
 VIEW_LOGS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_VIEW_LOGS_TABLE", "mymodel_qna_view_logs")
@@ -226,6 +251,10 @@ class QnaEchoesHistoryResponse(BaseModel):
     my_strength: Optional[str] = None
     my_memo: Optional[str] = None
     limit: int = 0
+    offset: int = 0
+    has_more: bool = False
+    next_offset: Optional[int] = None
+    retention_mode: Optional[str] = None
     is_limited: bool = False
     items: List[QnaEchoesHistoryItem] = Field(default_factory=list)
 
@@ -272,6 +301,10 @@ class QnaDiscoveryHistoryResponse(BaseModel):
     subscription_tier: str
     total: int = 0
     limit: int = 0
+    offset: int = 0
+    has_more: bool = False
+    next_offset: Optional[int] = None
+    retention_mode: Optional[str] = None
     is_limited: bool = False
     items: List[QnaDiscoveryHistoryItem] = Field(default_factory=list)
 
@@ -487,7 +520,8 @@ def _now_iso() -> str:
 
 
 def _build_tier_for_subscription(tier: SubscriptionTier) -> str:
-    return "light" if tier == SubscriptionTier.FREE else "standard"
+    entitlement = resolve_mymodel_entitlement(tier)
+    return str(entitlement.build_tier or "light")
 
 
 def _view_tier_for_subscription(tier: SubscriptionTier) -> str:
@@ -1196,6 +1230,57 @@ async def _resolve_tiers(*, viewer_user_id: str, target_user_id: str) -> Tuple[s
     build_tier = _build_tier_for_subscription(target_tier)
     eff = _effective_tier(view_tier=view_tier, build_tier=build_tier)
     return (viewer_tier.value, view_tier, build_tier, eff)
+
+
+def _owner_reflection_policy_from_tier(tier: SubscriptionTier) -> Dict[str, Any]:
+    entitlement = resolve_mymodel_entitlement(tier)
+    return {
+        "subscription_tier": str(tier.value),
+        "build_tier": str(entitlement.build_tier or "light"),
+        "template_question_limit": int(entitlement.template_question_limit),
+        "can_expose_generated_reflections": bool(entitlement.can_expose_generated_reflections),
+        "can_expose_original_reflections": bool(entitlement.can_expose_original_reflections),
+    }
+
+
+async def _resolve_owner_reflection_policy(owner_user_id: str) -> Dict[str, Any]:
+    oid = str(owner_user_id or "").strip()
+    tier = SubscriptionTier.FREE
+    if oid:
+        try:
+            tier = await get_subscription_tier_for_user(oid, default=SubscriptionTier.FREE)
+        except Exception as exc:
+            logger.warning("owner subscription tier resolve failed: %s", exc)
+            tier = SubscriptionTier.FREE
+    return _owner_reflection_policy_from_tier(tier)
+
+
+async def _resolve_owner_reflection_policies(owner_user_ids: Set[str]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for owner_user_id in owner_user_ids or set():
+        oid = str(owner_user_id or "").strip()
+        if not oid or oid in out:
+            continue
+        out[oid] = await _resolve_owner_reflection_policy(oid)
+    return out
+
+
+async def _fetch_question_maps_for_build_tiers(build_tiers: Set[str]) -> Dict[str, Dict[int, str]]:
+    order = {"light": 0, "standard": 1}
+    out: Dict[str, Dict[int, str]] = {}
+    for build_tier in sorted({str(t or "light").strip() or "light" for t in (build_tiers or set())}, key=lambda x: order.get(x, 99)):
+        qrows = await _fetch_create_questions(build_tier=build_tier)
+        qmap: Dict[int, str] = {}
+        for r in qrows or []:
+            try:
+                qid = int((r or {}).get("id"))
+            except Exception:
+                continue
+            txt = str((r or {}).get("question_text") or "").strip()
+            if txt:
+                qmap[int(qid)] = txt
+        out[build_tier] = qmap
+    return out
 
 
 # ----------------------------
@@ -3285,6 +3370,9 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
     oid = str(owner_user_id or "").strip()
     if not oid:
         return []
+    owner_policy = await _resolve_owner_reflection_policy(oid)
+    if not bool(owner_policy.get("can_expose_generated_reflections")):
+        return []
     return await _sb_get_json_local(
         f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
         params={
@@ -3307,6 +3395,9 @@ async def _resolve_generated_reflection_access(
         raise HTTPException(status_code=404, detail="Reflection not found")
     owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
     if not owner_user_id:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    owner_policy = await _resolve_owner_reflection_policy(owner_user_id)
+    if not bool(owner_policy.get("can_expose_generated_reflections")):
         raise HTTPException(status_code=404, detail="Reflection not found")
     if owner_user_id != str(viewer_user_id):
         allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
@@ -3384,6 +3475,83 @@ async def _resolve_qna_context_for_reaction(
     }
 
 
+async def _fetch_create_list_items(
+    *, viewer_user_id: str, target_user_id: str, effective_tier: str
+) -> List[QnaListItem]:
+    qrows = await _fetch_create_questions(build_tier=effective_tier)
+    if not qrows:
+        return []
+
+    qmap: Dict[int, str] = {}
+    ordered_qids: List[int] = []
+    for r in qrows or []:
+        try:
+            qid = int((r or {}).get("id"))
+        except Exception:
+            continue
+        txt = str((r or {}).get("question_text") or "").strip()
+        if not txt:
+            continue
+        qmap[int(qid)] = txt
+        ordered_qids.append(int(qid))
+
+    if not qmap:
+        return []
+
+    answers = await _fetch_create_answers(user_id=target_user_id, question_ids=set(qmap.keys()))
+    visible_answer_ids: Set[int] = set()
+    for qid in ordered_qids:
+        row = answers.get(int(qid)) or {}
+        if _is_secret_flag(row.get("is_secret")):
+            continue
+        body = str(row.get("answer_text") or "").strip()
+        if not body:
+            continue
+        visible_answer_ids.add(int(qid))
+
+    if not visible_answer_ids:
+        return []
+
+    q_instance_ids: Set[str] = {f"{target_user_id}:{qid}" for qid in visible_answer_ids}
+    metrics = await _fetch_instance_metrics(q_instance_ids)
+    discoveries_map = await _fetch_discovery_counts_for_instances(q_instance_ids)
+    read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
+
+    items: List[QnaListItem] = []
+    for qid in ordered_qids:
+        if int(qid) not in visible_answer_ids:
+            continue
+        iid = f"{target_user_id}:{int(qid)}"
+        m = metrics.get(iid) or {}
+        try:
+            views = int(m.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            resonances = int(m.get("resonances") or 0)
+        except Exception:
+            resonances = 0
+        try:
+            discoveries = int(discoveries_map.get(iid) or 0)
+        except Exception:
+            discoveries = 0
+        a = answers.get(int(qid)) or {}
+        generated_at = str(a.get("updated_at") or "").strip() or None
+        items.append(
+            QnaListItem(
+                title=str(qmap.get(int(qid)) or ""),
+                q_key=_q_key_for_question_id(int(qid)),
+                q_instance_id=iid,
+                generated_at=generated_at,
+                views=views,
+                resonances=resonances,
+                discoveries=discoveries,
+                is_new=(iid not in read_set),
+            )
+        )
+    return items
+
+
 async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: str) -> List[QnaListItem]:
     rows = await _fetch_active_generated_reflections_for_owner(target_user_id, limit=200)
     if not rows:
@@ -3449,12 +3617,20 @@ async def _build_saved_generated_items(
 ) -> List[QnaSavedReflectionItem]:
     if not prepared_rows:
         return []
-    ids = {iid for iid, _, _ in prepared_rows}
+    owner_ids = {str(owner) for _, owner, _ in prepared_rows if str(owner or "").strip()}
+    owner_policies = await _resolve_owner_reflection_policies(owner_ids)
+    visible_rows = [
+        row
+        for row in prepared_rows
+        if bool((owner_policies.get(str(row[1])) or {}).get("can_expose_generated_reflections"))
+    ]
+    if not visible_rows:
+        return []
+    ids = {iid for iid, _, _ in visible_rows}
     rows_map = await _fetch_generated_reflections_by_public_ids(ids, require_active=True, require_ready=True)
-    owner_ids = {owner for _, owner, _ in prepared_rows}
-    profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
+    profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in visible_rows}))
     items: List[QnaSavedReflectionItem] = []
-    for iid, owner_uid, saved_at in prepared_rows:
+    for iid, owner_uid, saved_at in visible_rows:
         row = rows_map.get(iid)
         if not row:
             continue
@@ -3468,6 +3644,73 @@ async def _build_saved_generated_items(
             QnaSavedReflectionItem(
                 q_instance_id=iid,
                 q_key=_build_generated_q_key(row),
+                title=title,
+                owner_user_id=str(owner_uid),
+                owner_display_name=dn_s,
+                saved_at=saved_at,
+            )
+        )
+    return items
+
+
+async def _build_saved_create_items(
+    *,
+    prepared_rows: List[Tuple[str, str, int, str, str]],  # (q_instance_id, owner_user_id, question_id, q_key, saved_at)
+) -> List[QnaSavedReflectionItem]:
+    if not prepared_rows:
+        return []
+
+    owner_ids = {str(owner_uid) for _, owner_uid, _, _, _ in prepared_rows if str(owner_uid or "").strip()}
+    owner_policies = await _resolve_owner_reflection_policies(owner_ids)
+    question_maps = await _fetch_question_maps_for_build_tiers(
+        {str((owner_policies.get(owner_id) or {}).get("build_tier") or "light") for owner_id in owner_ids}
+    )
+
+    visible_rows: List[Tuple[str, str, int, str, str, str]] = []
+    qids_by_owner: Dict[str, Set[int]] = {}
+    for iid, owner_uid, qid_val, qk, saved_at in prepared_rows:
+        owner_id = str(owner_uid or "").strip()
+        policy = owner_policies.get(owner_id) or {}
+        owner_build_tier = str(policy.get("build_tier") or "light")
+        owner_qmap = question_maps.get(owner_build_tier) or {}
+        title = str(owner_qmap.get(int(qid_val)) or "").strip()
+        if not title:
+            continue
+        visible_rows.append((iid, owner_id, int(qid_val), qk, saved_at, title))
+        qids_by_owner.setdefault(owner_id, set()).add(int(qid_val))
+
+    if not visible_rows:
+        return []
+
+    secret_pairs: Set[Tuple[str, int]] = set()
+    for owner_id, qids in qids_by_owner.items():
+        try:
+            secret_qids = await _fetch_secret_question_ids(target_user_id=str(owner_id), question_ids=set(qids))
+        except Exception as exc:
+            logger.warning("secret check failed (saved reflections): %s", exc)
+            secret_qids = set(qids)
+        for qid_val in (secret_qids or set()):
+            secret_pairs.add((str(owner_id), int(qid_val)))
+
+    if secret_pairs:
+        visible_rows = [
+            row
+            for row in visible_rows
+            if (str(row[1]), int(row[2])) not in secret_pairs
+        ]
+    if not visible_rows:
+        return []
+
+    profiles_map = await _fetch_profiles_by_ids(list({row[1] for row in visible_rows}))
+    items: List[QnaSavedReflectionItem] = []
+    for iid, owner_uid, qid_val, qk, saved_at, title in visible_rows:
+        p = profiles_map.get(str(owner_uid)) or {}
+        dn = p.get("display_name") if isinstance(p, dict) else None
+        dn_s = dn.strip() if isinstance(dn, str) else None
+        items.append(
+            QnaSavedReflectionItem(
+                q_instance_id=iid,
+                q_key=qk,
                 title=title,
                 owner_user_id=str(owner_uid),
                 owner_display_name=dn_s,
@@ -3535,88 +3778,17 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             viewer_user_id=viewer_user_id, target_user_id=tgt
         )
 
-        # legacy create-based reflections
-        create_items: List[QnaListItem] = []
         try:
-            resp = await _sb_post_rpc(
-                QNA_LIST_RPC,
-                {
-                    "p_viewer_user_id": str(viewer_user_id),
-                    "p_target_user_id": str(tgt),
-                    "p_effective_tier": str(effective_tier or "").strip() or None,
-                    "p_limit": int(QNA_LIST_RPC_LIMIT),
-                },
+            create_items = await _fetch_create_list_items(
+                viewer_user_id=str(viewer_user_id),
+                target_user_id=str(tgt),
+                effective_tier=str(effective_tier),
             )
+        except HTTPException:
+            raise
         except Exception as exc:
-            logger.error("Supabase rpc %s failed (network): %s", QNA_LIST_RPC, exc)
+            logger.error("create list build failed: %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        if resp.status_code >= 300:
-            logger.error("Supabase rpc %s failed: %s %s", QNA_LIST_RPC, resp.status_code, (resp.text or "")[:1500])
-            raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        rows: Any = []
-        try:
-            rows = resp.json()
-        except Exception:
-            rows = []
-
-        if isinstance(rows, list):
-            for r in rows:
-                if not isinstance(r, dict):
-                    continue
-                title = str(r.get("title") or "").strip()
-                q_key = str(r.get("q_key") or "").strip()
-                q_instance_id = str(r.get("q_instance_id") or "").strip()
-                if not title or not q_key or not q_instance_id:
-                    continue
-                gen_raw = r.get("generated_at")
-                generated_at = None if gen_raw is None else (str(gen_raw).strip() or None)
-                try:
-                    views = int(r.get("views") or 0)
-                except Exception:
-                    views = 0
-                try:
-                    resonances = int(r.get("resonances") or 0)
-                except Exception:
-                    resonances = 0
-                try:
-                    discoveries = int(r.get("discoveries") or 0)
-                except Exception:
-                    discoveries = 0
-                create_items.append(
-                    QnaListItem(
-                        title=title,
-                        q_key=q_key,
-                        q_instance_id=q_instance_id,
-                        generated_at=generated_at,
-                        views=views,
-                        resonances=resonances,
-                        discoveries=discoveries,
-                        is_new=True if r.get("is_new") is True else False,
-                    )
-                )
-
-        # legacy create secret filter only
-        if create_items:
-            try:
-                qids: Set[int] = set()
-                qid_by_instance: Dict[str, int] = {}
-                for it in create_items:
-                    try:
-                        _, qid_val = _parse_instance_id(it.q_instance_id)
-                        qids.add(int(qid_val))
-                        qid_by_instance[str(it.q_instance_id)] = int(qid_val)
-                    except Exception:
-                        continue
-                secret_qids = await _fetch_secret_question_ids(target_user_id=str(tgt), question_ids=qids) if qids else set()
-                if secret_qids:
-                    create_items = [it for it in create_items if qid_by_instance.get(str(it.q_instance_id)) not in secret_qids]
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.error("secret filter failed (list): %s", exc)
-                raise HTTPException(status_code=502, detail="Failed to load reflections")
 
         generated_items = await _fetch_generated_list_items(viewer_user_id=str(viewer_user_id), target_user_id=str(tgt))
 
@@ -3666,38 +3838,17 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             if not allowed:
                 raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
 
-        # legacy create unread via rpc
         create_total = 0
         create_unread = 0
         try:
             _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-            resp = await _sb_post_rpc(
-                QNA_UNREAD_RPC,
-                {
-                    "p_viewer_user_id": str(viewer_user_id),
-                    "p_target_user_id": str(tgt),
-                    "p_effective_tier": str(effective_tier or "").strip() or None,
-                },
+            create_items = await _fetch_create_list_items(
+                viewer_user_id=str(viewer_user_id),
+                target_user_id=str(tgt),
+                effective_tier=str(effective_tier),
             )
-            if resp.status_code < 300:
-                data: Any = None
-                try:
-                    data = resp.json()
-                except Exception:
-                    data = None
-                row: Dict[str, Any] = {}
-                if isinstance(data, list) and data and isinstance(data[0], dict):
-                    row = data[0]
-                elif isinstance(data, dict):
-                    row = data
-                try:
-                    create_total = int(row.get("total_items") or 0)
-                except Exception:
-                    create_total = 0
-                try:
-                    create_unread = int(row.get("unread_count") or 0)
-                except Exception:
-                    create_unread = 0
+            create_total = len(create_items)
+            create_unread = sum(1 for item in create_items if bool(item.is_new))
         except Exception as exc:
             logger.warning("create unread fallback failed: %s", exc)
 
@@ -3858,6 +4009,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("account status enqueue failed (qna_view): %s", exc)
+        try:
+            await enqueue_global_summary_refresh(
+                trigger="qna_view",
+                requested_at=requested_at,
+                actor_user_id=viewer_user_id,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_view): %s", exc)
         return QnaViewResponse(status="ok", q_key=qk, q_instance_id=iid, views=int(counts.get("views") or 0), resonances=int(counts.get("resonances") or 0), is_new=False)
 
     @app.post("/mymodel/qna/resonance", response_model=QnaResonanceResponse)
@@ -3925,31 +4085,28 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
         except Exception:
             viewer_tier = SubscriptionTier.FREE
-        view_tier = _view_tier_for_subscription(viewer_tier)
-        qrows = await _fetch_create_questions(build_tier=view_tier)
-        qmap: Dict[int, str] = {}
-        for r in qrows or []:
-            try:
-                qid = int((r or {}).get("id"))
-            except Exception:
-                continue
-            txt = str((r or {}).get("question_text") or "").strip()
-            if txt:
-                qmap[int(qid)] = txt
+        retention = history_retention_bounds_for_query(str(viewer_tier.value), now_utc=datetime.now(timezone.utc))
         followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
         scan_limit = int(min(max(int(limit) * 5, 50), 2000))
-        rows = await _sb_get_json_local(
-            f"/rest/v1/{ECHOES_TABLE}",
-            params={
-                "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
-                "viewer_user_id": f"eq.{viewer_user_id}",
-                "order": sb_order,
-                "limit": str(scan_limit),
-                "offset": str(int(offset)),
-            },
-        )
+        params: Dict[str, str] = {
+            "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
+            "viewer_user_id": f"eq.{viewer_user_id}",
+            "order": sb_order,
+            "limit": str(scan_limit),
+            "offset": str(int(offset)),
+        }
+        clauses: List[str] = []
+        gte_iso = str(retention.get("gte_iso") or "").strip()
+        lt_iso = str(retention.get("lt_iso") or "").strip()
+        if gte_iso:
+            clauses.append(f"created_at.gte.{gte_iso}")
+        if lt_iso:
+            clauses.append(f"created_at.lt.{lt_iso}")
+        if clauses:
+            params["and"] = f"({','.join(clauses)})"
+        rows = await _sb_get_json_local(f"/rest/v1/{ECHOES_TABLE}", params=params)
         if not rows:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
         picked: List[Dict[str, Any]] = []
@@ -3965,14 +4122,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
 
         generated_prepared: List[Tuple[str, str, str]] = []
         create_prepared: List[Tuple[str, str, int, str, str]] = []
-        owner_ids: Set[str] = set()
         for r in picked:
             iid = str((r or {}).get("q_instance_id") or "").strip()
             tgt = str((r or {}).get("target_user_id") or "").strip()
             saved_at = str((r or {}).get("created_at") or "").strip()
             if not iid or not tgt or not saved_at or tgt not in followed_set:
                 continue
-            owner_ids.add(tgt)
             if _is_generated_reflection_instance_id(iid):
                 generated_prepared.append((iid, tgt, saved_at))
                 continue
@@ -3987,35 +4142,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                     qid_val = int(qid2)
                 except Exception:
                     qid_val = None
-            if not qid_val or int(qid_val) not in qmap:
+            if not qid_val:
                 continue
             qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
             create_prepared.append((iid, tgt, int(qid_val), qk, saved_at))
 
-        # secret filter for create only
-        if create_prepared:
-            qids_by_owner: Dict[str, Set[int]] = {}
-            for _, owner_uid, qid_val, _, _ in create_prepared:
-                qids_by_owner.setdefault(str(owner_uid), set()).add(int(qid_val))
-            secret_pairs: Set[Tuple[str, int]] = set()
-            for owner_id, qids in qids_by_owner.items():
-                try:
-                    secret_qids = await _fetch_secret_question_ids(target_user_id=str(owner_id), question_ids=set(qids))
-                except Exception as exc:
-                    logger.warning("secret check failed (saved reflections): %s", exc)
-                    secret_qids = set(qids)
-                for qid_val in (secret_qids or set()):
-                    secret_pairs.add((str(owner_id), int(qid_val)))
-            if secret_pairs:
-                create_prepared = [t for t in create_prepared if (str(t[1]), int(t[2])) not in secret_pairs]
-
-        profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
-        create_items: List[QnaSavedReflectionItem] = []
-        for iid, tgt, qid_val, qk, saved_at in create_prepared:
-            p = profiles_map.get(str(tgt)) or {}
-            dn = p.get("display_name") if isinstance(p, dict) else None
-            dn_s = dn.strip() if isinstance(dn, str) else None
-            create_items.append(QnaSavedReflectionItem(q_instance_id=iid, q_key=qk, title=str(qmap.get(int(qid_val)) or ""), owner_user_id=tgt, owner_display_name=dn_s, saved_at=saved_at))
+        create_items = await _build_saved_create_items(prepared_rows=create_prepared)
         generated_items = await _build_saved_generated_items(prepared_rows=generated_prepared)
         items = [*generated_items, *create_items]
         items.sort(key=lambda x: x.saved_at, reverse=(order_key == "newest"))
@@ -4124,6 +4256,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("account status enqueue failed (qna_echoes_submit): %s", exc)
+        try:
+            await enqueue_global_summary_refresh(
+                trigger="qna_echoes_submit",
+                requested_at=requested_at,
+                actor_user_id=viewer_user_id,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_echoes_submit): %s", exc)
         return QnaEchoesSubmitResponse(status="ok", q_key=qk, q_instance_id=iid, strength=strength, memo=memo, resonated=bool(resonated), views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.post("/mymodel/qna/echoes/delete", response_model=QnaEchoesDeleteResponse)
@@ -4143,10 +4284,30 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         iid = str(req.q_instance_id or "").strip()
         if tgt == viewer_user_id:
             raise HTTPException(status_code=400, detail="Self echoes is not allowed")
-        resp_del = await _sb_delete(f"/rest/v1/{ECHOES_TABLE}", params={"viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}"}, prefer="return=minimal")
+        resp_del = await _sb_delete(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{iid}",
+                "select": "created_at",
+            },
+            prefer="return=representation",
+        )
         if resp_del.status_code >= 300:
             logger.error("Supabase %s delete failed (echoes): %s %s", ECHOES_TABLE, resp_del.status_code, (resp_del.text or "")[:800])
             raise HTTPException(status_code=502, detail="Failed to delete echoes")
+        deleted_echo_activity_dates: List[str] = []
+        try:
+            deleted_rows = resp_del.json()
+        except Exception:
+            deleted_rows = []
+        if isinstance(deleted_rows, list):
+            for row in deleted_rows:
+                if not isinstance(row, dict):
+                    continue
+                deleted_created_at = str(row.get("created_at") or "").strip()
+                if deleted_created_at:
+                    deleted_echo_activity_dates.append(deleted_created_at)
         was_resonated = await _is_resonated(viewer_user_id, iid)
         resp_del2 = await _sb_delete(f"/rest/v1/{RESONANCES_TABLE}", params={"viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}"}, prefer="return=minimal")
         if resp_del2.status_code >= 300:
@@ -4197,14 +4358,32 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("account status enqueue failed (qna_echoes_delete): %s", exc)
+        try:
+            if deleted_echo_activity_dates:
+                await enqueue_global_summary_refresh_many(
+                    activity_dates=deleted_echo_activity_dates,
+                    trigger="qna_echoes_delete",
+                    requested_at=requested_at,
+                    actor_user_id=viewer_user_id,
+                    debounce=True,
+                )
+            else:
+                await enqueue_global_summary_refresh(
+                    trigger="qna_echoes_delete",
+                    requested_at=requested_at,
+                    actor_user_id=viewer_user_id,
+                    debounce=True,
+                )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_echoes_delete): %s", exc)
         return QnaEchoesDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, resonated=False, views=int(views or 0), resonances=int(res_cnt or 0))
 
     @app.get("/mymodel/qna/echoes/history", response_model=QnaEchoesHistoryResponse)
     async def qna_echoes_history(
         q_instance_id: str = Query(..., description="<target_user_id>:<question_id> or reflection:<uuid>"),
         q_key: Optional[str] = Query(default=None, description="Optional; derived if omitted"),
-        limit: Optional[int] = Query(default=None, description="Max items (Plus/Premium only)"),
-        offset: Optional[int] = Query(default=None, description="Offset (Plus/Premium only)"),
+        limit: Optional[int] = Query(default=None, description="Max items to return"),
+        offset: Optional[int] = Query(default=None, description="Offset"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaEchoesHistoryResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -4222,44 +4401,105 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         except Exception as exc:
             logger.warning("viewer subscription tier resolve failed (echoes history): %s", exc)
             viewer_tier = SubscriptionTier.FREE
-        is_free = viewer_tier == SubscriptionTier.FREE
-        eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
-        eff_limit = max(1, min(eff_limit, 1000))
-        eff_offset = 0 if is_free else int(offset or 0)
-        eff_offset = max(0, eff_offset)
-        total = await _sb_count_rows(f"/rest/v1/{ECHOES_TABLE}", params={"q_instance_id": f"eq.{iid}"})
-        cnt_small = await _sb_count_rows(f"/rest/v1/{ECHOES_TABLE}", params={"q_instance_id": f"eq.{iid}", "strength": "eq.small"})
-        cnt_medium = await _sb_count_rows(f"/rest/v1/{ECHOES_TABLE}", params={"q_instance_id": f"eq.{iid}", "strength": "eq.medium"})
-        cnt_large = await _sb_count_rows(f"/rest/v1/{ECHOES_TABLE}", params={"q_instance_id": f"eq.{iid}", "strength": "eq.large"})
-        resp = await _sb_get(f"/rest/v1/{ECHOES_TABLE}", params={"select": "strength,created_at", "q_instance_id": f"eq.{iid}", "order": "created_at.desc", "limit": str(eff_limit), "offset": str(eff_offset)})
+        tier_str = str(viewer_tier.value)
+        retention = history_retention_bounds_for_query(tier_str, now_utc=datetime.now(timezone.utc))
+        gte_iso = str(retention.get("gte_iso") or "").strip()
+        lt_iso = str(retention.get("lt_iso") or "").strip()
+        eff_limit = max(1, min(int(limit or 50), 1000))
+        eff_offset = max(0, int(offset or 0))
+
+        def _apply_created_at_retention(params: Dict[str, str]) -> Dict[str, str]:
+            clauses: List[str] = []
+            if gte_iso:
+                clauses.append(f"created_at.gte.{gte_iso}")
+            if lt_iso:
+                clauses.append(f"created_at.lt.{lt_iso}")
+            if clauses:
+                params["and"] = f"({','.join(clauses)})"
+            return params
+
+        # Viewer must still have at least one Echoes save within the visible retention window.
+        my_resp = await _sb_get(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({
+                "select": "strength,memo,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{iid}",
+                "order": "created_at.desc",
+                "limit": "1",
+            }),
+        )
+        if my_resp.status_code >= 300:
+            logger.error("Supabase %s select failed (my echoes history): %s %s", ECHOES_TABLE, my_resp.status_code, (my_resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Failed to load echoes history")
+        my_rows = my_resp.json() if my_resp is not None else []
+        if not isinstance(my_rows, list) or not my_rows:
+            raise HTTPException(status_code=404, detail="Echoes history not found")
+        row0 = my_rows[0] if isinstance(my_rows[0], dict) else {}
+        my_strength = str((row0 or {}).get("strength") or "").strip() or None
+        memo_raw = (row0 or {}).get("memo")
+        my_memo = None if memo_raw is None else (str(memo_raw).strip() or None)
+
+        total = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}"}),
+        )
+        cnt_small = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.small"}),
+        )
+        cnt_medium = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.medium"}),
+        )
+        cnt_large = await _sb_count_rows(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({"q_instance_id": f"eq.{iid}", "strength": "eq.large"}),
+        )
+        resp = await _sb_get(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({
+                "select": "strength,created_at",
+                "q_instance_id": f"eq.{iid}",
+                "order": "created_at.desc",
+                "limit": str(eff_limit + 1),
+                "offset": str(eff_offset),
+            }),
+        )
         if resp.status_code >= 300:
             logger.error("Supabase %s select failed: %s %s", ECHOES_TABLE, resp.status_code, (resp.text or "")[:800])
             raise HTTPException(status_code=502, detail="Failed to load echoes history")
         rows = resp.json()
         items: List[QnaEchoesHistoryItem] = []
         if isinstance(rows, list):
-            for r in rows:
+            for r in rows[:eff_limit]:
                 if not isinstance(r, dict):
                     continue
                 st = str(r.get("strength") or "").strip()
                 ca = str(r.get("created_at") or "").strip()
                 if st and ca:
                     items.append(QnaEchoesHistoryItem(strength=st, created_at=ca))
-        my_strength = None
-        my_memo = None
-        try:
-            resp_my = await _sb_get(f"/rest/v1/{ECHOES_TABLE}", params={"select": "strength,memo,created_at", "viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}", "order": "created_at.desc", "limit": "1"})
-            if resp_my.status_code < 300:
-                rr = resp_my.json()
-                if isinstance(rr, list) and rr:
-                    row0 = rr[0] if isinstance(rr[0], dict) else {}
-                    my_strength = str((row0 or {}).get("strength") or "").strip() or None
-                    memo_raw = (row0 or {}).get("memo")
-                    my_memo = None if memo_raw is None else (str(memo_raw).strip() or None)
-        except Exception:
-            my_strength = None
-            my_memo = None
-        return QnaEchoesHistoryResponse(status="ok", q_key=qk, q_instance_id=iid, subscription_tier=str(viewer_tier.value), total=int(total or 0), count_small=int(cnt_small or 0), count_medium=int(cnt_medium or 0), count_large=int(cnt_large or 0), my_strength=my_strength, my_memo=my_memo, limit=int(eff_limit), is_limited=bool(is_free), items=items)
+        has_more = isinstance(rows, list) and len(rows) > eff_limit
+        next_offset = (eff_offset + eff_limit) if has_more else None
+        return QnaEchoesHistoryResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=iid,
+            subscription_tier=tier_str,
+            total=int(total or 0),
+            count_small=int(cnt_small or 0),
+            count_medium=int(cnt_medium or 0),
+            count_large=int(cnt_large or 0),
+            my_strength=my_strength,
+            my_memo=my_memo,
+            limit=int(eff_limit),
+            offset=int(eff_offset),
+            has_more=bool(has_more),
+            next_offset=next_offset,
+            retention_mode=str(retention.get("mode") or ""),
+            is_limited=bool(tier_str != SubscriptionTier.PREMIUM.value),
+            items=items,
+        )
 
     @app.get("/mymodel/qna/discoveries/reflections", response_model=QnaSavedReflectionsResponse)
     async def qna_discoveries_reflections(
@@ -4283,31 +4523,28 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
         except Exception:
             viewer_tier = SubscriptionTier.FREE
-        view_tier = _view_tier_for_subscription(viewer_tier)
-        qrows = await _fetch_create_questions(build_tier=view_tier)
-        qmap: Dict[int, str] = {}
-        for r in qrows or []:
-            try:
-                qid = int((r or {}).get("id"))
-            except Exception:
-                continue
-            txt = str((r or {}).get("question_text") or "").strip()
-            if txt:
-                qmap[int(qid)] = txt
+        retention = history_retention_bounds_for_query(str(viewer_tier.value), now_utc=datetime.now(timezone.utc))
         followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
         scan_limit = int(min(max(int(limit) * 5, 50), 2000))
-        rows = await _sb_get_json_local(
-            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
-            params={
-                "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
-                "viewer_user_id": f"eq.{viewer_user_id}",
-                "order": sb_order,
-                "limit": str(scan_limit),
-                "offset": str(int(offset)),
-            },
-        )
+        params: Dict[str, str] = {
+            "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
+            "viewer_user_id": f"eq.{viewer_user_id}",
+            "order": sb_order,
+            "limit": str(scan_limit),
+            "offset": str(int(offset)),
+        }
+        clauses: List[str] = []
+        gte_iso = str(retention.get("gte_iso") or "").strip()
+        lt_iso = str(retention.get("lt_iso") or "").strip()
+        if gte_iso:
+            clauses.append(f"created_at.gte.{gte_iso}")
+        if lt_iso:
+            clauses.append(f"created_at.lt.{lt_iso}")
+        if clauses:
+            params["and"] = f"({','.join(clauses)})"
+        rows = await _sb_get_json_local(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params=params)
         if not rows:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
         picked: List[Dict[str, Any]] = []
@@ -4320,16 +4557,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             picked.append(r)
             if len(picked) >= int(limit):
                 break
+
         generated_prepared: List[Tuple[str, str, str]] = []
         create_prepared: List[Tuple[str, str, int, str, str]] = []
-        owner_ids: Set[str] = set()
         for r in picked:
             iid = str((r or {}).get("q_instance_id") or "").strip()
             tgt = str((r or {}).get("target_user_id") or "").strip()
             saved_at = str((r or {}).get("created_at") or "").strip()
             if not iid or not tgt or not saved_at or tgt not in followed_set:
                 continue
-            owner_ids.add(tgt)
             if _is_generated_reflection_instance_id(iid):
                 generated_prepared.append((iid, tgt, saved_at))
                 continue
@@ -4344,32 +4580,12 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                     qid_val = int(qid2)
                 except Exception:
                     qid_val = None
-            if not qid_val or int(qid_val) not in qmap:
+            if not qid_val:
                 continue
             qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
             create_prepared.append((iid, tgt, int(qid_val), qk, saved_at))
-        if create_prepared:
-            qids_by_owner: Dict[str, Set[int]] = {}
-            for _, owner_uid, qid_val, _, _ in create_prepared:
-                qids_by_owner.setdefault(str(owner_uid), set()).add(int(qid_val))
-            secret_pairs: Set[Tuple[str, int]] = set()
-            for owner_id, qids in qids_by_owner.items():
-                try:
-                    secret_qids = await _fetch_secret_question_ids(target_user_id=str(owner_id), question_ids=set(qids))
-                except Exception as exc:
-                    logger.warning("secret check failed (saved reflections): %s", exc)
-                    secret_qids = set(qids)
-                for qid_val in (secret_qids or set()):
-                    secret_pairs.add((str(owner_id), int(qid_val)))
-            if secret_pairs:
-                create_prepared = [t for t in create_prepared if (str(t[1]), int(t[2])) not in secret_pairs]
-        profiles_map = await _fetch_profiles_by_ids(list(owner_ids))
-        create_items: List[QnaSavedReflectionItem] = []
-        for iid, tgt, qid_val, qk, saved_at in create_prepared:
-            p = profiles_map.get(str(tgt)) or {}
-            dn = p.get("display_name") if isinstance(p, dict) else None
-            dn_s = dn.strip() if isinstance(dn, str) else None
-            create_items.append(QnaSavedReflectionItem(q_instance_id=iid, q_key=qk, title=str(qmap.get(int(qid_val)) or ""), owner_user_id=tgt, owner_display_name=dn_s, saved_at=saved_at))
+
+        create_items = await _build_saved_create_items(prepared_rows=create_prepared)
         generated_items = await _build_saved_generated_items(prepared_rows=generated_prepared)
         items = [*generated_items, *create_items]
         items.sort(key=lambda x: x.saved_at, reverse=(order_key == "newest"))
@@ -4458,6 +4674,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("account status enqueue failed (qna_discoveries_submit): %s", exc)
+        try:
+            await enqueue_global_summary_refresh(
+                trigger="qna_discoveries_submit",
+                requested_at=requested_at,
+                actor_user_id=viewer_user_id,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_discoveries_submit): %s", exc)
         return QnaDiscoverySubmitResponse(status="ok", q_key=qk, q_instance_id=iid, id=inserted_id)
 
     @app.post("/mymodel/qna/discoveries/delete", response_model=QnaDiscoveryDeleteResponse)
@@ -4477,10 +4702,30 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         iid = str(req.q_instance_id or "").strip()
         if tgt == viewer_user_id:
             raise HTTPException(status_code=400, detail="Self discoveries is not allowed")
-        resp_del = await _sb_delete(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}"}, prefer="return=minimal")
+        resp_del = await _sb_delete(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{iid}",
+                "select": "created_at",
+            },
+            prefer="return=representation",
+        )
         if resp_del.status_code >= 300:
             logger.error("Supabase %s delete failed (discoveries): %s %s", DISCOVERY_LOGS_TABLE, resp_del.status_code, (resp_del.text or "")[:800])
             raise HTTPException(status_code=502, detail="Failed to delete discovery")
+        deleted_discovery_activity_dates: List[str] = []
+        try:
+            deleted_rows = resp_del.json()
+        except Exception:
+            deleted_rows = []
+        if isinstance(deleted_rows, list):
+            for row in deleted_rows:
+                if not isinstance(row, dict):
+                    continue
+                deleted_created_at = str(row.get("created_at") or "").strip()
+                if deleted_created_at:
+                    deleted_discovery_activity_dates.append(deleted_created_at)
         discoveries = 0
         try:
             discoveries = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"q_instance_id": f"eq.{iid}"})
@@ -4516,14 +4761,32 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             )
         except Exception as exc:
             logger.warning("account status enqueue failed (qna_discoveries_delete): %s", exc)
+        try:
+            if deleted_discovery_activity_dates:
+                await enqueue_global_summary_refresh_many(
+                    activity_dates=deleted_discovery_activity_dates,
+                    trigger="qna_discoveries_delete",
+                    requested_at=requested_at,
+                    actor_user_id=viewer_user_id,
+                    debounce=True,
+                )
+            else:
+                await enqueue_global_summary_refresh(
+                    trigger="qna_discoveries_delete",
+                    requested_at=requested_at,
+                    actor_user_id=viewer_user_id,
+                    debounce=True,
+                )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_discoveries_delete): %s", exc)
         return QnaDiscoveryDeleteResponse(status="ok", q_key=qk, q_instance_id=iid, discoveries=int(discoveries or 0))
 
     @app.get("/mymodel/qna/discoveries/history", response_model=QnaDiscoveryHistoryResponse)
     async def qna_discovery_history(
         q_instance_id: str = Query(..., description="<target_user_id>:<question_id> or reflection:<uuid>"),
         q_key: Optional[str] = Query(default=None, description="Optional; derived if omitted"),
-        limit: Optional[int] = Query(default=None, description="Max items (Plus/Premium only)"),
-        offset: Optional[int] = Query(default=None, description="Offset (Plus/Premium only)"),
+        limit: Optional[int] = Query(default=None, description="Max items to return"),
+        offset: Optional[int] = Query(default=None, description="Offset"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoveryHistoryResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -4541,20 +4804,51 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         except Exception as exc:
             logger.warning("viewer subscription tier resolve failed (discoveries history): %s", exc)
             viewer_tier = SubscriptionTier.FREE
-        is_free = viewer_tier == SubscriptionTier.FREE
-        eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
-        eff_limit = max(1, min(eff_limit, 1000))
-        eff_offset = 0 if is_free else int(offset or 0)
-        eff_offset = max(0, eff_offset)
-        total = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}"})
-        resp = await _sb_get(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"select": "id,category,memo,created_at", "viewer_user_id": f"eq.{viewer_user_id}", "q_instance_id": f"eq.{iid}", "order": "created_at.desc", "limit": str(eff_limit), "offset": str(eff_offset)})
+        tier_str = str(viewer_tier.value)
+        retention = history_retention_bounds_for_query(tier_str, now_utc=datetime.now(timezone.utc))
+        gte_iso = str(retention.get("gte_iso") or "").strip()
+        lt_iso = str(retention.get("lt_iso") or "").strip()
+        eff_limit = max(1, min(int(limit or 50), 1000))
+        eff_offset = max(0, int(offset or 0))
+
+        def _apply_created_at_retention(params: Dict[str, str]) -> Dict[str, str]:
+            clauses: List[str] = []
+            if gte_iso:
+                clauses.append(f"created_at.gte.{gte_iso}")
+            if lt_iso:
+                clauses.append(f"created_at.lt.{lt_iso}")
+            if clauses:
+                params["and"] = f"({','.join(clauses)})"
+            return params
+
+        my_total = await _sb_count_rows(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params=_apply_created_at_retention({
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{iid}",
+            }),
+        )
+        if int(my_total or 0) <= 0:
+            raise HTTPException(status_code=404, detail="Discoveries history not found")
+
+        resp = await _sb_get(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params=_apply_created_at_retention({
+                "select": "id,category,memo,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": f"eq.{iid}",
+                "order": "created_at.desc",
+                "limit": str(eff_limit + 1),
+                "offset": str(eff_offset),
+            }),
+        )
         if resp.status_code >= 300:
             logger.error("Supabase %s select failed: %s %s", DISCOVERY_LOGS_TABLE, resp.status_code, (resp.text or "")[:800])
             raise HTTPException(status_code=502, detail="Failed to load discoveries history")
         rows = resp.json()
         items: List[QnaDiscoveryHistoryItem] = []
         if isinstance(rows, list):
-            for r in rows:
+            for r in rows[:eff_limit]:
                 if not isinstance(r, dict):
                     continue
                 rid = str(r.get("id") or "").strip()
@@ -4565,4 +4859,20 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 memo_s = None if memo is None else str(memo)
                 ca = str(r.get("created_at") or "").strip()
                 items.append(QnaDiscoveryHistoryItem(id=rid, category=cat, memo=memo_s, created_at=ca))
-        return QnaDiscoveryHistoryResponse(status="ok", q_key=qk, q_instance_id=iid, subscription_tier=str(viewer_tier.value), total=int(total or 0), limit=int(eff_limit), is_limited=bool(is_free), items=items)
+        has_more = isinstance(rows, list) and len(rows) > eff_limit
+        next_offset = (eff_offset + eff_limit) if has_more else None
+        return QnaDiscoveryHistoryResponse(
+            status="ok",
+            q_key=qk,
+            q_instance_id=iid,
+            subscription_tier=tier_str,
+            total=int(my_total or 0),
+            limit=int(eff_limit),
+            offset=int(eff_offset),
+            has_more=bool(has_more),
+            next_offset=next_offset,
+            retention_mode=str(retention.get("mode") or ""),
+            is_limited=bool(tier_str != SubscriptionTier.PREMIUM.value),
+            items=items,
+        )
+

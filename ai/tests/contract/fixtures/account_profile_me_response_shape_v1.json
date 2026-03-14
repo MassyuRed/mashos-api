@@ -1,0 +1,9 @@
+{
+  "user_id": "<str>",
+  "display_name": "<str_or_null>",
+  "friend_code": "<str_or_null>",
+  "myprofile_code": "<str_or_null>",
+  "push_enabled": "<bool>",
+  "tutorial_completed": "<bool>",
+  "tutorial_skipped": "<bool>"
+}

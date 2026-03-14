@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastapi import FastAPI, Header, HTTPException, Path, Query
+from pydantic import BaseModel, Field
+
+from api_account_visibility import _require_user_id
+from publish_governance import decide_myprofile_report_publish
+from supabase_client import sb_get
+
+try:
+    from subscription import SubscriptionTier
+    from subscription_store import get_subscription_tier_for_user
+except Exception:  # pragma: no cover
+    SubscriptionTier = None  # type: ignore
+    get_subscription_tier_for_user = None  # type: ignore
+
+logger = logging.getLogger("myprofile_reports_read_api")
+
+
+class MyProfileReportHistoryItem(BaseModel):
+    id: str
+    report_type: str
+    title: Optional[str] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    generated_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MyProfileReportHistoryResponse(BaseModel):
+    status: str = "ok"
+    items: List[MyProfileReportHistoryItem] = Field(default_factory=list)
+    limit: int = 60
+    offset: int = 0
+    has_more: bool = False
+    next_offset: Optional[int] = None
+    subscription_tier: str = "free"
+
+
+class MyProfileReportDetailItem(MyProfileReportHistoryItem):
+    content_text: Optional[str] = None
+    content_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MyProfileReportDetailResponse(BaseModel):
+    status: str = "ok"
+    item: MyProfileReportDetailItem
+
+
+def _pick_rows(resp) -> List[Dict[str, Any]]:
+    try:
+        data = resp.json()
+    except Exception:
+        return []
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict):
+        return [data]
+    return []
+
+
+def _normalize_content_json(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+async def _resolve_subscription_tier(user_id: str) -> str:
+    if SubscriptionTier is None or get_subscription_tier_for_user is None:
+        return "free"
+    try:
+        tier = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
+        return str(getattr(tier, "value", tier) or "free").strip().lower() or "free"
+    except Exception:
+        return "free"
+
+
+async def _fetch_history_rows(
+    user_id: str,
+    report_type: str,
+    limit: int,
+    offset: int,
+    *,
+    tier_str: str,
+    now_utc: datetime,
+) -> Tuple[List[Dict[str, Any]], bool, Optional[int]]:
+    lim = max(1, min(int(limit or 60), 200))
+    off = max(0, int(offset or 0))
+    needed = off + lim + 1
+    raw_offset = 0
+    raw_page_size = max(50, min(200, lim * 3))
+    filtered_rows: List[Dict[str, Any]] = []
+
+    while len(filtered_rows) < needed:
+        resp = await sb_get(
+            "/rest/v1/myprofile_reports",
+            params={
+                "select": "id,report_type,title,period_start,period_end,generated_at,updated_at,content_text,content_json",
+                "user_id": f"eq.{user_id}",
+                "report_type": f"eq.{report_type}",
+                "order": "period_end.desc,generated_at.desc,updated_at.desc",
+                "limit": str(raw_page_size),
+                "offset": str(raw_offset),
+            },
+            timeout=8.0,
+        )
+        if resp.status_code >= 300:
+            logger.warning("myprofile_reports history select failed: %s %s", resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Failed to load self-structure report history")
+
+        chunk = _pick_rows(resp)
+        if not chunk:
+            break
+        raw_offset += len(chunk)
+
+        for row in chunk:
+            published_row = decide_myprofile_report_publish(
+                row,
+                requested_report_type=report_type,
+                tier_str=tier_str,
+                now_utc=now_utc,
+            )
+            if published_row:
+                filtered_rows.append(published_row)
+                if len(filtered_rows) >= needed:
+                    break
+
+        if len(chunk) < raw_page_size:
+            break
+
+    page = filtered_rows[off : off + lim]
+    has_more = len(filtered_rows) > (off + lim)
+    next_offset = (off + lim) if has_more else None
+    return page, has_more, next_offset
+
+
+async def _fetch_detail_row(
+    user_id: str,
+    report_id: str,
+    *,
+    tier_str: str,
+    now_utc: datetime,
+) -> Dict[str, Any]:
+    resp = await sb_get(
+        "/rest/v1/myprofile_reports",
+        params={
+            "select": "id,report_type,title,period_start,period_end,content_text,content_json,generated_at,updated_at",
+            "user_id": f"eq.{user_id}",
+            "id": f"eq.{report_id}",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code >= 300:
+        logger.warning("myprofile_reports detail select failed: %s %s", resp.status_code, (resp.text or "")[:800])
+        raise HTTPException(status_code=502, detail="Failed to load self-structure report")
+    rows = _pick_rows(resp)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Self-structure report not found")
+    published_row = decide_myprofile_report_publish(rows[0], tier_str=tier_str, now_utc=now_utc)
+    if not published_row:
+        raise HTTPException(status_code=404, detail="Self-structure report not found")
+    return published_row
+
+
+def register_myprofile_report_read_routes(app: FastAPI) -> None:
+    @app.get("/myprofile/reports/history", response_model=MyProfileReportHistoryResponse)
+    async def get_myprofile_report_history(
+        report_type: str = Query(default="monthly"),
+        limit: int = Query(default=60, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileReportHistoryResponse:
+        me = await _require_user_id(authorization)
+        tier_str = await _resolve_subscription_tier(me)
+        now_utc = datetime.now(timezone.utc)
+        rows, has_more, next_offset = await _fetch_history_rows(
+            me,
+            str(report_type or "monthly"),
+            int(limit or 60),
+            int(offset or 0),
+            tier_str=tier_str,
+            now_utc=now_utc,
+        )
+        items = [MyProfileReportHistoryItem(**row) for row in rows]
+        return MyProfileReportHistoryResponse(
+            items=items,
+            limit=int(limit or 60),
+            offset=int(offset or 0),
+            has_more=bool(has_more),
+            next_offset=next_offset,
+            subscription_tier=tier_str,
+        )
+
+    @app.get("/myprofile/reports/{report_id}", response_model=MyProfileReportDetailResponse)
+    async def get_myprofile_report_detail(
+        report_id: str = Path(..., min_length=1),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileReportDetailResponse:
+        me = await _require_user_id(authorization)
+        tier_str = await _resolve_subscription_tier(me)
+        now_utc = datetime.now(timezone.utc)
+        row = await _fetch_detail_row(me, str(report_id or "").strip(), tier_str=tier_str, now_utc=now_utc)
+        item = MyProfileReportDetailItem(
+            id=str(row.get("id") or report_id),
+            report_type=str(row.get("report_type") or ""),
+            title=row.get("title"),
+            period_start=row.get("period_start"),
+            period_end=row.get("period_end"),
+            generated_at=row.get("generated_at"),
+            updated_at=row.get("updated_at"),
+            content_text=row.get("content_text"),
+            content_json=_normalize_content_json(row.get("content_json")),
+        )
+        return MyProfileReportDetailResponse(item=item)

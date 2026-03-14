@@ -1,0 +1,14 @@
+{
+  "minimum_supported_version": "<str_or_null>",
+  "recommended_version": "<str_or_null>",
+  "maintenance_message": "<str_or_null>",
+  "feature_flags": {
+    "account_delete_enabled": "<bool>",
+    "myweb_mock_enabled": "<bool>"
+  },
+  "client_meta": {
+    "app_version": "<str_or_null>",
+    "app_build": "<str_or_null>",
+    "platform": "<str_or_null>"
+  }
+}

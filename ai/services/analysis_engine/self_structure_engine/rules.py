@@ -68,6 +68,7 @@ SOURCE_WEIGHT = {
     "deep_insight": 1.1,
     "echo": 0.4,
     "discovery": 0.4,
+    "today_question": 1.05,
 }
 
 RELIABILITY_WEIGHT = {
@@ -96,6 +97,10 @@ SOURCE_BIAS = {
     "discovery": {
         "primary": {"thinking_weight": 0.5, "action_weight": 0.4},
         "secondary": {"thinking_weight": 0.4, "action_weight": 0.3},
+    },
+    "today_question": {
+        "primary": {"thinking_weight": 1.1, "action_weight": 0.8},
+        "secondary": {"thinking_weight": 0.7, "action_weight": 0.5},
     },
 }
 

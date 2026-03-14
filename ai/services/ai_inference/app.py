@@ -22,9 +22,10 @@ from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import httpx
 
-from fastapi import FastAPI, HTTPException, Header, Query
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from middleware_active_user_touch import install_active_user_touch_middleware
+from middleware_api_contract import install_api_contract_middleware
 from pydantic import BaseModel, Field
 from structure_dict import build_structure_answer
 from api_emotion_submit import (
@@ -35,6 +36,7 @@ from api_emotion_submit import (
 )
 from api_emotion_secret import register_emotion_secret_routes
 from api_emotion_history_search import register_emotion_history_search_routes
+from api_emotion_history_manage import register_emotion_history_manage_routes
 from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
 from api_public_profile import register_public_profile_routes
@@ -60,8 +62,17 @@ except Exception:
 from api_activity_login import register_activity_login_routes
 from api_account_status import register_account_status_routes
 from api_account_visibility import register_account_visibility_routes
+from api_account_lifecycle import register_account_lifecycle_routes
+from api_app_bootstrap import register_app_bootstrap_routes
+from api_input_summary import register_input_summary_routes
+from api_global_summary import register_global_summary_routes
+from api_report_reads import register_report_reads_routes
+from api_myweb_reads import register_myweb_read_routes
+from api_myprofile_reports_read import register_myprofile_report_read_routes
 from api_mymodel_create import register_mymodel_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
+from api_today_question import register_today_question_routes
+from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
 from astor_myprofile_persona import build_persona_context_payload
 from astor_myweb_insight import generate_myweb_insight_text
@@ -100,10 +111,6 @@ except Exception:
     ROLLOVER_ACTIVE_USERS_LIMIT = 10000
 ROLLOVER_SELF_STRUCTURE_MONTHLY_URL = os.getenv("ROLLOVER_SELF_STRUCTURE_MONTHLY_URL", "").strip()
 JST = timezone(timedelta(hours=9))
-GLOBAL_SUMMARY_TABLE = (os.getenv("GLOBAL_SUMMARY_TABLE") or "daily_global_activity").strip() or "daily_global_activity"
-GLOBAL_SUMMARY_REFRESH_RPC = (os.getenv("GLOBAL_SUMMARY_REFRESH_RPC") or "refresh_daily_global_activity").strip() or "refresh_daily_global_activity"
-GLOBAL_SUMMARY_DB_TZ = "Asia/Tokyo"
-GLOBAL_SUMMARY_RESPONSE_TZ = "+09:00"
 
 # ---------- App ----------
 app = FastAPI(title=APP_NAME, version="1.0.0")
@@ -118,11 +125,13 @@ app.add_middleware(
 
 # Phase8++: global active_users touch middleware (best-effort)
 install_active_user_touch_middleware(app)
+install_api_contract_middleware(app)
 
 
 register_emotion_submit_routes(app)
 register_emotion_secret_routes(app)
 register_emotion_history_search_routes(app)
+register_emotion_history_manage_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
 register_public_profile_routes(app)
@@ -134,8 +143,17 @@ register_ranking_routes(app)
 register_activity_login_routes(app)
 register_account_status_routes(app)
 register_account_visibility_routes(app)
+register_account_lifecycle_routes(app)
+register_app_bootstrap_routes(app)
+register_input_summary_routes(app)
+register_global_summary_routes(app)
+register_report_reads_routes(app)
+register_myweb_read_routes(app)
+register_myprofile_report_read_routes(app)
 register_mymodel_create_routes(app)
 register_mymodel_qna_routes(app)
+register_today_question_routes(app)
+register_report_distribution_settings_routes(app)
 
 # Extra ranking routes (Phase: MyModel views/resonances + login streak)
 # NOTE: Some ranking endpoints live in separate modules; ensure they are registered.
@@ -200,16 +218,6 @@ class InferResponse(BaseModel):
     meta: Dict[str, Any] = {}
 
 
-class GlobalSummaryResponse(BaseModel):
-    date: str
-    tz: str = GLOBAL_SUMMARY_RESPONSE_TZ
-    emotion_users: int = 0
-    reflection_views: int = 0
-    echo_count: int = 0
-    discovery_count: int = 0
-    updated_at: Optional[str] = None
-
-
 # ---------- Rules & Utilities ----------
 DATE_WORDS = re.compile(r"(いつ|何日|何時|何年度|何年|昨日|明日|先週|来週|先月|来月|去年|来年)")
 ISO_DATE = re.compile(r"\b\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}\b")
@@ -247,137 +255,6 @@ async def _sb_post(
     url = f"{SUPABASE_URL}{path}"
     async with httpx.AsyncClient(timeout=8.0) as client:
         return await client.post(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
-
-
-async def _sb_post_rpc(fn: str, payload: Dict[str, Any]) -> httpx.Response:
-    return await _sb_post(f"/rest/v1/rpc/{fn}", json=payload)
-
-
-def _normalize_global_summary_tz(raw_tz: Optional[str]) -> Tuple[str, str]:
-    s = str(raw_tz or "").strip()
-    if not s:
-        return (GLOBAL_SUMMARY_DB_TZ, GLOBAL_SUMMARY_RESPONSE_TZ)
-
-    normalized = s.replace(" ", "")
-    if normalized in {"Asia/Tokyo", "asia/tokyo", "JST", "jst", "+09:00", "+0900", "09:00"}:
-        return (GLOBAL_SUMMARY_DB_TZ, GLOBAL_SUMMARY_RESPONSE_TZ)
-
-    raise HTTPException(status_code=400, detail="Only Asia/Tokyo (+09:00) is supported currently")
-
-
-def _resolve_global_summary_date(raw_date: Optional[str]) -> str:
-    s = str(raw_date or "").strip()
-    if not s:
-        return datetime.now(JST).date().isoformat()
-
-    try:
-        return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
-
-
-def _global_summary_zero(*, activity_date: str, response_tz: str) -> GlobalSummaryResponse:
-    return GlobalSummaryResponse(
-        date=activity_date,
-        tz=response_tz,
-        emotion_users=0,
-        reflection_views=0,
-        echo_count=0,
-        discovery_count=0,
-        updated_at=None,
-    )
-
-
-def _parse_global_summary_row(row: Dict[str, Any], *, fallback_date: str, response_tz: str) -> GlobalSummaryResponse:
-    try:
-        emotion_users = int((row or {}).get("emotion_users") or 0)
-    except Exception:
-        emotion_users = 0
-    try:
-        reflection_views = int((row or {}).get("reflection_view_count") or 0)
-    except Exception:
-        reflection_views = 0
-    try:
-        echo_count = int((row or {}).get("echo_count") or 0)
-    except Exception:
-        echo_count = 0
-    try:
-        discovery_count = int((row or {}).get("discovery_count") or 0)
-    except Exception:
-        discovery_count = 0
-
-    date_value = str((row or {}).get("activity_date") or fallback_date).strip() or fallback_date
-    updated_at_raw = (row or {}).get("updated_at")
-    updated_at = None if updated_at_raw is None else (str(updated_at_raw).strip() or None)
-
-    return GlobalSummaryResponse(
-        date=date_value,
-        tz=response_tz,
-        emotion_users=emotion_users,
-        reflection_views=reflection_views,
-        echo_count=echo_count,
-        discovery_count=discovery_count,
-        updated_at=updated_at,
-    )
-
-
-async def _fetch_global_summary_row(*, activity_date: str, db_tz: str) -> Optional[Dict[str, Any]]:
-    resp = await _sb_get(
-        f"/rest/v1/{GLOBAL_SUMMARY_TABLE}",
-        params={
-            "select": "activity_date,tz,emotion_users,reflection_view_count,echo_count,discovery_count,updated_at",
-            "activity_date": f"eq.{activity_date}",
-            "tz": f"eq.{db_tz}",
-            "limit": "1",
-        },
-    )
-    if resp.status_code >= 300:
-        logger.warning(
-            "Supabase %s select failed (global summary): %s %s",
-            GLOBAL_SUMMARY_TABLE,
-            resp.status_code,
-            (resp.text or "")[:800],
-        )
-        return None
-
-    rows = resp.json()
-    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
-        return rows[0]
-    return None
-
-
-async def _refresh_global_summary_row(*, activity_date: str, db_tz: str) -> Optional[Dict[str, Any]]:
-    try:
-        resp = await _sb_post_rpc(
-            GLOBAL_SUMMARY_REFRESH_RPC,
-            {
-                "p_activity_date": activity_date,
-                "p_tz": db_tz,
-            },
-        )
-    except Exception as exc:
-        logger.warning("global summary refresh RPC failed (network): %s", exc)
-        return None
-
-    if resp.status_code >= 300:
-        logger.warning(
-            "Supabase rpc %s failed (global summary refresh): %s %s",
-            GLOBAL_SUMMARY_REFRESH_RPC,
-            resp.status_code,
-            (resp.text or "")[:800],
-        )
-        return None
-
-    try:
-        data = resp.json()
-    except Exception:
-        return None
-
-    if isinstance(data, dict):
-        return data
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        return data[0]
-    return None
 
 
 async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
@@ -481,6 +358,7 @@ async def _fetch_active_user_ids(*, limit: int = ROLLOVER_ACTIVE_USERS_LIMIT) ->
 
 def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
     now_jst = now_utc.astimezone(JST)
+    distribution_key = now_jst.date().isoformat()
 
     daily_target = _myweb_build_target_period("daily", now_utc)
     daily_day_jst = daily_target.period_start_utc.astimezone(JST)
@@ -502,6 +380,7 @@ def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
 
     return {
         "now_jst": now_jst.isoformat(),
+        "distribution_key": distribution_key,
         "daily_scope": daily_scope,
         "weekly_scope": weekly_scope,
         "monthly_scope": monthly_scope,
@@ -509,7 +388,7 @@ def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
     }
 
 
-async def _enqueue_rollover_snapshot_job(*, user_id: str, scope: str, requested_at: str) -> None:
+async def _enqueue_rollover_snapshot_job(*, user_id: str, scope: str, requested_at: str, distribution_key: Optional[str] = None) -> None:
     if not callable(enqueue_job):
         raise HTTPException(status_code=500, detail="astor_job_queue.enqueue_job is unavailable")
 
@@ -526,12 +405,14 @@ async def _enqueue_rollover_snapshot_job(*, user_id: str, scope: str, requested_
             "scope": sc,
             "trigger": "internal_rollover",
             "requested_at": requested_at,
+            "distribution_origin": True,
+            "distribution_key": str(distribution_key or "").strip() or None,
         },
         priority=12,
     )
 
 
-async def _trigger_self_structure_monthly_rollover(*, requested_at: str) -> Dict[str, Any]:
+async def _trigger_self_structure_monthly_rollover(*, requested_at: str, distribution_key: Optional[str] = None) -> Dict[str, Any]:
     url = str(ROLLOVER_SELF_STRUCTURE_MONTHLY_URL or "").strip()
     if not url:
         return {
@@ -547,6 +428,8 @@ async def _trigger_self_structure_monthly_rollover(*, requested_at: str) -> Dict
     body = {
         "trigger": "internal_rollover",
         "requested_at": requested_at,
+        "distribution_origin": True,
+        "distribution_key": str(distribution_key or "").strip() or None,
     }
 
     try:
@@ -1114,29 +997,6 @@ async def myweb_insight_monthly_get(
     return await myweb_insight(req, authorization=authorization)
 
 
-@app.get("/global_summary", response_model=GlobalSummaryResponse)
-async def global_summary(
-    date: Optional[str] = Query(default=None, description="YYYY-MM-DD. Defaults to today in JST."),
-    tz: Optional[str] = Query(default=GLOBAL_SUMMARY_RESPONSE_TZ, description="Currently fixed to +09:00 / Asia/Tokyo."),
-) -> GlobalSummaryResponse:
-    db_tz, response_tz = _normalize_global_summary_tz(tz)
-    activity_date = _resolve_global_summary_date(date)
-
-    try:
-        row = await _fetch_global_summary_row(activity_date=activity_date, db_tz=db_tz)
-        if row is None:
-            row = await _refresh_global_summary_row(activity_date=activity_date, db_tz=db_tz)
-
-        if row is None:
-            return _global_summary_zero(activity_date=activity_date, response_tz=response_tz)
-
-        return _parse_global_summary_row(row, fallback_date=activity_date, response_tz=response_tz)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("global_summary failed: %s", exc)
-        return _global_summary_zero(activity_date=activity_date, response_tz=response_tz)
-
 
 @app.get("/healthz")
 def healthz() -> Dict[str, Any]:
@@ -1168,6 +1028,7 @@ async def _run_rollover_once() -> Dict[str, Any]:
                 user_id=uid,
                 scope=str(plan["daily_scope"]),
                 requested_at=requested_at,
+                distribution_key=str(plan.get("distribution_key") or "").strip() or None,
             )
             enqueued["daily"] += 1
         except Exception as exc:
@@ -1180,6 +1041,7 @@ async def _run_rollover_once() -> Dict[str, Any]:
                     user_id=uid,
                     scope=weekly_scope,
                     requested_at=requested_at,
+                    distribution_key=str(plan.get("distribution_key") or "").strip() or None,
                 )
                 enqueued["weekly"] += 1
             except Exception as exc:
@@ -1192,6 +1054,7 @@ async def _run_rollover_once() -> Dict[str, Any]:
                     user_id=uid,
                     scope=monthly_scope,
                     requested_at=requested_at,
+                    distribution_key=str(plan.get("distribution_key") or "").strip() or None,
                 )
                 enqueued["monthly"] += 1
             except Exception as exc:
@@ -1199,7 +1062,10 @@ async def _run_rollover_once() -> Dict[str, Any]:
 
     self_structure_monthly: Dict[str, Any]
     if bool(plan.get("run_self_structure_monthly")):
-        self_structure_monthly = await _trigger_self_structure_monthly_rollover(requested_at=requested_at)
+        self_structure_monthly = await _trigger_self_structure_monthly_rollover(
+            requested_at=requested_at,
+            distribution_key=str(plan.get("distribution_key") or "").strip() or None,
+        )
     else:
         self_structure_monthly = {"due": False, "status": "not_due"}
 
@@ -1208,6 +1074,7 @@ async def _run_rollover_once() -> Dict[str, Any]:
         "requested_at": requested_at,
         "rollover": {
             "now_jst": plan.get("now_jst"),
+            "distribution_key": plan.get("distribution_key"),
             "daily_scope": plan.get("daily_scope"),
             "weekly_scope": plan.get("weekly_scope"),
             "monthly_scope": plan.get("monthly_scope"),

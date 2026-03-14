@@ -28,15 +28,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from publish_governance import decide_myweb_report_publish, history_retention_bounds_for_query
 
 from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
-
 # Phase10: generation lock (dedupe concurrent generation)
 try:
     from generation_lock import (
@@ -67,6 +68,12 @@ try:
 except Exception:  # pragma: no cover
     SubscriptionTier = None  # type: ignore
     get_subscription_tier_for_user = None  # type: ignore
+
+# Shared no-input gate for emotion-period snapshots.
+try:
+    from astor_material_snapshots import get_emotion_period_public_input_status
+except Exception:  # pragma: no cover
+    get_emotion_period_public_input_status = None  # type: ignore
 
 
 logger = logging.getLogger("myweb_reports_api")
@@ -159,12 +166,13 @@ class MyWebEnsureRequest(BaseModel):
 
 class MyWebEnsureItem(BaseModel):
     report_type: Literal["daily", "weekly", "monthly"]
-    status: Literal["generated", "exists", "error"]
+    status: Literal["generated", "exists", "skipped", "error"]
     period_start: str
     period_end: str
     title: str
     report_id: Optional[str] = None
     error: Optional[str] = None
+    skip_reason: Optional[str] = None
 
 
 class MyWebEnsureResponse(BaseModel):
@@ -192,6 +200,10 @@ class MyWebReadyReportsResponse(BaseModel):
     user_id: str = Field(..., description="viewer user_id")
     report_type: str = Field(..., description="requested type")
     viewer_tier: str = Field(..., description="free/plus/premium")
+    limit: int = Field(default=10)
+    offset: int = Field(default=0)
+    has_more: bool = Field(default=False)
+    next_offset: Optional[int] = Field(default=None)
     items: List[MyWebReportRecord] = Field(default_factory=list)
 
 @dataclass(frozen=True)
@@ -566,6 +578,85 @@ def _find_peak_time_bucket(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
         return None
     return best
 
+COMMON_OBSERVATION_NOTE_LINES = (
+    "このレポートは、入力から見える変化をまとめた『観測』です。",
+    "診断や断定を目的としたものではありません。",
+)
+
+
+def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str]:
+    if report_type == "daily":
+        return (
+            "【昨日、見えていたこと】",
+            "【気持ちが動いた流れ】",
+            "【あなたへのコメント】",
+            "【このレポートについて】",
+        )
+    if report_type == "weekly":
+        return (
+            "【今週、見えていたこと】",
+            "【気持ちが動いた流れ】",
+            "【あなたへのコメント】",
+            "【このレポートについて】",
+        )
+    return (
+        "【今月、見えていたこと】",
+        "【気持ちが動いた流れ】",
+        "【あなたへのコメント】",
+        "【このレポートについて】",
+    )
+
+
+def _common_observation_note_lines() -> List[str]:
+    return list(COMMON_OBSERVATION_NOTE_LINES)
+
+
+def _fallback_overview_line(report_type: str) -> str:
+    if report_type == "daily":
+        return "昨日はまだ、ひとつの流れとして言い切るほどの傾向は見えていません。"
+    if report_type == "weekly":
+        return "今週はまだ、ひとつの流れとして言い切るほどの傾向は見えていません。"
+    return "今月はまだ、ひとつの流れとして言い切るほどの傾向は見えていません。"
+
+
+def _fallback_reader_comment(report_type: str) -> str:
+    if report_type == "daily":
+        return "まとまりきらない感じそのものが、昨日の自然な状態だったのかもしれません。"
+    if report_type == "weekly":
+        return "日によって違う動きが出ていたこと自体に、今週らしさが表れていたようです。"
+    return "いくつかの流れが重なっていたこと自体が、今月の自然な特徴だったようです。"
+
+
+def _normalize_summary_movement_items(summary: Dict[str, Any]) -> List[str]:
+    items: List[str] = []
+
+    raw = summary.get("movementItems")
+    if isinstance(raw, list):
+        for x in raw:
+            s = str(x or "").strip()
+            if s:
+                items.append(s)
+
+    if not items:
+        evidence = summary.get("evidence") if isinstance(summary.get("evidence"), dict) else {}
+        ev_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
+        for row in ev_items:
+            if isinstance(row, dict):
+                s = str(row.get("text") or "").strip()
+                if s:
+                    items.append(s)
+
+    return items
+
+
+EMOTION_NEED_PHRASE = {
+    "joy": "前向きさや手応えを感じたい気持ち",
+    "sadness": "気持ちを守りながら静かに整理したい気持ち",
+    "anxiety": "先を見通して安心を確かめたい気持ち",
+    "anger": "自分の納得できる線を守りたい気持ち",
+    "calm": "落ち着ける感覚を保ちたい気持ち",
+}
+
 
 def _build_standard_summary_object(
     *,
@@ -580,52 +671,56 @@ def _build_standard_summary_object(
     snap_summary = snapshot_summary if isinstance(snapshot_summary, dict) else {}
 
     movement = views.get("movement") if isinstance(views.get("movement"), dict) else {}
-    day = views.get("day") if isinstance(views.get("day"), dict) else {}
     weekly_snapshot = payload.get("weekly_snapshot") if isinstance(payload.get("weekly_snapshot"), dict) else {}
-    monthly_report = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
     time_buckets = _extract_time_bucket_rows(snapshot_views=views, analysis_payload=payload)
     peak_bucket = _find_peak_time_bucket(time_buckets)
 
-    evidence_items: List[Dict[str, str]] = []
-    next_points: List[str] = []
-    structural_comment = ""
-    gentle_comment = ""
+    movement_items: List[str] = []
+    overview_comment = ""
+    reader_comment = ""
 
     if report_type == "daily":
         metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
         share_map = _first_non_empty_emotion_map(metrics.get("sharePct"))
+        weighted_counts = _first_non_empty_emotion_map(metrics.get("totals"))
         top_items = _pick_top_share_items(share_map, limit=2)
-        dominant_key = str(metrics.get("dominantKey") or "").strip() or (top_items[0][0] if top_items else None)
+        dominant_key = str(metrics.get("dominantKey") or "").strip() or _dominant_key_from_map(weighted_counts) or (top_items[0][0] if top_items else None)
         dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-        total_all = _coerce_int(metrics.get("totalAll"), 0)
+        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
+        total_all = _coerce_int(metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         movement_key = str(movement.get("key") or "").strip()
 
         if total_all > 0:
-            structural_comment = f"昨日は「{dominant_label}」が中心に現れていました。"
+            overview_comment = f"昨日は「{dominant_label}」を中心に気持ちが動きやすい一日でした。"
+            if secondary_label and secondary_label != dominant_label:
+                overview_comment += f" 「{secondary_label}」も重なりやすく、ひとつの感情だけではまとまりきらない流れも見られました。"
             if peak_bucket and peak_bucket.get("inputCount"):
                 peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-                peak_dom = KEY_TO_JP.get(str(peak_bucket.get("dominantKey") or ""), str(peak_bucket.get("dominantKey") or ""))
-                if peak_dom and peak_dom != "":
-                    structural_comment += f"入力は {peak_label} に集まりやすく、{peak_label} では「{peak_dom}」の比重が高めでした。"
+                if peak_label:
+                    overview_comment += f" とくに{peak_label}のあたりで反応が出やすかったようです。"
             if movement_key == "swing":
-                structural_comment += "前日から中心感情の切り替わりも見られます。"
+                overview_comment += " 一日の中で気持ちの向きが切り替わる場面も見られました。"
         else:
-            structural_comment = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
+            overview_comment = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
 
+        if dominant_key:
+            movement_items.append(f"最も強く出ていたのは「{dominant_label}」でした。")
         if peak_bucket and peak_bucket.get("inputCount"):
             peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            gentle_comment = f"{peak_label} の前後で何を考えていたかを短く振り返ると、感情の流れが見えやすくなります。"
-            next_points.append(f"{peak_label} の入力前後にあった出来事や受け止め方を一言残してみてください。")
-        elif dominant_key:
-            gentle_comment = f"「{dominant_label}」が強く出た場面の共通点を一言で残すと、次の比較がしやすくなります。"
-            next_points.append(f"「{dominant_label}」が強く出た時間帯の共通点を探してみてください。")
-
-        if dominant_key and top_items:
-            evidence_items.append({"text": f"昨日は「{dominant_label}」の比重が最も高めでした。"})
-        if peak_bucket and peak_bucket.get("inputCount"):
-            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
+            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
+            if peak_label and peak_count > 0:
+                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
         if movement_key:
-            evidence_items.append({"text": f"前日比では「{_render_daily_motion_line(movement)}」の動きが見られます。"})
+            movement_items.append(_render_daily_motion_line(movement))
+
+        if total_all > 0:
+            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
+            reader_comment = (
+                f"昨日の反応は、ただ気分が揺れていたというより、{need_phrase}が背景にあったようです。"
+                " 表に出ていた気持ちだけでなく、その奥で何を大事にしていたのかを見ると、昨日の流れが少し自然につながって見えてきます。"
+            )
+        else:
+            reader_comment = _fallback_reader_comment("daily")
 
     elif report_type == "weekly":
         snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
@@ -634,48 +729,50 @@ def _build_standard_summary_object(
         top_items = _pick_top_share_items(share_map, limit=2)
         dominant_key = _dominant_key_from_map(weighted_counts) or (top_items[0][0] if top_items else None)
         dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         n_events = _coerce_int(weekly_snapshot.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         alternation_rate = _coerce_float(weekly_snapshot.get("alternation_rate"), 0.0)
 
         if dominant_key:
-            structural_comment = f"今週は「{dominant_label}」が中心に現れていました。"
+            overview_comment = f"今週は「{dominant_label}」が土台にありながら、感情の向きが場面ごとに動きやすい週でした。"
+            if secondary_label and secondary_label != dominant_label:
+                overview_comment += f" 「{secondary_label}」も重なる場面があり、ひとつの空気感だけではない週だったようです。"
         elif n_events > 0:
-            structural_comment = f"今週は {n_events} 件の入力をもとに、感情の傾向を観測できます。"
+            overview_comment = f"今週は {n_events} 件の入力から、気持ちの流れを観測できる週でした。"
         else:
-            structural_comment = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
+            overview_comment = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
 
         if peak_bucket and peak_bucket.get("inputCount"):
             peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            peak_dom_key = str(peak_bucket.get("dominantKey") or "").strip() or None
-            peak_dom_label = KEY_TO_JP.get(peak_dom_key, peak_dom_key) if peak_dom_key else None
-            structural_comment += f" 入力は {peak_label} に集まりやすく"
-            if peak_dom_label:
-                structural_comment += f"、{peak_label} では「{peak_dom_label}」の比重が高めでした。"
-            else:
-                structural_comment += "、時間帯ごとの偏りも見られます。"
+            if peak_label:
+                overview_comment += f" 入力は {peak_label} に集まりやすい流れがありました。"
 
         if alternation_rate >= 0.55:
-            structural_comment += " 感情の切り替わりは比較的多めでした。"
+            overview_comment += " 気持ちの切り替わりは比較的多めでした。"
         elif 0 < alternation_rate <= 0.25:
-            structural_comment += " 感情の切り替わりは比較的穏やかでした。"
-
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            gentle_comment = f"{peak_label} の前後で何を考えていたかを短く振り返ると、週の流れが見えやすくなります。"
-            next_points.append(f"{peak_label} に入力が集まる日の共通点を一言で残してみてください。")
-        elif dominant_key:
-            gentle_comment = f"「{dominant_label}」が強く出た日を見返すと、今週の感情の流れをつかみやすくなります。"
-            next_points.append(f"「{dominant_label}」が強く出た日の前後を振り返ってみてください。")
+            overview_comment += " 大きな切り替わりは少なく、全体としてはまとまりのある週でした。"
 
         if dominant_key:
-            evidence_items.append({"text": f"全体では「{dominant_label}」の比重が最も高めでした。"})
-        if len(top_items) >= 2:
-            second_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0])
-            evidence_items.append({"text": f"次に目立ったのは「{second_label}」で、全体の約{top_items[1][1]}%でした。"})
+            movement_items.append(f"全体では「{dominant_label}」の比重が最も高めでした。")
+        if secondary_label and secondary_label != dominant_label:
+            movement_items.append(f"次に目立ったのは「{secondary_label}」でした。")
         if peak_bucket and peak_bucket.get("inputCount"):
-            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
+            if peak_label and peak_count > 0:
+                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
         if alternation_rate > 0:
-            evidence_items.append({"text": f"感情の切り替わり率は {alternation_rate:.2f} でした。"})
+            movement_items.append(f"気持ちの切り替わり率は {alternation_rate:.2f} でした。")
+
+        if n_events > 0:
+            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
+            reader_comment = f"今週の反応は、その場ごとにばらばらに起きていたというより、{need_phrase}からつながっていたように見えます。"
+            if alternation_rate >= 0.55:
+                reader_comment += " 揺れが多かったのも、その場ごとに守りたいものが動いていた結果なのかもしれません。"
+            else:
+                reader_comment += " 大きく崩れなかったのは、その週なりの保ち方が働いていたからとも読めます。"
+        else:
+            reader_comment = _fallback_reader_comment("weekly")
 
     else:
         snapshot_metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
@@ -684,10 +781,14 @@ def _build_standard_summary_object(
         totals_map = _first_non_empty_emotion_map(snapshot_metrics.get("totals"))
         dominant_key = _dominant_key_from_map(totals_map) or _dominant_key_from_map(share_map)
         dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
+        secondary_label = None
+        top_items = _pick_top_share_items(share_map, limit=2)
+        if len(top_items) >= 2:
+            secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0])
+        total_all = _coerce_int(snapshot_metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
 
         peak_week = None
         peak_week_total = -1
-        week_dominants: List[str] = []
         calm_first_half = 0
         calm_second_half = 0
         for idx, week in enumerate(weeks or []):
@@ -699,63 +800,64 @@ def _build_standard_summary_object(
             if total > peak_week_total:
                 peak_week_total = total
                 peak_week = week
-            week_dom_key = _dominant_key_from_map(week)
-            week_dominants.append(str(week_dom_key or ""))
             if idx < 2:
                 calm_first_half += _coerce_int(week.get("calm"), 0)
             else:
                 calm_second_half += _coerce_int(week.get("calm"), 0)
 
         if dominant_key:
-            structural_comment = f"今月は「{dominant_label}」が月全体の中心でした。"
+            overview_comment = f"今月は「{dominant_label}」が中心にありながら、月の中で似た流れが繰り返し出やすい月でした。"
+            if secondary_label and secondary_label != dominant_label:
+                overview_comment += f" 「{secondary_label}」も重なる場面があり、複数の空気感が行き来していたようです。"
         else:
-            structural_comment = "今月は週ごとの変化を見ながら、月全体の傾向を観測できます。"
+            overview_comment = "今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。"
 
         if peak_week and peak_week_total > 0:
             peak_week_label = str(peak_week.get("label") or "ある週")
-            peak_week_dom = KEY_TO_JP.get(_dominant_key_from_map(peak_week), _dominant_key_from_map(peak_week))
-            if peak_week_dom:
-                structural_comment += f" {peak_week_label} は「{peak_week_dom}」の比重が高く、動きが強めの週でした。"
-            else:
-                structural_comment += f" {peak_week_label} に動きが集まりやすい月でした。"
-
+            overview_comment += f" とくに{peak_week_label}は動きが強めでした。"
         if peak_bucket and peak_bucket.get("inputCount"):
             peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            structural_comment += f" 時間帯では {peak_label} の入力が最も多めでした。"
-
+            if peak_label:
+                overview_comment += f" 時間帯では {peak_label} に入力が集まりやすい傾向がありました。"
         if calm_second_half > calm_first_half and calm_second_half > 0:
-            structural_comment += " 後半にかけて「平穏」が増え、整え直しの動きも見られます。"
+            overview_comment += " 後半には少し整え直すような流れも見えていました。"
 
         if dominant_key:
-            gentle_comment = f"週ごとの違いと時間帯の偏りを見比べると、「{dominant_label}」がどの場面で強く出やすいかを追いやすくなります。"
+            movement_items.append(f"月全体では「{dominant_label}」の比重が最も高めでした。")
+        if peak_week and peak_week_total > 0:
+            peak_week_label = str(peak_week.get("label") or "ある週")
+            movement_items.append(f"{peak_week_label} は合計 {peak_week_total} と、今月で最も動きが強めでした。")
+        if peak_bucket and peak_bucket.get("inputCount"):
+            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
+            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
+            if peak_label and peak_count > 0:
+                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
+        if calm_second_half > calm_first_half and calm_second_half > 0:
+            movement_items.append("後半にかけて『平穏』の比重が増えていました。")
+
+        if total_all > 0:
+            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
+            reader_comment = f"今月の流れを見ると、心はずっと{need_phrase}を軸に動いていたようです。"
+            if calm_second_half > calm_first_half and calm_second_half > 0:
+                reader_comment += " 後半に少し落ち着きが戻っていたのも、整え直す方向へ気持ちが向いていた結果なのかもしれません。"
+            reader_comment += " その月の反応をばらばらに見るより、ひとつのテーマを抱えながら過ごしていた月として読む方がしっくりきます。"
         else:
-            gentle_comment = "週ごとの変化と時間帯の偏りを並べて見ると、月の流れがつかみやすくなります。"
+            reader_comment = _fallback_reader_comment("monthly")
 
-        if peak_week and peak_week_total > 0:
-            next_points.append(f"{peak_week.get('label') or '動きが強い週'} の前後で、気持ちの切り替わりが起きた場面を振り返ってみてください。")
-        if peak_bucket and peak_bucket.get("inputCount"):
-            next_points.append(f"{peak_bucket.get('label') or peak_bucket.get('bucket')} の入力前後に、どんな受け止め方が多いかを見比べてみてください。")
-
-        if dominant_key:
-            evidence_items.append({"text": f"月全体では「{dominant_label}」の比重が最も高めでした。"})
-        if peak_week and peak_week_total > 0:
-            evidence_items.append({"text": f"{peak_week.get('label') or 'ある週'} は合計 {peak_week_total} と、今月で最も動きが強めでした。"})
-        if peak_bucket and peak_bucket.get("inputCount"):
-            evidence_items.append({"text": f"入力は {peak_bucket.get('label') or peak_bucket.get('bucket')} に {int(peak_bucket.get('inputCount') or 0)} 件ありました。"})
-        if calm_second_half > calm_first_half and calm_second_half > 0:
-            evidence_items.append({"text": "後半にかけて『平穏』の比重が増えていました。"})
-
+    clean_movement_items = [s for s in movement_items if str(s or "").strip()][:4]
     return {
-        "structuralComment": structural_comment.strip() or None,
-        "gentleComment": gentle_comment.strip() or None,
-        "nextPoints": [str(x).strip() for x in next_points if str(x).strip()][:4],
+        "overviewComment": overview_comment.strip() or None,
+        "movementItems": clean_movement_items,
+        "readerComment": reader_comment.strip() or None,
+        "structuralComment": overview_comment.strip() or None,
+        "gentleComment": reader_comment.strip() or None,
+        "nextPoints": [],
         "evidence": {
-            "items": [item for item in evidence_items if isinstance(item, dict) and str(item.get("text") or "").strip()][:4]
+            "items": [{"text": s} for s in clean_movement_items]
         },
-        "compositionMode": "additive" if report_type == "daily" else "replace",
+        "compositionMode": "replace",
         "source": "api_hybrid_summary",
     }
-
 
 def _render_standard_text_from_summary(
     *,
@@ -766,87 +868,48 @@ def _render_standard_text_from_summary(
     summary: Dict[str, Any],
     light_text: str = "",
 ) -> str:
-    structural_comment = str((summary or {}).get("structuralComment") or "").strip()
-    gentle_comment = str((summary or {}).get("gentleComment") or "").strip()
-    next_points = (summary or {}).get("nextPoints") if isinstance((summary or {}).get("nextPoints"), list) else []
-    evidence = (summary or {}).get("evidence") if isinstance((summary or {}).get("evidence"), dict) else {}
-    evidence_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
+    sec_overview, sec_movement, sec_comment, sec_note = _observation_section_titles(report_type)
 
-    if report_type == "daily" and str(light_text or "").strip():
-        lines: List[str] = [str(light_text).strip()]
-        extra_added = False
-        if structural_comment or evidence_items or gentle_comment or next_points:
-            lines.append("")
-            lines.append("【もう少し詳しく】")
-            extra_added = True
-        if structural_comment:
-            lines.append(structural_comment)
-        if evidence_items:
-            for item in evidence_items[:3]:
-                if isinstance(item, dict):
-                    t = str(item.get("text") or "").strip()
-                    if t:
-                        lines.append(f"・{t}")
-        if gentle_comment:
-            lines.append(gentle_comment)
-        if next_points:
-            lines.append("")
-            lines.append("【次の観測】")
-            for point in next_points[:2]:
-                s = str(point or "").strip()
-                if s:
-                    lines.append(f"・{s}")
-        if extra_added:
-            lines.append("")
-            lines.append("【注記】")
-            lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
-        return "\n".join(lines).strip()
+    overview = str(
+        summary.get("overviewComment")
+        or summary.get("structuralComment")
+        or ""
+    ).strip()
 
-    if report_type == "daily":
-        summary_title = "【今日の構造サマリー】"
-    elif report_type == "weekly":
-        summary_title = "【今週の構造サマリー】"
-    else:
-        summary_title = "【今月の構造サマリー】"
+    movement_items = _normalize_summary_movement_items(summary)
 
-    lines = [title]
+    reader_comment = str(
+        summary.get("readerComment")
+        or summary.get("gentleComment")
+        or ""
+    ).strip()
+
+    lines: List[str] = [title]
     rng = _range_line_jst(period_start_iso, period_end_iso)
     if rng:
         lines.append(rng)
+
     lines.append("")
-    lines.append(summary_title)
-    if structural_comment:
-        lines.append(structural_comment)
+    lines.append(sec_overview)
+    lines.append(overview or _fallback_overview_line(report_type))
+    lines.append("")
+
+    lines.append(sec_movement)
+    if movement_items:
+        for item in movement_items[:4]:
+            lines.append(f"・{item}")
     else:
-        lines.append("今回の構造サマリーはまだ十分に生成されていません。")
+        lines.append("・大きな動きとしてはまだまとまりませんでした。")
     lines.append("")
 
-    if evidence_items:
-        lines.append("【観測ポイント】")
-        for item in evidence_items[:4]:
-            if isinstance(item, dict):
-                t = str(item.get("text") or "").strip()
-                if t:
-                    lines.append(f"- {t}")
-        lines.append("")
+    lines.append(sec_comment)
+    lines.append(reader_comment or _fallback_reader_comment(report_type))
+    lines.append("")
 
-    if gentle_comment:
-        lines.append("【やさしい視点】")
-        lines.append(gentle_comment)
-        lines.append("")
+    lines.append(sec_note)
+    lines.extend(_common_observation_note_lines())
 
-    if next_points:
-        lines.append("【次の観測】")
-        for point in next_points[:4]:
-            s = str(point or "").strip()
-            if s:
-                lines.append(f"- {s}")
-        lines.append("")
-
-    lines.append("【注記】")
-    lines.append("このレポートは、入力から見える変化や傾向をまとめた『観測』であり、診断や断定を目的としたものではありません。")
     return "\n".join(lines).strip()
-
 
 def _render_analysis_standard_text(
     *,
@@ -922,16 +985,8 @@ def _render_analysis_standard_text(
         lines.append(gentle_comment)
         lines.append("")
 
-    if next_points:
-        lines.append("【次の観測】")
-        for p in next_points[:4]:
-            s = str(p or "").strip()
-            if s:
-                lines.append(f"- {s}")
-        lines.append("")
-
-    lines.append("【注記】")
-    lines.append("このレポートは、入力から見える変化や傾向をまとめた『観測』であり、診断や断定を目的としたものではありません。")
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
 
 
@@ -1081,12 +1136,15 @@ def _build_standard_report_payload(
             metrics["timeBucketInputTotal"] = sum(_coerce_int(row.get("inputCount"), 0) for row in time_buckets)
         timeline = mr.get("share_trend") if isinstance(mr.get("share_trend"), list) else weeks
 
+    if not summary.get("overviewComment") and isinstance(narrative.get("structural_comment"), str):
+        summary["overviewComment"] = str(narrative.get("structural_comment") or "").strip() or None
+    if not summary.get("readerComment") and isinstance(narrative.get("gentle_comment"), str):
+        summary["readerComment"] = str(narrative.get("gentle_comment") or "").strip() or None
     if not summary.get("structuralComment") and isinstance(narrative.get("structural_comment"), str):
         summary["structuralComment"] = str(narrative.get("structural_comment") or "").strip() or None
     if not summary.get("gentleComment") and isinstance(narrative.get("gentle_comment"), str):
         summary["gentleComment"] = str(narrative.get("gentle_comment") or "").strip() or None
-    if not summary.get("nextPoints") and isinstance(narrative.get("next_points"), list):
-        summary["nextPoints"] = narrative.get("next_points")
+    summary["nextPoints"] = []
     if not summary.get("evidence") and isinstance(narrative.get("evidence"), dict):
         summary["evidence"] = narrative.get("evidence")
 
@@ -1516,16 +1574,8 @@ def _render_structural_text_from_summary(
             lines.append(gentle_comment)
             lines.append("")
 
-        if next_points:
-            lines.append("【次に見るところ】")
-            for point in next_points[:3]:
-                s = str(point or "").strip()
-                if s:
-                    lines.append(f"- {s}")
-            lines.append("")
-
-        lines.append("【注記】")
-        lines.append("このレポートは、昨日の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+        lines.append("【このレポートについて】")
+        lines.extend(_common_observation_note_lines())
         return "\n".join(lines).strip()
 
     if report_type == "weekly":
@@ -1583,16 +1633,8 @@ def _render_structural_text_from_summary(
             lines.append(gentle_comment)
             lines.append("")
 
-        if next_points:
-            lines.append("【次の観測】")
-            for point in next_points[:4]:
-                s = str(point or "").strip()
-                if s:
-                    lines.append(f"- {s}")
-            lines.append("")
-
-        lines.append("【注記】")
-        lines.append("このレポートは、今週の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+        lines.append("【このレポートについて】")
+        lines.extend(_common_observation_note_lines())
         return "\n".join(lines).strip()
 
     lines.append("【今月の感情制御モデル】")
@@ -1649,16 +1691,8 @@ def _render_structural_text_from_summary(
         lines.append(gentle_comment)
         lines.append("")
 
-    if next_points:
-        lines.append("【次の観測】")
-        for point in next_points[:4]:
-            s = str(point or "").strip()
-            if s:
-                lines.append(f"- {s}")
-        lines.append("")
-
-    lines.append("【注記】")
-    lines.append("このレポートは、今月の入力から見える感情の流れや切り替わりを観測したものであり、診断や断定を目的としたものではありません。")
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
 
 
@@ -1949,6 +1983,50 @@ def _map_key(jp: str) -> Optional[str]:
     return JP_TO_KEY.get(str(jp).strip())
 
 
+NO_PUBLIC_EMOTION_SKIP_REASON = "no_public_emotion_entries"
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+def _has_renderable_emotion_content(row: Dict[str, Any]) -> bool:
+    for it in _normalize_details(row):
+        if _map_key(str(it.get("type") or "")):
+            return True
+    return False
+
+
+def _filter_renderable_emotion_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [r for r in (rows or []) if _has_renderable_emotion_content(r)]
+
+
+def _metrics_total_all(metrics: Any) -> int:
+    if isinstance(metrics, dict):
+        return _safe_int(metrics.get("totalAll") or 0, 0)
+    return 0
+
+
+def _build_myweb_skip_meta(
+    *,
+    report_type: str,
+    scope: Optional[str] = None,
+    public_source_hash: Optional[str] = None,
+    skip_reason: str = NO_PUBLIC_EMOTION_SKIP_REASON,
+) -> Dict[str, Any]:
+    return {
+        "status": "skipped",
+        "report_type": str(report_type or "").strip() or None,
+        "scope": str(scope or "").strip() or None,
+        "report_id": None,
+        "public_source_hash": str(public_source_hash or "").strip() or None,
+        "skip_reason": str(skip_reason or NO_PUBLIC_EMOTION_SKIP_REASON),
+    }
+
+
 async def _fetch_emotion_rows(user_id: str, start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
     resp = await _sb_get(
         "/rest/v1/emotions",
@@ -2211,26 +2289,10 @@ def _render_weekly_standard_v3_text(
     days: List[Dict[str, Any]],
     supplement_text: Optional[str] = None,
 ) -> str:
-    """Render Weekly Standard report text.
-
-    This keeps the output observational and user-facing (no system notes).
-    """
-
-    def _range_line() -> Optional[str]:
-        try:
-            s = datetime.fromisoformat(period_start_iso.replace("Z", "+00:00")).astimezone(JST)
-            e = datetime.fromisoformat(period_end_iso.replace("Z", "+00:00")).astimezone(JST)
-            return f"対象期間（JST）: {s.year}/{s.month}/{s.day} 00:00 〜 {e.year}/{e.month}/{e.day} 23:59"
-        except Exception:
-            return None
-
     totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
-    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
-    top = metrics.get("top") if isinstance(metrics.get("top"), list) else []
     total_all = int(metrics.get("totalAll") or 0)
     dominant = _dominant_label(metrics)
 
-    # Peak day (by total weight)
     peak_day_label: Optional[str] = None
     peak_total = -1
     dom_keys: List[Optional[str]] = []
@@ -2245,7 +2307,6 @@ def _render_weekly_standard_v3_text(
         dk = str(d.get("dominantKey") or "").strip() or None
         dom_keys.append(dk)
 
-    # Dominant switches (rough rhythm)
     switches = 0
     last = None
     for dk in dom_keys:
@@ -2254,99 +2315,72 @@ def _render_weekly_standard_v3_text(
         if dk:
             last = dk
 
-    # Two most prominent emotions (user-facing)
     top_pairs: List[Tuple[str, int]] = []
-    for it in top:
-        if isinstance(it, list) and len(it) == 2:
-            k = str(it[0] or "").strip()
-            try:
-                v = int(it[1] or 0)
-            except Exception:
-                v = 0
-            if k:
-                top_pairs.append((k, v))
-    top_pairs = top_pairs[:2]
-
-    def _pct(k: str) -> Optional[int]:
-        try:
-            return int(share.get(k, 0))
-        except Exception:
-            return None
-
-    lines: List[str] = []
-    lines.append(title)
-    rng = _range_line()
-    if rng:
-        lines.append(rng)
-    lines.append("")
-
-    # 1) Summary
-    lines.append("【観測サマリー】")
-    if total_all <= 0:
-        lines.append("今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。")
-    else:
-        s1 = f"今週は「{dominant}」が中心に現れていました。"
-        if top_pairs:
-            k1, _v1 = top_pairs[0]
-            p1 = _pct(k1)
-            if p1 is not None and p1 > 0:
-                s1 += f"（全体の約{p1}%）"
-        lines.append(s1)
-        if len(top_pairs) >= 2:
-            k2, _v2 = top_pairs[1]
-            p2 = _pct(k2)
-            if p2 is not None and p2 > 0:
-                lines.append(f"次に目立ったのは「{KEY_TO_JP.get(k2, k2)}」で、約{p2}%でした。")
-    lines.append("")
-
-    # 2) Pattern detection
-    lines.append("【パターン検出】")
-    if total_all <= 0:
-        lines.append("大きな揺れは観測されませんでした（入力量が少ないため）。")
-    else:
-        if peak_day_label:
-            lines.append(f"感情の動きが強めに出たのは {peak_day_label} でした。")
-        if switches >= 3:
-            lines.append("日ごとの中心感情が切り替わりやすく、揺れが出やすい週だったかもしれません。")
-        elif switches == 0:
-            lines.append("中心感情は大きくは切り替わらず、一定のリズムで推移していました。")
-        else:
-            lines.append("中心感情はときどき切り替わりつつ、全体としてはまとまりのある動きでした。")
-    lines.append("")
-
-    # 3) Movement
-    lines.append("【感情の動き】")
     for k in EMOTION_KEYS:
         try:
             v = int(totals.get(k, 0) or 0)
         except Exception:
             v = 0
         if v > 0:
-            lines.append(f"- {KEY_TO_JP.get(k, k)}: {v}")
+            top_pairs.append((k, v))
+    top_pairs.sort(key=lambda x: x[1], reverse=True)
+
     if total_all <= 0:
-        lines.append("（今週は合計が0のため、グラフ中心で確認するのが良さそうです）")
-    lines.append("")
+        overview = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
+    else:
+        overview = f"今週は「{dominant}」が中心に現れていました。"
+        if len(top_pairs) >= 2:
+            k2, _v2 = top_pairs[1]
+            overview += f" その一方で、「{KEY_TO_JP.get(k2, k2)}」も重なる場面がありました。"
+        if switches >= 3:
+            overview += " 日によって気持ちの向きが切り替わりやすい流れも見られました。"
+        elif switches == 0:
+            overview += " 大きな切り替わりは少なく、全体としては近い空気感が続いていました。"
 
-    # 4) Hint
-    lines.append("【感情観測ヒント】")
-    lines.append("ピークが出た日の『思考メモ（出来事の受け止め方）』を短く振り返ると、次の観測がしやすくなります。")
-    lines.append("同じ感情が続いた日は『何が安心材料だったか／何が引き金だったか』を一言で残すのがおすすめです。")
-    lines.append("")
+    movement_lines: List[str] = []
+    if peak_day_label:
+        movement_lines.append(f"感情の動きが強めに出たのは {peak_day_label} でした。")
+    if total_all > 0:
+        movement_lines.append(f"今週は「{dominant}」の比重が高く出ていました。")
+    if len(top_pairs) >= 2:
+        movement_lines.append(f"次に目立ったのは「{KEY_TO_JP.get(top_pairs[1][0], top_pairs[1][0])}」でした。")
 
-    # Optional supplement
-    if supplement_text:
-        st = str(supplement_text or "").strip()
-        if st:
-            lines.append("【補足】")
-            lines.append(st)
-            lines.append("")
+    if total_all <= 0:
+        comment = _fallback_reader_comment("weekly")
+    else:
+        dom_key = top_pairs[0][0] if top_pairs else None
+        need_phrase = EMOTION_NEED_PHRASE.get(dom_key, "何かを保ちたい気持ち")
+        comment = f"今週の反応は、日によって違って見えても、内側では{need_phrase}が続いていた週だったようです。"
+        if switches >= 3:
+            comment += " 揺れが多かったのも、気分が不安定だったというより、その場ごとに守りたいものが動いていた結果なのかもしれません。"
+        else:
+            comment += " 大きく崩れなかったのは、その週なりの保ち方が働いていたからとも読めます。"
 
-    # 5) Note
-    lines.append("【注記】")
-    lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
-
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.extend([
+        "",
+        "【今週、見えていたこと】",
+        overview,
+        "",
+        "【気持ちが動いた流れ】",
+    ])
+    if movement_lines:
+        for item in movement_lines[:3]:
+            lines.append(f"・{item}")
+    else:
+        lines.append("・大きな動きとしてはまだまとまりませんでした。")
+    lines.extend([
+        "",
+        "【あなたへのコメント】",
+        comment,
+        "",
+        "【このレポートについて】",
+    ])
+    lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
-
 
 def _render_monthly_standard_v3_text(
     *,
@@ -2357,22 +2391,10 @@ def _render_monthly_standard_v3_text(
     weeks: List[Dict[str, Any]],
     supplement_text: Optional[str] = None,
 ) -> str:
-    """Render Monthly Standard report text (28d / 4-week buckets)."""
-
-    def _range_line() -> Optional[str]:
-        try:
-            s = datetime.fromisoformat(period_start_iso.replace("Z", "+00:00")).astimezone(JST)
-            e = datetime.fromisoformat(period_end_iso.replace("Z", "+00:00")).astimezone(JST)
-            return f"対象期間（JST）: {s.year}/{s.month}/{s.day} 00:00 〜 {e.year}/{e.month}/{e.day} 23:59"
-        except Exception:
-            return None
-
     totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
-    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
     total_all = int(metrics.get("totalAll") or 0)
     dominant = _dominant_label(metrics)
 
-    # Week summaries
     week_summaries: List[str] = []
     week_doms: List[str] = []
     calm_by_week: List[int] = []
@@ -2393,169 +2415,106 @@ def _render_monthly_standard_v3_text(
         calm_by_week.append(int(w.get("calm", 0) or 0))
         dom_jp = KEY_TO_JP.get(best_k, best_k) if best_k else "—"
         week_doms.append(str(dom_jp))
-        if wt <= 0:
-            week_summaries.append(f"- {label}: 入力量が少なめでした")
-        else:
-            week_summaries.append(f"- {label}: 「{dom_jp}」が中心（合計 {wt}）")
+        if wt > 0:
+            week_summaries.append(f"{label}は「{dom_jp}」が中心でした。")
 
-    # Simple "reset" signal: calm increasing in later weeks
-    reset_hint = None
+    reset_hint = False
     if len(calm_by_week) >= 4:
         try:
             first_half = calm_by_week[0] + calm_by_week[1]
             second_half = calm_by_week[2] + calm_by_week[3]
-            if second_half > first_half and second_half > 0:
-                reset_hint = "後半にかけて『平穏』が増え、整え直しの動きが出ていた可能性があります。"
+            reset_hint = second_half > first_half and second_half > 0
         except Exception:
-            reset_hint = None
+            reset_hint = False
 
-    def _pct(k: str) -> Optional[int]:
-        try:
-            return int(share.get(k, 0))
-        except Exception:
-            return None
-
-    lines: List[str] = []
-    lines.append(title)
-    rng = _range_line()
-    if rng:
-        lines.append(rng)
-    lines.append("")
-
-    lines.append("【観測サマリー】")
     if total_all <= 0:
-        lines.append("今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。")
+        overview = "今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。"
     else:
-        s1 = f"今月は「{dominant}」が中心に現れていました。"
-        # Try show share of dominant by key (reverse map JP -> key when possible)
+        overview = f"今月は「{dominant}」が中心に現れていました。"
+        dom_count = sum(1 for d in week_doms if d == dominant)
+        if dom_count >= 3:
+            overview += f" 週をまたいで「{dominant}」が繰り返し中心になっていました。"
+        elif dom_count == 2:
+            overview += f" 「{dominant}」が中心の週が複数あり、似た流れが戻ってきやすい月でした。"
+        else:
+            overview += " 週ごとに中心感情が変わりやすく、その時々の状況に合わせて空気感が動いていた月でした。"
+
+    movement_lines: List[str] = []
+    movement_lines.extend(week_summaries[:2])
+    if reset_hint:
+        movement_lines.append("後半にかけて、少し整え直すような流れも見えていました。")
+
+    if total_all <= 0:
+        comment = _fallback_reader_comment("monthly")
+    else:
         dom_key = None
         for k, jp in KEY_TO_JP.items():
             if jp == dominant:
                 dom_key = k
                 break
-        if dom_key:
-            p1 = _pct(dom_key)
-            if p1 is not None and p1 > 0:
-                s1 += f"（全体の約{p1}%）"
-        lines.append(s1)
-    lines.append("")
+        need_phrase = EMOTION_NEED_PHRASE.get(dom_key, "何かを保ちたい気持ち")
+        comment = f"今月の流れを見ると、心はずっと{need_phrase}を軸に動いていたようです。"
+        if reset_hint:
+            comment += " 後半に少し落ち着きが戻っていたのも、整え直す方向へ気持ちが向いていた結果なのかもしれません。"
+        comment += " その月の反応をばらばらに見るより、ひとつのテーマを抱えながら過ごしていた月として読む方がしっくりきます。"
 
-    lines.append("【今月の傾向】")
-    if total_all <= 0:
-        lines.append("入力が少ないため、傾向の比較は控えめにしておきます。")
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.extend([
+        "",
+        "【今月、見えていたこと】",
+        overview,
+        "",
+        "【気持ちが動いた流れ】",
+    ])
+    if movement_lines:
+        for item in movement_lines[:3]:
+            lines.append(f"・{item}")
     else:
-        # Very simple repetition hint: dominant appears in many weeks
-        dom_count = sum(1 for d in week_doms if d == dominant)
-        if dom_count >= 3:
-            lines.append(f"週をまたいで「{dominant}」が繰り返し中心になっていました。")
-        elif dom_count == 2:
-            lines.append(f"「{dominant}」が中心の週が複数あり、同じ流れが戻ってきやすい月だったかもしれません。")
-        else:
-            lines.append("週ごとに中心感情が変わりやすく、状況に合わせて揺れやすい月だったかもしれません。")
-    lines.append("")
-
-    lines.append("【週ごとの推移】")
-    if week_summaries:
-        lines.extend(week_summaries)
-    else:
-        lines.append("週ごとの集計が取得できませんでした。")
-    lines.append("")
-
-    lines.append("【整え直しの動き】")
-    if reset_hint:
-        lines.append(reset_hint)
-    else:
-        lines.append("落ち着き（平穏）の出方や戻り方を、週ごとのグラフで合わせて確認すると傾向がつかみやすいです。")
-    lines.append("")
-
-    lines.append("【感情の動き】")
-    for k in EMOTION_KEYS:
-        try:
-            v = int(totals.get(k, 0) or 0)
-        except Exception:
-            v = 0
-        if v > 0:
-            lines.append(f"- {KEY_TO_JP.get(k, k)}: {v}")
-    lines.append("")
-
-    lines.append("【感情観測ヒント】")
-    lines.append("繰り返し出た感情がある場合、その週に共通していた『思考のパターン』を一言でメモすると、次月の比較がしやすくなります。")
-    lines.append("月の中で切り替わりが多い場合は、切り替わり直前にあった出来事や受け止め方を短く残すのがおすすめです。")
-    lines.append("")
-
-    if supplement_text:
-        st = str(supplement_text or "").strip()
-        if st:
-            lines.append("【補足】")
-            lines.append(st)
-            lines.append("")
-
-    lines.append("【注記】")
-    lines.append("このレポートは、入力から見える変化をまとめた『観測』であり、診断や断定を目的としたものではありません。")
-
+        lines.append("・大きな動きとしてはまだまとまりませんでした。")
+    lines.extend([
+        "",
+        "【あなたへのコメント】",
+        comment,
+        "",
+        "【このレポートについて】",
+    ])
+    lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
-
 
 def _render_daily_motion_line(movement: Dict[str, Any]) -> str:
     key = str((movement or {}).get("key") or "").strip()
     if key == "swing":
-        return "前日と中心感情が入れ替わりました（揺れ）"
+        return "前日とは少し違う気持ちの向きが出ていました。"
     if key == "up":
-        return "前日より観測量が増えています（上昇）"
+        return "前日より反応が表に出やすい一日でした。"
     if key == "down":
-        return "前日より観測量が落ち着いています（減少）"
-    return "前日とほぼ同じ観測量でした（安定）"
-
+        return "前日より少し静かに落ち着いていく流れでした。"
+    return "前日と近い空気感のまま推移していました。"
 
 def _render_daily_hint_line(metrics: Dict[str, Any], movement: Dict[str, Any]) -> str:
-    total_all = int((metrics or {}).get("totalAll") or 0)
-    if total_all <= 0:
-        return "入力が少ない日は、一言だけでも残しておくと次の比較がしやすくなります。"
-
-    motion_key = str((movement or {}).get("key") or "").strip()
-    if motion_key == "swing":
-        return "感情の中心が動いた日でした。切り替わりのきっかけを短く残すと流れが見えやすくなります。"
-
-    top = (metrics or {}).get("top") if isinstance((metrics or {}).get("top"), list) else []
-    dominant_key = None
-    if top and isinstance(top[0], list) and len(top[0]) >= 1:
-        dominant_key = str(top[0][0] or "").strip() or None
-
-    if dominant_key == "joy":
-        return "前向きなエネルギーが出やすい一日でした。何が追い風だったか一言残すと再現しやすくなります。"
-    if dominant_key == "sadness":
-        return "気持ちが内側に向きやすい一日でした。負荷になった場面を短く残すと次の比較がしやすくなります。"
-    if dominant_key == "anxiety":
-        return "緊張や気がかりが前に出やすい一日でした。引き金になった出来事を一言残すと流れが見えやすくなります。"
-    if dominant_key == "anger":
-        return "反応が強く出やすい一日でした。どこで負荷がかかったかを短く残すと切り分けしやすくなります。"
-    if dominant_key == "calm":
-        return "整っている時間が比較的多い一日でした。落ち着けた条件を残しておくと次にも活かしやすくなります。"
-    return "その日の中心感情ときっかけを一言で残すと、次の比較がしやすくなります。"
-
+    return ""
 
 def _render_daily_standard_v3_text(
     *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
     metrics: Dict[str, Any],
     summary: Dict[str, Any],
     movement: Dict[str, Any],
 ) -> str:
-    top = (metrics or {}).get("top") if isinstance((metrics or {}).get("top"), list) else []
     share = (metrics or {}).get("sharePct") if isinstance((metrics or {}).get("sharePct"), dict) else {}
-
-    dominant_key = None
-    if top and isinstance(top[0], list) and len(top[0]) >= 1:
-        dominant_key = str(top[0][0] or "").strip() or None
-
+    dominant_key = str((metrics or {}).get("dominantKey") or "").strip() or None
+    if not dominant_key:
+        totals = (metrics or {}).get("totals") if isinstance((metrics or {}).get("totals"), dict) else {}
+        dominant_key = _dominant_key_from_map(totals)
     dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-    try:
-        dominant_pct = int(share.get(dominant_key, 0)) if dominant_key else 0
-    except Exception:
-        dominant_pct = 0
 
-    input_count = 0
     try:
-        input_count = int((summary or {}).get("emotions_public"))
+        input_count = int((summary or {}).get("emotions_public") or 0)
     except Exception:
         input_count = 0
     if input_count <= 0:
@@ -2563,19 +2522,61 @@ def _render_daily_standard_v3_text(
             input_count = int((summary or {}).get("emotions_total") or 0)
         except Exception:
             input_count = 0
+    if input_count <= 0:
+        try:
+            input_count = int((metrics or {}).get("totalAll") or 0)
+        except Exception:
+            input_count = 0
 
-    lines: List[str] = []
-    lines.append("【昨日の観測サマリー】")
-    lines.append(f"・最も強かった感情: {dominant_label}（{dominant_pct}%）")
-    lines.append(f"・総入力: {input_count}件")
-    lines.append("")
-    lines.append("【昨日の動き】")
-    lines.append(f"・{_render_daily_motion_line(movement)}")
-    lines.append("")
-    lines.append("【ひとこと視点】")
-    lines.append(f"・{_render_daily_hint_line(metrics, movement)}")
+    try:
+        dominant_pct = int(share.get(dominant_key, 0)) if dominant_key else 0
+    except Exception:
+        dominant_pct = 0
+
+    if input_count <= 0:
+        overview = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
+    else:
+        overview = f"昨日は「{dominant_label}」が比較的出やすい一日でした。"
+        if dominant_pct > 0:
+            overview += f" 全体としては「{dominant_label}」の比重が高く、"
+        overview += _render_daily_motion_line(movement)
+
+    movement_lines: List[str] = []
+    if dominant_key:
+        movement_lines.append(f"最も強く出ていたのは「{dominant_label}」でした。")
+    movement_lines.append(_render_daily_motion_line(movement))
+
+    if input_count <= 0:
+        comment = _fallback_reader_comment("daily")
+    else:
+        need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
+        comment = (
+            f"昨日の反応は、ただ気分が揺れていたというより、{need_phrase}が背景にあったようです。"
+            " 表に出ていた気持ちだけでなく、その奥で何を大事にしていたのかを見ると、昨日の流れが少し自然につながって見えてきます。"
+        )
+
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.extend([
+        "",
+        "【昨日、見えていたこと】",
+        overview,
+        "",
+        "【気持ちが動いた流れ】",
+    ])
+    for item in movement_lines[:2]:
+        lines.append(f"・{item}")
+    lines.extend([
+        "",
+        "【あなたへのコメント】",
+        comment,
+        "",
+        "【このレポートについて】",
+    ])
+    lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
-
 
 def _render_simple_report_text(
     report_type: str,
@@ -2627,6 +2628,10 @@ async def _generate_and_save(
     rows_all = await _fetch_emotion_rows(user_id, target.period_start_iso, target.period_end_iso)
     # NOTE: public output should exclude secret materials (governance v1)
     rows = [r for r in (rows_all or []) if not bool((r or {}).get("is_secret"))]
+    rows = _filter_renderable_emotion_rows(rows)
+
+    if not rows:
+        return "", {}, None, _build_myweb_skip_meta(report_type=target.report_type)
 
     # 2) metrics
     content_json: Dict[str, Any] = {}
@@ -2650,13 +2655,13 @@ async def _generate_and_save(
     if target.report_type == "daily":
         metrics = _build_daily_metrics(rows)
         content_json["metrics"] = metrics
-        text = _render_simple_report_text(
-            "daily",
-            target.title,
-            target.period_start_iso,
-            target.period_end_iso,
-            metrics,
-            astor_text=None,
+        text = _render_daily_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
+            metrics=metrics,
+            summary={"emotions_public": len(rows), "emotions_total": len(rows)},
+            movement={"key": "stable"},
         )
     elif target.report_type == "weekly":
         days = _build_days_fixed7(rows, target.period_start_utc)
@@ -2794,7 +2799,7 @@ async def _generate_and_save(
     except Exception as exc:
         logger.error("Failed to enqueue inspect_emotion_report_v1: %s", exc)
 
-    return text, content_json, astor_text, {"report_id": rid}
+    return text, content_json, astor_text, {"status": "generated", "report_id": rid}
 
 
 
@@ -2849,6 +2854,18 @@ async def _generate_and_save_from_snapshot(
 
     metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
     content_json["metrics"] = metrics
+
+    summary_public_raw = summary.get("emotions_public") if isinstance(summary, dict) else None
+    summary_public = None
+    if summary_public_raw not in (None, ""):
+        summary_public = _safe_int(summary_public_raw, 0)
+    metrics_total = _metrics_total_all(metrics)
+    if (summary_public is not None and summary_public <= 0) or metrics_total <= 0:
+        return "", content_json, None, _build_myweb_skip_meta(
+            report_type=report_type,
+            scope=sc,
+            public_source_hash=snap_hash,
+        )
 
     if report_type == "daily":
         day = views.get("day") if isinstance(views.get("day"), dict) else {}
@@ -2930,6 +2947,9 @@ async def _generate_and_save_from_snapshot(
     # Light text is always stored in legacy content_text.
     if report_type == "daily":
         light_text = _render_daily_standard_v3_text(
+            title=target.title,
+            period_start_iso=target.period_start_iso,
+            period_end_iso=target.period_end_iso,
             metrics=metrics,
             summary=summary,
             movement=movement,
@@ -3047,7 +3067,7 @@ async def _generate_and_save_from_snapshot(
     rid = await _upsert_report(payload_upsert)
     payload_upsert["_id"] = rid
 
-    return light_text, content_json, astor_text, {"report_id": rid, "report_type": report_type, "scope": sc, "public_source_hash": snap_hash}
+    return light_text, content_json, astor_text, {"status": "generated", "report_id": rid, "report_type": report_type, "scope": sc, "public_source_hash": snap_hash}
 
 
 def register_myweb_report_routes(app: FastAPI) -> None:
@@ -3166,6 +3186,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                         )
                         continue
                     raise HTTPException(status_code=409, detail="Report generation is in progress")
+                meta = None
                 try:
                     if rt in ("daily", "weekly", "monthly"):
                         # v2: snapshot-driven generation (emotion_period scope)
@@ -3219,19 +3240,30 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                                     except Exception:
                                         pass
 
-                                _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
-                                    user_id,
-                                    scope=scope,
-                                    include_astor=req.include_astor,
-                                )
+                                try:
+                                    _text, _cjson, _astor_text, meta = await _generate_and_save_from_snapshot(
+                                        user_id,
+                                        scope=scope,
+                                        include_astor=req.include_astor,
+                                    )
+                                except HTTPException as he2:
+                                    if int(getattr(he2, "status_code", 0) or 0) == 404 and callable(get_emotion_period_public_input_status):
+                                        status = await get_emotion_period_public_input_status(user_id=user_id, scope=scope)
+                                        if not bool((status or {}).get("has_public_input")):
+                                            meta = _build_myweb_skip_meta(report_type=rt, scope=scope)
+                                        else:
+                                            raise
+                                    else:
+                                        raise
                             else:
                                 raise
 
                         # Enqueue inspection (best-effort) for API-generated artifacts.
                         try:
+                            meta_status = str((meta or {}).get("status") or "generated") if isinstance(meta, dict) else "generated"
                             rid = (meta or {}).get("report_id") if isinstance(meta, dict) else None
                             expected_public_hash = (meta or {}).get("public_source_hash") if isinstance(meta, dict) else None
-                            if rid:
+                            if meta_status == "generated" and rid:
                                 from astor_job_queue import enqueue_job as _enqueue_job
 
                                 await _enqueue_job(
@@ -3261,14 +3293,17 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                         await release_lock(lock_key=lock_key, owner_id=lock_owner)
                     if lock_key and release_lock is not None:
                         await release_lock(lock_key=lock_key, owner_id=lock_owner)
+                meta_dict = dict(meta) if isinstance(meta, dict) else {}
+                item_status = "skipped" if str(meta_dict.get("status") or "generated") == "skipped" else "generated"
                 results.append(
                     MyWebEnsureItem(
                         report_type=rt,  # type: ignore
-                        status="generated",
+                        status=item_status,  # type: ignore[arg-type]
                         period_start=target.period_start_iso,
                         period_end=target.period_end_iso,
                         title=target.title,
-                        report_id=(meta or {}).get("report_id"),
+                        report_id=meta_dict.get("report_id"),
+                        skip_reason=meta_dict.get("skip_reason"),
                     )
                 )
             except HTTPException as he:
@@ -3305,14 +3340,16 @@ def register_myweb_report_routes(app: FastAPI) -> None:
     async def myweb_reports_ready(
         report_type: Literal["daily", "weekly", "monthly"] = "weekly",
         limit: int = 10,
+        offset: int = 0,
         authorization: Optional[str] = Header(default=None),
     ) -> MyWebReadyReportsResponse:
         """Return READY (or PUBLISHED) MyWeb reports only.
 
-        Minimal decide_publish:
+        Shared publish governance:
         - status in (READY, PUBLISHED)
         - retention window by current subscription tier
-        - strip premium-only fields based on current tier
+        - visible-content only
+        - pagination is applied after publish filtering
         """
         access_token = _extract_bearer_token(authorization)
         if not access_token:
@@ -3320,8 +3357,6 @@ def register_myweb_report_routes(app: FastAPI) -> None:
 
         user_id = await _resolve_user_id_from_token(access_token)
 
-        # Resolve current tier (default: free)
-        tier_enum = None
         tier_str = "free"
         if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
             try:
@@ -3330,122 +3365,94 @@ def register_myweb_report_routes(app: FastAPI) -> None:
             except Exception:
                 tier_str = "free"
 
-        def _parse_dt(iso: str) -> Optional[datetime]:
-            s = (iso or "").strip()
-            if not s:
-                return None
-            try:
-                if s.endswith("Z"):
-                    s = s[:-1] + "+00:00"
-                dt = datetime.fromisoformat(s)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.astimezone(timezone.utc)
-            except Exception:
-                return None
-
-        # Retention boundaries
         now_utc = datetime.now(timezone.utc)
-        now_jst = now_utc.astimezone(JST)
-        cur_month_start_jst = datetime(now_jst.year, now_jst.month, 1, tzinfo=JST)
-        if now_jst.month == 1:
-            prev_year, prev_month = now_jst.year - 1, 12
-        else:
-            prev_year, prev_month = now_jst.year, now_jst.month - 1
-        prev_month_start_jst = datetime(prev_year, prev_month, 1, tzinfo=JST)
-
-        if cur_month_start_jst.month == 12:
-            next_year, next_month = cur_month_start_jst.year + 1, 1
-        else:
-            next_year, next_month = cur_month_start_jst.year, cur_month_start_jst.month + 1
-        next_month_start_jst = datetime(next_year, next_month, 1, tzinfo=JST)
-
-        prev_month_start_utc = prev_month_start_jst.astimezone(timezone.utc)
-        next_month_start_utc = next_month_start_jst.astimezone(timezone.utc)
-        plus_window_start_utc = (now_utc - timedelta(days=365))
-
-        def _retention_ok(period_end_iso: str) -> bool:
-            pe = _parse_dt(period_end_iso)
-            if pe is None:
-                return False
-            if tier_str == "premium":
-                return True
-            if tier_str == "plus":
-                return pe >= plus_window_start_utc
-            return prev_month_start_utc <= pe < next_month_start_utc
-
-        def _shape_content_json(cj: Dict[str, Any]) -> Dict[str, Any]:
-            # 生成物は全ユーザー分を保持し、表示制御は RN / クライアント側で行う。
-            # そのため、ready API では content_json を tier によって削らない。
-            return dict(cj or {})
+        retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
 
         lim = max(1, min(int(limit or 10), 50))
-        # Fetch more than requested to allow filtering by status/retention.
-        fetch_limit = max(lim * 4, 30)
+        off = max(0, int(offset or 0))
+        needed = off + lim + 1
+        raw_page_size = max(lim * 4, 30)
+        raw_offset = 0
+        visible_rows: List[Dict[str, Any]] = []
 
-        resp = await _sb_get(
-            f"/rest/v1/{REPORTS_TABLE}",
-            params=[
+        while len(visible_rows) < needed:
+            params: List[Tuple[str, str]] = [
                 ("select", "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"),
                 ("user_id", f"eq.{user_id}"),
                 ("report_type", f"eq.{report_type}"),
                 ("order", "period_start.desc"),
-                ("limit", str(fetch_limit)),
-            ],
-        )
-        if resp.status_code not in (200, 206):
-            logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Supabase query failed")
-        try:
-            rows = resp.json()
-        except Exception:
-            rows = []
+                ("limit", str(raw_page_size)),
+                ("offset", str(raw_offset)),
+            ]
+            gte_iso = str(retention.get("gte_iso") or "").strip()
+            lt_iso = str(retention.get("lt_iso") or "").strip()
+            if gte_iso:
+                params.append(("period_end", f"gte.{gte_iso}"))
+            if lt_iso:
+                params.append(("period_end", f"lt.{lt_iso}"))
 
-        items: List[MyWebReportRecord] = []
-        if isinstance(rows, list):
+            resp = await _sb_get(
+                f"/rest/v1/{REPORTS_TABLE}",
+                params=params,
+            )
+            if resp.status_code not in (200, 206):
+                logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
+                raise HTTPException(status_code=502, detail="Supabase query failed")
+            try:
+                rows = resp.json()
+            except Exception:
+                rows = []
+            if not isinstance(rows, list) or not rows:
+                break
+
+            raw_offset += len(rows)
+
             for r in rows:
                 if not isinstance(r, dict):
                     continue
-                cj = r.get("content_json") if isinstance(r.get("content_json"), dict) else {}
-                pub = cj.get("publish") if isinstance(cj.get("publish"), dict) else {}
-                st = str(pub.get("status") or "").strip().upper()
-                if st not in ("READY", "PUBLISHED"):
-                    continue
-
-                # 日報は「前日の入力が0件」の場合は配布しない
-                if report_type == "daily":
-                    metrics = cj.get("metrics") if isinstance(cj.get("metrics"), dict) else {}
-                    try:
-                        daily_total_all = int(metrics.get("totalAll") or 0)
-                    except Exception:
-                        daily_total_all = 0
-                    if daily_total_all <= 0:
-                        continue
-
-                pe = str(r.get("period_end") or "")
-                if not _retention_ok(pe):
-                    continue
-
-                items.append(
-                    MyWebReportRecord(
-                        id=str(r.get("id") or ""),
-                        report_type=str(r.get("report_type") or ""),
-                        period_start=str(r.get("period_start") or ""),
-                        period_end=str(r.get("period_end") or ""),
-                        title=r.get("title"),
-                        content_text=r.get("content_text"),
-                        content_json=_shape_content_json(cj),
-                        generated_at=r.get("generated_at"),
-                        updated_at=r.get("updated_at"),
-                    )
+                published_row = decide_myweb_report_publish(
+                    r,
+                    tier_str=tier_str,
+                    requested_report_type=report_type,
+                    now_utc=now_utc,
                 )
-                if len(items) >= lim:
+                if not published_row:
+                    continue
+                visible_rows.append(published_row)
+                if len(visible_rows) >= needed:
                     break
+
+            if len(rows) < raw_page_size:
+                break
+
+        page_rows = visible_rows[off : off + lim]
+        has_more = len(visible_rows) > (off + lim)
+        next_offset = (off + lim) if has_more else None
+
+        items: List[MyWebReportRecord] = []
+        for published_row in page_rows:
+            items.append(
+                MyWebReportRecord(
+                    id=str(published_row.get("id") or ""),
+                    report_type=str(published_row.get("report_type") or ""),
+                    period_start=str(published_row.get("period_start") or ""),
+                    period_end=str(published_row.get("period_end") or ""),
+                    title=published_row.get("title"),
+                    content_text=published_row.get("content_text"),
+                    content_json=(published_row.get("content_json") if isinstance(published_row.get("content_json"), dict) else {}),
+                    generated_at=published_row.get("generated_at"),
+                    updated_at=published_row.get("updated_at"),
+                )
+            )
 
         return MyWebReadyReportsResponse(
             user_id=user_id,
             report_type=str(report_type),
             viewer_tier=str(tier_str),
+            limit=lim,
+            offset=off,
+            has_more=bool(has_more),
+            next_offset=next_offset,
             items=items,
         )
 

@@ -1,0 +1,7 @@
+{
+  "headers": {
+    "X-App-Version": "1.2.3",
+    "X-App-Build": "123",
+    "X-Platform": "ios"
+  }
+}

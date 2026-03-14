@@ -1,0 +1,12 @@
+{
+  "headers": {
+    "Authorization": "Bearer test-token",
+    "X-App-Version": "1.0.0",
+    "X-App-Build": "100",
+    "X-Platform": "android"
+  },
+  "json": {
+    "emotions": ["Joy"],
+    "memo": "old build memo payload"
+  }
+}

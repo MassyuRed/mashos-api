@@ -1,0 +1,35 @@
+{
+  "status": "<str>",
+  "saved": "<int>",
+  "deleted": "<int>",
+  "skipped_locked": "<int>",
+  "skipped_invalid": "<int>",
+  "skipped_empty": "<int>",
+  "meta": {
+    "user_id": "<str>",
+    "subscription_tier": "<str>",
+    "can_edit_existing": "<bool>",
+    "can_edit_answers": "<bool>",
+    "saved_at": "<str>",
+    "engine": "<str>",
+    "locked_question_ids": "<list>",
+    "invalid_question_ids": "<list>",
+    "locked": "<list>",
+    "invalid": "<list>",
+    "create_state": {
+      "build_tier": "<str>",
+      "total_questions": "<int>",
+      "answered_count": "<int>",
+      "unanswered_count": "<int>",
+      "has_unanswered": "<bool>",
+      "is_created": "<bool>",
+      "show_incomplete_badge": "<bool>",
+      "incomplete_badge_count": "<int>"
+    },
+    "ui_texts": {
+      "placeholder_default": "<str>",
+      "edit_locked_message": "<str>",
+      "create_completed_message": "<str>"
+    }
+  }
+}

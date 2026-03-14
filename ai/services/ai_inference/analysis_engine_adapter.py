@@ -73,6 +73,8 @@ _SOURCE_TYPE_ALIASES = {
     "echoes": "echo",
     "discovery": "discovery",
     "discoveries": "discovery",
+    "today_question": "today_question",
+    "today_questions": "today_question",
 }
 
 _DEFAULT_SOURCE_WEIGHT = {
@@ -81,6 +83,7 @@ _DEFAULT_SOURCE_WEIGHT = {
     "deep_insight": 1.1,
     "echo": 0.4,
     "discovery": 0.4,
+    "today_question": 1.05,
 }
 
 # (source_type, grouped-key-in-payload)
@@ -95,6 +98,8 @@ _SOURCE_VIEW_KEYS: List[tuple[str, str]] = [
     ("echo", "echo"),
     ("discovery", "discoveries"),
     ("discovery", "discovery"),
+    ("today_question", "today_questions"),
+    ("today_question", "today_question"),
 ]
 
 
@@ -425,6 +430,12 @@ def _coerce_self_structure_item(
         action_signals=_coerce_str_list(raw.get("action_signals")),
         social_signals=_coerce_str_list(raw.get("social_signals")),
         source_weight=_coerce_source_weight(source_type, raw.get("source_weight")),
+        answer_mode=_pick_first_text(raw, ["answer_mode"]) or None,
+        choice_key=_pick_first_text(raw, ["choice_key", "selected_choice_key"]) or None,
+        role_hint=_pick_first_text(raw, ["role_hint"]) or None,
+        target_hint=_pick_first_text(raw, ["target_hint"]) or None,
+        world_kind_hint=_pick_first_text(raw, ["world_kind_hint"]) or None,
+        analysis_tags=_coerce_str_list(raw.get("analysis_tags")),
     )
 
     supported_fields = _self_structure_input_supported_fields()

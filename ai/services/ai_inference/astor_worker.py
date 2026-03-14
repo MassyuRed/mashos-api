@@ -13,7 +13,7 @@ Env:
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1   (comma separated)
+  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1,refresh_global_summary_v1,inspect_global_summary_v1   (comma separated)
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -60,6 +60,8 @@ from astor_material_snapshots import (
     compute_source_hash_from_emotion_meta,
     fetch_emotions_in_range,
     _parse_emotion_period_scope,
+    _is_self_insight_only_row,
+    _exclude_rows_by_ids,
 )  # type: ignore
 
 # Phase X+: emotion structure reports (MyWeb weekly/monthly)
@@ -69,6 +71,11 @@ from api_myweb_reports import (
 )  # type: ignore
 
 from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # type: ignore
+
+try:
+    from report_distribution_push_store import ReportDistributionPushStore
+except Exception:  # pragma: no cover
+    ReportDistributionPushStore = None  # type: ignore
 
 # Generation lock (avoid concurrent snapshot generation per user/scope)
 from generation_lock import build_lock_key, make_owner_id, release_lock, try_acquire_lock  # type: ignore
@@ -170,6 +177,26 @@ from astor_friend_feed_kernel import (  # type: ignore
     generate_friend_feed,
 )
 
+from astor_global_summary_store import (  # type: ignore
+    GLOBAL_ACTIVITY_SUMMARIES_TABLE,
+    GLOBAL_SUMMARY_TIMEZONE,
+    GLOBAL_SUMMARY_TOTAL_KEYS,
+    GLOBAL_SUMMARY_VERSION,
+    STATUS_READY as GLOBAL_SUMMARY_STATUS_READY,
+    build_global_summary_source_hash,
+    canonical_global_summary_activity_date,
+    canonical_global_summary_timezone,
+    fail_global_summary,
+    promote_global_summary,
+    upsert_global_summary_draft,
+)
+from astor_global_summary_kernel import (  # type: ignore
+    generate_global_summary_payload,
+)
+from astor_global_summary_enqueue import (  # type: ignore
+    resolve_global_summary_activity_date,
+)
+
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
@@ -217,6 +244,8 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "inspect_account_status_v1",
     "refresh_friend_feed_v1",
     "inspect_friend_feed_v1",
+    "refresh_global_summary_v1",
+    "inspect_global_summary_v1",
 ]
 
 
@@ -284,6 +313,47 @@ async def _handle_snapshot_generate_v1(*, user_id: str, payload: dict) -> dict:
 
 
 
+NO_PUBLIC_EMOTION_SKIP_REASON = "no_public_emotion_entries"
+
+
+def _extract_public_emotion_count_from_snapshot_row(snapshot_row: Optional[Dict[str, Any]]) -> int:
+    payload = snapshot_row.get("payload") if isinstance(snapshot_row, dict) else {}
+    summary = payload.get("summary") if isinstance(payload, dict) and isinstance(payload.get("summary"), dict) else {}
+    try:
+        return int(summary.get("emotions_public") or 0)
+    except Exception:
+        return 0
+
+
+def _filter_non_self_insight_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    exclude_ids = {str(r.get("id") or "") for r in (rows or []) if _is_self_insight_only_row(r)}
+    return _exclude_rows_by_ids(rows or [], exclude_ids) if exclude_ids else list(rows or [])
+
+
+def _build_emotion_analysis_skip_result(
+    *,
+    user_id: str,
+    scope: str,
+    scope_kind: str,
+    analysis_stage: str,
+    analysis_version: str,
+    snapshot_row: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    snap = snapshot_row if isinstance(snapshot_row, dict) else {}
+    return {
+        "status": "skipped_no_input",
+        "user_id": str(user_id or "").strip(),
+        "scope": str(scope or "").strip(),
+        "scope_kind": str(scope_kind or "").strip(),
+        "snapshot_id": str(snap.get("id") or ""),
+        "source_hash": str(snap.get("source_hash") or ""),
+        "entry_count": 0,
+        "analysis_stage": analysis_stage,
+        "analysis_version": analysis_version,
+        "skip_reason": NO_PUBLIC_EMOTION_SKIP_REASON,
+    }
+
+
 async def _handle_generate_emotion_report_v2(*, user_id: str, payload: dict) -> dict:
     """Generate emotion structure reports from emotion_period snapshots for a user (v2).
 
@@ -308,7 +378,8 @@ async def _handle_generate_emotion_report_v2(*, user_id: str, payload: dict) -> 
     if not scopes:
         raise ValueError("payload.scope(s) is required")
 
-    generated = []
+    generated: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
     errors: Dict[str, str] = {}
     for sc in scopes:
         try:
@@ -316,18 +387,38 @@ async def _handle_generate_emotion_report_v2(*, user_id: str, payload: dict) -> 
             rid = None
             rt = None
             pub_hash = None
+            meta_status = "generated"
+            skip_reason = None
             if isinstance(meta, dict):
                 rid = meta.get("report_id")
                 rt = meta.get("report_type")
                 pub_hash = meta.get("public_source_hash")
+                meta_status = str(meta.get("status") or "generated").strip() or "generated"
+                skip_reason = str(meta.get("skip_reason") or "").strip() or None
+            if meta_status == "skipped":
+                skipped.append({
+                    "scope": sc,
+                    "report_type": rt,
+                    "report_id": rid,
+                    "public_source_hash": pub_hash,
+                    "status": "skipped",
+                    "skip_reason": skip_reason or NO_PUBLIC_EMOTION_SKIP_REASON,
+                })
+                continue
             generated.append({"scope": sc, "report_type": rt, "report_id": rid, "public_source_hash": pub_hash, "status": "ok"})
         except Exception as exc:
             errors[sc] = str(exc)
 
-    if not generated:
-        raise RuntimeError(f"generate_emotion_report_v2 failed: {errors}")
+    if generated:
+        return {"status": "ok", "user_id": uid, "generated": generated, "skipped": (skipped or None), "errors": (errors or None)}
 
-    return {"status": "ok", "user_id": uid, "generated": generated, "errors": (errors or None)}
+    if skipped and not errors:
+        return {"status": "skipped_no_input", "user_id": uid, "generated": [], "skipped": skipped, "errors": None}
+
+    if skipped and errors:
+        return {"status": "skipped_no_input", "user_id": uid, "generated": [], "skipped": skipped, "errors": errors}
+
+    raise RuntimeError(f"generate_emotion_report_v2 failed: {errors}")
 
 
 # ----------------------------
@@ -341,6 +432,86 @@ _PHONE_RE = re.compile(r"(?:\b0\d{1,4}[- ]?\d{1,4}[- ]?\d{4}\b|\b\d{10,11}\b)")
 
 def _now_iso_z() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_distribution_key(raw: Any) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    return s if len(s) == 10 else None
+
+
+def _distribution_key_from_requested_at(raw: Any) -> Optional[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(JST).date().isoformat()
+    except Exception:
+        return None
+
+
+def _emotion_distribution_family(report_type: Any) -> Optional[str]:
+    rt = str(report_type or "").strip().lower()
+    if rt == "daily":
+        return "emotion_daily"
+    if rt == "weekly":
+        return "emotion_weekly"
+    if rt == "monthly":
+        return "emotion_monthly"
+    return None
+
+
+async def _enqueue_emotion_report_distribution_candidate(
+    *,
+    user_id: str,
+    report_row: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> bool:
+    if ReportDistributionPushStore is None:
+        return False
+    if not bool((payload or {}).get("distribution_origin")):
+        return False
+    distribution_key = (
+        _normalize_distribution_key((payload or {}).get("distribution_key"))
+        or _distribution_key_from_requested_at((payload or {}).get("requested_at"))
+    )
+    if not distribution_key:
+        return False
+    family = _emotion_distribution_family((report_row or {}).get("report_type"))
+    if not family:
+        return False
+    try:
+        store = ReportDistributionPushStore()
+        await store.create_candidate(
+            user_id=str(user_id or "").strip(),
+            distribution_key=distribution_key,
+            report_family=family,
+            report_table=MYWEB_REPORTS_TABLE,
+            report_id=(report_row or {}).get("id"),
+            report_type=str((report_row or {}).get("report_type") or "").strip() or None,
+            period_start=str((report_row or {}).get("period_start") or "").strip() or None,
+            period_end=str((report_row or {}).get("period_end") or "").strip() or None,
+            open_target={
+                "screen": "MyWeb",
+                "open_mode": "reportHistory",
+                "report_type": str((report_row or {}).get("report_type") or "").strip() or None,
+            },
+        )
+        return True
+    except Exception as exc:
+        WORKER_LOGGER.warning(
+            "Failed to enqueue report distribution candidate. user=%s report_id=%s err=%s",
+            str(user_id or "").strip(),
+            str((report_row or {}).get("id") or "").strip(),
+            exc,
+        )
+        return False
 
 
 def _detect_pii(text: str) -> List[str]:
@@ -574,7 +745,14 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
                     job_key=f"emotion_report_v2_refresh:{uid}:{scope}:{regen_hash}",
                     job_type="generate_emotion_report_v2",
                     user_id=uid,
-                    payload={"trigger": "inspect_mismatch", "requested_at": inspected_at, "scope": scope, "include_astor": True},
+                    payload={
+                        "trigger": "inspect_mismatch",
+                        "requested_at": inspected_at,
+                        "scope": scope,
+                        "include_astor": True,
+                        "distribution_origin": bool((payload or {}).get("distribution_origin")),
+                        "distribution_key": (payload or {}).get("distribution_key"),
+                    },
                     priority=20,
                     debounce_seconds=10,
                 )
@@ -597,17 +775,23 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
 
     patched = await _patch_myweb_report_content_json(report_id, content_json=cj2)
 
-    ready_push_sent = False
-    if patched and status == "READY" and previous_status != "READY":
+    distribution_candidate_enqueued = False
+    if status == "READY":
         try:
-            ready_push_sent = await _send_myweb_report_ready_push(user_id=uid, report_row=row)
+            distribution_candidate_enqueued = await _enqueue_emotion_report_distribution_candidate(
+                user_id=uid,
+                report_row=row,
+                payload=(payload or {}),
+            )
         except Exception as exc:
             WORKER_LOGGER.warning(
-                "MyWeb READY push failed. user=%s report_id=%s err=%s",
+                "Emotion distribution candidate enqueue failed. user=%s report_id=%s err=%s",
                 uid,
                 report_id,
                 exc,
             )
+
+    ready_push_sent = False
 
     return {
         "status": status,
@@ -621,6 +805,7 @@ async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, 
         "flags": flags,
         "previous_status": (previous_status or None),
         "ready_push_sent": bool(ready_push_sent),
+        "distribution_candidate_enqueued": bool(distribution_candidate_enqueued),
     }
 
 
@@ -667,6 +852,25 @@ async def _fetch_latest_snapshot_row(*, user_id: str, scope: str, snapshot_type:
 
 async def _fetch_latest_public_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
     return await _fetch_latest_snapshot_row(user_id=user_id, scope=scope, snapshot_type="public")
+
+
+def _extract_snapshot_payload(snapshot_row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    payload = (snapshot_row or {}).get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_snapshot_summary(snapshot_row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    payload = _extract_snapshot_payload(snapshot_row)
+    summary = payload.get("summary")
+    return summary if isinstance(summary, dict) else {}
+
+
+def _extract_snapshot_public_emotion_count(snapshot_row: Optional[Dict[str, Any]]) -> int:
+    summary = _extract_snapshot_summary(snapshot_row)
+    try:
+        return int(summary.get("emotions_public") or 0)
+    except Exception:
+        return 0
 
 
 async def _fetch_latest_internal_snapshot_row(*, user_id: str, scope: str) -> Optional[Dict[str, Any]]:
@@ -1394,6 +1598,261 @@ async def _handle_inspect_friend_feed_v1(*, user_id: str, payload: Dict[str, Any
     }
 
 
+async def _fetch_global_summary_row_by_id(summary_id: str) -> Optional[Dict[str, Any]]:
+    sid = str(summary_id or "").strip()
+    if not sid:
+        return None
+    resp = await sb_get(
+        f"/rest/v1/{GLOBAL_ACTIVITY_SUMMARIES_TABLE}",
+        params={
+            "select": "id,activity_date,timezone,status,payload,source_hash,version,meta,created_at,updated_at,published_at",
+            "id": f"eq.{sid}",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(
+            f"fetch global_activity_summary by id failed: {resp.status_code} {(resp.text or '')[:800]}"
+        )
+    rows = resp.json()
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+_GLOBAL_SUMMARY_ALLOWED_TOP_LEVEL_KEYS = {
+    "version",
+    "activity_date",
+    "timezone",
+    "generated_at",
+    "totals",
+}
+
+
+def _validate_global_summary_payload(payload: Any) -> List[str]:
+    flags: List[str] = []
+    if not isinstance(payload, dict):
+        flags.append("payload_missing")
+        return flags
+
+    version = str(payload.get("version") or "").strip()
+    if version != GLOBAL_SUMMARY_VERSION:
+        flags.append(f"version_mismatch:{version or 'missing'}")
+
+    activity_date = canonical_global_summary_activity_date(payload.get("activity_date"))
+    if not activity_date:
+        flags.append("activity_date_missing")
+
+    raw_timezone = str(payload.get("timezone") or "").strip()
+    payload_timezone = canonical_global_summary_timezone(raw_timezone)
+    expected_timezone = canonical_global_summary_timezone(GLOBAL_SUMMARY_TIMEZONE)
+    if not raw_timezone:
+        flags.append("timezone_missing")
+    elif payload_timezone != expected_timezone:
+        flags.append(f"timezone_mismatch:{payload_timezone}")
+
+    generated_at = str(payload.get("generated_at") or "").strip()
+    if not generated_at:
+        flags.append("generated_at_missing")
+
+    totals = payload.get("totals")
+    if not isinstance(totals, dict):
+        flags.append("totals_missing")
+        return flags
+
+    for key in list(payload.keys()):
+        ks = str(key or "").strip()
+        if ks and ks not in _GLOBAL_SUMMARY_ALLOWED_TOP_LEVEL_KEYS:
+            flags.append(f"unexpected_key:{ks}")
+
+    allowed_total_keys = {str(x or "").strip() for x in (GLOBAL_SUMMARY_TOTAL_KEYS or []) if str(x or "").strip()}
+    for key in list(totals.keys()):
+        ks = str(key or "").strip()
+        if ks and ks not in allowed_total_keys:
+            flags.append(f"unexpected_total_key:{ks}")
+
+    for key in list(GLOBAL_SUMMARY_TOTAL_KEYS or []):
+        if key not in totals:
+            flags.append(f"total_missing:{key}")
+            continue
+        coerced = _coerce_ranking_int(totals.get(key))
+        if coerced is None:
+            flags.append(f"total_invalid:{key}")
+        elif coerced < 0:
+            flags.append(f"total_negative:{key}")
+
+    return flags
+
+
+async def _handle_refresh_global_summary_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    trigger = str((payload or {}).get("trigger") or "worker").strip() or "worker"
+    requested_at = str((payload or {}).get("requested_at") or _now_iso_z()).strip() or _now_iso_z()
+    timezone_name = canonical_global_summary_timezone(
+        (payload or {}).get("timezone") or (payload or {}).get("tz") or GLOBAL_SUMMARY_TIMEZONE
+    )
+    activity_date = resolve_global_summary_activity_date(
+        requested_at=requested_at,
+        activity_date=(payload or {}).get("activity_date"),
+        timezone_name=timezone_name,
+    )
+    actor_user_id = str((payload or {}).get("actor_user_id") or "").strip()
+
+    prefer_refresh_raw = (payload or {}).get("prefer_refresh")
+    if prefer_refresh_raw is None:
+        prefer_refresh = True
+    elif isinstance(prefer_refresh_raw, str):
+        prefer_refresh = prefer_refresh_raw.strip().lower() in ("1", "true", "yes", "y", "on")
+    else:
+        prefer_refresh = bool(prefer_refresh_raw)
+
+    fallback_to_table_raw = (payload or {}).get("fallback_to_table")
+    if fallback_to_table_raw is None:
+        fallback_to_table = True
+    elif isinstance(fallback_to_table_raw, str):
+        fallback_to_table = fallback_to_table_raw.strip().lower() in ("1", "true", "yes", "y", "on")
+    else:
+        fallback_to_table = bool(fallback_to_table_raw)
+
+    allow_empty_raw = (payload or {}).get("allow_empty")
+    if allow_empty_raw is None:
+        allow_empty = False
+    elif isinstance(allow_empty_raw, str):
+        allow_empty = allow_empty_raw.strip().lower() in ("1", "true", "yes", "y", "on")
+    else:
+        allow_empty = bool(allow_empty_raw)
+
+    summary_payload = await generate_global_summary_payload(
+        activity_date,
+        timezone_name=timezone_name,
+        prefer_refresh=prefer_refresh,
+        fallback_to_table=fallback_to_table,
+        allow_empty=allow_empty,
+    )
+    meta: Dict[str, Any] = {
+        "trigger": trigger,
+        "requested_at": requested_at,
+        "job_type": "refresh_global_summary_v1",
+        "kernel": "rpc_kernel_v1",
+        "timezone": timezone_name,
+    }
+    if actor_user_id:
+        meta["actor_user_id"] = actor_user_id
+
+    summary_row = await upsert_global_summary_draft(
+        activity_date,
+        summary_payload,
+        meta=meta,
+        timezone_name=timezone_name,
+        version=1,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "activity_date": activity_date,
+        "timezone": timezone_name,
+        "summary_id": str((summary_row or {}).get("id") or ""),
+        "summary_status": str((summary_row or {}).get("status") or ""),
+        "source_hash": str((summary_row or {}).get("source_hash") or ""),
+    }
+
+
+async def _handle_inspect_global_summary_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    summary_id = str((payload or {}).get("summary_id") or "").strip()
+    if not summary_id:
+        raise ValueError("payload.summary_id is required")
+
+    summary_row = await _fetch_global_summary_row_by_id(summary_id)
+    if not summary_row:
+        return {"status": "missing", "user_id": uid, "summary_id": summary_id}
+
+    activity_date = canonical_global_summary_activity_date(
+        summary_row.get("activity_date") or (payload or {}).get("activity_date")
+    )
+    timezone_name = canonical_global_summary_timezone(
+        summary_row.get("timezone") or (payload or {}).get("timezone") or GLOBAL_SUMMARY_TIMEZONE
+    )
+    summary_payload = summary_row.get("payload") if isinstance(summary_row.get("payload"), dict) else {}
+    flags = _validate_global_summary_payload(summary_payload)
+
+    payload_activity_date = canonical_global_summary_activity_date(summary_payload.get("activity_date"))
+    if activity_date and payload_activity_date and payload_activity_date != activity_date:
+        flags.append("activity_date_mismatch")
+
+    payload_timezone = canonical_global_summary_timezone(summary_payload.get("timezone") or timezone_name)
+    if timezone_name and payload_timezone and payload_timezone != timezone_name:
+        flags.append("timezone_row_mismatch")
+
+    source_hash = str(summary_row.get("source_hash") or "").strip()
+    if not source_hash:
+        flags.append("source_hash_missing")
+    else:
+        try:
+            recomputed_hash = build_global_summary_source_hash(
+                activity_date or payload_activity_date,
+                summary_payload,
+                timezone_name=timezone_name or payload_timezone,
+            )
+            if recomputed_hash != source_hash:
+                flags.append("source_hash_mismatch")
+        except Exception as exc:
+            flags.append(f"source_hash_recompute_failed:{exc.__class__.__name__}")
+
+    if flags:
+        failed = await fail_global_summary(
+            summary_id,
+            "global summary inspection failed",
+            flags={
+                "issues": flags,
+                "activity_date": activity_date,
+                "timezone": timezone_name,
+                "inspector": "inspect_global_summary_v1",
+            },
+        )
+        return {
+            "status": "failed",
+            "user_id": uid,
+            "activity_date": activity_date,
+            "timezone": timezone_name,
+            "summary_id": summary_id,
+            "source_hash": source_hash,
+            "flags": flags,
+            "summary_status": str((failed or {}).get("status") or ""),
+        }
+
+    promoted = await promote_global_summary(
+        summary_id,
+        extra_meta={
+            "inspection": {
+                "checked_at": _now_iso_z(),
+                "inspector": "inspect_global_summary_v1",
+                "activity_date": activity_date,
+                "timezone": timezone_name,
+                "flags": [],
+            }
+        },
+    )
+    return {
+        "status": "ready",
+        "user_id": uid,
+        "activity_date": activity_date,
+        "timezone": timezone_name,
+        "summary_id": summary_id,
+        "source_hash": source_hash,
+        "summary_status": str((promoted or {}).get("status") or ""),
+        "flags": [],
+    }
+
+
 def _coerce_str_list(value: Any) -> List[str]:
     if isinstance(value, list):
         out: List[str] = []
@@ -2083,6 +2542,21 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
     if not snap:
         raise RuntimeError("public emotion_period snapshot not found")
 
+    snapshot_public_count = _extract_snapshot_public_emotion_count(snap)
+    if snapshot_public_count <= 0:
+        return {
+            "status": "skipped_no_input",
+            "user_id": uid,
+            "scope": scope,
+            "scope_kind": scope_kind,
+            "snapshot_id": str(snap.get("id") or ""),
+            "source_hash": str(snap.get("source_hash") or ""),
+            "entry_count": 0,
+            "analysis_stage": "deep",
+            "analysis_version": "emotion_structure.deep.v1",
+            "skip_reason": "no_public_emotion_entries",
+        }
+
     period_info = _parse_emotion_period_scope(scope)
     start_iso = str(period_info.get("period_start_iso") or "").strip()
     end_iso = str(period_info.get("period_end_iso") or "").strip()
@@ -2090,7 +2564,22 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
         raise RuntimeError("snapshot period meta missing")
 
     rows = await fetch_emotions_in_range(uid, start_iso=start_iso, end_iso=end_iso, include_secret=False)
+    rows = _filter_non_self_insight_rows(rows)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
+    if not entries:
+        return {
+            "status": "skipped_no_input",
+            "user_id": uid,
+            "scope": scope,
+            "scope_kind": scope_kind,
+            "snapshot_id": str(snap.get("id") or ""),
+            "source_hash": str(snap.get("source_hash") or ""),
+            "entry_count": 0,
+            "analysis_stage": "deep",
+            "analysis_version": "emotion_structure.deep.v1",
+            "skip_reason": "no_public_emotion_entries",
+        }
+
     period_label = f"{start_iso}..{end_iso}"
 
     deep_model = _build_deep_control_model_payload(entries, scope_kind=scope_kind, period_label=period_label)
@@ -2201,6 +2690,21 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
     if not snap:
         raise RuntimeError("public emotion_period snapshot not found")
 
+    snapshot_public_count = _extract_snapshot_public_emotion_count(snap)
+    if snapshot_public_count <= 0:
+        return {
+            "status": "skipped_no_input",
+            "user_id": uid,
+            "scope": scope,
+            "scope_kind": scope_kind,
+            "snapshot_id": str(snap.get("id") or ""),
+            "source_hash": str(snap.get("source_hash") or ""),
+            "entry_count": 0,
+            "analysis_stage": "standard",
+            "analysis_version": "emotion_structure.standard.v1",
+            "skip_reason": "no_public_emotion_entries",
+        }
+
     period_info = _parse_emotion_period_scope(scope)
     start_iso = str(period_info.get("period_start_iso") or "").strip()
     end_iso = str(period_info.get("period_end_iso") or "").strip()
@@ -2213,7 +2717,21 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
         end_iso=end_iso,
         include_secret=False,
     )
+    rows = _filter_non_self_insight_rows(rows)
     entries = _normalize_entries_to_jst(build_emotion_entries_from_rows(rows))
+    if not entries:
+        return {
+            "status": "skipped_no_input",
+            "user_id": uid,
+            "scope": scope,
+            "scope_kind": scope_kind,
+            "snapshot_id": str(snap.get("id") or ""),
+            "source_hash": str(snap.get("source_hash") or ""),
+            "entry_count": 0,
+            "analysis_stage": "standard",
+            "analysis_version": "emotion_structure.standard.v1",
+            "skip_reason": "no_public_emotion_entries",
+        }
 
     period_label = f"{start_iso}..{end_iso}"
 
@@ -2302,7 +2820,7 @@ async def _worker_loop() -> None:
         _parse_job_types(
             os.getenv(
                 "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1",
+                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1,refresh_global_summary_v1,inspect_global_summary_v1",
             )
         )
     )
@@ -2423,6 +2941,9 @@ async def _worker_loop() -> None:
                             error="updated_while_running",
                             delay_seconds=max(1, delay),
                         )
+                    elif snap_status == "skipped_no_input":
+                        # Zero-input periods are a normal no-op; do not fan out downstream work.
+                        pass
                     else:
                         # Snapshot committed without concurrent updates -> enqueue downstream generation jobs.
                         try:
@@ -2526,6 +3047,8 @@ async def _worker_loop() -> None:
                                                 "requested_at": (claimed.payload or {}).get("requested_at"),
                                                 "scope": scope,
                                                 "source_hash": pub_hash,
+                                                "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                                "distribution_key": (claimed.payload or {}).get("distribution_key"),
                                             },
                                             priority=18,
                                         )
@@ -2553,7 +3076,8 @@ async def _worker_loop() -> None:
                     )
                 else:
                     try:
-                        if EMOTION_REPORT_V2_ENABLED:
+                        analysis_status = str((analysis_res or {}).get("status") or "").strip()
+                        if EMOTION_REPORT_V2_ENABLED and analysis_status == "ok":
                             scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
                             pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
                             if scope and pub_hash:
@@ -2580,6 +3104,8 @@ async def _worker_loop() -> None:
                                         "scope": scope,
                                         "include_astor": include_astor,
                                         "source_hash": pub_hash,
+                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
                                     },
                                     priority=12,
                                 )
@@ -2611,7 +3137,8 @@ async def _worker_loop() -> None:
                     )
                 else:
                     try:
-                        if EMOTION_REPORT_V2_ENABLED:
+                        analysis_status = str((analysis_res or {}).get("status") or "").strip()
+                        if EMOTION_REPORT_V2_ENABLED and analysis_status == "ok":
                             scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or "").strip()
                             pub_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
                             if scope and pub_hash:
@@ -2981,6 +3508,77 @@ async def _worker_loop() -> None:
                     claimed.user_id,
                     insp_res,
                 )
+            elif claimed.job_type == "refresh_global_summary_v1":
+                global_summary_res = await _handle_refresh_global_summary_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                else:
+                    try:
+                        summary_id = str((global_summary_res or {}).get("summary_id") or "").strip()
+                        activity_date = str((global_summary_res or {}).get("activity_date") or (claimed.payload or {}).get("activity_date") or "").strip()
+                        timezone_name = str((global_summary_res or {}).get("timezone") or (claimed.payload or {}).get("timezone") or (claimed.payload or {}).get("tz") or GLOBAL_SUMMARY_TIMEZONE).strip()
+                        summary_status = str((global_summary_res or {}).get("summary_status") or "").strip().lower()
+                        if summary_id and summary_status != GLOBAL_SUMMARY_STATUS_READY:
+                            await enqueue_job(
+                                job_key=f"inspect_global_summary:{summary_id}",
+                                job_type="inspect_global_summary_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "summary_id": summary_id,
+                                    "activity_date": activity_date,
+                                    "timezone": timezone_name,
+                                    "source_hash": (global_summary_res or {}).get("source_hash"),
+                                    "trigger": "refresh_global_summary_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                },
+                                priority=24,
+                            )
+                    except Exception as exc:
+                        logger.error("Global summary inspect enqueue failed: %s", exc)
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    global_summary_res,
+                )
+            elif claimed.job_type == "inspect_global_summary_v1":
+                insp_res = await _handle_inspect_global_summary_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    insp_res,
+                )
             elif claimed.job_type == "generate_emotion_report_v2":
                 gen_res = await _handle_generate_emotion_report_v2(user_id=claimed.user_id, payload=(claimed.payload or {}))
                 # Enqueue inspection jobs for publish gating (best-effort).
@@ -3004,6 +3602,9 @@ async def _worker_loop() -> None:
                                     "scope": scope,
                                     "expected_public_source_hash": expected_public_hash,
                                     "trigger": "generate_emotion_report_v2",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                    "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                    "distribution_key": (claimed.payload or {}).get("distribution_key"),
                                 },
                                 priority=30,
                             )
@@ -3090,6 +3691,17 @@ async def _worker_loop() -> None:
                                     str(exc),
                                     flags={
                                         "job_type": "inspect_friend_feed_v1",
+                                        "phase": "worker_exception",
+                                    },
+                                )
+                        elif claimed.job_type == "inspect_global_summary_v1":
+                            summary_id = str(((claimed.payload or {}).get("summary_id")) or "").strip()
+                            if summary_id:
+                                await fail_global_summary(
+                                    summary_id,
+                                    str(exc),
+                                    flags={
+                                        "job_type": "inspect_global_summary_v1",
                                         "phase": "worker_exception",
                                     },
                                 )
