@@ -5,13 +5,20 @@ Global Summary API
 ------------------
 Purpose
   - Keep the public `/global_summary` contract stable.
-  - Prefer READY artifacts from `global_activity_summaries`.
-  - During migration, fall back to legacy `daily_global_activity` / refresh RPC.
+  - For the current JST day, prefer a synchronous refresh so app-wide counters stay fresh.
+  - For historical JST days, prefer READY artifacts from `global_activity_summaries`.
+  - During migration, retain legacy `daily_global_activity` / refresh RPC fallback.
 
 Read order
-  1) latest READY artifact for the target JST day
-  2) migration fallback: legacy daily table, then legacy refresh RPC
-  3) zero response
+  - Current JST day:
+      1) synchronous legacy refresh
+      2) latest READY artifact
+      3) migration fallback: legacy daily table, then legacy refresh RPC
+      4) zero response
+  - Historical JST day:
+      1) latest READY artifact
+      2) migration fallback: legacy daily table, then legacy refresh RPC
+      3) zero response
 """
 
 from __future__ import annotations
@@ -59,10 +66,18 @@ def _normalize_global_summary_tz(raw_tz: Optional[str]) -> Tuple[str, str]:
     raise HTTPException(status_code=400, detail="Only Asia/Tokyo (+09:00) is supported currently")
 
 
+def _today_jst_date_iso() -> str:
+    return datetime.now(JST).date().isoformat()
+
+
+def _is_today_jst(activity_date: str) -> bool:
+    return activity_date == _today_jst_date_iso()
+
+
 def _resolve_global_summary_date(raw_date: Optional[str]) -> str:
     s = str(raw_date or "").strip()
     if not s:
-        return datetime.now(JST).date().isoformat()
+        return _today_jst_date_iso()
 
     try:
         return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
@@ -112,6 +127,37 @@ def _response_from_payload(
         echo_count=int(totals.get("echo_count") or 0),
         discovery_count=int(totals.get("discovery_count") or 0),
         updated_at=final_updated_at,
+    )
+
+
+async def _fetch_sync_refresh_summary_response(
+    *,
+    activity_date: str,
+    timezone_name: str,
+    response_tz: str,
+) -> Optional[GlobalSummaryResponse]:
+    try:
+        payload = await generate_global_summary_payload(
+            activity_date,
+            timezone_name=timezone_name,
+            prefer_refresh=True,
+            fallback_to_table=True,
+            allow_empty=False,
+        )
+    except Exception as exc:
+        logger.warning(
+            "sync global summary refresh failed: activity_date=%s timezone=%s err=%s",
+            activity_date,
+            timezone_name,
+            exc,
+        )
+        return None
+
+    return _response_from_payload(
+        payload,
+        activity_date=activity_date,
+        response_tz=response_tz,
+        updated_at=_to_text((payload or {}).get("generated_at")) or _to_text((payload or {}).get("updated_at")),
     )
 
 
@@ -193,6 +239,15 @@ def register_global_summary_routes(app: FastAPI) -> None:
         activity_date = _resolve_global_summary_date(date)
 
         try:
+            if _is_today_jst(activity_date):
+                fresh_response = await _fetch_sync_refresh_summary_response(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    response_tz=response_tz,
+                )
+                if fresh_response is not None:
+                    return fresh_response
+
             ready_response = await _fetch_ready_summary_response(
                 activity_date=activity_date,
                 timezone_name=db_tz,

@@ -100,6 +100,8 @@ def test_account_profile_me_keeps_tutorial_flags(client, monkeypatch):
 def test_global_summary_returns_contract_headers(client, monkeypatch):
     import api_global_summary as global_summary_module
 
+    monkeypatch.setattr(global_summary_module, "_today_jst_date_iso", lambda: "2026-03-12")
+
     async def fake_fetch_latest_ready_global_summary(activity_date: str, *, timezone_name: str):
         return {
             "activity_date": activity_date,

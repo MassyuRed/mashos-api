@@ -74,7 +74,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('POST', '/friends/remove', 'friends.remove.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/friends/notification-settings', 'friends.notification_settings.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/friends/notification-settings/{friend_user_id}', 'friends.notification_settings.update.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
-    ApiContractEntry('GET', '/global_summary', 'global_summary.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Daily app-wide aggregate counters; READY artifact preferred, legacy table/RPC fallback during migration'),
+    ApiContractEntry('GET', '/global_summary', 'global_summary.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Daily app-wide aggregate counters; current JST day prefers synchronous refresh, historical days prefer READY artifacts, legacy table/RPC fallback retained'),
     ApiContractEntry('GET', '/mymodel/create/questions', 'mymodel.create.questions.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/mymodel/create/answers', 'mymodel.create.answers.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/mymodel/infer', 'mymodel.infer.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
