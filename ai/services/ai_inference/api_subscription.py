@@ -1,26 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Subscription (tier) API for Cocolon (MashOS / FastAPI)
-
-MVP endpoint:
-- GET /subscription/me
-
-Purpose:
-- Debugging / UI gating: allow the client to know the current tier and the
-  allowed MyProfile modes.
-
-Auth:
-- Requires Authorization: Bearer <supabase_access_token>
-- Resolves the user via Supabase Auth `/auth/v1/user`.
-
-Note:
-- Tier lookup is fail-closed: if missing/unknown, returns 'free'.
-"""
-
 from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -32,50 +15,30 @@ from subscription import (
     normalize_subscription_tier,
 )
 from subscription_store import get_subscription_tier_for_user, set_subscription_tier_for_user
+from subscription_trial_store import get_trial_state, mark_trial_consumed
 from active_users_store import touch_active_user
 
-
 logger = logging.getLogger("subscription_api")
+
+PLUS_TRIAL_KEY = "plus_intro_v1"
 
 
 class SubscriptionMeResponse(BaseModel):
     user_id: str = Field(..., description="Supabase user id")
     subscription_tier: str = Field(..., description="free | plus | premium")
     allowed_myprofile_modes: list[str] = Field(..., description="Allowed MyProfile modes for the tier")
+    plus_trial_eligible: bool = Field(..., description="Whether the user can be shown the Plus free trial")
+    plus_trial_consumed: bool = Field(..., description="Whether the user has already used the Plus free trial")
+    plus_trial_consumed_at: Optional[str] = Field(default=None, description="When the Plus free trial was first consumed")
 
 
 class SubscriptionUpdateRequest(BaseModel):
-    """Client -> server subscription update (IAP result).
-
-    IMPORTANT:
-    - This endpoint should be backed by server-side purchase verification.
-    - For MVP/dev only, you may enable unverified updates via env.
-    """
-
-    platform: Optional[str] = Field(
-        default=None,
-        description="android | ios (optional, used for product_id mapping)",
-    )
-    product_id: Optional[str] = Field(
-        default=None,
-        description="IAP product id (SKU). Used to map to plus/premium.",
-    )
-    purchase_token: Optional[str] = Field(
-        default=None,
-        description="Android: purchaseToken (from Google Play)",
-    )
-    transaction_receipt: Optional[str] = Field(
-        default=None,
-        description="iOS: base64 receipt / Android: transactionReceipt (raw)",
-    )
-    transaction_id: Optional[str] = Field(
-        default=None,
-        description="iOS: transactionId (optional, for logging/debug)",
-    )
-    subscription_tier: Optional[str] = Field(
-        default=None,
-        description="Requested tier (free|plus|premium). If omitted, derived from product_id.",
-    )
+    platform: Optional[str] = Field(default=None, description="android | ios")
+    product_id: Optional[str] = Field(default=None, description="IAP product id")
+    purchase_token: Optional[str] = Field(default=None, description="Android purchaseToken")
+    transaction_receipt: Optional[str] = Field(default=None, description="iOS receipt / Android raw receipt")
+    transaction_id: Optional[str] = Field(default=None, description="iOS transaction id")
+    subscription_tier: Optional[str] = Field(default=None, description="free | plus | premium")
 
 
 class SubscriptionUpdateResponse(BaseModel):
@@ -83,7 +46,7 @@ class SubscriptionUpdateResponse(BaseModel):
     subscription_tier: str = Field(..., description="free | plus | premium")
     allowed_myprofile_modes: list[str] = Field(..., description="Allowed MyProfile modes for the tier")
     updated: bool = Field(..., description="True if tier was updated")
-    verification: str = Field(..., description="verification mode (e.g. unverified_dev)")
+    verification: str = Field(..., description="verification mode")
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -101,14 +64,6 @@ def _split_env_list(name: str) -> list[str]:
 
 
 def _user_in_unverified_allowlist(user_id: str) -> bool:
-    """Return True if user_id is explicitly allowed to use unverified updates.
-
-    This is intended for dev/staging safety:
-    - Keep COCOLON_IAP_ALLOW_UNVERIFIED=false
-    - Allow only specific test accounts (Supabase user ids) to update tier
-      without verification.
-    """
-
     uid = str(user_id or "").strip()
     if not uid:
         return False
@@ -117,14 +72,6 @@ def _user_in_unverified_allowlist(user_id: str) -> bool:
 
 
 def _resolve_tier_from_request(req: SubscriptionUpdateRequest) -> SubscriptionTier:
-    """Resolve desired tier from request.
-
-    Priority:
-    1) req.subscription_tier (explicit)
-    2) req.product_id mapping via env vars
-    3) heuristic fallback ("premium"/"plus" in product id)
-    """
-
     if req.subscription_tier:
         return normalize_subscription_tier(req.subscription_tier, default=SubscriptionTier.FREE)
 
@@ -134,8 +81,6 @@ def _resolve_tier_from_request(req: SubscriptionUpdateRequest) -> SubscriptionTi
 
     plat = str(req.platform or "").strip().lower()
 
-    # Env-driven mapping (recommended)
-    # - Allow comma-separated lists so you can add yearly/monthly SKUs, etc.
     if plat == "android":
         plus_ids = set(_split_env_list("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS"))
         prem_ids = set(_split_env_list("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS"))
@@ -151,13 +96,29 @@ def _resolve_tier_from_request(req: SubscriptionUpdateRequest) -> SubscriptionTi
         if pid in plus_ids:
             return SubscriptionTier.PLUS
 
-    # Fallback heuristic (dev convenience only)
     low = pid.lower()
     if "premium" in low:
         return SubscriptionTier.PREMIUM
     if "plus" in low:
         return SubscriptionTier.PLUS
     return SubscriptionTier.FREE
+
+
+async def _get_plus_trial_payload(
+    user_id: str,
+    tier: SubscriptionTier,
+) -> Tuple[bool, bool, Optional[str]]:
+    try:
+        trial_state = await get_trial_state(user_id, PLUS_TRIAL_KEY)
+        plus_trial_consumed = bool(trial_state.get("consumed"))
+        plus_trial_consumed_at = trial_state.get("consumed_at")
+    except Exception as exc:
+        logger.warning("Failed to read plus trial state: %s", exc)
+        plus_trial_consumed = True
+        plus_trial_consumed_at = None
+
+    plus_trial_eligible = (tier == SubscriptionTier.FREE) and (not plus_trial_consumed)
+    return plus_trial_eligible, plus_trial_consumed, plus_trial_consumed_at
 
 
 def register_subscription_routes(app: FastAPI) -> None:
@@ -172,10 +133,19 @@ def register_subscription_routes(app: FastAPI) -> None:
         user_id = await _resolve_user_id_from_token(access_token)
         tier = await get_subscription_tier_for_user(user_id)
         modes = [m.value for m in allowed_myprofile_modes_for_tier(tier)]
+
+        plus_trial_eligible, plus_trial_consumed, plus_trial_consumed_at = await _get_plus_trial_payload(
+            user_id,
+            tier,
+        )
+
         return SubscriptionMeResponse(
             user_id=user_id,
             subscription_tier=tier.value,
             allowed_myprofile_modes=modes,
+            plus_trial_eligible=plus_trial_eligible,
+            plus_trial_consumed=plus_trial_consumed,
+            plus_trial_consumed_at=plus_trial_consumed_at,
         )
 
     @app.post("/subscription/update", response_model=SubscriptionUpdateResponse)
@@ -183,24 +153,12 @@ def register_subscription_routes(app: FastAPI) -> None:
         req: SubscriptionUpdateRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> SubscriptionUpdateResponse:
-        """Update the caller's subscription tier.
-
-        Security note:
-        - This endpoint MUST be protected by server-side purchase verification
-          before production use.
-        - For MVP/dev, you can enable *unverified* updates via:
-            COCOLON_IAP_ALLOW_UNVERIFIED=true
-        """
-
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
-        # Ensure caller is a valid Supabase user
         user_id = await _resolve_user_id_from_token(access_token)
 
-        # Basic payload sanity: require at least *some* purchase proof fields.
-        # (Real verification should be added later.)
         if not (req.purchase_token or req.transaction_receipt):
             raise HTTPException(
                 status_code=400,
@@ -209,19 +167,12 @@ def register_subscription_routes(app: FastAPI) -> None:
 
         desired_tier = _resolve_tier_from_request(req)
 
-        # Fail-closed by default.
-        # In production, do NOT enable unverified updates.
-        #
-        # Dev/staging options:
-        # - COCOLON_IAP_ALLOW_UNVERIFIED=true (global)
-        # - COCOLON_IAP_ALLOW_UNVERIFIED_USER_IDS=<uuid1,uuid2,...> (per-user allowlist)
         allow_unverified = _env_flag("COCOLON_IAP_ALLOW_UNVERIFIED", default=False)
         verification_mode = ""
 
         if allow_unverified:
             verification_mode = "unverified_dev"
         elif _user_in_unverified_allowlist(user_id):
-            # Safer dev option: allow only specified test accounts
             allow_unverified = True
             verification_mode = "unverified_dev_user_allowlist"
 
@@ -236,7 +187,6 @@ def register_subscription_routes(app: FastAPI) -> None:
                 ),
             )
 
-        # Apply tier update (service_role bypasses RLS)
         try:
             updated_tier = await set_subscription_tier_for_user(user_id, desired_tier)
         except Exception as exc:
@@ -248,10 +198,9 @@ def register_subscription_routes(app: FastAPI) -> None:
                     "Ensure public.profiles has column 'subscription_tier' and the backend has SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY."
                 ),
             )
+
         modes = [m.value for m in allowed_myprofile_modes_for_tier(updated_tier)]
 
-
-        # Phase8++: keep active_users.subscription_tier in sync (best-effort)
         try:
             await touch_active_user(
                 user_id,
@@ -261,6 +210,20 @@ def register_subscription_routes(app: FastAPI) -> None:
             )
         except Exception:
             pass
+
+        if updated_tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM):
+            store_ref = str(req.transaction_id or req.purchase_token or "").strip() or None
+            try:
+                await mark_trial_consumed(
+                    user_id=user_id,
+                    trial_key=PLUS_TRIAL_KEY,
+                    platform=req.platform,
+                    product_id=req.product_id,
+                    store_ref=store_ref,
+                    source="subscription_update_paid_plan",
+                )
+            except Exception as exc:
+                logger.warning("Failed to mark plus trial consumed: %s", exc)
 
         return SubscriptionUpdateResponse(
             user_id=user_id,
