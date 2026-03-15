@@ -60,11 +60,13 @@ class TodayQuestionCurrentResponse(BaseModel):
     answer_status: str = "unanswered"
     answer_summary: Optional[TodayQuestionAnswerSummary] = None
     delivery: Dict[str, Any] = Field(default_factory=dict)
+    progress: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TodayQuestionAnswerCreateRequest(BaseModel):
     service_day_key: str
     question_id: str
+    sequence_no: Optional[int] = None
     answer_mode: str = Field(..., pattern="^(choice|free_text)$")
     selected_choice_id: Optional[str] = None
     selected_choice_key: Optional[str] = None
@@ -83,6 +85,7 @@ class TodayQuestionAnswerWriteResponse(BaseModel):
 class TodayQuestionHistoryItem(BaseModel):
     answer_id: str
     service_day_key: str
+    sequence_no: Optional[int] = None
     question_id: str
     question_key: Optional[str] = None
     question_version: int = 1
@@ -184,6 +187,7 @@ def register_today_question_routes(app: FastAPI) -> None:
             answer_status="answered" if bundle.answer else "unanswered",
             answer_summary=answer_summary,
             delivery=bundle.settings,
+            progress=bundle.progress,
         )
 
     @app.post("/today-question/answers", response_model=TodayQuestionAnswerWriteResponse)
@@ -196,6 +200,7 @@ def register_today_question_routes(app: FastAPI) -> None:
             uid,
             service_day_key=body.service_day_key,
             question_id=body.question_id,
+            sequence_no=body.sequence_no,
             answer_mode=body.answer_mode,
             selected_choice_id=body.selected_choice_id,
             selected_choice_key=body.selected_choice_key,
@@ -326,6 +331,7 @@ def register_today_question_routes(app: FastAPI) -> None:
                         "screen": "Input",
                         "service_day_key": str(row.get("service_day_key") or ""),
                         "question_id": str(row.get("question_id") or ""),
+                        "sequence_no": str(row.get("sequence_no") or ""),
                     },
                 )
                 sent += 1

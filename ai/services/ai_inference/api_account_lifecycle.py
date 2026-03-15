@@ -7,7 +7,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _get_profile_row, _pick_row, _require_user_id
-from supabase_client import sb_delete, sb_post
+from supabase_client import sb_auth_headers, sb_delete, sb_get, sb_patch, sb_post
 
 logger = logging.getLogger("account_lifecycle_api")
 
@@ -40,6 +40,150 @@ async def _fetch_profile_me(user_id: str) -> Dict[str, Any]:
     return row or {}
 
 
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    parts = str(authorization).split()
+    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1]:
+        return parts[1]
+    return None
+
+
+def _coerce_display_name(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        s = value.strip()
+        if s:
+            return s
+    return None
+
+
+async def _fetch_auth_user(authorization: Optional[str]) -> Dict[str, Any]:
+    token = _extract_bearer_token(authorization)
+    if not token:
+        return {}
+
+    try:
+        resp = await sb_get(
+            "/auth/v1/user",
+            headers=sb_auth_headers(token),
+            timeout=5.0,
+        )
+    except Exception as exc:
+        logger.warning("account/profile/me auth fetch exception: %r", exc)
+        return {}
+
+    if resp.status_code != 200:
+        logger.warning(
+            "account/profile/me auth fetch failed: status=%s body=%s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        return {}
+
+    try:
+        data = resp.json()
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+async def _resolve_insert_display_name(
+    authorization: Optional[str],
+    *,
+    requested_display_name: Optional[str] = None,
+    existing_row: Optional[Dict[str, Any]] = None,
+) -> str:
+    requested = _coerce_display_name(requested_display_name)
+    if requested:
+        return requested
+
+    current = _coerce_display_name((existing_row or {}).get("display_name"))
+    if current:
+        return current
+
+    auth_user = await _fetch_auth_user(authorization)
+    meta = auth_user.get("user_metadata") if isinstance(auth_user.get("user_metadata"), dict) else {}
+    for key in ("display_name", "displayName", "name", "full_name"):
+        value = _coerce_display_name(meta.get(key))
+        if value:
+            return value
+
+    email = _coerce_display_name(auth_user.get("email"))
+    if email and "@" in email:
+        local = email.split("@", 1)[0].strip()
+        if local:
+            return local
+
+    return "ユーザー"
+
+
+async def _update_or_create_profile_me(
+    user_id: str,
+    *,
+    authorization: Optional[str],
+    display_name: Optional[str] = None,
+    push_enabled: Optional[bool] = None,
+) -> Dict[str, Any]:
+    existing = await _fetch_profile_me(user_id)
+
+    update_fields: Dict[str, Any] = {}
+    if display_name is not None:
+        update_fields["display_name"] = await _resolve_insert_display_name(
+            authorization,
+            requested_display_name=display_name,
+            existing_row=existing,
+        )
+    if push_enabled is not None:
+        update_fields["push_enabled"] = bool(push_enabled)
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    if existing:
+        resp = await sb_patch(
+            "/rest/v1/profiles",
+            params={"id": f"eq.{user_id}"},
+            json=update_fields,
+            prefer="return=representation",
+            timeout=8.0,
+        )
+        if resp.status_code not in (200, 204):
+            logger.error(
+                "account/profile/me patch failed: status=%s body=%s",
+                resp.status_code,
+                resp.text[:1500],
+            )
+            raise HTTPException(status_code=502, detail="Failed to update profile")
+        return _pick_row(resp) or await _fetch_profile_me(user_id)
+
+    insert_payload: Dict[str, Any] = {
+        "id": user_id,
+        "display_name": await _resolve_insert_display_name(
+            authorization,
+            requested_display_name=display_name,
+            existing_row=existing,
+        ),
+    }
+    insert_payload.update(update_fields)
+
+    resp = await sb_post(
+        "/rest/v1/profiles",
+        json=insert_payload,
+        prefer="return=representation",
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 201):
+        logger.error(
+            "account/profile/me insert failed: status=%s body=%s payload_keys=%s",
+            resp.status_code,
+            resp.text[:1500],
+            sorted(insert_payload.keys()),
+        )
+        raise HTTPException(status_code=502, detail="Failed to update profile")
+
+    return _pick_row(resp) or await _fetch_profile_me(user_id)
+
+
 def register_account_lifecycle_routes(app: FastAPI) -> None:
     @app.get("/account/profile/me", response_model=AccountProfileMeResponse)
     async def get_account_profile_me(
@@ -64,25 +208,12 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
     ) -> AccountProfileMeResponse:
         me = await _require_user_id(authorization)
 
-        payload: Dict[str, Any] = {"id": me}
-        if body.display_name is not None:
-            payload["display_name"] = str(body.display_name).strip()
-        if body.push_enabled is not None:
-            payload["push_enabled"] = bool(body.push_enabled)
-
-        if len(payload.keys()) == 1:
-            raise HTTPException(status_code=400, detail="No fields to update")
-
-        resp = await sb_post(
-            "/rest/v1/profiles",
-            json=payload,
-            prefer="resolution=merge-duplicates,return=representation",
-            timeout=8.0,
+        row = await _update_or_create_profile_me(
+            me,
+            authorization=authorization,
+            display_name=body.display_name,
+            push_enabled=body.push_enabled,
         )
-        if resp.status_code not in (200, 201):
-            raise HTTPException(status_code=502, detail="Failed to update profile")
-
-        row = _pick_row(resp) or await _fetch_profile_me(me)
         return AccountProfileMeResponse(
             user_id=me,
             display_name=(row.get("display_name") if isinstance(row.get("display_name"), str) else None),
