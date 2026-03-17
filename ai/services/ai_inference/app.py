@@ -42,6 +42,13 @@ from api_myprofile import register_myprofile_routes
 from api_public_profile import register_public_profile_routes
 from api_deep_insight import register_deep_insight_routes
 from api_subscription import register_subscription_routes
+from subscription_webhooks import register_subscription_webhook_routes
+from subscription_runtime_config import (
+    enforce_subscription_env_if_requested,
+    format_subscription_env_audit_lines,
+)
+from subscription_release_config import register_subscription_release_config_routes
+from subscription_live_console_check import register_subscription_live_console_routes
 from api_myweb_reports import register_myweb_report_routes, _build_target_period as _myweb_build_target_period
 from api_cron_distribution import register_cron_distribution_routes
 from api_ranking import register_ranking_routes
@@ -137,6 +144,9 @@ register_myprofile_routes(app)
 register_public_profile_routes(app)
 register_deep_insight_routes(app)
 register_subscription_routes(app)
+register_subscription_webhook_routes(app)
+register_subscription_release_config_routes(app)
+register_subscription_live_console_routes(app)
 register_myweb_report_routes(app)
 register_cron_distribution_routes(app)
 register_ranking_routes(app)
@@ -186,6 +196,14 @@ astor_myweb_engine = AstorEngine()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("mymodel")
+
+try:
+    _subscription_audit = enforce_subscription_env_if_requested()
+    for _level, _message in format_subscription_env_audit_lines(_subscription_audit):
+        getattr(logger, _level, logger.info)(_message)
+except Exception as exc:
+    logger.error("[subscription.phase3] startup config enforcement failed: %s", exc)
+    raise
 
 # ---------- Models ----------
 class InputPayload(BaseModel):
