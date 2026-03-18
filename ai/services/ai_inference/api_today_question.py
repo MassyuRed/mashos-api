@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from active_users_store import touch_active_user
@@ -24,12 +24,26 @@ from publish_governance import history_retention_bounds_for_query
 logger = logging.getLogger("today_question_api")
 store = TodayQuestionStore()
 
-TODAY_QUESTION_INTERNAL_TOKEN = (
-    os.getenv("TODAY_QUESTION_INTERNAL_TOKEN", "").strip()
-    or os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip()
-    or os.getenv("CRON_INTERNAL_TOKEN", "").strip()
-    or os.getenv("INTERNAL_API_TOKEN", "").strip()
-)
+def _configured_today_question_cron_tokens() -> List[str]:
+    values = [
+        os.getenv("TODAY_QUESTION_INTERNAL_TOKEN", "").strip(),
+        os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip(),
+        os.getenv("CRON_INTERNAL_TOKEN", "").strip(),
+        os.getenv("INTERNAL_API_TOKEN", "").strip(),
+        os.getenv("MASHOS_CRON_TOKEN", "").strip(),
+        os.getenv("MYMODEL_CRON_TOKEN", "").strip(),
+        os.getenv("COCOLON_CRON_TOKEN", "").strip(),
+    ]
+    out: List[str] = []
+    for value in values:
+        tok = str(value or "").strip()
+        if tok and tok not in out:
+            out.append(tok)
+    return out
+
+
+TODAY_QUESTION_INTERNAL_TOKENS = _configured_today_question_cron_tokens()
+TODAY_QUESTION_INTERNAL_TOKEN = TODAY_QUESTION_INTERNAL_TOKENS[0] if TODAY_QUESTION_INTERNAL_TOKENS else ""
 
 
 class TodayQuestionChoiceOption(BaseModel):
@@ -134,6 +148,75 @@ class TodayQuestionPushResponse(BaseModel):
     status: str = "ok"
     scanned: int = 0
     sent: int = 0
+
+
+def _extract_today_question_cron_token(request: Request) -> Optional[str]:
+    try:
+        x_cron_token = str(request.headers.get("x-cron-token") or "").strip()
+    except Exception:
+        x_cron_token = ""
+    if x_cron_token:
+        return x_cron_token
+
+    try:
+        x_internal_token = str(request.headers.get("x-internal-token") or "").strip()
+    except Exception:
+        x_internal_token = ""
+    if x_internal_token:
+        return x_internal_token
+
+    authorization = request.headers.get("authorization")
+    provided = _extract_bearer_token(authorization) if authorization else None
+    token = str(provided or "").strip()
+    return token or None
+
+
+def _require_today_question_cron_auth(request: Request) -> None:
+    expected = list(TODAY_QUESTION_INTERNAL_TOKENS or [])
+    if not expected:
+        raise HTTPException(status_code=500, detail="Today question cron token is not configured")
+
+    provided = _extract_today_question_cron_token(request)
+    if not provided or provided not in expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[datetime] = None) -> TodayQuestionPushResponse:
+    current_utc = now_utc or datetime.now(timezone.utc)
+    candidates = await store.list_due_push_candidates(now_utc=current_utc, limit=limit)
+    sent = 0
+    for row in candidates:
+        token = str(row.get("push_token") or "").strip()
+        if not token:
+            continue
+        question_text = str(row.get("question_text") or "").strip()
+        body = "今日の問いが届きました。Homeを開いて答えてみましょう。"
+        if question_text:
+            snippet = question_text[:48]
+            body = f"今日の問い: {snippet}"
+        try:
+            await _send_fcm_push(
+                tokens=[token],
+                title="Cocolon",
+                body=body,
+                data={
+                    "type": "today_question",
+                    "screen": "Input",
+                    "service_day_key": str(row.get("service_day_key") or ""),
+                    "question_id": str(row.get("question_id") or ""),
+                    "sequence_no": str(row.get("sequence_no") or ""),
+                },
+            )
+            sent += 1
+            await store.mark_push_delivered(
+                user_id=str(row.get("user_id") or ""),
+                service_day_key=str(row.get("service_day_key") or ""),
+                timezone_name=str(row.get("timezone_name") or ""),
+                delivery_time_local=str(row.get("delivery_time_local") or ""),
+            )
+        except Exception:
+            logger.exception("today_question: push send failed")
+    return TodayQuestionPushResponse(scanned=len(candidates), sent=sent)
 
 
 async def _require_user_id(authorization: Optional[str]) -> str:
@@ -299,48 +382,8 @@ def register_today_question_routes(app: FastAPI) -> None:
 
     @app.post("/cron/today-question/push", response_model=TodayQuestionPushResponse)
     async def today_question_push_cron(
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-        x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token"),
+        request: Request,
         limit: int = Query(default=200, ge=1, le=1000),
     ) -> TodayQuestionPushResponse:
-        provided = str(x_internal_token or "").strip()
-        if not provided and authorization and authorization.lower().startswith("bearer "):
-            provided = authorization.split(" ", 1)[1].strip()
-        if TODAY_QUESTION_INTERNAL_TOKEN and provided != TODAY_QUESTION_INTERNAL_TOKEN:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-
-        now_utc = datetime.now(timezone.utc)
-        candidates = await store.list_due_push_candidates(now_utc=now_utc, limit=limit)
-        sent = 0
-        for row in candidates:
-            token = str(row.get("push_token") or "").strip()
-            if not token:
-                continue
-            question_text = str(row.get("question_text") or "").strip()
-            body = "今日の問いが届きました。Homeを開いて答えてみましょう。"
-            if question_text:
-                snippet = question_text[:48]
-                body = f"今日の問い: {snippet}"
-            try:
-                await _send_fcm_push(
-                    tokens=[token],
-                    title="Cocolon",
-                    body=body,
-                    data={
-                        "type": "today_question",
-                        "screen": "Input",
-                        "service_day_key": str(row.get("service_day_key") or ""),
-                        "question_id": str(row.get("question_id") or ""),
-                        "sequence_no": str(row.get("sequence_no") or ""),
-                    },
-                )
-                sent += 1
-                await store.mark_push_delivered(
-                    user_id=str(row.get("user_id") or ""),
-                    service_day_key=str(row.get("service_day_key") or ""),
-                    timezone_name=str(row.get("timezone_name") or ""),
-                    delivery_time_local=str(row.get("delivery_time_local") or ""),
-                )
-            except Exception:
-                logger.exception("today_question: push send failed")
-        return TodayQuestionPushResponse(scanned=len(candidates), sent=sent)
+        _require_today_question_cron_auth(request)
+        return await run_today_question_push_once(limit=limit)

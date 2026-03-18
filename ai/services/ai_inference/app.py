@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import httpx
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from middleware_active_user_touch import install_active_user_touch_middleware
 from middleware_api_contract import install_api_contract_middleware
@@ -50,7 +50,11 @@ from subscription_runtime_config import (
 from subscription_release_config import register_subscription_release_config_routes
 from subscription_live_console_check import register_subscription_live_console_routes
 from api_myweb_reports import register_myweb_report_routes, _build_target_period as _myweb_build_target_period
-from api_cron_distribution import register_cron_distribution_routes
+from api_cron_distribution import (
+    ReportDistributionPushBatchRequest,
+    register_cron_distribution_routes,
+    run_report_distribution_push_once,
+)
 from api_ranking import register_ranking_routes
 from api_ranking_mymodel_views import register_ranking_mymodel_views_routes
 from api_ranking_mymodel_resonances import register_ranking_mymodel_resonances_routes
@@ -78,7 +82,7 @@ from api_myweb_reads import register_myweb_read_routes
 from api_myprofile_reports_read import register_myprofile_report_read_routes
 from api_mymodel_create import register_mymodel_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
-from api_today_question import register_today_question_routes
+from api_today_question import register_today_question_routes, run_today_question_push_once
 from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
 from astor_myprofile_persona import build_persona_context_payload
@@ -106,11 +110,25 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 # Internal rollover (Cron -> single server entry)
-INTERNAL_ROLLOVER_TOKEN = (
-    os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip()
-    or os.getenv("CRON_INTERNAL_TOKEN", "").strip()
-    or os.getenv("INTERNAL_API_TOKEN", "").strip()
-)
+def _configured_internal_rollover_tokens() -> List[str]:
+    values = [
+        os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip(),
+        os.getenv("CRON_INTERNAL_TOKEN", "").strip(),
+        os.getenv("INTERNAL_API_TOKEN", "").strip(),
+        os.getenv("MASHOS_CRON_TOKEN", "").strip(),
+        os.getenv("MYMODEL_CRON_TOKEN", "").strip(),
+        os.getenv("COCOLON_CRON_TOKEN", "").strip(),
+    ]
+    out: List[str] = []
+    for value in values:
+        tok = str(value or "").strip()
+        if tok and tok not in out:
+            out.append(tok)
+    return out
+
+
+INTERNAL_ROLLOVER_TOKENS = _configured_internal_rollover_tokens()
+INTERNAL_ROLLOVER_TOKEN = INTERNAL_ROLLOVER_TOKENS[0] if INTERNAL_ROLLOVER_TOKENS else ""
 ACTIVE_USERS_TABLE = (os.getenv("ACTIVE_USERS_TABLE") or "active_users").strip() or "active_users"
 try:
     ROLLOVER_ACTIVE_USERS_LIMIT = int(os.getenv("ROLLOVER_ACTIVE_USERS_LIMIT", "10000") or "10000")
@@ -333,13 +351,34 @@ def _iso_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _require_internal_rollover_auth(authorization: Optional[str]) -> None:
-    expected = str(INTERNAL_ROLLOVER_TOKEN or "").strip()
+def _extract_internal_rollover_token_from_request(request: Request) -> Optional[str]:
+    try:
+        x_cron_token = str(request.headers.get("x-cron-token") or "").strip()
+    except Exception:
+        x_cron_token = ""
+    if x_cron_token:
+        return x_cron_token
+
+    try:
+        x_internal_token = str(request.headers.get("x-internal-token") or "").strip()
+    except Exception:
+        x_internal_token = ""
+    if x_internal_token:
+        return x_internal_token
+
+    authorization = request.headers.get("authorization")
+    actual = _extract_bearer_token(authorization) if authorization else None
+    actual_token = str(actual or "").strip()
+    return actual_token or None
+
+
+def _require_internal_rollover_auth(request: Request) -> None:
+    expected = list(INTERNAL_ROLLOVER_TOKENS or [])
     if not expected:
         raise HTTPException(status_code=500, detail="Internal rollover token is not configured")
 
-    actual = _extract_bearer_token(authorization) if authorization else None
-    if not actual or str(actual).strip() != expected:
+    actual = _extract_internal_rollover_token_from_request(request)
+    if not actual or actual not in expected:
         raise HTTPException(status_code=401, detail="Invalid internal rollover token")
 
 
@@ -1106,9 +1145,7 @@ async def _run_rollover_once() -> Dict[str, Any]:
 
 
 @app.post("/internal/rollover")
-async def internal_rollover(
-    authorization: Optional[str] = Header(default=None, alias="Authorization"),
-) -> Dict[str, Any]:
+async def internal_rollover(request: Request) -> Dict[str, Any]:
     """Single daily cron entry (JST 0:00) that fans out daily/weekly/monthly rollover jobs.
 
     Behavior:
@@ -1118,7 +1155,7 @@ async def internal_rollover(
     - Self-structure monthly is exposed as a month-start hook via URL env, because
       its existing persistence path is outside this file.
     """
-    _require_internal_rollover_auth(authorization)
+    _require_internal_rollover_auth(request)
     return await _run_rollover_once()
 
 
@@ -1131,6 +1168,56 @@ def _run_rollover_cli() -> int:
         return 0
     except Exception:
         logger.exception("rollover CLI failed")
+        return 1
+
+
+def _model_to_jsonable(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
+    return value
+
+
+def _parse_optional_cli_limit(args: List[str], default: int) -> int:
+    for raw in args:
+        candidate = str(raw or "").strip()
+        if not candidate or candidate.startswith("--"):
+            continue
+        try:
+            return max(1, int(candidate))
+        except Exception:
+            continue
+    return default
+
+
+def _run_report_distribution_push_cli(args: Optional[List[str]] = None) -> int:
+    import asyncio
+
+    argv = list(args or [])
+    limit = _parse_optional_cli_limit(argv, 300)
+    dry_run = any(str(arg or "").strip().lower() in {"--dry-run", "dry-run", "dry_run"} for arg in argv)
+    body = ReportDistributionPushBatchRequest(limit=limit, dry_run=dry_run)
+    try:
+        result = asyncio.run(run_report_distribution_push_once(body=body))
+        print(json.dumps(_model_to_jsonable(result), ensure_ascii=False))
+        return 0
+    except Exception:
+        logger.exception("report_distribution_push CLI failed")
+        return 1
+
+
+def _run_today_question_push_cli(args: Optional[List[str]] = None) -> int:
+    import asyncio
+
+    argv = list(args or [])
+    limit = _parse_optional_cli_limit(argv, 200)
+    try:
+        result = asyncio.run(run_today_question_push_once(limit=limit))
+        print(json.dumps(_model_to_jsonable(result), ensure_ascii=False))
+        return 0
+    except Exception:
+        logger.exception("today_question_push CLI failed")
         return 1
 
 
@@ -1317,8 +1404,15 @@ async def infer(
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1 and str(sys.argv[1]).strip().lower() == "rollover":
-        raise SystemExit(_run_rollover_cli())
+    if len(sys.argv) > 1:
+        _cmd = str(sys.argv[1]).strip().lower()
+        _args = sys.argv[2:]
+        if _cmd == "rollover":
+            raise SystemExit(_run_rollover_cli())
+        if _cmd in {"report_distribution_push", "report-distribution-push"}:
+            raise SystemExit(_run_report_distribution_push_cli(_args))
+        if _cmd in {"today_question_push", "today-question-push"}:
+            raise SystemExit(_run_today_question_push_cli(_args))
 
     import uvicorn
     uvicorn.run("app:app", host=HOST, port=PORT, log_level="info")

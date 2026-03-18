@@ -29,10 +29,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from api_emotion_submit import _ensure_supabase_config, _fetch_push_tokens_for_users, _send_fcm_push
+from api_emotion_submit import (
+    _ensure_supabase_config,
+    _extract_bearer_token,
+    _fetch_push_tokens_for_users,
+    _send_fcm_push,
+)
 
 # Phase11: observability (structured logs + optional slack notifications)
 try:
@@ -179,12 +184,25 @@ MYPROFILE_REPORTS_TABLE = (os.getenv("MYPROFILE_REPORTS_TABLE", "myprofile_repor
 
 MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
 
-CRON_TOKEN_ENV = (
-    os.getenv("MASHOS_CRON_TOKEN")
-    or os.getenv("MYMODEL_CRON_TOKEN")
-    or os.getenv("COCOLON_CRON_TOKEN")
-    or ""
-).strip()
+def _configured_cron_tokens() -> List[str]:
+    values = [
+        os.getenv("INTERNAL_ROLLOVER_TOKEN", "").strip(),
+        os.getenv("CRON_INTERNAL_TOKEN", "").strip(),
+        os.getenv("INTERNAL_API_TOKEN", "").strip(),
+        os.getenv("MASHOS_CRON_TOKEN", "").strip(),
+        os.getenv("MYMODEL_CRON_TOKEN", "").strip(),
+        os.getenv("COCOLON_CRON_TOKEN", "").strip(),
+    ]
+    out: List[str] = []
+    for value in values:
+        tok = str(value or "").strip()
+        if tok and tok not in out:
+            out.append(tok)
+    return out
+
+
+CRON_TOKEN_VALUES = _configured_cron_tokens()
+CRON_TOKEN_ENV = CRON_TOKEN_VALUES[0] if CRON_TOKEN_VALUES else ""
 
 DEFAULT_BATCH_SIZE = int(os.getenv("CRON_BATCH_SIZE", "200") or "200")
 DEFAULT_CONCURRENCY = int(os.getenv("CRON_CONCURRENCY", "4") or "4")
@@ -531,12 +549,34 @@ async def _fetch_user_ids_from_profiles(
 # ----------------------------
 
 
-def _require_cron_token(x_cron_token: Optional[str]) -> None:
-    tok = str(x_cron_token or "").strip()
-    if not CRON_TOKEN_ENV:
+def _extract_cron_token_from_request(request: Request) -> Optional[str]:
+    try:
+        x_cron_token = str(request.headers.get("x-cron-token") or "").strip()
+    except Exception:
+        x_cron_token = ""
+    if x_cron_token:
+        return x_cron_token
+
+    try:
+        x_internal_token = str(request.headers.get("x-internal-token") or "").strip()
+    except Exception:
+        x_internal_token = ""
+    if x_internal_token:
+        return x_internal_token
+
+    authorization = request.headers.get("authorization")
+    tok = _extract_bearer_token(authorization) if authorization else None
+    token = str(tok or "").strip()
+    return token or None
+
+
+def _require_cron_token(request: Request) -> None:
+    if not CRON_TOKEN_VALUES:
         # Fail closed: if env is not set, do not expose cron routes.
         raise HTTPException(status_code=500, detail="Cron token is not configured")
-    if not tok or tok != CRON_TOKEN_ENV:
+
+    tok = _extract_cron_token_from_request(request)
+    if not tok or tok not in CRON_TOKEN_VALUES:
         raise HTTPException(status_code=401, detail="Invalid cron token")
 
 
@@ -1355,6 +1395,15 @@ def _distribution_key_for_now(now_utc: datetime) -> str:
     return now_utc.astimezone(JST).date().isoformat()
 
 
+REPORT_DISTRIBUTION_PUSH_DISABLED_FAMILIES = {
+    "self_structure_monthly",
+}
+
+
+def _is_push_enabled_report_family(family: Any) -> bool:
+    return str(family or "").strip() not in REPORT_DISTRIBUTION_PUSH_DISABLED_FAMILIES
+
+
 def _report_distribution_family_priority(family: str) -> int:
     order = {
         "emotion_daily": 10,
@@ -1392,12 +1441,15 @@ async def _enqueue_report_distribution_candidate(
 ) -> None:
     if ReportDistributionPushStore is None:
         return
+    family = str(report_family or "").strip()
+    if not _is_push_enabled_report_family(family):
+        return
     try:
         store = ReportDistributionPushStore()
         await store.create_candidate(
             user_id=str(user_id or "").strip(),
             distribution_key=str(distribution_key or "").strip(),
-            report_family=str(report_family or "").strip(),
+            report_family=family,
             report_table=str(report_table or "").strip(),
             report_id=report_id,
             report_type=(str(report_type or "").strip() or None),
@@ -1409,13 +1461,18 @@ async def _enqueue_report_distribution_candidate(
         logger.warning(
             "enqueue report_distribution candidate failed. user=%s family=%s err=%s",
             str(user_id or "").strip(),
-            str(report_family or "").strip(),
+            family,
             exc,
         )
 
 
 def _build_report_distribution_push_payload(bundle_rows: List[Dict[str, Any]], *, distribution_key: str) -> Dict[str, Any]:
-    rows = sorted(bundle_rows or [], key=lambda r: _report_distribution_family_priority(str((r or {}).get("report_family") or "")))
+    rows = [
+        row
+        for row in (bundle_rows or [])
+        if _is_push_enabled_report_family((row or {}).get("report_family"))
+    ]
+    rows = sorted(rows, key=lambda r: _report_distribution_family_priority(str((r or {}).get("report_family") or "")))
     families = [str((r or {}).get("report_family") or "").strip() for r in rows if str((r or {}).get("report_family") or "").strip()]
     labels = [_candidate_report_label(r) for r in rows]
     unique_labels: List[str] = []
@@ -1596,15 +1653,179 @@ async def _maybe_notify_slack_cron_failure(
         return
 
 
+async def run_report_distribution_push_once(
+    *,
+    body: ReportDistributionPushBatchRequest,
+) -> ReportDistributionPushBatchResponse:
+    now_utc = _parse_now_utc(body.now_iso)
+    if ReportDistributionPushStore is None:
+        raise HTTPException(status_code=500, detail="report_distribution_push_store is not available")
+
+    store = ReportDistributionPushStore()
+    candidate_limit = max(1, min(int(body.limit or 300) * 6, 2000))
+    rows = await store.list_pending_candidates(limit=candidate_limit)
+
+    bundles: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        uid = str(row.get("user_id") or "").strip()
+        dist_key = str(row.get("distribution_key") or "").strip()
+        if not uid or not dist_key:
+            continue
+        bundles.setdefault((uid, dist_key), []).append(row)
+
+    settings_store = ReportDistributionSettingsStore() if ReportDistributionSettingsStore is not None else None
+    settings_map: Dict[str, Dict[str, Any]] = {}
+    if settings_store is not None and bundles:
+        try:
+            settings_map = await settings_store.fetch_settings_map_for_users(sorted({uid for (uid, _dist) in bundles.keys()}))
+        except Exception:
+            logger.exception("report_distribution_push: fetch settings map failed")
+            settings_map = {}
+
+    processed = 0
+    sent = 0
+    skipped = 0
+    errors = 0
+    sent_users: List[str] = []
+    skipped_users: List[str] = []
+    error_samples: List[str] = []
+
+    for (uid, dist_key), bundle_rows in sorted(bundles.items(), key=lambda item: (item[0][1], item[0][0]))[: max(1, int(body.limit or 300))]:
+        processed += 1
+        try:
+            settings = dict((settings_map or {}).get(uid) or {
+                "notification_enabled": REPORT_DISTRIBUTION_DEFAULT_NOTIFICATION_ENABLED,
+                "delivery_time_local": REPORT_DISTRIBUTION_DEFAULT_DELIVERY_TIME,
+                "timezone_name": REPORT_DISTRIBUTION_DEFAULT_TIMEZONE,
+            })
+            enabled_bundle_rows = [
+                row
+                for row in (bundle_rows or [])
+                if _is_push_enabled_report_family((row or {}).get("report_family"))
+            ]
+            suppressed_families = [
+                str((row or {}).get("report_family") or "").strip()
+                for row in (bundle_rows or [])
+                if not _is_push_enabled_report_family((row or {}).get("report_family"))
+            ]
+
+            if not enabled_bundle_rows:
+                skipped += 1
+                skipped_users.append(uid)
+                if not body.dry_run:
+                    preview_payload = _build_report_distribution_push_payload([], distribution_key=dist_key)
+                    await store.mark_bundle_delivered(
+                        user_id=uid,
+                        distribution_key=dist_key,
+                        bundle_families=[],
+                        payload={
+                            "sent_at": _iso_utc(now_utc),
+                            "send_status": "suppressed_policy",
+                            "data": dict(preview_payload.get("data") or {}),
+                            "settings": settings,
+                            "suppressed_families": suppressed_families,
+                        },
+                    )
+                continue
+
+            created_values = [
+                str((row or {}).get("created_at") or "").strip()
+                for row in enabled_bundle_rows
+                if str((row or {}).get("created_at") or "").strip()
+            ]
+            candidate_created_at = max(created_values) if created_values else None
+
+            if settings_store is not None and not bool(settings.get("notification_enabled", True)):
+                skipped += 1
+                skipped_users.append(uid)
+                if not body.dry_run:
+                    preview_payload = _build_report_distribution_push_payload(enabled_bundle_rows, distribution_key=dist_key)
+                    await store.mark_bundle_delivered(
+                        user_id=uid,
+                        distribution_key=dist_key,
+                        bundle_families=[str(x or "").strip() for x in list(preview_payload.get("families") or []) if str(x or "").strip()],
+                        payload={
+                            "sent_at": _iso_utc(now_utc),
+                            "send_status": "suppressed_disabled",
+                            "data": dict(preview_payload.get("data") or {}),
+                            "settings": settings,
+                            "suppressed_families": suppressed_families,
+                        },
+                    )
+                continue
+
+            if settings_store is not None and not is_bundle_due_for_settings(
+                candidate_created_at=candidate_created_at,
+                settings=settings,
+                now_utc=now_utc,
+            ):
+                skipped += 1
+                skipped_users.append(uid)
+                continue
+
+            send_res = await _send_report_distribution_bundle_push(
+                user_id=uid,
+                distribution_key=dist_key,
+                bundle_rows=enabled_bundle_rows,
+                dry_run=bool(body.dry_run),
+            )
+            send_status = str((send_res or {}).get("send_status") or "sent")
+            families = [str(x or "").strip() for x in list((send_res or {}).get("bundle_families") or []) if str(x or "").strip()]
+            payload_json = {
+                "sent_at": _iso_utc(now_utc),
+                "send_status": send_status,
+                "data": dict((send_res or {}).get("payload") or {}),
+                "settings": settings,
+            }
+            if not body.dry_run:
+                await store.mark_bundle_delivered(
+                    user_id=uid,
+                    distribution_key=dist_key,
+                    bundle_families=families,
+                    payload=payload_json,
+                )
+            if send_status == "sent":
+                sent += 1
+                sent_users.append(uid)
+            else:
+                skipped += 1
+                skipped_users.append(uid)
+        except Exception as exc:
+            errors += 1
+            if len(error_samples) < 10:
+                error_samples.append(f"{uid}:{dist_key}:{exc}")
+            logger.warning(
+                "report_distribution_push failed. user=%s distribution_key=%s err=%s",
+                uid,
+                dist_key,
+                exc,
+            )
+
+    return ReportDistributionPushBatchResponse(
+        status="ok",
+        now_iso=_iso_utc(now_utc),
+        processed=processed,
+        sent=sent,
+        skipped=skipped,
+        errors=errors,
+        bundles=processed,
+        sent_users=sent_users,
+        skipped_users=skipped_users,
+        error_samples=error_samples,
+    )
+
+
 def register_cron_distribution_routes(app: FastAPI) -> None:
 
     @app.post("/cron/myweb/daily", response_model=CronBatchResponse)
     async def cron_myweb_daily(
+        request: Request,
         body: CronBatchRequest,
-        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
     ) -> CronBatchResponse:
         job = "myweb_daily"
-        _require_cron_token(x_cron_token)
+        _require_cron_token(request)
         run_id = new_run_id(job)
         start_ms = monotonic_ms()
 
@@ -1795,11 +2016,11 @@ def register_cron_distribution_routes(app: FastAPI) -> None:
 
     @app.post("/cron/myweb/weekly", response_model=CronBatchResponse)
     async def cron_myweb_weekly(
+        request: Request,
         body: CronBatchRequest,
-        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
     ) -> CronBatchResponse:
         job = "myweb_weekly"
-        _require_cron_token(x_cron_token)
+        _require_cron_token(request)
         run_id = new_run_id(job)
         start_ms = monotonic_ms()
 
@@ -1992,11 +2213,11 @@ def register_cron_distribution_routes(app: FastAPI) -> None:
 
     @app.post("/cron/myweb/monthly", response_model=CronBatchResponse)
     async def cron_myweb_monthly(
+        request: Request,
         body: CronBatchRequest,
-        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
     ) -> CronBatchResponse:
         job = "myweb_monthly"
-        _require_cron_token(x_cron_token)
+        _require_cron_token(request)
         run_id = new_run_id(job)
         start_ms = monotonic_ms()
 
@@ -2189,11 +2410,11 @@ def register_cron_distribution_routes(app: FastAPI) -> None:
 
     @app.post("/cron/myprofile/monthly", response_model=CronBatchResponse)
     async def cron_myprofile_monthly(
+        request: Request,
         body: CronBatchRequest,
-        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
     ) -> CronBatchResponse:
         job = "myprofile_monthly"
-        _require_cron_token(x_cron_token)
+        _require_cron_token(request)
         run_id = new_run_id(job)
         start_ms = monotonic_ms()
 
@@ -2393,134 +2614,8 @@ def register_cron_distribution_routes(app: FastAPI) -> None:
 
     @app.post("/cron/report-distribution/push", response_model=ReportDistributionPushBatchResponse)
     async def cron_report_distribution_push(
+        request: Request,
         body: ReportDistributionPushBatchRequest,
-        x_cron_token: Optional[str] = Header(default=None, alias="X-Cron-Token"),
     ) -> ReportDistributionPushBatchResponse:
-        _require_cron_token(x_cron_token)
-        now_utc = _parse_now_utc(body.now_iso)
-        if ReportDistributionPushStore is None:
-            raise HTTPException(status_code=500, detail="report_distribution_push_store is not available")
-
-        store = ReportDistributionPushStore()
-        candidate_limit = max(1, min(int(body.limit or 300) * 6, 2000))
-        rows = await store.list_pending_candidates(limit=candidate_limit)
-
-        bundles: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            uid = str(row.get("user_id") or "").strip()
-            dist_key = str(row.get("distribution_key") or "").strip()
-            if not uid or not dist_key:
-                continue
-            bundles.setdefault((uid, dist_key), []).append(row)
-
-        settings_store = ReportDistributionSettingsStore() if ReportDistributionSettingsStore is not None else None
-        settings_map: Dict[str, Dict[str, Any]] = {}
-        if settings_store is not None and bundles:
-            try:
-                settings_map = await settings_store.fetch_settings_map_for_users(sorted({uid for (uid, _dist) in bundles.keys()}))
-            except Exception:
-                logger.exception("report_distribution_push: fetch settings map failed")
-                settings_map = {}
-
-        processed = 0
-        sent = 0
-        skipped = 0
-        errors = 0
-        sent_users: List[str] = []
-        skipped_users: List[str] = []
-        error_samples: List[str] = []
-
-        for (uid, dist_key), bundle_rows in sorted(bundles.items(), key=lambda item: (item[0][1], item[0][0]))[: max(1, int(body.limit or 300))]:
-            processed += 1
-            try:
-                settings = dict((settings_map or {}).get(uid) or {
-                    "notification_enabled": REPORT_DISTRIBUTION_DEFAULT_NOTIFICATION_ENABLED,
-                    "delivery_time_local": REPORT_DISTRIBUTION_DEFAULT_DELIVERY_TIME,
-                    "timezone_name": REPORT_DISTRIBUTION_DEFAULT_TIMEZONE,
-                })
-                created_values = [
-                    str((row or {}).get("created_at") or "").strip()
-                    for row in (bundle_rows or [])
-                    if str((row or {}).get("created_at") or "").strip()
-                ]
-                candidate_created_at = max(created_values) if created_values else None
-
-                if settings_store is not None and not bool(settings.get("notification_enabled", True)):
-                    skipped += 1
-                    skipped_users.append(uid)
-                    if not body.dry_run:
-                        preview_payload = _build_report_distribution_push_payload(bundle_rows, distribution_key=dist_key)
-                        await store.mark_bundle_delivered(
-                            user_id=uid,
-                            distribution_key=dist_key,
-                            bundle_families=[str(x or "").strip() for x in list(preview_payload.get("families") or []) if str(x or "").strip()],
-                            payload={
-                                "sent_at": _iso_utc(now_utc),
-                                "send_status": "suppressed_disabled",
-                                "data": dict(preview_payload.get("data") or {}),
-                                "settings": settings,
-                            },
-                        )
-                    continue
-
-                if settings_store is not None and not is_bundle_due_for_settings(
-                    candidate_created_at=candidate_created_at,
-                    settings=settings,
-                    now_utc=now_utc,
-                ):
-                    skipped += 1
-                    skipped_users.append(uid)
-                    continue
-
-                send_res = await _send_report_distribution_bundle_push(
-                    user_id=uid,
-                    distribution_key=dist_key,
-                    bundle_rows=bundle_rows,
-                    dry_run=bool(body.dry_run),
-                )
-                send_status = str((send_res or {}).get("send_status") or "sent")
-                families = [str(x or "").strip() for x in list((send_res or {}).get("bundle_families") or []) if str(x or "").strip()]
-                payload_json = {
-                    "sent_at": _iso_utc(now_utc),
-                    "send_status": send_status,
-                    "data": dict((send_res or {}).get("payload") or {}),
-                    "settings": settings,
-                }
-                if not body.dry_run:
-                    await store.mark_bundle_delivered(
-                        user_id=uid,
-                        distribution_key=dist_key,
-                        bundle_families=families,
-                        payload=payload_json,
-                    )
-                if send_status == "sent":
-                    sent += 1
-                    sent_users.append(uid)
-                else:
-                    skipped += 1
-                    skipped_users.append(uid)
-            except Exception as exc:
-                errors += 1
-                if len(error_samples) < 10:
-                    error_samples.append(f"{uid}:{dist_key}:{exc}")
-                logger.warning(
-                    "report_distribution_push failed. user=%s distribution_key=%s err=%s",
-                    uid,
-                    dist_key,
-                    exc,
-                )
-
-        return ReportDistributionPushBatchResponse(
-            status="ok",
-            now_iso=_iso_utc(now_utc),
-            processed=processed,
-            sent=sent,
-            skipped=skipped,
-            errors=errors,
-            bundles=processed,
-            sent_users=sent_users,
-            skipped_users=skipped_users,
-            error_samples=error_samples,
-        )
+        _require_cron_token(request)
+        return await run_report_distribution_push_once(body=body)

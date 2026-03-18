@@ -26,6 +26,7 @@ TODAY_QUESTION_ANSWERS_TABLE = (os.getenv("TODAY_QUESTION_ANSWERS_TABLE") or "to
 TODAY_QUESTION_REVISIONS_TABLE = (os.getenv("TODAY_QUESTION_REVISIONS_TABLE") or "today_question_answer_revisions").strip() or "today_question_answer_revisions"
 TODAY_QUESTION_PUSH_DELIVERIES_TABLE = (os.getenv("TODAY_QUESTION_PUSH_DELIVERIES_TABLE") or "today_question_push_deliveries").strip() or "today_question_push_deliveries"
 TODAY_QUESTION_DEFAULT_TIMEZONE = (os.getenv("TODAY_QUESTION_DEFAULT_TIMEZONE") or "Asia/Tokyo").strip() or "Asia/Tokyo"
+TODAY_QUESTION_SERVICE_DAY_TIMEZONE = (os.getenv("TODAY_QUESTION_SERVICE_DAY_TIMEZONE") or "Asia/Tokyo").strip() or "Asia/Tokyo"
 TODAY_QUESTION_DEFAULT_DELIVERY_TIME = (os.getenv("TODAY_QUESTION_DEFAULT_DELIVERY_TIME") or "18:00").strip() or "18:00"
 TODAY_QUESTION_DEFAULT_NOTIFICATION_ENABLED = (os.getenv("TODAY_QUESTION_DEFAULT_NOTIFICATION_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on")
 TODAY_QUESTION_MAX_HISTORY_LIMIT = int(os.getenv("TODAY_QUESTION_MAX_HISTORY_LIMIT", "100") or "100")
@@ -78,9 +79,32 @@ def _local_day_key(now_utc: Optional[datetime], timezone_name: str) -> str:
     return dt.date().isoformat()
 
 
+def _service_day_key(now_utc: Optional[datetime]) -> str:
+    return _local_day_key(now_utc, TODAY_QUESTION_SERVICE_DAY_TIMEZONE)
+
+
 def _local_hhmm(now_utc: Optional[datetime], timezone_name: str) -> str:
     dt = (now_utc or _now_utc()).astimezone(_zoneinfo(timezone_name))
     return dt.strftime("%H:%M")
+
+
+def _local_minutes_since_midnight(now_utc: Optional[datetime], timezone_name: str) -> int:
+    dt = (now_utc or _now_utc()).astimezone(_zoneinfo(timezone_name))
+    return int(dt.hour) * 60 + int(dt.minute)
+
+
+def _delivery_time_minutes(delivery_time_local: Any) -> int:
+    hhmm = _normalize_delivery_time_local(delivery_time_local)
+    try:
+        hh_str, mm_str = hhmm.split(":", 1)
+        return int(hh_str) * 60 + int(mm_str)
+    except Exception:
+        fallback_hh, fallback_mm = TODAY_QUESTION_DEFAULT_DELIVERY_TIME.split(":", 1)
+        return int(fallback_hh) * 60 + int(fallback_mm)
+
+
+def _is_delivery_time_due(now_utc: Optional[datetime], timezone_name: str, delivery_time_local: Any) -> bool:
+    return _local_minutes_since_midnight(now_utc, timezone_name) >= _delivery_time_minutes(delivery_time_local)
 
 
 def _parse_jsonish(value: Any, default: Any) -> Any:
@@ -684,7 +708,9 @@ class TodayQuestionStore:
     ) -> TodayQuestionCurrentBundle:
         uid = str(user_id or "").strip()
         settings = await self.get_or_create_user_settings(uid, timezone_name=timezone_name)
-        service_day_key = _local_day_key(now_utc, settings["timezone_name"])
+        # 生成/表示の切り替えはレポート配布と同じく service-day 基準（既定: Asia/Tokyo の 0:00）に固定する。
+        # ユーザー設定の timezone_name / delivery_time_local は push 通知の時刻判定のみに使う。
+        service_day_key = _service_day_key(now_utc)
         total_count = await self._fetch_total_sequence_count()
         today_answer = await self._fetch_answer_row_for_day(uid, service_day_key)
 
@@ -1049,9 +1075,10 @@ class TodayQuestionStore:
             settings = _settings_public(settings_row)
             if not settings["notification_enabled"]:
                 continue
-            if _local_hhmm(now, settings["timezone_name"]) != settings["delivery_time_local"]:
+            if not _is_delivery_time_due(now, settings["timezone_name"], settings["delivery_time_local"]):
                 continue
-            day_key = _local_day_key(now, settings["timezone_name"])
+            # 通知は user settings の local time を見るが、対象 question/day 自体は service-day 基準で固定する。
+            day_key = _service_day_key(now)
             due_by_day.setdefault(day_key, []).append({
                 "user_id": uid,
                 "push_token": str(profile.get("push_token") or "").strip(),

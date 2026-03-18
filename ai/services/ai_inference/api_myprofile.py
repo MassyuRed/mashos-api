@@ -344,34 +344,9 @@ async def _enqueue_self_structure_monthly_distribution_candidate(
     period_start: Optional[str],
     period_end: Optional[str],
 ) -> bool:
-    if ReportDistributionPushStore is None:
-        return False
-    uid = str(user_id or "").strip()
-    dist_key = _normalize_distribution_key(distribution_key)
-    if not uid or not dist_key:
-        return False
-    row = dict(report_row or {})
-    try:
-        store = ReportDistributionPushStore()
-        await store.create_candidate(
-            user_id=uid,
-            distribution_key=dist_key,
-            report_family="self_structure_monthly",
-            report_table="myprofile_reports",
-            report_id=row.get("id"),
-            report_type="monthly",
-            period_start=str(period_start or row.get("period_start") or "").strip() or None,
-            period_end=str(period_end or row.get("period_end") or "").strip() or None,
-            open_target={
-                "screen": "MyWeb",
-                "open_mode": "selfReportHistory",
-                "self_report_type": "monthly",
-            },
-        )
-        return True
-    except Exception as exc:
-        logger.warning("Failed to enqueue self_structure monthly distribution push candidate: %s", exc)
-        return False
+    # 2026-03 policy change:
+    # 自己構造分析の月報は生成・保存は継続するが、Push 通知候補には積まない。
+    return False
 
 
 class MyProfileMonthlyEnsureResponse(BaseModel):
