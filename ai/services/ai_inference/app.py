@@ -75,6 +75,7 @@ from api_account_status import register_account_status_routes
 from api_account_visibility import register_account_visibility_routes
 from api_account_lifecycle import register_account_lifecycle_routes
 from api_app_bootstrap import register_app_bootstrap_routes
+from api_notice import register_notice_routes
 from api_input_summary import register_input_summary_routes
 from api_global_summary import register_global_summary_routes
 from api_report_reads import register_report_reads_routes
@@ -173,6 +174,7 @@ register_account_status_routes(app)
 register_account_visibility_routes(app)
 register_account_lifecycle_routes(app)
 register_app_bootstrap_routes(app)
+register_notice_routes(app)
 register_input_summary_routes(app)
 register_global_summary_routes(app)
 register_report_reads_routes(app)

@@ -44,6 +44,10 @@ legacy table / refresh fallback during migration.
 | PATCH | `/today-question/history/{answer_id}` | `today_question.history.patch.v1` | `false` |  |  |
 | GET | `/today-question/settings` | `today_question.settings.read.v1` | `false` |  |  |
 | PATCH | `/today-question/settings` | `today_question.settings.patch.v1` | `false` |  |  |
+| GET | `/notices/current` | `notice.current.v1` | `false` |  |  |
+| GET | `/notices/history` | `notice.history.list.v1` | `false` |  |  |
+| POST | `/notices/read` | `notice.read.mark.v1` | `false` |  |  |
+| POST | `/notices/popup-seen` | `notice.popup_seen.mark.v1` | `false` |  |  |
 | GET | `/report-distribution/settings` | `report_distribution.settings.read.v1` | `false` |  | Bundled MyWeb/MyProfile distribution push settings |
 | PATCH | `/report-distribution/settings` | `report_distribution.settings.patch.v1` | `false` |  | Bundled MyWeb/MyProfile distribution push settings |
 | GET | `/emotion/history/search` | `emotion.history.search.read.v1` | `false` |  |  |
