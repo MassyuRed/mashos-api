@@ -277,10 +277,17 @@ def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
     return h
 
 
-async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
+async def _sb_get(
+    path: str,
+    *,
+    params: Optional[Dict[str, str]] = None,
+    timeout_seconds: float = 8.0,
+) -> httpx.Response:
     _ensure_supabase_config()
     url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    timeout_value = max(1.0, float(timeout_seconds or 8.0))
+    timeout = httpx.Timeout(timeout_value)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         return await client.get(url, headers=_sb_headers_json(), params=params)
 
 
@@ -383,34 +390,75 @@ def _require_internal_rollover_auth(request: Request) -> None:
 
 
 async def _fetch_active_user_ids(*, limit: int = ROLLOVER_ACTIVE_USERS_LIMIT) -> List[str]:
-    resp = await _sb_get(
-        f"/rest/v1/{ACTIVE_USERS_TABLE}",
-        params={
-            "select": "user_id",
-            "limit": str(max(1, int(limit or 1))),
-        },
-    )
-    if resp.status_code >= 300:
+    import asyncio
+
+    params = {
+        "select": "user_id",
+        "limit": str(max(1, int(limit or 1))),
+    }
+    attempts = 3
+    timeout_seconds = 25.0
+    retryable_statuses = {408, 425, 429, 500, 502, 503, 504}
+    last_transport_error: Optional[Exception] = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = await _sb_get(
+                f"/rest/v1/{ACTIVE_USERS_TABLE}",
+                params=params,
+                timeout_seconds=timeout_seconds,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_transport_error = exc
+            logger.warning(
+                "Supabase active_users select transport error (attempt %s/%s): %s",
+                attempt,
+                attempts,
+                exc,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(1.5 * attempt)
+                continue
+            logger.error("Supabase active_users select failed after retries: %s", exc)
+            raise HTTPException(status_code=502, detail="Failed to fetch active users") from exc
+
+        if resp.status_code < 300:
+            rows = resp.json()
+            out: List[str] = []
+            seen = set()
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    uid = str(row.get("user_id") or "").strip()
+                    if not uid or uid in seen:
+                        continue
+                    seen.add(uid)
+                    out.append(uid)
+            return out
+
+        response_text = (resp.text or "")[:1500]
+        if resp.status_code in retryable_statuses and attempt < attempts:
+            logger.warning(
+                "Supabase active_users select retryable response (attempt %s/%s): %s %s",
+                attempt,
+                attempts,
+                resp.status_code,
+                response_text,
+            )
+            await asyncio.sleep(1.5 * attempt)
+            continue
+
         logger.error(
             "Supabase active_users select failed: %s %s",
             resp.status_code,
-            resp.text[:1500],
+            response_text,
         )
         raise HTTPException(status_code=502, detail="Failed to fetch active users")
 
-    rows = resp.json()
-    out: List[str] = []
-    seen = set()
-    if isinstance(rows, list):
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            uid = str(row.get("user_id") or "").strip()
-            if not uid or uid in seen:
-                continue
-            seen.add(uid)
-            out.append(uid)
-    return out
+    if last_transport_error is not None:
+        raise HTTPException(status_code=502, detail="Failed to fetch active users") from last_transport_error
+    raise HTTPException(status_code=502, detail="Failed to fetch active users")
 
 
 def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
