@@ -3225,6 +3225,26 @@ async def _worker_loop() -> None:
                         error="updated_while_running",
                         delay_seconds=1,
                     )
+                else:
+                    try:
+                        scope = str((analysis_res or {}).get("scope") or (claimed.payload or {}).get("scope") or SNAPSHOT_SCOPE_DEFAULT).strip() or SNAPSHOT_SCOPE_DEFAULT
+                        src_hash = str((analysis_res or {}).get("source_hash") or (claimed.payload or {}).get("source_hash") or "").strip()
+                        if scope == SNAPSHOT_SCOPE_DEFAULT and src_hash:
+                            await enqueue_job(
+                                job_key=f"myprofile_latest_refresh:{claimed.user_id}:{scope}:{src_hash}",
+                                job_type="myprofile_latest_refresh_v1",
+                                user_id=claimed.user_id,
+                                payload={
+                                    "trigger": "analyze_self_structure_deep_v1",
+                                    "requested_at": (claimed.payload or {}).get("requested_at"),
+                                    "scope": scope,
+                                    "source_hash": src_hash,
+                                    "force": True,
+                                },
+                                priority=14,
+                            )
+                    except Exception as exc:
+                        logger.error("MyProfile latest enqueue after deep self structure failed: %s", exc)
                 logger.info(
                     "job done. key=%s type=%s user=%s res=%s",
                     claimed.job_key,

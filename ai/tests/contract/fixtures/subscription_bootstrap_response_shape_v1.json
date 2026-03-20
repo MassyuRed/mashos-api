@@ -1,0 +1,70 @@
+{
+  "sales_enabled": true,
+  "client_sales_enabled": true,
+  "client_sales_disabled_reason": null,
+  "links": {
+    "terms_url": "https://example.com/terms",
+    "privacy_url": "https://example.com/privacy",
+    "support_url": "https://example.com/support"
+  },
+  "policy": {
+    "restore_enabled": true,
+    "manage_enabled": true,
+    "ios_manage_url": "https://apps.apple.com/account/subscriptions",
+    "android_manage_mode": "specific_subscription",
+    "android_package_name": "com.example.cocolon",
+    "review_notice": null
+  },
+  "plans": {
+    "plus": {
+      "visible": true,
+      "purchasable": true,
+      "launch_stage": "live",
+      "title": "Plus会員",
+      "price_label": "月額300円",
+      "subtitle": "レポート閲覧 / MyModelCreate拡張",
+      "features": ["feature-a"],
+      "note_lines": ["note-a"],
+      "cta_label": "このプランを選ぶ",
+      "recommended": true,
+      "purchase_product_id": {
+        "ios": "cocolon_plus_monthly",
+        "android": "cocolon_plus_monthly"
+      },
+      "recognized_product_ids": {
+        "ios": ["cocolon_plus_monthly"],
+        "android": ["cocolon_plus_monthly"]
+      },
+      "trial": {
+        "enabled": true,
+        "subtitle": "１ヵ月無料トライアル（初回限定）",
+        "android_offer_tag": "trial_1m_new_user"
+      }
+    },
+    "premium": {
+      "visible": true,
+      "purchasable": false,
+      "launch_stage": "coming_soon",
+      "title": "Premium会員",
+      "price_label": "月額980円",
+      "subtitle": "Deepモード / DeepInsight / 生成・分析機能",
+      "features": ["feature-p"],
+      "note_lines": ["※Premiumは準備中です。"],
+      "cta_label": "準備中",
+      "recommended": false,
+      "purchase_product_id": {
+        "ios": null,
+        "android": null
+      },
+      "recognized_product_ids": {
+        "ios": [],
+        "android": []
+      },
+      "trial": {
+        "enabled": false,
+        "subtitle": null,
+        "android_offer_tag": null
+      }
+    }
+  }
+}

@@ -12,12 +12,12 @@ from urllib.parse import quote
 import httpx
 import jwt
 
+from subscription_bootstrap_store import resolve_plan_code_by_product_id
 from subscription_projection import (
     VerifiedPurchase,
     clean_optional_str,
     normalize_entitlement_status,
     normalize_plan_code,
-    plan_code_from_product_id,
 )
 
 logger = logging.getLogger("subscription_verifier_ios")
@@ -279,7 +279,7 @@ async def verify_ios_subscription(*, transaction_id: str, product_id: Optional[s
     status = _map_apple_status(wrapper.get("status"))
 
     resolved_product_id = clean_optional_str(tx_payload.get("productId")) or clean_optional_str(product_id)
-    plan_code = normalize_plan_code(plan_code_from_product_id("ios", resolved_product_id))
+    plan_code = normalize_plan_code(await resolve_plan_code_by_product_id("ios", resolved_product_id))
     if not plan_code:
         raise IOSVerificationError(
             f"Could not map iOS product_id to plan_code: {resolved_product_id or '<empty>'}"

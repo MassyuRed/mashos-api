@@ -1,6 +1,6 @@
 # Cocolon Public API Contract Policy
 
-Policy version: `2026-03-12.phase6e`
+Policy version: `2026-03-20.mymodel-qna-unread-status.v1`
 
 ## Core rules
 
@@ -15,13 +15,9 @@ Policy version: `2026-03-12.phase6e`
 
 ## Why this policy exists
 
-This policy fixes the boundary that protects already-released mobile builds from backend evolution.
-The goal is not merely "route everything through an API"; the goal is to keep the request/response
-contract stable while allowing internal tables, workers, and publishing logic to evolve behind that boundary.
-
-Phase 6-E keeps the route surface unchanged and extends state-backed governance to the
-`/global_summary` public aggregate surface. The v1 contract stays fixed, while reads now prefer
-READY daily summary artifacts and retain a legacy table / refresh fallback during migration.
+This policy revision adds `/mymodel/qna/unread-status` so MyModel Home unread
+aggregation stays server-owned across the viewer's accessible reflections, while existing
+v1 routes remain additive-only and backward compatible.
 
 ## Runtime headers
 

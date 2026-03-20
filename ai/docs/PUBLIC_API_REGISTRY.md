@@ -1,10 +1,10 @@
 # Cocolon Public API Registry
 
-Policy version: `2026-03-12.phase6e`
+Policy version: `2026-03-20.mymodel-qna-unread-status.v1`
 
-Phase 6-E keeps the same v1 route set and extends state-backed governance to the app-wide
-`/global_summary` surface, which now prefers READY daily summary artifacts while preserving
-legacy table / refresh fallback during migration.
+This policy revision adds `/mymodel/qna/unread-status` so the MyModel Home Reflections
+NEW badge stays API-owned across the viewer's accessible reflection set (self + followed
+owners), while preserving the single-target `/mymodel/qna/unread` contract.
 
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
@@ -29,6 +29,7 @@ legacy table / refresh fallback during migration.
 | GET | `/myweb/home-summary` | `myweb.home_summary.v1` | `false` |  |  |
 | GET | `/myweb/reports/{report_id}/weekly-days` | `myweb.report.weekly_days.v1` | `false` |  | Detail is readable only for publish-governed weekly reports |
 | GET | `/myprofile/reports/history` | `myprofile.reports.history.v1` | `false` |  | History excludes non-publishable self-structure rows |
+| GET | `/myprofile/latest/status` | `myprofile.latest.status.v1` | `false` |  | Lightweight latest self-structure version probe for in-app banner polling |
 | GET | `/myprofile/reports/{report_id}` | `myprofile.reports.detail.v1` | `false` |  | Detail is readable only for publishable self-structure rows |
 | DELETE | `/emotion/history/{emotion_id}` | `emotion.history.delete.v1` | `false` |  |  |
 | GET | `/myprofile/follow-list` | `myprofile.follow_list.v1` | `false` |  |  |
@@ -70,6 +71,7 @@ legacy table / refresh fallback during migration.
 | GET | `/mymodel/qna/list` | `mymodel.qna.list.v1` | `false` |  |  |
 | GET | `/mymodel/qna/trending` | `mymodel.qna.trending.v1` | `false` |  |  |
 | GET | `/mymodel/qna/unread` | `mymodel.qna.unread.v1` | `false` |  |  |
+| GET | `/mymodel/qna/unread-status` | `mymodel.qna.unread_status.v1` | `false` |  | MyModel Home reflections unread aggregated across self + followed owners |
 | POST | `/mymodel/qna/view` | `mymodel.qna.view.v1` | `false` |  |  |
 | POST | `/mymodel/qna/echoes/submit` | `mymodel.qna.echoes.submit.v1` | `false` |  |  |
 | POST | `/mymodel/qna/echoes/delete` | `mymodel.qna.echoes.delete.v1` | `false` |  |  |
@@ -95,6 +97,7 @@ legacy table / refresh fallback during migration.
 | GET | `/ranking/mymodel_questions` | `ranking.mymodel_questions.v1` | `false` |  |  |
 | GET | `/ranking/mymodel_resonances` | `ranking.mymodel_resonances.v1` | `false` |  |  |
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `false` |  |  |
+| GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config |
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
 

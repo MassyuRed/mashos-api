@@ -235,7 +235,7 @@ async def _require_user_id(authorization: Optional[str]) -> str:
 
 async def _enqueue_self_structure_refresh(user_id: str, trigger: str) -> bool:
     try:
-        res = enqueue_global_snapshot_refresh(user_id=str(user_id or "").strip(), trigger=trigger)
+        res = await enqueue_global_snapshot_refresh(user_id=str(user_id or "").strip(), trigger=trigger)
         return bool(res)
     except Exception:
         logger.exception("today_question: snapshot enqueue failed")

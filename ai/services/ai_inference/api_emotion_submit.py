@@ -60,6 +60,7 @@ from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from astor_friend_feed_enqueue import enqueue_friend_feed_refresh_many
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
+from astor_snapshot_enqueue import ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS
 
 # Shared Supabase HTTP client (connection pooled)
 from client_compat import extract_client_meta
@@ -511,10 +512,10 @@ ASTOR_WORKER_QUEUE_FALLBACK_LOCAL = _env_truthy("ASTOR_WORKER_QUEUE_FALLBACK_LOC
 # Phase X: Central material snapshots (debounced)
 # - Enqueue snapshot_generate_v1 after inputs are saved, so worker can build internal/public snapshots.
 ASTOR_SNAPSHOT_ENQUEUE_ENABLED = _env_truthy("ASTOR_SNAPSHOT_ENQUEUE_ENABLED", "true")
-try:
-    ASTOR_SNAPSHOT_DEBOUNCE_SECONDS = int(os.getenv("ASTOR_SNAPSHOT_DEBOUNCE_SECONDS", "300") or "300")
-except Exception:
-    ASTOR_SNAPSHOT_DEBOUNCE_SECONDS = 300
+ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS = max(
+    1,
+    int(ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS or 20),
+)
 
 
 async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
@@ -1656,7 +1657,7 @@ async def _post_submit_background_async(
                 try:
                     if ASTOR_SNAPSHOT_ENQUEUE_ENABLED:
                         now_dt = datetime.now(timezone.utc).replace(microsecond=0)
-                        delay = max(1, int(ASTOR_SNAPSHOT_DEBOUNCE_SECONDS or 300))
+                        delay = ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS
                         run_after_iso = (now_dt + timedelta(seconds=delay)).isoformat().replace("+00:00", "Z")
                         await _enqueue_job(
                             job_key=f"snapshot:{user_id}:global:internal",

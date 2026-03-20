@@ -28,6 +28,7 @@ Notes
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from datetime import datetime, timezone, timedelta
@@ -261,6 +262,15 @@ class MyProfileLatestEnsureResponse(BaseModel):
     skip_reason: Optional[str] = Field(default=None, description="optional no-save reason")
 
 
+class MyProfileLatestStatusResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    version_key: Optional[str] = Field(default=None, description="stable content/version key for app-internal banner polling")
+    generated_at: Optional[str] = Field(default=None, description="generated_at of the saved latest report")
+    saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (standard | deep)")
+    has_visible_content: bool = Field(default=False, description="false when the latest view is no-data only")
+    skip_reason: Optional[str] = Field(default=None, description="optional no-data reason")
+
+
 # ----------------------------
 # MyProfile Monthly report (distribution ensure)
 # ----------------------------
@@ -485,6 +495,29 @@ def _extract_saved_skip_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
     history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
     s = str(history.get("skip_reason") or cj.get("skip_reason") or "").strip()
     return s or None
+
+
+def _build_latest_version_key(row: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not row:
+        return None
+
+    fingerprint = _extract_saved_history_fingerprint(row)
+    if fingerprint:
+        return fingerprint
+
+    content_text = str((row or {}).get("content_text") or "").strip()
+    if not content_text and not _extract_saved_skip_reason(row):
+        return None
+
+    raw = "|".join(
+        [
+            str(_extract_saved_report_mode(row) or ""),
+            "1" if _extract_saved_has_visible_content(row) else "0",
+            str(_extract_saved_skip_reason(row) or ""),
+            content_text,
+        ]
+    )
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
 async def _fetch_latest_self_structure_analysis_row(
@@ -1554,6 +1587,51 @@ def register_myprofile_routes(app: FastAPI) -> None:
             tab=t,
             rows=ordered,
         )
+    @app.get("/myprofile/latest/status", response_model=MyProfileLatestStatusResponse)
+    async def get_myprofile_latest_status(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyProfileLatestStatusResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        uid = await _resolve_user_id_from_token(access_token)
+
+        try:
+            resp = await _sb_get(
+                "/rest/v1/myprofile_reports",
+                params={
+                    "select": "generated_at,content_text,content_json,title,period_start,period_end",
+                    "user_id": f"eq.{uid}",
+                    "report_type": "eq.latest",
+                    "order": "generated_at.desc",
+                    "limit": "1",
+                },
+            )
+            if resp.status_code >= 300:
+                logger.error(
+                    "Supabase select myprofile_reports(latest status) failed: %s %s",
+                    resp.status_code,
+                    resp.text[:1500],
+                )
+                raise HTTPException(status_code=502, detail="Failed to load latest MyProfile status")
+            rows = resp.json()
+            latest_row = rows[0] if isinstance(rows, list) and rows else None
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Failed to load latest MyProfile status: %s", exc)
+            raise HTTPException(status_code=502, detail="Failed to load latest MyProfile status")
+
+        return MyProfileLatestStatusResponse(
+            version_key=_build_latest_version_key(latest_row),
+            generated_at=(latest_row.get("generated_at") if latest_row else None),
+            saved_report_mode=_extract_saved_report_mode(latest_row) if latest_row else None,
+            has_visible_content=_extract_saved_has_visible_content(latest_row) if latest_row else False,
+            skip_reason=_extract_saved_skip_reason(latest_row) if latest_row else None,
+        )
+
+
     @app.get("/myprofile/latest", response_model=MyProfileLatestEnsureResponse)
     async def get_or_refresh_myprofile_latest(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),

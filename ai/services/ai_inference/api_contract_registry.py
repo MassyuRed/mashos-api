@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple
 
 from fastapi import Request
 
-API_CONTRACT_POLICY_VERSION = "2026-03-12.phase6e"
+API_CONTRACT_POLICY_VERSION = "2026-03-20.mymodel-qna-unread-status.v1"
 
 REQUEST_POLICY_ADDITIVE_ONLY = "additive-only"
 RESPONSE_POLICY_ADDITIVE_ONLY = "additive-only"
@@ -47,6 +47,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/myweb/home-summary', 'myweb.home_summary.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/myweb/reports/{report_id}/weekly-days', 'myweb.report.weekly_days.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Detail is readable only for publish-governed weekly reports'),
     ApiContractEntry('GET', '/myprofile/reports/history', 'myprofile.reports.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='History excludes non-publishable self-structure rows'),
+    ApiContractEntry('GET', '/myprofile/latest/status', 'myprofile.latest.status.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Lightweight latest self-structure version probe for in-app banner polling'),
     ApiContractEntry('GET', '/myprofile/reports/{report_id}', 'myprofile.reports.detail.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Detail is readable only for publishable self-structure rows'),
     ApiContractEntry('DELETE', '/emotion/history/{emotion_id}', 'emotion.history.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/myprofile/follow-list', 'myprofile.follow_list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
@@ -88,6 +89,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/mymodel/qna/list', 'mymodel.qna.list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/mymodel/qna/trending', 'mymodel.qna.trending.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/mymodel/qna/unread', 'mymodel.qna.unread.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/mymodel/qna/unread-status', 'mymodel.qna.unread_status.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='MyModel Home reflections unread aggregated across self + followed owners'),
     ApiContractEntry('POST', '/mymodel/qna/view', 'mymodel.qna.view.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/mymodel/qna/echoes/submit', 'mymodel.qna.echoes.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/mymodel/qna/echoes/delete', 'mymodel.qna.echoes.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
@@ -113,6 +115,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/ranking/mymodel_questions', 'ranking.mymodel_questions.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/ranking/mymodel_resonances', 'ranking.mymodel_resonances.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/ranking/mymodel_discoveries', 'ranking.mymodel_discoveries.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/subscription/bootstrap', 'subscription.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime subscription sales / plan config'),
     ApiContractEntry('GET', '/subscription/me', 'subscription.me.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/subscription/update', 'subscription.update.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Client purchase sync / tier refresh'),
 )

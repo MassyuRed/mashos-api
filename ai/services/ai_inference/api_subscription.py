@@ -7,12 +7,14 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from active_users_store import touch_active_user
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
+from client_compat import extract_client_meta
 from subscription import SubscriptionTier, normalize_subscription_tier
+from subscription_bootstrap_store import build_subscription_bootstrap, resolve_plan_code_by_product_id
 from subscription_projection import (
     CanonicalSubscriptionState,
     PurchaseOwnershipConflictError,
@@ -86,6 +88,54 @@ class SubscriptionUpdateResponse(BaseModel):
     plus_trial_consumed_at: Optional[str] = Field(default=None, description="When the Plus free trial was first consumed")
     updated: bool = Field(..., description="True if the projection ran successfully")
     verification: str = Field(..., description="verification / sync mode")
+
+
+class SubscriptionBootstrapLinks(BaseModel):
+    terms_url: Optional[str] = None
+    privacy_url: Optional[str] = None
+    support_url: Optional[str] = None
+
+
+class SubscriptionBootstrapPolicy(BaseModel):
+    restore_enabled: bool = True
+    manage_enabled: bool = True
+    ios_manage_url: Optional[str] = None
+    android_manage_mode: Optional[str] = None
+    android_package_name: Optional[str] = None
+    review_notice: Optional[str] = None
+
+
+class SubscriptionBootstrapTrial(BaseModel):
+    enabled: bool = False
+    subtitle: Optional[str] = None
+    android_offer_tag: Optional[str] = None
+
+
+class SubscriptionBootstrapPlan(BaseModel):
+    visible: bool = True
+    purchasable: bool = False
+    launch_stage: str = "hidden"
+    title: str
+    price_label: Optional[str] = None
+    subtitle: Optional[str] = None
+    features: list[str] = Field(default_factory=list)
+    note_lines: list[str] = Field(default_factory=list)
+    cta_label: Optional[str] = None
+    recommended: bool = False
+    purchase_product_id: Dict[str, Optional[str]] = Field(default_factory=dict)
+    recognized_product_ids: Dict[str, list[str]] = Field(default_factory=dict)
+    trial: SubscriptionBootstrapTrial = Field(default_factory=SubscriptionBootstrapTrial)
+
+
+class SubscriptionBootstrapResponse(BaseModel):
+    sales_enabled: bool = True
+    client_sales_enabled: bool = True
+    client_sales_disabled_reason: Optional[str] = None
+    links: SubscriptionBootstrapLinks = Field(default_factory=SubscriptionBootstrapLinks)
+    policy: SubscriptionBootstrapPolicy = Field(default_factory=SubscriptionBootstrapPolicy)
+    plans: Dict[str, SubscriptionBootstrapPlan] = Field(default_factory=dict)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +360,11 @@ async def _persist_or_conflict(user_id: str, verified_purchase: VerifiedPurchase
 
 
 def register_subscription_routes(app: FastAPI) -> None:
+    @app.get("/subscription/bootstrap", response_model=SubscriptionBootstrapResponse)
+    async def subscription_bootstrap(request: Request) -> SubscriptionBootstrapResponse:
+        bundle = await build_subscription_bootstrap(client_meta=extract_client_meta(request.headers))
+        return SubscriptionBootstrapResponse(**bundle)
+
     @app.get("/subscription/me", response_model=SubscriptionMeResponse)
     async def subscription_me(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -342,8 +397,20 @@ def register_subscription_routes(app: FastAPI) -> None:
                 ),
             )
 
+        store, purchase_token, transaction_id, original_transaction_id, store_ref = _resolve_request_refs(req)
+
         desired_tier = _resolve_tier_from_request(req)
         desired_plan_code = normalize_plan_code(desired_tier.value)
+        if desired_tier not in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) or not desired_plan_code:
+            runtime_plan_code = await resolve_plan_code_by_product_id(store, req.product_id)
+            runtime_plan_code = normalize_plan_code(runtime_plan_code)
+            if runtime_plan_code == SubscriptionTier.PLUS.value:
+                desired_tier = SubscriptionTier.PLUS
+                desired_plan_code = runtime_plan_code
+            elif runtime_plan_code == SubscriptionTier.PREMIUM.value:
+                desired_tier = SubscriptionTier.PREMIUM
+                desired_plan_code = runtime_plan_code
+
         if desired_tier not in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) or not desired_plan_code:
             raise HTTPException(
                 status_code=422,
@@ -353,7 +420,6 @@ def register_subscription_routes(app: FastAPI) -> None:
                 ),
             )
 
-        store, purchase_token, transaction_id, original_transaction_id, store_ref = _resolve_request_refs(req)
         raw_payload = _storage_payload(req, plan_code=desired_plan_code, store_ref=store_ref)
         verification_mode = ""
 

@@ -11,12 +11,12 @@ from urllib.parse import quote
 import httpx
 import jwt
 
+from subscription_bootstrap_store import resolve_plan_code_by_product_id
 from subscription_projection import (
     VerifiedPurchase,
     clean_optional_str,
     normalize_entitlement_status,
     normalize_plan_code,
-    plan_code_from_product_id,
 )
 
 logger = logging.getLogger("subscription_verifier_android")
@@ -255,7 +255,7 @@ async def verify_android_subscription(*, purchase_token: str, product_id: Option
     data = resp.json()
     line_item = _select_line_item(data, product_id)
     resolved_product_id = clean_optional_str(line_item.get("productId")) or clean_optional_str(product_id)
-    plan_code = normalize_plan_code(plan_code_from_product_id("android", resolved_product_id))
+    plan_code = normalize_plan_code(await resolve_plan_code_by_product_id("android", resolved_product_id))
     if not plan_code:
         raise AndroidVerificationError(
             f"Could not map Android product_id to plan_code: {resolved_product_id or '<empty>'}"

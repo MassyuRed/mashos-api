@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from subscription_bootstrap_store import audit_subscription_bootstrap_runtime
+
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
@@ -146,6 +148,7 @@ def _detected_public_snapshot() -> Dict[str, Any]:
         "premium_sku_android": _first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID"),
         "terms_url": _first_env("EXPO_PUBLIC_TERMS_URL"),
         "privacy_url": _first_env("EXPO_PUBLIC_PRIVACY_URL"),
+        "support_url": _first_env("EXPO_PUBLIC_SUPPORT_URL"),
     }
 
 
@@ -189,16 +192,12 @@ def _comparison_payload(public_snapshot: Optional[Dict[str, Any]], *, backend: D
     compare_membership("premium_sku_ios", snapshot.get("premium_sku_ios"), backend.get("ios_premium_product_ids") or [])
     compare_membership("premium_sku_android", snapshot.get("premium_sku_android"), backend.get("android_premium_product_ids") or [])
 
-    terms_url = _clean(snapshot.get("terms_url"))
-    privacy_url = _clean(snapshot.get("privacy_url"))
-    if terms_url:
-        matches.append({"field": "terms_url", "value": terms_url})
-    else:
-        warnings.append("terms_url: EXPO_PUBLIC_TERMS_URL is not provided in the submitted public config snapshot.")
-    if privacy_url:
-        matches.append({"field": "privacy_url", "value": privacy_url})
-    else:
-        warnings.append("privacy_url: EXPO_PUBLIC_PRIVACY_URL is not provided in the submitted public config snapshot.")
+    if _clean(snapshot.get("terms_url")):
+        warnings.append("terms_url: EXPO_PUBLIC_TERMS_URL is set, but runtime legal links are now sourced from /subscription/bootstrap.")
+    if _clean(snapshot.get("privacy_url")):
+        warnings.append("privacy_url: EXPO_PUBLIC_PRIVACY_URL is set, but runtime legal links are now sourced from /subscription/bootstrap.")
+    if _clean(snapshot.get("support_url")):
+        warnings.append("support_url: EXPO_PUBLIC_SUPPORT_URL is set, but runtime legal links are now sourced from /subscription/bootstrap.")
 
     ready = len(mismatches) == 0
     return {
@@ -220,9 +219,10 @@ class PublicSubscriptionConfigRequest(BaseModel):
     premium_sku_android: Optional[str] = Field(default=None)
     terms_url: Optional[str] = Field(default=None)
     privacy_url: Optional[str] = Field(default=None)
+    support_url: Optional[str] = Field(default=None)
 
 
-def build_subscription_release_report(*, public_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def build_subscription_release_report(*, public_snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     ios_plus_ids = _csv_env("COCOLON_IAP_IOS_PLUS_PRODUCT_IDS")
     ios_premium_ids = _csv_env("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
     android_plus_ids = _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
@@ -299,21 +299,30 @@ def build_subscription_release_report(*, public_snapshot: Optional[Dict[str, Any
             "EXPO_PUBLIC_MYMODEL_API_URL",
             "EXPO_PUBLIC_IAP_PLUS_SKU_IOS",
             "EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID",
-            "EXPO_PUBLIC_TERMS_URL",
-            "EXPO_PUBLIC_PRIVACY_URL",
             "EXPO_PUBLIC_ANDROID_PACKAGE_NAME",
         ],
         "recommended": [
             "EXPO_PUBLIC_IOS_BUNDLE_ID",
             "EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS",
             "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID",
+            "EXPO_PUBLIC_SUPPORT_URL",
+        ],
+        "notes": [
+            "Legal/support links are runtime-managed via /subscription/bootstrap.",
         ],
     }
 
     detected_public = _detected_public_snapshot()
     comparison = _comparison_payload(public_snapshot if public_snapshot is not None else detected_public, backend=backend_resolved)
+    runtime_bootstrap = await audit_subscription_bootstrap_runtime()
+    warnings.extend(runtime_bootstrap.get("warnings") or [])
 
-    ready = len(backend_missing) == 0 and not allow_unverified and comparison.get("ready", False)
+    ready = (
+        len(backend_missing) == 0
+        and not allow_unverified
+        and comparison.get("ready", False)
+        and runtime_bootstrap.get("ready", False)
+    )
 
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -327,6 +336,7 @@ def build_subscription_release_report(*, public_snapshot: Optional[Dict[str, Any
         "public_env_reference": public_env_reference,
         "public_env_detected_on_server": detected_public,
         "comparison": comparison,
+        "runtime_bootstrap": runtime_bootstrap,
         "console_targets": {
             "apple": {
                 "bundle_id": ios_bundle_id,
@@ -352,7 +362,7 @@ def register_subscription_release_config_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Dict[str, Any]:
         _require_admin_bearer(authorization)
-        return build_subscription_release_report()
+        return await build_subscription_release_report()
 
     @app.post("/subscription/config/release-check/compare-public")
     async def subscription_release_check_compare_public(
@@ -360,4 +370,4 @@ def register_subscription_release_config_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Dict[str, Any]:
         _require_admin_bearer(authorization)
-        return build_subscription_release_report(public_snapshot=body.model_dump(exclude_none=True))
+        return await build_subscription_release_report(public_snapshot=body.model_dump(exclude_none=True))

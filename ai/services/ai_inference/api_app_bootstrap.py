@@ -31,6 +31,7 @@ def register_app_bootstrap_routes(app: FastAPI) -> None:
                 "myweb_mock_enabled": False,
                 "today_question_enabled": True,
                 "today_question_history_enabled": True,
+                "subscription_sales_enabled": (os.getenv("COCOLON_SUBSCRIPTION_SALES_ENABLED") or "true").strip().lower() in {"1", "true", "yes", "on"},
             },
             client_meta=client_meta,
         )

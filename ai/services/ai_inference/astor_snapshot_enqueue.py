@@ -47,6 +47,13 @@ try:
 except Exception:
     ASTOR_SNAPSHOT_DEBOUNCE_SECONDS = 300
 
+try:
+    ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS = int(
+        os.getenv("ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS", "20") or "20"
+    )
+except Exception:
+    ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS = 20
+
 
 async def enqueue_global_snapshot_refresh(
     *,
@@ -111,10 +118,10 @@ async def enqueue_global_snapshot_refresh(
             delay = int(
                 debounce_seconds
                 if debounce_seconds is not None
-                else ASTOR_SNAPSHOT_DEBOUNCE_SECONDS
+                else ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS
             )
         except Exception:
-            delay = ASTOR_SNAPSHOT_DEBOUNCE_SECONDS
+            delay = ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS
         delay = max(1, int(delay or 300))
         payload["debounce_seconds"] = delay
         run_after_iso = (now_dt + timedelta(seconds=delay)).isoformat().replace(
@@ -148,5 +155,6 @@ __all__ = [
     "ASTOR_WORKER_QUEUE_ENABLED",
     "ASTOR_SNAPSHOT_ENQUEUE_ENABLED",
     "ASTOR_SNAPSHOT_DEBOUNCE_SECONDS",
+    "ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS",
     "enqueue_global_snapshot_refresh",
 ]

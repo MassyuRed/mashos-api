@@ -70,6 +70,7 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/mymodel/qna/list'),
     ('GET', '/mymodel/qna/trending'),
     ('GET', '/mymodel/qna/unread'),
+    ('GET', '/mymodel/qna/unread-status'),
     ('POST', '/mymodel/qna/view'),
     ('POST', '/mymodel/qna/echoes/submit'),
     ('POST', '/mymodel/qna/echoes/delete'),
@@ -95,6 +96,7 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/ranking/mymodel_questions'),
     ('GET', '/ranking/mymodel_resonances'),
     ('GET', '/ranking/mymodel_discoveries'),
+    ('GET', '/subscription/bootstrap'),
     ('GET', '/subscription/me'),
     ('POST', '/subscription/update'),
 }
@@ -112,7 +114,7 @@ def _route_map(app):
 
 
 def test_policy_version_is_fixed():
-    assert API_CONTRACT_POLICY_VERSION == "2026-03-12.phase6e"
+    assert API_CONTRACT_POLICY_VERSION == "2026-03-20.mymodel-qna-unread-status.v1"
 
 
 def test_registry_has_unique_contract_ids_and_routes():

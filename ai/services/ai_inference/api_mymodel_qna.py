@@ -341,6 +341,16 @@ class QnaUnreadResponse(BaseModel):
     has_unread: bool = False
 
 
+class QnaUnreadStatusResponse(BaseModel):
+    status: str = Field("ok", description="ok")
+    viewer_user_id: str
+    scope: str = Field("accessible", description="accessible")
+    accessible_target_count: int = 0
+    self_has_unread: bool = False
+    following_has_unread: bool = False
+    has_unread: bool = False
+
+
 class QnaTrendingItem(BaseModel):
     question_id: int
     title: str
@@ -3611,6 +3621,81 @@ async def _fetch_generated_unread_counts(*, viewer_user_id: str, target_user_id:
     return (total, unread)
 
 
+async def _fetch_create_unread_counts(
+    *, viewer_user_id: str, target_user_id: str, effective_tier: str
+) -> Tuple[int, int]:
+    qrows = await _fetch_create_questions(build_tier=effective_tier)
+    if not qrows:
+        return (0, 0)
+
+    question_ids: Set[int] = set()
+    for row in qrows or []:
+        try:
+            question_ids.add(int((row or {}).get("id")))
+        except Exception:
+            continue
+
+    if not question_ids:
+        return (0, 0)
+
+    answers = await _fetch_create_answers(user_id=target_user_id, question_ids=question_ids)
+    visible_instance_ids: Set[str] = set()
+    for qid in question_ids:
+        answer_row = answers.get(int(qid)) or {}
+        if _is_secret_flag(answer_row.get("is_secret")):
+            continue
+        answer_text = str(answer_row.get("answer_text") or "").strip()
+        if not answer_text:
+            continue
+        visible_instance_ids.add(f"{target_user_id}:{int(qid)}")
+
+    if not visible_instance_ids:
+        return (0, 0)
+
+    read_set = await _fetch_reads(viewer_user_id, visible_instance_ids)
+    total_items = len(visible_instance_ids)
+    unread_count = sum(1 for iid in visible_instance_ids if iid not in read_set)
+    return (total_items, unread_count)
+
+
+async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id: str) -> QnaUnreadResponse:
+    create_total = 0
+    create_unread = 0
+    try:
+        _, _, _, effective_tier = await _resolve_tiers(
+            viewer_user_id=viewer_user_id,
+            target_user_id=target_user_id,
+        )
+        create_total, create_unread = await _fetch_create_unread_counts(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=str(target_user_id),
+            effective_tier=str(effective_tier),
+        )
+    except Exception as exc:
+        logger.warning("create unread probe failed: %s", exc)
+
+    gen_total = 0
+    gen_unread = 0
+    try:
+        gen_total, gen_unread = await _fetch_generated_unread_counts(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=str(target_user_id),
+        )
+    except Exception as exc:
+        logger.warning("generated unread probe failed: %s", exc)
+
+    total_items = int(create_total) + int(gen_total)
+    unread_count = int(create_unread) + int(gen_unread)
+    return QnaUnreadResponse(
+        status="ok",
+        viewer_user_id=str(viewer_user_id),
+        target_user_id=str(target_user_id),
+        total_items=total_items,
+        unread_count=unread_count,
+        has_unread=unread_count > 0,
+    )
+
+
 async def _build_saved_generated_items(
     *,
     prepared_rows: List[Tuple[str, str, str]],  # (q_instance_id, owner_user_id, saved_at)
@@ -3736,6 +3821,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
     for path, methods in [
         ("/mymodel/qna/list", {"GET"}),
         ("/mymodel/qna/unread", {"GET"}),
+        ("/mymodel/qna/unread-status", {"GET"}),
         ("/mymodel/qna/detail", {"GET"}),
         ("/mymodel/qna/view", {"POST"}),
         ("/mymodel/qna/resonance", {"POST"}),
@@ -3838,30 +3924,69 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             if not allowed:
                 raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
 
-        create_total = 0
-        create_unread = 0
-        try:
-            _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-            create_items = await _fetch_create_list_items(
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=str(tgt),
-                effective_tier=str(effective_tier),
-            )
-            create_total = len(create_items)
-            create_unread = sum(1 for item in create_items if bool(item.is_new))
-        except Exception as exc:
-            logger.warning("create unread fallback failed: %s", exc)
-
-        gen_total, gen_unread = await _fetch_generated_unread_counts(viewer_user_id=str(viewer_user_id), target_user_id=str(tgt))
-        total_items = int(create_total) + int(gen_total)
-        unread_count = int(create_unread) + int(gen_unread)
-        return QnaUnreadResponse(
-            status="ok",
+        return await _compute_qna_unread_for_target(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=tgt,
-            total_items=total_items,
-            unread_count=unread_count,
-            has_unread=unread_count > 0,
+            target_user_id=str(tgt),
+        )
+
+    @app.get("/mymodel/qna/unread-status", response_model=QnaUnreadStatusResponse)
+    async def qna_unread_status(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaUnreadStatusResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        viewer_id = str(viewer_user_id)
+        try:
+            followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer_id, limit=5000)
+        except Exception as exc:
+            logger.warning("qna unread status follow-list load failed: %s", exc)
+            followed_owner_ids = set()
+        followed_owner_ids.discard(viewer_id)
+
+        accessible_target_count = 1 + len(followed_owner_ids)
+        self_has_unread = False
+        following_has_unread = False
+
+        try:
+            self_unread = await _compute_qna_unread_for_target(
+                viewer_user_id=viewer_id,
+                target_user_id=viewer_id,
+            )
+            self_has_unread = bool(self_unread.has_unread)
+        except Exception as exc:
+            logger.warning("qna unread status self probe failed: %s", exc)
+
+        if followed_owner_ids:
+            for owner_user_id in sorted(followed_owner_ids):
+                try:
+                    owner_unread = await _compute_qna_unread_for_target(
+                        viewer_user_id=viewer_id,
+                        target_user_id=str(owner_user_id),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "qna unread status probe failed for owner=%s: %s",
+                        owner_user_id,
+                        exc,
+                    )
+                    continue
+                if bool(owner_unread.has_unread):
+                    following_has_unread = True
+                    break
+
+        return QnaUnreadStatusResponse(
+            status="ok",
+            viewer_user_id=viewer_id,
+            scope="accessible",
+            accessible_target_count=int(accessible_target_count),
+            self_has_unread=bool(self_has_unread),
+            following_has_unread=bool(following_has_unread),
+            has_unread=bool(self_has_unread or following_has_unread),
         )
 
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
