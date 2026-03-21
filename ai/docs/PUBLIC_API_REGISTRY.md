@@ -12,6 +12,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted |
 | GET | `/input/summary` | `input.summary.v1` | `false` |  |  |
 | GET | `/account/profile/me` | `account.profile.me.read.v1` | `false` |  |  |
+| GET | `/account/display-name/availability` | `account.display_name.availability.v1` | `false` |  | Self-edit display name preflight availability check |
 | PATCH | `/account/profile/me` | `account.profile.me.patch.v1` | `false` |  |  |
 | POST | `/account/delete` | `account.delete.v1` | `false` |  | Delete lifecycle is server-owned |
 | GET | `/account/profile` | `account.profile.read.v1` | `false` |  |  |

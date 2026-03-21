@@ -584,11 +584,12 @@ COMMON_OBSERVATION_NOTE_LINES = (
 )
 
 
-def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str]:
+def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str, str]:
     if report_type == "daily":
         return (
             "【昨日、見えていたこと】",
             "【気持ちが動いた流れ】",
+            "【昨日、気持ちが出やすかった時間】",
             "【あなたへのコメント】",
             "【このレポートについて】",
         )
@@ -596,12 +597,14 @@ def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str]:
         return (
             "【今週、見えていたこと】",
             "【気持ちが動いた流れ】",
+            "【今週、気持ちが出やすかった時間】",
             "【あなたへのコメント】",
             "【このレポートについて】",
         )
     return (
         "【今月、見えていたこと】",
         "【気持ちが動いた流れ】",
+        "【今月、気持ちが出やすかった時間】",
         "【あなたへのコメント】",
         "【このレポートについて】",
     )
@@ -626,6 +629,69 @@ def _fallback_reader_comment(report_type: str) -> str:
         return "日によって違う動きが出ていたこと自体に、今週らしさが表れていたようです。"
     return "いくつかの流れが重なっていたこと自体が、今月の自然な特徴だったようです。"
 
+
+def _fallback_time_comment(report_type: str) -> str:
+    if report_type == "daily":
+        return "昨日は特定の時間帯だけに反応が偏るほどではなく、一日の中に分散していました。"
+    if report_type == "weekly":
+        return "今週は特定の時間帯に固定されるより、朝から夜まで広く反応が出ていました。"
+    return "今月は特定の時間帯だけが突出するより、時間帯ごとに反応が分かれていました。"
+
+
+def _time_bucket_reader_label(value: Any) -> str:
+    key = _normalize_time_bucket_key(value)
+    if key:
+        return TIME_BUCKET_READER_LABELS.get(key, key)
+    s = str(value or "").strip()
+    return s or "特定の時間帯"
+
+
+def _time_bucket_dominant_key(row: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(row, dict):
+        return None
+    raw = str(row.get("dominantKey") or row.get("dominant_key") or "").strip()
+    if raw:
+        if raw in EMOTION_KEYS:
+            return raw
+        if raw in JP_TO_KEY:
+            return JP_TO_KEY.get(raw)
+    for candidate in (row.get("weightedCounts"), row.get("weighted_counts"), row.get("counts"), row.get("sharePct"), row.get("share_pct")):
+        key = _dominant_key_from_map(candidate)
+        if key:
+            return key
+    return None
+
+
+def _build_time_bucket_comment(
+    *,
+    report_type: str,
+    peak_bucket: Optional[Dict[str, Any]],
+    fallback_dominant_key: Optional[str] = None,
+) -> str:
+    if not isinstance(peak_bucket, dict) or _coerce_int(peak_bucket.get("inputCount"), 0) <= 0:
+        return _fallback_time_comment(report_type)
+
+    bucket_key = _normalize_time_bucket_key(peak_bucket.get("bucket") or peak_bucket.get("label"))
+    time_label = _time_bucket_reader_label(peak_bucket.get("bucket") or peak_bucket.get("label"))
+    bucket_dom_key = _time_bucket_dominant_key(peak_bucket) or fallback_dominant_key
+    bucket_dom_label = KEY_TO_JP.get(bucket_dom_key, bucket_dom_key) if bucket_dom_key else ""
+    context_clause = TIME_BUCKET_CONTEXT_CLAUSES.get(bucket_key or "", "その時間帯がひとつの山になっていた")
+
+    if report_type == "daily":
+        first = f"昨日は{time_label}に反応が集まりやすい一日でした。"
+    elif report_type == "weekly":
+        first = f"今週は{time_label}に反応が集まりやすい週でした。"
+    else:
+        first = f"今月は{time_label}に反応が集まりやすい傾向がありました。"
+
+    if bucket_dom_label:
+        second = f"とくに「{bucket_dom_label}」がこの時間に出やすく、{context_clause}ようです。"
+    else:
+        second = f"{context_clause}ようです。"
+
+    if report_type == "monthly":
+        return f"{first}{second}この偏りは、月の中で繰り返し見られた流れです。"
+    return f"{first}{second}"
 
 def _normalize_summary_movement_items(summary: Dict[str, Any]) -> List[str]:
     items: List[str] = []
@@ -657,6 +723,28 @@ EMOTION_NEED_PHRASE = {
     "calm": "落ち着ける感覚を保ちたい気持ち",
 }
 
+EMOTION_FLOW_PHRASE = {
+    "joy": "手応えや前向きさを確かめたい流れ",
+    "sadness": "気持ちを急がせず、静かに整理したい流れ",
+    "anxiety": "先を見通して安心できる位置を確かめたい流れ",
+    "anger": "自分の納得できる線を守りたい流れ",
+    "calm": "落ち着ける感覚を保ち直したい流れ",
+}
+
+TIME_BUCKET_READER_LABELS: Dict[str, str] = {
+    "0-6": "深夜から早朝",
+    "6-12": "朝",
+    "12-18": "昼から夕方",
+    "18-24": "夜",
+}
+
+TIME_BUCKET_CONTEXT_CLAUSES: Dict[str, str] = {
+    "0-6": "周囲が静かになる中で、内側の反応が表面へ上がりやすかった",
+    "6-12": "一日の始まりに、その日の向きが比較的はっきり表れやすかった",
+    "12-18": "日中の動きの中で、反応がまとまって出やすかった",
+    "18-24": "一日の終わりにかけて、残っていた気持ちが表面へ上がりやすかった",
+}
+
 
 def _build_standard_summary_object(
     *,
@@ -677,6 +765,7 @@ def _build_standard_summary_object(
 
     movement_items: List[str] = []
     overview_comment = ""
+    time_comment = ""
     reader_comment = ""
 
     if report_type == "daily":
@@ -689,36 +778,54 @@ def _build_standard_summary_object(
         secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         total_all = _coerce_int(metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         movement_key = str(movement.get("key") or "").strip()
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         if total_all > 0:
-            overview_comment = f"昨日は「{dominant_label}」を中心に気持ちが動きやすい一日でした。"
+            overview_comment = f"昨日は「{dominant_label}」が中心に出ていました。"
             if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" 「{secondary_label}」も重なりやすく、ひとつの感情だけではまとまりきらない流れも見られました。"
-            if peak_bucket and peak_bucket.get("inputCount"):
-                peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-                if peak_label:
-                    overview_comment += f" とくに{peak_label}のあたりで反応が出やすかったようです。"
-            if movement_key == "swing":
-                overview_comment += " 一日の中で気持ちの向きが切り替わる場面も見られました。"
+                overview_comment += f"「{secondary_label}」も重なり、ひとつの感情だけではなく複数の向きが並んでいました。"
+            if movement_key:
+                overview_comment += _render_daily_motion_line(movement)
         else:
             overview_comment = "昨日は入力が少なめで、はっきりした傾向はまだ読み取りにくい日でした。"
 
         if dominant_key:
             movement_items.append(f"最も強く出ていたのは「{dominant_label}」でした。")
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
-            if peak_label and peak_count > 0:
-                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
+        if secondary_label and secondary_label != dominant_label:
+            movement_items.append(f"「{secondary_label}」も重なり、気持ちの向きが一つに固定されない場面がありました。")
         if movement_key:
-            movement_items.append(_render_daily_motion_line(movement))
+            movement_line = _render_daily_motion_line(movement)
+            if movement_line and movement_line not in movement_items:
+                movement_items.append(movement_line)
+
+        time_comment = _build_time_bucket_comment(
+            report_type="daily",
+            peak_bucket=peak_bucket,
+            fallback_dominant_key=dominant_key,
+        )
 
         if total_all > 0:
-            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
-            reader_comment = (
-                f"昨日の反応は、ただ気分が揺れていたというより、{need_phrase}が背景にあったようです。"
-                " 表に出ていた気持ちだけでなく、その奥で何を大事にしていたのかを見ると、昨日の流れが少し自然につながって見えてきます。"
-            )
+            reader_parts = [
+                f"昨日の反応は、「{dominant_label}」が一度強く出たというより、{flow_phrase}が続いていたようです。"
+            ]
+            if secondary_label and secondary_label != dominant_label:
+                reader_parts.append(
+                    f"そこに「{secondary_label}」が重なっていたのは、同じテーマに対して気持ちが別の角度から反応していたためと考えると自然です。"
+                )
+            else:
+                reader_parts.append(
+                    "似た反応がまとまっていたことから、その場ごとの小さな揺れより、気になっているテーマが続いていた可能性があります。"
+                )
+            if peak_time_label:
+                reader_parts.append(
+                    f"とくに{peak_time_label}に反応が集まっていたため、この流れが残っているあいだは同じ時間帯に似た反応が戻りやすい状態です。"
+                )
+            else:
+                reader_parts.append(
+                    "この流れが残っているあいだは、似た向きの反応がもう一度出やすい状態です。"
+                )
+            reader_comment = "".join(reader_parts)
         else:
             reader_comment = _fallback_reader_comment("daily")
 
@@ -732,45 +839,74 @@ def _build_standard_summary_object(
         secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         n_events = _coerce_int(weekly_snapshot.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         alternation_rate = _coerce_float(weekly_snapshot.get("alternation_rate"), 0.0)
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         if dominant_key:
-            overview_comment = f"今週は「{dominant_label}」が土台にありながら、感情の向きが場面ごとに動きやすい週でした。"
+            overview_comment = f"今週は「{dominant_label}」が中心に出ていました。"
             if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" 「{secondary_label}」も重なる場面があり、ひとつの空気感だけではない週だったようです。"
+                overview_comment += f"「{secondary_label}」も重なり、ひとつの空気感だけではない週でした。"
+            if alternation_rate >= 0.55:
+                overview_comment += "日ごとの切り替わりも比較的多い週でした。"
+            elif 0 < alternation_rate <= 0.25:
+                overview_comment += "大きな切り替わりは少なく、近い空気感が続いていました。"
+            else:
+                overview_comment += "週の中で少しずつ向きが動く場面も見られました。"
         elif n_events > 0:
-            overview_comment = f"今週は {n_events} 件の入力から、気持ちの流れを観測できる週でした。"
+            overview_comment = "今週は入力があり、気持ちの流れを観測できる週でした。"
         else:
             overview_comment = "今週は入力が少なめで、はっきりした傾向は読み取りにくい週でした。"
-
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            if peak_label:
-                overview_comment += f" 入力は {peak_label} に集まりやすい流れがありました。"
-
-        if alternation_rate >= 0.55:
-            overview_comment += " 気持ちの切り替わりは比較的多めでした。"
-        elif 0 < alternation_rate <= 0.25:
-            overview_comment += " 大きな切り替わりは少なく、全体としてはまとまりのある週でした。"
 
         if dominant_key:
             movement_items.append(f"全体では「{dominant_label}」の比重が最も高めでした。")
         if secondary_label and secondary_label != dominant_label:
-            movement_items.append(f"次に目立ったのは「{secondary_label}」でした。")
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
-            if peak_label and peak_count > 0:
-                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
-        if alternation_rate > 0:
-            movement_items.append(f"気持ちの切り替わり率は {alternation_rate:.2f} でした。")
+            movement_items.append(f"「{secondary_label}」も重なり、週の中で反応の角度が少し変わっていました。")
+        if alternation_rate >= 0.55:
+            movement_items.append("日ごとに気持ちの向きが切り替わる場面が比較的多めでした。")
+        elif 0 < alternation_rate <= 0.25:
+            movement_items.append("大きな切り替わりは少なく、似た反応が続きやすい週でした。")
+        elif n_events > 0:
+            movement_items.append("気持ちの向きは週の中でゆるやかに動いていました。")
+
+        time_comment = _build_time_bucket_comment(
+            report_type="weekly",
+            peak_bucket=peak_bucket,
+            fallback_dominant_key=dominant_key,
+        )
 
         if n_events > 0:
-            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
-            reader_comment = f"今週の反応は、その場ごとにばらばらに起きていたというより、{need_phrase}からつながっていたように見えます。"
-            if alternation_rate >= 0.55:
-                reader_comment += " 揺れが多かったのも、その場ごとに守りたいものが動いていた結果なのかもしれません。"
+            reader_parts = [
+                f"今週の反応は、「{dominant_label}」が単発で強く出たというより、{flow_phrase}が週を通して続いていたようです。"
+            ]
+            if secondary_label and secondary_label != dominant_label:
+                reader_parts.append(
+                    f"「{secondary_label}」が重なっていたのは、同じテーマに対して気持ちが別の角度から反応していたためと考えると自然です。"
+                )
             else:
-                reader_comment += " 大きく崩れなかったのは、その週なりの保ち方が働いていたからとも読めます。"
+                reader_parts.append(
+                    "似た感情が何度も戻っていたことから、日ごとの差よりも、週を通して残っていたテーマが大きかった可能性があります。"
+                )
+            if alternation_rate >= 0.55:
+                reader_parts.append(
+                    "切り替わりが多かったのも、気分がばらばらだったというより、その時々で気持ちの置き場を探し直していた流れとして読む方が自然です。"
+                )
+            elif 0 < alternation_rate <= 0.25:
+                reader_parts.append(
+                    "大きく切り替わらなかったのは、週のあいだ同じ方向の反応が土台に残っていたためと見られます。"
+                )
+            else:
+                reader_parts.append(
+                    "週の中で向きが少しずつ変わっていても、底にある反応の軸は大きく変わっていませんでした。"
+                )
+            if peak_time_label:
+                reader_parts.append(
+                    f"とくに{peak_time_label}に反応が集まっていたため、この流れが残っているあいだは同じ時間帯に似た反応が来週のはじめにも出やすい状態です。"
+                )
+            else:
+                reader_parts.append(
+                    "この流れが残っているあいだは、似た場面で近い向きの反応がもう一度出やすい状態です。"
+                )
+            reader_comment = "".join(reader_parts)
         else:
             reader_comment = _fallback_reader_comment("weekly")
 
@@ -781,16 +917,19 @@ def _build_standard_summary_object(
         totals_map = _first_non_empty_emotion_map(snapshot_metrics.get("totals"))
         dominant_key = _dominant_key_from_map(totals_map) or _dominant_key_from_map(share_map)
         dominant_label = KEY_TO_JP.get(dominant_key, dominant_key) if dominant_key else "—"
-        secondary_label = None
         top_items = _pick_top_share_items(share_map, limit=2)
-        if len(top_items) >= 2:
-            secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0])
+        secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         total_all = _coerce_int(snapshot_metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         peak_week = None
         peak_week_total = -1
         calm_first_half = 0
         calm_second_half = 0
+        dominant_repeat_count = 0
+        week_switches = 0
+        last_week_dom: Optional[str] = None
         for idx, week in enumerate(weeks or []):
             if not isinstance(week, dict):
                 continue
@@ -804,43 +943,94 @@ def _build_standard_summary_object(
                 calm_first_half += _coerce_int(week.get("calm"), 0)
             else:
                 calm_second_half += _coerce_int(week.get("calm"), 0)
+            week_dom = _dominant_key_from_map(week)
+            if week_dom:
+                if last_week_dom and last_week_dom != week_dom:
+                    week_switches += 1
+                last_week_dom = week_dom
+                if dominant_key and week_dom == dominant_key:
+                    dominant_repeat_count += 1
+
+        peak_week_label = str((peak_week or {}).get("label") or "") if peak_week else ""
 
         if dominant_key:
-            overview_comment = f"今月は「{dominant_label}」が中心にありながら、月の中で似た流れが繰り返し出やすい月でした。"
+            overview_comment = f"今月は「{dominant_label}」が中心に出ていました。"
             if secondary_label and secondary_label != dominant_label:
-                overview_comment += f" 「{secondary_label}」も重なる場面があり、複数の空気感が行き来していたようです。"
+                overview_comment += f"「{secondary_label}」も重なり、ひとつの感情だけではない月でした。"
+            if dominant_repeat_count >= 3:
+                overview_comment += f"週をまたいで「{dominant_label}」が繰り返し中心に戻っていました。"
+            elif week_switches >= 2:
+                overview_comment += "週ごとに気持ちの向きが少しずつ入れ替わっていました。"
+            else:
+                overview_comment += "月の中では近い方向の反応が続きやすい流れでした。"
+            if peak_week_label:
+                overview_comment += f"とくに{peak_week_label}は動きが強めでした。"
+            if calm_second_half > calm_first_half and calm_second_half > 0:
+                overview_comment += "後半には少し整え直すような流れも見えていました。"
         else:
             overview_comment = "今月は入力が少なめで、はっきりした傾向は読み取りにくい月でした。"
 
-        if peak_week and peak_week_total > 0:
-            peak_week_label = str(peak_week.get("label") or "ある週")
-            overview_comment += f" とくに{peak_week_label}は動きが強めでした。"
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            if peak_label:
-                overview_comment += f" 時間帯では {peak_label} に入力が集まりやすい傾向がありました。"
-        if calm_second_half > calm_first_half and calm_second_half > 0:
-            overview_comment += " 後半には少し整え直すような流れも見えていました。"
-
         if dominant_key:
             movement_items.append(f"月全体では「{dominant_label}」の比重が最も高めでした。")
-        if peak_week and peak_week_total > 0:
-            peak_week_label = str(peak_week.get("label") or "ある週")
-            movement_items.append(f"{peak_week_label} は合計 {peak_week_total} と、今月で最も動きが強めでした。")
-        if peak_bucket and peak_bucket.get("inputCount"):
-            peak_label = str(peak_bucket.get("label") or peak_bucket.get("bucket") or "")
-            peak_count = _coerce_int(peak_bucket.get("inputCount"), 0)
-            if peak_label and peak_count > 0:
-                movement_items.append(f"入力は {peak_label} に {peak_count} 件ありました。")
+        if secondary_label and secondary_label != dominant_label:
+            movement_items.append(f"「{secondary_label}」も重なり、同じテーマへの反応に別の角度が加わっていました。")
+        if peak_week_label:
+            movement_items.append(f"{peak_week_label}は、今月の中でも反応の動きが強めでした。")
         if calm_second_half > calm_first_half and calm_second_half > 0:
-            movement_items.append("後半にかけて『平穏』の比重が増えていました。")
+            movement_items.append("後半にかけて『平穏』が少し増え、整え直す向きも見えていました。")
+        elif week_switches >= 2:
+            movement_items.append("週をまたぐごとに、気持ちの向きが少しずつ入れ替わっていました。")
+
+        time_comment = _build_time_bucket_comment(
+            report_type="monthly",
+            peak_bucket=peak_bucket,
+            fallback_dominant_key=dominant_key,
+        )
 
         if total_all > 0:
-            need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
-            reader_comment = f"今月の流れを見ると、心はずっと{need_phrase}を軸に動いていたようです。"
+            lead = f"今月は「{dominant_label}」を軸にしながら"
+            if secondary_label and secondary_label != dominant_label:
+                lead += f"、「{secondary_label}」も重なり、"
+            else:
+                lead += "、"
+            lead += "同じ感情でも反応の質が少しずつ変わっていた月でした。"
+            reader_parts = [lead]
+            if dominant_repeat_count >= 3:
+                reader_parts.append(
+                    f"週をまたいで「{dominant_label}」が何度も中心に戻っていたため、単発の揺れより、長く気にかかるテーマが続いていた可能性があります。"
+                )
+            elif week_switches >= 2:
+                reader_parts.append(
+                    "週ごとに中心は入れ替わっていましたが、反応が別物になったというより、同じテーマへの表れ方が変化していたようです。"
+                )
+            else:
+                reader_parts.append(
+                    f"大きく軸が変わらなかったのは、月のあいだ{flow_phrase}が土台に残っていたためと見られます。"
+                )
+            if peak_week_label:
+                reader_parts.append(
+                    f"とくに{peak_week_label}は反応の動きが強く、その週が今月全体の流れを押し上げていました。"
+                )
             if calm_second_half > calm_first_half and calm_second_half > 0:
-                reader_comment += " 後半に少し落ち着きが戻っていたのも、整え直す方向へ気持ちが向いていた結果なのかもしれません。"
-            reader_comment += " その月の反応をばらばらに見るより、ひとつのテーマを抱えながら過ごしていた月として読む方がしっくりきます。"
+                reader_parts.append(
+                    "後半に『平穏』が少し増えていたのは、月の終わりに向けて気持ちを整え直す動きが入っていたためと読むと自然です。"
+                )
+            else:
+                reader_parts.append(
+                    "月末にかけても大きく静まりきらなかったことから、反応の軸は最後まで残っていたようです。"
+                )
+            reader_parts.append(
+                "複数の感情が重なっていたのは、ひとつの理由だけで揺れたというより、同じテーマに対して心が何度も別の角度から反応していたためと考えると納得しやすい流れです。"
+            )
+            if peak_time_label:
+                reader_parts.append(
+                    f"とくに{peak_time_label}に反応が集まりやすかったため、来月のはじめも同じ時間帯に似た反応が残りやすい状態です。"
+                )
+            else:
+                reader_parts.append(
+                    "この流れが残っているあいだは、来月のはじめも近い向きの反応がもう一度出やすい状態です。"
+                )
+            reader_comment = "".join(reader_parts)
         else:
             reader_comment = _fallback_reader_comment("monthly")
 
@@ -848,6 +1038,7 @@ def _build_standard_summary_object(
     return {
         "overviewComment": overview_comment.strip() or None,
         "movementItems": clean_movement_items,
+        "timeComment": time_comment.strip() or None,
         "readerComment": reader_comment.strip() or None,
         "structuralComment": overview_comment.strip() or None,
         "gentleComment": reader_comment.strip() or None,
@@ -868,7 +1059,7 @@ def _render_standard_text_from_summary(
     summary: Dict[str, Any],
     light_text: str = "",
 ) -> str:
-    sec_overview, sec_movement, sec_comment, sec_note = _observation_section_titles(report_type)
+    sec_overview, sec_movement, sec_time, sec_comment, sec_note = _observation_section_titles(report_type)
 
     overview = str(
         summary.get("overviewComment")
@@ -877,6 +1068,11 @@ def _render_standard_text_from_summary(
     ).strip()
 
     movement_items = _normalize_summary_movement_items(summary)
+
+    time_comment = str(
+        summary.get("timeComment")
+        or ""
+    ).strip()
 
     reader_comment = str(
         summary.get("readerComment")
@@ -900,6 +1096,10 @@ def _render_standard_text_from_summary(
             lines.append(f"・{item}")
     else:
         lines.append("・大きな動きとしてはまだまとまりませんでした。")
+    lines.append("")
+
+    lines.append(sec_time)
+    lines.append(time_comment or _fallback_time_comment(report_type))
     lines.append("")
 
     lines.append(sec_comment)
@@ -2331,11 +2531,11 @@ def _render_weekly_standard_v3_text(
         overview = f"今週は「{dominant}」が中心に現れていました。"
         if len(top_pairs) >= 2:
             k2, _v2 = top_pairs[1]
-            overview += f" その一方で、「{KEY_TO_JP.get(k2, k2)}」も重なる場面がありました。"
+            overview += f"その一方で、「{KEY_TO_JP.get(k2, k2)}」も重なる場面がありました。"
         if switches >= 3:
-            overview += " 日によって気持ちの向きが切り替わりやすい流れも見られました。"
+            overview += "日によって気持ちの向きが切り替わりやすい流れも見られました。"
         elif switches == 0:
-            overview += " 大きな切り替わりは少なく、全体としては近い空気感が続いていました。"
+            overview += "大きな切り替わりは少なく、全体としては近い空気感が続いていました。"
 
     movement_lines: List[str] = []
     if peak_day_label:
@@ -2344,17 +2544,6 @@ def _render_weekly_standard_v3_text(
         movement_lines.append(f"今週は「{dominant}」の比重が高く出ていました。")
     if len(top_pairs) >= 2:
         movement_lines.append(f"次に目立ったのは「{KEY_TO_JP.get(top_pairs[1][0], top_pairs[1][0])}」でした。")
-
-    if total_all <= 0:
-        comment = _fallback_reader_comment("weekly")
-    else:
-        dom_key = top_pairs[0][0] if top_pairs else None
-        need_phrase = EMOTION_NEED_PHRASE.get(dom_key, "何かを保ちたい気持ち")
-        comment = f"今週の反応は、日によって違って見えても、内側では{need_phrase}が続いていた週だったようです。"
-        if switches >= 3:
-            comment += " 揺れが多かったのも、気分が不安定だったというより、その場ごとに守りたいものが動いていた結果なのかもしれません。"
-        else:
-            comment += " 大きく崩れなかったのは、その週なりの保ち方が働いていたからとも読めます。"
 
     lines: List[str] = [title]
     rng = _range_line_jst(period_start_iso, period_end_iso)
@@ -2373,9 +2562,6 @@ def _render_weekly_standard_v3_text(
     else:
         lines.append("・大きな動きとしてはまだまとまりませんでした。")
     lines.extend([
-        "",
-        "【あなたへのコメント】",
-        comment,
         "",
         "【このレポートについて】",
     ])
@@ -2433,30 +2619,16 @@ def _render_monthly_standard_v3_text(
         overview = f"今月は「{dominant}」が中心に現れていました。"
         dom_count = sum(1 for d in week_doms if d == dominant)
         if dom_count >= 3:
-            overview += f" 週をまたいで「{dominant}」が繰り返し中心になっていました。"
+            overview += f"週をまたいで「{dominant}」が繰り返し中心になっていました。"
         elif dom_count == 2:
-            overview += f" 「{dominant}」が中心の週が複数あり、似た流れが戻ってきやすい月でした。"
+            overview += f"「{dominant}」が中心の週が複数あり、似た流れが戻ってきやすい月でした。"
         else:
-            overview += " 週ごとに中心感情が変わりやすく、その時々の状況に合わせて空気感が動いていた月でした。"
+            overview += "週ごとに中心感情が変わりやすく、その時々の状況に合わせて空気感が動いていた月でした。"
 
     movement_lines: List[str] = []
     movement_lines.extend(week_summaries[:2])
     if reset_hint:
         movement_lines.append("後半にかけて、少し整え直すような流れも見えていました。")
-
-    if total_all <= 0:
-        comment = _fallback_reader_comment("monthly")
-    else:
-        dom_key = None
-        for k, jp in KEY_TO_JP.items():
-            if jp == dominant:
-                dom_key = k
-                break
-        need_phrase = EMOTION_NEED_PHRASE.get(dom_key, "何かを保ちたい気持ち")
-        comment = f"今月の流れを見ると、心はずっと{need_phrase}を軸に動いていたようです。"
-        if reset_hint:
-            comment += " 後半に少し落ち着きが戻っていたのも、整え直す方向へ気持ちが向いていた結果なのかもしれません。"
-        comment += " その月の反応をばらばらに見るより、ひとつのテーマを抱えながら過ごしていた月として読む方がしっくりきます。"
 
     lines: List[str] = [title]
     rng = _range_line_jst(period_start_iso, period_end_iso)
@@ -2475,9 +2647,6 @@ def _render_monthly_standard_v3_text(
     else:
         lines.append("・大きな動きとしてはまだまとまりませんでした。")
     lines.extend([
-        "",
-        "【あなたへのコメント】",
-        comment,
         "",
         "【このレポートについて】",
     ])
@@ -2538,22 +2707,13 @@ def _render_daily_standard_v3_text(
     else:
         overview = f"昨日は「{dominant_label}」が比較的出やすい一日でした。"
         if dominant_pct > 0:
-            overview += f" 全体としては「{dominant_label}」の比重が高く、"
+            overview += f"全体としては「{dominant_label}」の比重が高く、"
         overview += _render_daily_motion_line(movement)
 
     movement_lines: List[str] = []
     if dominant_key:
         movement_lines.append(f"最も強く出ていたのは「{dominant_label}」でした。")
     movement_lines.append(_render_daily_motion_line(movement))
-
-    if input_count <= 0:
-        comment = _fallback_reader_comment("daily")
-    else:
-        need_phrase = EMOTION_NEED_PHRASE.get(dominant_key, "何かを保ちたい気持ち")
-        comment = (
-            f"昨日の反応は、ただ気分が揺れていたというより、{need_phrase}が背景にあったようです。"
-            " 表に出ていた気持ちだけでなく、その奥で何を大事にしていたのかを見ると、昨日の流れが少し自然につながって見えてきます。"
-        )
 
     lines: List[str] = [title]
     rng = _range_line_jst(period_start_iso, period_end_iso)
@@ -2569,9 +2729,6 @@ def _render_daily_standard_v3_text(
     for item in movement_lines[:2]:
         lines.append(f"・{item}")
     lines.extend([
-        "",
-        "【あなたへのコメント】",
-        comment,
         "",
         "【このレポートについて】",
     ])

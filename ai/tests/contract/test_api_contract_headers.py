@@ -97,6 +97,33 @@ def test_account_profile_me_keeps_tutorial_flags(client, monkeypatch):
     assert response.headers["X-Cocolon-Contract-Id"] == "account.profile.me.read.v1"
 
 
+def test_account_display_name_availability_returns_contract_headers(client, monkeypatch):
+    import api_account_lifecycle as account_lifecycle_module
+
+    async def fake_require_user_id(_authorization):
+        return "user-456"
+
+    async def fake_is_display_name_available(candidate: str, *, exclude_user_id=None):
+        assert candidate == "Mash"
+        assert exclude_user_id == "user-456"
+        return True
+
+    monkeypatch.setattr(account_lifecycle_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(account_lifecycle_module, "_is_display_name_available", fake_is_display_name_available)
+
+    response = client.get(
+        "/account/display-name/availability?candidate=Mash",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Api-Policy-Version"] == API_CONTRACT_POLICY_VERSION
+    assert response.headers["X-Cocolon-Contract-Id"] == "account.display_name.availability.v1"
+    assert response.headers["X-Cocolon-Deprecated"] == "false"
+    assert response.headers["X-Cocolon-Request-Id"]
+    assert response.json()["available"] is True
+
+
 def test_global_summary_returns_contract_headers(client, monkeypatch):
     import api_global_summary as global_summary_module
 
@@ -141,3 +168,56 @@ def test_global_summary_returns_contract_headers(client, monkeypatch):
     assert body["reflection_views"] == 11
     assert body["echo_count"] == 13
     assert body["discovery_count"] == 17
+
+
+
+class _FakeResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = ""
+
+    def json(self):
+        return self._payload
+
+
+def test_myprofile_latest_status_returns_contract_headers(client, monkeypatch):
+    import api_myprofile as myprofile_module
+
+    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
+        return "user-123"
+
+    async def fake_sb_get(path: str, *, params=None):
+        assert path == "/rest/v1/myprofile_reports"
+        return _FakeResponse(
+            200,
+            [
+                {
+                    "generated_at": "2026-03-20T00:00:00Z",
+                    "content_text": "現在の自己構造です。",
+                    "title": "自己構造レポート（最新版）",
+                    "period_start": "2026-02-21T00:00:00Z",
+                    "period_end": "2026-03-20T00:00:00Z",
+                    "content_json": {
+                        "version": "myprofile.report.v4",
+                        "report_mode": "standard",
+                        "visibility": {"has_visible_content": True},
+                        "history": {
+                            "history_fingerprint": "self-structure-version-key-1",
+                            "skip_reason": None,
+                        },
+                    },
+                }
+            ],
+        )
+
+    monkeypatch.setattr(myprofile_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(myprofile_module, "_sb_get", fake_sb_get)
+
+    response = client.get("/myprofile/latest/status", headers={"Authorization": "Bearer test-token"})
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Api-Policy-Version"] == API_CONTRACT_POLICY_VERSION
+    assert response.headers["X-Cocolon-Contract-Id"] == "myprofile.latest.status.v1"
+    assert response.headers["X-Cocolon-Deprecated"] == "false"
+    assert response.headers["X-Cocolon-Request-Id"]

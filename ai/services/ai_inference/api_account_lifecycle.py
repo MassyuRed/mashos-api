@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _get_profile_row, _pick_row, _require_user_id
@@ -25,6 +25,11 @@ class AccountProfileMeResponse(BaseModel):
 class AccountProfileMePatchBody(BaseModel):
     display_name: Optional[str] = None
     push_enabled: Optional[bool] = None
+
+
+class AccountDisplayNameAvailabilityResponse(BaseModel):
+    candidate: str
+    available: bool = False
 
 
 class AccountDeleteResponse(BaseModel):
@@ -55,6 +60,81 @@ def _coerce_display_name(value: Any) -> Optional[str]:
         if s:
             return s
     return None
+
+
+def _looks_like_display_name_conflict(error_like: Any) -> bool:
+    if isinstance(error_like, dict):
+        raw = " ".join(
+            str(error_like.get(key) or "") for key in ("code", "message", "details", "hint")
+        )
+    else:
+        raw = str(error_like or "")
+    lower = raw.lower()
+    if "profiles_display_name_unique" in lower:
+        return True
+    return "display_name" in lower and any(
+        token in lower for token in ("unique", "duplicate", "already exists", "already")
+    )
+
+
+async def _is_display_name_available(
+    candidate: str,
+    *,
+    exclude_user_id: Optional[str] = None,
+) -> bool:
+    normalized = _coerce_display_name(candidate)
+    if not normalized:
+        return False
+
+    params = {
+        "select": "id",
+        "display_name": f"eq.{normalized}",
+        "limit": "1",
+    }
+    if exclude_user_id:
+        params["id"] = f"neq.{exclude_user_id}"
+
+    resp = await sb_get(
+        "/rest/v1/profiles",
+        params=params,
+        timeout=5.0,
+    )
+    if resp.status_code >= 300:
+        logger.error(
+            "account/display-name/availability failed: status=%s body=%s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        raise HTTPException(status_code=502, detail="Failed to check display name availability")
+
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if isinstance(data, list):
+        return len(data) == 0
+    if isinstance(data, dict):
+        return not bool(data.get("id"))
+    return True
+
+
+def _raise_profile_update_error(resp: Any, *, operation: str) -> None:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+
+    if _looks_like_display_name_conflict(payload) or _looks_like_display_name_conflict(getattr(resp, "text", "")):
+        raise HTTPException(status_code=409, detail="display_name already exists")
+
+    logger.error(
+        "account/profile/me %s failed: status=%s body=%s",
+        operation,
+        getattr(resp, "status_code", "?"),
+        str(getattr(resp, "text", ""))[:1500],
+    )
+    raise HTTPException(status_code=502, detail="Failed to update profile")
 
 
 async def _fetch_auth_user(authorization: Optional[str]) -> Dict[str, Any]:
@@ -148,12 +228,7 @@ async def _update_or_create_profile_me(
             timeout=8.0,
         )
         if resp.status_code not in (200, 204):
-            logger.error(
-                "account/profile/me patch failed: status=%s body=%s",
-                resp.status_code,
-                resp.text[:1500],
-            )
-            raise HTTPException(status_code=502, detail="Failed to update profile")
+            _raise_profile_update_error(resp, operation="patch")
         return _pick_row(resp) or await _fetch_profile_me(user_id)
 
     insert_payload: Dict[str, Any] = {
@@ -173,18 +248,24 @@ async def _update_or_create_profile_me(
         timeout=8.0,
     )
     if resp.status_code not in (200, 201):
-        logger.error(
-            "account/profile/me insert failed: status=%s body=%s payload_keys=%s",
-            resp.status_code,
-            resp.text[:1500],
-            sorted(insert_payload.keys()),
-        )
-        raise HTTPException(status_code=502, detail="Failed to update profile")
+        _raise_profile_update_error(resp, operation="insert")
 
     return _pick_row(resp) or await _fetch_profile_me(user_id)
 
 
 def register_account_lifecycle_routes(app: FastAPI) -> None:
+    @app.get("/account/display-name/availability", response_model=AccountDisplayNameAvailabilityResponse)
+    async def get_account_display_name_availability(
+        candidate: str = Query(..., min_length=1, max_length=20),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> AccountDisplayNameAvailabilityResponse:
+        me = await _require_user_id(authorization)
+        normalized = _coerce_display_name(candidate)
+        if not normalized:
+            raise HTTPException(status_code=400, detail="candidate is required")
+        available = await _is_display_name_available(normalized, exclude_user_id=me)
+        return AccountDisplayNameAvailabilityResponse(candidate=normalized, available=available)
+
     @app.get("/account/profile/me", response_model=AccountProfileMeResponse)
     async def get_account_profile_me(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),

@@ -139,6 +139,31 @@ def test_account_profile_me_response_matches_legacy_shape_fixture(client, monkey
     _assert_shape_subset(expected_shape, response.json())
 
 
+def test_account_display_name_availability_matches_snapshot_shape(client, monkeypatch):
+    import api_account_lifecycle as account_lifecycle_module
+
+    expected_shape = _load_fixture("account_display_name_availability_response_shape_v1.json")
+
+    async def fake_require_user_id(_authorization):
+        return "user-456"
+
+    async def fake_is_display_name_available(candidate: str, *, exclude_user_id: Optional[str] = None) -> bool:
+        assert candidate == "Mash"
+        assert exclude_user_id == "user-456"
+        return True
+
+    monkeypatch.setattr(account_lifecycle_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(account_lifecycle_module, "_is_display_name_available", fake_is_display_name_available)
+
+    response = client.get(
+        "/account/display-name/availability?candidate=Mash",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    _assert_shape_subset(expected_shape, response.json())
+
+
 def test_report_distribution_settings_matches_snapshot_shape(client, monkeypatch):
     import api_report_distribution_settings as report_distribution_settings_module
 

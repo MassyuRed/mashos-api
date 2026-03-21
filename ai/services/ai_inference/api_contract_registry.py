@@ -30,6 +30,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('POST', '/emotion/submit', 'emotion.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Legacy payloads must remain accepted'),
     ApiContractEntry('GET', '/input/summary', 'input.summary.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/account/profile/me', 'account.profile.me.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/account/display-name/availability', 'account.display_name.availability.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Self-edit display name preflight availability check'),
     ApiContractEntry('PATCH', '/account/profile/me', 'account.profile.me.patch.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/account/delete', 'account.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Delete lifecycle is server-owned'),
     ApiContractEntry('GET', '/account/profile', 'account.profile.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),

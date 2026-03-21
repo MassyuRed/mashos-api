@@ -1,0 +1,8 @@
+{
+  "status": "ok",
+  "version_key": "<str_or_null>",
+  "generated_at": "<str_or_null>",
+  "saved_report_mode": "<str_or_null>",
+  "has_visible_content": "<bool>",
+  "skip_reason": "<str_or_null>"
+}
