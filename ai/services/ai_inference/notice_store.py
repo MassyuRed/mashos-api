@@ -20,6 +20,7 @@ APP_NOTICE_FETCH_LIMIT = int(os.getenv("APP_NOTICE_FETCH_LIMIT", "300") or "300"
 APP_NOTICE_HISTORY_MAX_LIMIT = int(os.getenv("APP_NOTICE_HISTORY_MAX_LIMIT", "100") or "100")
 
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
+_BODY_ACTION_TOKEN_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.:-]+)\s*\}\}")
 
 
 def _now_utc() -> datetime:
@@ -223,10 +224,24 @@ def _raise_http_from_supabase(resp, default_detail: str) -> None:
     raise HTTPException(status_code=502, detail=detail)
 
 
+def _normalize_notice_action_kind(value: Any) -> str:
+    kind = str(value or "none").strip().lower() or "none"
+    if kind in {"url", "internal_route"}:
+        return kind
+    return "none"
+
+
+def _normalize_notice_action_placement(value: Any) -> str:
+    placement = str(value or "button").strip().lower() or "button"
+    if placement in {"inline", "button", "both"}:
+        return placement
+    return "button"
+
+
 def _cta_public(row: Mapping[str, Any]) -> Dict[str, Any]:
     raw_params = _parse_jsonish(row.get("cta_params_json"), {})
     params = raw_params if isinstance(raw_params, dict) else {}
-    kind = str(row.get("cta_kind") or "none").strip().lower() or "none"
+    kind = _normalize_notice_action_kind(row.get("cta_kind"))
     return {
         "kind": kind,
         "label": str(row.get("cta_label") or "").strip() or None,
@@ -236,16 +251,157 @@ def _cta_public(row: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _notice_actions_public(row: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    raw_actions = _parse_jsonish(row.get("actions_json"), [])
+    if not isinstance(raw_actions, list):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, raw in enumerate(raw_actions):
+        if not isinstance(raw, dict):
+            continue
+        kind = _normalize_notice_action_kind(raw.get("kind"))
+        if kind == "none":
+            continue
+        label = str(raw.get("label") or "").strip() or None
+        if not label:
+            continue
+        route = str(raw.get("route") or "").strip() or None
+        url = str(raw.get("url") or "").strip() or None
+        if kind == "url" and not url:
+            continue
+        if kind == "internal_route" and not route:
+            continue
+        params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+        key = str(raw.get("key") or "").strip() or f"action_{idx + 1}"
+        signature = f"{key}|{kind}|{route or ''}|{url or ''}|{label}"
+        if signature in seen:
+            continue
+        seen.add(signature)
+        out.append({
+            "key": key,
+            "label": label,
+            "kind": kind,
+            "route": route,
+            "params": params,
+            "url": url,
+            "placement": _normalize_notice_action_placement(raw.get("placement")),
+        })
+    return out
+
+
+def _compact_body_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not segments:
+        return []
+    out: List[Dict[str, Any]] = []
+    for segment in segments:
+        seg_type = str(segment.get("type") or "text").strip().lower() or "text"
+        seg_text = str(segment.get("text") or "")
+        if not seg_text:
+            continue
+        if seg_type == "text" and out and str(out[-1].get("type") or "text") == "text":
+            out[-1]["text"] = str(out[-1].get("text") or "") + seg_text
+            continue
+        item = {"type": seg_type, "text": seg_text}
+        action_key = str(segment.get("action_key") or "").strip() or None
+        if action_key:
+            item["action_key"] = action_key
+        out.append(item)
+    return out
+
+
+def _resolved_notice_body(raw_body: Any, actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    body_template = str(raw_body or "").strip()
+    if not body_template:
+        return {
+            "body": "",
+            "body_format": "plain_text",
+            "body_segments": [],
+        }
+
+    if not actions:
+        return {
+            "body": body_template,
+            "body_format": "plain_text",
+            "body_segments": [],
+        }
+
+    actions_by_key = {
+        str(action.get("key") or "").strip(): action
+        for action in actions
+        if str(action.get("key") or "").strip()
+    }
+    inline_actions_by_key = {
+        key: action
+        for key, action in actions_by_key.items()
+        if str(action.get("placement") or "button").strip().lower() in {"inline", "both"}
+    }
+
+    resolved_parts: List[str] = []
+    segments: List[Dict[str, Any]] = []
+    cursor = 0
+    inline_segment_count = 0
+
+    for match in _BODY_ACTION_TOKEN_RE.finditer(body_template):
+        start, end = match.span()
+        token_key = str(match.group(1) or "").strip()
+        if start > cursor:
+            plain = body_template[cursor:start]
+            if plain:
+                resolved_parts.append(plain)
+                segments.append({"type": "text", "text": plain})
+        action = actions_by_key.get(token_key)
+        fallback_text = str((action or {}).get("label") or match.group(0) or "")
+        if fallback_text:
+            resolved_parts.append(fallback_text)
+        inline_action = inline_actions_by_key.get(token_key)
+        if inline_action and fallback_text:
+            segments.append({
+                "type": "action",
+                "text": fallback_text,
+                "action_key": token_key,
+            })
+            inline_segment_count += 1
+        elif fallback_text:
+            segments.append({"type": "text", "text": fallback_text})
+        cursor = end
+
+    if cursor < len(body_template):
+        tail = body_template[cursor:]
+        if tail:
+            resolved_parts.append(tail)
+            segments.append({"type": "text", "text": tail})
+
+    if not resolved_parts:
+        resolved_parts.append(body_template)
+        segments.append({"type": "text", "text": body_template})
+
+    compact_segments = _compact_body_segments(segments)
+    return {
+        "body": "".join(resolved_parts).strip(),
+        "body_format": "inline_links_v1" if inline_segment_count > 0 else "plain_text",
+        "body_segments": compact_segments if inline_segment_count > 0 else [],
+    }
+
+
 def _notice_public(row: Mapping[str, Any], state_row: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     read_at = str((state_row or {}).get("read_at") or "").strip() or None
     popup_seen_at = str((state_row or {}).get("popup_seen_at") or "").strip() or None
+    actions = _notice_actions_public(row)
+    resolved_body = _resolved_notice_body(row.get("body"), actions)
+    body_format = str(row.get("body_format") or resolved_body.get("body_format") or "plain_text").strip() or "plain_text"
+    if resolved_body.get("body_segments"):
+        body_format = "inline_links_v1"
     return {
         "notice_id": str(row.get("id") or ""),
         "notice_key": str(row.get("notice_key") or "").strip() or None,
         "version": int(row.get("version") or 1),
         "title": str(row.get("title") or "").strip(),
-        "body": str(row.get("body") or "").strip(),
-        "body_format": str(row.get("body_format") or "plain_text").strip() or "plain_text",
+        "body": str(resolved_body.get("body") or "").strip(),
+        "body_format": body_format,
+        "body_segments": resolved_body.get("body_segments") or [],
+        "actions": actions,
         "category": str(row.get("category") or "other").strip() or "other",
         "priority": str(row.get("priority") or "normal").strip() or "normal",
         "published_at": str(row.get("published_at") or row.get("start_at_utc") or row.get("created_at") or "").strip() or None,

@@ -21,8 +21,24 @@ def test_notices_current_contract_headers_and_shape(client, monkeypatch):
                 "notice_key": "update_2026_03_19_ios",
                 "version": 1,
                 "title": "アップデート版を配布しました",
-                "body": "不具合修正を含む最新版を配布しました。",
-                "body_format": "plain_text",
+                "body": "不具合修正を含む最新版はアプリページから確認できます。",
+                "body_format": "inline_links_v1",
+                "body_segments": [
+                    {"type": "text", "text": "不具合修正を含む最新版は"},
+                    {"type": "action", "text": "アプリページ", "action_key": "app_page"},
+                    {"type": "text", "text": "から確認できます。"},
+                ],
+                "actions": [
+                    {
+                        "key": "app_page",
+                        "label": "アプリページ",
+                        "kind": "url",
+                        "route": None,
+                        "params": {},
+                        "url": "https://example.com/app",
+                        "placement": "both",
+                    }
+                ],
                 "category": "update",
                 "priority": "high",
                 "published_at": "2026-03-19T09:00:00Z",
@@ -60,6 +76,9 @@ def test_notices_current_contract_headers_and_shape(client, monkeypatch):
     assert body["has_unread"] is True
     assert body["badge"]["show"] is True
     assert body["popup_notice"]["notice_id"] == "notice-1"
+    assert body["popup_notice"]["body_format"] == "inline_links_v1"
+    assert body["popup_notice"]["body_segments"][1]["action_key"] == "app_page"
+    assert body["popup_notice"]["actions"][0]["placement"] == "both"
     assert body["popup_notice"]["cta"]["kind"] == "none"
 
 
@@ -81,8 +100,33 @@ def test_notices_history_contract_shape(client, monkeypatch):
                     "notice_key": "update_2026_03_19_ios",
                     "version": 1,
                     "title": "アップデート版を配布しました",
-                    "body": "不具合修正を含む最新版を配布しました。",
-                    "body_format": "plain_text",
+                    "body": "不具合修正を含む最新版はアプリページから確認できます。",
+                    "body_format": "inline_links_v1",
+                    "body_segments": [
+                        {"type": "text", "text": "不具合修正を含む最新版は"},
+                        {"type": "action", "text": "アプリページ", "action_key": "app_page"},
+                        {"type": "text", "text": "から確認できます。"},
+                    ],
+                    "actions": [
+                        {
+                            "key": "app_page",
+                            "label": "アプリページ",
+                            "kind": "url",
+                            "route": None,
+                            "params": {},
+                            "url": "https://example.com/app",
+                            "placement": "both",
+                        },
+                        {
+                            "key": "mash_x",
+                            "label": "Mash公式X",
+                            "kind": "url",
+                            "route": None,
+                            "params": {},
+                            "url": "https://example.com/x",
+                            "placement": "inline",
+                        },
+                    ],
                     "category": "update",
                     "priority": "high",
                     "published_at": "2026-03-19T09:00:00Z",
@@ -125,7 +169,61 @@ def test_notices_history_contract_shape(client, monkeypatch):
     assert body["unread_count"] == 1
     assert len(body["items"]) == 1
     assert body["items"][0]["title"] == "アップデート版を配布しました"
+    assert body["items"][0]["actions"][1]["key"] == "mash_x"
     assert body["items"][0]["cta"]["kind"] == "url"
+
+
+
+def test_notice_store_resolves_inline_actions_to_public_shape():
+    import notice_store
+
+    row = {
+        "id": "notice-inline-1",
+        "notice_key": "notice_inline",
+        "version": 1,
+        "title": "リンク付きお知らせ",
+        "body": "最新版は{{app_page}}から確認できます。最新情報は{{mash_x}}をご覧ください。",
+        "body_format": "plain_text",
+        "actions_json": [
+            {
+                "key": "app_page",
+                "label": "アプリページ",
+                "kind": "url",
+                "url": "https://example.com/app",
+                "placement": "both",
+            },
+            {
+                "key": "mash_x",
+                "label": "Mash公式X",
+                "kind": "url",
+                "url": "https://example.com/x",
+                "placement": "inline",
+            },
+        ],
+        "category": "update",
+        "priority": "normal",
+        "published_at": "2026-03-21T00:00:00Z",
+        "cta_kind": "none",
+        "cta_label": None,
+        "cta_route": None,
+        "cta_params_json": {},
+        "cta_url": None,
+    }
+
+    item = notice_store._notice_public(row, state_row=None)
+
+    assert item["body"] == "最新版はアプリページから確認できます。最新情報はMash公式Xをご覧ください。"
+    assert item["body_format"] == "inline_links_v1"
+    assert [segment["type"] for segment in item["body_segments"]] == [
+        "text",
+        "action",
+        "text",
+        "action",
+        "text",
+    ]
+    assert [action["key"] for action in item["actions"]] == ["app_page", "mash_x"]
+    assert item["actions"][0]["placement"] == "both"
+    assert item["actions"][1]["placement"] == "inline"
 
 
 

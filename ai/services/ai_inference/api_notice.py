@@ -16,6 +16,22 @@ logger = logging.getLogger("notice_api")
 store = NoticeStore()
 
 
+class NoticeBodySegment(BaseModel):
+    type: str = "text"
+    text: str = ""
+    action_key: Optional[str] = None
+
+
+class NoticeAction(BaseModel):
+    key: Optional[str] = None
+    label: Optional[str] = None
+    kind: str = "none"
+    route: Optional[str] = None
+    params: Dict[str, Any] = Field(default_factory=dict)
+    url: Optional[str] = None
+    placement: str = "button"
+
+
 class NoticeItem(BaseModel):
     notice_id: str
     notice_key: Optional[str] = None
@@ -23,13 +39,15 @@ class NoticeItem(BaseModel):
     title: str
     body: str
     body_format: str = "plain_text"
+    body_segments: List[NoticeBodySegment] = Field(default_factory=list)
+    actions: List[NoticeAction] = Field(default_factory=list)
     category: str = "other"
     priority: str = "normal"
     published_at: Optional[str] = None
     is_read: bool = False
     read_at: Optional[str] = None
     popup_seen_at: Optional[str] = None
-    cta: Dict[str, Any] = Field(default_factory=dict)
+    cta: NoticeAction = Field(default_factory=NoticeAction)
 
 
 class NoticeCurrentResponse(BaseModel):
