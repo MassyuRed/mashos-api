@@ -322,6 +322,9 @@ class TodayQuestionStore:
             _raise_http_from_supabase(resp, f"Failed to insert {table}")
         if resp.status_code == 204:
             return []
+        text = (getattr(resp, "text", "") or "").strip()
+        if not text:
+            return []
         data = resp.json()
         if isinstance(data, list):
             return [x for x in data if isinstance(x, dict)]
