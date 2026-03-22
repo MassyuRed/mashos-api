@@ -3091,6 +3091,8 @@ async def _worker_loop() -> None:
                                         "requested_at": (claimed.payload or {}).get("requested_at"),
                                         "scope": scope,
                                         "source_hash": pub_hash,
+                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
                                     },
                                     priority=17,
                                 )
@@ -3153,6 +3155,8 @@ async def _worker_loop() -> None:
                                         "scope": scope,
                                         "include_astor": include_astor,
                                         "source_hash": pub_hash,
+                                        "distribution_origin": bool((claimed.payload or {}).get("distribution_origin")),
+                                        "distribution_key": (claimed.payload or {}).get("distribution_key"),
                                     },
                                     priority=11,
                                 )
