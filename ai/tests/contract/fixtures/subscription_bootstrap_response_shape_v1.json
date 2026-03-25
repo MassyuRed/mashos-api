@@ -29,11 +29,11 @@
       "recommended": true,
       "purchase_product_id": {
         "ios": "cocolon_plus_monthly",
-        "android": "cocolon_plus_monthly"
+        "android": "emlis"
       },
       "recognized_product_ids": {
         "ios": ["cocolon_plus_monthly"],
-        "android": ["cocolon_plus_monthly"]
+        "android": ["emlis"]
       },
       "trial": {
         "enabled": true,

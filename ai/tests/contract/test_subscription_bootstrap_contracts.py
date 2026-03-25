@@ -38,11 +38,11 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                     "recommended": True,
                     "purchase_product_id": {
                         "ios": "cocolon_plus_monthly",
-                        "android": "cocolon_plus_monthly",
+                        "android": "emlis",
                     },
                     "recognized_product_ids": {
                         "ios": ["cocolon_plus_monthly"],
-                        "android": ["cocolon_plus_monthly"],
+                        "android": ["emlis"],
                     },
                     "trial": {
                         "enabled": True,
@@ -126,8 +126,8 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
                     "note_lines": [],
                     "cta_label": "このプランを選ぶ",
                     "recommended": True,
-                    "purchase_product_id": {"ios": "cocolon_plus_monthly", "android": "cocolon_plus_monthly"},
-                    "recognized_product_ids": {"ios": ["cocolon_plus_monthly"], "android": ["cocolon_plus_monthly"]},
+                    "purchase_product_id": {"ios": "cocolon_plus_monthly", "android": "emlis"},
+                    "recognized_product_ids": {"ios": ["cocolon_plus_monthly"], "android": ["emlis"]},
                     "trial": {"enabled": True, "subtitle": None, "android_offer_tag": "trial_1m_new_user"},
                 }
             },
