@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _require_user_id
-from publish_governance import decide_myprofile_report_publish
+from publish_governance import decide_myprofile_report_publish, history_retention_bounds_for_query
 from supabase_client import sb_get
 
 try:
@@ -20,6 +20,15 @@ except Exception:  # pragma: no cover
     get_subscription_tier_for_user = None  # type: ignore
 
 logger = logging.getLogger("myprofile_reports_read_api")
+
+MYPROFILE_HISTORY_PROJECTION_SELECT = (
+    "id,report_type,title,period_start,period_end,generated_at,updated_at,"
+    "has_visible_content:content_json->visibility->>has_visible_content,"
+    "archive_eligible:content_json->history->>archive_eligible"
+)
+MYPROFILE_HISTORY_FALLBACK_SELECT = (
+    "id,report_type,title,period_start,period_end,generated_at,updated_at,content_text,content_json"
+)
 
 
 class MyProfileReportHistoryItem(BaseModel):
@@ -99,27 +108,70 @@ async def _fetch_history_rows(
     off = max(0, int(offset or 0))
     needed = off + lim + 1
     raw_offset = 0
-    raw_page_size = max(50, min(200, lim * 3))
+    raw_page_size = max(50, min(200, lim * 2))
     filtered_rows: List[Dict[str, Any]] = []
+
+    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+    gte_iso = str(retention.get("gte_iso") or "").strip()
+    lt_iso = str(retention.get("lt_iso") or "").strip()
+
+    def _base_params(select_clause: str) -> Dict[str, str]:
+        params = {
+            "select": select_clause,
+            "user_id": f"eq.{user_id}",
+            "report_type": f"eq.{report_type}",
+            "order": "period_end.desc,generated_at.desc,updated_at.desc",
+            "limit": str(raw_page_size),
+            "offset": str(raw_offset),
+        }
+        if gte_iso and lt_iso:
+            params["and"] = f"(period_end.gte.{gte_iso},period_end.lt.{lt_iso})"
+        elif gte_iso:
+            params["period_end"] = f"gte.{gte_iso}"
+        elif lt_iso:
+            params["period_end"] = f"lt.{lt_iso}"
+        return params
 
     while len(filtered_rows) < needed:
         resp = await sb_get(
             "/rest/v1/myprofile_reports",
-            params={
-                "select": "id,report_type,title,period_start,period_end,generated_at,updated_at,content_text,content_json",
-                "user_id": f"eq.{user_id}",
-                "report_type": f"eq.{report_type}",
-                "order": "period_end.desc,generated_at.desc,updated_at.desc",
-                "limit": str(raw_page_size),
-                "offset": str(raw_offset),
-            },
+            params=_base_params(MYPROFILE_HISTORY_PROJECTION_SELECT),
             timeout=8.0,
         )
-        if resp.status_code >= 300:
-            logger.warning("myprofile_reports history select failed: %s %s", resp.status_code, (resp.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Failed to load self-structure report history")
+        chunk = _pick_rows(resp) if resp.status_code < 300 else []
+        projection_ok = resp.status_code < 300 and (
+            not chunk
+            or any(
+                any(key in row for key in ("has_visible_content", "archive_eligible"))
+                for row in chunk[:3]
+            )
+        )
 
-        chunk = _pick_rows(resp)
+        if not projection_ok:
+            if resp.status_code >= 300:
+                logger.warning(
+                    "myprofile_reports history projection select failed: %s %s",
+                    resp.status_code,
+                    (resp.text or "")[:800],
+                )
+            else:
+                logger.warning(
+                    "myprofile_reports history projection missing expected fields; falling back to legacy body select"
+                )
+            resp = await sb_get(
+                "/rest/v1/myprofile_reports",
+                params=_base_params(MYPROFILE_HISTORY_FALLBACK_SELECT),
+                timeout=8.0,
+            )
+            if resp.status_code >= 300:
+                logger.warning(
+                    "myprofile_reports history legacy select failed: %s %s",
+                    resp.status_code,
+                    (resp.text or "")[:800],
+                )
+                raise HTTPException(status_code=502, detail="Failed to load self-structure report history")
+            chunk = _pick_rows(resp)
+
         if not chunk:
             break
         raw_offset += len(chunk)

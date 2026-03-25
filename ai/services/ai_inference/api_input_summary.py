@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from supabase_client import sb_get
+from response_microcache import get_or_compute
+
+logger = logging.getLogger("input_summary_api")
 
 JST = timezone(timedelta(hours=9))
 EMOTIONS_TABLE = "emotions"
+INPUT_SUMMARY_CACHE_TTL_SECONDS = 10.0
+INPUT_SUMMARY_STREAK_LOOKBACK_DAYS = max(35, int(os.getenv("INPUT_SUMMARY_STREAK_LOOKBACK_DAYS", "60") or "60"))
+INPUT_SUMMARY_STREAK_PAGE_SIZE = max(100, int(os.getenv("INPUT_SUMMARY_STREAK_PAGE_SIZE", "400") or "400"))
+INPUT_SUMMARY_STREAK_MAX_SCAN_ROWS = max(
+    INPUT_SUMMARY_STREAK_PAGE_SIZE,
+    int(os.getenv("INPUT_SUMMARY_STREAK_MAX_SCAN_ROWS", "4000") or "4000"),
+)
 
 
 class InputSummaryResponse(BaseModel):
@@ -67,6 +81,129 @@ def _week_start_utc(now_utc: datetime) -> datetime:
     return (midnight_jst - timedelta(days=days_since_sunday)).astimezone(timezone.utc)
 
 
+def _parse_content_range_total(content_range: str) -> Optional[int]:
+    raw = str(content_range or "").strip()
+    if not raw or "/" not in raw:
+        return None
+    tail = raw.split("/")[-1].strip()
+    if not tail or tail == "*":
+        return None
+    try:
+        return int(tail)
+    except Exception:
+        return None
+
+
+def _range_params(
+    *,
+    user_id: str,
+    start_iso: str,
+    end_iso: str,
+    select: str,
+    limit: int = 1,
+    offset: int = 0,
+    order: Optional[str] = None,
+) -> List[Tuple[str, str]]:
+    params: List[Tuple[str, str]] = [
+        ("select", select),
+        ("user_id", f"eq.{user_id}"),
+        ("created_at", f"gte.{start_iso}"),
+        ("created_at", f"lt.{end_iso}"),
+        ("limit", str(max(1, int(limit)))),
+    ]
+    if offset > 0:
+        params.append(("offset", str(max(0, int(offset)))))
+    if order:
+        params.append(("order", order))
+    return params
+
+
+async def _fetch_range_count(user_id: str, start_iso: str, end_iso: str) -> int:
+    resp = await sb_get(
+        f"/rest/v1/{EMOTIONS_TABLE}",
+        params=_range_params(
+            user_id=user_id,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            select="id",
+            limit=1,
+        ),
+        prefer="count=exact",
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise HTTPException(status_code=502, detail="Failed to load input summary")
+    total = _parse_content_range_total(resp.headers.get("content-range") or resp.headers.get("Content-Range") or "")
+    if total is None:
+        raise RuntimeError("missing count header for input summary range count")
+    return max(0, int(total))
+
+
+async def _fetch_last_input_at(user_id: str) -> Optional[str]:
+    resp = await sb_get(
+        f"/rest/v1/{EMOTIONS_TABLE}",
+        params={
+            "select": "created_at",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.desc",
+            "limit": "1",
+        },
+        timeout=8.0,
+    )
+    if resp.status_code not in (200, 206):
+        raise HTTPException(status_code=502, detail="Failed to load input summary")
+    rows = resp.json()
+    rows = rows if isinstance(rows, list) else []
+    if not rows:
+        return None
+    row0 = rows[0] if isinstance(rows[0], dict) else {}
+    return str(row0.get("created_at") or "").strip() or None
+
+
+async def _fetch_recent_streak_date_keys(user_id: str, start_iso: str, end_iso: str) -> Set[str]:
+    page_size = int(INPUT_SUMMARY_STREAK_PAGE_SIZE)
+    max_rows = int(INPUT_SUMMARY_STREAK_MAX_SCAN_ROWS)
+    offset = 0
+    fetched_rows = 0
+    date_keys: Set[str] = set()
+
+    while fetched_rows < max_rows:
+        resp = await sb_get(
+            f"/rest/v1/{EMOTIONS_TABLE}",
+            params=_range_params(
+                user_id=user_id,
+                start_iso=start_iso,
+                end_iso=end_iso,
+                select="created_at",
+                limit=page_size,
+                offset=offset,
+                order="created_at.desc",
+            ),
+            timeout=8.0,
+        )
+        if resp.status_code not in (200, 206):
+            raise HTTPException(status_code=502, detail="Failed to load input summary")
+        rows = resp.json()
+        rows = rows if isinstance(rows, list) else []
+        if not rows:
+            break
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            dt = _to_utc(str(row.get("created_at") or ""))
+            if dt is None:
+                continue
+            date_keys.add(_to_jst_date_key(dt))
+
+        fetched_rows += len(rows)
+        if len(rows) < page_size or fetched_rows >= max_rows:
+            break
+        offset += len(rows)
+
+    return date_keys
+
+
 async def _fetch_recent_rows(user_id: str, start_iso: str, end_iso: str) -> List[Dict[str, Any]]:
     resp = await sb_get(
         f"/rest/v1/{EMOTIONS_TABLE}",
@@ -113,54 +250,102 @@ def _compute_streak(now_utc: datetime, date_keys: Set[str]) -> int:
     return streak
 
 
+async def _build_payload_db_aggregated(user_id: str) -> Dict[str, Any]:
+    now_utc = datetime.now(timezone.utc)
+
+    day_start = _jst_midnight_utc(now_utc)
+    day_end = day_start + timedelta(days=1)
+    month_start = _month_start_utc(now_utc)
+    week_start = _week_start_utc(now_utc)
+    streak_window_start = day_start - timedelta(days=INPUT_SUMMARY_STREAK_LOOKBACK_DAYS)
+
+    today_count, week_count, month_count, last_input_at, date_keys = await asyncio.gather(
+        _fetch_range_count(user_id, day_start.isoformat(), day_end.isoformat()),
+        _fetch_range_count(user_id, week_start.isoformat(), day_end.isoformat()),
+        _fetch_range_count(user_id, month_start.isoformat(), day_end.isoformat()),
+        _fetch_last_input_at(user_id),
+        _fetch_recent_streak_date_keys(user_id, streak_window_start.isoformat(), day_end.isoformat()),
+    )
+
+    response = InputSummaryResponse(
+        user_id=user_id,
+        today_count=int(today_count or 0),
+        week_count=int(week_count or 0),
+        month_count=int(month_count or 0),
+        streak_days=_compute_streak(now_utc, date_keys),
+        last_input_at=last_input_at,
+    )
+    return jsonable_encoder(response)
+
+
+async def _build_payload_legacy(user_id: str) -> Dict[str, Any]:
+    now_utc = datetime.now(timezone.utc)
+
+    day_start = _jst_midnight_utc(now_utc)
+    day_end = day_start + timedelta(days=1)
+    month_start = _month_start_utc(now_utc)
+    week_start = _week_start_utc(now_utc)
+    streak_window_start = day_start - timedelta(days=35)
+
+    fetch_start = min(month_start, week_start, streak_window_start)
+    rows = await _fetch_recent_rows(
+        user_id=user_id,
+        start_iso=fetch_start.isoformat(),
+        end_iso=day_end.isoformat(),
+    )
+
+    today_count = 0
+    week_count = 0
+    month_count = 0
+    last_input_at = None
+    date_keys: Set[str] = set()
+
+    for row in rows:
+        dt = _to_utc(row.get("created_at"))
+        if dt is None:
+            continue
+        if last_input_at is None:
+            last_input_at = row.get("created_at")
+        if day_start <= dt < day_end:
+            today_count += 1
+        if week_start <= dt < day_end:
+            week_count += 1
+        if month_start <= dt < day_end:
+            month_count += 1
+        date_keys.add(_to_jst_date_key(dt))
+
+    response = InputSummaryResponse(
+        user_id=user_id,
+        today_count=today_count,
+        week_count=week_count,
+        month_count=month_count,
+        streak_days=_compute_streak(now_utc, date_keys),
+        last_input_at=last_input_at,
+    )
+    return jsonable_encoder(response)
+
+
 def register_input_summary_routes(app: FastAPI) -> None:
     @app.get("/input/summary", response_model=InputSummaryResponse)
     async def get_input_summary(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> InputSummaryResponse:
         user_id = await _require_user_id(authorization)
-        now_utc = datetime.now(timezone.utc)
 
-        day_start = _jst_midnight_utc(now_utc)
-        day_end = day_start + timedelta(days=1)
-        month_start = _month_start_utc(now_utc)
-        week_start = _week_start_utc(now_utc)
-        streak_window_start = day_start - timedelta(days=35)
+        async def _build_payload() -> Dict[str, Any]:
+            try:
+                return await _build_payload_db_aggregated(user_id)
+            except Exception as exc:
+                logger.warning(
+                    "input summary aggregated path fallback activated: user_id=%s err=%r",
+                    user_id,
+                    exc,
+                )
+                return await _build_payload_legacy(user_id)
 
-        fetch_start = min(month_start, week_start, streak_window_start)
-        rows = await _fetch_recent_rows(
-            user_id=user_id,
-            start_iso=fetch_start.isoformat(),
-            end_iso=day_end.isoformat(),
+        payload = await get_or_compute(
+            f"input_summary:{user_id}",
+            INPUT_SUMMARY_CACHE_TTL_SECONDS,
+            _build_payload,
         )
-
-        today_count = 0
-        week_count = 0
-        month_count = 0
-        last_input_at = None
-        date_keys: Set[str] = set()
-
-        for row in rows:
-            dt = _to_utc(row.get("created_at"))
-            if dt is None:
-                continue
-            if last_input_at is None:
-                last_input_at = row.get("created_at")
-            if day_start <= dt < day_end:
-                today_count += 1
-            if week_start <= dt < day_end:
-                week_count += 1
-            if month_start <= dt < day_end:
-                month_count += 1
-            date_keys.add(_to_jst_date_key(dt))
-
-        streak_days = _compute_streak(now_utc, date_keys)
-
-        return InputSummaryResponse(
-            user_id=user_id,
-            today_count=today_count,
-            week_count=week_count,
-            month_count=month_count,
-            streak_days=streak_days,
-            last_input_at=last_input_at,
-        )
+        return InputSummaryResponse(**payload)

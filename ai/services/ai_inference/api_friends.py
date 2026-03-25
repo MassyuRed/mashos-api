@@ -24,6 +24,7 @@ Notes
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone, timedelta
@@ -31,6 +32,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Path
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 # Reuse auth helpers & config checks from emotion submit module
@@ -46,11 +48,15 @@ from astor_friend_feed_store import (
     fetch_latest_ready_friend_feed_summary,
     select_friend_feed_items,
 )
+from response_microcache import get_or_compute, invalidate_prefix
+from supabase_client import sb_count, sb_delete, sb_get, sb_patch, sb_post
 
 logger = logging.getLogger("friends_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+FRIENDS_MANAGE_CACHE_TTL_SECONDS = 5.0
+FRIENDS_UNREAD_CACHE_TTL_SECONDS = 5.0
 
 
 # ----------------------------
@@ -135,32 +141,135 @@ def _sb_headers_json(*, prefer: Optional[str] = None) -> Dict[str, str]:
     return h
 
 
-async def _sb_get(path: str, *, params: Optional[Dict[str, str]] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.get(url, headers=_sb_headers_json(), params=params)
+async def _sb_get(
+    path: str,
+    *,
+    params: Optional[Dict[str, str]] = None,
+    prefer: Optional[str] = None,
+) -> httpx.Response:
+    return await sb_get(
+        path,
+        params=params,
+        prefer=prefer,
+        timeout=8.0,
+        headers=_sb_headers_json(prefer=prefer),
+    )
 
 
 async def _sb_post(path: str, *, json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json)
+    return await sb_post(path, json=json, prefer=prefer, timeout=8.0, headers=_sb_headers_json(prefer=prefer))
 
 
 async def _sb_patch(path: str, *, params: Dict[str, str], json: Any, prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+    return await sb_patch(path, params=params, json=json, prefer=prefer, timeout=8.0, headers=_sb_headers_json(prefer=prefer))
 
 async def _sb_delete(path: str, *, params: Dict[str, str], prefer: Optional[str] = None) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.delete(url, headers=_sb_headers_json(prefer=prefer), params=params)
+    return await sb_delete(path, params=params, prefer=prefer, timeout=8.0, headers=_sb_headers_json(prefer=prefer))
 
+
+async def _invalidate_friend_api_caches(*user_ids: str) -> None:
+    seen = set()
+    for raw in user_ids:
+        uid = str(raw or "").strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        await invalidate_prefix(f"friends:manage:{uid}")
+        await invalidate_prefix(f"friends:unread:{uid}")
+
+
+async def _fetch_incoming_pending_count(user_id: str) -> int:
+    try:
+        return int(
+            await sb_count(
+                "/rest/v1/friend_requests",
+                params={
+                    "requested_user_id": f"eq.{user_id}",
+                    "status": "eq.pending",
+                    "select": "id",
+                },
+                timeout=8.0,
+            )
+        )
+    except Exception as exc:
+        logger.warning("Supabase incoming friend_requests count failed: %s", exc)
+        return 0
+
+
+def _parse_content_range_total(content_range: str) -> Optional[int]:
+    raw = str(content_range or "").strip()
+    if not raw or "/" not in raw:
+        return None
+    tail = raw.split("/")[-1].strip()
+    if not tail or tail == "*":
+        return None
+    try:
+        return int(tail)
+    except Exception:
+        return None
+
+
+def _parse_iso_utc(value: Any) -> Optional[datetime]:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _has_newer_iso(candidate_iso: Optional[str], cursor_iso: Optional[str]) -> bool:
+    candidate_dt = _parse_iso_utc(candidate_iso)
+    if candidate_dt is None:
+        return False
+    cursor_dt = _parse_iso_utc(cursor_iso) if cursor_iso else None
+    if cursor_dt is None:
+        return True
+    return candidate_dt > cursor_dt
+
+
+async def _fetch_latest_pending_request_head_and_count(user_id: str) -> Tuple[Optional[str], int]:
+    try:
+        resp = await _sb_get(
+            "/rest/v1/friend_requests",
+            params={
+                "select": "id,created_at",
+                "requested_user_id": f"eq.{user_id}",
+                "status": "eq.pending",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+            prefer="count=exact",
+        )
+    except Exception as exc:
+        logger.warning("Supabase friend_requests head+count failed: %s", exc)
+        latest_created_at = await _latest_friend_request_created_at(user_id)
+        total_count = await _fetch_incoming_pending_count(user_id)
+        return latest_created_at, total_count
+
+    if resp.status_code >= 300:
+        logger.warning("Supabase friend_requests head+count failed: %s %s", resp.status_code, resp.text[:1500])
+        latest_created_at = await _latest_friend_request_created_at(user_id)
+        total_count = await _fetch_incoming_pending_count(user_id)
+        return latest_created_at, total_count
+
+    rows = resp.json()
+    rows = rows if isinstance(rows, list) else []
+    latest_created_at: Optional[str] = None
+    if rows and isinstance(rows[0], dict):
+        value = rows[0].get("created_at")
+        latest_created_at = str(value).strip() if value else None
+
+    total_count = _parse_content_range_total(resp.headers.get("content-range") or resp.headers.get("Content-Range") or "")
+    if total_count is None:
+        total_count = await _fetch_incoming_pending_count(user_id)
+    return latest_created_at, max(0, int(total_count or 0))
 
 
 async def _lookup_profile_by_friend_code(friend_code: str) -> Optional[Dict[str, Any]]:
@@ -295,6 +404,18 @@ def _in_list(values: List[str]) -> str:
             continue
         xs.append(f'"{v}"')
     return f"in.({','.join(xs)})"
+
+
+def _dedupe_user_ids(values: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for raw in values or []:
+        uid = str(raw or "").strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        out.append(uid)
+    return out
 
 
 def _format_friend_feed_time_label(iso_value: Any) -> str:
@@ -460,7 +581,7 @@ async def _fetch_or_create_my_profile(user_id: str) -> Dict[str, Any]:
     }
 
 
-async def _fetch_manage_friends_list(user_id: str) -> List[Dict[str, Any]]:
+async def _fetch_manage_friendship_rows(user_id: str) -> List[Dict[str, Any]]:
     resp = await _sb_get(
         "/rest/v1/friendships",
         params={
@@ -473,122 +594,118 @@ async def _fetch_manage_friends_list(user_id: str) -> List[Dict[str, Any]]:
         logger.error("Supabase friendships select failed: %s %s", resp.status_code, resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to query friendships")
 
-    rows = resp.json() if isinstance(resp.json(), list) else []
-    friend_ids = [str((row or {}).get("friend_user_id") or "").strip() for row in rows if isinstance(row, dict)]
-    profiles = await _fetch_profiles_map(friend_ids)
-
-    out: List[Dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        fid = str(row.get("friend_user_id") or "").strip()
-        if not fid:
-            continue
-        prof = profiles.get(fid) or {}
-        out.append(
-            {
-                "userId": fid,
-                "displayName": prof.get("display_name") or "Friend",
-                "friendCode": prof.get("friend_code") or None,
-            }
-        )
-    return out
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
 
 
-async def _fetch_manage_requests(user_id: str) -> Dict[str, List[Dict[str, Any]]]:
-    in_resp = await _sb_get(
-        "/rest/v1/friend_requests",
-        params={
-            "select": "id,requester_user_id,created_at",
-            "requested_user_id": f"eq.{user_id}",
-            "status": "eq.pending",
-            "order": "created_at.desc",
-        },
+async def _fetch_manage_request_rows_legacy(user_id: str) -> List[Dict[str, Any]]:
+    in_resp, out_resp = await asyncio.gather(
+        _sb_get(
+            "/rest/v1/friend_requests",
+            params={
+                "select": "id,requester_user_id,requested_user_id,created_at",
+                "requested_user_id": f"eq.{user_id}",
+                "status": "eq.pending",
+                "order": "created_at.desc",
+            },
+        ),
+        _sb_get(
+            "/rest/v1/friend_requests",
+            params={
+                "select": "id,requester_user_id,requested_user_id,created_at",
+                "requester_user_id": f"eq.{user_id}",
+                "status": "eq.pending",
+                "order": "created_at.desc",
+            },
+        ),
     )
     if in_resp.status_code >= 300:
         logger.error("Supabase incoming friend_requests select failed: %s %s", in_resp.status_code, in_resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to query friend requests")
-
-    out_resp = await _sb_get(
-        "/rest/v1/friend_requests",
-        params={
-            "select": "id,requested_user_id,created_at",
-            "requester_user_id": f"eq.{user_id}",
-            "status": "eq.pending",
-            "order": "created_at.desc",
-        },
-    )
     if out_resp.status_code >= 300:
         logger.error("Supabase outgoing friend_requests select failed: %s %s", out_resp.status_code, out_resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to query friend requests")
 
-    incoming_rows = in_resp.json() if isinstance(in_resp.json(), list) else []
-    outgoing_rows = out_resp.json() if isinstance(out_resp.json(), list) else []
-
-    profile_ids: List[str] = []
+    rows: List[Dict[str, Any]] = []
+    incoming_payload = in_resp.json()
+    outgoing_payload = out_resp.json()
+    incoming_rows = incoming_payload if isinstance(incoming_payload, list) else []
+    outgoing_rows = outgoing_payload if isinstance(outgoing_payload, list) else []
     for row in incoming_rows:
         if isinstance(row, dict):
-            profile_ids.append(str(row.get("requester_user_id") or "").strip())
+            rows.append(row)
     for row in outgoing_rows:
         if isinstance(row, dict):
-            profile_ids.append(str(row.get("requested_user_id") or "").strip())
-    profiles = await _fetch_profiles_map(profile_ids)
-
-    incoming: List[Dict[str, Any]] = []
-    for row in incoming_rows:
-        if not isinstance(row, dict):
-            continue
-        requester_user_id = str(row.get("requester_user_id") or "").strip()
-        if not requester_user_id:
-            continue
-        prof = profiles.get(requester_user_id) or {}
-        incoming.append(
-            {
-                "id": int(row.get("id") or 0),
-                "requesterUserId": requester_user_id,
-                "requesterName": prof.get("display_name") or "Friend",
-                "createdAt": row.get("created_at"),
-            }
-        )
-
-    outgoing: List[Dict[str, Any]] = []
-    for row in outgoing_rows:
-        if not isinstance(row, dict):
-            continue
-        requested_user_id = str(row.get("requested_user_id") or "").strip()
-        if not requested_user_id:
-            continue
-        prof = profiles.get(requested_user_id) or {}
-        outgoing.append(
-            {
-                "id": int(row.get("id") or 0),
-                "requestedUserId": requested_user_id,
-                "requestedName": prof.get("display_name") or "Friend",
-                "friendCode": prof.get("friend_code") or None,
-                "createdAt": row.get("created_at"),
-            }
-        )
-
-    return {"incoming": incoming, "outgoing": outgoing}
+            rows.append(row)
+    rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    return rows
 
 
-async def _fetch_friend_notification_map(viewer_user_id: str) -> Dict[str, bool]:
+async def _fetch_manage_request_rows(user_id: str) -> List[Dict[str, Any]]:
     try:
         resp = await _sb_get(
-            "/rest/v1/friend_notification_settings",
+            "/rest/v1/friend_requests",
             params={
-                "select": "owner_user_id,is_enabled",
-                "viewer_user_id": f"eq.{viewer_user_id}",
-                "order": "owner_user_id.asc",
+                "select": "id,requester_user_id,requested_user_id,created_at",
+                "status": "eq.pending",
+                "or": f"(requested_user_id.eq.{user_id},requester_user_id.eq.{user_id})",
+                "order": "created_at.desc",
             },
         )
     except Exception as exc:
+        logger.warning("Supabase combined friend_requests select failed, falling back: %s", exc)
+        return await _fetch_manage_request_rows_legacy(user_id)
+
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase combined friend_requests select failed, falling back: %s %s",
+            resp.status_code,
+            resp.text[:1500],
+        )
+        return await _fetch_manage_request_rows_legacy(user_id)
+
+    rows = resp.json()
+    return rows if isinstance(rows, list) else []
+
+
+async def _fetch_friend_notification_map(
+    viewer_user_id: str,
+    owner_user_ids: Optional[List[str]] = None,
+) -> Dict[str, bool]:
+    ids_filter = _dedupe_user_ids(owner_user_ids or []) if owner_user_ids is not None else None
+    if owner_user_ids is not None and not ids_filter:
+        return {}
+
+    params = {
+        "select": "owner_user_id,is_enabled",
+        "viewer_user_id": f"eq.{viewer_user_id}",
+        "order": "owner_user_id.asc",
+    }
+    if ids_filter is not None:
+        params["owner_user_id"] = _in_list(ids_filter)
+
+    try:
+        resp = await _sb_get(
+            "/rest/v1/friend_notification_settings",
+            params=params,
+        )
+    except Exception as exc:
+        if ids_filter is not None:
+            logger.warning("Failed to query filtered friend notification settings, retrying unfiltered: %s", exc)
+            return await _fetch_friend_notification_map(viewer_user_id, owner_user_ids=None)
         logger.warning("Failed to query friend notification settings: %s", exc)
         return {}
 
     if resp.status_code == 404:
         return {}
     if resp.status_code >= 300:
+        if ids_filter is not None:
+            logger.warning(
+                "Supabase select filtered friend_notification_settings failed, retrying unfiltered: %s %s",
+                resp.status_code,
+                resp.text[:1500],
+            )
+            return await _fetch_friend_notification_map(viewer_user_id, owner_user_ids=None)
         logger.warning(
             "Supabase select friend_notification_settings failed: %s %s",
             resp.status_code,
@@ -826,6 +943,7 @@ def register_friend_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to send friend request push: %s", exc)
 
+        await _invalidate_friend_api_caches(requester_user_id, requested_user_id)
         return FriendRequestCreateResponse(
             status="ok",
             request_id=request_id,
@@ -867,6 +985,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
         # Create friendships (both directions)
         await _insert_friendships_bidirectional(requester_user_id, requested_user_id)
+        await _invalidate_friend_api_caches(requester_user_id, requested_user_id)
         return FriendRequestActionResponse(status="ok", request_id=request_id)
 
     @app.post("/friends/requests/{request_id}/reject", response_model=FriendRequestActionResponse)
@@ -899,6 +1018,7 @@ def register_friend_routes(app: FastAPI) -> None:
             logger.error("Supabase update friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
             raise HTTPException(status_code=502, detail="Failed to reject friend request")
 
+        await _invalidate_friend_api_caches(requested_user_id, str(req.get("requester_user_id") or ""))
         return FriendRequestActionResponse(status="ok", request_id=request_id)
 
 
@@ -941,6 +1061,7 @@ def register_friend_routes(app: FastAPI) -> None:
             logger.error("Supabase delete friend_requests failed: %s %s", resp.status_code, resp.text[:1500])
             raise HTTPException(status_code=502, detail="Failed to cancel friend request")
 
+        await _invalidate_friend_api_caches(requester_user_id, str(req.get("requested_user_id") or ""))
         return FriendRequestActionResponse(status="ok", request_id=request_id)
 
     @app.post("/friends/remove", response_model=FriendRemoveResponse)
@@ -960,6 +1081,7 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=400, detail="You cannot remove yourself from friends")
 
         await _delete_friendships_bidirectional(me, friend_user_id)
+        await _invalidate_friend_api_caches(me, friend_user_id)
         return FriendRemoveResponse(status="ok", friend_user_id=friend_user_id)
 
 
@@ -995,23 +1117,92 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         me = await _resolve_user_id_from_token(access_token)
+        cache_key = f"friends:manage:{me}"
 
-        my_profile = await _fetch_or_create_my_profile(me)
-        friends_list = await _fetch_manage_friends_list(me)
-        reqs = await _fetch_manage_requests(me)
-        incoming = list(reqs.get("incoming") or [])
-        outgoing = list(reqs.get("outgoing") or [])
-        friend_notif_map = await _fetch_friend_notification_map(me)
+        async def _build_payload() -> Dict[str, Any]:
+            my_profile, friend_rows, request_rows = await asyncio.gather(
+                _fetch_or_create_my_profile(me),
+                _fetch_manage_friendship_rows(me),
+                _fetch_manage_request_rows(me),
+            )
 
-        return {
-            "status": "ok",
-            "myProfile": my_profile,
-            "friendsList": friends_list,
-            "incoming": incoming,
-            "outgoing": outgoing,
-            "friendNotifMap": friend_notif_map,
-            "incomingPendingCount": len(incoming),
-        }
+            friend_ids = _dedupe_user_ids(
+                [str((row or {}).get("friend_user_id") or "").strip() for row in friend_rows if isinstance(row, dict)]
+            )
+
+            profile_ids: List[str] = list(friend_ids)
+            for row in request_rows:
+                if not isinstance(row, dict):
+                    continue
+                requester_user_id = str(row.get("requester_user_id") or "").strip()
+                requested_user_id = str(row.get("requested_user_id") or "").strip()
+                if requested_user_id == me and requester_user_id:
+                    profile_ids.append(requester_user_id)
+                elif requester_user_id == me and requested_user_id:
+                    profile_ids.append(requested_user_id)
+            profile_ids = _dedupe_user_ids(profile_ids)
+
+            profiles, friend_notif_map = await asyncio.gather(
+                _fetch_profiles_map(profile_ids) if profile_ids else asyncio.sleep(0, result={}),
+                _fetch_friend_notification_map(me, owner_user_ids=friend_ids) if friend_ids else asyncio.sleep(0, result={}),
+            )
+
+            friends_list: List[Dict[str, Any]] = []
+            for row in friend_rows:
+                if not isinstance(row, dict):
+                    continue
+                fid = str(row.get("friend_user_id") or "").strip()
+                if not fid:
+                    continue
+                prof = profiles.get(fid) or {}
+                friends_list.append(
+                    {
+                        "userId": fid,
+                        "displayName": prof.get("display_name") or "Friend",
+                        "friendCode": prof.get("friend_code") or None,
+                    }
+                )
+
+            incoming: List[Dict[str, Any]] = []
+            outgoing: List[Dict[str, Any]] = []
+            for row in request_rows:
+                if not isinstance(row, dict):
+                    continue
+                requester_user_id = str(row.get("requester_user_id") or "").strip()
+                requested_user_id = str(row.get("requested_user_id") or "").strip()
+                if requested_user_id == me and requester_user_id:
+                    prof = profiles.get(requester_user_id) or {}
+                    incoming.append(
+                        {
+                            "id": int(row.get("id") or 0),
+                            "requesterUserId": requester_user_id,
+                            "requesterName": prof.get("display_name") or "Friend",
+                            "createdAt": row.get("created_at"),
+                        }
+                    )
+                elif requester_user_id == me and requested_user_id:
+                    prof = profiles.get(requested_user_id) or {}
+                    outgoing.append(
+                        {
+                            "id": int(row.get("id") or 0),
+                            "requestedUserId": requested_user_id,
+                            "requestedName": prof.get("display_name") or "Friend",
+                            "friendCode": prof.get("friend_code") or None,
+                            "createdAt": row.get("created_at"),
+                        }
+                    )
+
+            return {
+                "status": "ok",
+                "myProfile": my_profile,
+                "friendsList": friends_list,
+                "incoming": incoming,
+                "outgoing": outgoing,
+                "friendNotifMap": friend_notif_map,
+                "incomingPendingCount": len(incoming),
+            }
+
+        return await get_or_compute(cache_key, FRIENDS_MANAGE_CACHE_TTL_SECONDS, _build_payload)
 
 
     @app.get("/friends/unread-status", response_model=FriendUnreadStatusResponse)
@@ -1023,26 +1214,29 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         me = await _resolve_user_id_from_token(access_token)
+        cache_key = f"friends:unread:{me}"
 
-        feed_last_read_at = await _fetch_last_read_at("friend_feed_reads", me)
-        requests_last_read_at = await _fetch_last_read_at("friend_request_reads", me)
+        async def _build_payload() -> Dict[str, Any]:
+            feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
+                _fetch_last_read_at("friend_feed_reads", me),
+                _fetch_last_read_at("friend_request_reads", me),
+                _latest_friend_feed_created_at(me),
+                _fetch_latest_pending_request_head_and_count(me),
+            )
 
-        feed_cursor = feed_last_read_at or "1970-01-01T00:00:00Z"
-        requests_cursor = requests_last_read_at or "1970-01-01T00:00:00Z"
+            latest_request_created_at, incoming_pending_count = pending_request_head
 
-        feed_unread = await _has_newer_friend_feed(me, feed_cursor)
-        requests_unread = await _has_newer_friend_requests(me, requests_cursor)
+            response = FriendUnreadStatusResponse(
+                feed_unread=_has_newer_iso(latest_feed_created_at, feed_last_read_at),
+                requests_unread=_has_newer_iso(latest_request_created_at, requests_last_read_at),
+                incoming_pending_count=int(incoming_pending_count or 0),
+                feed_last_read_at=feed_last_read_at,
+                requests_last_read_at=requests_last_read_at,
+            )
+            return jsonable_encoder(response)
 
-        reqs = await _fetch_manage_requests(me)
-        incoming = list(reqs.get("incoming") or [])
-
-        return FriendUnreadStatusResponse(
-            feed_unread=bool(feed_unread),
-            requests_unread=bool(requests_unread),
-            incoming_pending_count=len(incoming),
-            feed_last_read_at=feed_last_read_at,
-            requests_last_read_at=requests_last_read_at,
-        )
+        payload = await get_or_compute(cache_key, FRIENDS_UNREAD_CACHE_TTL_SECONDS, _build_payload)
+        return FriendUnreadStatusResponse(**payload)
 
     @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
     async def post_friend_feed_mark_read(
@@ -1059,6 +1253,7 @@ def register_friend_routes(app: FastAPI) -> None:
         if not ok:
             raise HTTPException(status_code=502, detail="Failed to mark friend feed as read")
 
+        await _invalidate_friend_api_caches(me)
         return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
     @app.post("/friends/unread/read-requests", response_model=FriendUnreadMarkReadResponse)
@@ -1076,6 +1271,7 @@ def register_friend_routes(app: FastAPI) -> None:
         if not ok:
             raise HTTPException(status_code=502, detail="Failed to mark friend requests as read")
 
+        await _invalidate_friend_api_caches(me)
         return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
     @app.get("/friends/notification-settings", response_model=FriendNotificationSettingsResponse)
@@ -1214,6 +1410,7 @@ def register_friend_routes(app: FastAPI) -> None:
                 )
                 raise HTTPException(status_code=502, detail="Failed to save notification setting")
 
+        await _invalidate_friend_api_caches(me)
         return FriendNotificationSettingResponse(
             status="ok",
             friend_user_id=owner_user_id,

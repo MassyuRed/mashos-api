@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
+from response_microcache import get_or_compute, invalidate_prefix
 from supabase_client import ensure_supabase_config, sb_get, sb_patch, sb_post
 
 logger = logging.getLogger("today_question_store")
@@ -32,6 +34,11 @@ TODAY_QUESTION_DEFAULT_NOTIFICATION_ENABLED = (os.getenv("TODAY_QUESTION_DEFAULT
 TODAY_QUESTION_MAX_HISTORY_LIMIT = int(os.getenv("TODAY_QUESTION_MAX_HISTORY_LIMIT", "100") or "100")
 TODAY_QUESTION_PUSH_SCAN_LIMIT = int(os.getenv("TODAY_QUESTION_PUSH_SCAN_LIMIT", "1000") or "1000")
 TODAY_QUESTION_SEQUENCE_FETCH_LIMIT = int(os.getenv("TODAY_QUESTION_SEQUENCE_FETCH_LIMIT", "5000") or "5000")
+TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS", "300") or "300")
+TODAY_QUESTION_SETTINGS_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_SETTINGS_CACHE_TTL_SECONDS", "30") or "30")
+TODAY_QUESTION_PROGRESS_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_PROGRESS_CACHE_TTL_SECONDS", "10") or "10")
+TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS", "10") or "10")
+TODAY_QUESTION_HISTORY_SCAN_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_HISTORY_SCAN_CACHE_TTL_SECONDS", "20") or "20")
 
 _HHMM_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
@@ -140,6 +147,37 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _today_question_settings_cache_prefix(user_id: str) -> str:
+    return f"today_question:user_settings:{str(user_id or '').strip()}"
+
+
+def _today_question_progress_cache_prefix(user_id: str) -> str:
+    return f"today_question:user_progress:{str(user_id or '').strip()}"
+
+
+def _today_question_answer_day_cache_prefix(user_id: str) -> str:
+    return f"today_question:answer_day:{str(user_id or '').strip()}"
+
+
+def _today_question_answer_sequence_cache_prefix(user_id: str) -> str:
+    return f"today_question:answer_sequence:{str(user_id or '').strip()}"
+
+
+def _today_question_answer_scan_cache_prefix(user_id: str) -> str:
+    return f"today_question:answer_scan:{str(user_id or '').strip()}"
+
+
+async def invalidate_today_question_user_runtime_cache(user_id: str) -> None:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+    await invalidate_prefix(_today_question_settings_cache_prefix(uid))
+    await invalidate_prefix(_today_question_progress_cache_prefix(uid))
+    await invalidate_prefix(_today_question_answer_day_cache_prefix(uid))
+    await invalidate_prefix(_today_question_answer_sequence_cache_prefix(uid))
+    await invalidate_prefix(_today_question_answer_scan_cache_prefix(uid))
 
 
 def _raise_http_from_supabase(resp, default_detail: str) -> None:
@@ -350,29 +388,35 @@ class TodayQuestionStore:
         uid = str(user_id or "").strip()
         if not uid:
             raise HTTPException(status_code=401, detail="Unauthorized")
-        rows = await self._select_rows(
-            TODAY_QUESTION_SETTINGS_TABLE,
-            params={
-                "select": "*",
-                "user_id": f"eq.{uid}",
-                "limit": "1",
-            },
-        )
-        if rows:
-            return _settings_public(rows[0])
 
-        created = {
-            "user_id": uid,
-            "notification_enabled": TODAY_QUESTION_DEFAULT_NOTIFICATION_ENABLED,
-            "delivery_time_local": TODAY_QUESTION_DEFAULT_DELIVERY_TIME,
-            "timezone_name": _normalize_timezone_name(timezone_name),
-        }
-        rows = await self._insert_rows(
-            TODAY_QUESTION_SETTINGS_TABLE,
-            json_body=created,
-            prefer="resolution=merge-duplicates,return=representation",
-        )
-        return _settings_public(rows[0] if rows else created)
+        cache_key = f"{_today_question_settings_cache_prefix(uid)}:{str(timezone_name or '').strip() or 'default'}"
+
+        async def _producer() -> Dict[str, Any]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_SETTINGS_TABLE,
+                params={
+                    "select": "notification_enabled,delivery_time_local,timezone_name",
+                    "user_id": f"eq.{uid}",
+                    "limit": "1",
+                },
+            )
+            if rows:
+                return _settings_public(rows[0])
+
+            created = {
+                "user_id": uid,
+                "notification_enabled": TODAY_QUESTION_DEFAULT_NOTIFICATION_ENABLED,
+                "delivery_time_local": TODAY_QUESTION_DEFAULT_DELIVERY_TIME,
+                "timezone_name": _normalize_timezone_name(timezone_name),
+            }
+            rows = await self._insert_rows(
+                TODAY_QUESTION_SETTINGS_TABLE,
+                json_body=created,
+                prefer="resolution=merge-duplicates,return=representation",
+            )
+            return _settings_public(rows[0] if rows else created)
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_SETTINGS_CACHE_TTL_SECONDS, _producer)
 
     async def patch_user_settings(
         self,
@@ -396,6 +440,7 @@ class TodayQuestionStore:
             json_body=body,
             prefer="resolution=merge-duplicates,return=representation",
         )
+        await invalidate_today_question_user_runtime_cache(uid)
         return _settings_public(rows[0] if rows else body)
 
     async def _fetch_schedule_row(self, service_day_key: str) -> Optional[Dict[str, Any]]:
@@ -411,29 +456,39 @@ class TodayQuestionStore:
         return rows[0] if rows else None
 
     async def _fetch_sequence_rows(self, *, limit: int = TODAY_QUESTION_SEQUENCE_FETCH_LIMIT) -> List[Dict[str, Any]]:
-        rows = await self._select_rows(
-            TODAY_QUESTION_SEQUENCE_TABLE,
-            params={
-                "select": "*",
-                "order": "sequence_no.asc",
-                "limit": str(max(1, min(int(limit or TODAY_QUESTION_SEQUENCE_FETCH_LIMIT), TODAY_QUESTION_SEQUENCE_FETCH_LIMIT))),
-            },
-        )
-        return rows
+        lim = max(1, min(int(limit or TODAY_QUESTION_SEQUENCE_FETCH_LIMIT), TODAY_QUESTION_SEQUENCE_FETCH_LIMIT))
+        cache_key = f"today_question:static:sequence_rows:{lim}"
+
+        async def _producer() -> List[Dict[str, Any]]:
+            return await self._select_rows(
+                TODAY_QUESTION_SEQUENCE_TABLE,
+                params={
+                    "select": "id,sequence_no,question_id",
+                    "order": "sequence_no.asc",
+                    "limit": str(lim),
+                },
+            )
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_sequence_row(self, sequence_no: int) -> Optional[Dict[str, Any]]:
         seq = _safe_int(sequence_no, 0)
         if seq < 1:
             return None
-        rows = await self._select_rows(
-            TODAY_QUESTION_SEQUENCE_TABLE,
-            params={
-                "select": "*",
-                "sequence_no": f"eq.{seq}",
-                "limit": "1",
-            },
-        )
-        return rows[0] if rows else None
+        cache_key = f"today_question:static:sequence:{seq}"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_SEQUENCE_TABLE,
+                params={
+                    "select": "id,sequence_no,question_id",
+                    "sequence_no": f"eq.{seq}",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_sequence_row_by_id(self, sequence_id: str) -> Optional[Dict[str, Any]]:
         sid = str(sequence_id or "").strip()
@@ -450,31 +505,39 @@ class TodayQuestionStore:
         return rows[0] if rows else None
 
     async def _fetch_total_sequence_count(self) -> int:
-        rows = await self._select_rows(
-            TODAY_QUESTION_SEQUENCE_TABLE,
-            params={
-                "select": "sequence_no",
-                "order": "sequence_no.desc",
-                "limit": "1",
-            },
-        )
-        if not rows:
-            return 0
-        return max(_safe_int(rows[0].get("sequence_no"), 0), 0)
+        async def _producer() -> int:
+            rows = await self._select_rows(
+                TODAY_QUESTION_SEQUENCE_TABLE,
+                params={
+                    "select": "sequence_no",
+                    "order": "sequence_no.desc",
+                    "limit": "1",
+                },
+            )
+            if not rows:
+                return 0
+            return max(_safe_int(rows[0].get("sequence_no"), 0), 0)
+
+        return await get_or_compute("today_question:static:sequence_total", TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_user_progress_row(self, user_id: str) -> Optional[Dict[str, Any]]:
         uid = str(user_id or "").strip()
         if not uid:
             return None
-        rows = await self._select_rows(
-            TODAY_QUESTION_PROGRESS_TABLE,
-            params={
-                "select": "*",
-                "user_id": f"eq.{uid}",
-                "limit": "1",
-            },
-        )
-        return rows[0] if rows else None
+        cache_key = _today_question_progress_cache_prefix(uid)
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_PROGRESS_TABLE,
+                params={
+                    "select": "user_id,last_completed_sequence_no,current_sequence_id,current_sequence_no,current_presented_local_date,updated_at",
+                    "user_id": f"eq.{uid}",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_PROGRESS_CACHE_TTL_SECONDS, _producer)
 
     async def _upsert_user_progress(
         self,
@@ -503,70 +566,90 @@ class TodayQuestionStore:
             json_body=body,
             prefer="resolution=merge-duplicates,return=representation",
         )
+        await invalidate_prefix(_today_question_progress_cache_prefix(uid))
         return rows[0] if rows else body
 
     async def _fetch_question_row(self, question_id: str) -> Optional[Dict[str, Any]]:
         qid = str(question_id or "").strip()
         if not qid:
             return None
-        rows = await self._select_rows(
-            TODAY_QUESTION_BANK_TABLE,
-            params={
-                "select": "*",
-                "id": f"eq.{qid}",
-                "limit": "1",
-            },
-        )
-        return rows[0] if rows else None
+        cache_key = f"today_question:static:question:{qid}"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_BANK_TABLE,
+                params={
+                    "select": "id,question_key,version,question_text,choice_count,free_text_enabled",
+                    "id": f"eq.{qid}",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_choice_rows(self, question_id: str) -> List[Dict[str, Any]]:
         qid = str(question_id or "").strip()
         if not qid:
             return []
-        rows = await self._select_rows(
-            TODAY_QUESTION_CHOICES_TABLE,
-            params={
-                "select": "*",
-                "question_id": f"eq.{qid}",
-                "order": "sort_order.asc",
-                "limit": "10",
-            },
-        )
-        return rows
+        cache_key = f"today_question:static:choices:{qid}"
+
+        async def _producer() -> List[Dict[str, Any]]:
+            return await self._select_rows(
+                TODAY_QUESTION_CHOICES_TABLE,
+                params={
+                    "select": "id,question_id,choice_key,choice_label,sort_order,hidden_meta_json",
+                    "question_id": f"eq.{qid}",
+                    "order": "sort_order.asc",
+                    "limit": "10",
+                },
+            )
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_answer_row_for_day(self, user_id: str, service_day_key: str) -> Optional[Dict[str, Any]]:
         uid = str(user_id or "").strip()
         day = str(service_day_key or "").strip()
         if not uid or not day:
             return None
-        rows = await self._select_rows(
-            TODAY_QUESTION_ANSWERS_TABLE,
-            params={
-                "select": "*",
-                "user_id": f"eq.{uid}",
-                "service_day_key": f"eq.{day}",
-                "order": "answered_at.desc,id.desc",
-                "limit": "1",
-            },
-        )
-        return rows[0] if rows else None
+        cache_key = f"{_today_question_answer_day_cache_prefix(uid)}:{day}"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_ANSWERS_TABLE,
+                params={
+                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,question_text_snapshot,choices_snapshot_json,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at",
+                    "user_id": f"eq.{uid}",
+                    "service_day_key": f"eq.{day}",
+                    "order": "answered_at.desc,id.desc",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_answer_row_for_sequence(self, user_id: str, sequence_no: int) -> Optional[Dict[str, Any]]:
         uid = str(user_id or "").strip()
         seq = _safe_int(sequence_no, 0)
         if not uid or seq < 1:
             return None
-        rows = await self._select_rows(
-            TODAY_QUESTION_ANSWERS_TABLE,
-            params={
-                "select": "*",
-                "user_id": f"eq.{uid}",
-                "sequence_no": f"eq.{seq}",
-                "order": "answered_at.desc,id.desc",
-                "limit": "1",
-            },
-        )
-        return rows[0] if rows else None
+        cache_key = f"{_today_question_answer_sequence_cache_prefix(uid)}:{seq}"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_ANSWERS_TABLE,
+                params={
+                    "select": "id,sequence_no,service_day_key,answered_at",
+                    "user_id": f"eq.{uid}",
+                    "sequence_no": f"eq.{seq}",
+                    "order": "answered_at.desc,id.desc",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS, _producer)
 
     async def _fetch_answer_rows_for_user(self, user_id: str, *, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         uid = str(user_id or "").strip()
@@ -575,17 +658,21 @@ class TodayQuestionStore:
         total_count = await self._fetch_total_sequence_count()
         lim = limit if limit is not None else max(total_count + 20, 500)
         lim = max(1, min(int(lim or 500), TODAY_QUESTION_SEQUENCE_FETCH_LIMIT))
-        rows = await self._select_rows(
-            TODAY_QUESTION_ANSWERS_TABLE,
-            params={
-                "select": "id,user_id,sequence_no,question_id,question_key,question_version,service_day_key,answered_at",
-                "user_id": f"eq.{uid}",
-                "sequence_no": "not.is.null",
-                "order": "sequence_no.asc,answered_at.asc",
-                "limit": str(lim),
-            },
-        )
-        return rows
+        cache_key = f"{_today_question_answer_scan_cache_prefix(uid)}:{lim}"
+
+        async def _producer() -> List[Dict[str, Any]]:
+            return await self._select_rows(
+                TODAY_QUESTION_ANSWERS_TABLE,
+                params={
+                    "select": "sequence_no",
+                    "user_id": f"eq.{uid}",
+                    "sequence_no": "not.is.null",
+                    "order": "sequence_no.asc,answered_at.asc",
+                    "limit": str(lim),
+                },
+            )
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_HISTORY_SCAN_CACHE_TTL_SECONDS, _producer)
 
     async def _compute_first_unanswered_sequence_no(self, user_id: str) -> Optional[int]:
         sequence_rows = await self._fetch_sequence_rows()
@@ -611,37 +698,83 @@ class TodayQuestionStore:
         *,
         service_day_key: str,
         total_count: Optional[int] = None,
+        progress_row: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         total = max(_safe_int(total_count, 0), 0) if total_count is not None else await self._fetch_total_sequence_count()
-        progress_row = await self._fetch_user_progress_row(user_id)
-        first_unanswered = await self._compute_first_unanswered_sequence_no(user_id)
+        progress_row = progress_row or await self._fetch_user_progress_row(user_id)
 
-        if first_unanswered is None:
+        desired_sequence_row: Optional[Dict[str, Any]] = None
+        desired_sequence_no: Optional[int] = None
+        last_completed_sequence_no = max(_safe_int((progress_row or {}).get("last_completed_sequence_no"), 0), 0)
+        current_progress_sequence_no = _safe_int((progress_row or {}).get("current_sequence_no"), 0) or None
+        current_progress_sequence_id = str((progress_row or {}).get("current_sequence_id") or "").strip() or None
+        current_progress_presented_local_date = str((progress_row or {}).get("current_presented_local_date") or "").strip() or None
+        presented_local_date: Optional[str] = None
+
+        if total <= 0:
             desired_sequence_row = None
             desired_sequence_no = None
-            last_completed_sequence_no = total
+            last_completed_sequence_no = 0
             presented_local_date = None
         else:
-            desired_sequence_row = await self._fetch_sequence_row(first_unanswered)
-            desired_sequence_no = _safe_int(desired_sequence_row.get("sequence_no"), 0) if desired_sequence_row else None
-            if not desired_sequence_row or not desired_sequence_no:
-                logger.warning("today_question: sequence row missing for sequence_no=%s", first_unanswered)
-                desired_sequence_row = None
-                desired_sequence_no = None
-                last_completed_sequence_no = total
-                presented_local_date = None
-            else:
-                last_completed_sequence_no = max(desired_sequence_no - 1, 0)
-                current_progress_sequence_no = _safe_int((progress_row or {}).get("current_sequence_no"), 0) or None
-                current_progress_presented_local_date = str((progress_row or {}).get("current_presented_local_date") or "").strip() or None
-                if current_progress_sequence_no == desired_sequence_no and current_progress_presented_local_date:
-                    presented_local_date = current_progress_presented_local_date
+            if current_progress_sequence_no and current_progress_sequence_no <= total:
+                candidate_row = await self._fetch_sequence_row(current_progress_sequence_no)
+                candidate_row_id = str((candidate_row or {}).get("id") or "").strip() or None
+                if candidate_row and (not current_progress_sequence_id or current_progress_sequence_id == candidate_row_id):
+                    candidate_answer = await self._fetch_answer_row_for_sequence(user_id, current_progress_sequence_no)
+                    if not candidate_answer:
+                        desired_sequence_row = candidate_row
+                        desired_sequence_no = current_progress_sequence_no
+                        last_completed_sequence_no = max(desired_sequence_no - 1, 0)
+                        presented_local_date = current_progress_presented_local_date or service_day_key
+
+            if desired_sequence_row is None:
+                if last_completed_sequence_no >= total:
+                    desired_sequence_row = None
+                    desired_sequence_no = None
+                    last_completed_sequence_no = total
+                    presented_local_date = None
                 else:
-                    presented_local_date = service_day_key
+                    next_sequence_no = max(last_completed_sequence_no, 0) + 1
+                    if next_sequence_no <= total:
+                        next_sequence_answer = await self._fetch_answer_row_for_sequence(user_id, next_sequence_no)
+                        if not next_sequence_answer:
+                            candidate_row = await self._fetch_sequence_row(next_sequence_no)
+                            if candidate_row:
+                                desired_sequence_row = candidate_row
+                                desired_sequence_no = next_sequence_no
+                                last_completed_sequence_no = max(next_sequence_no - 1, 0)
+                                if current_progress_sequence_no == next_sequence_no and current_progress_presented_local_date:
+                                    presented_local_date = current_progress_presented_local_date
+                                else:
+                                    presented_local_date = service_day_key
+
+            if desired_sequence_row is None and desired_sequence_no is None and last_completed_sequence_no < total:
+                first_unanswered = await self._compute_first_unanswered_sequence_no(user_id)
+                if first_unanswered is None:
+                    desired_sequence_row = None
+                    desired_sequence_no = None
+                    last_completed_sequence_no = total
+                    presented_local_date = None
+                else:
+                    desired_sequence_row = await self._fetch_sequence_row(first_unanswered)
+                    desired_sequence_no = _safe_int(desired_sequence_row.get("sequence_no"), 0) if desired_sequence_row else None
+                    if not desired_sequence_row or not desired_sequence_no:
+                        logger.warning("today_question: sequence row missing for sequence_no=%s", first_unanswered)
+                        desired_sequence_row = None
+                        desired_sequence_no = None
+                        last_completed_sequence_no = total
+                        presented_local_date = None
+                    else:
+                        last_completed_sequence_no = max(desired_sequence_no - 1, 0)
+                        if current_progress_sequence_no == desired_sequence_no and current_progress_presented_local_date:
+                            presented_local_date = current_progress_presented_local_date
+                        else:
+                            presented_local_date = service_day_key
 
         existing_last_completed = _safe_int((progress_row or {}).get("last_completed_sequence_no"), 0)
-        existing_current_sequence_id = str((progress_row or {}).get("current_sequence_id") or "").strip() or None
-        existing_current_sequence_no = _safe_int((progress_row or {}).get("current_sequence_no"), 0) or None
+        existing_current_sequence_id = current_progress_sequence_id
+        existing_current_sequence_no = current_progress_sequence_no
         existing_presented_local_date = str((progress_row or {}).get("current_presented_local_date") or "").strip() or None
         desired_current_sequence_id = str((desired_sequence_row or {}).get("id") or "").strip() or None
 
@@ -710,15 +843,22 @@ class TodayQuestionStore:
         now_utc: Optional[datetime] = None,
     ) -> TodayQuestionCurrentBundle:
         uid = str(user_id or "").strip()
-        settings = await self.get_or_create_user_settings(uid, timezone_name=timezone_name)
         # 生成/表示の切り替えはレポート配布と同じく service-day 基準（既定: Asia/Tokyo の 0:00）に固定する。
         # ユーザー設定の timezone_name / delivery_time_local は push 通知の時刻判定のみに使う。
         service_day_key = _service_day_key(now_utc)
-        total_count = await self._fetch_total_sequence_count()
-        today_answer = await self._fetch_answer_row_for_day(uid, service_day_key)
+        settings_task = asyncio.create_task(self.get_or_create_user_settings(uid, timezone_name=timezone_name))
+        total_count_task = asyncio.create_task(self._fetch_total_sequence_count())
+        today_answer_task = asyncio.create_task(self._fetch_answer_row_for_day(uid, service_day_key))
+        progress_task = asyncio.create_task(self._fetch_user_progress_row(uid))
+
+        settings, total_count, today_answer, progress_row = await asyncio.gather(
+            settings_task,
+            total_count_task,
+            today_answer_task,
+            progress_task,
+        )
 
         if today_answer:
-            progress_row = await self._fetch_user_progress_row(uid)
             answer_sequence_no = _safe_int(today_answer.get("sequence_no"), 0) or None
             if not progress_row and answer_sequence_no:
                 progress_row = await self._upsert_user_progress(
@@ -745,7 +885,12 @@ class TodayQuestionStore:
                 progress=progress_public,
             )
 
-        resolved = await self._resolve_pending_progress(uid, service_day_key=service_day_key, total_count=total_count)
+        resolved = await self._resolve_pending_progress(
+            uid,
+            service_day_key=service_day_key,
+            total_count=total_count,
+            progress_row=progress_row,
+        )
         sequence_row = resolved["sequence_row"]
         if not sequence_row:
             return TodayQuestionCurrentBundle(
@@ -881,6 +1026,8 @@ class TodayQuestionStore:
                 current_presented_local_date=presented_local_date,
             )
 
+        await invalidate_today_question_user_runtime_cache(uid)
+
         return rows[0] if rows else row
 
     async def list_history(
@@ -999,6 +1146,7 @@ class TodayQuestionStore:
             json_body=patch_body,
             prefer="return=representation",
         )
+        await invalidate_today_question_user_runtime_cache(str(user_id or "").strip())
         if rows:
             return rows[0]
         return await self.get_history_answer(user_id, answer_id)

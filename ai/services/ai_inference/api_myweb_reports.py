@@ -28,10 +28,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Path, Query
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from publish_governance import decide_myweb_report_publish, history_retention_bounds_for_query
+
+from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
+from supabase_client import sb_get, sb_post
 
 from api_emotion_submit import (
     _ensure_supabase_config,
@@ -91,6 +95,16 @@ SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip
 # Phase10 lock tuning (env)
 MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120") or "120")
 MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
+MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "15") or "15")
+MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS", "30") or "30")
+
+MYWEB_READY_CANDIDATE_SELECT = (
+    "id,report_type,period_start,period_end,title,generated_at,updated_at,"
+    "publish_status:content_json->publish->>status,"
+    "metrics_total_all:content_json->metrics->>totalAll,"
+    "standard_total_all:content_json->standardReport->metrics->>totalAll"
+)
+MYWEB_READY_FULL_SELECT = "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"
 
 # JST fixed
 JST_OFFSET = timedelta(hours=9)
@@ -206,6 +220,14 @@ class MyWebReadyReportsResponse(BaseModel):
     next_offset: Optional[int] = Field(default=None)
     items: List[MyWebReportRecord] = Field(default_factory=list)
 
+
+class MyWebReportDetailResponse(BaseModel):
+    status: str = Field(default="ok")
+    user_id: str = Field(..., description="viewer user_id")
+    viewer_tier: str = Field(..., description="free/plus/premium")
+    item: MyWebReportRecord
+
+
 @dataclass(frozen=True)
 class TargetPeriod:
     report_type: str
@@ -231,22 +253,318 @@ def _sb_headers(*, prefer: Optional[str] = None) -> Dict[str, str]:
 
 
 async def _sb_get(path: str, *, params: List[Tuple[str, str]]) -> httpx.Response:
-    _ensure_supabase_config()
-    if not SUPABASE_URL:
-        raise HTTPException(status_code=500, detail="Supabase URL is not configured")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        return await client.get(url, headers=_sb_headers(), params=params)
+    return await sb_get(path, params=dict(params), timeout=10.0, headers=_sb_headers())
 
 
 async def _sb_post(path: str, *, params: List[Tuple[str, str]], json_body: Any, prefer: str) -> httpx.Response:
-    _ensure_supabase_config()
-    if not SUPABASE_URL:
-        raise HTTPException(status_code=500, detail="Supabase URL is not configured")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        return await client.post(url, headers=_sb_headers(prefer=prefer), params=params, json=json_body)
+    return await sb_post(path, params=dict(params), json=json_body, prefer=prefer, timeout=10.0, headers=_sb_headers(prefer=prefer))
 
+
+def _pick_rows_from_response(resp: httpx.Response) -> List[Dict[str, Any]]:
+    try:
+        data = resp.json()
+    except Exception:
+        return []
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict):
+        return [data]
+    return []
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return int(value)
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+async def _resolve_viewer_tier_str(user_id: str) -> str:
+    tier_str = "free"
+    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
+        try:
+            tier_enum = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
+            tier_str = tier_enum.value if hasattr(tier_enum, "value") else str(tier_enum)
+        except Exception:
+            tier_str = "free"
+    return str(tier_str or "free")
+
+
+def _build_myweb_report_record(row: Dict[str, Any], *, include_body: bool) -> MyWebReportRecord:
+    content_json = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
+    return MyWebReportRecord(
+        id=str(row.get("id") or ""),
+        report_type=str(row.get("report_type") or ""),
+        period_start=str(row.get("period_start") or ""),
+        period_end=str(row.get("period_end") or ""),
+        title=row.get("title"),
+        content_text=(row.get("content_text") if include_body else None),
+        content_json=(content_json if include_body else {}),
+        generated_at=row.get("generated_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+def _build_myweb_retention_params(retention: Dict[str, Any]) -> List[Tuple[str, str]]:
+    params: List[Tuple[str, str]] = []
+    gte_iso = str(retention.get("gte_iso") or "").strip()
+    lt_iso = str(retention.get("lt_iso") or "").strip()
+    if gte_iso:
+        params.append(("period_end", f"gte.{gte_iso}"))
+    if lt_iso:
+        params.append(("period_end", f"lt.{lt_iso}"))
+    return params
+
+
+def _build_myweb_id_in_filter(report_ids: List[str]) -> Optional[str]:
+    values = [str(rid or "").strip() for rid in report_ids if str(rid or "").strip()]
+    if not values:
+        return None
+    return f"in.({','.join(values)})"
+
+
+async def _fetch_myweb_ready_candidate_chunk(
+    user_id: str,
+    report_type: str,
+    *,
+    retention: Dict[str, Any],
+    raw_page_size: int,
+    raw_offset: int,
+) -> List[Dict[str, Any]]:
+    params: List[Tuple[str, str]] = [
+        ("select", MYWEB_READY_CANDIDATE_SELECT),
+        ("user_id", f"eq.{user_id}"),
+        ("report_type", f"eq.{report_type}"),
+        ("order", "period_start.desc"),
+        ("limit", str(raw_page_size)),
+        ("offset", str(raw_offset)),
+    ]
+    params.extend(_build_myweb_retention_params(retention))
+
+    resp = await _sb_get(
+        f"/rest/v1/{REPORTS_TABLE}",
+        params=params,
+    )
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(
+            f"Supabase projection select failed: {resp.status_code} {(resp.text or '')[:800]}"
+        )
+    rows = _pick_rows_from_response(resp)
+    if rows and not any(
+        any(key in row for key in ("publish_status", "metrics_total_all", "standard_total_all"))
+        for row in rows[:3]
+    ):
+        raise RuntimeError("Supabase projection select returned rows without expected projection fields")
+    return rows
+
+
+async def _fetch_myweb_full_rows_by_ids(user_id: str, report_ids: List[str]) -> List[Dict[str, Any]]:
+    id_filter = _build_myweb_id_in_filter(report_ids)
+    if not id_filter:
+        return []
+
+    resp = await _sb_get(
+        f"/rest/v1/{REPORTS_TABLE}",
+        params=[
+            ("select", MYWEB_READY_FULL_SELECT),
+            ("user_id", f"eq.{user_id}"),
+            ("id", id_filter),
+            ("limit", str(max(1, len(report_ids)))),
+        ],
+    )
+    if resp.status_code not in (200, 206):
+        logger.error("Supabase select myweb_reports by ids failed: %s %s", resp.status_code, (resp.text or "")[:800])
+        raise HTTPException(status_code=502, detail="Supabase query failed")
+    return _pick_rows_from_response(resp)
+
+
+async def _build_myweb_ready_payload_legacy(
+    *,
+    user_id: str,
+    report_type: str,
+    lim: int,
+    off: int,
+    include_body: bool,
+) -> Dict[str, Any]:
+    tier_str = await _resolve_viewer_tier_str(user_id)
+    now_utc = datetime.now(timezone.utc)
+    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+
+    needed = off + lim + 1
+    raw_page_size = max(lim * 4, 30)
+    raw_offset = 0
+    visible_rows: List[Dict[str, Any]] = []
+
+    while len(visible_rows) < needed:
+        params: List[Tuple[str, str]] = [
+            ("select", MYWEB_READY_FULL_SELECT),
+            ("user_id", f"eq.{user_id}"),
+            ("report_type", f"eq.{report_type}"),
+            ("order", "period_start.desc"),
+            ("limit", str(raw_page_size)),
+            ("offset", str(raw_offset)),
+        ]
+        params.extend(_build_myweb_retention_params(retention))
+
+        resp = await _sb_get(
+            f"/rest/v1/{REPORTS_TABLE}",
+            params=params,
+        )
+        if resp.status_code not in (200, 206):
+            logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Supabase query failed")
+        rows = _pick_rows_from_response(resp)
+        if not rows:
+            break
+
+        raw_offset += len(rows)
+
+        for row in rows:
+            published_row = decide_myweb_report_publish(
+                row,
+                tier_str=tier_str,
+                requested_report_type=report_type,
+                now_utc=now_utc,
+            )
+            if not published_row:
+                continue
+            visible_rows.append(published_row)
+            if len(visible_rows) >= needed:
+                break
+
+        if len(rows) < raw_page_size:
+            break
+
+    page_rows = visible_rows[off : off + lim]
+    has_more = len(visible_rows) > (off + lim)
+    next_offset = (off + lim) if has_more else None
+    items = [_build_myweb_report_record(row, include_body=include_body) for row in page_rows]
+
+    response = MyWebReadyReportsResponse(
+        user_id=user_id,
+        report_type=str(report_type),
+        viewer_tier=str(tier_str),
+        limit=lim,
+        offset=off,
+        has_more=bool(has_more),
+        next_offset=next_offset,
+        items=items,
+    )
+    return jsonable_encoder(response)
+
+
+async def _build_myweb_ready_payload_projection_first(
+    *,
+    user_id: str,
+    report_type: str,
+    lim: int,
+    off: int,
+    include_body: bool,
+) -> Dict[str, Any]:
+    tier_str = await _resolve_viewer_tier_str(user_id)
+    now_utc = datetime.now(timezone.utc)
+    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+
+    needed = off + lim + 1
+    raw_page_size = max(lim * 4, 30)
+    raw_offset = 0
+    visible_candidates: List[Dict[str, Any]] = []
+
+    while len(visible_candidates) < needed:
+        rows = await _fetch_myweb_ready_candidate_chunk(
+            user_id,
+            report_type,
+            retention=retention,
+            raw_page_size=raw_page_size,
+            raw_offset=raw_offset,
+        )
+        if not rows:
+            break
+
+        raw_offset += len(rows)
+
+        for row in rows:
+            published_row = decide_myweb_report_publish(
+                row,
+                tier_str=tier_str,
+                requested_report_type=report_type,
+                now_utc=now_utc,
+            )
+            if not published_row:
+                continue
+            visible_candidates.append(published_row)
+            if len(visible_candidates) >= needed:
+                break
+
+        if len(rows) < raw_page_size:
+            break
+
+    page_rows = visible_candidates[off : off + lim]
+    has_more = len(visible_candidates) > (off + lim)
+    next_offset = (off + lim) if has_more else None
+
+    materialized_rows: List[Dict[str, Any]] = []
+    if include_body and page_rows:
+        page_ids = [str(row.get("id") or "").strip() for row in page_rows if str(row.get("id") or "").strip()]
+        full_rows = await _fetch_myweb_full_rows_by_ids(user_id, page_ids)
+        full_row_map = {str(row.get("id") or "").strip(): row for row in full_rows if isinstance(row, dict)}
+        for row in page_rows:
+            rid = str(row.get("id") or "").strip()
+            full_row = full_row_map.get(rid)
+            if not isinstance(full_row, dict):
+                continue
+            published_row = decide_myweb_report_publish(
+                full_row,
+                tier_str=tier_str,
+                requested_report_type=report_type,
+                now_utc=now_utc,
+            )
+            if published_row:
+                materialized_rows.append(published_row)
+    else:
+        materialized_rows = page_rows
+
+    items = [_build_myweb_report_record(row, include_body=include_body) for row in materialized_rows]
+
+    response = MyWebReadyReportsResponse(
+        user_id=user_id,
+        report_type=str(report_type),
+        viewer_tier=str(tier_str),
+        limit=lim,
+        offset=off,
+        has_more=bool(has_more),
+        next_offset=next_offset,
+        items=items,
+    )
+    return jsonable_encoder(response)
+
+
+async def _build_myweb_detail_payload(*, user_id: str, report_id: str) -> Dict[str, Any]:
+    tier_str = await _resolve_viewer_tier_str(user_id)
+    now_utc = datetime.now(timezone.utc)
+
+    rows = await _fetch_myweb_full_rows_by_ids(user_id, [report_id])
+    if not rows:
+        raise HTTPException(status_code=404, detail="MyWeb report not found")
+
+    published_row = decide_myweb_report_publish(
+        rows[0],
+        tier_str=tier_str,
+        now_utc=now_utc,
+    )
+    if not published_row:
+        raise HTTPException(status_code=404, detail="MyWeb report not found")
+
+    response = MyWebReportDetailResponse(
+        user_id=user_id,
+        viewer_tier=str(tier_str),
+        item=_build_myweb_report_record(published_row, include_body=True),
+    )
+    return jsonable_encoder(response)
 
 
 async def _fetch_latest_snapshot_hash(user_id: str, *, scope: str, snapshot_type: str) -> Optional[str]:
@@ -3486,6 +3804,9 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                     )
                 )
 
+        await invalidate_prefix(f"myweb:ready:{user_id}")
+        await invalidate_prefix(f"myweb:detail:{user_id}")
+        await invalidate_prefix(f"report_reads:myweb_unread:{user_id}")
         return MyWebEnsureResponse(
             user_id=user_id,
             now_iso=now_utc.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -3498,6 +3819,7 @@ def register_myweb_report_routes(app: FastAPI) -> None:
         report_type: Literal["daily", "weekly", "monthly"] = "weekly",
         limit: int = 10,
         offset: int = 0,
+        include_body: bool = Query(default=True, description="When false, return list metadata only for future list/detail clients."),
         authorization: Optional[str] = Header(default=None),
     ) -> MyWebReadyReportsResponse:
         """Return READY (or PUBLISHED) MyWeb reports only.
@@ -3507,109 +3829,76 @@ def register_myweb_report_routes(app: FastAPI) -> None:
         - retention window by current subscription tier
         - visible-content only
         - pagination is applied after publish filtering
+
+        Current RN clients keep using `include_body=true` implicitly.
+        API-only optimization uses a projection-first scan internally and fetches full bodies only for the visible page.
         """
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         user_id = await _resolve_user_id_from_token(access_token)
-
-        tier_str = "free"
-        if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
-            try:
-                tier_enum = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
-                tier_str = tier_enum.value if hasattr(tier_enum, "value") else str(tier_enum)
-            except Exception:
-                tier_str = "free"
-
-        now_utc = datetime.now(timezone.utc)
-        retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
-
         lim = max(1, min(int(limit or 10), 50))
         off = max(0, int(offset or 0))
-        needed = off + lim + 1
-        raw_page_size = max(lim * 4, 30)
-        raw_offset = 0
-        visible_rows: List[Dict[str, Any]] = []
-
-        while len(visible_rows) < needed:
-            params: List[Tuple[str, str]] = [
-                ("select", "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"),
-                ("user_id", f"eq.{user_id}"),
-                ("report_type", f"eq.{report_type}"),
-                ("order", "period_start.desc"),
-                ("limit", str(raw_page_size)),
-                ("offset", str(raw_offset)),
-            ]
-            gte_iso = str(retention.get("gte_iso") or "").strip()
-            lt_iso = str(retention.get("lt_iso") or "").strip()
-            if gte_iso:
-                params.append(("period_end", f"gte.{gte_iso}"))
-            if lt_iso:
-                params.append(("period_end", f"lt.{lt_iso}"))
-
-            resp = await _sb_get(
-                f"/rest/v1/{REPORTS_TABLE}",
-                params=params,
-            )
-            if resp.status_code not in (200, 206):
-                logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
-                raise HTTPException(status_code=502, detail="Supabase query failed")
-            try:
-                rows = resp.json()
-            except Exception:
-                rows = []
-            if not isinstance(rows, list) or not rows:
-                break
-
-            raw_offset += len(rows)
-
-            for r in rows:
-                if not isinstance(r, dict):
-                    continue
-                published_row = decide_myweb_report_publish(
-                    r,
-                    tier_str=tier_str,
-                    requested_report_type=report_type,
-                    now_utc=now_utc,
-                )
-                if not published_row:
-                    continue
-                visible_rows.append(published_row)
-                if len(visible_rows) >= needed:
-                    break
-
-            if len(rows) < raw_page_size:
-                break
-
-        page_rows = visible_rows[off : off + lim]
-        has_more = len(visible_rows) > (off + lim)
-        next_offset = (off + lim) if has_more else None
-
-        items: List[MyWebReportRecord] = []
-        for published_row in page_rows:
-            items.append(
-                MyWebReportRecord(
-                    id=str(published_row.get("id") or ""),
-                    report_type=str(published_row.get("report_type") or ""),
-                    period_start=str(published_row.get("period_start") or ""),
-                    period_end=str(published_row.get("period_end") or ""),
-                    title=published_row.get("title"),
-                    content_text=published_row.get("content_text"),
-                    content_json=(published_row.get("content_json") if isinstance(published_row.get("content_json"), dict) else {}),
-                    generated_at=published_row.get("generated_at"),
-                    updated_at=published_row.get("updated_at"),
-                )
-            )
-
-        return MyWebReadyReportsResponse(
-            user_id=user_id,
-            report_type=str(report_type),
-            viewer_tier=str(tier_str),
-            limit=lim,
-            offset=off,
-            has_more=bool(has_more),
-            next_offset=next_offset,
-            items=items,
+        include_body_bool = bool(include_body)
+        cache_key = build_cache_key(
+            f"myweb:ready:{user_id}",
+            {"report_type": str(report_type), "limit": lim, "offset": off, "include_body": include_body_bool},
         )
+
+        async def _build_payload() -> Dict[str, Any]:
+            try:
+                return await _build_myweb_ready_payload_projection_first(
+                    user_id=user_id,
+                    report_type=str(report_type),
+                    lim=lim,
+                    off=off,
+                    include_body=include_body_bool,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "myweb ready projection-first fallback activated: user_id=%s report_type=%s include_body=%s err=%s",
+                    user_id,
+                    report_type,
+                    include_body_bool,
+                    exc,
+                )
+                return await _build_myweb_ready_payload_legacy(
+                    user_id=user_id,
+                    report_type=str(report_type),
+                    lim=lim,
+                    off=off,
+                    include_body=include_body_bool,
+                )
+
+        payload = await get_or_compute(
+            cache_key,
+            MYWEB_READY_CACHE_TTL_SECONDS,
+            _build_payload,
+            ttl_resolver=lambda payload: 0.75 if not list((payload or {}).get("items") or []) else MYWEB_READY_CACHE_TTL_SECONDS,
+        )
+        return MyWebReadyReportsResponse(**payload)
+
+    @app.get("/myweb/reports/{report_id}", response_model=MyWebReportDetailResponse)
+    async def myweb_report_detail(
+        report_id: str = Path(..., min_length=1),
+        authorization: Optional[str] = Header(default=None),
+    ) -> MyWebReportDetailResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        user_id = await _resolve_user_id_from_token(access_token)
+        rid = str(report_id or "").strip()
+        cache_key = build_cache_key(
+            f"myweb:detail:{user_id}",
+            {"report_id": rid},
+        )
+
+        payload = await get_or_compute(
+            cache_key,
+            MYWEB_DETAIL_CACHE_TTL_SECONDS,
+            lambda: _build_myweb_detail_payload(user_id=user_id, report_id=rid),
+        )
+        return MyWebReportDetailResponse(**payload)
 

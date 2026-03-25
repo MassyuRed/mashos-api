@@ -69,6 +69,8 @@ from supabase_client import (
     sb_auth_headers as _sb_auth_headers_shared,
     sb_get as _sb_get_shared,
 )
+from supabase_auth_token_cache import resolve_user_id_verified_cached
+from response_microcache import invalidate_prefix
 
 logger = logging.getLogger("emotion_submit")
 
@@ -295,9 +297,18 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
 async def _resolve_user_id_from_token(access_token: str) -> str:
     """
     Supabase Auth の `/auth/v1/user` を利用して JWT を検証しつつ user_id を取得する。
-    - 200 以外の場合は 401 を返す。
+    - まず短TTLの verified token cache を確認し、ヒット時は Auth API を再度叩かない。
+    - キャッシュ未ヒット時のみ `/auth/v1/user` へフォールバックする。
     """
     _ensure_supabase_config()
+
+    try:
+        cached_user_id = await resolve_user_id_verified_cached(access_token)
+    except Exception:
+        cached_user_id = None
+    if cached_user_id:
+        return str(cached_user_id)
+
     resp = await _sb_get_shared(
         "/auth/v1/user",
         headers=_sb_auth_headers_shared(access_token),
@@ -1867,6 +1878,11 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             created_at=created_at,
             is_secret=bool(payload.is_secret),
         )
+
+        try:
+            await invalidate_prefix(f"input_summary:{user_id}")
+        except Exception:
+            logger.exception("emotion_submit: input summary cache invalidate failed")
 
         # 5) 残りの重い処理（通知/分析/レポート更新）はバックグラウンドで実行する
         # - notify_friends=false（または send_friend_notification=false）の場合は通知しない。

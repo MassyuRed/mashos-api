@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -12,12 +13,49 @@ from fastapi import HTTPException
 from client_compat import normalize_optional_str_list
 from subscription_store import get_subscription_tier_for_user
 from supabase_client import ensure_supabase_config, sb_get, sb_post
+from response_microcache import get_or_compute
 
 APP_NOTICES_TABLE = (os.getenv("APP_NOTICES_TABLE") or "app_notices").strip() or "app_notices"
 APP_NOTICE_USER_STATES_TABLE = (os.getenv("APP_NOTICE_USER_STATES_TABLE") or "app_notice_user_states").strip() or "app_notice_user_states"
 APP_NOTICES_ENABLED = (os.getenv("APP_NOTICES_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on")
 APP_NOTICE_FETCH_LIMIT = int(os.getenv("APP_NOTICE_FETCH_LIMIT", "300") or "300")
 APP_NOTICE_HISTORY_MAX_LIMIT = int(os.getenv("APP_NOTICE_HISTORY_MAX_LIMIT", "100") or "100")
+
+logger = logging.getLogger("notice_store")
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(str(raw).strip())
+    except Exception:
+        return default
+
+
+NOTICE_CURRENT_CATALOG_CACHE_TTL_SECONDS = max(0.0, _env_float("APP_NOTICE_CURRENT_CATALOG_CACHE_TTL_SECONDS", 20.0))
+NOTICE_CURRENT_ROW_SELECT = ",".join([
+    "id",
+    "notice_key",
+    "version",
+    "title",
+    "category",
+    "priority",
+    "published_at",
+    "created_at",
+    "start_at_utc",
+    "end_at_utc",
+    "status",
+    "requires_popup",
+    "popup_once",
+    "target_platform_json",
+    "target_tiers_json",
+    "min_app_version",
+    "max_app_version",
+])
+NOTICE_CURRENT_STATE_SELECT = "notice_id,read_at,popup_seen_at"
+NOTICE_STATE_MUTATION_SELECT = "notice_id,read_at,popup_seen_at,created_at"
 
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
 _BODY_ACTION_TOKEN_RE = re.compile(r"\{\{\s*([A-Za-z0-9_.:-]+)\s*\}\}")
@@ -449,9 +487,9 @@ class NoticeStore:
             return [data]
         return []
 
-    async def _fetch_notice_rows(self, *, include_draft: bool = False) -> List[Dict[str, Any]]:
+    async def _fetch_notice_rows(self, *, include_draft: bool = False, select: str = "*") -> List[Dict[str, Any]]:
         params = {
-            "select": "*",
+            "select": str(select or "*") or "*",
             "order": "published_at.desc,created_at.desc",
             "limit": str(max(1, APP_NOTICE_FETCH_LIMIT)),
         }
@@ -459,7 +497,7 @@ class NoticeStore:
             params["status"] = "neq.draft"
         return await self._select_rows(APP_NOTICES_TABLE, params=params)
 
-    async def _fetch_notice_rows_by_ids(self, notice_ids: Iterable[str]) -> List[Dict[str, Any]]:
+    async def _fetch_notice_rows_by_ids(self, notice_ids: Iterable[str], *, select: str = "*") -> List[Dict[str, Any]]:
         ids = [str(value or "").strip() for value in notice_ids if str(value or "").strip()]
         if not ids:
             return []
@@ -467,13 +505,19 @@ class NoticeStore:
         return await self._select_rows(
             APP_NOTICES_TABLE,
             params={
-                "select": "*",
+                "select": str(select or "*") or "*",
                 "id": f"in.({quoted})",
                 "limit": str(max(len(ids), 1)),
             },
         )
 
-    async def _fetch_state_rows_for_user(self, user_id: str, notice_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    async def _fetch_state_rows_for_user(
+        self,
+        user_id: str,
+        notice_ids: Iterable[str],
+        *,
+        select: str = "*",
+    ) -> Dict[str, Dict[str, Any]]:
         ids = [str(value or "").strip() for value in notice_ids if str(value or "").strip()]
         uid = str(user_id or "").strip()
         if not uid or not ids:
@@ -482,7 +526,7 @@ class NoticeStore:
         rows = await self._select_rows(
             APP_NOTICE_USER_STATES_TABLE,
             params={
-                "select": "*",
+                "select": str(select or "*") or "*",
                 "user_id": f"eq.{uid}",
                 "notice_id": f"in.({quoted})",
                 "limit": str(max(len(ids), 1)),
@@ -495,6 +539,42 @@ class NoticeStore:
                 continue
             out[notice_id] = row
         return out
+
+    async def _fetch_current_notice_catalog_rows(self) -> List[Dict[str, Any]]:
+        async def _producer() -> List[Dict[str, Any]]:
+            try:
+                return await self._fetch_notice_rows(include_draft=False, select=NOTICE_CURRENT_ROW_SELECT)
+            except Exception as exc:
+                logger.warning("notice current slim-select fallback activated: err=%r", exc)
+                return await self._fetch_notice_rows(include_draft=False, select="*")
+
+        return await get_or_compute(
+            "notice_catalog:current",
+            NOTICE_CURRENT_CATALOG_CACHE_TTL_SECONDS,
+            _producer,
+        )
+
+    async def _fetch_current_state_rows_for_user(self, user_id: str, notice_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        ids = [str(value or "").strip() for value in notice_ids if str(value or "").strip()]
+        if not uid or not ids:
+            return {}
+        try:
+            return await self._fetch_state_rows_for_user(uid, ids, select=NOTICE_CURRENT_STATE_SELECT)
+        except Exception as exc:
+            logger.warning(
+                "notice current state slim-select fallback activated: user_id=%s err=%r",
+                uid,
+                exc,
+            )
+            return await self._fetch_state_rows_for_user(uid, ids, select="*")
+
+    async def _fetch_notice_row_for_popup(self, notice_id: str) -> Optional[Dict[str, Any]]:
+        rows = await self._fetch_notice_rows_by_ids([notice_id], select="*")
+        if not rows:
+            return None
+        row0 = rows[0]
+        return row0 if isinstance(row0, dict) else None
 
     async def _client_tier(self, user_id: str) -> str:
         tier = await get_subscription_tier_for_user(user_id)
@@ -515,50 +595,108 @@ class NoticeStore:
             return False
         return True
 
-    async def _visible_notice_rows(self, user_id: str, client_meta: Mapping[str, Any], *, include_expired_history: bool) -> List[Dict[str, Any]]:
-        if not APP_NOTICES_ENABLED:
-            return []
-        tier = await self._client_tier(user_id)
+    def _filter_visible_rows(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        client_meta: Mapping[str, Any],
+        tier: str,
+        include_expired_history: bool,
+    ) -> List[Dict[str, Any]]:
         now_utc = _now_utc()
-        rows = await self._fetch_notice_rows(include_draft=False)
         visible: List[Dict[str, Any]] = []
         for row in rows:
+            if not isinstance(row, dict):
+                continue
             if not self._matches_client(row, client_meta=client_meta, tier=tier):
                 continue
             if not _has_started(row, now_utc):
                 continue
-            if not include_expired_history:
-                if not _is_currently_active(row, now_utc):
-                    continue
-            visible.append(row)
+            if (not include_expired_history) and (not _is_currently_active(row, now_utc)):
+                continue
+            visible.append(dict(row))
         visible.sort(key=_notice_sort_key, reverse=True)
         return visible
 
+    @staticmethod
+    def _has_full_notice_payload(row: Mapping[str, Any]) -> bool:
+        return any(key in row for key in ("body", "actions_json", "cta_kind", "cta_label", "cta_route", "cta_url", "body_format"))
+
+    async def _visible_notice_rows(self, user_id: str, client_meta: Mapping[str, Any], *, include_expired_history: bool) -> List[Dict[str, Any]]:
+        if not APP_NOTICES_ENABLED:
+            return []
+        tier = await self._client_tier(user_id)
+        rows = await self._fetch_notice_rows(include_draft=False)
+        return self._filter_visible_rows(
+            rows,
+            client_meta=client_meta,
+            tier=tier,
+            include_expired_history=include_expired_history,
+        )
+
     async def fetch_current_notice_bundle(self, user_id: str, client_meta: Mapping[str, Any]) -> Dict[str, Any]:
-        visible_rows = await self._visible_notice_rows(user_id, client_meta, include_expired_history=True)
+        if not APP_NOTICES_ENABLED:
+            return {
+                "feature_enabled": False,
+                "unread_count": 0,
+                "has_unread": False,
+                "badge": {"show": False, "count": 0},
+                "popup_notice": None,
+            }
+
+        tier = await self._client_tier(user_id)
+        catalog_rows = await self._fetch_current_notice_catalog_rows()
+        visible_rows = self._filter_visible_rows(
+            catalog_rows,
+            client_meta=client_meta,
+            tier=tier,
+            include_expired_history=True,
+        )
         notice_ids = [str(row.get("id") or "") for row in visible_rows if str(row.get("id") or "").strip()]
-        state_rows = await self._fetch_state_rows_for_user(user_id, notice_ids)
+        state_rows = await self._fetch_current_state_rows_for_user(user_id, notice_ids)
 
         unread_count = 0
+        popup_candidate: Optional[Dict[str, Any]] = None
+        popup_state: Optional[Dict[str, Any]] = None
+        now_utc = _now_utc()
+
         for row in visible_rows:
             notice_id = str(row.get("id") or "").strip()
             state = state_rows.get(notice_id) if notice_id else None
             if not str((state or {}).get("read_at") or "").strip():
                 unread_count += 1
 
-        now_utc = _now_utc()
-        popup_notice = None
-        popup_candidates = [row for row in visible_rows if _is_currently_active(row, now_utc) and _safe_bool(row.get("requires_popup"), False)]
-        popup_candidates.sort(key=_notice_sort_key, reverse=True)
-        for row in popup_candidates:
-            notice_id = str(row.get("id") or "").strip()
-            state = state_rows.get(notice_id) if notice_id else None
+            if popup_candidate is not None:
+                continue
+            if not _is_currently_active(row, now_utc):
+                continue
+            if not _safe_bool(row.get("requires_popup"), False):
+                continue
             popup_once = _safe_bool(row.get("popup_once"), True)
             popup_seen_at = str((state or {}).get("popup_seen_at") or "").strip() or None
             if popup_once and popup_seen_at:
                 continue
-            popup_notice = _notice_public(row, state)
-            break
+            popup_candidate = row
+            popup_state = state
+
+        popup_notice = None
+        if popup_candidate is not None:
+            materialized_row: Mapping[str, Any] = popup_candidate
+            if not self._has_full_notice_payload(popup_candidate):
+                notice_id = str(popup_candidate.get("id") or "").strip()
+                if notice_id:
+                    try:
+                        full_row = await self._fetch_notice_row_for_popup(notice_id)
+                        if full_row is not None:
+                            materialized_row = full_row
+                    except Exception as exc:
+                        logger.warning(
+                            "notice current popup full-fetch failed: user_id=%s notice_id=%s err=%r",
+                            user_id,
+                            notice_id,
+                            exc,
+                        )
+            popup_notice = _notice_public(materialized_row, popup_state)
 
         return {
             "feature_enabled": bool(APP_NOTICES_ENABLED),
@@ -583,7 +721,7 @@ class NoticeStore:
         safe_offset = max(0, _safe_int(offset, 0))
         visible_rows = await self._visible_notice_rows(user_id, client_meta, include_expired_history=True)
         notice_ids = [str(row.get("id") or "") for row in visible_rows if str(row.get("id") or "").strip()]
-        state_rows = await self._fetch_state_rows_for_user(user_id, notice_ids)
+        state_rows = await self._fetch_state_rows_for_user(user_id, notice_ids, select=NOTICE_CURRENT_STATE_SELECT)
 
         items = [_notice_public(row, state_rows.get(str(row.get("id") or "").strip())) for row in visible_rows]
         unread_count = sum(1 for item in items if not item.get("is_read"))
@@ -608,12 +746,12 @@ class NoticeStore:
         if not ids:
             raise HTTPException(status_code=400, detail="notice_ids is required")
 
-        notice_rows = await self._fetch_notice_rows_by_ids(ids)
+        notice_rows = await self._fetch_notice_rows_by_ids(ids, select="id")
         valid_ids = [str(row.get("id") or "").strip() for row in notice_rows if str(row.get("id") or "").strip()]
         if not valid_ids:
             return 0
 
-        existing = await self._fetch_state_rows_for_user(uid, valid_ids)
+        existing = await self._fetch_state_rows_for_user(uid, valid_ids, select=NOTICE_STATE_MUTATION_SELECT)
         now_iso = _iso_utc()
         payload: List[Dict[str, Any]] = []
         updated_count = 0
@@ -643,11 +781,11 @@ class NoticeStore:
         if not nid:
             raise HTTPException(status_code=400, detail="notice_id is required")
 
-        notice_rows = await self._fetch_notice_rows_by_ids([nid])
+        notice_rows = await self._fetch_notice_rows_by_ids([nid], select="id")
         if not notice_rows:
             return False
 
-        existing = await self._fetch_state_rows_for_user(uid, [nid])
+        existing = await self._fetch_state_rows_for_user(uid, [nid], select=NOTICE_STATE_MUTATION_SELECT)
         row = existing.get(nid) or {}
         now_iso = _iso_utc()
         await self._upsert_state_rows([
@@ -661,3 +799,4 @@ class NoticeStore:
             }
         ])
         return True
+

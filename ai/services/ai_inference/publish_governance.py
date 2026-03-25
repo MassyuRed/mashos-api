@@ -48,6 +48,39 @@ def _to_utc_iso_z(value: Optional[datetime]) -> Optional[str]:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _coerce_int(value: Any) -> int:
+    try:
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return int(value)
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    s = str(value or "").strip().lower()
+    if s in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if s in {"0", "false", "f", "no", "n", "off", ""}:
+        return False
+    return bool(value)
+
+
+def _extract_row_bool(row: Any, *keys: str) -> Optional[bool]:
+    if not isinstance(row, dict):
+        return None
+    for key in keys:
+        if key in row:
+            return _coerce_bool(row.get(key))
+    return None
+
+
 def extract_publish_meta(content_json: Any) -> Dict[str, Any]:
     cj = normalize_content_json(content_json)
     publish = cj.get("publish")
@@ -59,6 +92,22 @@ def extract_publish_status(content_json: Any) -> str:
     return str(publish.get("status") or "").strip().upper()
 
 
+def extract_myweb_publish_status_from_row(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+
+    status = str(
+        row.get("publish_status")
+        or row.get("publishStatus")
+        or row.get("status")
+        or ""
+    ).strip().upper()
+    if status in PUBLISH_READY_STATUSES:
+        return status
+
+    return extract_publish_status(row.get("content_json"))
+
+
 def is_ready_or_published_status(status: Any) -> bool:
     return str(status or "").strip().upper() in PUBLISH_READY_STATUSES
 
@@ -67,27 +116,50 @@ def _extract_myweb_metrics_total_all(content_json: Any) -> int:
     cj = normalize_content_json(content_json)
 
     metrics = cj.get("metrics") if isinstance(cj.get("metrics"), dict) else {}
-    try:
-        total_all = int(metrics.get("totalAll") or 0)
-    except Exception:
-        total_all = 0
+    total_all = _coerce_int(metrics.get("totalAll"))
     if total_all > 0:
         return total_all
 
     standard = cj.get("standardReport") if isinstance(cj.get("standardReport"), dict) else {}
     std_metrics = standard.get("metrics") if isinstance(standard.get("metrics"), dict) else {}
-    try:
-        std_total_all = int(std_metrics.get("totalAll") or 0)
-    except Exception:
-        std_total_all = 0
+    std_total_all = _coerce_int(std_metrics.get("totalAll"))
     if std_total_all > 0:
         return std_total_all
 
     return 0
 
 
+def extract_myweb_total_all_from_row(row: Any) -> int:
+    if not isinstance(row, dict):
+        return 0
+
+    direct_total = _coerce_int(
+        row.get("metrics_total_all")
+        or row.get("metricsTotalAll")
+        or row.get("visible_total_all")
+        or row.get("visibleTotalAll")
+    )
+    if direct_total > 0:
+        return direct_total
+
+    standard_total = _coerce_int(
+        row.get("standard_total_all")
+        or row.get("standardTotalAll")
+        or row.get("standard_report_total_all")
+        or row.get("standardReportTotalAll")
+    )
+    if standard_total > 0:
+        return standard_total
+
+    return _extract_myweb_metrics_total_all(row.get("content_json"))
+
+
 def myweb_report_has_visible_content(content_json: Any) -> bool:
     return _extract_myweb_metrics_total_all(content_json) > 0
+
+
+def myweb_report_row_has_visible_content(row: Any) -> bool:
+    return extract_myweb_total_all_from_row(row) > 0
 
 
 def myweb_daily_has_visible_content(content_json: Any) -> bool:
@@ -190,24 +262,43 @@ def decide_myweb_report_publish(
     if requested and report_type != requested:
         return None
 
-    content_json = normalize_content_json(out.get("content_json"))
-    if not is_ready_or_published_status(extract_publish_status(content_json)):
+    if not is_ready_or_published_status(extract_myweb_publish_status_from_row(out)):
         return None
-    if not myweb_report_has_visible_content(content_json):
+    if not myweb_report_row_has_visible_content(out):
         return None
     if not myweb_retention_ok(out.get("period_end"), tier_str, now_utc=now_utc):
         return None
 
-    out["content_json"] = content_json
+    if "content_json" in out:
+        out["content_json"] = normalize_content_json(out.get("content_json"))
     return out
 
 
 def myprofile_report_has_visible_content(row: Any) -> bool:
     if not isinstance(row, dict):
         return False
+
+    direct_visible = _extract_row_bool(row, "has_visible_content", "hasVisibleContent")
+    if direct_visible is not None:
+        return direct_visible
+
+    direct_archive = _extract_row_bool(row, "archive_eligible", "archiveEligible")
+    if direct_archive is not None:
+        return direct_archive
+
+    content_json = normalize_content_json(row.get("content_json"))
+
+    visibility = content_json.get("visibility") if isinstance(content_json.get("visibility"), dict) else {}
+    if "has_visible_content" in visibility:
+        return _coerce_bool(visibility.get("has_visible_content"))
+
+    history = content_json.get("history") if isinstance(content_json.get("history"), dict) else {}
+    if "archive_eligible" in history:
+        return _coerce_bool(history.get("archive_eligible"))
+
     if str(row.get("content_text") or "").strip():
         return True
-    return bool(normalize_content_json(row.get("content_json")))
+    return bool(content_json)
 
 
 def myprofile_report_retention_ok(period_end_iso: Any, tier_str: Any, *, now_utc: Optional[datetime] = None) -> bool:

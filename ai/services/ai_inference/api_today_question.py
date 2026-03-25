@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from active_users_store import touch_active_user
@@ -18,11 +19,14 @@ from today_question_store import (
     TodayQuestionStore,
     _answer_summary,
     _history_item_public,
+    invalidate_today_question_user_runtime_cache,
 )
 from publish_governance import history_retention_bounds_for_query
+from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
 
 logger = logging.getLogger("today_question_api")
 store = TodayQuestionStore()
+TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS = 10.0
 
 def _configured_today_question_cron_tokens() -> List[str]:
     values = [
@@ -242,6 +246,14 @@ async def _enqueue_self_structure_refresh(user_id: str, trigger: str) -> bool:
         return False
 
 
+async def _invalidate_today_question_caches(user_id: str) -> None:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+    await invalidate_prefix(f"today_question:current:{uid}")
+    await invalidate_today_question_user_runtime_cache(uid)
+
+
 async def _require_plus_or_higher(user_id: str) -> str:
     tier = await get_subscription_tier_for_user(user_id)
     tier_value = str(getattr(tier, "value", tier) or "free").strip().lower() or "free"
@@ -262,16 +274,26 @@ def register_today_question_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> TodayQuestionCurrentResponse:
         uid = await _require_user_id(authorization)
-        bundle = await store.fetch_current_bundle(uid, timezone_name=timezone_name)
-        answer_summary = _answer_summary(bundle.answer)
-        return TodayQuestionCurrentResponse(
-            service_day_key=bundle.service_day_key,
-            question=bundle.question,
-            answer_status="answered" if bundle.answer else "unanswered",
-            answer_summary=answer_summary,
-            delivery=bundle.settings,
-            progress=bundle.progress,
+        cache_key = build_cache_key(
+            f"today_question:current:{uid}",
+            {"timezone_name": str(timezone_name or "")},
         )
+
+        async def _build_payload() -> Dict[str, Any]:
+            bundle = await store.fetch_current_bundle(uid, timezone_name=timezone_name)
+            answer_summary = _answer_summary(bundle.answer)
+            response = TodayQuestionCurrentResponse(
+                service_day_key=bundle.service_day_key,
+                question=bundle.question,
+                answer_status="answered" if bundle.answer else "unanswered",
+                answer_summary=answer_summary,
+                delivery=bundle.settings,
+                progress=bundle.progress,
+            )
+            return jsonable_encoder(response)
+
+        payload = await get_or_compute(cache_key, TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS, _build_payload)
+        return TodayQuestionCurrentResponse(**payload)
 
     @app.post("/today-question/answers", response_model=TodayQuestionAnswerWriteResponse)
     async def today_question_answers_create(
@@ -290,6 +312,7 @@ def register_today_question_routes(app: FastAPI) -> None:
             free_text=body.free_text,
             timezone_name=body.timezone_name,
         )
+        await _invalidate_today_question_caches(uid)
         enqueued = await _enqueue_self_structure_refresh(uid, trigger="today_question_answer")
         return TodayQuestionAnswerWriteResponse(
             answer_id=str(row.get("id") or ""),
@@ -349,6 +372,7 @@ def register_today_question_routes(app: FastAPI) -> None:
             selected_choice_key=body.selected_choice_key,
             free_text=body.free_text,
         )
+        await _invalidate_today_question_caches(uid)
         enqueued = await _enqueue_self_structure_refresh(uid, trigger="today_question_edit")
         return TodayQuestionAnswerWriteResponse(
             answer_id=str(row.get("id") or answer_id),
@@ -378,6 +402,7 @@ def register_today_question_routes(app: FastAPI) -> None:
             delivery_time_local=body.delivery_time_local,
             timezone_name=body.timezone_name,
         )
+        await _invalidate_today_question_caches(uid)
         return TodayQuestionSettingsResponse(**settings)
 
     @app.post("/cron/today-question/push", response_model=TodayQuestionPushResponse)
