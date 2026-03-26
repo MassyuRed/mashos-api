@@ -29,11 +29,13 @@ Emotion Submit API for Cocolon
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 from dataclasses import asdict, dataclass
@@ -127,7 +129,9 @@ _FCM_APP_INIT_LOCK = threading.Lock()
 _FCM_SERVICE_ACCOUNT_TMPFILE: Optional[str] = None
 _FCM_V1_APP_NAME = os.getenv("FCM_V1_APP_NAME", "cocolon_fcm_v1").strip() or "cocolon_fcm_v1"
 _FCM_V1_APP: Optional[Any] = None  # firebase_admin.App
-
+_FCM_SERVICE_ACCOUNT_INFO_CACHE: Optional[Dict[str, Any]] = None
+_FCM_SERVICE_ACCOUNT_INFO_SOURCE: str = ""
+_FCM_SERVICE_ACCOUNT_INFO_LOCK = threading.Lock()
 
 
 def _has_fcm_v1_credentials() -> bool:
@@ -138,50 +142,259 @@ def _has_fcm_v1_credentials() -> bool:
         return True
     if FCM_SERVICE_ACCOUNT_JSON:
         return True
+    if os.path.isfile("/etc/secrets/firebase_service_account.json"):
+        return True
     return False
+
+
+def _strip_json_comments(raw: str) -> str:
+    out: List[str] = []
+    in_string = False
+    quote = ""
+    escape = False
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_string = False
+            i += 1
+            continue
+
+        if ch in ('"', "'"):
+            in_string = True
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "/" and (i + 1) < len(raw):
+            nxt = raw[i + 1]
+            if nxt == "/":
+                i += 2
+                while i < len(raw) and raw[i] not in "\r\n":
+                    i += 1
+                continue
+            if nxt == "*":
+                i += 2
+                while (i + 1) < len(raw) and not (raw[i] == "*" and raw[i + 1] == "/"):
+                    i += 1
+                if (i + 1) < len(raw):
+                    i += 2
+                continue
+
+        if ch == "#":
+            i += 1
+            while i < len(raw) and raw[i] not in "\r\n":
+                i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _strip_json_trailing_commas(raw: str) -> str:
+    out: List[str] = []
+    in_string = False
+    quote = ""
+    escape = False
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_string = False
+            i += 1
+            continue
+
+        if ch in ('"', "'"):
+            in_string = True
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == ",":
+            j = i + 1
+            while j < len(raw) and raw[j].isspace():
+                j += 1
+            if j < len(raw) and raw[j] in "}]":
+                i += 1
+                continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _normalize_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in dict(info or {}).items():
+        normalized[str(key)] = value
+
+    if not str(normalized.get("type") or "").strip():
+        if str(normalized.get("client_email") or "").strip() and str(normalized.get("private_key") or "").strip():
+            normalized["type"] = "service_account"
+
+    private_key = normalized.get("private_key")
+    if isinstance(private_key, str):
+        cleaned_key = private_key.replace("\r\n", "\n").replace("\\r\\n", "\n").replace("\\n", "\n").strip()
+        if "BEGIN PRIVATE KEY" in cleaned_key and not cleaned_key.endswith("\n"):
+            cleaned_key = f"{cleaned_key}\n"
+        normalized["private_key"] = cleaned_key
+
+    if not str(normalized.get("token_uri") or "").strip():
+        normalized["token_uri"] = "https://oauth2.googleapis.com/token"
+    if not str(normalized.get("auth_uri") or "").strip():
+        normalized["auth_uri"] = "https://accounts.google.com/o/oauth2/auth"
+    if not str(normalized.get("auth_provider_x509_cert_url") or "").strip():
+        normalized["auth_provider_x509_cert_url"] = "https://www.googleapis.com/oauth2/v1/certs"
+
+    return normalized
+
+
+def _parse_fcm_service_account_text(raw_text: str) -> Dict[str, Any]:
+    candidates: List[str] = []
+    seen: set[str] = set()
+
+    def _push(value: Optional[str]) -> None:
+        if value is None:
+            return
+        candidate = str(value).lstrip("\ufeff").strip()
+        if not candidate or candidate in seen:
+            return
+        seen.add(candidate)
+        candidates.append(candidate)
+
+    _push(raw_text)
+
+    for candidate in list(candidates):
+        match = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", candidate, flags=re.DOTALL)
+        if match:
+            _push(match.group(2))
+
+    for candidate in list(candidates):
+        trimmed = candidate.strip()
+        if len(trimmed) >= 2 and trimmed[0] == trimmed[-1] and trimmed[0] in {"'", '"'}:
+            try:
+                unwrapped = ast.literal_eval(trimmed)
+                if isinstance(unwrapped, str):
+                    _push(unwrapped)
+            except Exception:
+                _push(trimmed[1:-1])
+
+    for candidate in list(candidates):
+        compact = "".join(candidate.split())
+        if compact and not candidate.lstrip().startswith(("{", "[")) and len(compact) >= 64:
+            try:
+                decoded = base64.b64decode(compact, validate=True).decode("utf-8")
+                _push(decoded)
+            except Exception:
+                pass
+
+    attempts: List[str] = []
+    for candidate in candidates:
+        attempts.append(candidate)
+        sanitized = _strip_json_trailing_commas(_strip_json_comments(candidate))
+        if sanitized != candidate:
+            attempts.append(sanitized)
+
+    last_exc: Optional[BaseException] = None
+    for attempt in attempts:
+        try:
+            parsed: Any = json.loads(attempt)
+            while isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            if not isinstance(parsed, dict):
+                raise ValueError("FCM service account payload is not a JSON object.")
+            return _normalize_fcm_service_account_info(parsed)
+        except Exception as exc:
+            last_exc = exc
+        try:
+            parsed_py = ast.literal_eval(attempt)
+            if isinstance(parsed_py, str):
+                parsed_py = json.loads(parsed_py)
+            if not isinstance(parsed_py, dict):
+                raise ValueError("FCM service account payload is not an object literal.")
+            return _normalize_fcm_service_account_info(parsed_py)
+        except Exception as exc:
+            last_exc = exc
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("FCM service account payload is empty.")
+
+
+def _resolve_fcm_service_account_info() -> Tuple[Dict[str, Any], str]:
+    global _FCM_SERVICE_ACCOUNT_INFO_CACHE, _FCM_SERVICE_ACCOUNT_INFO_SOURCE
+
+    with _FCM_SERVICE_ACCOUNT_INFO_LOCK:
+        if _FCM_SERVICE_ACCOUNT_INFO_CACHE is not None:
+            return dict(_FCM_SERVICE_ACCOUNT_INFO_CACHE), (_FCM_SERVICE_ACCOUNT_INFO_SOURCE or "")
+
+        sources: List[Tuple[str, str, bool]] = []
+        if FCM_SERVICE_ACCOUNT_FILE:
+            sources.append((f"file:{FCM_SERVICE_ACCOUNT_FILE}", FCM_SERVICE_ACCOUNT_FILE, True))
+        if FCM_SERVICE_ACCOUNT_JSON_BASE64:
+            sources.append(("env:FCM_SERVICE_ACCOUNT_JSON_BASE64", FCM_SERVICE_ACCOUNT_JSON_BASE64, False))
+        if FCM_SERVICE_ACCOUNT_JSON:
+            sources.append(("env:FCM_SERVICE_ACCOUNT_JSON", FCM_SERVICE_ACCOUNT_JSON, False))
+        default_path = "/etc/secrets/firebase_service_account.json"
+        if os.path.isfile(default_path) and default_path != FCM_SERVICE_ACCOUNT_FILE:
+            sources.append((f"file:{default_path}", default_path, True))
+
+        last_exc: Optional[BaseException] = None
+        for source_label, source_value, is_file in sources:
+            try:
+                if is_file:
+                    if not os.path.isfile(source_value):
+                        continue
+                    raw_text = open(source_value, "r", encoding="utf-8").read()
+                else:
+                    raw_text = source_value
+                info = _parse_fcm_service_account_text(raw_text)
+                _FCM_SERVICE_ACCOUNT_INFO_CACHE = dict(info)
+                _FCM_SERVICE_ACCOUNT_INFO_SOURCE = source_label
+                return dict(info), source_label
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("Failed to load FCM service account credentials from %s: %s", source_label, exc)
+
+        if last_exc is not None:
+            raise RuntimeError(str(last_exc))
+        raise RuntimeError("FCM service account credentials are not configured.")
 
 
 def _ensure_fcm_service_account_file() -> str:
     """サービスアカウントJSONをファイルパスとして確保する。
 
     優先順位:
-      1) FCM_SERVICE_ACCOUNT_FILE / GOOGLE_APPLICATION_CREDENTIALS の実ファイル
-      2) FCM_SERVICE_ACCOUNT_JSON_BASE64 / FCM_SERVICE_ACCOUNT_JSON を /tmp に書き出して利用
+      1) 実ファイル / env / default secret file から JSON を解決
+      2) 解析済み JSON を /tmp に書き出して利用
     """
     global _FCM_SERVICE_ACCOUNT_TMPFILE
-
-    if FCM_SERVICE_ACCOUNT_FILE and os.path.isfile(FCM_SERVICE_ACCOUNT_FILE):
-        return FCM_SERVICE_ACCOUNT_FILE
 
     if _FCM_SERVICE_ACCOUNT_TMPFILE and os.path.isfile(_FCM_SERVICE_ACCOUNT_TMPFILE):
         return _FCM_SERVICE_ACCOUNT_TMPFILE
 
-    raw_json: Optional[str] = None
-    if FCM_SERVICE_ACCOUNT_JSON_BASE64:
-        try:
-            raw_json = base64.b64decode(FCM_SERVICE_ACCOUNT_JSON_BASE64).decode("utf-8")
-        except Exception as exc:
-            logger.error("Failed to decode FCM_SERVICE_ACCOUNT_JSON_BASE64: %s", exc)
-            raw_json = None
-    elif FCM_SERVICE_ACCOUNT_JSON:
-        raw_json = FCM_SERVICE_ACCOUNT_JSON
+    info, _source = _resolve_fcm_service_account_info()
 
-    if not raw_json:
-        return ""
-
-    try:
-        info = json.loads(raw_json)
-    except Exception as exc:
-        logger.error("Invalid FCM service account JSON: %s", exc)
-        return ""
-
-    # NOTE: firebase_admin.credentials.Certificate() はファイルパスを最も確実に扱えるため、
-    #       env に JSON 文字列で渡された場合は /tmp に書き出して利用する。
     try:
         fd, path = tempfile.mkstemp(prefix="firebase_service_account_", suffix=".json")
         os.close(fd)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(json.dumps(info))
+            f.write(json.dumps(info, ensure_ascii=False))
         try:
             os.chmod(path, 0o600)
         except Exception:
@@ -1146,26 +1359,9 @@ def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
                 _FCM_OAUTH_CLIENT_EMAIL or "",
             )
 
-        # まずは既存の設定から探す（/etc/secrets を最後の砦として見る）
-        cred_path = _ensure_fcm_service_account_file()
-        if not cred_path:
-            default_path = "/etc/secrets/firebase_service_account.json"
-            if os.path.isfile(default_path):
-                cred_path = default_path
-            else:
-                raise RuntimeError("FCM service account file not found.")
-
-        project_id = ""
-        client_email = ""
-        try:
-            with open(cred_path, "r", encoding="utf-8") as f:
-                info = json.load(f)
-            project_id = str(info.get("project_id") or "")
-            client_email = str(info.get("client_email") or "")
-        except Exception:
-            # JSON が読めなくても Credentials 側から拾えることがあるので続行
-            project_id = ""
-            client_email = ""
+        info, info_source = _resolve_fcm_service_account_info()
+        project_id = str(info.get("project_id") or "")
+        client_email = str(info.get("client_email") or "")
 
         try:
             from google.oauth2 import service_account
@@ -1173,7 +1369,7 @@ def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
             raise RuntimeError(f"google-auth is not available: {exc}")
 
         scopes = ["https://www.googleapis.com/auth/firebase.messaging"]
-        creds = service_account.Credentials.from_service_account_file(cred_path, scopes=scopes)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
 
         # refresh (requests が無い環境もあり得るので transport をフォールバック)
         req = None
@@ -1206,11 +1402,12 @@ def _get_fcm_oauth_access_token() -> Tuple[str, datetime, str, str]:
         _FCM_OAUTH_CLIENT_EMAIL = client_email
 
         logger.info(
-            "FCM v1 OAuth token refreshed [patch_v5]: project_id=%s token_len=%s exp=%s sa=%s",
+            "FCM v1 OAuth token refreshed [patch_v5]: project_id=%s token_len=%s exp=%s sa=%s source=%s",
             project_id,
             len(_FCM_OAUTH_TOKEN),
             _FCM_OAUTH_EXPIRY.isoformat(),
             (client_email or ""),
+            info_source,
         )
 
         return _FCM_OAUTH_TOKEN, _FCM_OAUTH_EXPIRY, project_id, client_email
