@@ -16,16 +16,99 @@ import json
 import logging
 import os
 import re
+import sys
+import types
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import httpx
 
+_CURRENT_DIR = Path(__file__).resolve().parent
+if str(_CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_CURRENT_DIR))
+
+
+def _install_optional_perf_runtime_stubs() -> None:
+    """Keep startup alive even if additive perf helper modules are absent.
+
+    Some deployments may lag behind additive helper files introduced by recent
+    API-only optimization patches. In that case we degrade to no-op behavior
+    instead of failing the whole web service / cron entrypoint at import time.
+    """
+
+    if "request_metrics" not in sys.modules:
+        try:
+            import request_metrics  # type: ignore  # noqa: F401
+        except Exception:
+            stub = types.ModuleType("request_metrics")
+
+            def _noop(*args, **kwargs):
+                return None
+
+            stub.begin_request_metrics = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+            stub.finish_request_metrics = _noop  # type: ignore[attr-defined]
+            stub.snapshot_request_metrics = lambda: {}  # type: ignore[attr-defined]
+            stub.record_cache_coalesced = _noop  # type: ignore[attr-defined]
+            stub.record_cache_hit = _noop  # type: ignore[attr-defined]
+            stub.record_cache_miss = _noop  # type: ignore[attr-defined]
+            stub.record_supabase_call = _noop  # type: ignore[attr-defined]
+            sys.modules["request_metrics"] = stub
+
+    if "response_microcache" not in sys.modules:
+        try:
+            import response_microcache  # type: ignore  # noqa: F401
+        except Exception:
+            stub = types.ModuleType("response_microcache")
+
+            async def _get_or_compute(key, ttl_seconds, producer, *, ttl_resolver=None):
+                return await producer()
+
+            def _build_cache_key(prefix, payload=None):
+                base = str(prefix or "").strip().rstrip(":")
+                if not payload:
+                    return base
+                try:
+                    encoded = json.dumps(
+                        payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                except Exception:
+                    encoded = str(payload)
+                return f"{base}:{encoded}"
+
+            async def _invalidate_prefix(prefix):
+                return 0
+
+            async def _invalidate_exact(key):
+                return 0
+
+            stub.get_or_compute = _get_or_compute  # type: ignore[attr-defined]
+            stub.build_cache_key = _build_cache_key  # type: ignore[attr-defined]
+            stub.invalidate_prefix = _invalidate_prefix  # type: ignore[attr-defined]
+            stub.invalidate_exact = _invalidate_exact  # type: ignore[attr-defined]
+            sys.modules["response_microcache"] = stub
+
+
+_install_optional_perf_runtime_stubs()
+
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from middleware_active_user_touch import install_active_user_touch_middleware
+from fastapi.middleware.gzip import GZipMiddleware
+try:
+    from middleware_active_user_touch import install_active_user_touch_middleware
+except Exception:
+    def install_active_user_touch_middleware(app: FastAPI) -> None:
+        return None
 from middleware_api_contract import install_api_contract_middleware
+try:
+    from middleware_request_perf import install_request_perf_middleware
+except Exception:
+    def install_request_perf_middleware(app: FastAPI) -> None:
+        return None
 from pydantic import BaseModel, Field
 from structure_dict import build_structure_answer
 from api_emotion_submit import (
@@ -84,6 +167,7 @@ from api_myprofile_reports_read import register_myprofile_report_read_routes
 from api_mymodel_create import register_mymodel_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
 from api_today_question import register_today_question_routes, run_today_question_push_once
+from supabase_client import aclose_async_client, sb_get as _shared_sb_get, sb_post as _shared_sb_post
 from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
 from astor_myprofile_persona import build_persona_context_payload
@@ -148,10 +232,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=max(512, int(os.getenv("API_GZIP_MINIMUM_SIZE", "1024") or "1024")),
+)
 
 # Phase8++: global active_users touch middleware (best-effort)
 install_active_user_touch_middleware(app)
 install_api_contract_middleware(app)
+install_request_perf_middleware(app)
 
 
 register_emotion_submit_routes(app)
@@ -285,21 +374,25 @@ async def _sb_get(
     params: Optional[Dict[str, str]] = None,
     timeout_seconds: float = 8.0,
 ) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    timeout_value = max(1.0, float(timeout_seconds or 8.0))
-    timeout = httpx.Timeout(timeout_value)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        return await client.get(url, headers=_sb_headers_json(), params=params)
+    return await _shared_sb_get(
+        path,
+        params=params,
+        timeout=max(1.0, float(timeout_seconds or 8.0)),
+        headers=_sb_headers_json(),
+    )
 
 
 async def _sb_post(
     path: str, *, json: Any, params: Optional[Dict[str, str]] = None, prefer: Optional[str] = None
 ) -> httpx.Response:
-    _ensure_supabase_config()
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        return await client.post(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json)
+    return await _shared_sb_post(
+        path,
+        params=params,
+        json=json,
+        prefer=prefer,
+        timeout=8.0,
+        headers=_sb_headers_json(prefer=prefer),
+    )
 
 
 async def _has_myprofile_link(*, viewer_user_id: str, owner_user_id: str) -> bool:
@@ -1450,6 +1543,16 @@ async def infer(
     if persona_ctx is not None:
         meta["astor_persona"] = persona_ctx
     return InferResponse(output=output, meta=meta)
+
+
+@app.on_event("shutdown")
+async def _close_shared_supabase_client() -> None:
+    try:
+        await aclose_async_client()
+    except Exception as exc:
+        logger.warning("shared supabase client shutdown failed: %s", exc)
+
+
 # ---------- Entrypoint ----------
 if __name__ == "__main__":
     import sys
