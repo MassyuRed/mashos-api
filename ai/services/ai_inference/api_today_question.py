@@ -220,7 +220,7 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
             snippet = question_text[:48]
             body = f"今日の問い: {snippet}"
         try:
-            await _send_fcm_push(
+            send_res = await _send_fcm_push(
                 tokens=[token],
                 title="Cocolon",
                 body=body,
@@ -232,13 +232,21 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
                     "sequence_no": str(row.get("sequence_no") or ""),
                 },
             )
-            sent += 1
-            await store.mark_push_delivered(
-                user_id=str(row.get("user_id") or ""),
-                service_day_key=str(row.get("service_day_key") or ""),
-                timezone_name=str(row.get("timezone_name") or ""),
-                delivery_time_local=str(row.get("delivery_time_local") or ""),
-            )
+            if int((send_res or {}).get("success") or 0) > 0:
+                sent += 1
+                await store.mark_push_delivered(
+                    user_id=str(row.get("user_id") or ""),
+                    service_day_key=str(row.get("service_day_key") or ""),
+                    timezone_name=str(row.get("timezone_name") or ""),
+                    delivery_time_local=str(row.get("delivery_time_local") or ""),
+                )
+            else:
+                logger.warning(
+                    "today_question: push not delivered. user=%s service_day_key=%s send_result=%s",
+                    str(row.get("user_id") or ""),
+                    str(row.get("service_day_key") or ""),
+                    send_res or {},
+                )
         except Exception:
             logger.exception("today_question: push send failed")
     return TodayQuestionPushResponse(scanned=len(candidates), sent=sent)

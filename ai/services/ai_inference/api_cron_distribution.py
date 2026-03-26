@@ -1537,15 +1537,35 @@ async def _send_report_distribution_bundle_push(
     token = str((token_map or {}).get(str(user_id or "").strip()) or "").strip()
 
     send_status = "sent"
+    send_result: Dict[str, Any] = {
+        "provider": "none",
+        "attempted": 0,
+        "success": 0,
+        "failure": 0,
+        "errors": [],
+        "skipped_reason": None,
+    }
     if dry_run:
         send_status = "dry_run"
     elif token:
-        await _send_fcm_push(
+        send_result = await _send_fcm_push(
             tokens=[token],
             title=str(payload.get("title") or "Cocolon"),
             body=str(payload.get("body") or "新しいレポートが届きました"),
             data=data_payload,
         )
+        success = int((send_result or {}).get("success") or 0)
+        failure = int((send_result or {}).get("failure") or 0)
+        attempted = int((send_result or {}).get("attempted") or 0)
+        skipped_reason = str((send_result or {}).get("skipped_reason") or "").strip()
+        if success > 0:
+            send_status = "sent"
+        elif skipped_reason:
+            send_status = f"skipped_{skipped_reason}"
+        elif attempted > 0 and failure >= attempted:
+            send_status = "failed_send"
+        else:
+            send_status = "failed_unknown"
     else:
         send_status = "skipped_no_token"
 
@@ -1553,6 +1573,7 @@ async def _send_report_distribution_bundle_push(
         "send_status": send_status,
         "payload": data_payload,
         "bundle_families": families,
+        "send_result": send_result,
     }
 
 
@@ -1778,8 +1799,9 @@ async def run_report_distribution_push_once(
                 "send_status": send_status,
                 "data": dict((send_res or {}).get("payload") or {}),
                 "settings": settings,
+                "send_result": dict((send_res or {}).get("send_result") or {}),
             }
-            if not body.dry_run:
+            if not body.dry_run and send_status == "sent":
                 await store.mark_bundle_delivered(
                     user_id=uid,
                     distribution_key=dist_key,
@@ -1792,6 +1814,13 @@ async def run_report_distribution_push_once(
             else:
                 skipped += 1
                 skipped_users.append(uid)
+                logger.warning(
+                    "report_distribution_push not delivered. user=%s distribution_key=%s send_status=%s send_result=%s",
+                    uid,
+                    dist_key,
+                    send_status,
+                    (send_res or {}).get("send_result") or {},
+                )
         except Exception as exc:
             errors += 1
             if len(error_samples) < 10:
