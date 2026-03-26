@@ -23,6 +23,7 @@ heavy tasks out-of-process, improving API stability.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -30,12 +31,85 @@ import re
 import signal
 import statistics
 import sys
+import types
 from collections import Counter, defaultdict
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+_CURRENT_DIR = Path(__file__).resolve().parent
+if str(_CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_CURRENT_DIR))
+
+
+def _install_optional_perf_runtime_stubs() -> None:
+    """Keep worker startup alive if additive perf helper modules are absent.
+
+    Some deployments may momentarily run the worker on a revision where helper
+    files (response_microcache / request_metrics) are missing or not yet synced.
+    In that case we degrade to no-op behavior instead of crash-looping at import
+    time before the worker can even start polling jobs.
+    """
+
+    if "request_metrics" not in sys.modules:
+        try:
+            import request_metrics  # type: ignore  # noqa: F401
+        except Exception:
+            stub = types.ModuleType("request_metrics")
+
+            def _noop(*args, **kwargs):
+                return None
+
+            stub.begin_request_metrics = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+            stub.finish_request_metrics = _noop  # type: ignore[attr-defined]
+            stub.snapshot_request_metrics = lambda: {}  # type: ignore[attr-defined]
+            stub.record_cache_coalesced = _noop  # type: ignore[attr-defined]
+            stub.record_cache_hit = _noop  # type: ignore[attr-defined]
+            stub.record_cache_miss = _noop  # type: ignore[attr-defined]
+            stub.record_supabase_call = _noop  # type: ignore[attr-defined]
+            sys.modules["request_metrics"] = stub
+
+    if "response_microcache" not in sys.modules:
+        try:
+            import response_microcache  # type: ignore  # noqa: F401
+        except Exception:
+            stub = types.ModuleType("response_microcache")
+
+            async def _get_or_compute(key, ttl_seconds, producer, *, ttl_resolver=None):
+                return await producer()
+
+            def _build_cache_key(prefix, payload=None):
+                base = str(prefix or "").strip().rstrip(":")
+                if not payload:
+                    return base
+                try:
+                    encoded = json.dumps(
+                        payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                except Exception:
+                    encoded = str(payload)
+                return f"{base}:{encoded}"
+
+            async def _invalidate_prefix(prefix):
+                return 0
+
+            async def _invalidate_exact(key):
+                return 0
+
+            stub.get_or_compute = _get_or_compute  # type: ignore[attr-defined]
+            stub.build_cache_key = _build_cache_key  # type: ignore[attr-defined]
+            stub.invalidate_prefix = _invalidate_prefix  # type: ignore[attr-defined]
+            stub.invalidate_exact = _invalidate_exact  # type: ignore[attr-defined]
+            sys.modules["response_microcache"] = stub
+
+
+_install_optional_perf_runtime_stubs()
 
 from astor_job_queue import (
     fetch_next_queued_job,
