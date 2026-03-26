@@ -5,15 +5,18 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from active_users_store import touch_active_user
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
 from notice_store import NoticeStore
+from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
 
 logger = logging.getLogger("notice_api")
 store = NoticeStore()
+NOTICE_CURRENT_CACHE_TTL_SECONDS = 15.0
 
 
 class NoticeBodySegment(BaseModel):
@@ -101,6 +104,18 @@ async def _require_user_id(authorization: Optional[str]) -> str:
     return uid
 
 
+async def get_notice_current_payload_for_user(user_id: str, client_meta: Dict[str, Any]) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    meta = dict(client_meta or {})
+    cache_key = build_cache_key(f"notices:current:{uid}", meta)
+
+    async def _build_payload() -> Dict[str, Any]:
+        bundle = await store.fetch_current_notice_bundle(uid, meta)
+        return jsonable_encoder(NoticeCurrentResponse(**bundle))
+
+    return await get_or_compute(cache_key, NOTICE_CURRENT_CACHE_TTL_SECONDS, _build_payload)
+
+
 def register_notice_routes(app: FastAPI) -> None:
     @app.get("/notices/current", response_model=NoticeCurrentResponse)
     async def notices_current(
@@ -108,8 +123,9 @@ def register_notice_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NoticeCurrentResponse:
         uid = await _require_user_id(authorization)
-        bundle = await store.fetch_current_notice_bundle(uid, extract_client_meta(request.headers))
-        return NoticeCurrentResponse(**bundle)
+        client_meta = extract_client_meta(request.headers)
+        payload = await get_notice_current_payload_for_user(uid, client_meta)
+        return NoticeCurrentResponse(**payload)
 
     @app.get("/notices/history", response_model=NoticeHistoryResponse)
     async def notices_history(
@@ -135,6 +151,7 @@ def register_notice_routes(app: FastAPI) -> None:
     ) -> NoticeReadResponse:
         uid = await _require_user_id(authorization)
         updated_count = await store.mark_notices_read(uid, body.notice_ids)
+        await invalidate_prefix(f"notices:current:{uid}")
         current = await store.fetch_current_notice_bundle(uid, extract_client_meta(request.headers))
         return NoticeReadResponse(
             updated_count=updated_count,
@@ -148,4 +165,5 @@ def register_notice_routes(app: FastAPI) -> None:
     ) -> NoticePopupSeenResponse:
         uid = await _require_user_id(authorization)
         popup_seen = await store.mark_notice_popup_seen(uid, body.notice_id)
+        await invalidate_prefix(f"notices:current:{uid}")
         return NoticePopupSeenResponse(popup_seen=bool(popup_seen))

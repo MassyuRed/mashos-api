@@ -267,6 +267,33 @@ async def _subscription_tier_value(user_id: str) -> str:
     return str(getattr(tier, "value", tier) or "free").strip().lower() or "free"
 
 
+async def get_today_question_current_payload_for_user(
+    user_id: str,
+    *,
+    timezone_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    cache_key = build_cache_key(
+        f"today_question:current:{uid}",
+        {"timezone_name": str(timezone_name or "")},
+    )
+
+    async def _build_payload() -> Dict[str, Any]:
+        bundle = await store.fetch_current_bundle(uid, timezone_name=timezone_name)
+        answer_summary = _answer_summary(bundle.answer)
+        response = TodayQuestionCurrentResponse(
+            service_day_key=bundle.service_day_key,
+            question=bundle.question,
+            answer_status="answered" if bundle.answer else "unanswered",
+            answer_summary=answer_summary,
+            delivery=bundle.settings,
+            progress=bundle.progress,
+        )
+        return jsonable_encoder(response)
+
+    return await get_or_compute(cache_key, TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS, _build_payload)
+
+
 def register_today_question_routes(app: FastAPI) -> None:
     @app.get("/today-question/current", response_model=TodayQuestionCurrentResponse)
     async def today_question_current(
@@ -274,25 +301,7 @@ def register_today_question_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> TodayQuestionCurrentResponse:
         uid = await _require_user_id(authorization)
-        cache_key = build_cache_key(
-            f"today_question:current:{uid}",
-            {"timezone_name": str(timezone_name or "")},
-        )
-
-        async def _build_payload() -> Dict[str, Any]:
-            bundle = await store.fetch_current_bundle(uid, timezone_name=timezone_name)
-            answer_summary = _answer_summary(bundle.answer)
-            response = TodayQuestionCurrentResponse(
-                service_day_key=bundle.service_day_key,
-                question=bundle.question,
-                answer_status="answered" if bundle.answer else "unanswered",
-                answer_summary=answer_summary,
-                delivery=bundle.settings,
-                progress=bundle.progress,
-            )
-            return jsonable_encoder(response)
-
-        payload = await get_or_compute(cache_key, TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS, _build_payload)
+        payload = await get_today_question_current_payload_for_user(uid, timezone_name=timezone_name)
         return TodayQuestionCurrentResponse(**payload)
 
     @app.post("/today-question/answers", response_model=TodayQuestionAnswerWriteResponse)

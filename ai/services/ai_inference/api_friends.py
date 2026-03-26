@@ -272,6 +272,32 @@ async def _fetch_latest_pending_request_head_and_count(user_id: str) -> Tuple[Op
     return latest_created_at, max(0, int(total_count or 0))
 
 
+async def get_friend_unread_status_payload_for_user(user_id: str) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    cache_key = f"friends:unread:{uid}"
+
+    async def _build_payload() -> Dict[str, Any]:
+        feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
+            _fetch_last_read_at("friend_feed_reads", uid),
+            _fetch_last_read_at("friend_request_reads", uid),
+            _latest_friend_feed_created_at(uid),
+            _fetch_latest_pending_request_head_and_count(uid),
+        )
+
+        latest_request_created_at, incoming_pending_count = pending_request_head
+
+        response = FriendUnreadStatusResponse(
+            feed_unread=_has_newer_iso(latest_feed_created_at, feed_last_read_at),
+            requests_unread=_has_newer_iso(latest_request_created_at, requests_last_read_at),
+            incoming_pending_count=int(incoming_pending_count or 0),
+            feed_last_read_at=feed_last_read_at,
+            requests_last_read_at=requests_last_read_at,
+        )
+        return jsonable_encoder(response)
+
+    return await get_or_compute(cache_key, FRIENDS_UNREAD_CACHE_TTL_SECONDS, _build_payload)
+
+
 async def _lookup_profile_by_friend_code(friend_code: str) -> Optional[Dict[str, Any]]:
     """Return {id, display_name} or None"""
     resp = await _sb_get(
@@ -1214,28 +1240,7 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         me = await _resolve_user_id_from_token(access_token)
-        cache_key = f"friends:unread:{me}"
-
-        async def _build_payload() -> Dict[str, Any]:
-            feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
-                _fetch_last_read_at("friend_feed_reads", me),
-                _fetch_last_read_at("friend_request_reads", me),
-                _latest_friend_feed_created_at(me),
-                _fetch_latest_pending_request_head_and_count(me),
-            )
-
-            latest_request_created_at, incoming_pending_count = pending_request_head
-
-            response = FriendUnreadStatusResponse(
-                feed_unread=_has_newer_iso(latest_feed_created_at, feed_last_read_at),
-                requests_unread=_has_newer_iso(latest_request_created_at, requests_last_read_at),
-                incoming_pending_count=int(incoming_pending_count or 0),
-                feed_last_read_at=feed_last_read_at,
-                requests_last_read_at=requests_last_read_at,
-            )
-            return jsonable_encoder(response)
-
-        payload = await get_or_compute(cache_key, FRIENDS_UNREAD_CACHE_TTL_SECONDS, _build_payload)
+        payload = await get_friend_unread_status_payload_for_user(me)
         return FriendUnreadStatusResponse(**payload)
 
     @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)

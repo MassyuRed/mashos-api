@@ -321,68 +321,81 @@ async def _fetch_migration_fallback_response(
     )
 
 
+async def get_global_summary_payload(
+    date: Optional[str] = None,
+    tz: Optional[str] = GLOBAL_SUMMARY_RESPONSE_TZ,
+) -> Dict[str, Any]:
+    db_tz, response_tz = _normalize_global_summary_tz(tz)
+    activity_date = _resolve_global_summary_date(date)
+    ttl_seconds = GLOBAL_SUMMARY_TODAY_CACHE_TTL_SECONDS if _is_today_jst(activity_date) else GLOBAL_SUMMARY_HISTORY_CACHE_TTL_SECONDS
+    cache_key = build_cache_key(
+        f"global_summary:{activity_date}:{response_tz}",
+        {
+            "db_tz": db_tz,
+            "ready_reader_id": id(fetch_latest_ready_global_summary),
+            "fallback_reader_id": id(generate_global_summary_payload),
+            "pytest_current_test": os.getenv("PYTEST_CURRENT_TEST") or None,
+        },
+    )
+
+    async def _build_payload() -> Dict[str, Any]:
+        try:
+            ready_response = await _fetch_ready_summary_response(
+                activity_date=activity_date,
+                timezone_name=db_tz,
+                response_tz=response_tz,
+            )
+            if ready_response is not None:
+                if _is_today_jst(activity_date) and _ready_summary_is_stale(ready_response.updated_at):
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="ready_stale",
+                    )
+                return jsonable_encoder(ready_response)
+
+            fallback_response = await _fetch_migration_fallback_response(
+                activity_date=activity_date,
+                timezone_name=db_tz,
+                response_tz=response_tz,
+            )
+            if fallback_response is not None:
+                if _is_today_jst(activity_date):
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="ready_missing_fallback_used",
+                    )
+                return jsonable_encoder(fallback_response)
+
+            if _is_today_jst(activity_date):
+                _schedule_global_summary_ready_refresh(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    reason="ready_missing_zero_used",
+                )
+            return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("global_summary failed: %s", exc)
+            return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
+
+    return await get_or_compute(cache_key, ttl_seconds, _build_payload)
+
+
 def register_global_summary_routes(app: FastAPI) -> None:
     @app.get("/global_summary", response_model=GlobalSummaryResponse)
     async def global_summary(
         date: Optional[str] = Query(default=None, description="YYYY-MM-DD. Defaults to today in JST."),
         tz: Optional[str] = Query(default=GLOBAL_SUMMARY_RESPONSE_TZ, description="Currently fixed to +09:00 / Asia/Tokyo."),
     ) -> GlobalSummaryResponse:
-        db_tz, response_tz = _normalize_global_summary_tz(tz)
-        activity_date = _resolve_global_summary_date(date)
-        ttl_seconds = GLOBAL_SUMMARY_TODAY_CACHE_TTL_SECONDS if _is_today_jst(activity_date) else GLOBAL_SUMMARY_HISTORY_CACHE_TTL_SECONDS
-        cache_key = build_cache_key(
-            f"global_summary:{activity_date}:{response_tz}",
-            {"db_tz": db_tz},
-        )
-
-        async def _build_payload() -> Dict[str, Any]:
-            try:
-                ready_response = await _fetch_ready_summary_response(
-                    activity_date=activity_date,
-                    timezone_name=db_tz,
-                    response_tz=response_tz,
-                )
-                if ready_response is not None:
-                    if _is_today_jst(activity_date) and _ready_summary_is_stale(ready_response.updated_at):
-                        _schedule_global_summary_ready_refresh(
-                            activity_date=activity_date,
-                            timezone_name=db_tz,
-                            reason="ready_stale",
-                        )
-                    return jsonable_encoder(ready_response)
-
-                fallback_response = await _fetch_migration_fallback_response(
-                    activity_date=activity_date,
-                    timezone_name=db_tz,
-                    response_tz=response_tz,
-                )
-                if fallback_response is not None:
-                    if _is_today_jst(activity_date):
-                        _schedule_global_summary_ready_refresh(
-                            activity_date=activity_date,
-                            timezone_name=db_tz,
-                            reason="ready_missing_fallback_used",
-                        )
-                    return jsonable_encoder(fallback_response)
-
-                if _is_today_jst(activity_date):
-                    _schedule_global_summary_ready_refresh(
-                        activity_date=activity_date,
-                        timezone_name=db_tz,
-                        reason="ready_missing_zero_used",
-                    )
-                return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.warning("global_summary failed: %s", exc)
-                return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
-
-        payload = await get_or_compute(cache_key, ttl_seconds, _build_payload)
+        payload = await get_global_summary_payload(date=date, tz=tz)
         return GlobalSummaryResponse(**payload)
 
 
 __all__ = [
     "GlobalSummaryResponse",
+    "get_global_summary_payload",
     "register_global_summary_routes",
 ]

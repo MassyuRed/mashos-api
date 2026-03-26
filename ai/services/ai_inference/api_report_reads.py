@@ -381,6 +381,73 @@ async def _fetch_latest_self_structure_ids(user_id: str, *, tier_str: str, limit
     return ids[:limit]
 
 
+async def get_myweb_unread_status_payload_for_user(
+    user_id: str,
+    *,
+    limit: int = 1,
+    include_self_structure: bool = True,
+) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    lim = max(1, min(int(limit or 1), 10))
+    cache_key = build_cache_key(
+        f"report_reads:myweb_unread:{uid}",
+        {"limit": lim, "include_self_structure": bool(include_self_structure)},
+    )
+
+    async def _build_payload() -> Dict[str, Any]:
+        tier_str = await _resolve_viewer_tier(uid)
+        daily_task = _fetch_latest_ready_myweb_ids(uid, "daily", tier_str=tier_str, limit=lim)
+        weekly_task = _fetch_latest_ready_myweb_ids(uid, "weekly", tier_str=tier_str, limit=lim)
+        monthly_task = _fetch_latest_ready_myweb_ids(uid, "monthly", tier_str=tier_str, limit=lim)
+        self_structure_task = None
+        if include_self_structure and tier_str in {"plus", "premium"}:
+            self_structure_task = _fetch_latest_self_structure_ids(uid, tier_str=tier_str, limit=lim)
+
+        daily_ids, weekly_ids, monthly_ids = await asyncio.gather(daily_task, weekly_task, monthly_task)
+        self_structure_ids: List[str] = []
+        if self_structure_task is not None:
+            try:
+                self_structure_ids = await self_structure_task
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.warning("failed to load self-structure unread ids: %s", exc)
+                self_structure_ids = []
+
+        ids_by_type = {
+            "daily": daily_ids,
+            "weekly": weekly_ids,
+            "monthly": monthly_ids,
+            "selfStructure": self_structure_ids,
+        }
+
+        all_ids: List[str] = []
+        for key in ("daily", "weekly", "monthly", "selfStructure"):
+            all_ids.extend(ids_by_type.get(key) or [])
+        all_ids = list(dict.fromkeys([str(x or "").strip() for x in all_ids if str(x or "").strip()]))
+
+        read_set = await _fetch_read_id_set(uid, all_ids) if all_ids else set()
+
+        def _latest_unread(ids: List[str]) -> bool:
+            latest_id = ids[0] if ids else None
+            return bool(latest_id) and latest_id not in read_set
+
+        response = MyWebUnreadStatusResponse(
+            viewer_tier=tier_str,
+            ids_by_type=MyWebUnreadIdsByType(**ids_by_type),
+            read_ids=[rid for rid in all_ids if rid in read_set],
+            unread_by_type=MyWebUnreadFlags(
+                daily=_latest_unread(ids_by_type["daily"]),
+                weekly=_latest_unread(ids_by_type["weekly"]),
+                monthly=_latest_unread(ids_by_type["monthly"]),
+                selfStructure=_latest_unread(ids_by_type["selfStructure"]),
+            ),
+        )
+        return jsonable_encoder(response)
+
+    return await get_or_compute(cache_key, MYWEB_UNREAD_STATUS_CACHE_TTL_SECONDS, _build_payload)
+
+
 def register_report_reads_routes(app: FastAPI) -> None:
     @app.get("/report-reads/status", response_model=ReportReadStatusResponse)
     async def get_report_reads_status(
@@ -428,62 +495,9 @@ def register_report_reads_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> MyWebUnreadStatusResponse:
         me = await _require_user_id(authorization)
-        lim = max(1, min(int(limit or 1), 10))
-        cache_key = build_cache_key(
-            f"report_reads:myweb_unread:{me}",
-            {"limit": lim, "include_self_structure": bool(include_self_structure)},
+        payload = await get_myweb_unread_status_payload_for_user(
+            me,
+            limit=limit,
+            include_self_structure=include_self_structure,
         )
-
-        async def _build_payload() -> Dict[str, Any]:
-            tier_str = await _resolve_viewer_tier(me)
-            daily_task = _fetch_latest_ready_myweb_ids(me, "daily", tier_str=tier_str, limit=lim)
-            weekly_task = _fetch_latest_ready_myweb_ids(me, "weekly", tier_str=tier_str, limit=lim)
-            monthly_task = _fetch_latest_ready_myweb_ids(me, "monthly", tier_str=tier_str, limit=lim)
-            self_structure_task = None
-            if include_self_structure and tier_str in {"plus", "premium"}:
-                self_structure_task = _fetch_latest_self_structure_ids(me, tier_str=tier_str, limit=lim)
-
-            daily_ids, weekly_ids, monthly_ids = await asyncio.gather(daily_task, weekly_task, monthly_task)
-            self_structure_ids: List[str] = []
-            if self_structure_task is not None:
-                try:
-                    self_structure_ids = await self_structure_task
-                except HTTPException:
-                    raise
-                except Exception as exc:
-                    logger.warning("failed to load self-structure unread ids: %s", exc)
-                    self_structure_ids = []
-
-            ids_by_type = {
-                "daily": daily_ids,
-                "weekly": weekly_ids,
-                "monthly": monthly_ids,
-                "selfStructure": self_structure_ids,
-            }
-
-            all_ids: List[str] = []
-            for key in ("daily", "weekly", "monthly", "selfStructure"):
-                all_ids.extend(ids_by_type.get(key) or [])
-            all_ids = list(dict.fromkeys([str(x or "").strip() for x in all_ids if str(x or "").strip()]))
-
-            read_set = await _fetch_read_id_set(me, all_ids) if all_ids else set()
-
-            def _latest_unread(ids: List[str]) -> bool:
-                latest_id = ids[0] if ids else None
-                return bool(latest_id) and latest_id not in read_set
-
-            response = MyWebUnreadStatusResponse(
-                viewer_tier=tier_str,
-                ids_by_type=MyWebUnreadIdsByType(**ids_by_type),
-                read_ids=[rid for rid in all_ids if rid in read_set],
-                unread_by_type=MyWebUnreadFlags(
-                    daily=_latest_unread(ids_by_type["daily"]),
-                    weekly=_latest_unread(ids_by_type["weekly"]),
-                    monthly=_latest_unread(ids_by_type["monthly"]),
-                    selfStructure=_latest_unread(ids_by_type["selfStructure"]),
-                ),
-            )
-            return jsonable_encoder(response)
-
-        payload = await get_or_compute(cache_key, MYWEB_UNREAD_STATUS_CACHE_TTL_SECONDS, _build_payload)
         return MyWebUnreadStatusResponse(**payload)

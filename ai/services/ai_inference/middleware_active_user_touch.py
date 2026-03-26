@@ -109,6 +109,7 @@ from fastapi import FastAPI
 from starlette.requests import Request
 
 from active_users_store import touch_active_user
+from client_compat import extract_client_meta
 from supabase_auth_token_cache import resolve_user_id_verified_cached
 
 logger = logging.getLogger("middleware_active_user_touch")
@@ -444,7 +445,26 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
             return False
         return True
 
-    async def _verify_and_touch(token: str, activity: str) -> None:
+    def _should_refresh_startup_snapshot_for_path(path: str) -> bool:
+        prefixes = (
+            "/activity/login",
+            "/emotion/submit",
+            "/friends",
+            "/notices",
+            "/today-question",
+            "/report-reads",
+            "/input/summary",
+        )
+        return any(path.startswith(prefix) for prefix in prefixes)
+
+    async def _verify_and_touch(
+        token: str,
+        activity: str,
+        *,
+        client_meta: Optional[dict] = None,
+        refresh_startup_snapshot: bool = False,
+        force_refresh_startup_snapshot: bool = False,
+    ) -> None:
         # Verified + cached resolve
         uid = await resolve_user_id_verified_cached(token)
 
@@ -461,9 +481,38 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
             # touch is best-effort
             return
 
-    async def _verify_touch_with_release(token: str, activity: str, sched_key: str) -> None:
+        if not refresh_startup_snapshot:
+            return
+
         try:
-            await _verify_and_touch(token, activity)
+            from startup_snapshot_store import refresh_startup_snapshot_if_due
+
+            await refresh_startup_snapshot_if_due(
+                uid,
+                client_meta=client_meta,
+                reason=activity,
+                force_refresh=force_refresh_startup_snapshot,
+            )
+        except Exception:
+            logger.exception("startup snapshot refresh failed")
+
+    async def _verify_touch_with_release(
+        token: str,
+        activity: str,
+        sched_key: str,
+        *,
+        client_meta: Optional[dict] = None,
+        refresh_startup_snapshot: bool = False,
+        force_refresh_startup_snapshot: bool = False,
+    ) -> None:
+        try:
+            await _verify_and_touch(
+                token,
+                activity,
+                client_meta=client_meta,
+                refresh_startup_snapshot=refresh_startup_snapshot,
+                force_refresh_startup_snapshot=force_refresh_startup_snapshot,
+            )
         finally:
             _release_schedule(sched_key)
 
@@ -486,6 +535,9 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
             return response
 
         activity = f"{method} {path}"[:120]
+        client_meta = extract_client_meta(request.headers)
+        should_refresh_startup_snapshot = _should_refresh_startup_snapshot_for_path(path)
+        force_refresh_startup_snapshot = should_refresh_startup_snapshot and method in {"POST", "PUT", "PATCH", "DELETE"}
 
         important = _is_important_path(path)
 
@@ -508,11 +560,27 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
 
         # Run in background so we don't add latency to the request.
         try:
-            asyncio.create_task(_verify_touch_with_release(token, activity, sched_key))
+            asyncio.create_task(
+                _verify_touch_with_release(
+                    token,
+                    activity,
+                    sched_key,
+                    client_meta=client_meta,
+                    refresh_startup_snapshot=should_refresh_startup_snapshot,
+                    force_refresh_startup_snapshot=force_refresh_startup_snapshot,
+                )
+            )
         except Exception:
             # If create_task fails, run inline (still best-effort) and release the key.
             try:
-                await _verify_touch_with_release(token, activity, sched_key)
+                await _verify_touch_with_release(
+                    token,
+                    activity,
+                    sched_key,
+                    client_meta=client_meta,
+                    refresh_startup_snapshot=should_refresh_startup_snapshot,
+                    force_refresh_startup_snapshot=force_refresh_startup_snapshot,
+                )
             except Exception:
                 pass
 

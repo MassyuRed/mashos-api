@@ -325,6 +325,29 @@ async def _build_payload_legacy(user_id: str) -> Dict[str, Any]:
     return jsonable_encoder(response)
 
 
+async def get_input_summary_payload_for_user(user_id: str) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return jsonable_encoder(InputSummaryResponse(user_id=""))
+
+    async def _build_payload() -> Dict[str, Any]:
+        try:
+            return await _build_payload_db_aggregated(uid)
+        except Exception as exc:
+            logger.warning(
+                "input summary aggregated path fallback activated: user_id=%s err=%r",
+                uid,
+                exc,
+            )
+            return await _build_payload_legacy(uid)
+
+    return await get_or_compute(
+        f"input_summary:{uid}",
+        INPUT_SUMMARY_CACHE_TTL_SECONDS,
+        _build_payload,
+    )
+
+
 def register_input_summary_routes(app: FastAPI) -> None:
     @app.get("/input/summary", response_model=InputSummaryResponse)
     async def get_input_summary(
@@ -332,20 +355,5 @@ def register_input_summary_routes(app: FastAPI) -> None:
     ) -> InputSummaryResponse:
         user_id = await _require_user_id(authorization)
 
-        async def _build_payload() -> Dict[str, Any]:
-            try:
-                return await _build_payload_db_aggregated(user_id)
-            except Exception as exc:
-                logger.warning(
-                    "input summary aggregated path fallback activated: user_id=%s err=%r",
-                    user_id,
-                    exc,
-                )
-                return await _build_payload_legacy(user_id)
-
-        payload = await get_or_compute(
-            f"input_summary:{user_id}",
-            INPUT_SUMMARY_CACHE_TTL_SECONDS,
-            _build_payload,
-        )
+        payload = await get_input_summary_payload_for_user(user_id)
         return InputSummaryResponse(**payload)
