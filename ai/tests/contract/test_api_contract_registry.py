@@ -41,6 +41,7 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/deep_insight/questions'),
     ('POST', '/deep_insight/answers'),
     ('GET', '/today-question/current'),
+    ('GET', '/today-question/status'),
     ('POST', '/today-question/answers'),
     ('GET', '/today-question/history'),
     ('PATCH', '/today-question/history/{answer_id}'),

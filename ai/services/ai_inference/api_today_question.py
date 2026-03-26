@@ -27,6 +27,7 @@ from response_microcache import build_cache_key, get_or_compute, invalidate_pref
 logger = logging.getLogger("today_question_api")
 store = TodayQuestionStore()
 TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS = 10.0
+TODAY_QUESTION_STATUS_CACHE_TTL_SECONDS = 10.0
 
 def _configured_today_question_cron_tokens() -> List[str]:
     values = [
@@ -79,6 +80,26 @@ class TodayQuestionCurrentResponse(BaseModel):
     answer_summary: Optional[TodayQuestionAnswerSummary] = None
     delivery: Dict[str, Any] = Field(default_factory=dict)
     progress: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TodayQuestionStatusQuestion(BaseModel):
+    question_id: str
+    question_key: Optional[str] = None
+    version: int = 1
+    choice_count: int = 0
+    free_text_enabled: bool = True
+
+
+class TodayQuestionStatusResponse(BaseModel):
+    service_day_key: str
+    question: Optional[TodayQuestionStatusQuestion] = None
+    answer_status: str = "unanswered"
+    answer_summary: Optional[TodayQuestionAnswerSummary] = None
+    delivery: Dict[str, Any] = Field(default_factory=dict)
+    progress: Dict[str, Any] = Field(default_factory=dict)
+    has_current_question: bool = False
+    should_prompt: bool = False
+    is_answered_today: bool = False
 
 
 class TodayQuestionAnswerCreateRequest(BaseModel):
@@ -251,6 +272,7 @@ async def _invalidate_today_question_caches(user_id: str) -> None:
     if not uid:
         return
     await invalidate_prefix(f"today_question:current:{uid}")
+    await invalidate_prefix(f"today_question:status:{uid}")
     await invalidate_today_question_user_runtime_cache(uid)
 
 
@@ -294,6 +316,37 @@ async def get_today_question_current_payload_for_user(
     return await get_or_compute(cache_key, TODAY_QUESTION_CURRENT_CACHE_TTL_SECONDS, _build_payload)
 
 
+async def get_today_question_status_payload_for_user(
+    user_id: str,
+    *,
+    timezone_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    cache_key = build_cache_key(
+        f"today_question:status:{uid}",
+        {"timezone_name": str(timezone_name or "")},
+    )
+
+    async def _build_payload() -> Dict[str, Any]:
+        bundle = await store.fetch_status_bundle(uid, timezone_name=timezone_name)
+        is_answered_today = bool(bundle.answer)
+        has_current_question = bool(bundle.question) or is_answered_today
+        response = TodayQuestionStatusResponse(
+            service_day_key=bundle.service_day_key,
+            question=bundle.question,
+            answer_status="answered" if is_answered_today else "unanswered",
+            answer_summary=_answer_summary(bundle.answer),
+            delivery=bundle.settings,
+            progress=bundle.progress,
+            has_current_question=has_current_question,
+            should_prompt=bool(has_current_question and not is_answered_today),
+            is_answered_today=is_answered_today,
+        )
+        return jsonable_encoder(response)
+
+    return await get_or_compute(cache_key, TODAY_QUESTION_STATUS_CACHE_TTL_SECONDS, _build_payload)
+
+
 def register_today_question_routes(app: FastAPI) -> None:
     @app.get("/today-question/current", response_model=TodayQuestionCurrentResponse)
     async def today_question_current(
@@ -303,6 +356,15 @@ def register_today_question_routes(app: FastAPI) -> None:
         uid = await _require_user_id(authorization)
         payload = await get_today_question_current_payload_for_user(uid, timezone_name=timezone_name)
         return TodayQuestionCurrentResponse(**payload)
+
+    @app.get("/today-question/status", response_model=TodayQuestionStatusResponse)
+    async def today_question_status(
+        timezone_name: Optional[str] = Query(default=None),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> TodayQuestionStatusResponse:
+        uid = await _require_user_id(authorization)
+        payload = await get_today_question_status_payload_for_user(uid, timezone_name=timezone_name)
+        return TodayQuestionStatusResponse(**payload)
 
     @app.post("/today-question/answers", response_model=TodayQuestionAnswerWriteResponse)
     async def today_question_answers_create(

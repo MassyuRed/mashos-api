@@ -9,6 +9,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
+| GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle (bootstrap + cached user-scoped snapshot) |
 | POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted |
 | GET | `/input/summary` | `input.summary.v1` | `false` |  |  |
 | GET | `/account/profile/me` | `account.profile.me.read.v1` | `false` |  |  |
@@ -41,6 +42,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | GET | `/deep_insight/questions` | `deep_insight.questions.v1` | `false` |  |  |
 | POST | `/deep_insight/answers` | `deep_insight.answers.v1` | `false` |  |  |
 | GET | `/today-question/current` | `today_question.current.v1` | `false` |  |  |
+| GET | `/today-question/status` | `today_question.status.v1` | `false` |  | Lightweight Today Question popup/badge state without question body or choices |
 | POST | `/today-question/answers` | `today_question.answers.create.v1` | `false` |  |  |
 | GET | `/today-question/history` | `today_question.history.list.v1` | `false` |  |  |
 | PATCH | `/today-question/history/{answer_id}` | `today_question.history.patch.v1` | `false` |  |  |

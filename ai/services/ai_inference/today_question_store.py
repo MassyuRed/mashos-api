@@ -52,6 +52,15 @@ class TodayQuestionCurrentBundle:
     progress: Dict[str, Any]
 
 
+@dataclass
+class TodayQuestionStatusBundle:
+    service_day_key: str
+    question: Optional[Dict[str, Any]]
+    answer: Optional[Dict[str, Any]]
+    settings: Dict[str, Any]
+    progress: Dict[str, Any]
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -296,6 +305,26 @@ def _question_public_from_answer_row(answer_row: Mapping[str, Any]) -> Dict[str,
         "choice_count": len(choices_sorted),
         "choices": [_choice_public_from_snapshot(r) for r in choices_sorted],
         "free_text_enabled": True,
+    }
+
+
+def _question_status_public(question_row: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "question_id": str(question_row.get("id") or question_row.get("question_id") or ""),
+        "question_key": str(question_row.get("question_key") or "") or None,
+        "version": int(question_row.get("version") or question_row.get("question_version") or 1),
+        "choice_count": int(question_row.get("choice_count") or 0),
+        "free_text_enabled": bool(question_row.get("free_text_enabled", True)),
+    }
+
+
+def _question_status_public_from_answer_row(answer_row: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "question_id": str(answer_row.get("question_id") or ""),
+        "question_key": str(answer_row.get("question_key") or "") or None,
+        "version": int(answer_row.get("question_version") or 1),
+        "choice_count": int(answer_row.get("choice_count") or 0),
+        "free_text_enabled": bool(answer_row.get("free_text_enabled", True)),
     }
 
 
@@ -588,6 +617,25 @@ class TodayQuestionStore:
 
         return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
 
+    async def _fetch_question_meta_row(self, question_id: str) -> Optional[Dict[str, Any]]:
+        qid = str(question_id or "").strip()
+        if not qid:
+            return None
+        cache_key = f"today_question:static:question_meta:{qid}"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_BANK_TABLE,
+                params={
+                    "select": "id,question_key,version,choice_count,free_text_enabled",
+                    "id": f"eq.{qid}",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_STATIC_CACHE_TTL_SECONDS, _producer)
+
     async def _fetch_choice_rows(self, question_id: str) -> List[Dict[str, Any]]:
         qid = str(question_id or "").strip()
         if not qid:
@@ -619,6 +667,28 @@ class TodayQuestionStore:
                 TODAY_QUESTION_ANSWERS_TABLE,
                 params={
                     "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,question_text_snapshot,choices_snapshot_json,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at",
+                    "user_id": f"eq.{uid}",
+                    "service_day_key": f"eq.{day}",
+                    "order": "answered_at.desc,id.desc",
+                    "limit": "1",
+                },
+            )
+            return rows[0] if rows else None
+
+        return await get_or_compute(cache_key, TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS, _producer)
+
+    async def _fetch_answer_status_row_for_day(self, user_id: str, service_day_key: str) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        day = str(service_day_key or "").strip()
+        if not uid or not day:
+            return None
+        cache_key = f"{_today_question_answer_day_cache_prefix(uid)}:{day}:status"
+
+        async def _producer() -> Optional[Dict[str, Any]]:
+            rows = await self._select_rows(
+                TODAY_QUESTION_ANSWERS_TABLE,
+                params={
+                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at",
                     "user_id": f"eq.{uid}",
                     "service_day_key": f"eq.{day}",
                     "order": "answered_at.desc,id.desc",
@@ -919,6 +989,100 @@ class TodayQuestionStore:
         return TodayQuestionCurrentBundle(
             service_day_key=service_day_key,
             question=_question_public(question_row, choice_rows),
+            answer=None,
+            settings=settings,
+            progress=resolved["public"],
+        )
+
+    async def fetch_status_bundle(
+        self,
+        user_id: str,
+        *,
+        timezone_name: Optional[str] = None,
+        now_utc: Optional[datetime] = None,
+    ) -> TodayQuestionStatusBundle:
+        uid = str(user_id or "").strip()
+        service_day_key = _service_day_key(now_utc)
+        settings_task = asyncio.create_task(self.get_or_create_user_settings(uid, timezone_name=timezone_name))
+        total_count_task = asyncio.create_task(self._fetch_total_sequence_count())
+        today_answer_task = asyncio.create_task(self._fetch_answer_status_row_for_day(uid, service_day_key))
+        progress_task = asyncio.create_task(self._fetch_user_progress_row(uid))
+
+        settings, total_count, today_answer, progress_row = await asyncio.gather(
+            settings_task,
+            total_count_task,
+            today_answer_task,
+            progress_task,
+        )
+
+        if today_answer:
+            answer_sequence_no = _safe_int(today_answer.get("sequence_no"), 0) or None
+            if not progress_row and answer_sequence_no:
+                progress_row = await self._upsert_user_progress(
+                    uid,
+                    last_completed_sequence_no=answer_sequence_no,
+                    current_sequence_id=str(today_answer.get("sequence_id") or "").strip() or None,
+                    current_sequence_no=answer_sequence_no,
+                    current_presented_local_date=str(today_answer.get("presented_local_date") or today_answer.get("local_answer_date") or service_day_key),
+                )
+            progress_public = _progress_public(
+                sequence_no=answer_sequence_no or _safe_int((progress_row or {}).get("current_sequence_no"), 0) or None,
+                total_count=total_count,
+                current_presented_local_date=(
+                    str(today_answer.get("presented_local_date") or "").strip()
+                    or str((progress_row or {}).get("current_presented_local_date") or "").strip()
+                    or service_day_key
+                ),
+            )
+            question_meta = _question_status_public_from_answer_row(today_answer)
+            question_id = str(today_answer.get("question_id") or "").strip()
+            if question_id:
+                meta_row = await self._fetch_question_meta_row(question_id)
+                if meta_row:
+                    question_meta = _question_status_public(meta_row)
+            return TodayQuestionStatusBundle(
+                service_day_key=service_day_key,
+                question=question_meta,
+                answer=today_answer,
+                settings=settings,
+                progress=progress_public,
+            )
+
+        resolved = await self._resolve_pending_progress(
+            uid,
+            service_day_key=service_day_key,
+            total_count=total_count,
+            progress_row=progress_row,
+        )
+        sequence_row = resolved["sequence_row"]
+        if not sequence_row:
+            return TodayQuestionStatusBundle(
+                service_day_key=service_day_key,
+                question=None,
+                answer=None,
+                settings=settings,
+                progress=resolved["public"],
+            )
+
+        question_id = str(sequence_row.get("question_id") or "").strip()
+        question_row = await self._fetch_question_meta_row(question_id)
+        if not question_row:
+            logger.warning(
+                "today_question: status meta row missing for sequence_no=%s question_id=%s",
+                sequence_row.get("sequence_no"),
+                sequence_row.get("question_id"),
+            )
+            return TodayQuestionStatusBundle(
+                service_day_key=service_day_key,
+                question=None,
+                answer=None,
+                settings=settings,
+                progress=resolved["public"],
+            )
+
+        return TodayQuestionStatusBundle(
+            service_day_key=service_day_key,
+            question=_question_status_public(question_row),
             answer=None,
             settings=settings,
             progress=resolved["public"],
