@@ -5,17 +5,17 @@ Global Summary API
 ------------------
 Purpose
   - Keep the public `/global_summary` contract stable.
-  - Prefer READY artifacts from `global_activity_summaries` for both current and historical JST days.
-  - For the current JST day, when READY is missing or stale, enqueue a background refresh instead of blocking
-    the request on a synchronous regeneration.
+  - For the current JST day, favor a synchronous legacy refresh so Home can reflect the latest input immediately.
+  - For historical JST days, prefer READY artifacts from `global_activity_summaries`.
   - During migration, retain legacy `daily_global_activity` / refresh RPC fallback so current clients keep working.
 
 Read order
   - Current JST day:
-      1) latest READY artifact
-      2) migration fallback: legacy daily table, then legacy refresh RPC
-      3) zero response
-      + if READY is stale or absent, best-effort enqueue a background refresh
+      1) synchronous legacy refresh RPC/table read
+      2) latest READY artifact
+      3) legacy fallback without forced refresh
+      4) zero response
+      + best-effort enqueue a READY refresh so published artifacts catch up
   - Historical JST day:
       1) latest READY artifact
       2) migration fallback: legacy daily table, then legacy refresh RPC
@@ -321,6 +321,45 @@ async def _fetch_migration_fallback_response(
     )
 
 
+async def _fetch_current_day_synchronous_response(
+    *,
+    activity_date: str,
+    timezone_name: str,
+    response_tz: str,
+) -> Optional[GlobalSummaryResponse]:
+    """Refresh the current JST day synchronously via legacy surfaces.
+
+    Home re-fetches `/global_summary` immediately after an emotion submit. If we return READY-first
+    for the current day, the response can lag behind the just-saved input even when the artifact is
+    only a few seconds old. To keep the existing UI contract, the current day must prefer a fresh
+    synchronous read.
+    """
+
+    try:
+        payload = await generate_global_summary_payload(
+            activity_date,
+            timezone_name=timezone_name,
+            prefer_refresh=True,
+            fallback_to_table=True,
+            allow_empty=False,
+        )
+    except Exception as exc:
+        logger.warning(
+            "current-day synchronous global summary refresh failed: activity_date=%s timezone=%s err=%s",
+            activity_date,
+            timezone_name,
+            exc,
+        )
+        return None
+
+    return _response_from_payload(
+        payload,
+        activity_date=activity_date,
+        response_tz=response_tz,
+        updated_at=_to_text((payload or {}).get("generated_at")) or _to_text((payload or {}).get("updated_at")),
+    )
+
+
 async def get_global_summary_payload(
     date: Optional[str] = None,
     tz: Optional[str] = GLOBAL_SUMMARY_RESPONSE_TZ,
@@ -340,18 +379,61 @@ async def get_global_summary_payload(
 
     async def _build_payload() -> Dict[str, Any]:
         try:
+            is_today = _is_today_jst(activity_date)
+
+            if is_today:
+                sync_response = await _fetch_current_day_synchronous_response(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    response_tz=response_tz,
+                )
+                if sync_response is not None:
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="current_day_sync_used",
+                    )
+                    return jsonable_encoder(sync_response)
+
+                ready_response = await _fetch_ready_summary_response(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    response_tz=response_tz,
+                )
+                if ready_response is not None:
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="current_day_sync_failed_ready_fallback",
+                    )
+                    return jsonable_encoder(ready_response)
+
+                fallback_response = await _fetch_migration_fallback_response(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    response_tz=response_tz,
+                )
+                if fallback_response is not None:
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="current_day_sync_failed_legacy_fallback",
+                    )
+                    return jsonable_encoder(fallback_response)
+
+                _schedule_global_summary_ready_refresh(
+                    activity_date=activity_date,
+                    timezone_name=db_tz,
+                    reason="current_day_zero_used",
+                )
+                return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
+
             ready_response = await _fetch_ready_summary_response(
                 activity_date=activity_date,
                 timezone_name=db_tz,
                 response_tz=response_tz,
             )
             if ready_response is not None:
-                if _is_today_jst(activity_date) and _ready_summary_is_stale(ready_response.updated_at):
-                    _schedule_global_summary_ready_refresh(
-                        activity_date=activity_date,
-                        timezone_name=db_tz,
-                        reason="ready_stale",
-                    )
                 return jsonable_encoder(ready_response)
 
             fallback_response = await _fetch_migration_fallback_response(
@@ -360,20 +442,8 @@ async def get_global_summary_payload(
                 response_tz=response_tz,
             )
             if fallback_response is not None:
-                if _is_today_jst(activity_date):
-                    _schedule_global_summary_ready_refresh(
-                        activity_date=activity_date,
-                        timezone_name=db_tz,
-                        reason="ready_missing_fallback_used",
-                    )
                 return jsonable_encoder(fallback_response)
 
-            if _is_today_jst(activity_date):
-                _schedule_global_summary_ready_refresh(
-                    activity_date=activity_date,
-                    timezone_name=db_tz,
-                    reason="ready_missing_zero_used",
-                )
             return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
         except HTTPException:
             raise

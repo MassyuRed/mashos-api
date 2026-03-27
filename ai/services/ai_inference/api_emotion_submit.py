@@ -74,6 +74,8 @@ from response_microcache import invalidate_prefix
 
 logger = logging.getLogger("emotion_submit")
 
+JST = timezone(timedelta(hours=9))
+
 astor_engine = AstorEngine()
 
 # ---------- 環境変数 ----------
@@ -1039,6 +1041,27 @@ def _format_emotion_push_body(emotion_details: List[Dict[str, Any]]) -> str:
     return body[:180]
 
 
+def _global_summary_activity_date_from_created_at(created_at: Optional[str]) -> str:
+    """`/global_summary` が参照する JST 日付バケットを返す。"""
+    s = str(created_at or "").strip()
+    if not s:
+        return datetime.now(JST).date().isoformat()
+
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(JST).date().isoformat()
+    except Exception:
+        logger.warning(
+            "Failed to derive global summary activity_date from created_at=%s; fallback to JST today",
+            created_at,
+        )
+        return datetime.now(JST).date().isoformat()
+
+
 async def _fetch_push_tokens_for_users(user_ids: List[str]) -> Dict[str, str]:
     """profiles から push_token を取得する（service_roleでRLSをバイパス）。
 
@@ -1449,8 +1472,42 @@ async def _push_notify_friends_about_emotion(
     if not _is_fcm_enabled():
         return
 
-    token_map = await _fetch_push_tokens_for_users(viewer_user_ids)
-    tokens = list(token_map.values())
+    viewer_ids = [
+        uid
+        for uid in (viewer_user_ids or [])
+        if isinstance(uid, str) and uid.strip() and uid != owner_user_id
+    ]
+    if not viewer_ids:
+        return
+
+    token_map = await _fetch_push_tokens_for_users(viewer_ids)
+    owner_token_map = await _fetch_push_tokens_for_users([owner_user_id]) if owner_user_id else {}
+    owner_tokens = {
+        str(token or "").strip()
+        for token in owner_token_map.values()
+        if isinstance(token, str) and token.strip()
+    }
+
+    tokens: List[str] = []
+    seen_tokens = set()
+    filtered_owner_token_count = 0
+    for token in token_map.values():
+        t = str(token or "").strip()
+        if not t or t in seen_tokens:
+            continue
+        if t in owner_tokens:
+            filtered_owner_token_count += 1
+            continue
+        seen_tokens.add(t)
+        tokens.append(t)
+
+    if filtered_owner_token_count:
+        logger.info(
+            "Friend push filtered owner-matching tokens: owner_user_id=%s count=%s",
+            owner_user_id,
+            filtered_owner_token_count,
+        )
+
     if not tokens:
         return
 
@@ -1883,6 +1940,14 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             await invalidate_prefix(f"input_summary:{user_id}")
         except Exception:
             logger.exception("emotion_submit: input summary cache invalidate failed")
+
+        try:
+            global_summary_activity_date = _global_summary_activity_date_from_created_at(
+                inserted.get("created_at", created_at)
+            )
+            await invalidate_prefix(f"global_summary:{global_summary_activity_date}:")
+        except Exception:
+            logger.exception("emotion_submit: global summary cache invalidate failed")
 
         # 5) 残りの重い処理（通知/分析/レポート更新）はバックグラウンドで実行する
         # - notify_friends=false（または send_friend_notification=false）の場合は通知しない。
