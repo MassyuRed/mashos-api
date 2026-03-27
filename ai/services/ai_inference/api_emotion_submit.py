@@ -285,6 +285,81 @@ def _extract_first_braced_object(raw: str) -> Optional[str]:
     return None
 
 
+def _unwrap_nested_string_value(value: str, *, max_rounds: int = 3) -> str:
+    current = str(value)
+    for _ in range(max_rounds):
+        trimmed = current.strip()
+        if len(trimmed) < 2 or trimmed[0] != trimmed[-1] or trimmed[0] not in {"'", '"'}:
+            return current
+        try:
+            decoded = ast.literal_eval(trimmed)
+            if isinstance(decoded, str):
+                current = decoded
+                continue
+        except Exception:
+            pass
+        try:
+            decoded_json = json.loads(trimmed)
+            if isinstance(decoded_json, str):
+                current = decoded_json
+                continue
+        except Exception:
+            pass
+        return trimmed[1:-1]
+    return current
+
+
+_PEM_BLOCK_RE = re.compile(
+    r"-----BEGIN [A-Z0-9 ]+-----.*?-----END [A-Z0-9 ]+-----",
+    flags=re.DOTALL,
+)
+
+
+def _normalize_private_key_value(private_key: Any) -> Any:
+    if not isinstance(private_key, str):
+        return private_key
+
+    cleaned_key = _unwrap_nested_string_value(private_key).lstrip("\ufeff").strip()
+    if not cleaned_key:
+        return cleaned_key
+
+    compact = "".join(cleaned_key.split())
+    if cleaned_key and not cleaned_key.lstrip().startswith("-----BEGIN ") and len(compact) >= 128:
+        try:
+            decoded_key = base64.b64decode(compact, validate=True).decode("utf-8")
+            if "BEGIN PRIVATE KEY" in decoded_key and "END PRIVATE KEY" in decoded_key:
+                cleaned_key = decoded_key.strip()
+        except Exception:
+            pass
+
+    cleaned_key = (
+        cleaned_key.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+    )
+    cleaned_key = _strip_json_placeholder_lines(cleaned_key).strip()
+
+    pem_match = _PEM_BLOCK_RE.search(cleaned_key)
+    if pem_match:
+        cleaned_key = pem_match.group(0).strip()
+
+    lines = [line.strip() for line in cleaned_key.split("\n") if line.strip()]
+    if len(lines) >= 2 and lines[0].startswith("-----BEGIN ") and lines[-1].startswith("-----END "):
+        begin_line = lines[0]
+        end_line = lines[-1]
+        middle_lines = [line.replace(" ", "") for line in lines[1:-1] if line not in {"...", "…", "---"}]
+        joined = "".join(middle_lines)
+        if joined and re.fullmatch(r"[A-Za-z0-9+/=]+", joined):
+            middle_lines = [joined[i : i + 64] for i in range(0, len(joined), 64)]
+        cleaned_key = "\n".join([begin_line, *middle_lines, end_line]).strip()
+
+    if "BEGIN PRIVATE KEY" in cleaned_key and not cleaned_key.endswith("\n"):
+        cleaned_key = f"{cleaned_key}\n"
+    return cleaned_key
+
+
 def _normalize_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     for key, value in dict(info or {}).items():
@@ -294,12 +369,7 @@ def _normalize_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
         if str(normalized.get("client_email") or "").strip() and str(normalized.get("private_key") or "").strip():
             normalized["type"] = "service_account"
 
-    private_key = normalized.get("private_key")
-    if isinstance(private_key, str):
-        cleaned_key = private_key.replace("\r\n", "\n").replace("\\r\\n", "\n").replace("\\n", "\n").strip()
-        if "BEGIN PRIVATE KEY" in cleaned_key and not cleaned_key.endswith("\n"):
-            cleaned_key = f"{cleaned_key}\n"
-        normalized["private_key"] = cleaned_key
+    normalized["private_key"] = _normalize_private_key_value(normalized.get("private_key"))
 
     if not str(normalized.get("token_uri") or "").strip():
         normalized["token_uri"] = "https://oauth2.googleapis.com/token"
@@ -307,6 +377,34 @@ def _normalize_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
         normalized["auth_uri"] = "https://accounts.google.com/o/oauth2/auth"
     if not str(normalized.get("auth_provider_x509_cert_url") or "").strip():
         normalized["auth_provider_x509_cert_url"] = "https://www.googleapis.com/oauth2/v1/certs"
+
+    return normalized
+
+
+def _validate_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = _normalize_fcm_service_account_info(info)
+
+    client_email = str(normalized.get("client_email") or "").strip()
+    private_key = str(normalized.get("private_key") or "").strip()
+    if not client_email:
+        raise RuntimeError("FCM service account client_email is missing.")
+    if not private_key:
+        raise RuntimeError("FCM service account private_key is missing.")
+    if re.fullmatch(r"[.·•*\s]+", private_key or "") or private_key in {"...", "…"}:
+        raise RuntimeError("FCM service account private_key appears to be redacted or placeholder text.")
+
+    try:
+        from google.oauth2 import service_account
+    except Exception:
+        return normalized
+
+    try:
+        service_account.Credentials.from_service_account_info(
+            normalized,
+            scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+        )
+    except Exception as exc:
+        raise RuntimeError(str(exc))
 
     return normalized
 
@@ -418,6 +516,7 @@ def _resolve_fcm_service_account_info() -> Tuple[Dict[str, Any], str]:
                 else:
                     raw_text = source_value
                 info = _parse_fcm_service_account_text(raw_text)
+                info = _validate_fcm_service_account_info(info)
                 _FCM_SERVICE_ACCOUNT_INFO_CACHE = dict(info)
                 _FCM_SERVICE_ACCOUNT_INFO_SOURCE = source_label
                 return dict(info), source_label
@@ -1767,7 +1866,17 @@ async def _send_fcm_push(
         }
 
     if _has_fcm_v1_credentials():
-        return await _send_fcm_push_v1(tokens=tokens, title=title, body=body, data=data)
+        v1_result = await _send_fcm_push_v1(tokens=tokens, title=title, body=body, data=data)
+        skipped_reason = str(v1_result.get("skipped_reason") or "").strip()
+        if skipped_reason in {"oauth_error", "missing_project_id", "missing_credentials"} and FCM_SERVER_KEY:
+            logger.warning(
+                "FCM v1 send unavailable (reason=%s). Falling back to legacy FCM provider.",
+                skipped_reason,
+            )
+            legacy_result = await _send_fcm_push_legacy(tokens=tokens, title=title, body=body, data=data)
+            if str(legacy_result.get("skipped_reason") or "") != "fcm_disabled_or_missing_server_key":
+                return legacy_result
+        return v1_result
 
     return await _send_fcm_push_legacy(tokens=tokens, title=title, body=body, data=data)
 
