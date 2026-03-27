@@ -238,6 +238,53 @@ def _strip_json_trailing_commas(raw: str) -> str:
     return "".join(out)
 
 
+def _strip_json_placeholder_lines(raw: str) -> str:
+    cleaned_lines: List[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        # Render / shell snippet / redacted secret preview 由来の standalone ellipsis や
+        # YAML document marker が混じると JSON/Python dict として壊れるので除去する。
+        if stripped in {"...", "…", "---"}:
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
+def _extract_first_braced_object(raw: str) -> Optional[str]:
+    start = raw.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    quote = ""
+    escape = False
+    for idx in range(start, len(raw)):
+        ch = raw[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == quote:
+                in_string = False
+            continue
+
+        if ch in ('"', "'"):
+            in_string = True
+            quote = ch
+            continue
+
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : idx + 1]
+    return None
+
+
 def _normalize_fcm_service_account_info(info: Dict[str, Any]) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     for key, value in dict(info or {}).items():
@@ -306,9 +353,16 @@ def _parse_fcm_service_account_text(raw_text: str) -> Dict[str, Any]:
     attempts: List[str] = []
     for candidate in candidates:
         attempts.append(candidate)
-        sanitized = _strip_json_trailing_commas(_strip_json_comments(candidate))
+
+        sanitized = _strip_json_placeholder_lines(
+            _strip_json_trailing_commas(_strip_json_comments(candidate))
+        )
         if sanitized != candidate:
             attempts.append(sanitized)
+
+        extracted = _extract_first_braced_object(sanitized)
+        if extracted and extracted != sanitized:
+            attempts.append(extracted)
 
     last_exc: Optional[BaseException] = None
     for attempt in attempts:
