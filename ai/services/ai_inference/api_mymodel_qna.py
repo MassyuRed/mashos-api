@@ -3704,6 +3704,71 @@ async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id:
     )
 
 
+async def get_mymodel_qna_unread_status_payload_for_user(user_id: str) -> Dict[str, Any]:
+    viewer_id = str(user_id or "").strip()
+    payload = {
+        "status": "ok",
+        "viewer_user_id": viewer_id,
+        "scope": "accessible",
+        "accessible_target_count": 0 if not viewer_id else 1,
+        "self_has_unread": False,
+        "following_has_unread": False,
+        "has_unread": False,
+        "has_any_unread": False,
+    }
+    if not viewer_id:
+        return payload
+
+    try:
+        followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer_id, limit=5000)
+    except Exception as exc:
+        logger.warning("qna unread status follow-list load failed: %s", exc)
+        followed_owner_ids = set()
+    followed_owner_ids.discard(viewer_id)
+
+    accessible_target_count = 1 + len(followed_owner_ids)
+    self_has_unread = False
+    following_has_unread = False
+
+    try:
+        self_unread = await _compute_qna_unread_for_target(
+            viewer_user_id=viewer_id,
+            target_user_id=viewer_id,
+        )
+        self_has_unread = bool(self_unread.has_unread)
+    except Exception as exc:
+        logger.warning("qna unread status self probe failed: %s", exc)
+
+    if followed_owner_ids:
+        for owner_user_id in sorted(followed_owner_ids):
+            try:
+                owner_unread = await _compute_qna_unread_for_target(
+                    viewer_user_id=viewer_id,
+                    target_user_id=str(owner_user_id),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "qna unread status probe failed for owner=%s: %s",
+                    owner_user_id,
+                    exc,
+                )
+                continue
+            if bool(owner_unread.has_unread):
+                following_has_unread = True
+                break
+
+    payload.update(
+        {
+            "accessible_target_count": int(accessible_target_count),
+            "self_has_unread": bool(self_has_unread),
+            "following_has_unread": bool(following_has_unread),
+            "has_unread": bool(self_has_unread or following_has_unread),
+            "has_any_unread": bool(self_has_unread or following_has_unread),
+        }
+    )
+    return payload
+
+
 async def _build_saved_generated_items(
     *,
     prepared_rows: List[Tuple[str, str, str]],  # (q_instance_id, owner_user_id, saved_at)
@@ -3950,53 +4015,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             raise HTTPException(status_code=401, detail="Invalid token")
 
         viewer_id = str(viewer_user_id)
-        try:
-            followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer_id, limit=5000)
-        except Exception as exc:
-            logger.warning("qna unread status follow-list load failed: %s", exc)
-            followed_owner_ids = set()
-        followed_owner_ids.discard(viewer_id)
-
-        accessible_target_count = 1 + len(followed_owner_ids)
-        self_has_unread = False
-        following_has_unread = False
-
-        try:
-            self_unread = await _compute_qna_unread_for_target(
-                viewer_user_id=viewer_id,
-                target_user_id=viewer_id,
-            )
-            self_has_unread = bool(self_unread.has_unread)
-        except Exception as exc:
-            logger.warning("qna unread status self probe failed: %s", exc)
-
-        if followed_owner_ids:
-            for owner_user_id in sorted(followed_owner_ids):
-                try:
-                    owner_unread = await _compute_qna_unread_for_target(
-                        viewer_user_id=viewer_id,
-                        target_user_id=str(owner_user_id),
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "qna unread status probe failed for owner=%s: %s",
-                        owner_user_id,
-                        exc,
-                    )
-                    continue
-                if bool(owner_unread.has_unread):
-                    following_has_unread = True
-                    break
-
-        return QnaUnreadStatusResponse(
-            status="ok",
-            viewer_user_id=viewer_id,
-            scope="accessible",
-            accessible_target_count=int(accessible_target_count),
-            self_has_unread=bool(self_has_unread),
-            following_has_unread=bool(following_has_unread),
-            has_unread=bool(self_has_unread or following_has_unread),
-        )
+        payload = await get_mymodel_qna_unread_status_payload_for_user(viewer_id)
+        return QnaUnreadStatusResponse(**payload)
 
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(

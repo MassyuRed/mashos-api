@@ -26,15 +26,19 @@ except Exception:
     STARTUP_SNAPSHOT_SECTION_TIMEOUT_SECONDS = 12.0
 
 JST = timezone(timedelta(hours=9))
-STARTUP_SNAPSHOT_SCHEMA_VERSION = "startup_snapshot.v1"
+STARTUP_SNAPSHOT_SCHEMA_VERSION = "startup_snapshot.v2"
 STARTUP_SNAPSHOT_SOURCE_VERSIONS: Dict[str, str] = {
     "schema": STARTUP_SNAPSHOT_SCHEMA_VERSION,
     "friends_unread": "friends.unread.v1",
     "myweb_unread": "report_reads.myweb_unread.v1",
+    "mymodel_create_status": "mymodel.create.status.v1",
+    "mymodel_reflections_unread": "mymodel.qna.unread_status.v1",
     "notices_current": "notices.current.v1",
-    "today_question_light": "today_question.current.light.v1",
+    "today_question_status": "today_question.status.v1",
+    "today_question_popup": "today_question.current.popup.v1",
     "input_summary": "input.summary.v1",
     "global_summary": "global_summary.ready_first.v1",
+    "myweb_home_summary": "myweb.home_summary.v1",
 }
 
 
@@ -129,13 +133,24 @@ async def _build_startup_snapshot_payload(
     timezone_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     uid = str(user_id or "").strip()
+    normalized_meta = _normalize_client_meta(client_meta)
+    resolved_timezone_name = str(timezone_name or "").strip() or None
     if not uid:
         return {
             "schema_version": STARTUP_SNAPSHOT_SCHEMA_VERSION,
             "user_id": "",
-            "client_meta": _normalize_client_meta(client_meta),
+            "client_meta": normalized_meta,
             "generated_at": _iso_utc(),
+            "timezone_name": resolved_timezone_name,
             "source_versions": dict(STARTUP_SNAPSHOT_SOURCE_VERSIONS),
+            "flags": {
+                "has_any_friends_unread": False,
+                "has_any_myweb_unread": False,
+                "has_popup_notice": False,
+                "today_question_answered": False,
+                "has_any_mymodel_unread": False,
+                "has_today_question_popup": False,
+            },
             "sections": {},
             "errors": {"user_id": "missing"},
         }
@@ -144,11 +159,26 @@ async def _build_startup_snapshot_payload(
     from api_friends import get_friend_unread_status_payload_for_user
     from api_global_summary import get_global_summary_payload
     from api_input_summary import get_input_summary_payload_for_user
+    from api_mymodel_create import get_mymodel_create_status_payload_for_user
+    from api_mymodel_qna import get_mymodel_qna_unread_status_payload_for_user
+    from api_myweb_reads import get_myweb_home_summary_payload_for_user
     from api_notice import get_notice_current_payload_for_user
     from api_report_reads import get_myweb_unread_status_payload_for_user
-    from api_today_question import get_today_question_current_payload_for_user
+    from api_today_question import (
+        get_today_question_popup_payload_for_user,
+        get_today_question_status_payload_for_user,
+    )
 
-    normalized_meta = _normalize_client_meta(client_meta)
+    create_entry_default = {
+        "build_tier": "light",
+        "total_questions": 0,
+        "answered_count": 0,
+        "unanswered_count": 0,
+        "has_unanswered": False,
+        "is_created": False,
+    }
+    standard_entry_default = dict(create_entry_default)
+    standard_entry_default["build_tier"] = "standard"
 
     defaults: Dict[str, Any] = {
         "friends_unread": {
@@ -176,6 +206,29 @@ async def _build_startup_snapshot_payload(
                 "selfStructure": False,
             },
         },
+        "mymodel_create_status": {
+            "status": "ok",
+            "user_id": uid,
+            "subscription_tier": "free",
+            "effective_build_tier": "light",
+            "light": dict(create_entry_default),
+            "standard": dict(standard_entry_default),
+            "accessible": dict(create_entry_default),
+            "has_unanswered": False,
+            "has_any_unanswered": False,
+            "is_created": False,
+            "engine": "mymodel.create.status.v1",
+        },
+        "mymodel_reflections_unread": {
+            "status": "ok",
+            "viewer_user_id": uid,
+            "scope": "accessible",
+            "accessible_target_count": 1,
+            "self_has_unread": False,
+            "following_has_unread": False,
+            "has_unread": False,
+            "has_any_unread": False,
+        },
         "notices_current": {
             "feature_enabled": True,
             "unread_count": 0,
@@ -183,14 +236,18 @@ async def _build_startup_snapshot_payload(
             "badge": {"show": False, "count": 0},
             "popup_notice": None,
         },
-        "today_question": {
+        "today_question_status": {
             "service_day_key": _today_jst_date_iso(),
+            "question": None,
             "answer_status": "unanswered",
             "answer_summary": None,
-            "question": None,
             "delivery": {},
             "progress": {},
+            "has_current_question": False,
+            "should_prompt": False,
+            "is_answered_today": False,
         },
+        "today_question_popup": None,
         "input_summary": {
             "status": "ok",
             "user_id": uid,
@@ -209,6 +266,11 @@ async def _build_startup_snapshot_payload(
             "discovery_count": 0,
             "updated_at": None,
         },
+        "myweb_home_summary": {
+            "status": "ok",
+            "weekly": {"count": 0, "top": [], "error": ""},
+            "monthly": {"count": 0, "error": ""},
+        },
     }
 
     section_results = await asyncio.gather(
@@ -218,36 +280,73 @@ async def _build_startup_snapshot_payload(
             get_myweb_unread_status_payload_for_user(uid, limit=1, include_self_structure=True),
             defaults["myweb_unread"],
         ),
+        _safe_section("mymodel_create_status", get_mymodel_create_status_payload_for_user(uid), defaults["mymodel_create_status"]),
+        _safe_section(
+            "mymodel_reflections_unread",
+            get_mymodel_qna_unread_status_payload_for_user(uid),
+            defaults["mymodel_reflections_unread"],
+        ),
         _safe_section("notices_current", get_notice_current_payload_for_user(uid, normalized_meta), defaults["notices_current"]),
         _safe_section(
-            "today_question",
-            get_today_question_current_payload_for_user(uid, timezone_name=timezone_name),
-            defaults["today_question"],
+            "today_question_status",
+            get_today_question_status_payload_for_user(uid, timezone_name=resolved_timezone_name),
+            defaults["today_question_status"],
         ),
         _safe_section("input_summary", get_input_summary_payload_for_user(uid), defaults["input_summary"]),
         _safe_section("global_summary", get_global_summary_payload(), defaults["global_summary"]),
+        _safe_section("myweb_home_summary", get_myweb_home_summary_payload_for_user(uid), defaults["myweb_home_summary"]),
     )
 
     sections: Dict[str, Any] = {}
     errors: Dict[str, str] = {}
     for name, payload, error in section_results:
-        if name == "today_question":
-            payload = _light_today_question_payload(payload if isinstance(payload, Mapping) else defaults[name])
         sections[name] = payload
         if error:
             errors[name] = error
 
+    today_question_status = sections.get("today_question_status") if isinstance(sections.get("today_question_status"), Mapping) else {}
+    should_prompt_today_question = bool(today_question_status.get("should_prompt"))
+    if should_prompt_today_question:
+        popup_name, popup_payload, popup_error = await _safe_section(
+            "today_question_popup",
+            get_today_question_popup_payload_for_user(uid, timezone_name=resolved_timezone_name),
+            defaults["today_question_popup"],
+        )
+        sections[popup_name] = popup_payload
+        if popup_error:
+            errors[popup_name] = popup_error
+    else:
+        sections["today_question_popup"] = defaults["today_question_popup"]
+
+    # Backward-compatible alias retained for older clients that still expect `today_question`.
+    sections["today_question"] = sections.get("today_question_status")
+
     friends_unread = sections.get("friends_unread") if isinstance(sections.get("friends_unread"), Mapping) else {}
     myweb_unread = sections.get("myweb_unread") if isinstance(sections.get("myweb_unread"), Mapping) else {}
+    mymodel_create_status = sections.get("mymodel_create_status") if isinstance(sections.get("mymodel_create_status"), Mapping) else {}
+    mymodel_reflections_unread = sections.get("mymodel_reflections_unread") if isinstance(sections.get("mymodel_reflections_unread"), Mapping) else {}
     notices_current = sections.get("notices_current") if isinstance(sections.get("notices_current"), Mapping) else {}
-    today_question = sections.get("today_question") if isinstance(sections.get("today_question"), Mapping) else {}
+    today_question_popup = sections.get("today_question_popup") if isinstance(sections.get("today_question_popup"), Mapping) else {}
 
     unread_by_type = myweb_unread.get("unread_by_type") if isinstance(myweb_unread.get("unread_by_type"), Mapping) else {}
     startup_flags = {
         "has_any_friends_unread": bool(friends_unread.get("feed_unread") or friends_unread.get("requests_unread")),
         "has_any_myweb_unread": any(bool(unread_by_type.get(k)) for k in ("daily", "weekly", "monthly", "selfStructure")),
         "has_popup_notice": bool(notices_current.get("popup_notice")),
-        "today_question_answered": str(today_question.get("answer_status") or "unanswered") == "answered",
+        "today_question_answered": str(today_question_status.get("answer_status") or "unanswered") == "answered",
+        "has_any_mymodel_unread": bool(
+            mymodel_create_status.get("has_any_unanswered")
+            or mymodel_create_status.get("has_unanswered")
+            or mymodel_reflections_unread.get("has_unread")
+            or mymodel_reflections_unread.get("has_any_unread")
+        ),
+        "has_today_question_popup": bool(
+            should_prompt_today_question
+            and (
+                (isinstance(today_question_popup.get("question"), Mapping) if isinstance(today_question_popup, Mapping) else False)
+                or bool(today_question_popup)
+            )
+        ),
     }
 
     payload = {
@@ -255,6 +354,7 @@ async def _build_startup_snapshot_payload(
         "user_id": uid,
         "client_meta": normalized_meta,
         "generated_at": _iso_utc(),
+        "timezone_name": resolved_timezone_name,
         "source_versions": dict(STARTUP_SNAPSHOT_SOURCE_VERSIONS),
         "flags": startup_flags,
         "sections": sections,
