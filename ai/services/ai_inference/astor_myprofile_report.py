@@ -2327,19 +2327,18 @@ def _build_current_structure_summary_from_basis(basis: Dict[str, Any]) -> str:
     role_names = _unique_keep_order([_role_label_from_row(x) for x in _take_list((basis or {}).get("top_roles"))[:3]])
     secondary = [x for x in role_names if x and x != core_label][:2]
     flow = _role_flow_phrase(core_role)
+    if flow:
+        first = f"今のあなたは、{flow}流れが前に出ています。"
+    else:
+        first = f"今のあなたは、『{core_label}』に近い出方が中心になっています。"
     if secondary:
         if len(secondary) == 1:
-            first = f"今回の観測では、『{core_label}』を中心に『{secondary[0]}』の役割が重なって表れている可能性があります。"
+            second = f"その上で『{secondary[0]}』の向きも重なっていて、ひとつの動きだけでは言い切れない状態です。"
         else:
-            first = f"今回の観測では、『{core_label}』を中心に『{secondary[0]}』『{secondary[1]}』の役割が重なって表れている可能性があります。"
+            second = f"その上で『{secondary[0]}』『{secondary[1]}』の向きも重なっていて、いくつかの出方が同時に立っています。"
     else:
-        first = f"今回の観測では、『{core_label}』の役割が前に出やすい可能性があります。"
-    if flow:
-        second = f"いまは、{flow}流れが前面に出やすい状態です。"
-    else:
-        second = f"いまは、『{core_label}』らしい反応の出方が中心になっている状態です。"
+        second = f"役割ラベルで見ると、『{core_label}』がいちばん近い位置にあります。"
     return "\n".join([first, second]).strip()
-
 
 def _build_role_content_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
     top_roles = _take_list((basis or {}).get("top_roles"))
@@ -2353,30 +2352,36 @@ def _build_role_content_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
         if not role_label or role_label in seen:
             continue
         seen.append(role_label)
-        prefix = "主役割" if idx == 0 else f"補助役割{idx}"
-        lines.append(f"・{prefix}: {role_label}")
         role_summary = _role_summary_from_row(row)
-        if role_summary:
-            lines.append(f"  {role_summary}です。")
+        role_flow = _role_flow_phrase(row) or role_summary
+        if idx == 0:
+            if role_flow:
+                lines.append(f"・いちばん前に出やすいのは『{role_label}』で、{role_flow}傾向があります。")
+            else:
+                lines.append(f"・いちばん前に出やすいのは『{role_label}』という向きです。")
+        else:
+            if role_flow:
+                lines.append(f"・その横で『{role_label}』も重なり、{role_flow}向きが支えています。")
+            else:
+                lines.append(f"・その横で『{role_label}』の向きも少し重なっています。")
     return lines
-
 
 def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
     lines: List[str] = []
     thinking_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("thinking_patterns"))[:2]])
     if thinking_labels:
         quoted = "、".join([f"『{x}』" for x in thinking_labels])
-        lines.append(f"・思考では{quoted}が前に出やすく、まず意味や背景を整理しながら受け止めようとしやすい状態です。")
+        lines.append(f"・考え方では{quoted}が前に出やすく、まず意味や背景を確かめながら受け止めようとする流れがあります。")
 
     action_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("action_patterns"))[:2]])
     if action_labels:
         quoted = "、".join([f"『{x}』" for x in action_labels])
-        lines.append(f"・行動では{quoted}が選ばれやすく、反応の出方にもその傾向が表れています。")
+        lines.append(f"・動き方では{quoted}が選ばれやすく、外へ出る反応にもその傾向がにじみやすいようです。")
 
     target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
     if target_labels:
         quoted = "、".join([f"『{x}』" for x in target_labels])
-        lines.append(f"・主な対象として{quoted}が現れており、その場面でこの役割が立ち上がりやすい可能性があります。")
+        lines.append(f"・とくに{quoted}の場面でこの出方が立ち上がりやすく、置かれている文脈の影響も大きそうです。")
 
     generated = _take_list((basis or {}).get("generated_roles"))
     if generated:
@@ -2384,9 +2389,8 @@ def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
         desc = str(row.get("description") or "").strip()
         target = _target_label_from_row(row)
         if desc and target:
-            lines.append(f"・『{target}』に向かうときは、{desc}という流れになりやすい状態です。")
+            lines.append(f"・『{target}』に向くときは、{desc}ような関わり方になりやすいようです。")
     return lines
-
 
 def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
     lines: List[str] = []
@@ -2399,9 +2403,9 @@ def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
             continue
         used_targets.append(target)
         if role_label:
-            lines.append(f"・『{target}』の場面では『{role_label}』が前に出やすく、その役割から反応が組み立てられやすい状態です。")
+            lines.append(f"・『{target}』に触れると、まず『{role_label}』の向きで受け止め、そのあと行動を選びやすい流れがあります。")
         else:
-            lines.append(f"・『{target}』の場面で反応が立ち上がりやすい状態です。")
+            lines.append(f"・『{target}』に触れると、いったん内側で受け止めてから反応が立ち上がりやすいようです。")
         if len(lines) >= 2:
             break
 
@@ -2413,18 +2417,17 @@ def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
                 continue
             used_targets.append(target)
             if desc:
-                lines.append(f"・『{target}』に対しては、{desc}流れが立ち上がりやすい状態です。")
+                lines.append(f"・『{target}』に対しては、{desc}ような流れが立ち上がりやすいようです。")
             else:
-                lines.append(f"・『{target}』に対して反応が濃く立ち上がりやすい状態です。")
+                lines.append(f"・『{target}』に対して反応が濃く立ち上がりやすいようです。")
             if len(lines) >= 2:
                 break
 
     if not lines:
         target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
         for target in target_labels[:2]:
-            lines.append(f"・『{target}』がきっかけになると、役割の出方がはっきりしやすい状態です。")
+            lines.append(f"・『{target}』がきっかけになると、いまの出方がはっきり表れやすいようです。")
     return lines
-
 
 def _build_emotion_connection_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
     bridge = _take_dict((basis or {}).get("emotion_bridge"))
@@ -2434,17 +2437,16 @@ def _build_emotion_connection_lines_from_basis(basis: Dict[str, Any]) -> List[st
     if top_emotions:
         joined = " / ".join(top_emotions[:2])
         if core_label:
-            lines.append(f"・背景には {joined} の揺れが重なっており、そのときほど『{core_label}』がやや強く表れやすい可能性があります。")
+            lines.append(f"・背景には{joined}の揺れがあり、その気持ちをそのまま外に出すより『{core_label}』の出方に変えて持ちやすいようです。")
         else:
-            lines.append(f"・背景には {joined} の揺れが重なっている可能性があります。")
+            lines.append(f"・背景には{joined}の揺れが重なっているようです。")
     movement = str(bridge.get("movement_summary") or "").strip()
     if movement:
-        lines.append(f"・感情面では、{_excerpt(movement, 110)}")
+        lines.append(f"・気持ちの流れとしては、{_excerpt(movement, 110)}。")
     control = str(bridge.get("control_note") or "").strip()
     if control:
-        lines.append(f"・深い層では、{_excerpt(control, 110)}")
+        lines.append(f"・もう少し深いところでは、{_excerpt(control, 110)}。")
     return lines[:3]
-
 
 def _build_change_lines_v2(
     *,
@@ -2460,9 +2462,9 @@ def _build_change_lines_v2(
     cur_core = _role_label_from_row(_take_dict((basis or {}).get("core_role")))
     if prev_core and cur_core:
         if prev_core != cur_core:
-            lines.append(f"・前回は『{prev_core}』が中心でしたが、今回は『{cur_core}』が前に出ています。")
+            lines.append(f"・前回は『{prev_core}』寄りでしたが、今回は『{cur_core}』の出方が少し前に出ています。")
         else:
-            lines.append(f"・前回から引き続き、『{cur_core}』が中心にあります。")
+            lines.append(f"・前回から引き続き、『{cur_core}』に近い出方が中心です。")
 
     prev_targets = _unique_keep_order([_target_label_from_row(x) for x in _take_list(prev_basis.get("top_targets"))[:2]])
     cur_targets = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
@@ -2475,7 +2477,7 @@ def _build_change_lines_v2(
     prev_emotions = _unique_keep_order([str(x) for x in _take_list(_take_dict(prev_basis.get("emotion_bridge")).get("top_emotions"))[:2]])
     cur_emotions = _unique_keep_order([emo_label_ja(x) for x in _take_list(_take_dict((basis or {}).get("emotion_bridge")).get("top_emotions"))[:2]])
     if prev_emotions and cur_emotions and prev_emotions[0] != cur_emotions[0]:
-        lines.append(f"・感情の背景は『{prev_emotions[0]}』寄りから『{cur_emotions[0]}』寄りへ動いています。")
+        lines.append(f"・背景に重なりやすい感情は『{prev_emotions[0]}』寄りから『{cur_emotions[0]}』寄りへ動いています。")
 
     return lines[:3]
 

@@ -278,6 +278,12 @@ EMOTION_INPUT_CATEGORY_OPTIONS: Tuple[str, ...] = (
 # 「自己理解」はプライベート用途：フレンド通知/フレンドログ（friend_emotion_feed）対象外
 SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 
+INPUT_FEEDBACK_HINT_KEYWORDS: Tuple[Tuple[Tuple[str, ...], str], ...] = (
+    (("わかって", "分かって", "理解", "聞いて", "受け止め", "伝えたい"), "understood"),
+    (("整理", "まとめ", "言葉", "書き出", "整え", "落ち着"), "organize"),
+    (("引っか", "もや", "残っ", "まだ", "うまく", "苦しい"), "residual"),
+)
+
 
 def _ensure_supabase_config() -> None:
     """Supabase 接続情報が無い場合は 500 を返す。"""
@@ -414,6 +420,111 @@ def _normalize_categories(raw: Optional[Sequence[str]]) -> List[str]:
         raise HTTPException(status_code=400, detail=f"Invalid category: {sample}")
 
     return normalized
+
+
+def _strength_rank(value: Any) -> int:
+    raw = str(value or "").strip().lower()
+    return 3 if raw == "strong" else 2 if raw == "medium" else 1 if raw == "weak" else 0
+
+
+def _dominant_emotion_detail(emotion_details: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    best: Optional[Dict[str, Any]] = None
+    best_rank = -1
+    for item in emotion_details or []:
+        if not isinstance(item, dict):
+            continue
+        rank = _strength_rank(item.get("strength"))
+        if rank > best_rank:
+            best = item
+            best_rank = rank
+    return best
+
+
+def _memo_hint_mode(memo: Optional[str], memo_action: Optional[str]) -> str:
+    text = " ".join([
+        str(memo or "").strip(),
+        str(memo_action or "").strip(),
+    ]).strip()
+    if not text:
+        return ""
+    lower = text.lower()
+    for keywords, mode in INPUT_FEEDBACK_HINT_KEYWORDS:
+        if any(keyword in text or keyword in lower for keyword in keywords):
+            return mode
+    return ""
+
+
+def _has_emotion_type(emotion_details: Sequence[Dict[str, Any]], emotion_type: str) -> bool:
+    target = str(emotion_type or "").strip()
+    if not target:
+        return False
+    return any(str((item or {}).get("type") or "").strip() == target for item in emotion_details or [])
+
+
+def _build_input_feedback_comment(
+    *,
+    emotion_details: Sequence[Dict[str, Any]],
+    memo: Optional[str],
+    memo_action: Optional[str],
+) -> str:
+    details = [item for item in (emotion_details or []) if isinstance(item, dict)]
+    if not details:
+        return ""
+
+    dominant = _dominant_emotion_detail(details) or {}
+    dominant_type = str(dominant.get("type") or "").strip()
+    dominant_strength = str(dominant.get("strength") or "").strip().lower()
+    multiple = len(details) >= 2
+    has_calm = _has_emotion_type(details, "平穏")
+    has_sadness = _has_emotion_type(details, "悲しみ")
+    has_anxiety = _has_emotion_type(details, "不安")
+    has_anger = _has_emotion_type(details, "怒り")
+    memo_mode = _memo_hint_mode(memo, memo_action)
+
+    if dominant_type == SELF_INSIGHT_EMOTION_TYPE:
+        return "いまは気持ちを片づけるより、まず自分の状態を言葉にして確かめたくなっているのかもしれません。"
+
+    if has_calm and (has_sadness or has_anxiety or has_anger):
+        if has_sadness:
+            return "もう大きく崩れてはいないけれど、悲しさの余韻はまだ少し残っている感じがあります。"
+        if has_anxiety:
+            return "落ち着こうとしているのに、気持ちのほうはまだ少し先を気にしているようです。"
+        return "表では静かでも、内側にはまだ引っかかりが少し残っている感じがあります。"
+
+    if memo_mode == "understood":
+        return "解決したいというより、まずはこの感じを分かってほしい気持ちのほうが近そうです。"
+    if memo_mode == "organize":
+        return "いまは抱えたままにするより、少しでも自分の中で整理したかった状態に近そうです。"
+    if memo_mode == "residual":
+        return "もう言い切れるほど強くはなくても、まだ少しその気持ちの近くにいる感じがあります。"
+
+    if dominant_type == "悲しみ":
+        if dominant_strength == "strong":
+            return "いまは気持ちを切り替えたというより、抱えたまま少しずつ整えようとしている状態に近そうです。"
+        return "悲しさをなくしたいというより、いまの形のまま静かに受け止めようとしている感じがあります。"
+
+    if dominant_type == "不安":
+        if multiple:
+            return "落ち着こうとしていても、まだ気持ちのほうが先回りして確かめたがっているようです。"
+        return "先をはっきりさせたい気持ちよりも、まだ安心できる位置を探している感じが残っています。"
+
+    if dominant_type == "怒り":
+        if multiple:
+            return "強くぶつけたいというより、引っかかりをどう扱えばいいか探している状態だったのかもしれません。"
+        return "納得できない感じをそのままにできず、まず自分の中で線を引き直したかったのかもしれません。"
+
+    if dominant_type == "喜び":
+        if multiple:
+            return "気分が上がっているというより、安心や手応えが少し戻ってきている感覚のほうが近そうです。"
+        return "うれしさそのものより、少し力が抜けて前向きさが戻ってきた感じが前に出ています。"
+
+    if dominant_type == "平穏":
+        return "大きく揺れていないというより、自分の中で落ち着ける位置へ戻り直している途中に近そうです。"
+
+    if multiple:
+        return "気持ちが一つにまとまりきらないままでも、そのままにせず確かめたくなっていたのかもしれません。"
+
+    return "いまは気持ちをすぐに片づけるより、まずはこの状態を言葉にして受け止めたかったのかもしれません。"
 
 
 async def _insert_emotion_row(
@@ -809,11 +920,18 @@ class EmotionSubmitRequest(BaseModel):
             allow_population_by_field_name = True
 
 
+class EmotionSubmitInputFeedback(BaseModel):
+    comment_text: str = Field(..., description="入力直後に表示する短い受け取りコメント")
+
+
 class EmotionSubmitResponse(BaseModel):
     status: str = Field(..., description="'ok' 固定（現状）")
     id: Optional[Any] = Field(default=None, description="保存された emotions.id（あれば）")
     created_at: str = Field(..., description="保存時刻（ISO8601）")
-
+    input_feedback: Optional[EmotionSubmitInputFeedback] = Field(
+        default=None,
+        description="入力直後の1〜2文コメント（保存対象ではない即時フィードバック）",
+    )
 
 
 async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
@@ -1962,9 +2080,20 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             notify_friends=notify_friends,
         )
 
+        input_feedback_comment = _build_input_feedback_comment(
+            emotion_details=emotion_details,
+            memo=payload.memo,
+            memo_action=payload.memo_action,
+        )
+
         return EmotionSubmitResponse(
             status="ok",
             id=inserted.get("id"),
             created_at=inserted.get("created_at", created_at),
+            input_feedback=(
+                EmotionSubmitInputFeedback(comment_text=input_feedback_comment)
+                if input_feedback_comment
+                else None
+            ),
         )
 
