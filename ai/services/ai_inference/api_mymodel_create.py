@@ -62,6 +62,10 @@ from mymodel_entitlements import (
     filter_question_rows_for_build_tier,
     resolve_mymodel_entitlement,
 )
+from reflection_text_formatter import (
+    REFLECTION_DISPLAY_VERSION,
+    apply_reflection_storage_fields,
+)
 
 
 logger = logging.getLogger("mymodel_create_api")
@@ -95,6 +99,27 @@ INTRO_SECRET_TOGGLE_NOTE = (
     or ""
 ).strip() or "（シークレットメモのオンオフ切り替えは可能です。）"
 FREE_ACCESSIBLE_QUESTION_COUNT = int(FREE_TEMPLATE_QUESTION_LIMIT)
+
+ANSWER_SELECT_BASE = "question_id,answer_text,updated_at,is_secret"
+ANSWER_SELECT_WITH_DISPLAY = "question_id,answer_text,updated_at,is_secret,reflection_display_text,reflection_display_state,reflection_format_version,reflection_format_meta,reflection_display_updated_at"
+REFLECTION_DISPLAY_STORAGE_FIELDS = frozenset({
+    "reflection_display_text",
+    "reflection_display_state",
+    "reflection_format_version",
+    "reflection_format_meta",
+    "reflection_display_updated_at",
+})
+
+
+def _looks_like_missing_reflection_display_columns(detail: Any) -> bool:
+    txt = str(detail or "").lower()
+    return ("reflection_display_" in txt) or ("reflection_format_" in txt)
+
+
+def _strip_reflection_display_columns(row: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    return {k: v for k, v in row.items() if k not in REFLECTION_DISPLAY_STORAGE_FIELDS}
 
 
 def _ui_texts() -> Dict[str, str]:
@@ -221,17 +246,24 @@ async def _fetch_answers(*, user_id: str, question_ids: Optional[Set[int]] = Non
     if not uid:
         return {}
 
-    params: Dict[str, str] = {
-        "select": "question_id,answer_text,updated_at,is_secret",
+    base_params: Dict[str, str] = {
         "user_id": f"eq.{uid}",
     }
     # If filtering by question_ids, use `in.(...)`
     if question_ids:
         ids = sorted({int(x) for x in question_ids if isinstance(x, int) or str(x).strip().isdigit()})
         if ids:
-            params["question_id"] = f"in.({','.join(str(i) for i in ids)})"
+            base_params["question_id"] = f"in.({','.join(str(i) for i in ids)})"
 
-    resp = await _sb_get(f"/rest/v1/{ANSWERS_TABLE}", params=params)
+    params_v2 = dict(base_params)
+    params_v2["select"] = ANSWER_SELECT_WITH_DISPLAY
+    resp = await _sb_get(f"/rest/v1/{ANSWERS_TABLE}", params=params_v2)
+    if resp.status_code >= 300 and _looks_like_missing_reflection_display_columns(resp.text):
+        logger.warning("Reflection display columns not available on %s yet; falling back to base select", ANSWERS_TABLE)
+        params_v1 = dict(base_params)
+        params_v1["select"] = ANSWER_SELECT_BASE
+        resp = await _sb_get(f"/rest/v1/{ANSWERS_TABLE}", params=params_v1)
+
     if resp.status_code >= 300:
         logger.error("Supabase %s select failed: %s %s", ANSWERS_TABLE, resp.status_code, resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to load create answers")
@@ -405,8 +437,25 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         skipped_locked_ids: Set[int] = set()
         skipped_invalid_ids: Set[int] = set()
         skipped_empty_ids: Set[int] = set()
+        formatting_changed_ids: Set[int] = set()
+        formatting_masked_ids: Set[int] = set()
+        formatting_blocked_ids: Set[int] = set()
 
         now_iso = _now_iso()
+
+        def _build_formatted_row(*, qid: int, row: Dict[str, Any], raw_text: str, display_updated_at: Optional[str]) -> Dict[str, Any]:
+            formatted_row, display_result = apply_reflection_storage_fields(
+                row,
+                raw_text=raw_text,
+                display_updated_at=display_updated_at,
+            )
+            if bool(display_result.changed):
+                formatting_changed_ids.add(int(qid))
+            if str(display_result.display_state) == "masked":
+                formatting_masked_ids.add(int(qid))
+            elif str(display_result.display_state) == "blocked":
+                formatting_blocked_ids.add(int(qid))
+            return formatted_row
 
         for a in (body.answers or []):
             try:
@@ -450,12 +499,17 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 if desired_secret == prev_secret:
                     continue
                 saved_payload.append(
-                    {
-                        "user_id": user_id,
-                        "question_id": qid,
-                        "answer_text": prev_text,
-                        "is_secret": bool(desired_secret),
-                    }
+                    _build_formatted_row(
+                        qid=qid,
+                        row={
+                            "user_id": user_id,
+                            "question_id": qid,
+                            "answer_text": prev_text,
+                            "is_secret": bool(desired_secret),
+                        },
+                        raw_text=prev_text,
+                        display_updated_at=now_iso,
+                    )
                 )
                 continue
 
@@ -463,12 +517,17 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 if desired_secret == prev_secret:
                     continue
                 saved_payload.append(
-                    {
-                        "user_id": user_id,
-                        "question_id": qid,
-                        "answer_text": prev_text,
-                        "is_secret": bool(desired_secret),
-                    }
+                    _build_formatted_row(
+                        qid=qid,
+                        row={
+                            "user_id": user_id,
+                            "question_id": qid,
+                            "answer_text": prev_text,
+                            "is_secret": bool(desired_secret),
+                        },
+                        raw_text=prev_text,
+                        display_updated_at=now_iso,
+                    )
                 )
                 continue
 
@@ -496,7 +555,14 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             if has_prev and new_text_stripped == prev_text and desired_secret != prev_secret:
                 row.pop("updated_at", None)
 
-            saved_payload.append(row)
+            saved_payload.append(
+                _build_formatted_row(
+                    qid=qid,
+                    row=row,
+                    raw_text=str(new_text_stripped or ""),
+                    display_updated_at=now_iso,
+                )
+            )
 
         # Apply deletes first (so clearing + re-saving in same batch behaves deterministically).
         deleted = 0
@@ -525,6 +591,15 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 json=saved_payload,
                 prefer="resolution=merge-duplicates,return=minimal",
             )
+            if resp.status_code not in (200, 201, 204) and _looks_like_missing_reflection_display_columns(resp.text):
+                logger.warning("Reflection display columns not available on %s yet; retrying save without display fields", ANSWERS_TABLE)
+                fallback_payload = [_strip_reflection_display_columns(row) for row in saved_payload]
+                resp = await _sb_post(
+                    f"/rest/v1/{ANSWERS_TABLE}",
+                    params={"on_conflict": "user_id,question_id"},
+                    json=fallback_payload,
+                    prefer="resolution=merge-duplicates,return=minimal",
+                )
             if resp.status_code not in (200, 201, 204):
                 logger.error("Supabase %s upsert failed: %s %s", ANSWERS_TABLE, resp.status_code, resp.text[:1500])
                 raise HTTPException(status_code=502, detail="Failed to save create answers")
@@ -619,6 +694,15 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 "locked": locked_items,
                 "invalid": invalid_items,
                 "create_state": create_state,
+                "reflection_formatting": {
+                    "version": REFLECTION_DISPLAY_VERSION,
+                    "changed_question_ids": sorted(formatting_changed_ids),
+                    "masked_question_ids": sorted(formatting_masked_ids),
+                    "blocked_question_ids": sorted(formatting_blocked_ids),
+                    "changed_count": int(len(formatting_changed_ids)),
+                    "masked_count": int(len(formatting_masked_ids)),
+                    "blocked_count": int(len(formatting_blocked_ids)),
+                },
                 "ui_texts": _ui_texts(),
             },
         )

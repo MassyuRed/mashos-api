@@ -395,14 +395,18 @@ def test_mymodel_create_answers_free_blocks_text_edit_but_allows_secret_toggle(c
     toggle_body = response_toggle.json()
     assert toggle_body["status"] == "ok"
     assert toggle_body["saved"] == 1
-    assert saved_batches == [
-        {
-            "user_id": "user-999",
-            "question_id": 1,
-            "answer_text": "Existing answer",
-            "is_secret": True,
-        }
-    ]
+    assert len(saved_batches) == 1
+    saved_row = saved_batches[0]
+    assert saved_row["user_id"] == "user-999"
+    assert saved_row["question_id"] == 1
+    assert saved_row["answer_text"] == "Existing answer"
+    assert saved_row["is_secret"] is True
+    assert saved_row["reflection_display_text"] == "Existing answer"
+    assert saved_row["reflection_display_state"] == "ready"
+    assert saved_row["reflection_format_version"] == "reflection.display.v1"
+    assert isinstance(saved_row.get("reflection_format_meta"), dict)
+    assert saved_row["reflection_format_meta"].get("display_state") == "ready"
+    assert isinstance(saved_row.get("reflection_display_updated_at"), str)
 
 
 def test_myweb_unread_status_matches_snapshot_shape(client, monkeypatch):

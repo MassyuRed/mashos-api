@@ -42,6 +42,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from reflection_text_formatter import resolve_create_reflection_display, sanitize_reflection_context_text
+
 # Downstream jobs are best-effort.
 try:
     from astor_job_queue import enqueue_job  # type: ignore
@@ -671,12 +673,20 @@ async def fetch_emotions_for_premium_reflection(
 
 
 async def fetch_mymodel_create_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
-    return await _fetch_optional_rows_by_user(
+    rows = await _fetch_optional_rows_by_user(
         table=MYMODEL_CREATE_ANSWERS_TABLE,
         user_id=user_id,
         user_id_column=MYMODEL_CREATE_USER_ID_COLUMN,
         include_secret=include_secret,
     )
+    if include_secret:
+        return rows
+    out: List[Dict[str, Any]] = []
+    for row in rows or []:
+        public_row = _public_mymodel_create_row(row)
+        if public_row is not None:
+            out.append(public_row)
+    return out
 
 
 async def fetch_deep_insight_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
@@ -689,21 +699,27 @@ async def fetch_deep_insight_rows_for_self_structure(user_id: str, *, include_se
 
 
 async def fetch_echo_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
-    return await _fetch_optional_rows_by_user(
+    rows = await _fetch_optional_rows_by_user(
         table=ECHO_INPUTS_TABLE,
         user_id=user_id,
         user_id_column=ECHO_USER_ID_COLUMN,
         include_secret=include_secret,
     )
+    if include_secret:
+        return rows
+    return [_sanitize_public_reaction_context_row(row) for row in (rows or []) if isinstance(row, dict)]
 
 
 async def fetch_discovery_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
-    return await _fetch_optional_rows_by_user(
+    rows = await _fetch_optional_rows_by_user(
         table=DISCOVERY_INPUTS_TABLE,
         user_id=user_id,
         user_id_column=DISCOVERY_USER_ID_COLUMN,
         include_secret=include_secret,
     )
+    if include_secret:
+        return rows
+    return [_sanitize_public_reaction_context_row(row) for row in (rows or []) if isinstance(row, dict)]
 
 
 async def fetch_today_question_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
@@ -713,6 +729,30 @@ async def fetch_today_question_rows_for_self_structure(user_id: str, *, include_
         user_id_column="user_id",
         include_secret=include_secret,
     )
+
+
+def _public_mymodel_create_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    result = resolve_create_reflection_display(row)
+    display_text = str(result.display_text or "").strip() if str(result.display_state) != "blocked" else ""
+    if not display_text:
+        return None
+    out = dict(row)
+    out["answer_text"] = display_text
+    out["reflection_display_text"] = display_text
+    out["reflection_display_state"] = result.display_state
+    out["reflection_format_version"] = result.version
+    out["reflection_format_meta"] = result.as_storage_meta()
+    return out
+
+
+def _sanitize_public_reaction_context_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {}
+    out = dict(row)
+    out["context_answer"] = sanitize_reflection_context_text(row.get("context_answer"))
+    return out
 
 
 def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -2311,6 +2351,15 @@ async def generate_and_store_material_snapshots(
     internal_material_meta.extend(_material_meta_rows_from_rows("today_question", internal_today_question_rows))
     internal_material_meta = _dedupe_material_meta_rows(internal_material_meta)
 
+    public_material_meta: List[Dict[str, Any]] = []
+    public_material_meta.extend(_material_meta_rows_from_rows("emotion_input", public_emotion_rows))
+    public_material_meta.extend(_material_meta_rows_from_rows("mymodel_create", public_mymodel_rows))
+    public_material_meta.extend(_material_meta_rows_from_rows("deep_insight", public_deep_rows))
+    public_material_meta.extend(_material_meta_rows_from_rows("echo", public_echo_rows))
+    public_material_meta.extend(_material_meta_rows_from_rows("discovery", public_discovery_rows))
+    public_material_meta.extend(_material_meta_rows_from_rows("today_question", public_today_question_rows))
+    public_material_meta = _dedupe_material_meta_rows(public_material_meta)
+
     internal_hash = compute_source_hash_from_material_meta(
         user_id=uid,
         scope=sc,
@@ -2321,7 +2370,7 @@ async def generate_and_store_material_snapshots(
         user_id=uid,
         scope=sc,
         snapshot_type="public",
-        meta_rows=internal_material_meta,
+        meta_rows=public_material_meta,
     )
 
     internal_views = _build_global_views(
@@ -2346,7 +2395,7 @@ async def generate_and_store_material_snapshots(
         premium_reflection_view=premium_reflection_view,
     )
     public_summary = _build_global_summary(
-        material_meta=[r for r in internal_material_meta if not _row_is_secret(r)],
+        material_meta=public_material_meta,
         emotion_total_rows=emotion_total_rows,
         emotion_public_rows=emotion_public_rows,
         emotion_secret_rows=emotion_secret_rows,
@@ -2427,7 +2476,7 @@ async def generate_and_store_material_snapshots(
         "public": {"source_hash": public_hash, "inserted": bool(inserted_public)},
         "counts": {
             "total": material_total_rows,
-            "public": material_total_rows - material_secret_rows,
+            "public": len(public_material_meta),
             "secret": material_secret_rows,
             "source_counts": (internal_self_structure_view or {}).get("source_counts") or {},
             "self_structure_items": len((internal_self_structure_view or {}).get("items") or []),

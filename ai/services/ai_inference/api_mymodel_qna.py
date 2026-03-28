@@ -18,7 +18,7 @@ To keep this change set small and deterministic, v1 uses **MyModel Create**
 questions + answers as the Q&A corpus.
 
 - "title" := mymodel_create_questions.question_text
-- "body"  := mymodel_create_answers.answer_text (for the target user)
+- "body"  := mymodel_create_answers.reflection_display_text (fallback: formatted answer_text)
 
 Popularity (views/resonances) is aggregated by q_key.
 Unread ("New") is tracked per viewer x q_instance_id.
@@ -43,6 +43,7 @@ from api_emotion_submit import (
 )
 from api_mymodel_create import _fetch_answers as _fetch_create_answers
 from api_mymodel_create import _fetch_questions as _fetch_create_questions
+from reflection_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from publish_governance import history_retention_bounds_for_query, normalize_tier_str
@@ -579,6 +580,16 @@ def _is_secret_flag(value: Any) -> bool:
     return False
 
 
+def _public_create_body_from_answer_row(answer_row: Any) -> Optional[str]:
+    if not isinstance(answer_row, dict):
+        return None
+    if _is_secret_flag(answer_row.get("is_secret")):
+        return None
+    body = get_public_create_reflection_text(answer_row)
+    body_s = str(body or "").strip()
+    return body_s or None
+
+
 async def _fetch_secret_question_ids(*, target_user_id: str, question_ids: Set[int]) -> Set[int]:
     """Return question_ids that are marked as secret for the target user."""
     uid = str(target_user_id or "").strip()
@@ -700,12 +711,12 @@ async def _fetch_following_set(*, viewer_user_id: str, owner_ids: Set[str]) -> S
 
 
 async def _fetch_holder_user_ids_for_question(*, question_id: int, scan_limit: int) -> List[str]:
-    """Return user_id list (deduped, ordered) who answered the question."""
+    """Return user_id list (deduped, ordered) who answered the question and remain publishable."""
     qid = int(question_id)
     resp = await _sb_get(
         "/rest/v1/mymodel_create_answers",
         params={
-            "select": "user_id,updated_at",
+            "select": "*",
             "question_id": f"eq.{qid}",
             "answer_text": "not.is.null",
             "order": "updated_at.desc",
@@ -719,6 +730,10 @@ async def _fetch_holder_user_ids_for_question(*, question_id: int, scan_limit: i
     ids_raw: List[str] = []
     if isinstance(rows, list):
         for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if not _public_create_body_from_answer_row(r):
+                continue
             uid = str((r or {}).get("user_id") or "").strip()
             if uid:
                 ids_raw.append(uid)
@@ -1821,6 +1836,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         recent_holder_ids = await _fetch_holder_user_ids_for_question(
             question_id=int(question_id), scan_limit=scan_limit
         )
+        public_holder_id_set = set(recent_holder_ids)
+        metric_ordered_ids = [uid for uid in metric_ordered_ids if str(uid or "").strip() in public_holder_id_set]
 
         # Merge (unique) with size cap = scan_limit (avoid huge IN filters downstream)
         holder_ids: List[str] = []
@@ -2013,10 +2030,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
-        is_secret = _is_secret_flag(a.get("is_secret"))
-        if is_secret:
-            raise HTTPException(status_code=404, detail="Answer not found")
-        body = str(a.get("answer_text") or "").strip()
+        body = _public_create_body_from_answer_row(a)
         if not body:
             raise HTTPException(status_code=404, detail="Answer not found")
 
@@ -3465,9 +3479,7 @@ async def _resolve_qna_context_for_reaction(
 
     answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
     a = answers.get(int(qid)) or {}
-    if _is_secret_flag(a.get("is_secret")):
-        raise HTTPException(status_code=404, detail="Answer not found")
-    body = str(a.get("answer_text") or "").strip()
+    body = _public_create_body_from_answer_row(a)
     if not body:
         raise HTTPException(status_code=404, detail="Answer not found")
 
@@ -3512,9 +3524,7 @@ async def _fetch_create_list_items(
     visible_answer_ids: Set[int] = set()
     for qid in ordered_qids:
         row = answers.get(int(qid)) or {}
-        if _is_secret_flag(row.get("is_secret")):
-            continue
-        body = str(row.get("answer_text") or "").strip()
+        body = _public_create_body_from_answer_row(row)
         if not body:
             continue
         visible_answer_ids.add(int(qid))
@@ -3642,9 +3652,7 @@ async def _fetch_create_unread_counts(
     visible_instance_ids: Set[str] = set()
     for qid in question_ids:
         answer_row = answers.get(int(qid)) or {}
-        if _is_secret_flag(answer_row.get("is_secret")):
-            continue
-        answer_text = str(answer_row.get("answer_text") or "").strip()
+        answer_text = _public_create_body_from_answer_row(answer_row)
         if not answer_text:
             continue
         visible_instance_ids.add(f"{target_user_id}:{int(qid)}")
@@ -3767,22 +3775,23 @@ async def _build_saved_create_items(
     if not visible_rows:
         return []
 
-    secret_pairs: Set[Tuple[str, int]] = set()
+    public_pairs: Set[Tuple[str, int]] = set()
     for owner_id, qids in qids_by_owner.items():
         try:
-            secret_qids = await _fetch_secret_question_ids(target_user_id=str(owner_id), question_ids=set(qids))
+            owner_answers = await _fetch_create_answers(user_id=str(owner_id), question_ids=set(qids))
         except Exception as exc:
-            logger.warning("secret check failed (saved reflections): %s", exc)
-            secret_qids = set(qids)
-        for qid_val in (secret_qids or set()):
-            secret_pairs.add((str(owner_id), int(qid_val)))
+            logger.warning("public reflection check failed (saved reflections): %s", exc)
+            owner_answers = {}
+        for qid_val in qids:
+            answer_row = owner_answers.get(int(qid_val)) if isinstance(owner_answers, dict) else None
+            if _public_create_body_from_answer_row(answer_row):
+                public_pairs.add((str(owner_id), int(qid_val)))
 
-    if secret_pairs:
-        visible_rows = [
-            row
-            for row in visible_rows
-            if (str(row[1]), int(row[2])) not in secret_pairs
-        ]
+    visible_rows = [
+        row
+        for row in visible_rows
+        if (str(row[1]), int(row[2])) in public_pairs
+    ]
     if not visible_rows:
         return []
 
@@ -4052,9 +4061,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             raise HTTPException(status_code=404, detail="Question not found")
         answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
-        if _is_secret_flag(a.get("is_secret")):
-            raise HTTPException(status_code=404, detail="Answer not found")
-        body = str(a.get("answer_text") or "").strip()
+        body = _public_create_body_from_answer_row(a)
         if not body:
             raise HTTPException(status_code=404, detail="Answer not found")
         qk = _q_key_for_question_id(int(qid))
