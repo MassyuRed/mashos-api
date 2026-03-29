@@ -26,9 +26,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Dict, Optional
 
 import httpx
+
+from request_metrics import record_supabase_call
 
 logger = logging.getLogger("supabase_client")
 
@@ -210,8 +213,9 @@ async def sb_request(
     retry_count = _build_retry_count()
 
     for attempt in range(retry_count + 1):
+        started = time.perf_counter()
         try:
-            return await client.request(
+            resp = await client.request(
                 method=method_upper,
                 url=url,
                 headers=h,
@@ -219,7 +223,16 @@ async def sb_request(
                 json=json,
                 timeout=timeout,
             )
+            record_supabase_call(
+                elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                status_code=resp.status_code,
+            )
+            return resp
         except (httpx.TimeoutException, httpx.TransportError) as exc:
+            record_supabase_call(
+                elapsed_ms=(time.perf_counter() - started) * 1000.0,
+                error=type(exc).__name__,
+            )
             if (not _is_retryable_method(method_upper)) or attempt >= retry_count:
                 raise
             delay = _retry_delay_seconds(attempt)

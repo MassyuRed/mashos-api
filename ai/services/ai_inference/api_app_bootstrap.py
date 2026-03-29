@@ -74,18 +74,16 @@ def _startup_fallback_payload(
     detail: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
-        "schema_version": "startup_snapshot.v2",
+        "schema_version": "startup_snapshot.v1",
         "user_id": str(user_id or "").strip(),
         "client_meta": dict(client_meta or {}),
         "generated_at": _iso_utc(),
-        "source_versions": {"schema": "startup_snapshot.v2"},
+        "source_versions": {"schema": "startup_snapshot.v1"},
         "flags": {
             "has_any_friends_unread": False,
             "has_any_myweb_unread": False,
             "has_popup_notice": False,
             "today_question_answered": False,
-            "has_any_mymodel_unread": False,
-            "has_today_question_popup": False,
         },
         "sections": {},
         "errors": {"startup": str(detail or "unavailable")},

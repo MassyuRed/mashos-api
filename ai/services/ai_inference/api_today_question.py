@@ -347,22 +347,6 @@ async def get_today_question_status_payload_for_user(
     return await get_or_compute(cache_key, TODAY_QUESTION_STATUS_CACHE_TTL_SECONDS, _build_payload)
 
 
-async def get_today_question_popup_payload_for_user(
-    user_id: str,
-    *,
-    timezone_name: Optional[str] = None,
-) -> Dict[str, Any]:
-    payload = dict(await get_today_question_current_payload_for_user(user_id, timezone_name=timezone_name) or {})
-    question = payload.get("question") if isinstance(payload.get("question"), dict) else None
-    answer_status = str(payload.get("answer_status") or "unanswered")
-    is_answered_today = answer_status == "answered"
-    has_current_question = bool(question) or is_answered_today
-    payload["has_current_question"] = has_current_question
-    payload["should_prompt"] = bool(question and not is_answered_today)
-    payload["is_answered_today"] = is_answered_today
-    return payload
-
-
 def register_today_question_routes(app: FastAPI) -> None:
     @app.get("/today-question/current", response_model=TodayQuestionCurrentResponse)
     async def today_question_current(
