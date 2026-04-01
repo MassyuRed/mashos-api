@@ -34,11 +34,6 @@
       "recognized_product_ids": {
         "ios": ["cocolon_plus_monthly"],
         "android": ["emlis"]
-      },
-      "trial": {
-        "enabled": true,
-        "subtitle": "１ヵ月無料トライアル（初回限定）",
-        "android_offer_tag": "trial_1m_new_user"
       }
     },
     "premium": {
@@ -59,11 +54,6 @@
       "recognized_product_ids": {
         "ios": [],
         "android": []
-      },
-      "trial": {
-        "enabled": false,
-        "subtitle": null,
-        "android_offer_tag": null
       }
     }
   }

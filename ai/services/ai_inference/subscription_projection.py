@@ -13,7 +13,6 @@ from subscription import (
     normalize_subscription_tier,
 )
 from subscription_store import get_subscription_tier_for_user, set_subscription_tier_for_user
-from subscription_trial_store import get_trial_state, mark_trial_consumed
 from supabase_client import (
     sb_get as _sb_get_shared,
     sb_patch as _sb_patch_shared,
@@ -23,7 +22,6 @@ from supabase_client import (
 
 logger = logging.getLogger("subscription_projection")
 
-PLUS_TRIAL_KEY = "plus_intro_v1"
 CLAIMS_TABLE = "subscription_purchase_claims"
 ENTITLEMENTS_TABLE = "subscription_entitlements"
 NOTIFICATION_LOG_TABLE = "store_notification_log"
@@ -77,9 +75,6 @@ class CanonicalSubscriptionState:
     auto_renew: bool = False
     store: Optional[str] = None
     product_id: Optional[str] = None
-    plus_trial_eligible: bool = False
-    plus_trial_consumed: bool = False
-    plus_trial_consumed_at: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -92,9 +87,6 @@ class CanonicalSubscriptionState:
             "auto_renew": self.auto_renew,
             "store": self.store,
             "product_id": self.product_id,
-            "plus_trial_eligible": self.plus_trial_eligible,
-            "plus_trial_consumed": self.plus_trial_consumed,
-            "plus_trial_consumed_at": self.plus_trial_consumed_at,
         }
 
 
@@ -389,20 +381,6 @@ async def find_purchase_claim(
     return None
 
 
-async def get_plus_trial_payload(user_id: str, tier: SubscriptionTier) -> tuple[bool, bool, Optional[str]]:
-    try:
-        trial_state = await get_trial_state(user_id, PLUS_TRIAL_KEY)
-        plus_trial_consumed = bool(trial_state.get("consumed"))
-        plus_trial_consumed_at = trial_state.get("consumed_at")
-    except Exception as exc:
-        logger.warning("Failed to read plus trial state: %s", exc)
-        plus_trial_consumed = True
-        plus_trial_consumed_at = None
-
-    plus_trial_eligible = (tier == SubscriptionTier.FREE) and (not plus_trial_consumed)
-    return plus_trial_eligible, plus_trial_consumed, plus_trial_consumed_at
-
-
 async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
     profile_tier = await get_subscription_tier_for_user(user_id)
 
@@ -438,7 +416,6 @@ async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
         product_id = None
 
     modes = [m.value for m in allowed_myprofile_modes_for_tier(tier)]
-    plus_trial_eligible, plus_trial_consumed, plus_trial_consumed_at = await get_plus_trial_payload(user_id, tier)
 
     return CanonicalSubscriptionState(
         user_id=user_id,
@@ -450,9 +427,6 @@ async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
         auto_renew=auto_renew,
         store=store,
         product_id=product_id,
-        plus_trial_eligible=plus_trial_eligible,
-        plus_trial_consumed=plus_trial_consumed,
-        plus_trial_consumed_at=plus_trial_consumed_at,
     )
 
 
@@ -566,24 +540,7 @@ async def project_profile_tier(user_id: str) -> CanonicalSubscriptionState:
 async def persist_verified_purchase(*, user_id: str, verified_purchase: VerifiedPurchase) -> CanonicalSubscriptionState:
     await upsert_purchase_claim(user_id=user_id, verified_purchase=verified_purchase)
     await upsert_entitlement_from_verified_purchase(user_id=user_id, verified_purchase=verified_purchase)
-    snapshot = await project_profile_tier(user_id)
-
-    final_tier = normalize_subscription_tier(snapshot.subscription_tier, default=SubscriptionTier.FREE)
-    if final_tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM):
-        try:
-            await mark_trial_consumed(
-                user_id=user_id,
-                trial_key=PLUS_TRIAL_KEY,
-                platform=verified_purchase.store,
-                product_id=verified_purchase.product_id,
-                store_ref=verified_purchase.store_ref,
-                source="subscription_store_verified",
-            )
-            snapshot = await build_subscription_state(user_id)
-        except Exception as exc:
-            logger.warning("Failed to mark plus trial consumed: %s", exc)
-
-    return snapshot
+    return await project_profile_tier(user_id)
 
 
 async def resolve_user_id_for_purchase(

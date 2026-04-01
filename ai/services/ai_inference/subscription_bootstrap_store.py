@@ -279,11 +279,6 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
                 "ios": plus_ios or [_string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS"))] if _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS")) else [],
                 "android": plus_android or [_string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID"))] if _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID")) else [],
             },
-            "trial": {
-                "enabled": True,
-                "subtitle": "１ヵ月無料トライアル（初回限定）",
-                "android_offer_tag": _string_or_none(_first_env("COCOLON_SUBSCRIPTION_PLUS_ANDROID_OFFER_TAG", "EXPO_PUBLIC_IAP_PLUS_TRIAL_OFFER_TAG_ANDROID")) or "trial_1m_new_user",
-            },
         },
         "premium": {
             "visible": True,
@@ -311,11 +306,6 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "recognized_product_ids": {
                 "ios": premium_ios,
                 "android": premium_android,
-            },
-            "trial": {
-                "enabled": False,
-                "subtitle": None,
-                "android_offer_tag": None,
             },
         },
     }
@@ -366,11 +356,6 @@ def _merge_plan_catalog(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str
         target["note_lines"] = _string_list(row.get("note_lines_json"), target.get("note_lines") or [])
         target["cta_label"] = _string_or_none(row.get("cta_label")) or target.get("cta_label")
         target["recommended"] = _bool(row.get("recommended"), default=target.get("recommended", False))
-        target_trial = dict(target.get("trial") or {})
-        target_trial["enabled"] = _bool(row.get("trial_enabled"), default=target_trial.get("enabled", False))
-        target_trial["subtitle"] = _string_or_none(row.get("trial_subtitle")) or target_trial.get("subtitle")
-        target_trial["android_offer_tag"] = _string_or_none(row.get("android_offer_tag")) or target_trial.get("android_offer_tag")
-        target["trial"] = target_trial
         catalog[plan_code] = target
     return catalog
 
@@ -421,11 +406,6 @@ def _plan_public(plan: Mapping[str, Any]) -> Dict[str, Any]:
         "recognized_product_ids": {
             "ios": _string_list((recognized or {}).get("ios"), []),
             "android": _string_list((recognized or {}).get("android"), []),
-        },
-        "trial": {
-            "enabled": _bool((plan.get("trial") or {}).get("enabled"), default=False),
-            "subtitle": _string_or_none((plan.get("trial") or {}).get("subtitle")),
-            "android_offer_tag": _string_or_none((plan.get("trial") or {}).get("android_offer_tag")),
         },
     }
 

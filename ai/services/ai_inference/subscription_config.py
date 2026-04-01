@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional
 
 APPLE_WEBHOOK_PATH = "/subscription/webhooks/apple"
 GOOGLE_WEBHOOK_PATH = "/subscription/webhooks/google"
-DEFAULT_ANDROID_PLUS_TRIAL_OFFER_TAG = "trial_1m_new_user"
-
 LEGACY_FRONTEND_ENV_ALIASES = {
     "EXPO_PUBLIC_IAP_IOS_PLUS_PRODUCT_ID": [
         "EXPO_PUBLIC_IAP_IOS_PLUS_PRODUCT_IDS",
@@ -33,7 +31,6 @@ EXPECTED_FRONTEND_ENV_NAMES = [
     "EXPO_PUBLIC_IAP_IOS_PREMIUM_PRODUCT_ID",
     "EXPO_PUBLIC_IAP_ANDROID_PLUS_PRODUCT_ID",
     "EXPO_PUBLIC_IAP_ANDROID_PREMIUM_PRODUCT_ID",
-    "EXPO_PUBLIC_IAP_PLUS_TRIAL_OFFER_TAG_ANDROID",
     "EXPO_PUBLIC_ANDROID_PACKAGE_NAME",
     "EXPO_PUBLIC_IOS_BUNDLE_ID",
     "EXPO_PUBLIC_TERMS_URL",
@@ -140,13 +137,6 @@ def get_subscription_product_ids(platform: Optional[str], plan: Optional[str]) -
     if plat == "android" and normalized_plan == "premium":
         return get_android_premium_product_ids()
     return []
-
-
-def get_plus_trial_offer_tag_android() -> str:
-    return _first_env(
-        "EXPO_PUBLIC_IAP_PLUS_TRIAL_OFFER_TAG_ANDROID",
-        "COCOLON_IAP_ANDROID_PLUS_TRIAL_OFFER_TAG",
-    ) or DEFAULT_ANDROID_PLUS_TRIAL_OFFER_TAG
 
 
 def get_apple_private_key_source() -> str:
@@ -315,9 +305,6 @@ def _frontend_public_snapshot() -> Dict[str, Optional[str]]:
                 "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID",
             )
         ),
-        "EXPO_PUBLIC_IAP_PLUS_TRIAL_OFFER_TAG_ANDROID": clean_optional_str(
-            _first_env("EXPO_PUBLIC_IAP_PLUS_TRIAL_OFFER_TAG_ANDROID") or DEFAULT_ANDROID_PLUS_TRIAL_OFFER_TAG
-        ),
         "EXPO_PUBLIC_ANDROID_PACKAGE_NAME": clean_optional_str(_first_env("EXPO_PUBLIC_ANDROID_PACKAGE_NAME")),
         "EXPO_PUBLIC_IOS_BUNDLE_ID": clean_optional_str(_first_env("EXPO_PUBLIC_IOS_BUNDLE_ID")),
         "EXPO_PUBLIC_TERMS_URL": clean_optional_str(_first_env("EXPO_PUBLIC_TERMS_URL")),
@@ -397,7 +384,6 @@ def get_subscription_config_audit_snapshot() -> Dict[str, Any]:
             "package_name": clean_optional_str(_first_env("COCOLON_IAP_ANDROID_PACKAGE_NAME", "GOOGLE_PLAY_PACKAGE_NAME", "ANDROID_PACKAGE_NAME", "EXPO_PUBLIC_ANDROID_PACKAGE_NAME")),
             "plus_product_ids": android_plus,
             "premium_product_ids": android_premium,
-            "plus_trial_offer_tag": get_plus_trial_offer_tag_android(),
             "service_account_source": get_google_service_account_source(),
             "client_email_preview": get_google_client_email_preview(),
             "token_uri": get_google_token_uri(),

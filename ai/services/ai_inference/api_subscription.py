@@ -59,9 +59,6 @@ class SubscriptionMeResponse(BaseModel):
     auto_renew: bool = Field(default=False, description="Whether auto renew is currently enabled")
     store: Optional[str] = Field(default=None, description="ios | android | null")
     product_id: Optional[str] = Field(default=None, description="Current product id when known")
-    plus_trial_eligible: bool = Field(..., description="Whether the user can be shown the Plus free trial")
-    plus_trial_consumed: bool = Field(..., description="Whether the user has already used the Plus free trial")
-    plus_trial_consumed_at: Optional[str] = Field(default=None, description="When the Plus free trial was first consumed")
 
 
 class SubscriptionUpdateRequest(BaseModel):
@@ -83,9 +80,6 @@ class SubscriptionUpdateResponse(BaseModel):
     auto_renew: bool = Field(default=False, description="Whether auto renew is currently enabled")
     store: Optional[str] = Field(default=None, description="ios | android | null")
     product_id: Optional[str] = Field(default=None, description="Resolved product id when known")
-    plus_trial_eligible: bool = Field(..., description="Whether the user can be shown the Plus free trial")
-    plus_trial_consumed: bool = Field(..., description="Whether the user has already used the Plus free trial")
-    plus_trial_consumed_at: Optional[str] = Field(default=None, description="When the Plus free trial was first consumed")
     updated: bool = Field(..., description="True if the projection ran successfully")
     verification: str = Field(..., description="verification / sync mode")
 
@@ -105,12 +99,6 @@ class SubscriptionBootstrapPolicy(BaseModel):
     review_notice: Optional[str] = None
 
 
-class SubscriptionBootstrapTrial(BaseModel):
-    enabled: bool = False
-    subtitle: Optional[str] = None
-    android_offer_tag: Optional[str] = None
-
-
 class SubscriptionBootstrapPlan(BaseModel):
     visible: bool = True
     purchasable: bool = False
@@ -124,7 +112,6 @@ class SubscriptionBootstrapPlan(BaseModel):
     recommended: bool = False
     purchase_product_id: Dict[str, Optional[str]] = Field(default_factory=dict)
     recognized_product_ids: Dict[str, list[str]] = Field(default_factory=dict)
-    trial: SubscriptionBootstrapTrial = Field(default_factory=SubscriptionBootstrapTrial)
 
 
 class SubscriptionBootstrapResponse(BaseModel):

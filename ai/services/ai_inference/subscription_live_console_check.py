@@ -23,7 +23,6 @@ from subscription_config import (
     get_apple_private_key,
     get_ios_plus_product_ids,
     get_ios_premium_product_ids,
-    get_plus_trial_offer_tag_android,
 )
 from subscription_release_config import _require_admin_bearer
 from subscription_verifier_android import _get_google_access_token
@@ -289,57 +288,6 @@ def _bool_from_strings(*values: Any, equals: Optional[Iterable[str]] = None) -> 
     return False
 
 
-def _apple_intro_offer_summary(offer: Dict[str, Any]) -> Dict[str, Any]:
-    attrs = offer.get("attributes") if isinstance(offer.get("attributes"), dict) else {}
-    mode = _first_non_empty(attrs.get("offerMode"), attrs.get("mode"), attrs.get("paymentMode"))
-    period = _first_non_empty(
-        attrs.get("subscriptionPeriod"),
-        attrs.get("duration"),
-        attrs.get("offerDuration"),
-        attrs.get("durationValue"),
-    )
-    periods = attrs.get("numberOfPeriods")
-    joined = " ".join([str(v) for v in attrs.values() if v is not None]).upper()
-    free_trial_detected = "FREE" in joined or "TRIAL" in joined or mode.upper() in {"FREE_TRIAL", "FREE"}
-    one_month_detected = "P1M" in joined or "ONE_MONTH" in joined or ("MONTH" in joined and "1" in joined)
-    return {
-        "id": _clean(offer.get("id")) or None,
-        "mode": mode or None,
-        "period": period or None,
-        "number_of_periods": periods,
-        "free_trial_detected": free_trial_detected,
-        "one_month_detected": one_month_detected,
-        "raw_attributes": attrs,
-    }
-
-
-def _gplay_offer_has_free_trial(offer: Dict[str, Any]) -> bool:
-    phases = offer.get("phases") or []
-    if not isinstance(phases, list):
-        return False
-    for phase in phases:
-        if not isinstance(phase, dict):
-            continue
-        regional_configs = phase.get("regionalConfigs") or []
-        if not isinstance(regional_configs, list):
-            regional_configs = []
-        other_regions = phase.get("otherRegionsConfig") or {}
-        for config in regional_configs:
-            if isinstance(config, dict) and config.get("free") is not None:
-                return True
-        if isinstance(other_regions, dict) and other_regions.get("free") is not None:
-            return True
-    return False
-
-
-def _gplay_offer_is_one_month(offer: Dict[str, Any]) -> bool:
-    phases = offer.get("phases") or []
-    if not isinstance(phases, list) or not phases:
-        return False
-    joined = " ".join([str(v) for phase in phases if isinstance(phase, dict) for v in phase.values() if v is not None]).upper()
-    return "P1M" in joined or ("MONTH" in joined and "1" in joined)
-
-
 def _gplay_offer_summary(offer: Dict[str, Any]) -> Dict[str, Any]:
     offer_tags = _gplay_offer_tags(offer.get("offerTags") or [])
     targeting = offer.get("targeting") if isinstance(offer.get("targeting"), dict) else {}
@@ -373,8 +321,6 @@ def _gplay_offer_summary(offer: Dict[str, Any]) -> Dict[str, Any]:
         "state": _clean(offer.get("state")) or None,
         "offer_tags": offer_tags,
         "targeting_rule": targeting_rule or None,
-        "has_free_trial_phase": _gplay_offer_has_free_trial(offer),
-        "has_one_month_phase": _gplay_offer_is_one_month(offer),
         "phases": phase_summaries,
     }
 
@@ -414,26 +360,12 @@ async def _fetch_apple_live_snapshot() -> Dict[str, Any]:
             _apple_attr(sub, "productIdentifier"),
             _apple_attr(sub, "referenceName"),
         )
-        group_ids = _apple_relationship_ids(sub, "subscriptionGroup")
-        intro_rows: List[Dict[str, Any]] = []
-        if sub_id:
-            try:
-                intro_rows = await _apple_connect_list(
-                    f"/v1/subscriptions/{quote(sub_id, safe='')}/introductoryOffers",
-                    params={"limit": 200},
-                )
-            except Exception as exc:
-                logger.warning("Failed to fetch Apple introductory offers for %s: %s", sub_id, exc)
-                intro_rows = []
-        intro_summaries = [_apple_intro_offer_summary(row) for row in intro_rows]
         row = {
             "id": sub_id,
             "product_id": product_id or None,
             "reference_name": _first_non_empty(_apple_attr(sub, "referenceName"), _apple_attr(sub, "name")) or None,
             "state": _first_non_empty(_apple_attr(sub, "state"), _apple_attr(sub, "status")) or None,
-            "group_ids": group_ids,
-            "introductory_offer_count": len(intro_summaries),
-            "introductory_offers": intro_summaries,
+            "group_ids": _apple_relationship_ids(sub, "subscriptionGroup"),
             "raw_attributes": sub.get("attributes") if isinstance(sub.get("attributes"), dict) else {},
         }
         subscription_rows.append(row)
@@ -443,16 +375,6 @@ async def _fetch_apple_live_snapshot() -> Dict[str, Any]:
     found_product_ids = sorted(product_map.keys())
     missing_plus_ids = sorted(pid for pid in expected_plus_ids if pid not in product_map)
     missing_premium_ids = sorted(pid for pid in expected_premium_ids if pid not in product_map)
-    plus_intro_present = all(
-        bool(product_map.get(pid, {}).get("introductory_offer_count")) for pid in expected_plus_ids if product_map.get(pid)
-    ) if expected_plus_ids else False
-    plus_intro_one_month = all(
-        any(
-            bool(item.get("free_trial_detected")) and bool(item.get("one_month_detected"))
-            for item in (product_map.get(pid, {}).get("introductory_offers") or [])
-        )
-        for pid in expected_plus_ids if product_map.get(pid)
-    ) if expected_plus_ids else False
 
     blocking_issues: List[str] = []
     warnings: List[str] = []
@@ -462,10 +384,6 @@ async def _fetch_apple_live_snapshot() -> Dict[str, Any]:
         blocking_issues.append(f"Apple Plus product IDs are missing in App Store Connect: {', '.join(missing_plus_ids)}")
     if missing_premium_ids:
         warnings.append(f"Apple Premium product IDs are missing in App Store Connect: {', '.join(missing_premium_ids)}")
-    if expected_plus_ids and not plus_intro_present:
-        blocking_issues.append("Apple Plus subscription exists, but no introductory offer was found for at least one expected Plus product.")
-    if expected_plus_ids and plus_intro_present and not plus_intro_one_month:
-        warnings.append("Apple introductory offer exists, but its exact 1-month free-trial shape could not be confirmed automatically. Review the returned raw offer attributes.")
 
     return {
         "credentials_source": _apple_console_credentials_source(),
@@ -479,8 +397,6 @@ async def _fetch_apple_live_snapshot() -> Dict[str, Any]:
         "found_product_ids": found_product_ids,
         "missing_plus_product_ids": missing_plus_ids,
         "missing_premium_product_ids": missing_premium_ids,
-        "plus_intro_offer_present_for_all_expected_products": plus_intro_present,
-        "plus_intro_offer_one_month_free_trial_confirmed": plus_intro_one_month,
         "subscriptions": subscription_rows,
         "blocking_issues": blocking_issues,
         "warnings": warnings,
@@ -495,7 +411,6 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
 
     expected_plus_ids = sorted({pid for pid in get_android_plus_product_ids() if clean_optional_str(pid)})
     expected_premium_ids = sorted({pid for pid in get_android_premium_product_ids() if clean_optional_str(pid)})
-    expected_trial_offer_tag = clean_optional_str(get_plus_trial_offer_tag_android())
 
     product_ids = sorted(set(expected_plus_ids + expected_premium_ids))
     product_rows: List[Dict[str, Any]] = []
@@ -518,9 +433,6 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
             base_plans = []
         base_plan_rows: List[Dict[str, Any]] = []
         any_active_base_plan = False
-        plus_trial_offer_present = False
-        plus_trial_tag_match = False
-        plus_trial_one_month = False
 
         for base_plan in base_plans:
             if not isinstance(base_plan, dict):
@@ -541,19 +453,6 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
                     warnings.append(f"Google offers could not be listed for productId={product_id}, basePlanId={base_plan_id}: {exc}")
                     offers = []
             offer_summaries = [_gplay_offer_summary(offer) for offer in offers]
-            if product_id in expected_plus_ids:
-                active_offers = [offer for offer in offer_summaries if _clean(offer.get("state")).upper() == "ACTIVE"]
-                plus_trial_offer_present = plus_trial_offer_present or any(
-                    bool(offer.get("has_free_trial_phase")) for offer in active_offers
-                )
-                plus_trial_tag_match = plus_trial_tag_match or any(
-                    expected_trial_offer_tag and expected_trial_offer_tag in (offer.get("offer_tags") or [])
-                    for offer in active_offers
-                )
-                plus_trial_one_month = plus_trial_one_month or any(
-                    bool(offer.get("has_free_trial_phase")) and bool(offer.get("has_one_month_phase"))
-                    for offer in active_offers
-                )
             base_plan_rows.append(
                 {
                     "base_plan_id": base_plan_id or None,
@@ -577,9 +476,6 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
                 ) or None,
                 "base_plan_count": len(base_plan_rows),
                 "has_active_base_plan": any_active_base_plan,
-                "plus_trial_offer_present": plus_trial_offer_present if product_id in expected_plus_ids else None,
-                "plus_trial_offer_tag_match": plus_trial_tag_match if product_id in expected_plus_ids else None,
-                "plus_trial_one_month_confirmed": plus_trial_one_month if product_id in expected_plus_ids else None,
                 "base_plans": base_plan_rows,
             }
         )
@@ -589,9 +485,6 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
 
     plus_rows = [row for row in product_rows if row.get("product_id") in expected_plus_ids]
     plus_active_base_plan_present = all(bool(row.get("has_active_base_plan")) for row in plus_rows) if plus_rows else False
-    plus_trial_offer_present = all(bool(row.get("plus_trial_offer_present")) for row in plus_rows) if plus_rows else False
-    plus_trial_offer_tag_match = all(bool(row.get("plus_trial_offer_tag_match")) for row in plus_rows) if plus_rows and expected_trial_offer_tag else False
-    plus_trial_one_month = all(bool(row.get("plus_trial_one_month_confirmed")) for row in plus_rows) if plus_rows else False
 
     if missing_plus_ids:
         blocking_issues.append(f"Google Plus product IDs are missing in Play Console: {', '.join(missing_plus_ids)}")
@@ -599,27 +492,15 @@ async def _fetch_google_live_snapshot() -> Dict[str, Any]:
         warnings.append(f"Google Premium product IDs are missing in Play Console: {', '.join(missing_premium_ids)}")
     if plus_rows and not plus_active_base_plan_present:
         blocking_issues.append("Google Plus subscription exists, but at least one expected Plus product has no ACTIVE base plan.")
-    if plus_rows and not plus_trial_offer_present:
-        blocking_issues.append("Google Plus subscription exists, but no ACTIVE free-trial offer was found under the expected Plus products.")
-    if plus_rows and plus_trial_offer_present and expected_trial_offer_tag and not plus_trial_offer_tag_match:
-        warnings.append(
-            f"Google free-trial offer exists, but the expected offer tag '{expected_trial_offer_tag}' was not found on any ACTIVE Plus offer."
-        )
-    if plus_rows and plus_trial_offer_present and not plus_trial_one_month:
-        warnings.append("Google free-trial offer exists, but its exact 1-month phase could not be confirmed automatically from the returned offer data.")
 
     return {
         "package_name": package_name,
         "expected_plus_product_ids": expected_plus_ids,
         "expected_premium_product_ids": expected_premium_ids,
-        "expected_plus_trial_offer_tag": expected_trial_offer_tag or None,
         "found_product_ids": sorted(found_product_ids),
         "missing_plus_product_ids": missing_plus_ids,
         "missing_premium_product_ids": missing_premium_ids,
         "plus_active_base_plan_present_for_all_expected_products": plus_active_base_plan_present,
-        "plus_trial_offer_present_for_all_expected_products": plus_trial_offer_present,
-        "plus_trial_offer_tag_match_for_all_expected_products": plus_trial_offer_tag_match if expected_trial_offer_tag else None,
-        "plus_trial_offer_one_month_confirmed": plus_trial_one_month,
         "subscriptions": product_rows,
         "blocking_issues": blocking_issues,
         "warnings": warnings,
