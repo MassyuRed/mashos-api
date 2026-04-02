@@ -14,6 +14,14 @@ PLAN_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PLAN_CATALOG_TABLE") or "subscript
 ALIASES_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PRODUCT_ALIASES_TABLE") or "subscription_product_aliases").strip() or "subscription_product_aliases"
 IOS_MANAGE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
+PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / ReflectionCreate拡張"
+PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / Reflection生成"
+PREMIUM_CANONICAL_FEATURES = [
+    "履歴全般：表示期間無制限",
+    "MyWeb：感情構造分析レポートがさらに深くなります",
+    "MyWeb：自己構造分析レポートがさらに深くなります",
+    "MyModel：Reflectionが入力内容から生成されます",
+]
 
 
 def _clean(value: Any) -> str:
@@ -87,6 +95,18 @@ def _string_list(value: Any, default: Optional[list[str]] = None) -> list[str]:
 def _string_or_none(value: Any) -> Optional[str]:
     s = _clean(value)
     return s or None
+
+
+def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
+    s = _string_or_none(value)
+    if not s:
+        return None
+    return (
+        s.replace("無料会員", "Freeプラン")
+        .replace("Plus会員", "Plusプラン")
+        .replace("Premium会員", "Premiumプラン")
+        .replace("MyModelCreate", "ReflectionCreate")
+    )
 
 
 def _normalize_platform(value: Any) -> str:
@@ -308,6 +328,36 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def _normalize_plan_catalog_item(plan_code: str, plan: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    src = dict(plan or {})
+    out = dict(src)
+
+    if plan_code == "plus":
+        out["title"] = _replace_legacy_subscription_text(src.get("title")) or "Plusプラン"
+        out["subtitle"] = (
+            _replace_legacy_subscription_text(src.get("subtitle")) or PLUS_CANONICAL_SUBTITLE
+        )
+        out["features"] = []
+        for item in _string_list(src.get("features"), src.get("features") or []):
+            text = _replace_legacy_subscription_text(item) or _clean(item)
+            if text:
+                out["features"].append(text)
+    elif plan_code == "premium":
+        out["title"] = "Premiumプラン"
+        out["subtitle"] = PREMIUM_CANONICAL_SUBTITLE
+        out["features"] = list(PREMIUM_CANONICAL_FEATURES)
+
+    out["note_lines"] = []
+    for item in _string_list(src.get("note_lines"), src.get("note_lines") or []):
+        text = _replace_legacy_subscription_text(item) or _clean(item)
+        if text:
+            out["note_lines"].append(text)
+    out["cta_label"] = _replace_legacy_subscription_text(src.get("cta_label")) or _string_or_none(
+        src.get("cta_label")
+    )
+    return out
+
+
 def _merge_settings(row: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     base = _default_runtime_settings()
     if not row:
@@ -353,8 +403,8 @@ def _merge_plan_catalog(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str
         target["note_lines"] = _string_list(row.get("note_lines_json"), target.get("note_lines") or [])
         target["cta_label"] = _string_or_none(row.get("cta_label")) or target.get("cta_label")
         target["recommended"] = _bool(row.get("recommended"), default=target.get("recommended", False))
-        catalog[plan_code] = target
-    return catalog
+        catalog[plan_code] = _normalize_plan_catalog_item(plan_code, target)
+    return {code: _normalize_plan_catalog_item(code, plan) for code, plan in catalog.items()}
 
 
 def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
