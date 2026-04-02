@@ -29,9 +29,9 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                     "visible": True,
                     "purchasable": True,
                     "launch_stage": "live",
-                    "title": "Plus会員",
+                    "title": "Plusプラン",
                     "price_label": "月額300円",
-                    "subtitle": "レポート閲覧 / MyModelCreate拡張",
+                    "subtitle": "レポート閲覧 / ReflectionCreate拡張",
                     "features": ["feature-a"],
                     "note_lines": ["note-a"],
                     "cta_label": "このプランを選ぶ",
@@ -49,11 +49,11 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                     "visible": True,
                     "purchasable": False,
                     "launch_stage": "coming_soon",
-                    "title": "Premium会員",
+                    "title": "Premiumプラン",
                     "price_label": "月額980円",
-                    "subtitle": "Deepモード / DeepInsight / 生成・分析機能",
+                    "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
                     "features": ["feature-p"],
-                    "note_lines": ["※Premiumは準備中です。"],
+                    "note_lines": ["※Premiumプランは準備中です。"],
                     "cta_label": "準備中",
                     "recommended": False,
                     "purchase_product_id": {"ios": None, "android": None},
@@ -102,16 +102,16 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
                 "ios_manage_url": "https://apps.apple.com/account/subscriptions",
                 "android_manage_mode": "specific_subscription",
                 "android_package_name": "com.example.cocolon",
-                "review_notice": "現在、Plusのみ販売中です。",
+                "review_notice": "現在、Plusプランのみ販売中です。",
             },
             "plans": {
                 "plus": {
                     "visible": True,
                     "purchasable": False,
                     "launch_stage": "live",
-                    "title": "Plus会員",
+                    "title": "Plusプラン",
                     "price_label": "月額300円",
-                    "subtitle": "レポート閲覧 / MyModelCreate拡張",
+                    "subtitle": "レポート閲覧 / ReflectionCreate拡張",
                     "features": [],
                     "note_lines": [],
                     "cta_label": "このプランを選ぶ",
@@ -128,4 +128,4 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
     body = response.json()
     assert body["client_sales_enabled"] is False
     assert body["client_sales_disabled_reason"] == "このバージョンでは購入できません。"
-    assert body["policy"]["review_notice"] == "現在、Plusのみ販売中です。"
+    assert body["policy"]["review_notice"] == "現在、Plusプランのみ販売中です。"
