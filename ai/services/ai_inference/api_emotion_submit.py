@@ -1659,6 +1659,7 @@ async def _notify_friends_about_emotion(
                 requested_at=created_at,
                 owner_user_id=owner_user_id,
                 debounce=True,
+                debounce_seconds=10,
             )
         except Exception as exc:
             logger.error("Friend feed enqueue failed (bg): %s", exc)

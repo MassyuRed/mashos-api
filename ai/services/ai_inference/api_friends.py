@@ -124,6 +124,13 @@ class FriendUnreadMarkReadResponse(BaseModel):
     status: str = Field(default="ok", description="ok")
     last_read_at: Optional[str] = None
 
+
+class FriendUnreadMarkReadBody(BaseModel):
+    last_seen_created_at: Optional[str] = Field(
+        default=None,
+        description="Latest friend feed created_at that was actually shown to the user",
+    )
+
 # ----------------------------
 # Supabase helpers
 # ----------------------------
@@ -492,9 +499,40 @@ def _build_friend_feed_response_items(rows: List[Dict[str, Any]]) -> List[Dict[s
                 "ownerName": owner_name,
                 "items": _normalize_friend_feed_emotions(row.get("items")),
                 "timeLabel": _format_friend_feed_time_label(created_at),
+                "createdAt": created_at,
+                "created_at": created_at,
             }
         )
     return items
+
+
+def _summary_latest_friend_feed_created_at(summary: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(summary, dict):
+        return None
+
+    payload = summary.get("payload") if isinstance(summary.get("payload"), dict) else summary
+    if not isinstance(payload, dict):
+        payload = {}
+
+    latest_created_at = str(payload.get("latest_created_at") or "").strip()
+    if latest_created_at:
+        return latest_created_at
+
+    raw_items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("created_at") or item.get("createdAt") or "").strip()
+        if value:
+            return value
+
+    fallback = str(
+        summary.get("published_at")
+        or summary.get("updated_at")
+        or summary.get("created_at")
+        or ""
+    ).strip()
+    return fallback or None
 
 
 async def _fetch_live_friend_feed_rows(viewer_user_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
@@ -1122,17 +1160,47 @@ def register_friend_routes(app: FastAPI) -> None:
         me = await _resolve_user_id_from_token(access_token)
 
         summary = None
+        latest_live_created_at: Optional[str] = None
         try:
-            summary = await fetch_latest_ready_friend_feed_summary(me)
+            summary, latest_live_created_at = await asyncio.gather(
+                fetch_latest_ready_friend_feed_summary(me),
+                _latest_friend_feed_created_at(me),
+            )
         except Exception as exc:
-            logger.warning("Failed to fetch ready friend feed summary: %s", exc)
+            logger.warning("Failed to prefetch friend feed freshness info: %s", exc)
+            try:
+                summary = await fetch_latest_ready_friend_feed_summary(me)
+            except Exception as inner_exc:
+                logger.warning("Failed to fetch ready friend feed summary: %s", inner_exc)
+                summary = None
+            try:
+                latest_live_created_at = await _latest_friend_feed_created_at(me)
+            except Exception as inner_exc:
+                logger.warning("Failed to fetch latest live friend feed created_at: %s", inner_exc)
+                latest_live_created_at = None
 
-        if summary:
+        summary_latest_created_at = _summary_latest_friend_feed_created_at(summary)
+        summary_is_fresh = bool(summary) and not _has_newer_iso(
+            latest_live_created_at,
+            summary_latest_created_at,
+        )
+
+        if summary_is_fresh and summary:
             items = _build_friend_feed_response_items(select_friend_feed_items(summary))
             return {"status": "ok", "items": items}
 
-        live_rows = await _fetch_live_friend_feed_rows(me, limit=20)
-        return {"status": "ok", "items": _build_friend_feed_response_items(live_rows)}
+        try:
+            live_rows = await _fetch_live_friend_feed_rows(me, limit=20)
+            return {"status": "ok", "items": _build_friend_feed_response_items(live_rows)}
+        except HTTPException:
+            if summary:
+                logger.warning(
+                    "Friend feed live fetch failed; falling back to ready summary (viewer_user_id=%s)",
+                    me,
+                )
+                items = _build_friend_feed_response_items(select_friend_feed_items(summary))
+                return {"status": "ok", "items": items}
+            raise
 
     @app.get("/friends/manage")
     async def get_friend_manage(
@@ -1245,6 +1313,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
     @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
     async def post_friend_feed_mark_read(
+        body: Optional[FriendUnreadMarkReadBody] = None,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> FriendUnreadMarkReadResponse:
         access_token = _extract_bearer_token(authorization)
@@ -1252,7 +1321,31 @@ def register_friend_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         me = await _resolve_user_id_from_token(access_token)
-        last_read_at = await _latest_friend_feed_created_at(me) or datetime.now(timezone.utc).isoformat()
+        requested_last_read_at = str((body.last_seen_created_at if body else "") or "").strip() or None
+        if requested_last_read_at and _parse_iso_utc(requested_last_read_at) is None:
+            requested_last_read_at = None
+
+        current_last_read_at_task = _fetch_last_read_at("friend_feed_reads", me)
+        latest_live_created_at_task = (
+            _latest_friend_feed_created_at(me)
+            if not requested_last_read_at
+            else asyncio.sleep(0, result=None)
+        )
+        current_last_read_at, latest_live_created_at = await asyncio.gather(
+            current_last_read_at_task,
+            latest_live_created_at_task,
+        )
+
+        candidate_last_read_at = (
+            requested_last_read_at
+            or latest_live_created_at
+            or datetime.now(timezone.utc).isoformat()
+        )
+        last_read_at = (
+            current_last_read_at
+            if _has_newer_iso(current_last_read_at, candidate_last_read_at)
+            else candidate_last_read_at
+        )
 
         ok = await _upsert_last_read_at("friend_feed_reads", me, last_read_at)
         if not ok:

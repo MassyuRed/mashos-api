@@ -40,10 +40,10 @@ ASTOR_FRIEND_FEED_ENQUEUE_ENABLED = _env_truthy(
 
 try:
     ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = int(
-        os.getenv("ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS", "300") or "300"
+        os.getenv("ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS", "10") or "10"
     )
 except Exception:
-    ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = 300
+    ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = 10
 
 
 async def enqueue_friend_feed_refresh(
