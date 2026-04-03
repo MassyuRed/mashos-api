@@ -112,6 +112,30 @@ def compute_generated_answer_norm_hash(text: Any) -> str:
 
 
 
+def compute_generated_display_source_signature(
+    *,
+    question: Any,
+    raw_answer: Any,
+    category: Any = None,
+    focus_key: Any = None,
+    topic_summary_text: Any = None,
+    text_candidates: Optional[Sequence[Any]] = None,
+) -> str:
+    payload = {
+        "question": _collapse_ws(question),
+        "raw_answer": _collapse_ws(raw_answer),
+        "category": _collapse_ws(category),
+        "focus_key": _collapse_ws(focus_key),
+        "topic_summary_text": _collapse_ws(topic_summary_text),
+        "text_candidates": _ordered_unique([_collapse_ws(x) for x in (text_candidates or []) if _collapse_ws(x)]),
+    }
+    if not any(payload.values()):
+        return ""
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     text = str(value or "").strip()
     if not text:
@@ -466,6 +490,7 @@ class GeneratedReflectionDisplayResult:
     flags: List[str]
     actions: List[str]
     answer_norm_hash: str
+    display_source_signature: str
     format_version: str = GENERATED_REFLECTION_DISPLAY_VERSION
 
     def as_storage_meta(self) -> Dict[str, Any]:
@@ -480,6 +505,7 @@ class GeneratedReflectionDisplayResult:
             "display_length": int(len(display_text)),
             "display_state": str(self.answer_display_state),
             "answer_norm_hash": str(self.answer_norm_hash),
+            "display_source_signature": str(self.display_source_signature),
             "blocked": bool(self.answer_display_state == STATE_BLOCKED),
         }
 
@@ -508,6 +534,14 @@ def build_generated_reflection_display(
     actions = _ordered_unique([*rewrite_actions, *safety.actions])
     norm_source = safety.display_text if safety.display_text is not None else (rewritten or raw)
     changed = bool(raw != rewritten or safety.changed or actions)
+    source_signature = compute_generated_display_source_signature(
+        question=question,
+        raw_answer=raw,
+        category=category,
+        focus_key=focus_key,
+        topic_summary_text=topic_summary_text,
+        text_candidates=text_candidates,
+    )
     return GeneratedReflectionDisplayResult(
         raw_answer_text=raw,
         rewritten_answer_text=rewritten,
@@ -517,6 +551,7 @@ def build_generated_reflection_display(
         flags=flags,
         actions=actions,
         answer_norm_hash=compute_generated_answer_norm_hash(norm_source),
+        display_source_signature=source_signature,
     )
 
 
@@ -536,6 +571,7 @@ def apply_generated_display_to_content_json(
         "answer_display_updated_at": str(display_updated_at or "").strip() or None,
         "rewritten_answer_text": result.rewritten_answer_text,
         "answer_norm_hash": result.answer_norm_hash,
+        "display_source_signature": result.display_source_signature,
     }
     updated["display"] = dict(display_payload)
     # keep flat keys too so legacy helpers / SQL probes can inspect content_json easily
@@ -557,6 +593,7 @@ def _extract_display_bundle(row: Mapping[str, Any]) -> Dict[str, Any]:
         "answer_display_updated_at",
         "rewritten_answer_text",
         "answer_norm_hash",
+        "display_source_signature",
     ):
         if key in row and (row or {}).get(key) is not None:
             out[key] = (row or {}).get(key)
@@ -571,15 +608,39 @@ def _extract_display_bundle(row: Mapping[str, Any]) -> Dict[str, Any]:
 def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optional[GeneratedReflectionDisplayResult]:
     if not isinstance(row, Mapping):
         return None
+    content_json = _parse_mapping((row or {}).get("content_json"))
     bundle = _extract_display_bundle(row)
     state = str(bundle.get("answer_display_state") or "").strip().lower()
     if state not in {STATE_READY, STATE_MASKED, STATE_BLOCKED}:
         return None
 
+    topic_summary_text = content_json.get("topic_summary_text") or (row or {}).get("topic_summary_text")
+    focus_key = content_json.get("focus_key") or (row or {}).get("focus_key")
+    text_candidates: List[str] = []
+    source_refs = content_json.get("source_refs")
+    if isinstance(source_refs, list):
+        for ref in source_refs:
+            if isinstance(ref, dict):
+                for key in ("text_primary", "text_secondary", "question_text"):
+                    value = _collapse_ws(ref.get(key))
+                    if value:
+                        text_candidates.append(value)
+
+    stored_signature = str(bundle.get("display_source_signature") or "").strip()
+    current_signature = compute_generated_display_source_signature(
+        question=(row or {}).get("question"),
+        raw_answer=(row or {}).get("answer"),
+        category=(row or {}).get("category"),
+        focus_key=focus_key,
+        topic_summary_text=topic_summary_text,
+        text_candidates=text_candidates,
+    )
+
     updated_at = _parse_iso((row or {}).get("updated_at"))
     display_updated_at = _parse_iso(bundle.get("answer_display_updated_at"))
     if updated_at and display_updated_at and display_updated_at < updated_at:
-        return None
+        if not stored_signature or not current_signature or stored_signature != current_signature:
+            return None
 
     display_text: Optional[str]
     if state == STATE_BLOCKED:
@@ -599,6 +660,7 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
     norm_hash = str(bundle.get("answer_norm_hash") or meta.get("answer_norm_hash") or compute_generated_answer_norm_hash(display_text or rewritten or raw)).strip()
     changed_meta = meta.get("changed")
     changed = bool(changed_meta) if changed_meta is not None else bool(rewritten != raw or state != STATE_READY)
+    display_source_signature = stored_signature or str(meta.get("display_source_signature") or current_signature or "").strip()
     return GeneratedReflectionDisplayResult(
         raw_answer_text=raw,
         rewritten_answer_text=rewritten,
@@ -608,6 +670,7 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
         flags=_ordered_unique(flags),
         actions=_ordered_unique(actions),
         answer_norm_hash=norm_hash,
+        display_source_signature=display_source_signature,
         format_version=version,
     )
 
@@ -656,6 +719,7 @@ __all__ = [
     "build_generated_reflection_display",
     "compose_generated_answer_raw",
     "compute_generated_answer_norm_hash",
+    "compute_generated_display_source_signature",
     "get_public_generated_reflection_text",
     "resolve_generated_reflection_display",
 ]
