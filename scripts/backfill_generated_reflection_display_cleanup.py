@@ -7,8 +7,22 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-for candidate in (ROOT, ROOT / "services", ROOT / "services" / "ai_inference"):
+_IMPORT_CANDIDATES = (
+    ROOT,
+    ROOT / "ai",
+    ROOT / "ai" / "services",
+    ROOT / "ai" / "services" / "ai_inference",
+    ROOT / "services",
+    ROOT / "services" / "ai_inference",
+)
+_seen_paths: set[str] = set()
+for candidate in _IMPORT_CANDIDATES:
+    if not candidate.exists():
+        continue
     path_str = str(candidate)
+    if path_str in _seen_paths:
+        continue
+    _seen_paths.add(path_str)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
