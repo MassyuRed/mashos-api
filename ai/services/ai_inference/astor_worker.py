@@ -287,7 +287,82 @@ WORKER_LOGGER = logging.getLogger("astor_worker")
 
 DEEP_MAX_CONTROL_PATTERNS = max(1, min(5, int(os.getenv("EMOTION_DEEP_MAX_CONTROL_PATTERNS", "5") or "5")))
 DEEP_UI_LABELS: List[str] = ["joy", "sadness", "anxiety", "anger", "calm"]
+
 _DEEP_PATTERN_LABEL_PRIORITY = ["calm", "joy", "sadness", "anxiety", "anger"]
+
+_DEEP_EMOTION_LABELS: Dict[str, str] = {
+    "joy": "喜び",
+    "sadness": "悲しみ",
+    "anxiety": "不安",
+    "anger": "怒り",
+    "calm": "平穏",
+}
+
+_DEEP_THEME_HINT_LABELS: Dict[str, str] = {
+    "self_pressure": "自分を急がせる言葉",
+    "interpersonal_caution": "人との距離を気にする言葉",
+    "fatigue_limit": "限界を感じる言葉",
+    "self_doubt": "自分を責めやすい言葉",
+    "generic": "前に出ていた言葉",
+}
+
+_MONTHLY_PHASE_LABELS: Dict[str, str] = {
+    "first_half": "前半",
+    "second_half": "後半",
+}
+
+
+def _deep_emotion_label_ja(value: Any) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    return _DEEP_EMOTION_LABELS.get(s, s)
+
+
+def _deep_localize_transition_key(value: Any) -> str:
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    if "->" in s:
+        left, right = s.split("->", 1)
+        return f"{_deep_emotion_label_ja(left)} → {_deep_emotion_label_ja(right)}"
+    if "→" in s:
+        left, right = s.split("→", 1)
+        return f"{_deep_emotion_label_ja(left)} → {_deep_emotion_label_ja(right)}"
+    return _deep_emotion_label_ja(s)
+
+
+def _deep_theme_hint_label(value: Any) -> str:
+    hint = str(value or "generic").strip() or "generic"
+    return _DEEP_THEME_HINT_LABELS.get(hint, _DEEP_THEME_HINT_LABELS["generic"])
+
+
+def _iso_z(dt: datetime) -> str:
+    value = dt
+    if not isinstance(value, datetime):
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _quote_phrase(value: Any) -> str:
+    s = str(value or "").strip().strip("「」『』\"'")
+    if not s:
+        return ""
+    return f"「{s}」"
+
+
+def _ordered_unique_strs(values: List[Any]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for value in list(values or []):
+        s = str(value or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
 
 
 def _parse_job_types(raw: str) -> List[str]:
@@ -2291,6 +2366,554 @@ def _extract_memo_keywords(text: str) -> List[str]:
     return uniq[:8]
 
 
+_MEMO_PHRASE_SPLIT_RE = re.compile(r"[\n\r。．！？!?、,]+")
+_MEMO_PHRASE_PRIORITY_RE = re.compile(r"(しなきゃ|したくない|気がする|かも|無理|怖い|しんど|疲れ|迷惑|大丈夫)")
+
+
+def _sanitize_phrase_sample(text: str) -> str:
+    s = str(text or "").strip()
+    if not s:
+        return ""
+    s = s.strip("「」『』\"'")
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return ""
+    if re.search(r"https?://|www\.", s, re.IGNORECASE):
+        return ""
+    if re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", s):
+        return ""
+    if re.search(r"\d{3,}", s):
+        return ""
+    if len(s) < 4 or len(s) > 24:
+        return ""
+    return s
+
+
+def _extract_memo_phrase_candidates(text: str) -> List[str]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+
+    scored: List[tuple[int, int, str]] = []
+    seen = set()
+    fragments = [frag for frag in _MEMO_PHRASE_SPLIT_RE.split(raw) if str(frag or "").strip()]
+    for idx, fragment in enumerate(fragments):
+        phrase = _sanitize_phrase_sample(fragment)
+        if not phrase or phrase in seen:
+            continue
+        seen.add(phrase)
+
+        score = 0
+        if _MEMO_PHRASE_PRIORITY_RE.search(phrase):
+            score += 3
+        if re.search(r"(たい|ない|かも|気がする|しんど|疲れ|無理|不安|怖|でき|だめ|ダメ|嫌)", phrase):
+            score += 2
+        if re.search(r"[ぁ-んァ-ヴー一-龯]", phrase):
+            score += 1
+        scored.append((score, -idx, phrase))
+
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    picked = [phrase for _score, _idx, phrase in scored[:3]]
+    return picked
+
+
+def _classify_memo_theme_hint(*, keyword: str, phrase_samples: List[str]) -> str:
+    keyword_text = str(keyword or "").lower()
+    if re.search(r"(疲れ|しんど|無理|限界)", keyword_text):
+        return "fatigue_limit"
+    if re.search(r"(できてない|ダメ|だめ|無価値|自信ない|うまくいかない)", keyword_text):
+        return "self_doubt"
+    if re.search(r"(迷惑|気をつか|余計なこと|嫌われ)", keyword_text):
+        return "interpersonal_caution"
+    if re.search(r"(しなきゃ|遅れて|間に合わせ|ちゃんと)", keyword_text):
+        return "self_pressure"
+
+    merged = " ".join([keyword_text] + [str(x or "") for x in list(phrase_samples or [])]).lower()
+    if re.search(r"(疲れ|しんど|無理|限界)", merged):
+        return "fatigue_limit"
+    if re.search(r"(できてない|ダメ|だめ|無価値|自信ない|うまくいかない)", merged):
+        return "self_doubt"
+    if re.search(r"(迷惑|気をつか|余計なこと|嫌われ)", merged):
+        return "interpersonal_caution"
+    if re.search(r"(しなきゃ|遅れて|間に合わせ|ちゃんと)", merged):
+        return "self_pressure"
+    return "generic"
+
+
+def _build_memo_themes_from_triggers(memo_triggers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[str, Dict[str, Any]] = {}
+
+    for item in list(memo_triggers or []):
+        count = int(item.get("count") or 0)
+        if count < 2:
+            continue
+        theme_hint = str(item.get("theme_hint") or item.get("themeHint") or "generic").strip() or "generic"
+        group = grouped.setdefault(
+            theme_hint,
+            {
+                "theme_hint": theme_hint,
+                "keywords": [],
+                "phrase_samples": [],
+                "linked_transition_keys": Counter(),
+                "dominant_time_buckets": Counter(),
+                "count": 0,
+                "evidence": {"triggerCount": 0, "phraseCount": 0},
+                "notes": [],
+            },
+        )
+
+        keyword = str(item.get("keyword") or "").strip()
+        if keyword and keyword not in group["keywords"]:
+            group["keywords"].append(keyword)
+
+        for phrase in list(item.get("phrase_samples") or item.get("phraseSamples") or []):
+            phrase_s = _sanitize_phrase_sample(phrase)
+            if phrase_s and phrase_s not in group["phrase_samples"]:
+                group["phrase_samples"].append(phrase_s)
+
+        for key in list(item.get("source_transition_keys") or item.get("sourceTransitionKeys") or item.get("related_transitions") or item.get("relatedTransitions") or []):
+            key_s = str(key or "").strip()
+            if key_s:
+                group["linked_transition_keys"][key_s] += 1
+
+        for bucket in list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []):
+            bucket_s = str(bucket or "").strip()
+            if bucket_s:
+                group["dominant_time_buckets"][bucket_s] += 1
+
+        group["count"] += count
+        group["evidence"]["triggerCount"] += 1
+        group["evidence"]["phraseCount"] = len(group["phrase_samples"])
+
+    ordered_groups = sorted(grouped.values(), key=lambda item: int(item.get("count") or 0), reverse=True)[:2]
+    out: List[Dict[str, Any]] = []
+    for idx, group in enumerate(ordered_groups, start=1):
+        out.append(
+            {
+                "theme_id": f"theme_{idx}",
+                "theme_hint": str(group.get("theme_hint") or "generic"),
+                "keywords": list(group.get("keywords") or [])[:4],
+                "phrase_samples": list(group.get("phrase_samples") or [])[:3],
+                "linked_transition_keys": [k for k, _ in group["linked_transition_keys"].most_common(4)],
+                "dominant_time_buckets": [k for k, _ in group["dominant_time_buckets"].most_common(2)],
+                "count": int(group.get("count") or 0),
+                "evidence": dict(group.get("evidence") or {}),
+                "notes": list(group.get("notes") or []),
+            }
+        )
+    return out
+
+
+def _select_recovery_route_for_pattern(
+    edge_keys: List[str],
+    recovery_time: List[Dict[str, Any]],
+) -> Optional[str]:
+    if not edge_keys or not recovery_time:
+        return None
+
+    related_labels = set()
+    for edge_key in list(edge_keys or []):
+        if "->" not in str(edge_key or ""):
+            continue
+        left, right = str(edge_key or "").split("->", 1)
+        related_labels.add(left)
+        related_labels.add(right)
+
+    def _recovery_key(item: Dict[str, Any]) -> str:
+        return f"{str(item.get('from_label') or '')}->{str(item.get('to_label') or '')}"
+
+    candidates: List[Dict[str, Any]] = []
+    for row in list(recovery_time or []):
+        if not isinstance(row, dict):
+            continue
+        from_label = str(row.get("from_label") or "").strip()
+        to_label = str(row.get("to_label") or "").strip()
+        if not from_label or not to_label:
+            continue
+        if _recovery_key(row) in edge_keys or from_label in related_labels or to_label in related_labels:
+            candidates.append(row)
+
+    recovery_candidates = [row for row in candidates if str(row.get("to_label") or "") in ("calm", "joy")]
+    if not recovery_candidates:
+        return None
+
+    recovery_candidates.sort(
+        key=lambda row: (
+            int(row.get("count") or 0),
+            -float(row.get("mean_minutes") or row.get("meanMinutes") or 0.0),
+        ),
+        reverse=True,
+    )
+    top = recovery_candidates[0]
+    return f"{str(top.get('from_label') or '')}->{str(top.get('to_label') or '')}" or None
+
+
+def _build_pattern_episodes(
+    control_patterns: List[Dict[str, Any]],
+    memo_themes: List[Dict[str, Any]],
+    recovery_time: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for idx, pattern in enumerate(list(control_patterns or [])[:2], start=1):
+        edge_keys = [str(x).strip() for x in list(pattern.get("transition_keys") or pattern.get("transitionKeys") or []) if str(x).strip()]
+        linked_theme_ids: List[str] = []
+        dominant_time_counter = Counter()
+        for theme in list(memo_themes or []):
+            theme_keys = set(str(x).strip() for x in list(theme.get("linked_transition_keys") or []) if str(x).strip())
+            if theme_keys.intersection(edge_keys):
+                theme_id = str(theme.get("theme_id") or theme.get("themeId") or "").strip()
+                if theme_id:
+                    linked_theme_ids.append(theme_id)
+                for bucket in list(theme.get("dominant_time_buckets") or []):
+                    bucket_s = str(bucket or "").strip()
+                    if bucket_s:
+                        dominant_time_counter[bucket_s] += 1
+
+        if not dominant_time_counter:
+            for bucket in list(pattern.get("dominant_time_buckets") or pattern.get("dominantTimeBuckets") or []):
+                bucket_s = str(bucket or "").strip()
+                if bucket_s:
+                    dominant_time_counter[bucket_s] += 1
+
+        recovery_route_key = _select_recovery_route_for_pattern(edge_keys, recovery_time)
+        out.append(
+            {
+                "pattern_id": f"pattern_{idx}",
+                "linked_theme_ids": linked_theme_ids,
+                "route_keys": edge_keys[:4],
+                "recovery_route_key": recovery_route_key,
+                "dominant_time_buckets": [k for k, _ in dominant_time_counter.most_common(2)],
+                "count": int((pattern.get("evidence") or {}).get("transitionCount") or pattern.get("size") or 0),
+                "evidence": {
+                    "transitionCount": int((pattern.get("evidence") or {}).get("transitionCount") or pattern.get("size") or 0),
+                    "themeCount": len(linked_theme_ids),
+                },
+                "notes": [],
+            }
+        )
+    return out
+
+
+
+
+def _build_monthly_phase_windows(
+    *,
+    period_start_utc: datetime,
+    period_end_exclusive_utc: datetime,
+) -> List[Dict[str, Any]]:
+    midpoint_utc = period_start_utc + timedelta(days=14)
+    return [
+        {
+            "phase_id": "first_half",
+            "phase_label": _MONTHLY_PHASE_LABELS["first_half"],
+            "start_utc": period_start_utc,
+            "end_utc": midpoint_utc,
+        },
+        {
+            "phase_id": "second_half",
+            "phase_label": _MONTHLY_PHASE_LABELS["second_half"],
+            "start_utc": midpoint_utc,
+            "end_utc": period_end_exclusive_utc,
+        },
+    ]
+
+
+def _summarize_monthly_phase_model(
+    *,
+    phase_id: str,
+    phase_label: str,
+    phase_entries: List[Any],
+    phase_model: Dict[str, Any],
+    period_start_utc: datetime,
+    period_end_exclusive_utc: datetime,
+) -> Optional[Dict[str, Any]]:
+    if len(list(phase_entries or [])) < 2:
+        return None
+
+    model = phase_model if isinstance(phase_model, dict) else {}
+    phase_summary = model.get("summary") if isinstance(model.get("summary"), dict) else {}
+    memo_themes = [item for item in list(model.get("memo_themes") or []) if isinstance(item, dict)]
+    memo_triggers = [item for item in list(model.get("memo_triggers") or []) if isinstance(item, dict)]
+    pattern_episodes = [item for item in list(model.get("pattern_episodes") or []) if isinstance(item, dict)]
+    transition_edges = [item for item in list(model.get("transition_edges") or []) if isinstance(item, dict)]
+    recovery_time = [item for item in list(model.get("recovery_time") or []) if isinstance(item, dict)]
+
+    theme_hints = _ordered_unique_strs([
+        item.get("theme_hint") or item.get("themeHint") or "generic"
+        for item in memo_themes
+    ])[:2]
+    theme_labels = [_deep_theme_hint_label(hint) for hint in theme_hints]
+
+    phrase_samples: List[str] = []
+    for theme in memo_themes:
+        for phrase in list(theme.get("phrase_samples") or theme.get("phraseSamples") or []):
+            clean = _sanitize_phrase_sample(str(phrase or ""))
+            if clean and clean not in phrase_samples:
+                phrase_samples.append(clean)
+    if not phrase_samples:
+        for trigger in memo_triggers:
+            for phrase in list(trigger.get("phrase_samples") or trigger.get("phraseSamples") or []):
+                clean = _sanitize_phrase_sample(str(phrase or ""))
+                if clean and clean not in phrase_samples:
+                    phrase_samples.append(clean)
+    phrase_samples = phrase_samples[:3]
+
+    route_keys: List[str] = []
+    for episode in pattern_episodes:
+        route_keys.extend(list(episode.get("route_keys") or episode.get("routeKeys") or []))
+    if not route_keys:
+        for edge in transition_edges:
+            key = f"{str(edge.get('from_label') or edge.get('fromLabel') or '').strip()}->{str(edge.get('to_label') or edge.get('toLabel') or '').strip()}"
+            if key != "->":
+                route_keys.append(key)
+    route_keys = _ordered_unique_strs(route_keys)[:4]
+    route_labels = [_deep_localize_transition_key(key) for key in route_keys]
+
+    recovery_route_key = ""
+    for episode in pattern_episodes:
+        recovery_route_key = str(episode.get("recovery_route_key") or episode.get("recoveryRouteKey") or "").strip()
+        if recovery_route_key:
+            break
+    if not recovery_route_key:
+        recovery_route_key = str(_select_recovery_route_for_pattern(route_keys, recovery_time) or "").strip()
+    recovery_route_label = _deep_localize_transition_key(recovery_route_key) if recovery_route_key else ""
+
+    dominant_time_buckets: List[str] = []
+    for episode in pattern_episodes:
+        dominant_time_buckets.extend(list(episode.get("dominant_time_buckets") or episode.get("dominantTimeBuckets") or []))
+    if not dominant_time_buckets:
+        for theme in memo_themes:
+            dominant_time_buckets.extend(list(theme.get("dominant_time_buckets") or theme.get("dominantTimeBuckets") or []))
+    if not dominant_time_buckets:
+        for edge in transition_edges:
+            dominant_time_buckets.extend(list(edge.get("dominant_time_buckets") or edge.get("dominantTimeBuckets") or []))
+    dominant_time_buckets = _ordered_unique_strs(dominant_time_buckets)[:2]
+
+    pattern_ids = _ordered_unique_strs([
+        episode.get("pattern_id") or episode.get("patternId") or ""
+        for episode in pattern_episodes
+    ])[:4]
+
+    if not (theme_hints or phrase_samples or route_keys or recovery_route_key):
+        return None
+
+    lead = _quote_phrase(phrase_samples[0]) if phrase_samples else (theme_labels[0] if theme_labels else "")
+    primary_route_label = route_labels[0] if route_labels else ""
+    if lead and primary_route_label:
+        phase_comment = f"{phase_label}は、{lead}が前に出る場面で、{primary_route_label}が目立っていました。"
+    elif primary_route_label:
+        phase_comment = f"{phase_label}は、{primary_route_label}が目立つ流れでした。"
+    elif lead:
+        phase_comment = f"{phase_label}は、{lead}が前に出やすい時期でした。"
+    else:
+        phase_comment = f"{phase_label}は、この時期らしい流れが見えていました。"
+
+    if recovery_route_label:
+        if primary_route_label and recovery_route_label != primary_route_label:
+            phase_comment += f" そのあとも、{recovery_route_label}へ戻る道が見えていました。"
+        else:
+            phase_comment += f" {recovery_route_label}へ戻る整え直しも見えていました。"
+
+    return {
+        "phase_id": phase_id,
+        "phase_label": phase_label,
+        "period_start_iso": _iso_z(period_start_utc),
+        "period_end_iso": _iso_z(period_end_exclusive_utc),
+        "entry_count": len(list(phase_entries or [])),
+        "transition_count": int(phase_summary.get("transitionCount") or len(transition_edges)),
+        "theme_hints": theme_hints,
+        "theme_labels": theme_labels,
+        "phrase_samples": phrase_samples,
+        "route_keys": route_keys,
+        "route_labels": route_labels,
+        "recovery_route_key": recovery_route_key,
+        "recovery_route_label": recovery_route_label,
+        "dominant_time_buckets": dominant_time_buckets,
+        "pattern_ids": pattern_ids,
+        "phase_comment": phase_comment,
+        "evidence": {
+            "themeCount": len(theme_hints),
+            "patternCount": len(pattern_ids),
+            "quoteSampleCount": len(phrase_samples),
+        },
+        "notes": [],
+    }
+
+
+def _build_monthly_phase_items(
+    entries: List[Any],
+    *,
+    period_start_utc: datetime,
+    period_end_exclusive_utc: datetime,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for window in _build_monthly_phase_windows(
+        period_start_utc=period_start_utc,
+        period_end_exclusive_utc=period_end_exclusive_utc,
+    ):
+        phase_entries = _entries_in_window(entries, window["start_utc"], window["end_utc"])
+        if len(list(phase_entries or [])) < 2:
+            continue
+
+        phase_period_label = f"{_iso_z(window['start_utc'])}..{_iso_z(window['end_utc'])}"
+        phase_model = _build_deep_control_model_payload(
+            phase_entries,
+            scope_kind="monthly_phase",
+            period_label=phase_period_label,
+        )
+        item = _summarize_monthly_phase_model(
+            phase_id=str(window.get("phase_id") or "phase").strip() or "phase",
+            phase_label=str(window.get("phase_label") or "この時期").strip() or "この時期",
+            phase_entries=phase_entries,
+            phase_model=phase_model,
+            period_start_utc=window["start_utc"],
+            period_end_exclusive_utc=window["end_utc"],
+        )
+        if item:
+            out.append(item)
+
+    phase_rank = {"first_half": 0, "second_half": 1}
+    out.sort(key=lambda item: phase_rank.get(str(item.get("phase_id") or ""), 99))
+    return out[:2]
+
+
+def _classify_monthly_shift_direction(
+    *,
+    from_phase: Dict[str, Any],
+    to_phase: Dict[str, Any],
+) -> str:
+    from_routes = set(_ordered_unique_strs(list(from_phase.get("route_keys") or [])))
+    to_routes = set(_ordered_unique_strs(list(to_phase.get("route_keys") or [])))
+    emerging_route_keys = [key for key in _ordered_unique_strs(list(to_phase.get("route_keys") or [])) if key not in from_routes]
+
+    def _route_target(route_key: str) -> str:
+        text = str(route_key or "").strip()
+        if "->" in text:
+            return text.split("->", 1)[1].strip()
+        if "→" in text:
+            return text.split("→", 1)[1].strip()
+        return ""
+
+    emerging_targets = {_route_target(key) for key in emerging_route_keys if _route_target(key)}
+    from_recovery_target = _route_target(str(from_phase.get("recovery_route_key") or ""))
+    to_recovery_target = _route_target(str(to_phase.get("recovery_route_key") or ""))
+
+    if (
+        "calm" in emerging_targets
+        or "joy" in emerging_targets
+        or (to_recovery_target in ("calm", "joy") and from_recovery_target not in ("calm", "joy"))
+    ):
+        return "recovery_shift"
+    if "anxiety" in emerging_targets or "anger" in emerging_targets:
+        return "tension_shift"
+    return "mixed"
+
+
+def _build_monthly_shift_items(
+    monthly_phases: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    phases = [item for item in list(monthly_phases or []) if isinstance(item, dict)]
+    if len(phases) < 2:
+        return []
+
+    phase_rank = {"first_half": 0, "second_half": 1}
+    phases.sort(key=lambda item: phase_rank.get(str(item.get("phase_id") or ""), 99))
+    from_phase = phases[0]
+    to_phase = phases[1]
+
+    from_phase_id = str(from_phase.get("phase_id") or "first_half").strip() or "first_half"
+    to_phase_id = str(to_phase.get("phase_id") or "second_half").strip() or "second_half"
+    from_phase_label = str(from_phase.get("phase_label") or _MONTHLY_PHASE_LABELS.get(from_phase_id, from_phase_id)).strip() or "前半"
+    to_phase_label = str(to_phase.get("phase_label") or _MONTHLY_PHASE_LABELS.get(to_phase_id, to_phase_id)).strip() or "後半"
+
+    from_theme_hints = _ordered_unique_strs(list(from_phase.get("theme_hints") or []))
+    to_theme_hints = _ordered_unique_strs(list(to_phase.get("theme_hints") or []))
+    emerging_theme_hints = [hint for hint in to_theme_hints if hint not in set(from_theme_hints)][:3]
+    settling_theme_hints = [hint for hint in from_theme_hints if hint not in set(to_theme_hints)][:3]
+    emerging_theme_labels = [_deep_theme_hint_label(hint) for hint in emerging_theme_hints]
+    settling_theme_labels = [_deep_theme_hint_label(hint) for hint in settling_theme_hints]
+
+    from_route_keys = _ordered_unique_strs(list(from_phase.get("route_keys") or []))
+    to_route_keys = _ordered_unique_strs(list(to_phase.get("route_keys") or []))
+    emerging_route_keys = [key for key in to_route_keys if key not in set(from_route_keys)][:4]
+    settling_route_keys = [key for key in from_route_keys if key not in set(to_route_keys)][:4]
+    emerging_route_labels = [_deep_localize_transition_key(key) for key in emerging_route_keys]
+    settling_route_labels = [_deep_localize_transition_key(key) for key in settling_route_keys]
+
+    from_recovery_route_key = str(from_phase.get("recovery_route_key") or "").strip()
+    to_recovery_route_key = str(to_phase.get("recovery_route_key") or "").strip()
+    from_recovery_route_label = str(from_phase.get("recovery_route_label") or _deep_localize_transition_key(from_recovery_route_key)).strip()
+    to_recovery_route_label = str(to_phase.get("recovery_route_label") or _deep_localize_transition_key(to_recovery_route_key)).strip()
+
+    direction_hint = _classify_monthly_shift_direction(from_phase=from_phase, to_phase=to_phase)
+    if direction_hint == "recovery_shift":
+        shift_label = "後半は静かに戻ろうとする流れが増えました"
+    elif direction_hint == "tension_shift":
+        shift_label = "後半は張りつめる流れが増えました"
+    elif settling_route_labels and emerging_route_labels:
+        shift_label = f"{settling_route_labels[0]}から{emerging_route_labels[0]}への変化"
+    else:
+        shift_label = "前半と後半で動き方が変わりました"
+
+    settling_lead = settling_route_labels[0] if settling_route_labels else (settling_theme_labels[0] if settling_theme_labels else "")
+    emerging_lead = emerging_route_labels[0] if emerging_route_labels else (emerging_theme_labels[0] if emerging_theme_labels else "")
+    if settling_lead and emerging_lead:
+        shift_comment = f"{from_phase_label}は{settling_lead}が目立っていましたが、{to_phase_label}は{emerging_lead}が前に出ていました。"
+    elif emerging_lead:
+        shift_comment = f"{to_phase_label}に入ってから、{emerging_lead}が増えていました。"
+    elif settling_lead:
+        shift_comment = f"{from_phase_label}で目立っていた{settling_lead}は、{to_phase_label}では少し静かになっていました。"
+    else:
+        shift_comment = f"{from_phase_label}と{to_phase_label}で、目立つ流れが少し入れ替わっていました。"
+
+    if from_recovery_route_label and to_recovery_route_label and from_recovery_route_label != to_recovery_route_label:
+        shift_comment += f" 整え直し方も、{from_recovery_route_label}から{to_recovery_route_label}へ少し移っていました。"
+    elif to_recovery_route_label and direction_hint == "recovery_shift":
+        shift_comment += f" {to_phase_label}は、{to_recovery_route_label}へ戻る流れが見えやすくなっていました。"
+
+    if not (
+        emerging_theme_hints
+        or settling_theme_hints
+        or emerging_route_keys
+        or settling_route_keys
+        or from_recovery_route_key
+        or to_recovery_route_key
+    ):
+        return []
+
+    return [
+        {
+            "shift_id": f"{from_phase_id}_to_{to_phase_id}",
+            "from_phase_id": from_phase_id,
+            "from_phase_label": from_phase_label,
+            "to_phase_id": to_phase_id,
+            "to_phase_label": to_phase_label,
+            "emerging_theme_hints": emerging_theme_hints,
+            "settling_theme_hints": settling_theme_hints,
+            "emerging_theme_labels": emerging_theme_labels,
+            "settling_theme_labels": settling_theme_labels,
+            "emerging_route_keys": emerging_route_keys,
+            "settling_route_keys": settling_route_keys,
+            "emerging_route_labels": emerging_route_labels,
+            "settling_route_labels": settling_route_labels,
+            "from_recovery_route_key": from_recovery_route_key,
+            "to_recovery_route_key": to_recovery_route_key,
+            "from_recovery_route_label": from_recovery_route_label,
+            "to_recovery_route_label": to_recovery_route_label,
+            "direction_hint": direction_hint,
+            "shift_label": shift_label,
+            "shift_comment": shift_comment,
+            "evidence": {
+                "fromEntryCount": int(from_phase.get("entry_count") or from_phase.get("count") or 0),
+                "toEntryCount": int(to_phase.get("entry_count") or to_phase.get("count") or 0),
+                "routeDeltaCount": len(emerging_route_keys) + len(settling_route_keys),
+                "themeDeltaCount": len(emerging_theme_hints) + len(settling_theme_hints),
+            },
+            "notes": [],
+        }
+    ]
+
+
 def _mean(xs: List[float]) -> Optional[float]:
     vals = [float(x) for x in xs if x is not None]
     if not vals:
@@ -2339,6 +2962,7 @@ def _build_transition_records(entries: List[Any]) -> List[Dict[str, Any]]:
                 str(getattr(cur, "memo", "") or "").strip(),
             ]
         ).strip()
+        phrase_candidates = _extract_memo_phrase_candidates(memo_text)
         out.append(
             {
                 "from_label": from_label,
@@ -2351,6 +2975,7 @@ def _build_transition_records(entries: List[Any]) -> List[Dict[str, Any]]:
                 "to_timestamp": cur_dt.isoformat(),
                 "memo": memo_text,
                 "keywords": _extract_memo_keywords(memo_text),
+                "phrase_candidates": phrase_candidates,
             }
         )
     return out
@@ -2463,17 +3088,28 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
                 "related_emotions": Counter(),
                 "related_transitions": Counter(),
                 "time_buckets": Counter(),
+                "phrase_samples": [],
+                "theme_hints": Counter(),
+                "source_transition_keys": Counter(),
             })
             stat["count"] += 1
             stat["related_emotions"][from_label] += 1
             stat["related_emotions"][to_label] += 1
             stat["related_transitions"][key] += 1
             stat["time_buckets"][str(t.get("time_bucket") or "unknown")] += 1
+            phrase_candidates = list(t.get("phrase_candidates") or [])
+            theme_hint = _classify_memo_theme_hint(keyword=kw, phrase_samples=phrase_candidates)
+            for phrase in phrase_candidates:
+                phrase_s = _sanitize_phrase_sample(phrase)
+                if phrase_s and phrase_s not in stat["phrase_samples"]:
+                    stat["phrase_samples"].append(phrase_s)
+            stat["theme_hints"][theme_hint] += 1
+            stat["source_transition_keys"][key] += 1
 
     total_transitions = max(1, len(transitions))
     transition_edges: List[Dict[str, Any]] = []
     recovery_time: List[Dict[str, Any]] = []
-    edge_vectors: List[List[float]] = []
+    edge_vectors_by_key: Dict[str, List[float]] = {}
 
     label_index = {lab: idx for idx, lab in enumerate(DEEP_UI_LABELS)}
     bucket_index = {"0-6": 0.0, "6-12": 1.0, "12-18": 2.0, "18-24": 3.0, "unknown": 1.5}
@@ -2512,17 +3148,15 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
             }
         )
         dominant_bucket = list(edge.get("dominant_time_buckets") or ["unknown"])[0]
-        edge_vectors.append(
-            [
-                float(label_index.get(from_label, 0)),
-                float(label_index.get(to_label, 0)),
-                math.log1p(float(len(rows))),
-                math.log1p(float(mean_minutes or 0.0) + 1.0),
-                float(edge.get("mean_intensity_from") or 0.0),
-                float(edge.get("mean_intensity_to") or 0.0),
-                float(bucket_index.get(dominant_bucket, 1.5)),
-            ]
-        )
+        edge_vectors_by_key[key] = [
+            float(label_index.get(from_label, 0)),
+            float(label_index.get(to_label, 0)),
+            math.log1p(float(len(rows))),
+            math.log1p(float(mean_minutes or 0.0) + 1.0),
+            float(edge.get("mean_intensity_from") or 0.0),
+            float(edge.get("mean_intensity_to") or 0.0),
+            float(bucket_index.get(dominant_bucket, 1.5)),
+        ]
 
     transition_edges.sort(key=lambda x: (int(x.get("count", 0) or 0), float(x.get("share") or 0.0)), reverse=True)
     recovery_time.sort(key=lambda x: (int(x.get("count", 0) or 0), float(x.get("mean_minutes") or 0.0) * -1.0), reverse=True)
@@ -2536,12 +3170,19 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
                 "related_emotions": [k for k, _ in stat["related_emotions"].most_common(5)],
                 "related_transitions": [k for k, _ in stat["related_transitions"].most_common(5)],
                 "dominant_time_buckets": [k for k, _ in stat["time_buckets"].most_common(2)],
+                "phrase_samples": list(stat.get("phrase_samples") or [])[:3],
+                "source_transition_keys": [k for k, _ in stat["source_transition_keys"].most_common(5)],
+                "theme_hint": (stat["theme_hints"].most_common(1)[0][0] if stat.get("theme_hints") and stat["theme_hints"] else "generic"),
                 "evidence": {"count": int(stat.get("count") or 0)},
                 "notes": [],
             }
         )
 
-    cluster_labels, clustering_name = _choose_cluster_labels(edge_vectors, DEEP_MAX_CONTROL_PATTERNS)
+    sorted_edge_vectors = [
+        edge_vectors_by_key.get(f"{str(edge.get('from_label') or '')}->{str(edge.get('to_label') or '')}", [0.0] * 7)
+        for edge in transition_edges
+    ]
+    cluster_labels, clustering_name = _choose_cluster_labels(sorted_edge_vectors, DEEP_MAX_CONTROL_PATTERNS)
     clusters: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
     for edge, label in zip(transition_edges, cluster_labels):
         clusters[int(label)].append(edge)
@@ -2570,6 +3211,13 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
             }
         )
 
+    memo_themes = _build_memo_themes_from_triggers(memo_triggers)
+    pattern_episodes = _build_pattern_episodes(
+        control_patterns=control_patterns,
+        memo_themes=memo_themes,
+        recovery_time=recovery_time,
+    )
+
     top_edges = [f"{e.get('from_label')}→{e.get('to_label')}" for e in transition_edges[:5]]
     return {
         "period": period_label,
@@ -2578,18 +3226,29 @@ def _build_deep_control_model_payload(entries: List[Any], *, scope_kind: str, pe
         "transition_edges": transition_edges,
         "recovery_time": recovery_time,
         "memo_triggers": memo_triggers[:10],
+        "memo_themes": memo_themes,
         "control_patterns": control_patterns,
+        "pattern_episodes": pattern_episodes,
         "summary": {
             "transitionCount": len(transitions),
             "edgeCount": len(transition_edges),
             "memoKeywordCount": len(memo_triggers),
+            "memoThemeCount": len(memo_themes),
             "patternCount": len(control_patterns),
+            "patternEpisodeCount": len(pattern_episodes),
+            "quoteSampleCount": sum(len(list(x.get("phrase_samples") or [])) for x in memo_themes),
+            "themeLinkedTransitionCount": len({
+                key
+                for theme in memo_themes
+                for key in list(theme.get("linked_transition_keys") or [])
+                if str(key or "").strip()
+            }),
             "dominantTransitions": top_edges,
         },
         "meta": {
-            "analysisVersion": "emotion_structure.deep.v1",
+            "analysisVersion": "emotion_structure.deep.v2",
             "clustering": clustering_name,
-            "memoMode": "keyword",
+            "memoMode": "keyword_phrase",
             "maxPatterns": DEEP_MAX_CONTROL_PATTERNS,
         },
         "notes": [
@@ -2627,7 +3286,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
             "source_hash": str(snap.get("source_hash") or ""),
             "entry_count": 0,
             "analysis_stage": "deep",
-            "analysis_version": "emotion_structure.deep.v1",
+            "analysis_version": "emotion_structure.deep.v2",
             "skip_reason": "no_public_emotion_entries",
         }
 
@@ -2650,19 +3309,44 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
             "source_hash": str(snap.get("source_hash") or ""),
             "entry_count": 0,
             "analysis_stage": "deep",
-            "analysis_version": "emotion_structure.deep.v1",
+            "analysis_version": "emotion_structure.deep.v2",
             "skip_reason": "no_public_emotion_entries",
         }
+
+
 
     period_label = f"{start_iso}..{end_iso}"
 
     deep_model = _build_deep_control_model_payload(entries, scope_kind=scope_kind, period_label=period_label)
+
+    monthly_phases: List[Dict[str, Any]] = []
+    monthly_shifts: List[Dict[str, Any]] = []
+    period_start_utc = period_info.get("period_start_utc")
+    period_end_exclusive_utc = period_info.get("dist_utc") if scope_kind == "monthly" else None
+    if (
+        scope_kind == "monthly"
+        and isinstance(period_start_utc, datetime)
+        and isinstance(period_end_exclusive_utc, datetime)
+    ):
+        monthly_phases = _build_monthly_phase_items(
+            entries,
+            period_start_utc=period_start_utc,
+            period_end_exclusive_utc=period_end_exclusive_utc,
+        )
+        monthly_shifts = _build_monthly_shift_items(monthly_phases)
+        deep_model["monthly_phases"] = monthly_phases
+        deep_model["monthly_shifts"] = monthly_shifts
+        deep_model.setdefault("summary", {})["phaseCount"] = len(monthly_phases)
+        deep_model.setdefault("summary", {})["shiftCount"] = len(monthly_shifts)
+        deep_model.setdefault("meta", {})["monthlyPhaseMode"] = "half_split_14d"
+        deep_model.setdefault("meta", {})["monthlyShiftMode"] = "first_to_second"
+
     analysis_payload: Dict[str, Any] = {
         "engine": "analysis_engine",
         "analysis_type": "emotion_structure",
         "scope": scope_kind,
         "analysis_stage": "deep",
-        "analysis_version": "emotion_structure.deep.v1",
+        "analysis_version": "emotion_structure.deep.v2",
         "source_hash": str(snap.get("source_hash") or ""),
         "snapshot_ref": {
             "snapshot_id": str(snap.get("id") or ""),
@@ -2676,19 +3360,24 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
         "entry_count": len(entries),
         "deep_control_model": deep_model,
         "controlPatterns": list(deep_model.get("control_patterns") or []),
+        "patternEpisodes": list(deep_model.get("pattern_episodes") or []),
         "transitionMatrix": deep_model.get("transition_matrix") or {},
         "transitionEdges": list(deep_model.get("transition_edges") or []),
         "recoveryTime": list(deep_model.get("recovery_time") or []),
         "memoTriggers": list(deep_model.get("memo_triggers") or []),
+        "memoThemes": list(deep_model.get("memo_themes") or []),
+        "monthly_phases": list(deep_model.get("monthly_phases") or []),
+        "monthly_shifts": list(deep_model.get("monthly_shifts") or []),
+        "monthlyPhases": list(deep_model.get("monthly_phases") or []),
+        "monthlyShifts": list(deep_model.get("monthly_shifts") or []),
     }
-
     row = {
         "target_user_id": uid,
         "snapshot_id": str(snap.get("id") or ""),
         "analysis_type": "emotion_structure",
         "scope": scope_kind,
         "analysis_stage": "deep",
-        "analysis_version": "emotion_structure.deep.v1",
+        "analysis_version": "emotion_structure.deep.v2",
         "source_hash": str(snap.get("source_hash") or "") or None,
         "payload": analysis_payload,
         "updated_at": _now_iso_z(),
@@ -2706,7 +3395,7 @@ async def _handle_analyze_emotion_structure_deep_v1(*, user_id: str, payload: Di
         "source_hash": str(snap.get("source_hash") or ""),
         "entry_count": len(entries),
         "analysis_stage": "deep",
-        "analysis_version": "emotion_structure.deep.v1",
+        "analysis_version": "emotion_structure.deep.v2",
         "pattern_count": int(len(list(deep_model.get("control_patterns") or []))),
     }
 

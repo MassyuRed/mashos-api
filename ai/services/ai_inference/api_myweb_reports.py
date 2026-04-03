@@ -1727,6 +1727,35 @@ def _localize_transition_key(value: Any) -> str:
     return _emotion_label_ja(s)
 
 
+DEEP_THEME_HINT_LABELS: Dict[str, str] = {
+    "self_pressure": "自分を急がせる言葉",
+    "interpersonal_caution": "人との距離を気にする言葉",
+    "fatigue_limit": "限界を感じる言葉",
+    "self_doubt": "自分を責めやすい言葉",
+    "generic": "前に出ていた言葉",
+}
+
+
+
+DEEP_THEME_HINT_MEANING_COMMENTS: Dict[str, str] = {
+    "self_pressure": "自分を整えたい気持ちが強いほど、内側の緊張も高まりやすい週でした。",
+    "interpersonal_caution": "人への配慮が強い場面で、静かな不安が続きやすい週でした。",
+    "fatigue_limit": "しんどさが言葉に出たあと、疲れから静けさへ戻る流れも見えていました。",
+    "self_doubt": "うまくできていない感覚が前に出るほど、焦りや落ち込みにつながりやすい週でした。",
+    "generic": "この言葉のまとまりが、今週の気持ちの動きとつながって見えていました。",
+}
+
+DEEP_SUMMARY_SOURCE_V1 = "api_deep_summary"
+DEEP_SUMMARY_SOURCE_WEEKLY_V2 = "api_deep_summary_v2"
+DEEP_SUMMARY_SOURCE_DAILY_V2 = "api_deep_summary_daily_v2"
+DEEP_SUMMARY_SOURCE_MONTHLY_V2 = "api_deep_summary_monthly_v2"
+
+MONTHLY_PHASE_LABELS: Dict[str, str] = {
+    "first_half": "前半",
+    "second_half": "後半",
+}
+
+
 def _normalize_transition_matrix(raw: Any) -> Dict[str, Dict[str, int]]:
     out: Dict[str, Dict[str, int]] = {}
     if not isinstance(raw, dict):
@@ -1841,12 +1870,330 @@ def _normalize_memo_triggers(raw: Any) -> List[Dict[str, Any]]:
                 "relatedEmotions": related_emotions[:5],
                 "relatedTransitions": related_transitions[:5],
                 "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or []),
+                "phraseSamples": list(item.get("phrase_samples") or item.get("phraseSamples") or [])[:3],
+                "sourceTransitionKeys": [
+                    str(x).strip()
+                    for x in list(item.get("source_transition_keys") or item.get("sourceTransitionKeys") or [])
+                    if str(x).strip()
+                ][:5],
+                "themeHint": str(item.get("theme_hint") or item.get("themeHint") or "generic").strip() or "generic",
                 "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
                 "notes": list(item.get("notes") or []),
             }
         )
     out.sort(key=lambda x: _coerce_int(x.get("count"), 0), reverse=True)
     return out
+
+
+def _normalize_memo_themes(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        theme_id = str(item.get("theme_id") or item.get("themeId") or item.get("themeLabel") or "").strip()
+        theme_hint = str(item.get("theme_hint") or item.get("themeHint") or "generic").strip() or "generic"
+        phrase_samples = [str(x).strip() for x in list(item.get("phrase_samples") or item.get("phraseSamples") or []) if str(x).strip()]
+        linked_transition_keys = [str(x).strip() for x in list(item.get("linked_transition_keys") or item.get("linkedTransitionKeys") or []) if str(x).strip()]
+        theme_label = str(item.get("themeLabel") or item.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
+        if not theme_id and not theme_label:
+            continue
+        out.append(
+            {
+                "themeId": theme_id or theme_label or "theme",
+                "themeHint": theme_hint,
+                "themeLabel": theme_label,
+                "keywords": [str(x).strip() for x in list(item.get("keywords") or []) if str(x).strip()][:4],
+                "phraseSamples": phrase_samples[:3],
+                "linkedTransitionKeys": linked_transition_keys[:4],
+                "linkedRouteLabels": [_localize_transition_key(x) for x in linked_transition_keys[:4]],
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or [])[:2],
+                "count": _coerce_int(item.get("count"), 0),
+                "meaningComment": str(item.get("meaningComment") or item.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: _coerce_int(x.get("count"), 0), reverse=True)
+    return out[:3]
+
+
+def _normalize_pattern_episodes(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        pattern_id = str(item.get("pattern_id") or item.get("patternId") or item.get("patternLabel") or "").strip()
+        route_keys = [str(x).strip() for x in list(item.get("route_keys") or item.get("routeKeys") or []) if str(x).strip()]
+        route_labels = list(item.get("routeLabels") or item.get("route_labels") or [])
+        if not route_labels:
+            route_labels = [_localize_transition_key(x) for x in route_keys]
+        recovery_route_key = str(item.get("recovery_route_key") or item.get("recoveryRouteKey") or "").strip()
+        out.append(
+            {
+                "patternId": pattern_id or "pattern",
+                "linkedThemeIds": [str(x).strip() for x in list(item.get("linked_theme_ids") or item.get("linkedThemeIds") or []) if str(x).strip()],
+                "routeKeys": route_keys[:4],
+                "routeLabels": [str(x).strip() for x in list(route_labels or []) if str(x).strip()][:4],
+                "recoveryRouteKey": recovery_route_key,
+                "recoveryRouteLabel": str(item.get("recoveryRouteLabel") or item.get("recovery_route_label") or _localize_transition_key(recovery_route_key)).strip(),
+                "dominantTimeBuckets": list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or [])[:2],
+                "count": _coerce_int(item.get("count"), 0),
+                "patternLabel": str(item.get("patternLabel") or item.get("pattern_label") or item.get("label") or "").strip(),
+                "patternComment": str(item.get("patternComment") or item.get("pattern_comment") or item.get("description") or "").strip(),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+    out.sort(key=lambda x: _coerce_int(x.get("count"), 0), reverse=True)
+    return out[:5]
+
+
+
+
+def _normalize_monthly_phases(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        phase_id = str(item.get("phase_id") or item.get("phaseId") or "").strip()
+        phase_label = str(
+            item.get("phase_label")
+            or item.get("phaseLabel")
+            or MONTHLY_PHASE_LABELS.get(phase_id, "")
+        ).strip()
+
+        theme_hints = [
+            str(x).strip()
+            for x in list(item.get("theme_hints") or item.get("themeHints") or [])
+            if str(x).strip()
+        ][:3]
+        theme_labels = [
+            str(x).strip()
+            for x in list(item.get("theme_labels") or item.get("themeLabels") or [])
+            if str(x).strip()
+        ]
+        if not theme_labels:
+            theme_labels = [
+                DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
+                for hint in theme_hints
+            ]
+
+        route_keys = [
+            str(x).strip()
+            for x in list(item.get("route_keys") or item.get("routeKeys") or [])
+            if str(x).strip()
+        ][:4]
+        route_labels = [
+            str(x).strip()
+            for x in list(item.get("route_labels") or item.get("routeLabels") or [])
+            if str(x).strip()
+        ]
+        if not route_labels:
+            route_labels = [_localize_transition_key(x) for x in route_keys]
+
+        recovery_route_key = str(
+            item.get("recovery_route_key") or item.get("recoveryRouteKey") or ""
+        ).strip()
+        recovery_route_label = str(
+            item.get("recovery_route_label")
+            or item.get("recoveryRouteLabel")
+            or _localize_transition_key(recovery_route_key)
+        ).strip()
+
+        dominant_buckets = [
+            _normalize_time_bucket_key(x) or str(x).strip()
+            for x in list(item.get("dominant_time_buckets") or item.get("dominantTimeBuckets") or [])
+            if str(x).strip()
+        ][:2]
+
+        entry_count = _coerce_int(item.get("entry_count") or item.get("entryCount"), 0)
+        transition_count = _coerce_int(item.get("transition_count") or item.get("transitionCount"), 0)
+
+        if not phase_id and not phase_label:
+            continue
+        if entry_count <= 0 and transition_count <= 0 and not theme_hints and not route_keys and not recovery_route_key:
+            continue
+
+        out.append(
+            {
+                "phaseId": phase_id or phase_label or "phase",
+                "phaseLabel": phase_label or phase_id or "区間",
+                "periodStartIso": str(item.get("period_start_iso") or item.get("periodStartIso") or "").strip(),
+                "periodEndIso": str(item.get("period_end_iso") or item.get("periodEndIso") or "").strip(),
+                "entryCount": entry_count,
+                "transitionCount": transition_count,
+                "themeHints": theme_hints,
+                "themeLabels": theme_labels[:3],
+                "phraseSamples": [
+                    str(x).strip()
+                    for x in list(item.get("phrase_samples") or item.get("phraseSamples") or [])
+                    if str(x).strip()
+                ][:3],
+                "routeKeys": route_keys,
+                "routeLabels": route_labels[:4],
+                "recoveryRouteKey": recovery_route_key,
+                "recoveryRouteLabel": recovery_route_label,
+                "dominantTimeBuckets": dominant_buckets,
+                "dominantTimeBucketLabels": [_time_bucket_reader_label(x) for x in dominant_buckets],
+                "patternIds": [
+                    str(x).strip()
+                    for x in list(item.get("pattern_ids") or item.get("patternIds") or [])
+                    if str(x).strip()
+                ][:4],
+                "phaseComment": str(item.get("phase_comment") or item.get("phaseComment") or "").strip(),
+                "count": _coerce_int(item.get("count"), entry_count),
+                "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                "notes": list(item.get("notes") or []),
+            }
+        )
+
+    phase_rank = {"first_half": 0, "second_half": 1}
+    out.sort(
+        key=lambda x: (
+            str(x.get("periodStartIso") or ""),
+            phase_rank.get(str(x.get("phaseId") or ""), 99),
+        )
+    )
+    return out[:2]
+
+
+
+def _normalize_monthly_shifts(raw: Any) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        shift_id = str(item.get("shift_id") or item.get("shiftId") or "").strip()
+        from_phase_id = str(item.get("from_phase_id") or item.get("fromPhaseId") or "").strip()
+        to_phase_id = str(item.get("to_phase_id") or item.get("toPhaseId") or "").strip()
+        if not shift_id and not (from_phase_id and to_phase_id):
+            continue
+
+        emerging_theme_hints = [
+            str(x).strip()
+            for x in list(item.get("emerging_theme_hints") or item.get("emergingThemeHints") or [])
+            if str(x).strip()
+        ][:3]
+        settling_theme_hints = [
+            str(x).strip()
+            for x in list(item.get("settling_theme_hints") or item.get("settlingThemeHints") or [])
+            if str(x).strip()
+        ][:3]
+
+        emerging_theme_labels = [
+            str(x).strip()
+            for x in list(item.get("emerging_theme_labels") or item.get("emergingThemeLabels") or [])
+            if str(x).strip()
+        ] or [
+            DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
+            for hint in emerging_theme_hints
+        ]
+        settling_theme_labels = [
+            str(x).strip()
+            for x in list(item.get("settling_theme_labels") or item.get("settlingThemeLabels") or [])
+            if str(x).strip()
+        ] or [
+            DEEP_THEME_HINT_LABELS.get(hint, DEEP_THEME_HINT_LABELS["generic"])
+            for hint in settling_theme_hints
+        ]
+
+        emerging_route_keys = [
+            str(x).strip()
+            for x in list(item.get("emerging_route_keys") or item.get("emergingRouteKeys") or [])
+            if str(x).strip()
+        ][:4]
+        settling_route_keys = [
+            str(x).strip()
+            for x in list(item.get("settling_route_keys") or item.get("settlingRouteKeys") or [])
+            if str(x).strip()
+        ][:4]
+
+        emerging_route_labels = [
+            str(x).strip()
+            for x in list(item.get("emerging_route_labels") or item.get("emergingRouteLabels") or [])
+            if str(x).strip()
+        ] or [_localize_transition_key(x) for x in emerging_route_keys]
+        settling_route_labels = [
+            str(x).strip()
+            for x in list(item.get("settling_route_labels") or item.get("settlingRouteLabels") or [])
+            if str(x).strip()
+        ] or [_localize_transition_key(x) for x in settling_route_keys]
+
+        from_recovery_route_key = str(
+            item.get("from_recovery_route_key") or item.get("fromRecoveryRouteKey") or ""
+        ).strip()
+        to_recovery_route_key = str(
+            item.get("to_recovery_route_key") or item.get("toRecoveryRouteKey") or ""
+        ).strip()
+        from_recovery_route_label = str(
+            item.get("from_recovery_route_label")
+            or item.get("fromRecoveryRouteLabel")
+            or _localize_transition_key(from_recovery_route_key)
+        ).strip()
+        to_recovery_route_label = str(
+            item.get("to_recovery_route_label")
+            or item.get("toRecoveryRouteLabel")
+            or _localize_transition_key(to_recovery_route_key)
+        ).strip()
+
+        normalized = {
+            "shiftId": shift_id or f"{from_phase_id}_to_{to_phase_id}",
+            "fromPhaseId": from_phase_id,
+            "fromPhaseLabel": str(
+                item.get("from_phase_label")
+                or item.get("fromPhaseLabel")
+                or MONTHLY_PHASE_LABELS.get(from_phase_id, from_phase_id)
+            ).strip() or "前半",
+            "toPhaseId": to_phase_id,
+            "toPhaseLabel": str(
+                item.get("to_phase_label")
+                or item.get("toPhaseLabel")
+                or MONTHLY_PHASE_LABELS.get(to_phase_id, to_phase_id)
+            ).strip() or "後半",
+            "emergingThemeHints": emerging_theme_hints,
+            "settlingThemeHints": settling_theme_hints,
+            "emergingThemeLabels": emerging_theme_labels[:3],
+            "settlingThemeLabels": settling_theme_labels[:3],
+            "emergingRouteKeys": emerging_route_keys,
+            "settlingRouteKeys": settling_route_keys,
+            "emergingRouteLabels": emerging_route_labels[:4],
+            "settlingRouteLabels": settling_route_labels[:4],
+            "fromRecoveryRouteKey": from_recovery_route_key,
+            "toRecoveryRouteKey": to_recovery_route_key,
+            "fromRecoveryRouteLabel": from_recovery_route_label,
+            "toRecoveryRouteLabel": to_recovery_route_label,
+            "directionHint": str(item.get("direction_hint") or item.get("directionHint") or "mixed").strip() or "mixed",
+            "shiftLabel": str(item.get("shift_label") or item.get("shiftLabel") or "").strip(),
+            "shiftComment": str(item.get("shift_comment") or item.get("shiftComment") or "").strip(),
+            "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+            "notes": list(item.get("notes") or []),
+        }
+        if not (
+            normalized["shiftLabel"]
+            or normalized["shiftComment"]
+            or normalized["emergingThemeLabels"]
+            or normalized["settlingThemeLabels"]
+            or normalized["emergingRouteLabels"]
+            or normalized["settlingRouteLabels"]
+            or normalized["fromRecoveryRouteLabel"]
+            or normalized["toRecoveryRouteLabel"]
+        ):
+            continue
+        out.append(normalized)
+
+    return out[:3]
 
 
 def _normalize_control_patterns(raw: Any) -> List[Dict[str, Any]]:
@@ -1889,21 +2236,1041 @@ def _extract_deep_control_model_payload(analysis_payload: Dict[str, Any]) -> Dic
     return deep_model if deep_model else payload
 
 
+def _quote_phrase_sample(value: Any) -> str:
+    s = str(value or "").strip().strip("「」『』\"'")
+    if not s:
+        return ""
+    return f"「{s}」"
+
+
+
+def _daily_deep_v2_reader_comment(
+    theme_hints: List[str],
+    *,
+    overview_route: str,
+    recovery_route: str,
+) -> str:
+    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
+    if "self_pressure" in hints:
+        if recovery_route:
+            return f"昨日のあなたは、自分を支えるために強い言葉を内側へ向けながらも、{recovery_route}へ戻ろうとする動きも持っていたようです。"
+        return "昨日のあなたは、自分を支えるために強い言葉を内側へ向けるほど、気持ちも張りつめやすかったようです。"
+    if "interpersonal_caution" in hints:
+        if recovery_route:
+            return f"昨日のあなたは、人との距離を丁寧に考えるほど緊張も抱えやすく、そのあとで{recovery_route}へ戻ろうとする流れも見えていました。"
+        return "昨日のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
+    if "fatigue_limit" in hints:
+        if recovery_route:
+            return f"昨日のあなたは、しんどさに気づいたあとで、{recovery_route}へ静かに戻ろうとしていたように見えます。"
+        return "昨日のあなたは、しんどさを押し込めるより、限界に気づきながら静かな方へ戻ろうとしていたように見えます。"
+    if "self_doubt" in hints:
+        if recovery_route:
+            return f"昨日のあなたは、うまくできていない感覚に引っぱられながらも、{recovery_route}へ整え直そうとしていたようです。"
+        return "昨日のあなたは、うまくできていない感覚に引っぱられながらも、整え直す流れを探していたようです。"
+    if recovery_route:
+        return f"昨日のあなたは、揺れたままで終わるのではなく、{recovery_route}へ戻ろうとする整え直し方も持っていたようです。"
+    if overview_route:
+        return f"昨日のあなたは、{overview_route}に動きやすい場面があり、その切り替わりが一日の手がかりになっていたようです。"
+    return "昨日のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+
+
+
+def _build_daily_deep_v2_summary(
+    *,
+    memo_themes: List[Dict[str, Any]],
+    memo_triggers: List[Dict[str, Any]],
+    transition_edges: List[Dict[str, Any]],
+    recovery_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    working_themes = list(memo_themes or [])
+    if not working_themes:
+        fallback_themes: List[Dict[str, Any]] = []
+        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
+            keyword = str(memo.get("keyword") or "").strip()
+            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
+            if not phrase_samples and keyword:
+                phrase_samples = [keyword]
+            fallback_themes.append(
+                {
+                    "themeId": f"memo_trigger_{idx}",
+                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
+                    "themeLabel": DEEP_THEME_HINT_LABELS.get(
+                        str(memo.get("themeHint") or "generic").strip() or "generic",
+                        DEEP_THEME_HINT_LABELS["generic"],
+                    ),
+                    "keywords": [keyword] if keyword else [],
+                    "phraseSamples": phrase_samples[:2],
+                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
+                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
+                    "count": _coerce_int(memo.get("count"), 0),
+                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(
+                        str(memo.get("themeHint") or "generic").strip() or "generic",
+                        DEEP_THEME_HINT_MEANING_COMMENTS["generic"],
+                    ),
+                }
+            )
+        working_themes = fallback_themes
+
+    theme_items: List[Dict[str, Any]] = []
+    for theme in list(working_themes or [])[:2]:
+        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
+        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
+        theme_label = str(
+            theme.get("themeLabel")
+            or theme.get("theme_label")
+            or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"])
+        )
+        phrase_samples = [
+            str(x).strip()
+            for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or [])
+            if str(x).strip()
+        ][:2]
+        lead_seed = phrase_samples[0] if phrase_samples else (
+            list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label
+        )
+        linked_route_labels = [
+            str(x).strip()
+            for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or [])
+            if str(x).strip()
+        ][:2]
+        theme_items.append(
+            {
+                "themeId": theme_id,
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLabel": theme_label,
+                "phraseSamples": phrase_samples,
+                "meaningComment": str(
+                    theme.get("meaningComment")
+                    or theme.get("meaning_comment")
+                    or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])
+                ).strip(),
+                "linkedRouteLabels": linked_route_labels,
+                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
+                "count": _coerce_int(theme.get("count"), 0),
+                "themeHint": theme_hint,
+            }
+        )
+
+    top_theme = theme_items[0] if theme_items else {}
+    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
+    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
+    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    if not overview_route:
+        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
+    recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
+
+    if overview_phrase_text and overview_route:
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動きやすい流れが見えていました。"
+    elif overview_phrase_text and recovery_route:
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出たあとで、{recovery_route}へ戻ろうとする流れも見えていました。"
+    elif overview_phrase_text:
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が前に出る場面が残っていました。"
+    elif overview_route:
+        overview_comment = f"昨日は、{overview_route}に動きやすい流れが見えていました。"
+    elif recovery_route:
+        overview_comment = f"昨日は、{recovery_route}へ戻る整え直しの流れが見えていました。"
+    else:
+        overview_comment = "昨日は深いところの流れを言い切るには、材料がまだ少なめでした。"
+
+    movement_items: List[str] = []
+    for theme in theme_items[:2]:
+        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
+        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+        if phrase and route:
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+        elif route:
+            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+    if recovery_route:
+        movement_items.append(f"そのあとで、{recovery_route}へ戻る動きも見えていました。")
+    if not movement_items and overview_route:
+        movement_items.append(f"{overview_route}に向かう切り替わりが、昨日の手がかりとして見えていました。")
+    deduped_movement: List[str] = []
+    seen_movement = set()
+    for text in movement_items:
+        s = str(text or "").strip()
+        if not s or s in seen_movement:
+            continue
+        seen_movement.add(s)
+        deduped_movement.append(s)
+    movement_items = deduped_movement[:3]
+
+    reader_comment = _daily_deep_v2_reader_comment(
+        [str(item.get("themeHint") or "generic") for item in theme_items],
+        overview_route=overview_route,
+        recovery_route=recovery_route,
+    )
+    summary = {
+        "overviewComment": overview_comment,
+        "themeItems": [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "themeHint"
+            }
+            for item in theme_items
+        ],
+        "movementItems": movement_items,
+        "readerComment": reader_comment,
+    }
+    summary["structuralComment"] = summary["overviewComment"]
+    summary["gentleComment"] = summary["readerComment"]
+    evidence_items = [{"text": x} for x in summary["movementItems"][:2]]
+    if overview_route:
+        evidence_items.append({"text": f"{overview_route} が昨日の流れの手がかりとして見えていました。"})
+    summary["evidence"] = {"items": evidence_items[:3]}
+    summary["nextPoints"] = []
+    summary["source"] = DEEP_SUMMARY_SOURCE_DAILY_V2
+    return summary
+
+
+
+def _render_daily_deep_v2_text(
+    *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    summary: Dict[str, Any],
+) -> str:
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    lines.append("【昨日、見えていたこと】")
+    lines.append(
+        str((summary or {}).get("overviewComment") or "").strip()
+        or "昨日は深いところの流れを言い切るには、材料がまだ少なめでした。"
+    )
+    lines.append("")
+
+    theme_items = list((summary or {}).get("themeItems") or [])
+    if theme_items:
+        lines.append("【あなたの言葉から見えていたテーマ】")
+        for theme in theme_items[:2]:
+            if not isinstance(theme, dict):
+                continue
+            phrases = [
+                _quote_phrase_sample(x)
+                for x in list(theme.get("phraseSamples") or [])[:2]
+                if str(x or "").strip()
+            ]
+            if phrases:
+                lines.append(f"- {' / '.join(phrases)}")
+            label = str(theme.get("themeLabel") or "").strip()
+            meaning = str(theme.get("meaningComment") or "").strip()
+            linked_routes = [
+                str(x).strip()
+                for x in list(theme.get("linkedRouteLabels") or [])[:2]
+                if str(x).strip()
+            ]
+            if label and meaning:
+                lines.append(f"  {label}: {meaning}")
+            elif meaning:
+                lines.append(f"  {meaning}")
+            if linked_routes:
+                lines.append(f"  つながりやすかった流れ: {' / '.join(linked_routes)}")
+        lines.append("")
+
+    movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
+    if movement_items:
+        lines.append("【言葉と気持ちがつながった流れ】")
+        for item in movement_items[:3]:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    reader_comment = str((summary or {}).get("readerComment") or "").strip()
+    if reader_comment:
+        lines.append("【あなたへのコメント】")
+        lines.append(reader_comment)
+        lines.append("")
+
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
+    return "\n".join(lines).strip()
+
+def _weekly_deep_v2_pattern_label(theme_hints: List[str], recovery_route_label: str) -> str:
+    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
+    if "self_pressure" in hints:
+        return "抱え込みから張りつめる流れ"
+    if "fatigue_limit" in hints:
+        return "疲れから静けさへ戻る流れ"
+    if "interpersonal_caution" in hints:
+        return "気をつかい続けて張りつめる流れ"
+    if "self_doubt" in hints:
+        return "自分を責めて沈みやすい流れ"
+    if recovery_route_label:
+        return "整え直しが見えていた流れ"
+    return "今週、くり返しやすかった流れ"
+
+
+def _weekly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_label: str) -> str:
+    routes = [str(x).strip() for x in list(route_labels or []) if str(x).strip()]
+    first_route = routes[0] if routes else "この流れ"
+    if recovery_route_label:
+        return f"{first_route} に動いたあとも、{recovery_route_label} へ戻る道が見えていました。"
+    if len(routes) >= 2:
+        return f"{routes[0]} を入り口にして、{routes[1]} へつながる流れが今週の中で重なっていました。"
+    return f"{first_route} を中心に、同じ流れが今週の中で何度か重なっていました。"
+
+
+def _weekly_deep_v2_reader_comment(theme_hints: List[str]) -> str:
+    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
+    if "self_pressure" in hints:
+        return "今週のあなたは、ただ揺れていたというより、自分を支えるために強い言葉を何度も内側へ向けていたように見えます。"
+    if "interpersonal_caution" in hints:
+        return "今週のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
+    if "fatigue_limit" in hints:
+        return "今週のあなたは、しんどさを押し込めるより、限界に気づきながら整え直そうとしていたように見えます。"
+    if "self_doubt" in hints:
+        return "今週のあなたは、うまくできていない感覚に引っぱられながらも、整え直す流れを探していたように見えます。"
+    return "今週のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+
+
+def _build_weekly_deep_v2_summary(
+    *,
+    memo_themes: List[Dict[str, Any]],
+    pattern_episodes: List[Dict[str, Any]],
+    memo_triggers: List[Dict[str, Any]],
+    transition_edges: List[Dict[str, Any]],
+    recovery_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    working_themes = list(memo_themes or [])
+    if not working_themes:
+        fallback_themes: List[Dict[str, Any]] = []
+        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
+            keyword = str(memo.get("keyword") or "").strip()
+            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
+            if not phrase_samples and keyword:
+                phrase_samples = [keyword]
+            fallback_themes.append(
+                {
+                    "themeId": f"memo_trigger_{idx}",
+                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
+                    "themeLabel": DEEP_THEME_HINT_LABELS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_LABELS["generic"]),
+                    "keywords": [keyword] if keyword else [],
+                    "phraseSamples": phrase_samples[:2],
+                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
+                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
+                    "count": _coerce_int(memo.get("count"), 0),
+                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
+                }
+            )
+        working_themes = fallback_themes
+
+    theme_items: List[Dict[str, Any]] = []
+    for theme in list(working_themes or [])[:2]:
+        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
+        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
+        theme_label = str(theme.get("themeLabel") or theme.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
+        phrase_samples = [str(x).strip() for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or []) if str(x).strip()][:2]
+        lead_seed = phrase_samples[0] if phrase_samples else (list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label)
+        linked_route_labels = [str(x).strip() for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or []) if str(x).strip()][:2]
+        theme_items.append(
+            {
+                "themeId": theme_id,
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLabel": theme_label,
+                "phraseSamples": phrase_samples,
+                "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
+                "linkedRouteLabels": linked_route_labels,
+                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
+                "count": _coerce_int(theme.get("count"), 0),
+                "themeHint": theme_hint,
+            }
+        )
+
+    top_theme = theme_items[0] if theme_items else {}
+    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
+    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
+    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    if not overview_route:
+        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
+    if overview_phrase_text and overview_route:
+        overview_comment = f"今週は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動く流れが何度か重なっていました。"
+    elif overview_phrase_text:
+        overview_comment = f"今週は、{overview_phrase_text}のような言葉が前に出る場面が重なっていました。"
+    elif overview_route:
+        overview_comment = f"今週は、{overview_route}に動く流れが何度か重なっていました。"
+    else:
+        overview_comment = "今週は深いところの流れを言い切るには、材料がまだ少なめでした。"
+
+    movement_items: List[str] = []
+    for theme in theme_items:
+        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
+        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+        if phrase and route:
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+        elif route:
+            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+    if recovery_rows:
+        recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
+        if recovery_route:
+            movement_items.append(f"{recovery_route}へ戻る流れも見えていました。")
+    deduped_movement: List[str] = []
+    seen_movement = set()
+    for text in movement_items:
+        s = str(text or "").strip()
+        if not s or s in seen_movement:
+            continue
+        seen_movement.add(s)
+        deduped_movement.append(s)
+    movement_items = deduped_movement[:3]
+
+    theme_hint_by_id = {str(item.get("themeId") or ""): str(item.get("themeHint") or "generic") for item in theme_items}
+    working_pattern_episodes = list(pattern_episodes or [])
+    if not working_pattern_episodes and (theme_items or transition_edges):
+        top_edge_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
+        top_recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
+        working_pattern_episodes = [
+            {
+                "patternId": "pattern_1",
+                "linkedThemeIds": [str((theme_items[0] or {}).get("themeId") or "")] if theme_items else [],
+                "routeLabels": [top_edge_route] if top_edge_route else [],
+                "recoveryRouteLabel": top_recovery_route,
+                "count": _coerce_int((transition_edges[0] or {}).get("count"), 0) if transition_edges else 0,
+            }
+        ]
+
+    pattern_items: List[Dict[str, Any]] = []
+    for episode in list(working_pattern_episodes or [])[:2]:
+        linked_theme_ids = [str(x).strip() for x in list(episode.get("linkedThemeIds") or episode.get("linked_theme_ids") or []) if str(x).strip()]
+        theme_hints = [theme_hint_by_id.get(theme_id, "generic") for theme_id in linked_theme_ids if theme_id]
+        route_labels = [str(x).strip() for x in list(episode.get("routeLabels") or episode.get("route_labels") or []) if str(x).strip()][:2]
+        recovery_route_label = str(episode.get("recoveryRouteLabel") or episode.get("recovery_route_label") or "").strip()
+        pattern_label = str(episode.get("patternLabel") or episode.get("pattern_label") or _weekly_deep_v2_pattern_label(theme_hints, recovery_route_label)).strip()
+        pattern_comment = str(episode.get("patternComment") or episode.get("pattern_comment") or _weekly_deep_v2_pattern_comment(route_labels, recovery_route_label)).strip()
+        pattern_items.append(
+            {
+                "patternId": str(episode.get("patternId") or episode.get("pattern_id") or "pattern").strip() or "pattern",
+                "patternLabel": pattern_label,
+                "linkedThemeIds": linked_theme_ids,
+                "routeLabels": route_labels,
+                "recoveryRouteLabel": recovery_route_label,
+                "patternComment": pattern_comment,
+                "count": _coerce_int(episode.get("count"), 0),
+            }
+        )
+
+    reader_comment = _weekly_deep_v2_reader_comment([str(item.get("themeHint") or "generic") for item in theme_items])
+    summary = {
+        "overviewComment": overview_comment,
+        "themeItems": [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "themeHint"
+            }
+            for item in theme_items
+        ],
+        "movementItems": movement_items,
+        "patternItems": pattern_items,
+        "readerComment": reader_comment,
+    }
+    summary["structuralComment"] = summary["overviewComment"]
+    summary["gentleComment"] = summary["readerComment"]
+    summary["evidence"] = {"items": [{"text": x} for x in summary["movementItems"][:3]]}
+    summary["nextPoints"] = []
+    summary["source"] = DEEP_SUMMARY_SOURCE_WEEKLY_V2
+    return summary
+
+
+def _render_weekly_deep_v2_text(
+    *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    summary: Dict[str, Any],
+) -> str:
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    lines.append("【今週、見えていたこと】")
+    lines.append(str((summary or {}).get("overviewComment") or "今週は深いところの流れを言い切るには、材料がまだ少なめでした。"))
+    lines.append("")
+
+    theme_items = list((summary or {}).get("themeItems") or [])
+    if theme_items:
+        lines.append("【あなたの言葉から見えていたテーマ】")
+        for theme in theme_items[:2]:
+            if not isinstance(theme, dict):
+                continue
+            phrases = [_quote_phrase_sample(x) for x in list(theme.get("phraseSamples") or [])[:2] if str(x or "").strip()]
+            if phrases:
+                lines.append(f"- {' / '.join(phrases)}")
+            label = str(theme.get("themeLabel") or "").strip()
+            meaning = str(theme.get("meaningComment") or "").strip()
+            if label and meaning:
+                lines.append(f"  {label}: {meaning}")
+            elif meaning:
+                lines.append(f"  {meaning}")
+        lines.append("")
+
+    movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
+    if movement_items:
+        lines.append("【言葉と気持ちがつながった流れ】")
+        for item in movement_items[:3]:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    pattern_items = list((summary or {}).get("patternItems") or [])
+    if pattern_items:
+        lines.append("【今週、くり返しやすかったパターン】")
+        for idx, pattern in enumerate(pattern_items[:2]):
+            if not isinstance(pattern, dict):
+                continue
+            label = str(pattern.get("patternLabel") or "").strip()
+            comment = str(pattern.get("patternComment") or "").strip()
+            if label:
+                lines.append(f"- {label}")
+            if comment:
+                lines.append(f"  {comment}")
+            if idx != min(len(pattern_items), 2) - 1:
+                lines.append("")
+        lines.append("")
+
+    reader_comment = str((summary or {}).get("readerComment") or "").strip()
+    if reader_comment:
+        lines.append("【あなたへのコメント】")
+        lines.append(reader_comment)
+        lines.append("")
+
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
+    return "\n".join(lines).strip()
+
+
+
+
+def _monthly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_label: str) -> str:
+    routes = [str(x).strip() for x in list(route_labels or []) if str(x).strip()]
+    first_route = routes[0] if routes else "この流れ"
+    if recovery_route_label:
+        return f"{first_route} が前に出たあとも、{recovery_route_label} へ戻る道が見えていました。"
+    if len(routes) >= 2:
+        return f"{routes[0]} を入り口にして、{routes[1]} へつながる流れが今月の中で重なっていました。"
+    return f"{first_route} を中心に、同じ流れが今月の中で何度か重なっていました。"
+
+
+
+def _monthly_deep_v2_phase_comment(phase: Dict[str, Any]) -> str:
+    explicit = str(phase.get("phaseComment") or "").strip()
+    if explicit:
+        return explicit
+
+    phase_label = str(phase.get("phaseLabel") or "この時期").strip() or "この時期"
+    phrase = str((list(phase.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
+    theme_label = str((list(phase.get("themeLabels") or [])[:1] or [""])[0] or "").strip()
+    lead = _quote_phrase_sample(phrase) if phrase else theme_label
+    route = str((list(phase.get("routeLabels") or [])[:1] or [""])[0] or "").strip()
+    recovery = str(phase.get("recoveryRouteLabel") or "").strip()
+    time_label = str((list(phase.get("dominantTimeBucketLabels") or [])[:1] or [""])[0] or "").strip()
+
+    if lead and route:
+        text = f"{phase_label}は、{lead}が前に出る場面で、{route}に動きやすい流れでした。"
+    elif route:
+        text = f"{phase_label}は、{route}が目立つ流れでした。"
+    elif lead:
+        text = f"{phase_label}は、{lead}が前に出やすい時期でした。"
+    else:
+        text = f"{phase_label}は、この時期らしい流れが見えていました。"
+
+    if recovery:
+        if route and recovery != route:
+            text += f" そのあとも、{recovery}へ戻る道が見えていました。"
+        else:
+            text += f" {recovery}へ戻る整え直しも見えていました。"
+
+    if time_label:
+        text += f" とくに{time_label}に出やすい傾向でした。"
+
+    return text
+
+
+
+def _monthly_deep_v2_shift_label(shift: Dict[str, Any]) -> str:
+    explicit = str(shift.get("shiftLabel") or "").strip()
+    if explicit:
+        return explicit
+
+    direction = str(shift.get("directionHint") or "mixed").strip() or "mixed"
+    settling_route = str((list(shift.get("settlingRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    emerging_route = str((list(shift.get("emergingRouteLabels") or [])[:1] or [""])[0] or "").strip()
+
+    if direction == "recovery_shift":
+        return "後半は静かに戻る流れ"
+    if direction == "tension_shift":
+        return "後半は張りつめる流れ"
+    if settling_route and emerging_route:
+        return f"{settling_route}から{emerging_route}への変化"
+    return "前半と後半で動き方が変化"
+
+
+
+def _monthly_deep_v2_shift_comment(shift: Dict[str, Any]) -> str:
+    explicit = str(shift.get("shiftComment") or "").strip()
+    if explicit:
+        return explicit
+
+    from_phase = str(shift.get("fromPhaseLabel") or "前半").strip() or "前半"
+    to_phase = str(shift.get("toPhaseLabel") or "後半").strip() or "後半"
+
+    settling = str((list(shift.get("settlingRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    if not settling:
+        settling = str((list(shift.get("settlingThemeLabels") or [])[:1] or [""])[0] or "").strip()
+
+    emerging = str((list(shift.get("emergingRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    if not emerging:
+        emerging = str((list(shift.get("emergingThemeLabels") or [])[:1] or [""])[0] or "").strip()
+
+    from_recovery = str(shift.get("fromRecoveryRouteLabel") or "").strip()
+    to_recovery = str(shift.get("toRecoveryRouteLabel") or "").strip()
+
+    if settling and emerging:
+        text = f"{from_phase}は{settling}が目立っていましたが、{to_phase}は{emerging}が前に出ていました。"
+    elif emerging:
+        text = f"{to_phase}に入ってから、{emerging}が増えていました。"
+    elif settling:
+        text = f"{from_phase}で目立っていた{settling}は、{to_phase}では少し静かになっていました。"
+    else:
+        text = f"{from_phase}と{to_phase}で、目立つ流れが少し入れ替わっていました。"
+
+    if from_recovery and to_recovery and from_recovery != to_recovery:
+        text += f" 整え直し方も、{from_recovery}から{to_recovery}へ少し移っていました。"
+    elif to_recovery:
+        text += f" {to_phase}では、{to_recovery}へ戻る流れが見えやすくなっていました。"
+
+    return text
+
+
+
+def _monthly_deep_v2_reader_comment(*, theme_hints: List[str], monthly_shifts: List[Dict[str, Any]]) -> str:
+    top_shift = monthly_shifts[0] if monthly_shifts else {}
+    direction = str((top_shift or {}).get("directionHint") or "").strip()
+    if direction == "recovery_shift":
+        return "今月のあなたは、張りつめ続けるよりも、後半にかけて少し静かに戻る方向を探していたように見えます。"
+    if direction == "tension_shift":
+        return "今月のあなたは、後半にかけて気持ちを守ろうとする反応が強まりやすかったように見えます。"
+
+    hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
+    if "self_pressure" in hints:
+        return "今月のあなたは、自分を支えるために強い言葉を何度も内側へ向けていたように見えます。"
+    if "interpersonal_caution" in hints:
+        return "今月のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
+    if "fatigue_limit" in hints:
+        return "今月のあなたは、しんどさに気づきながら、静かに整え直す方向も探していたように見えます。"
+    if "self_doubt" in hints:
+        return "今月のあなたは、自分を責める感覚に引っぱられながらも、整え直す流れを探していたように見えます。"
+    return "今月のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
+
+
+
+def _build_monthly_deep_v2_summary(
+    *,
+    memo_themes: List[Dict[str, Any]],
+    pattern_episodes: List[Dict[str, Any]],
+    memo_triggers: List[Dict[str, Any]],
+    transition_edges: List[Dict[str, Any]],
+    recovery_rows: List[Dict[str, Any]],
+    monthly_phases: List[Dict[str, Any]],
+    monthly_shifts: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    working_themes = list(memo_themes or [])
+    if not working_themes:
+        fallback_themes: List[Dict[str, Any]] = []
+        for idx, memo in enumerate(list(memo_triggers or [])[:2], start=1):
+            keyword = str(memo.get("keyword") or "").strip()
+            phrase_samples = [str(x).strip() for x in list(memo.get("phraseSamples") or []) if str(x).strip()]
+            if not phrase_samples and keyword:
+                phrase_samples = [keyword]
+            fallback_themes.append(
+                {
+                    "themeId": f"theme_{idx}",
+                    "themeHint": str(memo.get("themeHint") or "generic").strip() or "generic",
+                    "themeLabel": DEEP_THEME_HINT_LABELS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_LABELS["generic"]),
+                    "keywords": [keyword] if keyword else [],
+                    "phraseSamples": phrase_samples[:2],
+                    "linkedRouteLabels": list(memo.get("relatedTransitions") or [])[:2],
+                    "dominantTimeBuckets": list(memo.get("dominantTimeBuckets") or [])[:2],
+                    "count": _coerce_int(memo.get("count"), 0),
+                    "meaningComment": DEEP_THEME_HINT_MEANING_COMMENTS.get(str(memo.get("themeHint") or "generic").strip() or "generic", DEEP_THEME_HINT_MEANING_COMMENTS["generic"]),
+                }
+            )
+        working_themes = fallback_themes
+
+    theme_items: List[Dict[str, Any]] = []
+    for theme in list(working_themes or [])[:2]:
+        theme_id = str(theme.get("themeId") or theme.get("theme_id") or theme.get("themeLabel") or "theme").strip()
+        theme_hint = str(theme.get("themeHint") or theme.get("theme_hint") or "generic").strip() or "generic"
+        theme_label = str(theme.get("themeLabel") or theme.get("theme_label") or DEEP_THEME_HINT_LABELS.get(theme_hint, DEEP_THEME_HINT_LABELS["generic"]))
+        phrase_samples = [str(x).strip() for x in list(theme.get("phraseSamples") or theme.get("phrase_samples") or []) if str(x).strip()][:2]
+        lead_seed = phrase_samples[0] if phrase_samples else (list(theme.get("keywords") or [theme_label])[0] if list(theme.get("keywords") or []) else theme_label)
+        linked_route_labels = [str(x).strip() for x in list(theme.get("linkedRouteLabels") or theme.get("linked_route_labels") or []) if str(x).strip()][:2]
+        theme_items.append(
+            {
+                "themeId": theme_id,
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLabel": theme_label,
+                "phraseSamples": phrase_samples,
+                "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
+                "linkedRouteLabels": linked_route_labels,
+                "dominantTimeBuckets": list(theme.get("dominantTimeBuckets") or theme.get("dominant_time_buckets") or [])[:2],
+                "count": _coerce_int(theme.get("count"), 0),
+                "themeHint": theme_hint,
+            }
+        )
+
+    top_theme = theme_items[0] if theme_items else {}
+    overview_phrases = [str(x).strip() for x in list(top_theme.get("phraseSamples") or []) if str(x).strip()][:2]
+    overview_phrase_text = "、".join([_quote_phrase_sample(x) for x in overview_phrases])
+    overview_route = str((list(top_theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+    if not overview_route:
+        overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
+    if overview_phrase_text and overview_route:
+        overview_comment = f"今月は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動く流れが何度か重なっていました。"
+    elif overview_phrase_text:
+        overview_comment = f"今月は、{overview_phrase_text}のような言葉が前に出る場面が重なっていました。"
+    elif overview_route:
+        overview_comment = f"今月は、{overview_route}に動く流れが何度か重なっていました。"
+    else:
+        overview_comment = "今月は深いところの流れを言い切るには、材料がまだ少なめでした。"
+
+    movement_items: List[str] = []
+    for theme in theme_items:
+        phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
+        route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
+        if phrase and route:
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+        elif route:
+            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+    if recovery_rows:
+        recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
+        if recovery_route:
+            movement_items.append(f"{recovery_route}へ戻る流れも見えていました。")
+    deduped_movement: List[str] = []
+    seen_movement = set()
+    for text in movement_items:
+        s = str(text or "").strip()
+        if not s or s in seen_movement:
+            continue
+        seen_movement.add(s)
+        deduped_movement.append(s)
+    movement_items = deduped_movement[:3]
+
+    theme_hint_by_id = {str(item.get("themeId") or ""): str(item.get("themeHint") or "generic") for item in theme_items}
+    working_pattern_episodes = list(pattern_episodes or [])
+    if not working_pattern_episodes and (theme_items or transition_edges):
+        top_edge_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
+        top_recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
+        working_pattern_episodes = [
+            {
+                "patternId": "pattern_1",
+                "linkedThemeIds": [str((theme_items[0] or {}).get("themeId") or "")] if theme_items else [],
+                "routeLabels": [top_edge_route] if top_edge_route else [],
+                "recoveryRouteLabel": top_recovery_route,
+                "count": _coerce_int((transition_edges[0] or {}).get("count"), 0) if transition_edges else 0,
+            }
+        ]
+
+    pattern_items: List[Dict[str, Any]] = []
+    for episode in list(working_pattern_episodes or [])[:2]:
+        linked_theme_ids = [str(x).strip() for x in list(episode.get("linkedThemeIds") or episode.get("linked_theme_ids") or []) if str(x).strip()]
+        theme_hints = [theme_hint_by_id.get(theme_id, "generic") for theme_id in linked_theme_ids if theme_id]
+        route_labels = [str(x).strip() for x in list(episode.get("routeLabels") or episode.get("route_labels") or []) if str(x).strip()][:2]
+        recovery_route_label = str(episode.get("recoveryRouteLabel") or episode.get("recovery_route_label") or "").strip()
+        pattern_label = str(episode.get("patternLabel") or episode.get("pattern_label") or _weekly_deep_v2_pattern_label(theme_hints, recovery_route_label)).strip()
+        pattern_comment = str(episode.get("patternComment") or episode.get("pattern_comment") or _monthly_deep_v2_pattern_comment(route_labels, recovery_route_label)).strip()
+        pattern_items.append(
+            {
+                "patternId": str(episode.get("patternId") or episode.get("pattern_id") or "pattern").strip() or "pattern",
+                "patternLabel": pattern_label,
+                "linkedThemeIds": linked_theme_ids,
+                "routeLabels": route_labels,
+                "recoveryRouteLabel": recovery_route_label,
+                "patternComment": pattern_comment,
+                "count": _coerce_int(episode.get("count"), 0),
+            }
+        )
+
+    phase_items: List[Dict[str, Any]] = []
+    for phase in list(monthly_phases or [])[:2]:
+        phase_label = str(phase.get("phaseLabel") or "").strip()
+        theme_labels = [str(x).strip() for x in list(phase.get("themeLabels") or []) if str(x).strip()][:2]
+        phrase_samples = [str(x).strip() for x in list(phase.get("phraseSamples") or []) if str(x).strip()][:2]
+        route_labels = [str(x).strip() for x in list(phase.get("routeLabels") or []) if str(x).strip()][:2]
+        recovery_route_label = str(phase.get("recoveryRouteLabel") or "").strip()
+        time_labels = [str(x).strip() for x in list(phase.get("dominantTimeBucketLabels") or []) if str(x).strip()][:2]
+        if not phase_label:
+            continue
+        if not (theme_labels or phrase_samples or route_labels or recovery_route_label):
+            continue
+        phase_items.append(
+            {
+                "phaseId": str(phase.get("phaseId") or "phase").strip() or "phase",
+                "phaseLabel": phase_label,
+                "phaseFocusLabel": str(phase.get("phaseFocusLabel") or (theme_labels[0] if theme_labels else (route_labels[0] if route_labels else ""))).strip(),
+                "themeLabels": theme_labels,
+                "phraseSamples": phrase_samples,
+                "routeLabels": route_labels,
+                "recoveryRouteLabel": recovery_route_label,
+                "dominantTimeBucketLabels": time_labels,
+                "phaseComment": _monthly_deep_v2_phase_comment(phase),
+                "count": _coerce_int(phase.get("count"), _coerce_int(phase.get("entryCount"), 0)),
+            }
+        )
+
+    shift_items: List[Dict[str, Any]] = []
+    for shift in list(monthly_shifts or [])[:1]:
+        from_phase_label = str(shift.get("fromPhaseLabel") or "前半").strip() or "前半"
+        to_phase_label = str(shift.get("toPhaseLabel") or "後半").strip() or "後半"
+        emerging_theme_labels = [str(x).strip() for x in list(shift.get("emergingThemeLabels") or []) if str(x).strip()][:2]
+        settling_theme_labels = [str(x).strip() for x in list(shift.get("settlingThemeLabels") or []) if str(x).strip()][:2]
+        emerging_route_labels = [str(x).strip() for x in list(shift.get("emergingRouteLabels") or []) if str(x).strip()][:2]
+        settling_route_labels = [str(x).strip() for x in list(shift.get("settlingRouteLabels") or []) if str(x).strip()][:2]
+        if not (emerging_theme_labels or settling_theme_labels or emerging_route_labels or settling_route_labels or str(shift.get("shiftLabel") or "").strip() or str(shift.get("shiftComment") or "").strip()):
+            continue
+        shift_items.append(
+            {
+                "shiftId": str(shift.get("shiftId") or f"{from_phase_label}_to_{to_phase_label}").strip(),
+                "fromPhaseLabel": from_phase_label,
+                "toPhaseLabel": to_phase_label,
+                "shiftLabel": _monthly_deep_v2_shift_label(shift),
+                "shiftComment": _monthly_deep_v2_shift_comment(shift),
+                "emergingThemeLabels": emerging_theme_labels,
+                "settlingThemeLabels": settling_theme_labels,
+                "emergingRouteLabels": emerging_route_labels,
+                "settlingRouteLabels": settling_route_labels,
+                "fromRecoveryRouteLabel": str(shift.get("fromRecoveryRouteLabel") or "").strip(),
+                "toRecoveryRouteLabel": str(shift.get("toRecoveryRouteLabel") or "").strip(),
+                "directionHint": str(shift.get("directionHint") or "mixed").strip() or "mixed",
+            }
+        )
+
+    reader_comment = _monthly_deep_v2_reader_comment(
+        theme_hints=[str(item.get("themeHint") or "generic") for item in theme_items],
+        monthly_shifts=monthly_shifts,
+    )
+    summary = {
+        "overviewComment": overview_comment,
+        "themeItems": [{key: value for key, value in item.items() if key != "themeHint"} for item in theme_items],
+        "movementItems": movement_items,
+        "patternItems": pattern_items,
+        "phaseItems": phase_items,
+        "shiftItems": shift_items,
+        "readerComment": reader_comment,
+    }
+    summary["structuralComment"] = summary["overviewComment"]
+    summary["gentleComment"] = summary["readerComment"]
+    evidence_items = [{"text": x} for x in summary["movementItems"][:2]]
+    if shift_items and str((shift_items[0] or {}).get("shiftLabel") or "").strip():
+        evidence_items.append({"text": str((shift_items[0] or {}).get("shiftLabel") or "").strip()})
+    summary["evidence"] = {"items": evidence_items}
+    summary["nextPoints"] = []
+    summary["source"] = DEEP_SUMMARY_SOURCE_MONTHLY_V2
+    return summary
+
+
+
+def _monthly_deep_v2_phase_section_title(
+    phase_items: List[Dict[str, Any]],
+    shift_items: List[Dict[str, Any]],
+) -> str:
+    if len(list(phase_items or [])) >= 2 or list(shift_items or []):
+        return "【前半と後半で変わっていたこと】"
+    return "【今月の中で見えていた流れ】"
+
+
+
+def _render_monthly_deep_v2_phase_lines(phase: Dict[str, Any]) -> List[str]:
+    phase_label = str(phase.get("phaseLabel") or "この時期").strip() or "この時期"
+    focus_label = str(phase.get("phaseFocusLabel") or "").strip()
+    header = f"{phase_label}: {focus_label}" if focus_label else phase_label
+    comment = str(phase.get("phaseComment") or "").strip() or _monthly_deep_v2_phase_comment(phase)
+
+    lines: List[str] = [f"- {header}"]
+    if comment:
+        lines.append(f"  {comment}")
+    return lines
+
+
+
+def _render_monthly_deep_v2_shift_lines(shift: Dict[str, Any]) -> List[str]:
+    label = str(shift.get("shiftLabel") or "").strip()
+    comment = str(shift.get("shiftComment") or "").strip()
+
+    if not label and not comment:
+        label = "月の前半と後半で、流れの重心が少し切り替わっていました。"
+
+    lines: List[str] = []
+    if label:
+        lines.append(f"- 変化: {label}")
+    else:
+        lines.append("- 変化")
+
+    if comment and comment != label:
+        lines.append(f"  {comment}")
+
+    return lines
+
+
+
+def _render_monthly_deep_v2_text(
+    *,
+    title: str,
+    period_start_iso: str,
+    period_end_iso: str,
+    summary: Dict[str, Any],
+) -> str:
+    lines: List[str] = [title]
+    rng = _range_line_jst(period_start_iso, period_end_iso)
+    if rng:
+        lines.append(rng)
+    lines.append("")
+
+    lines.append("【今月、見えていたこと】")
+    lines.append(
+        str((summary or {}).get("overviewComment") or "").strip()
+        or "今月は深いところの流れを言い切るには、材料がまだ少なめでした。"
+    )
+    lines.append("")
+
+    theme_items = list((summary or {}).get("themeItems") or [])
+    if theme_items:
+        lines.append("【あなたの言葉から見えていたテーマ】")
+        for theme in theme_items[:2]:
+            if not isinstance(theme, dict):
+                continue
+            phrases = [_quote_phrase_sample(x) for x in list(theme.get("phraseSamples") or [])[:2] if str(x or "").strip()]
+            if phrases:
+                lines.append(f"- {' / '.join(phrases)}")
+            label = str(theme.get("themeLabel") or "").strip()
+            meaning = str(theme.get("meaningComment") or "").strip()
+            linked_routes = [str(x).strip() for x in list(theme.get("linkedRouteLabels") or [])[:2] if str(x).strip()]
+            if label and meaning:
+                lines.append(f"  {label}: {meaning}")
+            elif meaning:
+                lines.append(f"  {meaning}")
+            if linked_routes:
+                lines.append(f"  つながりやすかった流れ: {' / '.join(linked_routes)}")
+        lines.append("")
+
+    movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
+    if movement_items:
+        lines.append("【言葉と気持ちがつながった流れ】")
+        for item in movement_items[:3]:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    pattern_items = list((summary or {}).get("patternItems") or [])
+    if pattern_items:
+        lines.append("【今月、くり返しやすかったパターン】")
+        for idx, pattern in enumerate(pattern_items[:2]):
+            if not isinstance(pattern, dict):
+                continue
+            label = str(pattern.get("patternLabel") or "").strip()
+            comment = str(pattern.get("patternComment") or "").strip()
+            if label:
+                lines.append(f"- {label}")
+            if comment:
+                lines.append(f"  {comment}")
+            if idx != min(len(pattern_items), 2) - 1:
+                lines.append("")
+        lines.append("")
+
+    phase_items = list((summary or {}).get("phaseItems") or [])
+    shift_items = list((summary or {}).get("shiftItems") or [])
+    if phase_items or shift_items:
+        lines.append(_monthly_deep_v2_phase_section_title(phase_items, shift_items))
+        for phase in phase_items[:2]:
+            if not isinstance(phase, dict):
+                continue
+            lines.extend(_render_monthly_deep_v2_phase_lines(phase))
+        if shift_items:
+            if phase_items:
+                lines.append("")
+            first_shift = shift_items[0] if isinstance(shift_items[0], dict) else {}
+            lines.extend(_render_monthly_deep_v2_shift_lines(first_shift))
+        lines.append("")
+
+    reader_comment = str((summary or {}).get("readerComment") or "").strip()
+    if reader_comment:
+        lines.append("【あなたへのコメント】")
+        lines.append(reader_comment)
+        lines.append("")
+
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
+    return "\n".join(lines).strip()
+
+
+
+
 def _build_structural_summary_object(
     *,
     report_type: str,
     deep_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-    payload = _extract_deep_control_model_payload(deep_payload)
+    payload = deep_payload if isinstance(deep_payload, dict) else {}
+    deep_model = _extract_deep_control_model_payload(payload)
     transition_edges = _normalize_transition_edges(
-        payload.get("transition_edges") or payload.get("transitionEdges") or []
+        deep_model.get("transition_edges") or deep_model.get("transitionEdges") or []
     )
-    patterns = _normalize_control_patterns(payload.get("control_patterns") or payload.get("controlPatterns") or [])
-    recovery_rows = _normalize_recovery_time_rows(payload.get("recovery_time") or payload.get("recoveryTime") or [])
-    memo_triggers = _normalize_memo_triggers(payload.get("memo_triggers") or payload.get("memoTriggers") or [])
-    summary_raw = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    patterns = _normalize_control_patterns(deep_model.get("control_patterns") or deep_model.get("controlPatterns") or [])
+    recovery_rows = _normalize_recovery_time_rows(deep_model.get("recovery_time") or deep_model.get("recoveryTime") or [])
+    memo_triggers = _normalize_memo_triggers(deep_model.get("memo_triggers") or deep_model.get("memoTriggers") or [])
+    memo_themes = _normalize_memo_themes(deep_model.get("memo_themes") or deep_model.get("memoThemes") or [])
+    pattern_episodes = _normalize_pattern_episodes(deep_model.get("pattern_episodes") or deep_model.get("patternEpisodes") or [])
+    monthly_phases = _normalize_monthly_phases(
+        deep_model.get("monthly_phases")
+        or deep_model.get("monthlyPhases")
+        or payload.get("monthlyPhases")
+        or payload.get("monthly_phases")
+        or []
+    )
+    monthly_shifts = _normalize_monthly_shifts(
+        deep_model.get("monthly_shifts")
+        or deep_model.get("monthlyShifts")
+        or payload.get("monthlyShifts")
+        or payload.get("monthly_shifts")
+        or []
+    )
+    summary_raw = deep_model.get("summary") if isinstance(deep_model.get("summary"), dict) else {}
+    meta_raw = deep_model.get("meta") if isinstance(deep_model.get("meta"), dict) else {}
     pattern_count = _coerce_int(summary_raw.get("patternCount"), len(patterns))
     transition_count = _coerce_int(summary_raw.get("transitionCount"), len(transition_edges))
+    analysis_version = str(payload.get("analysis_version") or meta_raw.get("analysisVersion") or "").strip()
+    is_deep_v2_family = analysis_version == "emotion_structure.deep.v2"
+
+    if report_type == "daily" and is_deep_v2_family:
+        return _build_daily_deep_v2_summary(
+            memo_themes=memo_themes,
+            memo_triggers=memo_triggers,
+            transition_edges=transition_edges,
+            recovery_rows=recovery_rows,
+        )
+
+    if report_type == "weekly" and (memo_themes or memo_triggers):
+        return _build_weekly_deep_v2_summary(
+            memo_themes=memo_themes,
+            pattern_episodes=pattern_episodes,
+            memo_triggers=memo_triggers,
+            transition_edges=transition_edges,
+            recovery_rows=recovery_rows,
+        )
+
+    if report_type == "monthly" and monthly_phases:
+        return _build_monthly_deep_v2_summary(
+            memo_themes=memo_themes,
+            pattern_episodes=pattern_episodes,
+            memo_triggers=memo_triggers,
+            transition_edges=transition_edges,
+            recovery_rows=recovery_rows,
+            monthly_phases=monthly_phases,
+            monthly_shifts=monthly_shifts,
+        )
 
     top_edge = transition_edges[0] if transition_edges else {}
     top_route = str(top_edge.get("routeLabel") or "").strip()
@@ -2038,8 +3405,9 @@ def _build_structural_summary_object(
         "evidence": {
             "items": [item for item in evidence_items if isinstance(item, dict) and str(item.get("text") or "").strip()][:4]
         },
-        "source": "api_deep_summary",
+        "source": DEEP_SUMMARY_SOURCE_V1,
     }
+
 
 def _render_structural_text_from_summary(
     *,
@@ -2052,6 +3420,29 @@ def _render_structural_text_from_summary(
     recovery_rows: List[Dict[str, Any]],
     memo_triggers: List[Dict[str, Any]],
 ) -> str:
+    summary_source = str((summary or {}).get("source") or "").strip()
+    if summary_source == DEEP_SUMMARY_SOURCE_DAILY_V2:
+        return _render_daily_deep_v2_text(
+            title=title,
+            period_start_iso=period_start_iso,
+            period_end_iso=period_end_iso,
+            summary=summary,
+        )
+    if summary_source == DEEP_SUMMARY_SOURCE_WEEKLY_V2:
+        return _render_weekly_deep_v2_text(
+            title=title,
+            period_start_iso=period_start_iso,
+            period_end_iso=period_end_iso,
+            summary=summary,
+        )
+    if summary_source == DEEP_SUMMARY_SOURCE_MONTHLY_V2:
+        return _render_monthly_deep_v2_text(
+            title=title,
+            period_start_iso=period_start_iso,
+            period_end_iso=period_end_iso,
+            summary=summary,
+        )
+
     structural_comment = str((summary or {}).get("structuralComment") or "").strip()
     gentle_comment = str((summary or {}).get("gentleComment") or "").strip()
     evidence = (summary or {}).get("evidence") if isinstance((summary or {}).get("evidence"), dict) else {}
@@ -2216,6 +3607,55 @@ def _render_structural_text_from_summary(
     lines.extend(_common_observation_note_lines())
     return "\n".join(lines).strip()
 
+
+
+def _resolve_deep_report_contract(
+    *,
+    report_type: str,
+    summary: Dict[str, Any],
+    deep_payload: Dict[str, Any],
+) -> Dict[str, str]:
+    source = str((summary or {}).get("source") or "").strip()
+    payload = deep_payload if isinstance(deep_payload, dict) else {}
+    deep_model = _extract_deep_control_model_payload(payload)
+    meta_raw = deep_model.get("meta") if isinstance(deep_model.get("meta"), dict) else {}
+    analysis_version = str(payload.get("analysis_version") or meta_raw.get("analysisVersion") or "").strip()
+    is_deep_v2_family = analysis_version == "emotion_structure.deep.v2"
+
+    if source == DEEP_SUMMARY_SOURCE_MONTHLY_V2:
+        return {
+            "version": "myweb.deep.v2",
+            "scopeVersion": "myweb.deep.monthly.v2",
+            "presentationProfile": "monthly_model",
+            "displayMode": "cards_graph_text",
+        }
+
+    if source == DEEP_SUMMARY_SOURCE_DAILY_V2:
+        return {
+            "version": "myweb.deep.v2",
+            "scopeVersion": "myweb.deep.daily.v2",
+            "presentationProfile": "daily_observation",
+            "displayMode": "text",
+        }
+
+    if report_type == "weekly" and (source == DEEP_SUMMARY_SOURCE_WEEKLY_V2 or is_deep_v2_family):
+        return {
+            "version": "myweb.deep.v2",
+            "scopeVersion": "myweb.deep.weekly.v2",
+            "presentationProfile": "weekly_theme_pattern",
+            "displayMode": "cards_graph_text",
+        }
+
+    return {
+        "version": "myweb.structural.v1",
+        "scopeVersion": "",
+        "presentationProfile": "",
+        "displayMode": "text" if report_type == "daily" else "graph_text",
+    }
+
+
+
+
 def _build_structural_report_payload(
     *,
     report_type: str,
@@ -2241,8 +3681,28 @@ def _build_structural_report_payload(
     memo_triggers = _normalize_memo_triggers(
         deep_model.get("memo_triggers") or deep_model.get("memoTriggers") or payload.get("memoTriggers") or []
     )
+    memo_themes = _normalize_memo_themes(
+        deep_model.get("memo_themes") or deep_model.get("memoThemes") or payload.get("memoThemes") or []
+    )
     control_patterns = _normalize_control_patterns(
         deep_model.get("control_patterns") or deep_model.get("controlPatterns") or payload.get("controlPatterns") or []
+    )
+    pattern_episodes = _normalize_pattern_episodes(
+        deep_model.get("pattern_episodes") or deep_model.get("patternEpisodes") or payload.get("patternEpisodes") or []
+    )
+    monthly_phases = _normalize_monthly_phases(
+        deep_model.get("monthly_phases")
+        or deep_model.get("monthlyPhases")
+        or payload.get("monthlyPhases")
+        or payload.get("monthly_phases")
+        or []
+    )
+    monthly_shifts = _normalize_monthly_shifts(
+        deep_model.get("monthly_shifts")
+        or deep_model.get("monthlyShifts")
+        or payload.get("monthlyShifts")
+        or payload.get("monthly_shifts")
+        or []
     )
     summary_raw = deep_model.get("summary") if isinstance(deep_model.get("summary"), dict) else {}
     meta_raw = deep_model.get("meta") if isinstance(deep_model.get("meta"), dict) else {}
@@ -2261,17 +3721,32 @@ def _build_structural_report_payload(
         recovery_rows=recovery_rows,
         memo_triggers=memo_triggers,
     )
+    contract = _resolve_deep_report_contract(report_type=report_type, summary=summary, deep_payload=payload)
 
     metrics = {
         "transitionCount": _coerce_int(summary_raw.get("transitionCount"), len(transition_edges)),
         "edgeCount": _coerce_int(summary_raw.get("edgeCount"), len(transition_edges)),
         "memoKeywordCount": _coerce_int(summary_raw.get("memoKeywordCount"), len(memo_triggers)),
+        "memoThemeCount": _coerce_int(summary_raw.get("memoThemeCount"), len(memo_themes)),
         "patternCount": _coerce_int(summary_raw.get("patternCount"), len(control_patterns)),
+        "patternEpisodeCount": _coerce_int(summary_raw.get("patternEpisodeCount"), len(pattern_episodes)),
+        "quoteSampleCount": _coerce_int(summary_raw.get("quoteSampleCount"), 0),
+        "themeLinkedTransitionCount": _coerce_int(summary_raw.get("themeLinkedTransitionCount"), 0),
+        "recoveryRouteCount": _coerce_int(
+            summary_raw.get("recoveryRouteCount"),
+            len([row for row in recovery_rows if row.get("routeLabel")]),
+        ),
+        "phaseCount": _coerce_int(summary_raw.get("phaseCount"), len(monthly_phases)),
+        "shiftCount": _coerce_int(summary_raw.get("shiftCount"), len(monthly_shifts)),
     }
     features = {
         "emotionLabels": {k: KEY_TO_JP.get(k, k) for k in EMOTION_KEYS},
+        "memoThemes": memo_themes,
+        "patternEpisodes": pattern_episodes,
         "controlPatterns": control_patterns,
         "memoTriggers": memo_triggers,
+        "monthlyPhases": monthly_phases,
+        "monthlyShifts": monthly_shifts,
         "meta": meta_raw,
         "snapshotRef": payload.get("snapshot_ref") if isinstance(payload.get("snapshot_ref"), dict) else {},
         "period": payload.get("period") if isinstance(payload.get("period"), dict) else {},
@@ -2280,8 +3755,8 @@ def _build_structural_report_payload(
         features["transitionMatrixJa"] = _localize_transition_matrix(transition_matrix)
 
     structural_report: Dict[str, Any] = {
-        "version": "myweb.structural.v1",
-        "displayMode": "text" if report_type == "daily" else "graph_text",
+        "version": contract["version"],
+        "displayMode": contract["displayMode"],
         "reportType": str(report_type or ""),
         "contentText": content_text,
         "summary": summary,
@@ -2292,9 +3767,20 @@ def _build_structural_report_payload(
         "transitionEdges": transition_edges,
         "recoveryTime": recovery_rows,
         "memoTriggers": memo_triggers,
+        "memoThemes": memo_themes,
         "controlPatterns": control_patterns,
+        "patternEpisodes": pattern_episodes,
+        "monthlyPhases": monthly_phases,
+        "monthlyShifts": monthly_shifts,
         "analysisPayload": payload,
     }
+
+    scope_version = str(contract.get("scopeVersion") or "").strip()
+    presentation_profile = str(contract.get("presentationProfile") or "").strip()
+    if scope_version:
+        structural_report["scopeVersion"] = scope_version
+    if presentation_profile:
+        structural_report["presentationProfile"] = presentation_profile
     return structural_report
 
 
