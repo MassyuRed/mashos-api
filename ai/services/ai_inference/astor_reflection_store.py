@@ -45,6 +45,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import httpx
 
+from generated_reflection_display import (
+    apply_generated_display_to_content_json,
+    build_generated_reflection_display,
+    resolve_generated_reflection_display,
+)
+
 logger = logging.getLogger("astor_reflection_store")
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or "").rstrip("/")
@@ -374,6 +380,47 @@ async def _fetch_active_generated_topic_rows(*, user_id: str, topic_key: str, ex
     return rows
 
 
+def _skip_same_as_active_marker(*, active_row: Dict[str, Any], answer_norm_hash: str) -> Dict[str, Any]:
+    return {
+        "_stage_action": "skip_same_as_active",
+        "id": _row_id(active_row),
+        "public_id": _row_public_id(active_row),
+        "answer_norm_hash": str(answer_norm_hash or "").strip(),
+    }
+
+
+async def _maybe_skip_same_as_active(
+    *,
+    user_id: str,
+    topic_key: str,
+    question: str,
+    proposal_display_result: Any,
+    previous_reflection_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    active_rows = await _fetch_active_generated_topic_rows(
+        user_id=user_id,
+        topic_key=topic_key,
+        exclude_id=None,
+    )
+    proposal_question = str(question or "").strip()
+    proposal_hash = str(getattr(proposal_display_result, "answer_norm_hash", "") or "").strip()
+    if not proposal_question or not proposal_hash:
+        return None
+
+    for active_row in active_rows:
+        active_question = str((active_row or {}).get("question") or "").strip()
+        if active_question != proposal_question:
+            continue
+        active_display_result = resolve_generated_reflection_display(active_row)
+        active_hash = str(getattr(active_display_result, "answer_norm_hash", "") or "").strip()
+        if active_hash and active_hash == proposal_hash:
+            return _skip_same_as_active_marker(
+                active_row=active_row,
+                answer_norm_hash=proposal_hash,
+            )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # stage helpers
 # ---------------------------------------------------------------------------
@@ -399,6 +446,25 @@ async def _upsert_staged_generated_row(
     if not uid or not tk:
         raise ValueError("user_id and topic_key are required")
 
+    display_updated_at = _now_iso_z()
+    display_result = build_generated_reflection_display(
+        question=question,
+        raw_answer=answer,
+        category=category,
+        focus_key=focus_key,
+        topic_summary_text=topic_summary_text,
+    )
+
+    skip_marker = await _maybe_skip_same_as_active(
+        user_id=uid,
+        topic_key=tk,
+        question=question,
+        proposal_display_result=display_result,
+        previous_reflection_id=previous_reflection_id,
+    )
+    if skip_marker is not None:
+        return skip_marker
+
     existing = await _find_existing_staged_generated_row(user_id=uid, topic_key=tk, source_hash=source_hash)
     content_json = _build_content_json(
         topic_key=tk,
@@ -412,6 +478,11 @@ async def _upsert_staged_generated_row(
         topic_embedding=topic_embedding,
         focus_key=focus_key,
         previous_reflection_id=previous_reflection_id,
+    )
+    content_json = apply_generated_display_to_content_json(
+        content_json,
+        result=display_result,
+        display_updated_at=display_updated_at,
     )
 
     payload = {
@@ -550,12 +621,18 @@ async def stage_generation_plan(
     created_ids: List[str] = []
     updated_ids: List[str] = []
     inspection_targets: List[str] = []
+    skipped_same_as_active_ids: List[str] = []
 
     for proposal in creates:
         proposal = dict(proposal or {})
         proposal.setdefault("source_snapshot_id", sid)
         proposal.setdefault("source_hash", sh)
         row = await _stage_create(user_id=uid, proposal=proposal)
+        if str((row or {}).get("_stage_action") or "").strip() == "skip_same_as_active":
+            skipped_id = _row_id(row)
+            if skipped_id:
+                skipped_same_as_active_ids.append(skipped_id)
+            continue
         rid = _row_id(row)
         if rid:
             created_ids.append(rid)
@@ -566,6 +643,11 @@ async def stage_generation_plan(
         proposal.setdefault("source_snapshot_id", sid)
         proposal.setdefault("source_hash", sh)
         row = await _stage_update(user_id=uid, proposal=proposal)
+        if str((row or {}).get("_stage_action") or "").strip() == "skip_same_as_active":
+            skipped_id = _row_id(row)
+            if skipped_id:
+                skipped_same_as_active_ids.append(skipped_id)
+            continue
         rid = _row_id(row)
         if rid:
             updated_ids.append(rid)
@@ -580,11 +662,13 @@ async def stage_generation_plan(
         "created_ids": created_ids,
         "updated_ids": updated_ids,
         "deactivated_ids": deactivated_ids,
+        "skipped_same_as_active_ids": _unique_keep_order(skipped_same_as_active_ids),
         "inspection_targets": _unique_keep_order(inspection_targets),
         "stats": {
             "created_count": len(created_ids),
             "updated_count": len(updated_ids),
             "deactivated_count": len(deactivated_ids),
+            "skipped_same_as_active_count": len(_unique_keep_order(skipped_same_as_active_ids)),
             "inspection_target_count": len(_unique_keep_order(inspection_targets)),
         },
     }

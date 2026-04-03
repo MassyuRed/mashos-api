@@ -51,7 +51,7 @@ try:
 except Exception:  # pragma: no cover
     # Keep a safe fallback here as well because api_myprofile.py uses the
     # schema check during /myprofile/latest reads before any regeneration path.
-    MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
+    MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v5"
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (

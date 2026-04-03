@@ -198,6 +198,8 @@ try:
 except Exception:  # pragma: no cover - backward compatibility while adapter lands
     build_self_structure_inputs_from_snapshot_payload = None  # type: ignore
 
+from generated_reflection_display import resolve_generated_reflection_display
+
 
 from astor_reflection_engine import build_generation_plan as build_reflection_generation_plan  # type: ignore
 from astor_reflection_store import (  # type: ignore
@@ -1135,6 +1137,9 @@ async def _handle_inspect_reflection_v1(*, user_id: str, payload: Dict[str, Any]
     question = str(row.get("question") or "").strip()
     answer = str(row.get("answer") or "").strip()
     row_source_hash = str(row.get("source_hash") or "").strip()
+    display_result = resolve_generated_reflection_display(row)
+    display_text = str(getattr(display_result, "answer_display_text", "") or "").strip()
+    display_state = str(getattr(display_result, "answer_display_state", "") or "").strip().lower()
 
     flags: List[str] = []
     if not str(row.get("topic_key") or "").strip():
@@ -1150,17 +1155,46 @@ async def _handle_inspect_reflection_v1(*, user_id: str, payload: Dict[str, Any]
     if not row_source_hash:
         flags.append("source_hash_missing")
 
+    if display_state == "blocked":
+        flags.append("display_blocked")
+    elif not display_text:
+        flags.append("display_empty")
+    elif len(display_text) < 8:
+        flags.append("quality:too_short")
+
     latest_public_hash = await _fetch_latest_public_source_hash(uid, scope=SNAPSHOT_SCOPE_DEFAULT)
     if not latest_public_hash:
         flags.append("latest_public_source_hash_missing")
     elif row_source_hash and row_source_hash != latest_public_hash:
         flags.append("public_snapshot_mismatch")
 
-    pii_flags = _detect_pii("\n".join([question, answer]))
-    for pf in pii_flags:
-        flags.append(f"pii:{pf}")
+    for flag in getattr(display_result, "flags", []) or []:
+        f = str(flag or "").strip()
+        if f:
+            flags.append(f)
 
-    if flags:
+    reject_flag_prefixes = ("quality:",)
+    reject_flag_names = {
+        "topic_key_missing",
+        "category_missing",
+        "question_empty",
+        "answer_empty",
+        "answer_too_short",
+        "source_hash_missing",
+        "latest_public_source_hash_missing",
+        "public_snapshot_mismatch",
+        "display_blocked",
+        "display_empty",
+        "abuse:threat",
+        "abuse:doxxing",
+        "privacy:doxxing",
+        "privacy:address_plus_contact",
+    }
+    reject_required = any(flag in reject_flag_names for flag in flags) or any(
+        str(flag).startswith(reject_flag_prefixes) for flag in flags
+    )
+
+    if reject_required:
         reject_res = await reject_generated_reflection(reflection_id=rid)
         return {
             "status": "rejected",

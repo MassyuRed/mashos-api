@@ -75,6 +75,17 @@ except Exception:  # pragma: no cover
     MyProfileMode = None  # type: ignore
     normalize_myprofile_mode = None  # type: ignore
 
+# Self-structure dictionaries (used for Deep visual contract labels)
+try:
+    from analysis_engine.self_structure_engine.rules import ACTION_DICT, THINKING_DICT, ROLE_LABELS_JA
+except Exception:  # pragma: no cover
+    try:
+        from self_structure_engine.rules import ACTION_DICT, THINKING_DICT, ROLE_LABELS_JA  # type: ignore
+    except Exception:  # pragma: no cover
+        ACTION_DICT = {}  # type: ignore
+        THINKING_DICT = {}  # type: ignore
+        ROLE_LABELS_JA = {}  # type: ignore
+
 
 def _normalize_report_mode(x: Any) -> str:
     """Normalize report_mode into one of: standard / deep.
@@ -162,7 +173,16 @@ JP_TO_EMO_EN: Dict[str, str] = {
 SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
 
 
-MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
+MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v5"
+
+THINKING_LABELS_JA: Dict[str, str] = {
+    str(k): str((v or {}).get("label_ja") or k)
+    for k, v in (THINKING_DICT.items() if isinstance(THINKING_DICT, dict) else [])
+}
+ACTION_LABELS_JA: Dict[str, str] = {
+    str(k): str((v or {}).get("label_ja") or k)
+    for k, v in (ACTION_DICT.items() if isinstance(ACTION_DICT, dict) else [])
+}
 
 
 def _to_iso_z(dt: _dt.datetime) -> str:
@@ -1826,6 +1846,7 @@ def _build_report_basis_from_analysis(
         "generated_roles": _top_items(_take_list(deep.get("generated_roles")), top_k=5),
         "cluster_distribution": _top_items(_take_list(deep.get("cluster_distribution")) or _take_list(state_deep.get("cluster_scores")), top_k=5),
         "target_role_map": _top_items(_take_list(deep.get("target_role_map")) or _take_list(state_std.get("target_role_scores")), top_k=12),
+        "target_signatures": _top_items(_take_list(deep.get("target_signatures") or state_deep.get("target_signatures") or state_std.get("target_signatures")), top_k=10),
         "self_world_roles": _top_items(_take_list(deep.get("self_world_roles")), top_k=5),
         "real_world_roles": _top_items(_take_list(deep.get("real_world_roles")), top_k=5),
         "desired_roles": _top_items(_take_list(deep.get("desired_roles")), top_k=5),
@@ -2126,6 +2147,518 @@ def _build_emotion_bridge_lines_from_basis(
     return lines[:3]
 
 
+def _coerce_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _thinking_key_to_label_ja(key: Any) -> str:
+    s = str(key or "").strip()
+    if not s:
+        return ""
+    return THINKING_LABELS_JA.get(s, s)
+
+
+def _action_key_to_label_ja(key: Any) -> str:
+    s = str(key or "").strip()
+    if not s:
+        return ""
+    return ACTION_LABELS_JA.get(s, s)
+
+
+def _unknown_kind_to_label_ja(kind: Any) -> str:
+    mapping = {
+        "real_world_role_missing": "現実での役割がまだ薄い",
+        "desired_role_missing": "理想の役割がまだ薄い",
+        "self_world_role_missing": "自己認識の役割がまだ薄い",
+        "role_gap_unclear": "役割のズレがまだ曖昧",
+        "target_missing": "対象の切り分けがまだ薄い",
+    }
+    s = str(kind or "").strip()
+    return mapping.get(s, "追加観測が必要")
+
+
+def _build_role_ref(role_key: Any, role_label_ja: Any) -> Optional[Dict[str, Any]]:
+    key = str(role_key or "").strip()
+    label = str(role_label_ja or "").strip()
+    if not key and not label:
+        return None
+    if not label and key:
+        label = str(ROLE_LABELS_JA.get(key, key))
+    return {
+        "role_key": key or None,
+        "role_label_ja": label or None,
+    }
+
+
+def _role_ref_from_row(row: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    return _build_role_ref(
+        row.get("role_key") or row.get("key") or row.get("template_role"),
+        row.get("role_label_ja") or row.get("label_ja") or row.get("template_role_label_ja"),
+    )
+
+
+def _role_ref_from_gap_side(row: Any, kind: str) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return None
+    s_kind = str(kind or "").strip()
+    if not s_kind:
+        return None
+    if str(row.get("left_kind") or "").strip() == s_kind:
+        return _build_role_ref(row.get("left_role"), row.get("left_role_label_ja"))
+    if str(row.get("right_kind") or "").strip() == s_kind:
+        return _build_role_ref(row.get("right_role"), row.get("right_role_label_ja"))
+    return None
+
+
+def _target_meta_lookup_from_basis(basis: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    lookup: Dict[str, Dict[str, Any]] = {}
+
+    def _remember(row: Any) -> None:
+        if not isinstance(row, dict):
+            return
+        target_key = str(row.get("target_key") or row.get("key") or "").strip()
+        if not target_key:
+            return
+        current = dict(lookup.get(target_key) or {})
+        current["target_key"] = target_key
+        label = str(row.get("target_label_ja") or row.get("label_ja") or "").strip()
+        target_type = str(row.get("target_type") or "").strip()
+        if label and not current.get("target_label_ja"):
+            current["target_label_ja"] = label
+        if target_type and not current.get("target_type"):
+            current["target_type"] = target_type
+        lookup[target_key] = current
+
+    _remember(_take_dict((basis or {}).get("core_target")))
+    for key in (
+        "top_targets",
+        "target_role_map",
+        "target_signatures",
+        "generated_roles",
+        "self_world_roles",
+        "real_world_roles",
+        "desired_roles",
+        "role_gaps",
+        "question_candidates",
+    ):
+        for row in _take_list((basis or {}).get(key)):
+            _remember(row)
+    return lookup
+
+
+def _resolve_target_meta(
+    target_lookup: Dict[str, Dict[str, Any]],
+    *,
+    target_key: Any,
+    fallback_label: Any = None,
+    fallback_type: Any = None,
+) -> Dict[str, Any]:
+    key = str(target_key or "").strip()
+    meta = dict(target_lookup.get(key) or {})
+    label = str(fallback_label or meta.get("target_label_ja") or key or "").strip()
+    target_type = str(fallback_type or meta.get("target_type") or "").strip()
+    return {
+        "target_key": key or None,
+        "target_label_ja": label or None,
+        "target_type": target_type or None,
+    }
+
+
+def _role_switch_rows_from_basis(basis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = [dict(x) for x in _take_list((basis or {}).get("target_role_map")) if isinstance(x, dict)]
+    if rows:
+        return rows
+
+    fallback_rows: List[Dict[str, Any]] = []
+    generated_by_target = {
+        str(x.get("target_key") or "").strip(): x
+        for x in _take_list((basis or {}).get("generated_roles"))
+        if isinstance(x, dict) and str(x.get("target_key") or "").strip()
+    }
+    for sig in _take_list((basis or {}).get("target_signatures")):
+        if not isinstance(sig, dict):
+            continue
+        target_key = str(sig.get("target_key") or "").strip()
+        if not target_key:
+            continue
+        generated = generated_by_target.get(target_key) or {}
+        fallback_rows.append(
+            {
+                "target_key": target_key,
+                "target_label_ja": sig.get("target_label_ja") or generated.get("target_label_ja"),
+                "target_type": sig.get("target_type") or generated.get("target_type"),
+                "role_key": sig.get("top_role_key") or generated.get("template_role"),
+                "role_label_ja": sig.get("top_role_label_ja") or generated.get("template_role_label_ja"),
+                "score": sig.get("top_role_score") or generated.get("score"),
+                "evidence_count": sig.get("evidence_count") or generated.get("evidence_count"),
+            }
+        )
+    return fallback_rows
+
+
+def _top_roles_catalog_from_target_rows(rows: List[Dict[str, Any]], top_k: int = 5) -> List[Dict[str, Any]]:
+    catalog: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        role_key = str(row.get("role_key") or "").strip()
+        if not role_key:
+            continue
+        score = _coerce_float(row.get("score"))
+        prev = catalog.get(role_key)
+        if prev is None or score > _coerce_float(prev.get("score")):
+            catalog[role_key] = {
+                "role_key": role_key,
+                "role_label_ja": str(row.get("role_label_ja") or ROLE_LABELS_JA.get(role_key, role_key)).strip(),
+                "score": score,
+            }
+    ranked = sorted(catalog.values(), key=lambda d: (-_coerce_float(d.get("score")), str(d.get("role_label_ja") or "")))
+    return ranked[:max(top_k, 1)]
+
+
+def _world_roles_by_target(rows: List[Dict[str, Any]]) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+    by_target: Dict[str, Dict[str, Any]] = {}
+    global_best: Optional[Dict[str, Any]] = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        score = _coerce_float(row.get("score"))
+        target_key = str(row.get("target_key") or "").strip()
+        if target_key:
+            prev = by_target.get(target_key)
+            if prev is None or score > _coerce_float(prev.get("score")):
+                by_target[target_key] = row
+        elif global_best is None or score > _coerce_float(global_best.get("score")):
+            global_best = row
+    return by_target, global_best
+
+
+def _build_deep_summary_card_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]:
+    target_lookup = _target_meta_lookup_from_basis(basis)
+    generated = _take_dict((_take_list((basis or {}).get("generated_roles")) or [{}])[0])
+    core_target = _take_dict((basis or {}).get("core_target"))
+    core_role = _take_dict((basis or {}).get("core_role"))
+
+    target_meta = _resolve_target_meta(
+        target_lookup,
+        target_key=generated.get("target_key") or core_target.get("target_key"),
+        fallback_label=generated.get("target_label_ja") or core_target.get("target_label_ja"),
+        fallback_type=generated.get("target_type") or core_target.get("target_type"),
+    )
+    role_ref = _build_role_ref(
+        generated.get("template_role") or core_role.get("key") or core_role.get("role_key"),
+        generated.get("template_role_label_ja") or core_role.get("label_ja") or core_role.get("role_label_ja"),
+    )
+    description = str(generated.get("description") or "").strip()
+
+    target_label = str(target_meta.get("target_label_ja") or "").strip()
+    role_label = str((role_ref or {}).get("role_label_ja") or "").strip()
+
+    if target_label and role_label:
+        headline = f"現在は『{target_label}』に触れたときに『{role_label}』が立ち上がりやすい状態です。"
+    elif target_label and description:
+        headline = f"現在は『{target_label}』に触れたとき、{description}傾向が出やすい状態です。"
+    elif role_label:
+        headline = f"現在は『{role_label}』が前に出やすい状態です。"
+    else:
+        headline = "現在の役割スイッチの地図を整理しています。"
+
+    chips: List[str] = []
+    target_keys = _unique_keep_order([
+        str(x.get("target_key") or "").strip()
+        for x in _take_list((basis or {}).get("target_role_map"))
+        if isinstance(x, dict) and str(x.get("target_key") or "").strip()
+    ])
+    if len(target_keys) >= 2:
+        chips.append("対象で役割が切り替わりやすい")
+
+    thinking_labels = _unique_keep_order([
+        _pattern_label_from_row(x)
+        for x in _take_list((basis or {}).get("thinking_patterns"))[:2]
+    ])
+    action_labels = _unique_keep_order([
+        _pattern_label_from_row(x)
+        for x in _take_list((basis or {}).get("action_patterns"))[:2]
+    ])
+    if thinking_labels:
+        chips.append(f"思考は{' / '.join(thinking_labels[:2])}寄り")
+    if action_labels:
+        chips.append(f"行動は{' / '.join(action_labels[:2])}寄り")
+    if _take_list((basis or {}).get("role_gaps")):
+        chips.append("役割ギャップが見られる対象あり")
+
+    return {
+        "headline": headline,
+        "core_target": target_meta if target_meta.get("target_key") or target_meta.get("target_label_ja") else None,
+        "core_role": role_ref,
+        "core_generated_role": {
+            "description": description or None,
+            "target_key": target_meta.get("target_key"),
+            "target_label_ja": target_meta.get("target_label_ja"),
+        } if description or target_meta.get("target_key") or target_meta.get("target_label_ja") else None,
+        "chips": chips[:3],
+    }
+
+
+def _build_deep_role_switch_map_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]:
+    target_lookup = _target_meta_lookup_from_basis(basis)
+    rows = _role_switch_rows_from_basis(basis)
+    if not rows:
+        return {
+            "targets": [],
+            "roles": [],
+            "cells": [],
+            "dominant_by_target": [],
+            "max_score": 0.0,
+        }
+
+    target_best: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        target_key = str(row.get("target_key") or "").strip()
+        if not target_key:
+            continue
+        score = _coerce_float(row.get("score"))
+        prev = target_best.get(target_key)
+        if prev is None or score > _coerce_float(prev.get("score")):
+            target_best[target_key] = row
+
+    dominant_rows = sorted(
+        target_best.values(),
+        key=lambda d: (-_coerce_float(d.get("score")), _target_label_from_row(d), _role_label_from_row(d)),
+    )[:5]
+    selected_target_keys = [
+        str(row.get("target_key") or "").strip()
+        for row in dominant_rows
+        if str(row.get("target_key") or "").strip()
+    ]
+    selected_rows = [
+        row for row in rows
+        if str(row.get("target_key") or "").strip() in selected_target_keys
+    ]
+
+    roles = _top_roles_catalog_from_target_rows(selected_rows, top_k=5)
+    selected_role_keys = {str(x.get("role_key") or "").strip() for x in roles if str(x.get("role_key") or "").strip()}
+    if selected_role_keys:
+        selected_rows = [
+            row for row in selected_rows
+            if str(row.get("role_key") or "").strip() in selected_role_keys
+        ]
+
+    cells = [
+        {
+            "target_key": str(row.get("target_key") or "").strip() or None,
+            "target_label_ja": str(row.get("target_label_ja") or _resolve_target_meta(target_lookup, target_key=row.get("target_key")).get("target_label_ja") or "").strip() or None,
+            "role_key": str(row.get("role_key") or "").strip() or None,
+            "role_label_ja": str(row.get("role_label_ja") or ROLE_LABELS_JA.get(str(row.get("role_key") or "").strip(), row.get("role_key") or "")).strip() or None,
+            "score": _coerce_float(row.get("score")),
+            "evidence_count": _coerce_int(row.get("evidence_count")),
+        }
+        for row in selected_rows
+        if isinstance(row, dict)
+    ]
+
+    targets = [
+        _resolve_target_meta(
+            target_lookup,
+            target_key=row.get("target_key"),
+            fallback_label=row.get("target_label_ja"),
+            fallback_type=row.get("target_type"),
+        )
+        for row in dominant_rows
+    ]
+
+    dominant_by_target = [
+        {
+            **_resolve_target_meta(
+                target_lookup,
+                target_key=row.get("target_key"),
+                fallback_label=row.get("target_label_ja"),
+                fallback_type=row.get("target_type"),
+            ),
+            "role_key": str(row.get("role_key") or "").strip() or None,
+            "role_label_ja": str(row.get("role_label_ja") or ROLE_LABELS_JA.get(str(row.get("role_key") or "").strip(), row.get("role_key") or "")).strip() or None,
+            "score": _coerce_float(row.get("score")),
+        }
+        for row in dominant_rows
+    ]
+
+    return {
+        "targets": targets,
+        "roles": [
+            {
+                "role_key": str(row.get("role_key") or "").strip() or None,
+                "role_label_ja": str(row.get("role_label_ja") or "").strip() or None,
+            }
+            for row in roles
+        ],
+        "cells": cells,
+        "dominant_by_target": dominant_by_target,
+        "max_score": max([_coerce_float(x.get("score")) for x in cells] or [0.0]),
+    }
+
+
+def _build_deep_behavior_cards_from_basis(basis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    target_lookup = _target_meta_lookup_from_basis(basis)
+    generated_by_target = {
+        str(x.get("target_key") or "").strip(): x
+        for x in _take_list((basis or {}).get("generated_roles"))
+        if isinstance(x, dict) and str(x.get("target_key") or "").strip()
+    }
+
+    signature_rows = [dict(x) for x in _take_list((basis or {}).get("target_signatures")) if isinstance(x, dict)]
+    if not signature_rows:
+        for row in _take_list((basis or {}).get("generated_roles")):
+            if not isinstance(row, dict):
+                continue
+            signature_rows.append(
+                {
+                    "target_key": row.get("target_key"),
+                    "target_label_ja": row.get("target_label_ja"),
+                    "target_type": row.get("target_type"),
+                    "top_role_key": row.get("template_role"),
+                    "top_role_label_ja": row.get("template_role_label_ja"),
+                    "top_role_score": row.get("score"),
+                    "top_cluster_key": row.get("cluster"),
+                    "top_thinking_keys": row.get("top_thinking_keys") or [],
+                    "top_action_keys": row.get("top_action_keys") or [],
+                    "evidence_count": row.get("evidence_count"),
+                }
+            )
+
+    signature_rows.sort(key=lambda d: (-_coerce_float(d.get("top_role_score") or d.get("score")), str(d.get("target_label_ja") or d.get("target_key") or "")))
+
+    cards: List[Dict[str, Any]] = []
+    for sig in signature_rows[:4]:
+        target_meta = _resolve_target_meta(
+            target_lookup,
+            target_key=sig.get("target_key"),
+            fallback_label=sig.get("target_label_ja"),
+            fallback_type=sig.get("target_type"),
+        )
+        generated = generated_by_target.get(str(sig.get("target_key") or "").strip()) or {}
+        thinking = [
+            {"key": key, "label_ja": _thinking_key_to_label_ja(key)}
+            for key in list(sig.get("top_thinking_keys") or [])[:2]
+            if str(key or "").strip()
+        ]
+        actions = [
+            {"key": key, "label_ja": _action_key_to_label_ja(key)}
+            for key in list(sig.get("top_action_keys") or [])[:2]
+            if str(key or "").strip()
+        ]
+        cards.append(
+            {
+                **target_meta,
+                "generated_role_description": str(generated.get("description") or "").strip() or None,
+                "template_role_key": str(sig.get("top_role_key") or generated.get("template_role") or "").strip() or None,
+                "template_role_label_ja": str(sig.get("top_role_label_ja") or generated.get("template_role_label_ja") or ROLE_LABELS_JA.get(str(sig.get("top_role_key") or generated.get("template_role") or "").strip(), sig.get("top_role_key") or generated.get("template_role") or "")).strip() or None,
+                "cluster_key": str(sig.get("top_cluster_key") or generated.get("cluster") or "").strip() or None,
+                "score": _coerce_float(sig.get("top_role_score") or generated.get("score")),
+                "evidence_count": _coerce_int(sig.get("evidence_count") or generated.get("evidence_count")),
+                "thinking": thinking,
+                "actions": actions,
+            }
+        )
+    return cards
+
+
+def _build_deep_role_gap_cards_from_basis(basis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    target_lookup = _target_meta_lookup_from_basis(basis)
+    self_by_target, self_global = _world_roles_by_target(_take_list((basis or {}).get("self_world_roles")))
+    real_by_target, real_global = _world_roles_by_target(_take_list((basis or {}).get("real_world_roles")))
+    desired_by_target, desired_global = _world_roles_by_target(_take_list((basis or {}).get("desired_roles")))
+
+    def _select(kind: str, target_key: str, gap_row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        kind_key = str(kind or "").strip()
+        if kind_key == "self":
+            return _role_ref_from_row(self_by_target.get(target_key) or self_global) or _role_ref_from_gap_side(gap_row, "self")
+        if kind_key == "real":
+            return _role_ref_from_row(real_by_target.get(target_key) or real_global) or _role_ref_from_gap_side(gap_row, "real")
+        if kind_key == "desired":
+            return _role_ref_from_row(desired_by_target.get(target_key) or desired_global) or _role_ref_from_gap_side(gap_row, "desired")
+        return _role_ref_from_gap_side(gap_row, kind_key)
+
+    cards: List[Dict[str, Any]] = []
+    seen: List[str] = []
+    for gap in _take_list((basis or {}).get("role_gaps")):
+        if not isinstance(gap, dict):
+            continue
+        target_key = str(gap.get("target_key") or "").strip()
+        uniq = target_key or f"{gap.get('left_kind')}:{gap.get('left_role')}:{gap.get('right_kind')}:{gap.get('right_role')}"
+        if uniq in seen:
+            continue
+        seen.append(uniq)
+        target_meta = _resolve_target_meta(
+            target_lookup,
+            target_key=target_key,
+            fallback_label=gap.get("target_label_ja") or ("全体" if not target_key else None),
+        )
+        cards.append(
+            {
+                **target_meta,
+                "self_role": _select("self", target_key, gap),
+                "real_role": _select("real", target_key, gap),
+                "desired_role": _select("desired", target_key, gap),
+                "primary_gap": {
+                    "left_kind": str(gap.get("left_kind") or "").strip() or None,
+                    "right_kind": str(gap.get("right_kind") or "").strip() or None,
+                    "left_role_label_ja": str(gap.get("left_role_label_ja") or ROLE_LABELS_JA.get(str(gap.get("left_role") or "").strip(), gap.get("left_role") or "")).strip() or None,
+                    "right_role_label_ja": str(gap.get("right_role_label_ja") or ROLE_LABELS_JA.get(str(gap.get("right_role") or "").strip(), gap.get("right_role") or "")).strip() or None,
+                    "gap_score": _coerce_float(gap.get("gap_score")),
+                    "note": str(gap.get("note") or "").strip() or None,
+                },
+            }
+        )
+    return cards
+
+
+def _build_deep_unknown_area_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]:
+    target_lookup = _target_meta_lookup_from_basis(basis)
+    items: List[Dict[str, Any]] = []
+    for row in _take_list((basis or {}).get("question_candidates"))[:4]:
+        if not isinstance(row, dict):
+            continue
+        target_meta = _resolve_target_meta(
+            target_lookup,
+            target_key=row.get("target_key"),
+            fallback_label=("全体" if not str(row.get("target_key") or "").strip() else None),
+        )
+        items.append(
+            {
+                **target_meta,
+                "kind": str(row.get("kind") or "").strip() or None,
+                "kind_label_ja": _unknown_kind_to_label_ja(row.get("kind")),
+                "reason": str(row.get("reason") or "").strip() or None,
+                "hint": str(row.get("hint") or "").strip() or None,
+            }
+        )
+    return {"items": items}
+
+
+def _build_self_structure_deep_visual_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "schema": "self_structure_deep_visual.v1",
+        "presentationProfile": "role_switch_map",
+        "summaryCard": _build_deep_summary_card_from_basis(basis),
+        "roleSwitchMap": _build_deep_role_switch_map_from_basis(basis),
+        "behaviorCards": _build_deep_behavior_cards_from_basis(basis),
+        "roleGapCards": _build_deep_role_gap_cards_from_basis(basis),
+        "unknownArea": _build_deep_unknown_area_from_basis(basis),
+    }
+
+
 def _build_myprofile_report_content_json(
     *,
     report_mode: str,
@@ -2142,11 +2675,12 @@ def _build_myprofile_report_content_json(
 ) -> Dict[str, Any]:
     std_payload = _payload_of((self_structure_set or {}).get("standard_row"))
     deep_payload = _payload_of((self_structure_set or {}).get("deep_row"))
+    normalized_mode = _normalize_report_mode(report_mode)
 
     content = {
         "engine": "astor_myprofile_report",
-        "version": "myprofile.report.v3",
-        "report_mode": _normalize_report_mode(report_mode),
+        "version": MYPROFILE_REPORT_SCHEMA_VERSION,
+        "report_mode": normalized_mode,
         "report_type": str(report_type or "monthly"),
         "report_source": "analysis_results",
         "distribution": {
@@ -2167,8 +2701,14 @@ def _build_myprofile_report_content_json(
         "sections": sections,
         "generated_at_server": generated_at_server,
     }
-    return content
 
+    if normalized_mode == "deep":
+        deep_visual = _build_self_structure_deep_visual_from_basis(basis)
+        if deep_visual:
+            content["selfStructureDeepVisual"] = deep_visual
+            content["visual_contracts"] = ["self_structure_deep_visual.v1"]
+
+    return content
 
 
 

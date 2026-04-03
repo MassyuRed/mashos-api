@@ -43,6 +43,7 @@ from api_emotion_submit import (
 )
 from api_mymodel_create import _fetch_answers as _fetch_create_answers
 from api_mymodel_create import _fetch_questions as _fetch_create_questions
+from generated_reflection_display import get_public_generated_reflection_text
 from reflection_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
@@ -3397,7 +3398,7 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
     owner_policy = await _resolve_owner_reflection_policy(oid)
     if not bool(owner_policy.get("can_expose_generated_reflections")):
         return []
-    return await _sb_get_json_local(
+    rows = await _sb_get_json_local(
         f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
         params={
             "select": "*",
@@ -3409,6 +3410,11 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
             "limit": str(max(1, int(limit))),
         },
     )
+    visible_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        if get_public_generated_reflection_text(row):
+            visible_rows.append(row)
+    return visible_rows
 
 
 async def _resolve_generated_reflection_access(
@@ -3427,6 +3433,8 @@ async def _resolve_generated_reflection_access(
         allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
         if not allowed:
             raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+    if not get_public_generated_reflection_text(row):
+        raise HTTPException(status_code=404, detail="Reflection not found")
     return row
 
 
@@ -3439,6 +3447,9 @@ async def _resolve_qna_context_for_reaction(
             viewer_user_id=viewer_user_id,
             q_instance_id=iid,
         )
+        body = get_public_generated_reflection_text(row)
+        if not body:
+            raise HTTPException(status_code=404, detail="Reflection not found")
         owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
         return {
             "kind": "generated",
@@ -3448,7 +3459,7 @@ async def _resolve_qna_context_for_reaction(
             "row": row,
             "context_source_type": str((row or {}).get("source_type") or "generated").strip() or "generated",
             "context_question": str((row or {}).get("question") or "").strip() or None,
-            "context_answer": str((row or {}).get("answer") or "").strip() or None,
+            "context_answer": body,
             "context_topic_key": str((row or {}).get("topic_key") or "").strip() or None,
             "context_category": str((row or {}).get("category") or "").strip() or None,
         }
@@ -3726,6 +3737,8 @@ async def _build_saved_generated_items(
     for iid, owner_uid, saved_at in visible_rows:
         row = rows_map.get(iid)
         if not row:
+            continue
+        if not get_public_generated_reflection_text(row):
             continue
         title = str((row or {}).get("question") or "").strip()
         if not title:
@@ -4013,6 +4026,9 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         iid = str(q_instance_id or "").strip()
         if _is_generated_reflection_instance_id(iid):
             row = await _resolve_generated_reflection_access(viewer_user_id=viewer_user_id, q_instance_id=iid)
+            body = get_public_generated_reflection_text(row)
+            if not body:
+                raise HTTPException(status_code=404, detail="Reflection not found")
             qk = _build_generated_q_key(row)
             metrics = await _fetch_instance_metrics({iid})
             m = metrics.get(iid) or {}
@@ -4034,7 +4050,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             is_resonated = await _is_resonated(viewer_user_id, iid)
             return QnaDetailResponse(
                 title=str((row or {}).get("question") or "").strip(),
-                body=str((row or {}).get("answer") or "").strip(),
+                body=body,
                 q_key=qk,
                 q_instance_id=iid,
                 views=views,
