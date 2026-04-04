@@ -284,3 +284,67 @@ def test_generated_canonicalization_keeps_latest_per_owner_qkey():
 
     assert len(canonical) == 1
     assert canonical[0]["public_id"] == "reflection:owner-latest-generated-1"
+
+
+
+def test_generated_work_concern_uses_work_specific_head():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="仕事で気にしていることは？",
+        raw_answer="毎日どこがダメだったか考えてるし、反省することが多い。",
+        category="仕事",
+        focus_key="work",
+        topic_summary_text="仕事 / 毎日どこがダメだったか考えてる / 反省することが多い",
+    )
+
+    assert result.answer_display_state in {"ready", "masked"}
+    assert result.answer_display_text is not None
+    assert result.answer_display_text.startswith("仕事では、")
+    assert "最近気になっているのは、" not in result.answer_display_text
+
+
+
+def test_generated_notice_and_concern_use_different_heads():
+    import generated_reflection_display as display_module
+
+    common_raw = "どこか焦ってる毎日で余裕がない気がする。"
+    notice = display_module.build_generated_reflection_display(
+        question="最近気づいたことは？",
+        raw_answer=common_raw,
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / どこか焦ってる毎日で余裕がない",
+    )
+    concern = display_module.build_generated_reflection_display(
+        question="最近気になることは？",
+        raw_answer=common_raw,
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / どこか焦ってる毎日で余裕がない",
+    )
+
+    assert notice.answer_display_state in {"ready", "masked"}
+    assert concern.answer_display_state in {"ready", "masked"}
+    assert notice.answer_display_text is not None
+    assert concern.answer_display_text is not None
+    assert notice.answer_display_text.startswith("最近気づいたのは、")
+    assert concern.answer_display_text.startswith("最近気になっているのは、")
+
+
+
+def test_generated_stress_time_uses_time_specific_template():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="心が休まる時間は？",
+        raw_answer="夜中にASMRを聞いている時間は少し落ち着く。",
+        category="生活",
+        focus_key="stress",
+        topic_summary_text="生活 / 夜中にASMRを聞いている時間は少し落ち着く",
+    )
+
+    assert result.answer_display_state in {"ready", "masked"}
+    assert result.answer_display_text is not None
+    assert result.answer_display_text.startswith("心が休まるのは、")
+    assert "しんどい時は、" not in result.answer_display_text
