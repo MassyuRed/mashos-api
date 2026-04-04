@@ -52,6 +52,51 @@ _BAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
     re.compile(r"^(?:自分|私自身)(?:は|が)?$"),
     re.compile(r"^(?:不器用だ|最悪なんだ|疲れた|減ったのは|娯楽の排除|自身への無価値観|10)$"),
 )
+_GENERIC_FALLBACK_RE = re.compile(r"まだうまく言葉にしきれていません")
+_PAST_EVENT_TAIL_RE = re.compile(r"(?:た|だった|してた|していた|ていた|なった)$")
+_EVENT_TIME_MARKERS: Sequence[str] = (
+    "今日",
+    "昨日",
+    "今朝",
+    "今夜",
+    "明日",
+    "本日",
+    "さっき",
+    "さっきまで",
+    "久々",
+    "久しぶり",
+)
+_STABLE_CORE_HINTS: Sequence[str] = (
+    "こと",
+    "時間",
+    "関係",
+    "交流",
+    "会話",
+    "配信",
+    "写真",
+    "料理",
+    "歌う",
+    "休む",
+    "整える",
+    "振り返る",
+    "続ける",
+    "増やす",
+    "広げる",
+    "自分を知",
+    "挑戦",
+    "練習",
+    "安心",
+    "体調",
+    "ペース",
+)
+_HEAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
+    re.compile(r"^人との関わりでは、(?P<core>.+?)を大切にしたいです(?:。|$)"),
+    re.compile(r"^大切にしているのは、(?P<core>.+?)です(?:。|$)"),
+    re.compile(r"^少しずつ伸ばしたいのは、(?P<core>.+?)です(?:。|$)"),
+    re.compile(r"^最近夢中なのは、(?P<core>.+?)です(?:。|$)"),
+    re.compile(r"^最近気になっているのは、(?P<core>.+?)です(?:。|$)"),
+    re.compile(r"^しんどい時は、(?P<core>.+?)気持ちを整えています(?:。|$)"),
+)
 
 _PREFIX_FILLERS: Sequence[str] = (
     "でも",
@@ -242,6 +287,38 @@ def _is_low_quality_core_phrase(text: str) -> bool:
 
 
 
+def _looks_like_oneoff_event_fragment(text: str) -> bool:
+    s = _normalize_phrase(text)
+    if not s:
+        return True
+    lowered = s.rstrip("。！？!? ")
+    compact = lowered.replace(" ", "")
+    if not compact:
+        return True
+    if _contains_any(compact, _EVENT_TIME_MARKERS) and _PAST_EVENT_TAIL_RE.search(compact):
+        return True
+    if _PAST_EVENT_TAIL_RE.search(compact) and not _contains_any(compact, _STABLE_CORE_HINTS):
+        return True
+    return False
+
+
+
+def _extract_head_core_phrase(text: str) -> str:
+    s = _collapse_ws(text)
+    if not s:
+        return ""
+    for pattern in _HEAD_CORE_PATTERNS:
+        match = pattern.match(s)
+        if not match:
+            continue
+        core = _collapse_ws(match.group("core")).rstrip("。")
+        if core.endswith("ことで"):
+            core = core[:-3]
+        return core.rstrip("。")
+    return ""
+
+
+
 def _contains_any(text: str, keywords: Sequence[str]) -> bool:
     return any(k and k in text for k in (keywords or []))
 
@@ -297,6 +374,8 @@ def _infer_semantic_core_phrase(
             return "写真を撮って投稿すること"
         if _contains_any(combined, ("料理", "服", "可愛い")):
             return "好きなものを選んだり作ったりすること"
+        if _contains_any(combined, ("歌", "歌う")):
+            return "歌うこと"
 
     if mode == "relationship":
         if _contains_any(combined, ("安心", "落ち着")) and _contains_any(combined, ("話", "関わ", "一緒")):
@@ -309,6 +388,8 @@ def _infer_semantic_core_phrase(
             return "無理をしすぎず心と体を整えること"
         if _contains_any(combined, ("できた", "できなかった", "振り返")):
             return "できたことと課題の両方を振り返ること"
+        if _contains_any(combined, ("自分を知", "何ができる", "できること", "できないこと")):
+            return "自分を知ろうとすること"
 
     if mode == "stress":
         if _contains_any(combined, health_keys):
@@ -324,7 +405,7 @@ def _infer_semantic_core_phrase(
     candidates: List[Tuple[int, str]] = []
     mode_keywords = {
         "relationship": ("話", "交流", "関わ", "コメント", "安心", "聞", "一緒"),
-        "values": ("大切", "大事", "整", "休", "守", "続"),
+        "values": ("大切", "大事", "整", "休", "守", "続", "振り返", "自分を知"),
         "stress": ("整", "休", "寝", "落ち着", "薬", "だる", "疲"),
         "growth": ("練習", "挑戦", "伸ば", "続け", "少しずつ", "できるよう", "増や"),
         "fun": ("楽しい", "夢中", "配信", "写真", "ゲーム", "料理", "歌", "話"),
@@ -343,13 +424,19 @@ def _infer_semantic_core_phrase(
             score += 2
         if _SHORT_PARTICLE_TAIL_RE.search(s):
             score -= 3
+        if _looks_like_oneoff_event_fragment(s):
+            score -= 4
+        if not _contains_any(s, mode_keywords.get(mode, ())) and not _contains_any(s, _STABLE_CORE_HINTS):
+            score -= 2
         candidates.append((score, s))
 
     candidates.sort(key=lambda item: (item[0], -len(item[1])), reverse=True)
-    if not candidates:
+    if not candidates or candidates[0][0] <= 0:
         return ""
     candidate = candidates[0][1]
-    return "" if _is_low_quality_core_phrase(candidate) else candidate
+    if _is_low_quality_core_phrase(candidate) or _looks_like_oneoff_event_fragment(candidate):
+        return ""
+    return candidate
 
 
 
@@ -422,7 +509,7 @@ def _build_support_sentence(*, mode: str, question: str, category: str, raw_answ
         ]
     )
 
-    if mode in {"fun", "relationship", "growth"} and _contains_any(combined, ("配信", "枠", "コメント", "話", "交流")):
+    if mode in {"fun", "relationship", "growth"} and _contains_any(combined, ("配信", "コメント", "話", "交流", "会話")):
         if _contains_any(combined, ("怖", "不安")) and mode == "relationship":
             return _ensure_sentence("無理のない範囲で、コメントや会話の機会を少しずつ増やしていきたいです")
         if _contains_any(combined, ("怖", "不安")):
@@ -520,8 +607,44 @@ def _collect_quality_flags(text: str) -> List[str]:
         _append_once(flags, "quality:broken_answer")
     if re.search(r"(?:自分|私自身)(?:は|が)?です$", compact):
         _append_once(flags, "quality:broken_answer")
+    if _GENERIC_FALLBACK_RE.search(lowered):
+        _append_once(flags, "quality:fallback_generic")
+    core = _extract_head_core_phrase(lowered)
+    if core:
+        if _is_low_quality_core_phrase(core):
+            _append_once(flags, "quality:broken_answer")
+        if _looks_like_oneoff_event_fragment(core):
+            _append_once(flags, "quality:broken_answer")
     return flags
 
+
+
+def _apply_generated_quality_gate(
+    *,
+    display_text: Optional[str],
+    display_state: str,
+    quality_source_text: str,
+    flags: Sequence[str],
+    actions: Sequence[str],
+) -> Tuple[Optional[str], str, List[str], List[str]]:
+    state = str(display_state or STATE_READY).strip().lower() or STATE_READY
+    merged_flags = _ordered_unique([*flags, *_collect_quality_flags(quality_source_text)])
+    merged_actions = _ordered_unique([*actions])
+    block_for_quality = state != STATE_BLOCKED and any(
+        flag in {
+            "quality:empty",
+            "quality:too_short",
+            "quality:unfinished",
+            "quality:noun_only",
+            "quality:broken_answer",
+            "quality:fallback_generic",
+        }
+        for flag in merged_flags
+    )
+    if block_for_quality:
+        _append_once(merged_actions, "quality:block")
+        return None, STATE_BLOCKED, merged_flags, merged_actions
+    return (str(display_text or "").strip() or None), state, merged_flags, merged_actions
 
 
 @dataclass(frozen=True)
@@ -574,10 +697,16 @@ def build_generated_reflection_display(
         text_candidates=text_candidates,
     )
     safety = format_reflection_text(rewritten or raw)
-    flags = _ordered_unique([*_collect_quality_flags(str(safety.display_text or rewritten or "")), *safety.flags])
-    actions = _ordered_unique([*rewrite_actions, *safety.actions])
-    norm_source = safety.display_text if safety.display_text is not None else (rewritten or raw)
-    changed = bool(raw != rewritten or safety.changed or actions)
+    quality_source = str(safety.display_text or rewritten or "")
+    gated_text, gated_state, flags, actions = _apply_generated_quality_gate(
+        display_text=safety.display_text,
+        display_state=str(safety.display_state),
+        quality_source_text=quality_source,
+        flags=safety.flags,
+        actions=[*rewrite_actions, *safety.actions],
+    )
+    norm_source = gated_text if gated_text is not None else (rewritten or raw)
+    changed = bool(raw != rewritten or safety.changed or actions or gated_state != str(safety.display_state))
     source_signature = compute_generated_display_source_signature(
         question=question,
         raw_answer=raw,
@@ -589,8 +718,8 @@ def build_generated_reflection_display(
     return GeneratedReflectionDisplayResult(
         raw_answer_text=raw,
         rewritten_answer_text=rewritten,
-        answer_display_text=safety.display_text,
-        answer_display_state=str(safety.display_state),
+        answer_display_text=gated_text,
+        answer_display_state=gated_state,
         changed=changed,
         flags=flags,
         actions=actions,
@@ -703,6 +832,15 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
     actions = [str(x).strip() for x in (meta.get("actions") or []) if str(x).strip()]
     raw = _collapse_ws((row or {}).get("answer"))
     rewritten = _collapse_ws(bundle.get("rewritten_answer_text") or display_text or raw)
+    gated_text, gated_state, gated_flags, gated_actions = _apply_generated_quality_gate(
+        display_text=display_text,
+        display_state=state,
+        quality_source_text=display_text or rewritten or raw,
+        flags=flags,
+        actions=actions,
+    )
+    if gated_state != state or gated_text != display_text:
+        return None
     norm_hash = str(bundle.get("answer_norm_hash") or meta.get("answer_norm_hash") or compute_generated_answer_norm_hash(display_text or rewritten or raw)).strip()
     changed_meta = meta.get("changed")
     changed = bool(changed_meta) if changed_meta is not None else bool(rewritten != raw or state != STATE_READY)
@@ -713,8 +851,8 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
         answer_display_text=display_text,
         answer_display_state=state,
         changed=changed,
-        flags=_ordered_unique(flags),
-        actions=_ordered_unique(actions),
+        flags=_ordered_unique(gated_flags),
+        actions=_ordered_unique(gated_actions),
         answer_norm_hash=norm_hash,
         display_source_signature=display_source_signature,
         format_version=version,

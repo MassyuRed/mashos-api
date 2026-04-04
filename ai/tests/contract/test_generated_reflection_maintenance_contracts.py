@@ -241,3 +241,56 @@ def test_generated_generation_plan_prefers_latest_state_signals_for_same_questio
     answer = str(plan["creates"][0]["answer"] or "")
     assert "無理をしすぎず休むこと" in answer
     assert "夜更かし" not in answer
+
+
+def test_generated_display_recomputes_stored_bundle_that_now_fails_quality_gate():
+    import generated_reflection_display as display_module
+
+    signature = display_module.compute_generated_display_source_signature(
+        question="大切にしていることは？",
+        raw_answer="久々に枠とって歌った",
+        category="趣味",
+        focus_key="values",
+        topic_summary_text="趣味 / 久々に枠とって歌った",
+        text_candidates=[],
+    )
+
+    row: Dict[str, Any] = {
+        "id": "generated-persist-low-quality-1",
+        "public_id": "reflection:generated-persist-low-quality-1",
+        "owner_user_id": "owner-persist-low-quality-1",
+        "source_type": "generated",
+        "question": "大切にしていることは？",
+        "answer": "久々に枠とって歌った",
+        "category": "趣味",
+        "updated_at": "2026-04-03T07:00:00+00:00",
+        "content_json": {
+            "focus_key": "values",
+            "topic_summary_text": "趣味 / 久々に枠とって歌った",
+            "display": {
+                "answer_display_text": "大切にしているのは、久々に枠とって歌ったです。",
+                "answer_display_state": "ready",
+                "answer_format_version": display_module.GENERATED_REFLECTION_DISPLAY_VERSION,
+                "answer_format_meta": {
+                    "version": display_module.GENERATED_REFLECTION_DISPLAY_VERSION,
+                    "changed": True,
+                    "flags": [],
+                    "actions": ["rewrite:question_aware"],
+                    "answer_norm_hash": display_module.compute_generated_answer_norm_hash(
+                        "大切にしているのは、久々に枠とって歌ったです。"
+                    ),
+                    "display_source_signature": signature,
+                },
+                "answer_display_updated_at": "2026-04-03T06:59:00+00:00",
+                "rewritten_answer_text": "大切にしているのは、久々に枠とって歌ったです。",
+                "answer_norm_hash": display_module.compute_generated_answer_norm_hash(
+                    "大切にしているのは、久々に枠とって歌ったです。"
+                ),
+                "display_source_signature": signature,
+            }
+        },
+    }
+
+    result = display_module.resolve_generated_reflection_display(row)
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None

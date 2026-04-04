@@ -193,3 +193,35 @@ def test_generated_stage_skips_same_as_active(monkeypatch):
 
     assert result["_stage_action"] == "skip_same_as_active"
     assert result["id"] == "active-generated-1"
+
+
+def test_generated_reflection_display_blocks_low_quality_values_fragment():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="大切にしていることは？",
+        raw_answer="久々に枠とって歌った",
+        category="趣味",
+        focus_key="values",
+        topic_summary_text="趣味 / 久々に枠とって歌った",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+    assert "quality:block" in result.actions
+
+
+def test_generated_reflection_display_rewrites_fun_song_fragment():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="最近夢中なことは？",
+        raw_answer="久々に枠とって歌った",
+        category="趣味",
+        focus_key="fun",
+        topic_summary_text="趣味 / 久々に枠とって歌った",
+    )
+
+    assert result.answer_display_state in {"ready", "masked"}
+    assert result.answer_display_text is not None
+    assert "歌うこと" in result.answer_display_text
