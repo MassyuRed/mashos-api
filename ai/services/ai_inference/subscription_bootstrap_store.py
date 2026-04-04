@@ -269,6 +269,12 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
     plus_android = _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
     premium_ios = _csv_env("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
     premium_android = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
+
+    plus_ios_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS"))
+    plus_android_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID"))
+    premium_ios_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS"))
+    premium_android_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID"))
+
     return {
         "plus": {
             "visible": True,
@@ -292,18 +298,18 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "cta_label": "このプランを選ぶ",
             "recommended": True,
             "purchase_product_id": {
-                "ios": plus_ios[0] if plus_ios else _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS")),
-                "android": plus_android[0] if plus_android else _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID")),
+                "ios": plus_ios[0] if plus_ios else plus_ios_fallback,
+                "android": plus_android[0] if plus_android else plus_android_fallback,
             },
             "recognized_product_ids": {
-                "ios": plus_ios or [_string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS"))] if _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS")) else [],
-                "android": plus_android or [_string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID"))] if _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID")) else [],
+                "ios": plus_ios or ([plus_ios_fallback] if plus_ios_fallback else []),
+                "android": plus_android or ([plus_android_fallback] if plus_android_fallback else []),
             },
         },
         "premium": {
             "visible": True,
-            "purchasable": False,
-            "launch_stage": "coming_soon",
+            "purchasable": True,
+            "launch_stage": "live",
             "title": "Premiumプラン",
             "price_label": "月額980円",
             "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
@@ -313,16 +319,19 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
                 "MyWeb：自己構造分析レポートがさらに深くなります",
                 "MyModel：Reflectionが入力内容から生成されます",
             ],
-            "note_lines": ["※Premiumプランは準備中です。"],
-            "cta_label": "準備中",
+            "note_lines": [
+                "月額980円で自動更新されます。",
+                "解約はいつでもストアのサブスクリプション管理から行えます。",
+            ],
+            "cta_label": "このプランを選ぶ",
             "recommended": False,
             "purchase_product_id": {
-                "ios": premium_ios[0] if premium_ios else _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS")),
-                "android": premium_android[0] if premium_android else _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID")),
+                "ios": premium_ios[0] if premium_ios else premium_ios_fallback,
+                "android": premium_android[0] if premium_android else premium_android_fallback,
             },
             "recognized_product_ids": {
-                "ios": premium_ios,
-                "android": premium_android,
+                "ios": premium_ios or ([premium_ios_fallback] if premium_ios_fallback else []),
+                "android": premium_android or ([premium_android_fallback] if premium_android_fallback else []),
             },
         },
     }
@@ -580,13 +589,13 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
         missing_required.append(f"{PLAN_TABLE}[plus].visible")
     if not _bool(plus.get("purchasable"), default=False):
         missing_required.append(f"{PLAN_TABLE}[plus].purchasable")
-    if _bool(premium.get("purchasable"), default=False):
-        warnings.append("Premium plan is purchasable. This is expected only when the Premium launch is intentional.")
     if not _bool(premium.get("visible"), default=True):
         warnings.append("Premium plan is hidden. This is acceptable only if you want no coming-soon surface.")
 
     plus_ios_purchase = _string_or_none((plus.get("purchase_product_id") or {}).get("ios"))
     plus_android_purchase = _string_or_none((plus.get("purchase_product_id") or {}).get("android"))
+    premium_ios_purchase = _string_or_none((premium.get("purchase_product_id") or {}).get("ios"))
+    premium_android_purchase = _string_or_none((premium.get("purchase_product_id") or {}).get("android"))
     if not plus_ios_purchase:
         missing_required.append(f"{ALIASES_TABLE}[plus/ios].is_purchase_default")
     if not plus_android_purchase:
@@ -596,6 +605,16 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
         missing_required.append(f"{ALIASES_TABLE}[plus/ios].store_product_id")
     if len(_string_list((plus.get("recognized_product_ids") or {}).get("android"), [])) == 0:
         missing_required.append(f"{ALIASES_TABLE}[plus/android].store_product_id")
+
+    if _bool(premium.get("purchasable"), default=False):
+        if not premium_ios_purchase:
+            warnings.append("Premium iOS purchase product ID is missing while Premium is purchasable.")
+        if not premium_android_purchase:
+            warnings.append("Premium Android purchase product ID is missing while Premium is purchasable.")
+        if len(_string_list((premium.get("recognized_product_ids") or {}).get("ios"), [])) == 0:
+            warnings.append("Premium iOS recognized product IDs are empty while Premium is purchasable.")
+        if len(_string_list((premium.get("recognized_product_ids") or {}).get("android"), [])) == 0:
+            warnings.append("Premium Android recognized product IDs are empty while Premium is purchasable.")
 
     ready = len(missing_required) == 0
     return {
@@ -614,6 +633,8 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
             "support_url": _string_or_none(settings.get("support_url")),
             "plus_ios_purchase": plus_ios_purchase,
             "plus_android_purchase": plus_android_purchase,
+            "premium_ios_purchase": premium_ios_purchase,
+            "premium_android_purchase": premium_android_purchase,
             "premium_launch_stage": _string_or_none(premium.get("launch_stage")) or "coming_soon",
             "premium_purchasable": _bool(premium.get("purchasable"), default=False),
         },
