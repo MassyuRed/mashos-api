@@ -146,6 +146,7 @@ def test_generated_detail_hides_blocked_text(client, monkeypatch):
 
 def test_generated_stage_skips_same_as_active(monkeypatch):
     import astor_reflection_store as store_module
+    from generated_reflection_identity import compute_generated_question_q_key
 
     active_row: Dict[str, Any] = {
         "id": "active-generated-1",
@@ -162,15 +163,19 @@ def test_generated_stage_skips_same_as_active(monkeypatch):
         },
     }
 
-    async def fake_fetch_active_generated_topic_rows(*, user_id: str, topic_key: str, exclude_id: Optional[str] = None):
+    q_key = compute_generated_question_q_key("最近夢中なことは？")
+
+    async def fake_fetch_active_generated_public_group_rows(*, user_id: str, q_key: str, question: str, exclude_id: Optional[str] = None):
+        assert q_key == compute_generated_question_q_key(question)
         return [dict(active_row)]
 
-    monkeypatch.setattr(store_module, "_fetch_active_generated_topic_rows", fake_fetch_active_generated_topic_rows)
+    monkeypatch.setattr(store_module, "_fetch_active_generated_public_group_rows", fake_fetch_active_generated_public_group_rows)
 
     result = asyncio.run(
         store_module._upsert_staged_generated_row(
             user_id="owner-generated-dup",
             topic_key="topic-generated-dup",
+            q_key=q_key,
             category="趣味",
             question="最近夢中なことは？",
             answer="今日は体がだるくてずっと寝てるし、やたら お腹すいて色々食べてるだけだったけど お話練習したくて配信見に行って少しずつ コメントしてお話できたから お話。",

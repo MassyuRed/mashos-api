@@ -31,7 +31,7 @@ from reflection_text_formatter import (
     format_reflection_text,
 )
 
-GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v1"
+GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v2"
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _WS_RE = re.compile(r"\s+")
@@ -46,6 +46,12 @@ _BAD_EXACTS = {
     "まず一番大事なのは",
     "一番大事なのは",
 }
+
+_BAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
+    re.compile(r"^(?:今まで|今の|さっきまで)?私(?:は|が)?$"),
+    re.compile(r"^(?:自分|私自身)(?:は|が)?$"),
+    re.compile(r"^(?:不器用だ|最悪なんだ|疲れた|減ったのは|娯楽の排除|自身への無価値観|10)$"),
+)
 
 _PREFIX_FILLERS: Sequence[str] = (
     "でも",
@@ -208,6 +214,34 @@ def _normalize_phrase(text: str) -> str:
 
 
 
+def _is_low_quality_core_phrase(text: str) -> bool:
+    s = _normalize_phrase(text)
+    if not s:
+        return True
+    lowered = s.rstrip("。！？!? ")
+    compact = lowered.replace(" ", "")
+    if len(compact) < 4:
+        return True
+    if lowered in _BAD_EXACTS:
+        return True
+    if _SHORT_PARTICLE_TAIL_RE.search(lowered):
+        return True
+    if _BAD_TAIL_RE.search(lowered):
+        return True
+    if any(pattern.fullmatch(compact) for pattern in _BAD_CORE_PATTERNS):
+        return True
+    if compact.endswith(("だけ", "のは", "ことや", "って感じ", "みたい")):
+        return True
+    if re.fullmatch(r"(?:今まで|今の|さっきまで)?私(?:は|が)?です?", compact):
+        return True
+    if re.fullmatch(r"(?:自分|私自身)(?:は|が)?です?", compact):
+        return True
+    if compact.endswith(("だ", "です")) and len(compact) <= 10:
+        return True
+    return False
+
+
+
 def _contains_any(text: str, keywords: Sequence[str]) -> bool:
     return any(k and k in text for k in (keywords or []))
 
@@ -298,9 +332,7 @@ def _infer_semantic_core_phrase(
     }
     for fragment in fragments:
         s = _normalize_phrase(fragment)
-        if not s or len(s) < 4:
-            continue
-        if s in _BAD_EXACTS:
+        if _is_low_quality_core_phrase(s):
             continue
         score = 0
         if len(s) <= 26:
@@ -314,7 +346,10 @@ def _infer_semantic_core_phrase(
         candidates.append((score, s))
 
     candidates.sort(key=lambda item: (item[0], -len(item[1])), reverse=True)
-    return candidates[0][1] if candidates else ""
+    if not candidates:
+        return ""
+    candidate = candidates[0][1]
+    return "" if _is_low_quality_core_phrase(candidate) else candidate
 
 
 
@@ -356,7 +391,7 @@ def _nominalize_phrase(text: str) -> str:
 
 def _build_head_sentence(*, mode: str, core_phrase: str) -> str:
     core = _nominalize_phrase(core_phrase)
-    if not core:
+    if not core or _is_low_quality_core_phrase(core):
         return ""
     if mode == "relationship":
         return _ensure_sentence(f"人との関わりでは、{core}を大切にしたいです")
@@ -470,11 +505,20 @@ def _collect_quality_flags(text: str) -> List[str]:
     if len(s) < 8:
         _append_once(flags, "quality:too_short")
     lowered = s.rstrip("。！？!? ")
+    compact = lowered.replace(" ", "")
     if lowered in _BAD_EXACTS:
         _append_once(flags, "quality:noun_only")
     if _SHORT_PARTICLE_TAIL_RE.search(lowered):
         _append_once(flags, "quality:unfinished")
     if lowered.startswith(("でも", "ただ", "は")) and len(lowered) < 24:
+        _append_once(flags, "quality:broken_answer")
+    if _is_low_quality_core_phrase(lowered):
+        _append_once(flags, "quality:broken_answer")
+    if re.search(r"(?:だ|です)です$", compact):
+        _append_once(flags, "quality:broken_answer")
+    if re.search(r"(?:今まで|今の|さっきまで)?私(?:は|が)?です$", compact):
+        _append_once(flags, "quality:broken_answer")
+    if re.search(r"(?:自分|私自身)(?:は|が)?です$", compact):
         _append_once(flags, "quality:broken_answer")
     return flags
 
@@ -653,6 +697,8 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
 
     meta = _parse_mapping(bundle.get("answer_format_meta"))
     version = str(bundle.get("answer_format_version") or meta.get("version") or GENERATED_REFLECTION_DISPLAY_VERSION).strip() or GENERATED_REFLECTION_DISPLAY_VERSION
+    if version != GENERATED_REFLECTION_DISPLAY_VERSION:
+        return None
     flags = [str(x).strip() for x in (meta.get("flags") or []) if str(x).strip()]
     actions = [str(x).strip() for x in (meta.get("actions") or []) if str(x).strip()]
     raw = _collapse_ws((row or {}).get("answer"))

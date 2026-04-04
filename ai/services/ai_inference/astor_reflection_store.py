@@ -50,6 +50,7 @@ from generated_reflection_display import (
     build_generated_reflection_display,
     resolve_generated_reflection_display,
 )
+from generated_reflection_identity import compute_generated_question_q_key
 
 logger = logging.getLogger("astor_reflection_store")
 
@@ -217,6 +218,13 @@ def _row_public_id(row: Dict[str, Any]) -> str:
     return str(row.get("public_id") or "").strip()
 
 
+def _row_q_key(row: Dict[str, Any]) -> str:
+    qk = str(row.get("q_key") or "").strip()
+    if qk:
+        return qk
+    return compute_generated_question_q_key(row.get("question"))
+
+
 def _row_locked(row: Dict[str, Any]) -> bool:
     v = row.get("locked")
     if isinstance(v, bool):
@@ -229,6 +237,7 @@ def _row_locked(row: Dict[str, Any]) -> bool:
 def _build_content_json(
     *,
     topic_key: str,
+    q_key: str,
     category: str,
     question: str,
     answer: str,
@@ -244,6 +253,7 @@ def _build_content_json(
         "version": "premium_reflection.v1",
         "source_type": "generated",
         "topic_key": str(topic_key or "").strip(),
+        "q_key": str(q_key or "").strip() or None,
         "category": str(category or "").strip(),
         "question": str(question or "").strip(),
         "answer": str(answer or "").strip(),
@@ -332,15 +342,29 @@ async def _fetch_reflection_by_id(reflection_id: str) -> Optional[Dict[str, Any]
     return rows[0] if rows else None
 
 
-async def _find_existing_staged_generated_row(*, user_id: str, topic_key: str, source_hash: str) -> Optional[Dict[str, Any]]:
+async def _find_existing_staged_generated_row(*, user_id: str, q_key: str, topic_key: str, source_hash: str) -> Optional[Dict[str, Any]]:
     uid = str(user_id or "").strip()
+    qk = str(q_key or "").strip()
     tk = str(topic_key or "").strip()
     sh = str(source_hash or "").strip()
-    if not uid or not tk or not sh:
+    if not uid or not sh:
         return None
-    rows = await _sb_get_json(
-        f"/rest/v1/{REFLECTIONS_TABLE}",
-        params=[
+
+    query_sets: List[List[Tuple[str, str]]] = []
+    if qk:
+        query_sets.append([
+            ("select", "*"),
+            ("owner_user_id", f"eq.{uid}"),
+            ("source_type", "eq.generated"),
+            ("q_key", f"eq.{qk}"),
+            ("source_hash", f"eq.{sh}"),
+            ("status", "eq.draft"),
+            ("is_active", "eq.false"),
+            ("order", "updated_at.desc"),
+            ("limit", "1"),
+        ])
+    if tk:
+        query_sets.append([
             ("select", "*"),
             ("owner_user_id", f"eq.{uid}"),
             ("source_type", "eq.generated"),
@@ -350,10 +374,17 @@ async def _find_existing_staged_generated_row(*, user_id: str, topic_key: str, s
             ("is_active", "eq.false"),
             ("order", "updated_at.desc"),
             ("limit", "1"),
-        ],
-        timeout=8.0,
-    )
-    return rows[0] if rows else None
+        ])
+
+    for params in query_sets:
+        rows = await _sb_get_json(
+            f"/rest/v1/{REFLECTIONS_TABLE}",
+            params=params,
+            timeout=8.0,
+        )
+        if rows:
+            return rows[0]
+    return None
 
 
 async def _fetch_active_generated_topic_rows(*, user_id: str, topic_key: str, exclude_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -380,6 +411,55 @@ async def _fetch_active_generated_topic_rows(*, user_id: str, topic_key: str, ex
     return rows
 
 
+async def _fetch_active_generated_public_group_rows(
+    *,
+    user_id: str,
+    q_key: str,
+    question: str,
+    exclude_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    qk = str(q_key or "").strip()
+    q = str(question or "").strip()
+    ex = str(exclude_id or "").strip()
+    if not uid:
+        return []
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    query_sets: List[List[Tuple[str, str]]] = []
+    if qk:
+        query_sets.append([
+            ("select", "*"),
+            ("owner_user_id", f"eq.{uid}"),
+            ("source_type", "eq.generated"),
+            ("q_key", f"eq.{qk}"),
+            ("is_active", "eq.true"),
+            ("order", "updated_at.desc"),
+            ("limit", "50"),
+        ])
+    if q:
+        query_sets.append([
+            ("select", "*"),
+            ("owner_user_id", f"eq.{uid}"),
+            ("source_type", "eq.generated"),
+            ("question", f"eq.{q}"),
+            ("is_active", "eq.true"),
+            ("order", "updated_at.desc"),
+            ("limit", "50"),
+        ])
+
+    for params in query_sets:
+        rows = await _sb_get_json(f"/rest/v1/{REFLECTIONS_TABLE}", params=params, timeout=8.0)
+        for row in rows:
+            rid = _row_id(row)
+            if not rid or rid == ex:
+                continue
+            merged[rid] = row
+
+    ordered = sorted(merged.values(), key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""), reverse=True)
+    return ordered
+
+
 def _skip_same_as_active_marker(*, active_row: Dict[str, Any], answer_norm_hash: str) -> Dict[str, Any]:
     return {
         "_stage_action": "skip_same_as_active",
@@ -392,15 +472,16 @@ def _skip_same_as_active_marker(*, active_row: Dict[str, Any], answer_norm_hash:
 async def _maybe_skip_same_as_active(
     *,
     user_id: str,
-    topic_key: str,
+    q_key: str,
     question: str,
     proposal_display_result: Any,
     previous_reflection_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
-    active_rows = await _fetch_active_generated_topic_rows(
+    active_rows = await _fetch_active_generated_public_group_rows(
         user_id=user_id,
-        topic_key=topic_key,
-        exclude_id=None,
+        q_key=q_key,
+        question=question,
+        exclude_id=str(previous_reflection_id or "").strip() or None,
     )
     proposal_question = str(question or "").strip()
     proposal_hash = str(getattr(proposal_display_result, "answer_norm_hash", "") or "").strip()
@@ -428,6 +509,7 @@ async def _upsert_staged_generated_row(
     *,
     user_id: str,
     topic_key: str,
+    q_key: str,
     category: str,
     question: str,
     answer: str,
@@ -443,6 +525,7 @@ async def _upsert_staged_generated_row(
 ) -> Dict[str, Any]:
     uid = str(user_id or "").strip()
     tk = str(topic_key or "").strip()
+    qk = str(q_key or "").strip() or compute_generated_question_q_key(question)
     if not uid or not tk:
         raise ValueError("user_id and topic_key are required")
 
@@ -457,7 +540,7 @@ async def _upsert_staged_generated_row(
 
     skip_marker = await _maybe_skip_same_as_active(
         user_id=uid,
-        topic_key=tk,
+        q_key=qk,
         question=question,
         proposal_display_result=display_result,
         previous_reflection_id=previous_reflection_id,
@@ -465,9 +548,10 @@ async def _upsert_staged_generated_row(
     if skip_marker is not None:
         return skip_marker
 
-    existing = await _find_existing_staged_generated_row(user_id=uid, topic_key=tk, source_hash=source_hash)
+    existing = await _find_existing_staged_generated_row(user_id=uid, q_key=qk, topic_key=tk, source_hash=source_hash)
     content_json = _build_content_json(
         topic_key=tk,
+        q_key=qk,
         category=category,
         question=question,
         answer=answer,
@@ -491,6 +575,7 @@ async def _upsert_staged_generated_row(
         "status": "draft",
         "is_active": False,
         "topic_key": tk,
+        "q_key": qk,
         "category": str(category or "").strip() or None,
         "question": str(question or "").strip(),
         "answer": str(answer or "").strip(),
@@ -529,6 +614,7 @@ async def _stage_create(*, user_id: str, proposal: Dict[str, Any]) -> Dict[str, 
     return await _upsert_staged_generated_row(
         user_id=user_id,
         topic_key=str(proposal.get("topic_key") or "").strip(),
+        q_key=str(proposal.get("q_key") or "").strip(),
         category=str(proposal.get("category") or "").strip(),
         question=str(proposal.get("question") or "").strip(),
         answer=str(proposal.get("answer") or "").strip(),
@@ -551,6 +637,7 @@ async def _stage_update(*, user_id: str, proposal: Dict[str, Any]) -> Dict[str, 
     return await _upsert_staged_generated_row(
         user_id=user_id,
         topic_key=str(proposal.get("topic_key") or "").strip(),
+        q_key=str(proposal.get("q_key") or "").strip(),
         category=str(proposal.get("category") or "").strip(),
         question=str(proposal.get("question") or "").strip(),
         answer=str(proposal.get("answer") or "").strip(),
@@ -689,13 +776,20 @@ async def promote_reflection(
 
     uid = str(row.get("owner_user_id") or "").strip()
     topic_key = str(row.get("topic_key") or "").strip()
+    question = str(row.get("question") or "").strip()
+    q_key = _row_q_key(row)
     rid = _row_id(row)
     if not uid or not topic_key or not rid:
         raise ValueError("reflection row missing owner/topic/id")
     if str(row.get("source_type") or "") != "generated":
         raise ValueError("promote_reflection only supports generated reflections")
 
-    previous_rows = await _fetch_active_generated_topic_rows(user_id=uid, topic_key=topic_key, exclude_id=rid)
+    previous_rows = await _fetch_active_generated_public_group_rows(
+        user_id=uid,
+        q_key=q_key,
+        question=question,
+        exclude_id=rid,
+    )
 
     previous_ids: List[str] = []
     for prev in previous_rows:
@@ -721,6 +815,7 @@ async def promote_reflection(
         json_body={
             "status": "ready",
             "is_active": True,
+            "q_key": q_key,
         },
         timeout=8.0,
         prefer="return=representation",

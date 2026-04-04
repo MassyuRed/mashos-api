@@ -159,3 +159,85 @@ def test_generated_maintenance_plans_cleanup_and_reports_remaining_multi_answer_
     assert unresolved
     assert unresolved[0]["question"] == "人との関わりで大切なことは？"
     assert unresolved[0]["unique_answer_count"] == 2
+
+
+
+def test_generated_maintenance_archives_noncanonical_active_same_qkey():
+    import generated_reflection_maintenance as maintenance_module
+
+    latest_row = {
+        "id": "latest-qkey-row",
+        "public_id": "reflection:latest-qkey-row",
+        "owner_user_id": "owner-qkey-1",
+        "source_type": "generated",
+        "status": "ready",
+        "is_active": True,
+        "q_key": "generated:q:test-same-question",
+        "question": "大切にしていることは？",
+        "answer": "無理をしすぎず心と体を整えることを大切にしたい。",
+        "category": "生活",
+        "updated_at": "2026-04-03T17:56:32+00:00",
+        "content_json": {"focus_key": "values", "topic_summary_text": "生活 / 無理をしすぎず整える"},
+    }
+    older_row = {
+        "id": "older-qkey-row",
+        "public_id": "reflection:older-qkey-row",
+        "owner_user_id": "owner-qkey-1",
+        "source_type": "generated",
+        "status": "ready",
+        "is_active": True,
+        "q_key": "generated:q:test-same-question",
+        "question": "大切にしていることは？",
+        "answer": "恋愛を楽しみたい。",
+        "category": "生活",
+        "updated_at": "2026-04-03T10:50:00+00:00",
+        "content_json": {"focus_key": "values", "topic_summary_text": "生活 / 恋愛を楽しみたい"},
+    }
+
+    actions = maintenance_module.plan_generated_reflection_latest_qkey_cleanup([latest_row, older_row])
+    action_map = {item.reflection_id: item.action for item in actions}
+
+    assert action_map["latest-qkey-row"] == "keep"
+    assert action_map["older-qkey-row"] == "archive"
+
+
+
+def test_generated_generation_plan_prefers_latest_state_signals_for_same_question():
+    import astor_reflection_engine as engine_module
+
+    premium_reflection_view = {
+        "version": "premium_reflection_view.v1",
+        "items": [
+            {
+                "source_type": "emotion_input",
+                "source_id": "old-1",
+                "timestamp": "2026-01-01T09:00:00+00:00",
+                "category": "健康",
+                "text_primary": "夜更かしすること",
+                "text_secondary": "",
+                "source_weight": 1.0,
+            },
+            {
+                "source_type": "emotion_input",
+                "source_id": "new-1",
+                "timestamp": "2026-04-03T18:00:00+00:00",
+                "category": "健康",
+                "text_primary": "無理をしすぎず休むこと",
+                "text_secondary": "",
+                "source_weight": 1.0,
+            },
+        ],
+    }
+
+    plan = engine_module.build_generation_plan(
+        user_id="owner-latest-1",
+        snapshot_id="snapshot-latest-1",
+        source_hash="source-hash-latest-1",
+        premium_reflection_view=premium_reflection_view,
+        existing_dynamic_reflections=[],
+    )
+
+    assert len(plan["creates"]) == 1
+    answer = str(plan["creates"][0]["answer"] or "")
+    assert "無理をしすぎず休むこと" in answer
+    assert "夜更かし" not in answer

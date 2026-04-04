@@ -44,6 +44,7 @@ from api_emotion_submit import (
 from api_mymodel_create import _fetch_answers as _fetch_create_answers
 from api_mymodel_create import _fetch_questions as _fetch_create_questions
 from generated_reflection_display import get_public_generated_reflection_text
+from generated_reflection_identity import compute_generated_question_q_key
 from reflection_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
@@ -3325,6 +3326,9 @@ def _build_generated_q_key(row: Dict[str, Any]) -> str:
     qk = str((row or {}).get("q_key") or "").strip()
     if qk:
         return qk
+    question = str((row or {}).get("question") or "").strip()
+    if question:
+        return compute_generated_question_q_key(question)
     topic_key = str((row or {}).get("topic_key") or "").strip()
     if topic_key:
         return f"generated:{topic_key}"
@@ -3334,6 +3338,72 @@ def _build_generated_q_key(row: Dict[str, Any]) -> str:
 
 def _generated_public_id(row: Dict[str, Any]) -> str:
     return str((row or {}).get("public_id") or "").strip()
+
+
+def _generated_row_sort_key(row: Dict[str, Any]) -> Tuple[str, str]:
+    return (
+        str((row or {}).get("updated_at") or (row or {}).get("created_at") or "").strip(),
+        str((row or {}).get("id") or "").strip(),
+    )
+
+
+def _canonicalize_generated_rows_latest_by_qkey(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen_qkeys: Set[str] = set()
+    out: List[Dict[str, Any]] = []
+    for row in sorted(list(rows or []), key=_generated_row_sort_key, reverse=True):
+        qk = _build_generated_q_key(row)
+        if qk in seen_qkeys:
+            continue
+        seen_qkeys.add(qk)
+        out.append(row)
+    return out
+
+
+async def _fetch_generated_public_group_rows_for_owner(
+    owner_user_id: str,
+    *,
+    q_key: str,
+    question: str,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    owner_id = str(owner_user_id or "").strip()
+    qk = str(q_key or "").strip()
+    q = str(question or "").strip()
+    if not owner_id:
+        return []
+
+    merged: Dict[str, Dict[str, Any]] = {}
+    query_sets: List[Dict[str, str]] = []
+    if qk:
+        query_sets.append({
+            "select": "*",
+            "owner_user_id": f"eq.{owner_id}",
+            "source_type": "eq.generated",
+            "is_active": "eq.true",
+            "status": "in.(ready,published)",
+            "q_key": f"eq.{qk}",
+            "order": "updated_at.desc",
+            "limit": str(max(1, int(limit))),
+        })
+    if q:
+        query_sets.append({
+            "select": "*",
+            "owner_user_id": f"eq.{owner_id}",
+            "source_type": "eq.generated",
+            "is_active": "eq.true",
+            "status": "in.(ready,published)",
+            "question": f"eq.{q}",
+            "order": "updated_at.desc",
+            "limit": str(max(1, int(limit))),
+        })
+
+    for params in query_sets:
+        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+        for row in rows:
+            pid = _generated_public_id(row)
+            if pid:
+                merged[pid] = row
+    return sorted(list(merged.values()), key=_generated_row_sort_key, reverse=True)
 
 
 async def _fetch_generated_reflection_by_public_id(
@@ -3360,7 +3430,24 @@ async def _fetch_generated_reflection_by_public_id(
     if require_ready:
         params["status"] = "in.(ready,published)"
     rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
-    return rows[0] if rows else None
+    row = rows[0] if rows else None
+    if not row:
+        return None
+    if require_active and require_ready:
+        owner_id = str((row or {}).get("owner_user_id") or owner_user_id or "").strip()
+        qk = _build_generated_q_key(row)
+        question = str((row or {}).get("question") or "").strip()
+        group_rows = await _fetch_generated_public_group_rows_for_owner(owner_id, q_key=qk, question=question)
+        canonical_rows = _canonicalize_generated_rows_latest_by_qkey(group_rows)
+        canonical_row = canonical_rows[0] if canonical_rows else None
+        if canonical_row is None:
+            return None
+        if _generated_public_id(canonical_row) != pid:
+            return None
+        if not get_public_generated_reflection_text(canonical_row):
+            return None
+        return canonical_row
+    return row
 
 
 async def _fetch_generated_reflections_by_public_ids(
@@ -3384,10 +3471,15 @@ async def _fetch_generated_reflections_by_public_ids(
         params["status"] = "in.(ready,published)"
     rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
     out: Dict[str, Dict[str, Any]] = {}
-    for r in rows:
+    for r in _canonicalize_generated_rows_latest_by_qkey(rows):
         pid = _generated_public_id(r)
-        if pid:
-            out[pid] = r
+        if not pid:
+            continue
+        if pid not in ids:
+            continue
+        if not get_public_generated_reflection_text(r):
+            continue
+        out[pid] = r
     return out
 
 
@@ -3411,7 +3503,7 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
         },
     )
     visible_rows: List[Dict[str, Any]] = []
-    for row in rows:
+    for row in _canonicalize_generated_rows_latest_by_qkey(rows):
         if get_public_generated_reflection_text(row):
             visible_rows.append(row)
     return visible_rows

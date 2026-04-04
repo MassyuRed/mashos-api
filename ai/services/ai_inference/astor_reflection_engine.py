@@ -50,12 +50,15 @@ Premium dynamic Reflections の「生成計画（create / update / deactivate）
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import hashlib
 import logging
 import math
 import os
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from generated_reflection_identity import compute_generated_question_q_key
 
 
 logger = logging.getLogger("astor_reflection_engine")
@@ -98,6 +101,13 @@ try:
     MAX_SIGNALS_PER_TOPIC = int(os.getenv("REFLECTION_MAX_SIGNALS_PER_TOPIC", "12") or "12")
 except Exception:
     MAX_SIGNALS_PER_TOPIC = 12
+
+try:
+    REFLECTION_LATEST_STATE_WINDOW_HOURS = int(
+        os.getenv("REFLECTION_LATEST_STATE_WINDOW_HOURS", "72") or "72"
+    )
+except Exception:
+    REFLECTION_LATEST_STATE_WINDOW_HOURS = 72
 
 try:
     MAX_TEXT_LEN_FOR_EMBEDDING = int(
@@ -240,6 +250,38 @@ def _weighted_centroid(vectors: Sequence[Sequence[float]], weights: Sequence[flo
     if total <= 1e-12:
         return _normalize_vector(acc)
     return _normalize_vector([x / total for x in acc])
+
+
+def _parse_signal_timestamp(value: Any) -> Optional[datetime]:
+    text = str(value or '').strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def _select_latest_state_signals(signals: Sequence[ReflectionSignal]) -> List[ReflectionSignal]:
+    ordered_desc = sorted(
+        list(signals or []),
+        key=lambda signal: (_parse_signal_timestamp(getattr(signal, 'timestamp', '') or '') or datetime.min, str(getattr(signal, 'timestamp', '') or ''), str(getattr(signal, 'source_type', '') or ''), str(getattr(signal, 'source_id', '') or '')),
+        reverse=True,
+    )
+    if not ordered_desc:
+        return []
+
+    parsed_latest = _parse_signal_timestamp(getattr(ordered_desc[0], 'timestamp', '') or '')
+    if parsed_latest is None:
+        return ordered_desc
+
+    threshold = parsed_latest - timedelta(hours=max(1, int(REFLECTION_LATEST_STATE_WINDOW_HOURS or 72)))
+    latest_only = [
+        signal
+        for signal in ordered_desc
+        if (_parse_signal_timestamp(getattr(signal, 'timestamp', '') or '') or parsed_latest) >= threshold
+    ]
+    return latest_only or ordered_desc
 
 
 def _tokenize_for_embedding(text: str) -> List[str]:
@@ -959,98 +1001,186 @@ class ReflectionEngine:
         )
         new_clusters = self._detector.cluster_new_topics(unmatched_signals)
 
-        creates: List[Dict[str, Any]] = []
-        updates: List[Dict[str, Any]] = []
-        matched_existing_ids = set()
-
         existing_map = {t.reflection_id: t for t in existing_topics}
+        represented_existing_ids: Set[str] = set()
+        kept_existing_ids: Set[str] = set()
+        superseded_existing_ids: Set[str] = set()
+        grouped_candidates: Dict[str, List[Dict[str, Any]]] = {}
 
-        # Existing topics -> keep question, regenerate answer
+        def _cluster_latest_signal_at(cluster: TopicCluster) -> str:
+            timestamps = [str(getattr(signal, "timestamp", "") or "") for signal in (cluster.signals or []) if str(getattr(signal, "timestamp", "") or "")]
+            return max(timestamps) if timestamps else ""
+
+        def _merge_signals(entries: Sequence[Dict[str, Any]]) -> List[ReflectionSignal]:
+            merged: List[ReflectionSignal] = []
+            seen_keys = set()
+            raw_signals: List[ReflectionSignal] = []
+            for entry in entries or []:
+                raw_signals.extend(list(entry.get("signals") or []))
+            for signal in sorted(
+                raw_signals,
+                key=lambda x: (
+                    _parse_signal_timestamp(getattr(x, "timestamp", "") or "") or datetime.min,
+                    str(getattr(x, "timestamp", "") or ""),
+                    str(getattr(x, "source_type", "") or ""),
+                    str(getattr(x, "source_id", "") or ""),
+                ),
+                reverse=True,
+            ):
+                sig_key = (str(signal.source_type or ""), str(signal.source_id or ""))
+                if sig_key in seen_keys:
+                    continue
+                seen_keys.add(sig_key)
+                merged.append(signal)
+            return _select_latest_state_signals(merged)
+
+        def _candidate_sort_key(entry: Dict[str, Any]) -> Tuple[int, str, int, str]:
+            has_existing = 1 if str(entry.get("reflection_id") or "").strip() else 0
+            latest_signal_at = str(entry.get("latest_signal_at") or "")
+            signal_count = int(entry.get("signal_count") or 0)
+            topic_key = str(entry.get("topic_key") or "")
+            return (has_existing, latest_signal_at, signal_count, topic_key)
+
+        def _register_cluster_candidate(cluster: TopicCluster, *, existing_topic: Optional[ExistingReflectionTopic] = None) -> None:
+            question = ""
+            topic_key = ""
+            reflection_id = ""
+            if existing_topic is not None:
+                reflection_id = str(existing_topic.reflection_id or "").strip()
+                topic_key = str(existing_topic.topic_key or "").strip()
+                question = str(existing_topic.question or "").strip()
+                if reflection_id:
+                    represented_existing_ids.add(reflection_id)
+            if not question:
+                question = self._generator.generate_question(
+                    category=cluster.category,
+                    focus_key=cluster.focus_key or "generic",
+                    topic_summary_text=cluster.topic_summary_text,
+                    signals=cluster.signals,
+                )
+            q_key = compute_generated_question_q_key(question)
+            grouped_candidates.setdefault(q_key, []).append(
+                {
+                    "q_key": q_key,
+                    "question": question,
+                    "category": cluster.category,
+                    "focus_key": cluster.focus_key or "generic",
+                    "signals": list(cluster.signals or []),
+                    "topic_key": topic_key,
+                    "reflection_id": reflection_id,
+                    "latest_signal_at": _cluster_latest_signal_at(cluster),
+                    "signal_count": len(cluster.signals or []),
+                }
+            )
+
         for cluster in attached_clusters:
             rid = str(cluster.matched_reflection_id or "").strip()
             if not rid:
                 continue
-            matched_existing_ids.add(rid)
             topic = existing_map[rid]
+            _register_cluster_candidate(cluster, existing_topic=topic)
 
-            question = topic.question or self._generator.generate_question(
-                category=cluster.category,
-                focus_key=cluster.focus_key or "generic",
-                topic_summary_text=cluster.topic_summary_text,
-                signals=cluster.signals,
-            )
+        for cluster in new_clusters:
+            _register_cluster_candidate(cluster, existing_topic=None)
+
+        creates: List[Dict[str, Any]] = []
+        updates: List[Dict[str, Any]] = []
+
+        for q_key, entries in grouped_candidates.items():
+            if not entries:
+                continue
+            ordered_entries = sorted(entries, key=_candidate_sort_key, reverse=True)
+            canonical = ordered_entries[0]
+            for entry in ordered_entries:
+                if str(entry.get("reflection_id") or "").strip():
+                    canonical = entry
+                    break
+
+            question = str(canonical.get("question") or "").strip()
+            category = str(canonical.get("category") or "").strip()
+            focus_key = str(canonical.get("focus_key") or "").strip() or "generic"
+            combined_signals = _merge_signals(ordered_entries)
+            vectors = [s.embedding or _embed_text_local(s.embedding_text) for s in combined_signals]
+            weights = [max(0.1, float(s.source_weight)) for s in combined_signals]
+            centroid = _weighted_centroid(vectors, weights) if vectors else []
+            topic_summary_text = _build_topic_summary_text(category, combined_signals)
             answer = self._generator.generate_answer(
-                category=cluster.category,
+                category=category,
                 question=question,
-                signals=cluster.signals,
+                signals=combined_signals,
             )
+            payload = {
+                "q_key": q_key,
+                "source_type": "generated",
+                "product_type": "reflection_dynamic",
+                "required_plan_tier": DEFAULT_REQUIRED_PLAN_TIER,
+                "scope": DEFAULT_SCOPE,
+                "status": "draft",
+                "category": category,
+                "focus_key": focus_key,
+                "question": question,
+                "answer": answer,
+                "source_snapshot_id": sid,
+                "source_hash": sh,
+                "source_refs": _build_source_refs(combined_signals),
+                "topic_summary_text": topic_summary_text,
+                "topic_embedding": [round(float(x), 6) for x in centroid],
+            }
 
-            updates.append(
+            canonical_reflection_id = str(canonical.get("reflection_id") or "").strip()
+            canonical_topic_key = str(canonical.get("topic_key") or "").strip()
+            if canonical_reflection_id:
+                kept_existing_ids.add(canonical_reflection_id)
+                updates.append(
+                    {
+                        "reflection_id": canonical_reflection_id,
+                        "topic_key": canonical_topic_key,
+                        **payload,
+                    }
+                )
+            else:
+                topic_key = _make_topic_key(
+                    user_id=uid,
+                    category=category,
+                    focus_key=focus_key,
+                    topic_summary_text=topic_summary_text or question,
+                )
+                creates.append(
+                    {
+                        "topic_key": topic_key,
+                        **payload,
+                    }
+                )
+
+            for entry in ordered_entries:
+                rid = str(entry.get("reflection_id") or "").strip()
+                if rid and rid != canonical_reflection_id:
+                    superseded_existing_ids.add(rid)
+
+        deactivates: List[Dict[str, Any]] = []
+        deactivated_ids: Set[str] = set()
+
+        for rid in sorted(superseded_existing_ids):
+            if not rid or rid in deactivated_ids:
+                continue
+            topic = existing_map.get(rid)
+            deactivated_ids.add(rid)
+            deactivates.append(
                 {
                     "reflection_id": rid,
-                    "topic_key": topic.topic_key,
-                    "source_type": "generated",
-                    "product_type": "reflection_dynamic",
-                    "required_plan_tier": DEFAULT_REQUIRED_PLAN_TIER,
-                    "scope": DEFAULT_SCOPE,
-                    "status": "draft",
-                    "category": cluster.category,
-                    "focus_key": cluster.focus_key or "generic",
-                    "question": question,
-                    "answer": answer,
+                    "topic_key": str((topic.topic_key if topic else "") or "").strip(),
+                    "reason": "superseded_by_latest_q_key",
                     "source_snapshot_id": sid,
                     "source_hash": sh,
-                    "source_refs": _build_source_refs(cluster.signals),
-                    "topic_summary_text": cluster.topic_summary_text,
-                    "topic_embedding": [round(float(x), 6) for x in cluster.centroid],
                 }
             )
 
-        # New topics -> create
-        for cluster in new_clusters:
-            focus_key = cluster.focus_key or "generic"
-            question = self._generator.generate_question(
-                category=cluster.category,
-                focus_key=focus_key,
-                topic_summary_text=cluster.topic_summary_text,
-                signals=cluster.signals,
-            )
-            answer = self._generator.generate_answer(
-                category=cluster.category,
-                question=question,
-                signals=cluster.signals,
-            )
-            topic_key = _make_topic_key(
-                user_id=uid,
-                category=cluster.category,
-                focus_key=focus_key,
-                topic_summary_text=cluster.topic_summary_text or question,
-            )
-            creates.append(
-                {
-                    "topic_key": topic_key,
-                    "source_type": "generated",
-                    "product_type": "reflection_dynamic",
-                    "required_plan_tier": DEFAULT_REQUIRED_PLAN_TIER,
-                    "scope": DEFAULT_SCOPE,
-                    "status": "draft",
-                    "category": cluster.category,
-                    "focus_key": focus_key,
-                    "question": question,
-                    "answer": answer,
-                    "source_snapshot_id": sid,
-                    "source_hash": sh,
-                    "source_refs": _build_source_refs(cluster.signals),
-                    "topic_summary_text": cluster.topic_summary_text,
-                    "topic_embedding": [round(float(x), 6) for x in cluster.centroid],
-                }
-            )
-
-        # Existing dynamic reflection not represented in current snapshot -> deactivate
-        deactivates: List[Dict[str, Any]] = []
         for topic in existing_topics:
-            if topic.reflection_id in matched_existing_ids:
+            if topic.reflection_id in kept_existing_ids or topic.reflection_id in deactivated_ids:
                 continue
+            if topic.reflection_id in represented_existing_ids:
+                continue
+            deactivated_ids.add(topic.reflection_id)
             deactivates.append(
                 {
                     "reflection_id": topic.reflection_id,
@@ -1061,9 +1191,9 @@ class ReflectionEngine:
                 }
             )
 
-        creates.sort(key=lambda x: (str(x.get("category") or ""), str(x.get("focus_key") or ""), str(x.get("question") or "")))
-        updates.sort(key=lambda x: (str(x.get("category") or ""), str(x.get("focus_key") or ""), str(x.get("question") or ""), str(x.get("reflection_id") or "")))
-        deactivates.sort(key=lambda x: (str(x.get("topic_key") or ""), str(x.get("reflection_id") or "")))
+        creates.sort(key=lambda x: (str(x.get("q_key") or ""), str(x.get("question") or ""), str(x.get("topic_key") or "")))
+        updates.sort(key=lambda x: (str(x.get("q_key") or ""), str(x.get("question") or ""), str(x.get("reflection_id") or "")))
+        deactivates.sort(key=lambda x: (str(x.get("reason") or ""), str(x.get("topic_key") or ""), str(x.get("reflection_id") or "")))
 
         return {
             "user_id": uid,
@@ -1076,13 +1206,14 @@ class ReflectionEngine:
                 "input_items": len(signals),
                 "attached_topic_count": len(attached_clusters),
                 "new_topic_count": len(new_clusters),
+                "grouped_question_count": len(grouped_candidates),
+                "collapsed_same_question_count": sum(max(0, len(entries) - 1) for entries in grouped_candidates.values()),
                 "create_count": len(creates),
                 "update_count": len(updates),
                 "deactivate_count": len(deactivates),
                 "existing_topic_count": len(existing_topics),
             },
         }
-
 
 def build_generation_plan(
     *,

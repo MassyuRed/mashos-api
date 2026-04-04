@@ -40,6 +40,7 @@ from generated_reflection_display import (
     compute_generated_display_source_signature,
     resolve_generated_reflection_display,
 )
+from generated_reflection_identity import compute_generated_question_q_key
 
 _REQUIRED_DISPLAY_KEYS: Tuple[str, ...] = (
     "answer_display_state",
@@ -103,6 +104,14 @@ def _collect_text_candidates_from_row(row: Mapping[str, Any]) -> List[str]:
                     if value and value not in out:
                         out.append(value)
     return out
+
+
+
+def _row_generated_q_key(row: Mapping[str, Any]) -> str:
+    qk = str((row or {}).get("q_key") or "").strip()
+    if qk:
+        return qk
+    return compute_generated_question_q_key((row or {}).get("question"))
 
 
 
@@ -360,6 +369,97 @@ def summarize_unresolved_question_multi_answer_groups(
 
 
 
+def plan_generated_reflection_latest_qkey_cleanup(
+    rows: Sequence[Mapping[str, Any]],
+) -> List[GeneratedCleanupAction]:
+    grouped: Dict[Tuple[str, str], List[Mapping[str, Any]]] = {}
+    for row in rows or []:
+        if str((row or {}).get("source_type") or "").strip() != "generated":
+            continue
+        if not bool((row or {}).get("is_active")):
+            continue
+        status = str((row or {}).get("status") or "").strip().lower()
+        if status not in {"ready", "published"}:
+            continue
+        owner = str((row or {}).get("owner_user_id") or "").strip()
+        q_key = _row_generated_q_key(row)
+        question = str((row or {}).get("question") or "").strip()
+        if not owner or not q_key or not question:
+            continue
+        grouped.setdefault((owner, q_key), []).append(dict(row or {}))
+
+    actions: List[GeneratedCleanupAction] = []
+    for (owner, q_key), items in grouped.items():
+        ordered = sorted(items, key=_sort_desc_key, reverse=True)
+        keeper = ordered[0]
+        keeper_id = _row_id(dict(keeper or {}))
+        keeper_question = str((keeper or {}).get("question") or "").strip()
+        actions.append(
+            GeneratedCleanupAction(
+                action="keep",
+                reflection_id=keeper_id,
+                reason="latest_qkey_keeper",
+                owner_user_id=owner,
+                question=keeper_question,
+                answer_norm_hash=str(getattr(resolve_generated_reflection_display(keeper), "answer_norm_hash", "") or "").strip(),
+                is_active=bool((keeper or {}).get("is_active")),
+                public_id=_row_public_id(dict(keeper or {})),
+            )
+        )
+        for row in ordered[1:]:
+            rid = _row_id(dict(row or {}))
+            if not rid:
+                continue
+            if _row_locked(dict(row or {})):
+                actions.append(
+                    GeneratedCleanupAction(
+                        action="protected",
+                        reflection_id=rid,
+                        reason="latest_qkey_but_locked",
+                        owner_user_id=owner,
+                        question=str((row or {}).get("question") or keeper_question).strip(),
+                        answer_norm_hash=str(getattr(resolve_generated_reflection_display(row), "answer_norm_hash", "") or "").strip(),
+                        is_active=bool((row or {}).get("is_active")),
+                        public_id=_row_public_id(dict(row or {})),
+                    )
+                )
+                continue
+            actions.append(
+                GeneratedCleanupAction(
+                    action="archive",
+                    reflection_id=rid,
+                    reason="archive_noncanonical_latest_qkey",
+                    owner_user_id=owner,
+                    question=str((row or {}).get("question") or keeper_question).strip(),
+                    answer_norm_hash=str(getattr(resolve_generated_reflection_display(row), "answer_norm_hash", "") or "").strip(),
+                    is_active=bool((row or {}).get("is_active")),
+                    public_id=_row_public_id(dict(row or {})),
+                )
+            )
+    return actions
+
+
+
+def _merge_cleanup_actions(*action_groups: Sequence[GeneratedCleanupAction]) -> List[GeneratedCleanupAction]:
+    priority = {"delete": 4, "archive": 3, "protected": 2, "keep": 1}
+    merged: Dict[str, GeneratedCleanupAction] = {}
+    for group in action_groups:
+        for action in group or []:
+            rid = str(action.reflection_id or "").strip()
+            if not rid:
+                continue
+            current = merged.get(rid)
+            if current is None or priority.get(action.action, 0) > priority.get(current.action, 0):
+                merged[rid] = action
+    ordered = sorted(
+        merged.values(),
+        key=lambda item: (priority.get(item.action, 0), item.owner_user_id, item.question, item.reflection_id),
+        reverse=True,
+    )
+    return ordered
+
+
+
 def simulate_cleanup_actions(
     rows: Sequence[Mapping[str, Any]],
     actions: Sequence[GeneratedCleanupAction],
@@ -394,7 +494,7 @@ async def fetch_generated_reflection_rows(
     offset = 0
     while True:
         params: List[Tuple[str, str]] = [
-            ("select", "id,public_id,owner_user_id,source_type,status,is_active,locked,topic_key,category,question,answer,content_json,updated_at,created_at"),
+            ("select", "id,public_id,owner_user_id,source_type,status,is_active,locked,q_key,topic_key,category,question,answer,content_json,updated_at,created_at"),
             ("source_type", "eq.generated"),
             ("order", "created_at.asc,id.asc"),
             ("limit", str(limit)),
@@ -493,10 +593,13 @@ async def run_generated_reflection_backfill_cleanup(
         else:
             effective_rows.append(dict(row))
 
-    cleanup_actions = plan_generated_reflection_duplicate_cleanup(
+    duplicate_cleanup_actions = plan_generated_reflection_duplicate_cleanup(
         effective_rows,
         archive_active_duplicates=archive_active_duplicates,
     ) if do_cleanup else []
+    simulated_after_duplicate = simulate_cleanup_actions(effective_rows, duplicate_cleanup_actions)
+    latest_qkey_cleanup_actions = plan_generated_reflection_latest_qkey_cleanup(simulated_after_duplicate) if do_cleanup else []
+    cleanup_actions = _merge_cleanup_actions(duplicate_cleanup_actions, latest_qkey_cleanup_actions)
     actionable_cleanup = [a for a in cleanup_actions if a.action in {"archive", "delete"}]
 
     simulated_rows = simulate_cleanup_actions(effective_rows, cleanup_actions)
@@ -563,6 +666,7 @@ __all__ = [
     "build_generated_reflection_backfill_plan",
     "fetch_generated_reflection_rows",
     "plan_generated_reflection_duplicate_cleanup",
+    "plan_generated_reflection_latest_qkey_cleanup",
     "run_generated_reflection_backfill_cleanup",
     "simulate_cleanup_actions",
     "summarize_unresolved_question_multi_answer_groups",
