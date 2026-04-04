@@ -348,3 +348,135 @@ def test_generated_stress_time_uses_time_specific_template():
     assert result.answer_display_text is not None
     assert result.answer_display_text.startswith("心が休まるのは、")
     assert "しんどい時は、" not in result.answer_display_text
+
+
+def test_generated_notice_fragment_is_normalized_or_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="最近気づいたことは？",
+        raw_answer="お風呂上がりの髪の毛を猫が嗅いでいて。",
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / お風呂上がりの髪の毛を猫が嗅いでいて",
+    )
+
+    if result.answer_display_state == "ready":
+        assert result.answer_display_text is not None
+        assert "ていてです" not in result.answer_display_text
+    else:
+        assert result.answer_display_state == "blocked"
+
+
+def test_generated_notice_impulse_buy_fragment_is_normalized_or_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="最近気づいたことは？",
+        raw_answer="欲しいと思ったものは必ず欲しいと思って買っちゃう。",
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / 欲しいと思ったものは必ず欲しいと思って買っちゃう",
+    )
+
+    if result.answer_display_state == "ready":
+        assert result.answer_display_text is not None
+        assert "買っちゃうです" not in result.answer_display_text
+    else:
+        assert result.answer_display_state == "blocked"
+
+
+def test_generated_api_suppresses_overlapping_recent_notice_and_concern():
+    import api_mymodel_qna as qna_module
+
+    notice_row = {
+        "id": "notice-row-1",
+        "public_id": "reflection:notice-row-1",
+        "owner_user_id": "owner-suppress-1",
+        "source_type": "generated",
+        "question": "最近気づいたことは？",
+        "answer": "焦っていて余裕が少ない。",
+        "updated_at": "2026-04-04T07:39:13+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": "最近気づいたのは、どこか焦っていて余裕が少ないことです。 毎日を慌ただしく感じることがあります。",
+                "answer_format_meta": {
+                    "sibling_cluster": "recent_notice_vs_concern",
+                    "semantic_signature": "recent_notice_vs_concern|どこか焦っていて余裕が少ないこと|毎日を慌ただしく感じることがあります",
+                },
+            }
+        },
+    }
+    concern_row = {
+        "id": "concern-row-1",
+        "public_id": "reflection:concern-row-1",
+        "owner_user_id": "owner-suppress-1",
+        "source_type": "generated",
+        "question": "最近気になることは？",
+        "answer": "焦っていて余裕が少ない。",
+        "updated_at": "2026-04-04T07:39:12+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": "最近気になっているのは、どこか焦っていて余裕が少ないことです。 毎日を慌ただしく感じることがあります。",
+                "answer_format_meta": {
+                    "sibling_cluster": "recent_notice_vs_concern",
+                    "semantic_signature": "recent_notice_vs_concern|どこか焦っていて余裕が少ないこと|毎日を慌ただしく感じることがあります",
+                },
+            }
+        },
+    }
+
+    visible = qna_module._suppress_overlapping_generated_rows([notice_row, concern_row])
+
+    assert len(visible) == 1
+    assert visible[0]["public_id"] == "reflection:concern-row-1"
+
+
+def test_generated_api_suppresses_overlapping_stress_time_rows():
+    import api_mymodel_qna as qna_module
+
+    relax_row = {
+        "id": "relax-row-1",
+        "public_id": "reflection:relax-row-1",
+        "owner_user_id": "owner-suppress-2",
+        "source_type": "generated",
+        "question": "心が休まる時間は？",
+        "answer": "落ち着ける時間。",
+        "updated_at": "2026-04-04T07:39:13+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": "心が休まるのは、無理をせず落ち着ける時間です。 そういう時間があると、少し落ち着けます。",
+                "answer_format_meta": {
+                    "sibling_cluster": "stress_time_pair",
+                    "semantic_signature": "stress_time_pair|無理をせず落ち着ける時間|そういう時間があると少し落ち着けます",
+                },
+            }
+        },
+    }
+    loosen_row = {
+        "id": "loosen-row-1",
+        "public_id": "reflection:loosen-row-1",
+        "owner_user_id": "owner-suppress-2",
+        "source_type": "generated",
+        "question": "心がほどける時間は？",
+        "answer": "落ち着ける時間。",
+        "updated_at": "2026-04-04T07:39:14+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": "心がほどけるのは、無理をせず落ち着ける時間です。 そういう時間があると、少し落ち着けます。",
+                "answer_format_meta": {
+                    "sibling_cluster": "stress_time_pair",
+                    "semantic_signature": "stress_time_pair|無理をせず落ち着ける時間|そういう時間があると少し落ち着けます",
+                },
+            }
+        },
+    }
+
+    visible = qna_module._suppress_overlapping_generated_rows([relax_row, loosen_row])
+
+    assert len(visible) == 1
+    assert visible[0]["public_id"] == "reflection:relax-row-1"

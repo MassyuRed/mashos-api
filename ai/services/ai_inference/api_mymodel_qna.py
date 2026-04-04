@@ -3365,6 +3365,114 @@ def _canonicalize_generated_rows_latest_by_qkey(rows: List[Dict[str, Any]]) -> L
     return out
 
 
+def _generated_display_bundle(row: Dict[str, Any]) -> Dict[str, Any]:
+    content_json = (row or {}).get("content_json") or {}
+    if not isinstance(content_json, dict):
+        return {}
+    bundle = content_json.get("display") or {}
+    return dict(bundle) if isinstance(bundle, dict) else {}
+
+
+def _generated_display_meta(row: Dict[str, Any]) -> Dict[str, Any]:
+    bundle = _generated_display_bundle(row)
+    meta = bundle.get("answer_format_meta") or {}
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
+def _generated_sibling_cluster(row: Dict[str, Any]) -> str:
+    meta = _generated_display_meta(row)
+    cluster = str(meta.get("sibling_cluster") or "").strip()
+    if cluster:
+        return cluster
+    question = str((row or {}).get("question") or "").strip()
+    if question == "最近気づいたことは？" or question == "最近気になることは？":
+        return "recent_notice_vs_concern"
+    if question == "心が休まる時間は？" or question == "心がほどける時間は？":
+        return "stress_time_pair"
+    if question == "心と体を整える方法は？" or question == "気持ちを整える方法は？":
+        return "stress_method_pair"
+    return ""
+
+
+def _normalize_generated_overlap_text(text: str) -> str:
+    s = str(text or "").strip()
+    for prefix in (
+        "最近気づいたのは、",
+        "最近気になっているのは、",
+        "心が休まるのは、",
+        "心がほどけるのは、",
+        "心と体を整えるために、",
+        "気持ちを整えるために、",
+    ):
+        if s.startswith(prefix):
+            s = s[len(prefix):].strip()
+            break
+    s = s.replace("。", "").replace("、", "").replace(" ", "")
+    return s
+
+
+def _generated_semantic_signature(row: Dict[str, Any]) -> str:
+    meta = _generated_display_meta(row)
+    sig = str(meta.get("semantic_signature") or "").strip()
+    if sig:
+        return sig
+    cluster = _generated_sibling_cluster(row)
+    if not cluster:
+        return ""
+    text = get_public_generated_reflection_text(row)
+    if not text:
+        return ""
+    return f"{cluster}|{_normalize_generated_overlap_text(text)}"
+
+
+def _generated_sibling_priority(row: Dict[str, Any], cluster: str) -> int:
+    question = str((row or {}).get("question") or "").strip()
+    if cluster == "recent_notice_vs_concern":
+        return 0 if question == "最近気になることは？" else 1
+    if cluster == "stress_time_pair":
+        return 0 if question == "心が休まる時間は？" else 1
+    if cluster == "stress_method_pair":
+        return 0 if question == "心と体を整える方法は？" else 1
+    return 9
+
+
+def _suppress_overlapping_generated_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not rows:
+        return []
+    visible_rows = [row for row in list(rows or []) if get_public_generated_reflection_text(row)]
+    passthrough: List[Dict[str, Any]] = []
+    grouped: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+
+    for row in visible_rows:
+        cluster = _generated_sibling_cluster(row)
+        signature = _generated_semantic_signature(row)
+        owner = str((row or {}).get("owner_user_id") or "").strip()
+        if not owner or not cluster or not signature:
+            passthrough.append(row)
+            continue
+        grouped.setdefault((owner, cluster, signature), []).append(row)
+
+    out: List[Dict[str, Any]] = list(passthrough)
+    for (owner, cluster, signature), items in grouped.items():
+        if len(items) <= 1:
+            out.extend(items)
+            continue
+        items_sorted = sorted(items, key=_generated_row_sort_key, reverse=True)
+        items_sorted = sorted(items_sorted, key=lambda row: _generated_sibling_priority(row, cluster))
+        winner = items_sorted[0]
+        out.append(winner)
+        logger.info(
+            "generated_reflection_suppressed owner=%s cluster=%s signature=%s suppressed=%s winner=%s",
+            owner,
+            cluster,
+            signature,
+            [str((row or {}).get("public_id") or "").strip() for row in items_sorted[1:]],
+            str((winner or {}).get("public_id") or "").strip(),
+        )
+
+    return sorted(out, key=_generated_row_sort_key, reverse=True)
+
+
 async def _fetch_generated_public_group_rows_for_owner(
     owner_user_id: str,
     *,
@@ -3459,6 +3567,10 @@ async def _fetch_generated_reflection_by_public_id(
                 str((((canonical_row or {}).get("content_json") or {}).get("display") or {}).get("answer_display_state") or "").strip(),
             )
             return None
+        owner_visible_rows = await _fetch_active_generated_reflections_for_owner(owner_id, limit=200)
+        visible_ids = { _generated_public_id(item) for item in owner_visible_rows }
+        if pid not in visible_ids:
+            return None
         return canonical_row
     return row
 
@@ -3484,7 +3596,8 @@ async def _fetch_generated_reflections_by_public_ids(
         params["status"] = "in.(ready,published)"
     rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
     out: Dict[str, Dict[str, Any]] = {}
-    for r in _canonicalize_generated_rows_latest_by_qkey(rows):
+    visible_rows = _suppress_overlapping_generated_rows(_canonicalize_generated_rows_latest_by_qkey(rows))
+    for r in visible_rows:
         pid = _generated_public_id(r)
         if not pid:
             continue
@@ -3519,7 +3632,7 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
     for row in _canonicalize_generated_rows_latest_by_qkey(rows):
         if get_public_generated_reflection_text(row):
             visible_rows.append(row)
-    return visible_rows
+    return _suppress_overlapping_generated_rows(visible_rows)
 
 
 async def _resolve_generated_reflection_access(

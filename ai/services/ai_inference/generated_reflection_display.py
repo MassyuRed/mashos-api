@@ -17,7 +17,7 @@ It does not call any external model.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -31,7 +31,7 @@ from reflection_text_formatter import (
     format_reflection_text,
 )
 
-GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v3"
+GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v4"
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _WS_RE = re.compile(r"\s+")
@@ -53,6 +53,7 @@ _BAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
     re.compile(r"^(?:不器用だ|最悪なんだ|疲れた|減ったのは|娯楽の排除|自身への無価値観|10)$"),
 )
 _GENERIC_FALLBACK_RE = re.compile(r"まだうまく言葉にしきれていません")
+_BAD_DESU_ATTACHMENT_RE = re.compile(r"(?:ていて|っていて|といっても|ちゃう|じゃう|してた|している|してる|なきゃいけない)です$")
 _PAST_EVENT_TAIL_RE = re.compile(r"(?:た|だった|してた|していた|ていた|なった)$")
 _EVENT_TIME_MARKERS: Sequence[str] = (
     "今日",
@@ -369,6 +370,12 @@ class GeneratedAnswerPlan:
     temporal_scope: str
     source_quality: str
     evidence: Tuple[GeneratedAnswerEvidence, ...]
+    normalized_core_theme: str = ""
+    normalized_support_theme: str = ""
+    sibling_cluster: str = ""
+    family_evidence_score: int = 0
+    semantic_signature: str = ""
+    normalization_flags: Tuple[str, ...] = ()
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -376,10 +383,16 @@ class GeneratedAnswerPlan:
             "canonical_prompt": str(self.spec.canonical_prompt),
             "core_theme": str(self.core_theme),
             "support_theme": str(self.support_theme),
+            "normalized_core_theme": str(self.normalized_core_theme or self.core_theme),
+            "normalized_support_theme": str(self.normalized_support_theme or self.support_theme),
             "temporal_scope": str(self.temporal_scope),
             "source_quality": str(self.source_quality),
             "block_reason": str(self.block_reason),
             "answerable": bool(self.answerable),
+            "sibling_cluster": str(self.sibling_cluster),
+            "family_evidence_score": int(self.family_evidence_score),
+            "semantic_signature": str(self.semantic_signature),
+            "normalization_flags": list(self.normalization_flags),
             "evidence": [
                 {
                     "text": str(item.text),
@@ -1123,8 +1136,87 @@ def build_generated_answer_plan(
 
 
 
+def _question_sibling_cluster(question_family: str) -> str:
+    family = str(question_family or "").strip()
+    if family in {"notice_general", "concern_general"}:
+        return "recent_notice_vs_concern"
+    if family == "stress_time":
+        return "stress_time_pair"
+    if family == "stress_method":
+        return "stress_method_pair"
+    return ""
+
+
+def _plan_family_evidence_score(plan: GeneratedAnswerPlan) -> int:
+    scores = [int(item.score) for item in (plan.evidence or ())]
+    return max(scores) if scores else 0
+
+
+def _normalize_core_theme_for_public(spec: GeneratedQuestionSpec, theme: str) -> Tuple[str, Tuple[str, ...]]:
+    s = _collapse_ws(theme)
+    flags: List[str] = []
+    if not s:
+        return "", tuple(flags)
+
+    if spec.question_family in {"notice_general", "concern_general"}:
+        if "欲しいと思ったもの" in s and ("買っちゃう" in s or "買ってしまう" in s):
+            return "欲しいと思ったものをすぐ買ってしまうこと", ("normalize:impulse_buy",)
+        if "猫" in s and "嗅" in s:
+            return "猫が髪の匂いに反応していたこと", ("normalize:cat_reaction",)
+        if s.endswith("ていて"):
+            return s[:-3] + "ていたこと", ("normalize:teite",)
+        if s.endswith("てる"):
+            return s[:-2] + "ていること", ("normalize:teru",)
+        if s.endswith("買っちゃう"):
+            return s[:-4] + "買ってしまうこと", ("normalize:chau",)
+        if s.endswith("といっても"):
+            return "", ("normalize:block_fragment",)
+
+    if spec.question_family == "work_concern":
+        if s.endswith("といっても"):
+            return "", ("normalize:block_fragment",)
+
+    return s, tuple(flags)
+
+
+def normalize_generated_answer_plan(plan: GeneratedAnswerPlan) -> GeneratedAnswerPlan:
+    cluster = _question_sibling_cluster(plan.spec.question_family)
+    core = _collapse_ws(plan.normalized_core_theme or plan.core_theme)
+    support = _collapse_ws(plan.normalized_support_theme or plan.support_theme)
+    norm_flags: List[str] = []
+
+    if core:
+        core, core_flags = _normalize_core_theme_for_public(plan.spec, core)
+        norm_flags.extend(core_flags)
+    if support.endswith("といっても"):
+        support = ""
+        _append_once(norm_flags, "normalize:drop_support_fragment")
+
+    answerable = bool(plan.answerable and core)
+    block_reason = str(plan.block_reason or "").strip()
+    if not core and not block_reason:
+        block_reason = "non_explanatory_core"
+
+    signature_parts = [cluster, _normalize_for_hash(core), _normalize_for_hash(support)]
+    semantic_signature = "|".join([part for part in signature_parts if part])
+
+    return replace(
+        plan,
+        answerable=answerable,
+        block_reason=block_reason,
+        core_theme=core,
+        support_theme=support,
+        normalized_core_theme=core,
+        normalized_support_theme=support,
+        sibling_cluster=cluster,
+        family_evidence_score=_plan_family_evidence_score(plan),
+        semantic_signature=semantic_signature,
+        normalization_flags=tuple(_ordered_unique(norm_flags)),
+    )
+
+
 def _render_support_sentence(plan: GeneratedAnswerPlan) -> str:
-    support = _collapse_ws(plan.support_theme)
+    support = _collapse_ws(plan.normalized_support_theme or plan.support_theme)
     if not support:
         return ""
     if support.endswith(("。", "！", "？", "!", "?")):
@@ -1141,7 +1233,7 @@ def realize_generated_answer_text(plan: GeneratedAnswerPlan) -> Tuple[str, List[
         _append_once(actions, f"plan:block:{plan.block_reason or 'no_usable_theme'}")
         return "", actions
 
-    core = _collapse_ws(plan.core_theme)
+    core = _collapse_ws(plan.normalized_core_theme or plan.core_theme)
     head = _ensure_sentence(f"{plan.spec.head_prefix}{core}{plan.spec.head_suffix}")
     support = _render_support_sentence(plan)
     rewritten = " ".join([segment for segment in (head, support) if segment]).strip()
@@ -1168,6 +1260,7 @@ def compose_generated_answer_raw(
         topic_summary_text=topic_summary_text,
         text_candidates=text_candidates,
     )
+    plan = normalize_generated_answer_plan(plan)
     return realize_generated_answer_text(plan)
 
 
@@ -1189,6 +1282,8 @@ def _collect_quality_flags(text: str) -> List[str]:
     if _GENERIC_FALLBACK_RE.search(lowered):
         _append_once(flags, "quality:fallback_generic")
     if re.search(r"(?:だ|です)です$", compact):
+        _append_once(flags, "quality:broken_answer")
+    if _BAD_DESU_ATTACHMENT_RE.search(compact):
         _append_once(flags, "quality:broken_answer")
     if re.search(r"(?:今まで|今の|さっきまで)?私(?:は|が)?です$", compact):
         _append_once(flags, "quality:broken_answer")
@@ -1239,6 +1334,7 @@ def validate_generated_answer_text(
     state = str(display_state or STATE_READY).strip().lower() or STATE_READY
     merged_flags = _ordered_unique([
         *list(flags or []),
+        *list(getattr(plan, "normalization_flags", ()) or ()),
         *_collect_quality_flags(quality_source_text),
         *_collect_question_family_flags(plan.spec, quality_source_text),
     ])
@@ -1251,6 +1347,7 @@ def validate_generated_answer_text(
             "quality:unfinished",
             "quality:fallback_generic",
             "quality:operational_source",
+            "normalize:block_fragment",
         }
         for flag in merged_flags
     )
@@ -1365,6 +1462,7 @@ def build_generated_reflection_display(
         topic_summary_text=topic_summary_text,
         text_candidates=text_candidates,
     )
+    plan = normalize_generated_answer_plan(plan)
     rewritten, realize_actions = realize_generated_answer_text(plan)
 
     if rewritten:
@@ -1532,6 +1630,7 @@ def _stored_generated_display_result_from_row(row: Mapping[str, Any]) -> Optiona
         topic_summary_text=topic_summary_text,
         text_candidates=text_candidates,
     )
+    plan = normalize_generated_answer_plan(plan)
     validation = validate_generated_answer_text(
         plan=plan,
         display_text=display_text,
@@ -1606,6 +1705,7 @@ __all__ = [
     "apply_generated_display_to_content_json",
     "build_generated_reflection_display",
     "build_generated_answer_plan",
+    "normalize_generated_answer_plan",
     "compose_generated_answer_raw",
     "realize_generated_answer_text",
     "validate_generated_answer_text",
