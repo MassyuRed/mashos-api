@@ -31,7 +31,7 @@ from reflection_text_formatter import (
     format_reflection_text,
 )
 
-GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v4"
+GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v5"
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _WS_RE = re.compile(r"\s+")
@@ -89,6 +89,41 @@ _STABLE_CORE_HINTS: Sequence[str] = (
     "安心",
     "体調",
     "ペース",
+)
+_EXPLAINABLE_CORE_SUFFIX_HINTS: Sequence[str] = (
+    "こと",
+    "時間",
+    "関係",
+    "場面",
+    "瞬間",
+    "方法",
+    "やり方",
+)
+_CORE_TIME_ONLY_EXACTS = {
+    "誕生日前日",
+    "誕生日当日",
+    "前日",
+    "当日",
+    "今日",
+    "昨日",
+    "明日",
+    "今朝",
+    "今夜",
+    "夜中",
+    "お風呂上がり",
+    "寝る前",
+}
+_CORE_INCOMPLETE_TAIL_PATTERNS: Sequence[re.Pattern[str]] = (
+    re.compile(r".+(?:たら|なら)$"),
+    re.compile(r".+(?:ていて|っていて|といっても)$"),
+    re.compile(r".+(?:でまさかの)$"),
+    re.compile(r".+(?:してしまったや)$"),
+)
+_COLLOQUIAL_CORE_MARKERS: Sequence[str] = (
+    "なんか",
+    "まじ",
+    "www",
+    "w",
 )
 _HEAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
     re.compile(r"^人との関わりでは、(?P<core>.+?)を大切にしたいです(?:。|$)"),
@@ -376,6 +411,11 @@ class GeneratedAnswerPlan:
     family_evidence_score: int = 0
     semantic_signature: str = ""
     normalization_flags: Tuple[str, ...] = ()
+    core_theme_quality: str = "unknown"
+    core_theme_reject_flags: Tuple[str, ...] = ()
+    normalization_actions: Tuple[str, ...] = ()
+    explainable_core_theme: bool = False
+    block_reason_detail: str = ""
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -388,11 +428,16 @@ class GeneratedAnswerPlan:
             "temporal_scope": str(self.temporal_scope),
             "source_quality": str(self.source_quality),
             "block_reason": str(self.block_reason),
+            "block_reason_detail": str(self.block_reason_detail or self.block_reason),
             "answerable": bool(self.answerable),
             "sibling_cluster": str(self.sibling_cluster),
             "family_evidence_score": int(self.family_evidence_score),
             "semantic_signature": str(self.semantic_signature),
             "normalization_flags": list(self.normalization_flags),
+            "normalization_actions": list(self.normalization_actions),
+            "core_theme_quality": str(self.core_theme_quality),
+            "core_theme_reject_flags": list(self.core_theme_reject_flags),
+            "explainable_core_theme": bool(self.explainable_core_theme),
             "evidence": [
                 {
                     "text": str(item.text),
@@ -1161,12 +1206,6 @@ def _normalize_core_theme_for_public(spec: GeneratedQuestionSpec, theme: str) ->
     if spec.question_family in {"notice_general", "concern_general"}:
         if "欲しいと思ったもの" in s and ("買っちゃう" in s or "買ってしまう" in s):
             return "欲しいと思ったものをすぐ買ってしまうこと", ("normalize:impulse_buy",)
-        if "猫" in s and "嗅" in s:
-            return "猫が髪の匂いに反応していたこと", ("normalize:cat_reaction",)
-        if s.endswith("ていて"):
-            return s[:-3] + "ていたこと", ("normalize:teite",)
-        if s.endswith("てる"):
-            return s[:-2] + "ていること", ("normalize:teru",)
         if s.endswith("買っちゃう"):
             return s[:-4] + "買ってしまうこと", ("normalize:chau",)
         if s.endswith("といっても"):
@@ -1179,26 +1218,137 @@ def _normalize_core_theme_for_public(spec: GeneratedQuestionSpec, theme: str) ->
     return s, tuple(flags)
 
 
+def normalize_core_theme_if_safe(spec: GeneratedQuestionSpec, theme: str) -> Tuple[str, Tuple[str, ...]]:
+    return _normalize_core_theme_for_public(spec, theme)
+
+
+def _is_time_only_core_theme(text: str) -> bool:
+    compact = _compact_text(text)
+    if not compact:
+        return True
+    return compact in _CORE_TIME_ONLY_EXACTS
+
+
+def _looks_like_incomplete_core_theme(text: str) -> bool:
+    s = _collapse_ws(text)
+    compact = _compact_text(s)
+    if not compact:
+        return True
+    if any(pattern.fullmatch(compact) for pattern in _CORE_INCOMPLETE_TAIL_PATTERNS):
+        return True
+    if compact.endswith(("や", "w")):
+        return True
+    if compact.endswith(("ていて", "っていて", "といっても", "まさかの")):
+        return True
+    return False
+
+
+def _has_colloquial_core_residue(text: str) -> bool:
+    compact = _compact_text(text)
+    if not compact:
+        return False
+    return any(marker in compact for marker in _COLLOQUIAL_CORE_MARKERS)
+
+
+def _has_explainable_core_shape(spec: GeneratedQuestionSpec, theme: str) -> bool:
+    s = _collapse_ws(theme)
+    compact = _compact_text(s)
+    if not compact:
+        return False
+    if spec.question_family == "stress_time":
+        return _contains_any(compact, ("時間", "とき", "時", "瞬間", "場面"))
+    if spec.question_family in {"stress_method", "work_stress_method"}:
+        return "こと" in compact
+    if spec.question_family == "work_concern":
+        return "こと" in compact and len(compact) <= 28
+    return any(hint in compact for hint in _EXPLAINABLE_CORE_SUFFIX_HINTS)
+
+
+def assess_core_theme_quality(
+    spec: GeneratedQuestionSpec,
+    core_theme: str,
+    support_theme: str,
+    source_fragments: Sequence[str],
+) -> Tuple[bool, str, str, Tuple[str, ...], Tuple[str, ...], str, str]:
+    core = _collapse_ws(core_theme)
+    support = _collapse_ws(support_theme)
+    reject_flags: List[str] = []
+    normalization_actions: List[str] = []
+
+    if core:
+        core, norm_actions = normalize_core_theme_if_safe(spec, core)
+        normalization_actions.extend(norm_actions)
+
+    if support and (_looks_like_incomplete_core_theme(support) or _has_colloquial_core_residue(support)):
+        support = ""
+        _append_once(normalization_actions, "normalize:drop_support_fragment")
+
+    if not core:
+        _append_once(reject_flags, "core_theme:empty")
+    elif _is_time_only_core_theme(core):
+        _append_once(reject_flags, "core_theme:time_only")
+    elif _looks_like_incomplete_core_theme(core):
+        _append_once(reject_flags, "core_theme:incomplete_clause")
+    elif _has_colloquial_core_residue(core):
+        _append_once(reject_flags, "core_theme:colloquial_residue")
+    elif not _has_explainable_core_shape(spec, core):
+        _append_once(reject_flags, "core_theme:non_explanatory")
+
+    if spec.question_family == "work_concern" and core and len(_compact_text(core)) > 28:
+        _append_once(reject_flags, "core_theme:too_long_for_work_concern")
+
+    accepted = not reject_flags
+    block_detail = ""
+    quality = "usable"
+    if not accepted:
+        quality = "rejected"
+        block_detail = reject_flags[0]
+    elif normalization_actions:
+        quality = "normalized"
+
+    return (
+        accepted,
+        core if accepted else "",
+        support if accepted else "",
+        tuple(_ordered_unique(reject_flags)),
+        tuple(_ordered_unique(normalization_actions)),
+        quality,
+        block_detail,
+    )
+
+
 def normalize_generated_answer_plan(plan: GeneratedAnswerPlan) -> GeneratedAnswerPlan:
     cluster = _question_sibling_cluster(plan.spec.question_family)
     core = _collapse_ws(plan.normalized_core_theme or plan.core_theme)
     support = _collapse_ws(plan.normalized_support_theme or plan.support_theme)
-    norm_flags: List[str] = []
+    fragments = [item.text for item in (plan.evidence or ()) if str(getattr(item, "text", "") or "").strip()]
 
-    if core:
-        core, core_flags = _normalize_core_theme_for_public(plan.spec, core)
-        norm_flags.extend(core_flags)
-    if support.endswith("といっても"):
-        support = ""
-        _append_once(norm_flags, "normalize:drop_support_fragment")
+    accepted, core, support, reject_flags, normalization_actions, quality, block_detail = assess_core_theme_quality(
+        plan.spec,
+        core,
+        support,
+        fragments,
+    )
 
-    answerable = bool(plan.answerable and core)
+    answerable = bool(plan.answerable and accepted and core)
     block_reason = str(plan.block_reason or "").strip()
-    if not core and not block_reason:
+    if not answerable and not block_reason:
         block_reason = "non_explanatory_core"
+    if block_detail and block_detail not in block_reason:
+        block_reason_detail = block_detail
+    else:
+        block_reason_detail = block_reason
 
-    signature_parts = [cluster, _normalize_for_hash(core), _normalize_for_hash(support)]
+    signature_parts: List[str] = []
+    if answerable:
+        signature_parts = [cluster, _normalize_for_hash(core), _normalize_for_hash(support)]
     semantic_signature = "|".join([part for part in signature_parts if part])
+
+    merged_norm_flags = _ordered_unique([
+        *list(getattr(plan, "normalization_flags", ()) or ()),
+        *list(reject_flags or ()),
+        *list(normalization_actions or ()),
+    ])
 
     return replace(
         plan,
@@ -1211,7 +1361,12 @@ def normalize_generated_answer_plan(plan: GeneratedAnswerPlan) -> GeneratedAnswe
         sibling_cluster=cluster,
         family_evidence_score=_plan_family_evidence_score(plan),
         semantic_signature=semantic_signature,
-        normalization_flags=tuple(_ordered_unique(norm_flags)),
+        normalization_flags=tuple(merged_norm_flags),
+        core_theme_quality=quality,
+        core_theme_reject_flags=tuple(_ordered_unique(list(reject_flags or ()))),
+        normalization_actions=tuple(_ordered_unique(list(normalization_actions or ()))),
+        explainable_core_theme=bool(answerable and core),
+        block_reason_detail=block_reason_detail,
     )
 
 
@@ -1322,6 +1477,23 @@ def _collect_question_family_flags(spec: GeneratedQuestionSpec, text: str) -> Li
 
 
 
+def _collect_core_theme_quality_flags(spec: GeneratedQuestionSpec, core_theme: str) -> List[str]:
+    core = _collapse_ws(core_theme)
+    flags: List[str] = []
+    if not core:
+        _append_once(flags, "quality:non_explanatory_core")
+        return flags
+    if _is_time_only_core_theme(core):
+        _append_once(flags, "quality:non_explanatory_core")
+    if _looks_like_incomplete_core_theme(core):
+        _append_once(flags, "quality:non_explanatory_core")
+    if _has_colloquial_core_residue(core):
+        _append_once(flags, "quality:non_explanatory_core")
+    if not _has_explainable_core_shape(spec, core):
+        _append_once(flags, "quality:non_explanatory_core")
+    return flags
+
+
 def validate_generated_answer_text(
     *,
     plan: GeneratedAnswerPlan,
@@ -1337,6 +1509,7 @@ def validate_generated_answer_text(
         *list(getattr(plan, "normalization_flags", ()) or ()),
         *_collect_quality_flags(quality_source_text),
         *_collect_question_family_flags(plan.spec, quality_source_text),
+        *_collect_core_theme_quality_flags(plan.spec, plan.normalized_core_theme or plan.core_theme),
     ])
     merged_actions = _ordered_unique([*list(actions or [])])
     rewrite_needed = any(
@@ -1347,7 +1520,13 @@ def validate_generated_answer_text(
             "quality:unfinished",
             "quality:fallback_generic",
             "quality:operational_source",
+            "quality:non_explanatory_core",
             "normalize:block_fragment",
+            "core_theme:time_only",
+            "core_theme:incomplete_clause",
+            "core_theme:colloquial_residue",
+            "core_theme:non_explanatory",
+            "core_theme:too_long_for_work_concern",
         }
         for flag in merged_flags
     )
@@ -1384,6 +1563,7 @@ def validate_generated_answer_text(
         "quality:question_head_mismatch",
         "quality:question_shape_mismatch",
         "quality:operational_source",
+        "quality:non_explanatory_core",
     }
     if not display_value or any(
         flag in blocking_flags or str(flag).startswith("quality:block_reason:")

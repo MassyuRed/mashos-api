@@ -480,3 +480,133 @@ def test_generated_api_suppresses_overlapping_stress_time_rows():
 
     assert len(visible) == 1
     assert visible[0]["public_id"] == "reflection:relax-row-1"
+
+
+
+def test_generated_growth_time_only_fragment_is_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="伸ばしたいことは？",
+        raw_answer="誕生日前日。",
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / 誕生日前日",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+
+
+
+def test_generated_value_incomplete_clause_fragment_is_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="大切にしていることは？",
+        raw_answer="自分について考えていたら。",
+        category="生活",
+        focus_key="values",
+        topic_summary_text="生活 / 自分について考えていたら",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+
+
+
+def test_generated_fun_recent_broken_fragment_is_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="最近の楽しみは？",
+        raw_answer="出かけた先でまさかの。",
+        category="生活",
+        focus_key="fun",
+        topic_summary_text="生活 / 出かけた先でまさかの",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+
+
+
+def test_generated_notice_colloquial_fragment_is_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="最近気づいたことは？",
+        raw_answer="何も解決せず問題を後回しにしてしまったや。",
+        category="生活",
+        focus_key="generic",
+        topic_summary_text="生活 / 何も解決せず問題を後回しにしてしまったや",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+
+
+
+def test_generated_work_concern_long_raw_fragment_is_blocked():
+    import generated_reflection_display as display_module
+
+    result = display_module.build_generated_reflection_display(
+        question="仕事で気にしていることは？",
+        raw_answer="天気が悪い日は気分も落ち込みやすい 仕事の時に 集中力が落ちたて支障が出たりしたらまずい。",
+        category="仕事",
+        focus_key="work",
+        topic_summary_text="仕事 / 天気が悪い日は気分も落ち込みやすい / 仕事の時に 集中力が落ちたて支障が出たりしたらまずい",
+    )
+
+    assert result.answer_display_state == "blocked"
+    assert result.answer_display_text is None
+
+
+
+def test_generated_api_suppresses_overlapping_stress_method_rows():
+    import api_mymodel_qna as qna_module
+
+    body = "心と体を整えるために、体調を大事にしながら生活を整えることを大事にしています。 今の状態を見ながら、焦らず整えています。"
+    method_row = {
+        "id": "method-row-1",
+        "public_id": "reflection:method-row-1",
+        "owner_user_id": "owner-suppress-3",
+        "source_type": "generated",
+        "question": "心と体を整える方法は？",
+        "answer": "体調を大事にしながら生活を整える。",
+        "updated_at": "2026-04-04T10:20:00+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": body,
+                "answer_format_meta": {
+                    "sibling_cluster": "stress_method_pair",
+                    "semantic_signature": "stress_method_pair|体調を大事にしながら生活を整えること|今の状態を見ながら焦らず整えています",
+                },
+            }
+        },
+    }
+    feeling_row = {
+        "id": "feeling-row-1",
+        "public_id": "reflection:feeling-row-1",
+        "owner_user_id": "owner-suppress-3",
+        "source_type": "generated",
+        "question": "気持ちを整える方法は？",
+        "answer": "体調を大事にしながら生活を整える。",
+        "updated_at": "2026-04-04T10:20:01+00:00",
+        "content_json": {
+            "display": {
+                "answer_display_state": "ready",
+                "answer_display_text": body,
+                "answer_format_meta": {
+                    "sibling_cluster": "stress_method_pair",
+                    "semantic_signature": "stress_method_pair|体調を大事にしながら生活を整えること|今の状態を見ながら焦らず整えています",
+                },
+            }
+        },
+    }
+
+    visible = qna_module._suppress_overlapping_generated_rows([method_row, feeling_row])
+
+    assert len(visible) == 1
+    assert visible[0]["public_id"] == "reflection:method-row-1"
