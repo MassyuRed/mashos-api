@@ -3347,11 +3347,17 @@ def _generated_row_sort_key(row: Dict[str, Any]) -> Tuple[str, str]:
     )
 
 
+def _generated_owner_qkey(row: Dict[str, Any]) -> Tuple[str, str]:
+    owner = str((row or {}).get("owner_user_id") or "").strip()
+    qk = _build_generated_q_key(row)
+    return (owner, qk)
+
+
 def _canonicalize_generated_rows_latest_by_qkey(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    seen_qkeys: Set[str] = set()
+    seen_qkeys: Set[Tuple[str, str]] = set()
     out: List[Dict[str, Any]] = []
     for row in sorted(list(rows or []), key=_generated_row_sort_key, reverse=True):
-        qk = _build_generated_q_key(row)
+        qk = _generated_owner_qkey(row)
         if qk in seen_qkeys:
             continue
         seen_qkeys.add(qk)
@@ -3445,6 +3451,13 @@ async def _fetch_generated_reflection_by_public_id(
         if _generated_public_id(canonical_row) != pid:
             return None
         if not get_public_generated_reflection_text(canonical_row):
+            logger.info(
+                "generated_reflection_hidden_latest_blocked owner=%s q_key=%s public_id=%s state=%s",
+                owner_id,
+                qk,
+                _generated_public_id(canonical_row),
+                str((((canonical_row or {}).get("content_json") or {}).get("display") or {}).get("answer_display_state") or "").strip(),
+            )
             return None
         return canonical_row
     return row

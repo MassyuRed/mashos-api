@@ -234,6 +234,14 @@ def _row_locked(row: Dict[str, Any]) -> bool:
     return str(v or "").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
 
+def _generated_public_group_sort_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
+    return (
+        str(row.get("updated_at") or row.get("created_at") or "").strip(),
+        str(row.get("created_at") or "").strip(),
+        _row_id(row),
+    )
+
+
 def _build_content_json(
     *,
     topic_key: str,
@@ -425,6 +433,9 @@ async def _fetch_active_generated_public_group_rows(
     if not uid:
         return []
 
+    # Public/generated reflections are unique by (owner_user_id, q_key).
+    # question is used only as a legacy fallback when q_key is absent.
+
     merged: Dict[str, Dict[str, Any]] = {}
     query_sets: List[List[Tuple[str, str]]] = []
     if qk:
@@ -456,7 +467,7 @@ async def _fetch_active_generated_public_group_rows(
                 continue
             merged[rid] = row
 
-    ordered = sorted(merged.values(), key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""), reverse=True)
+    ordered = sorted(merged.values(), key=_generated_public_group_sort_key, reverse=True)
     return ordered
 
 
@@ -822,11 +833,37 @@ async def promote_reflection(
     )
     promoted = promoted_rows[0] if promoted_rows else row
 
+    post_rows = await _fetch_active_generated_public_group_rows(
+        user_id=uid,
+        q_key=q_key,
+        question=question,
+        exclude_id=None,
+    )
+    ordered_post_rows = sorted(post_rows, key=_generated_public_group_sort_key, reverse=True)
+    post_verify_archived_ids: List[str] = []
+    for extra in ordered_post_rows:
+        eid = _row_id(extra)
+        if not eid or eid == rid:
+            continue
+        await _sb_patch_json(
+            f"/rest/v1/{REFLECTIONS_TABLE}",
+            params=[("id", f"eq.{eid}")],
+            json_body={
+                "status": "archived",
+                "is_active": False,
+                "published_at": None,
+            },
+            timeout=8.0,
+            prefer="return=minimal",
+        )
+        post_verify_archived_ids.append(eid)
+
     capacity = await enforce_capacity_policy(user_id=uid, max_active=max_active, eviction_policy=eviction_policy)
 
     return {
         "promoted_id": rid,
         "previous_archived_ids": previous_ids,
+        "post_verify_archived_ids": post_verify_archived_ids,
         "capacity": capacity,
         "row": promoted,
     }

@@ -43,10 +43,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-backfill", dest="do_backfill", action="store_false", help="Skip display bundle backfill and report cleanup only.")
     parser.add_argument("--no-cleanup", dest="do_cleanup", action="store_false", help="Skip duplicate cleanup planning and execution.")
     parser.add_argument(
+        "--canonicalize-active-only",
+        dest="canonicalize_active_only",
+        action="store_true",
+        help="Canonicalize active generated reflections per owner_user_id + q_key only; skip inactive duplicate delete planning.",
+    )
+    parser.add_argument(
         "--leave-active-duplicates",
         dest="archive_active_duplicates",
         action="store_false",
         help="Do not archive exact active duplicates; only delete inactive clones.",
+    )
+    parser.add_argument(
+        "--allow-delete",
+        dest="allow_delete",
+        action="store_true",
+        help="Allow physical DELETE for inactive duplicate clones. Default cleanup is archive-only.",
     )
     parser.add_argument(
         "--apply",
@@ -66,6 +78,8 @@ async def _async_main(args: argparse.Namespace) -> int:
         do_backfill=bool(args.do_backfill),
         do_cleanup=bool(args.do_cleanup),
         archive_active_duplicates=bool(args.archive_active_duplicates),
+        canonicalize_active_only=bool(args.canonicalize_active_only),
+        allow_delete=bool(args.allow_delete),
         sample_limit=int(args.sample_limit or 20),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))

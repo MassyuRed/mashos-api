@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict
 
 
@@ -199,6 +200,133 @@ def test_generated_maintenance_archives_noncanonical_active_same_qkey():
 
     assert action_map["latest-qkey-row"] == "keep"
     assert action_map["older-qkey-row"] == "archive"
+
+
+def test_generated_cleanup_apply_skips_delete_by_default(monkeypatch):
+    import generated_reflection_maintenance as maintenance_module
+
+    archived_calls = []
+    deleted_calls = []
+
+    async def fake_patch_json(path, *, params=None, json_body=None, timeout=None, prefer=None):
+        archived_calls.append({
+            "path": path,
+            "params": params,
+            "json_body": json_body,
+            "timeout": timeout,
+            "prefer": prefer,
+        })
+        return []
+
+    async def fake_delete(path, *, params=None, timeout=None, prefer=None):
+        deleted_calls.append({
+            "path": path,
+            "params": params,
+            "timeout": timeout,
+            "prefer": prefer,
+        })
+
+    monkeypatch.setattr(maintenance_module, "_sb_patch_json", fake_patch_json)
+    monkeypatch.setattr(maintenance_module, "_sb_delete", fake_delete)
+
+    actions = [
+        maintenance_module.GeneratedCleanupAction(
+            action="archive",
+            reflection_id="archive-me",
+            reason="archive_noncanonical_latest_qkey",
+            owner_user_id="owner-cleanup-2",
+            q_key="generated:q:archive-me",
+            question="大切にしていることは？",
+            answer_norm_hash="hash-archive",
+            is_active=True,
+            public_id="reflection:archive-me",
+        ),
+        maintenance_module.GeneratedCleanupAction(
+            action="delete",
+            reflection_id="delete-me",
+            reason="delete_inactive_duplicate_clone",
+            owner_user_id="owner-cleanup-2",
+            q_key="generated:q:archive-me",
+            question="大切にしていることは？",
+            answer_norm_hash="hash-delete",
+            is_active=False,
+            public_id="reflection:delete-me",
+        ),
+    ]
+
+    result = asyncio.run(maintenance_module.apply_generated_cleanup_actions(actions))
+
+    assert result == {"archived_ids": ["archive-me"], "deleted_ids": []}
+    assert len(archived_calls) == 1
+    assert archived_calls[0]["json_body"]["status"] == "archived"
+    assert deleted_calls == []
+
+
+def test_generated_maintenance_canonicalize_active_only_skips_duplicate_delete_planning(monkeypatch):
+    import generated_reflection_maintenance as maintenance_module
+
+    latest_ready = {
+        "id": "canonical-active-new",
+        "public_id": "reflection:canonical-active-new",
+        "owner_user_id": "owner-cleanup-3",
+        "source_type": "generated",
+        "status": "ready",
+        "is_active": True,
+        "q_key": "generated:q:canonical-values",
+        "question": "大切にしていることは？",
+        "answer": "無理をしすぎず心と体を整えることを大切にしたい。",
+        "category": "生活",
+        "updated_at": "2026-04-03T18:00:00+00:00",
+        "content_json": {"focus_key": "values", "topic_summary_text": "生活 / 無理をしすぎず整える"},
+    }
+    older_ready = {
+        "id": "canonical-active-old",
+        "public_id": "reflection:canonical-active-old",
+        "owner_user_id": "owner-cleanup-3",
+        "source_type": "generated",
+        "status": "ready",
+        "is_active": True,
+        "q_key": "generated:q:canonical-values",
+        "question": "大切にしていることは？",
+        "answer": "恋愛を楽しみたい。",
+        "category": "生活",
+        "updated_at": "2026-04-03T10:00:00+00:00",
+        "content_json": {"focus_key": "values", "topic_summary_text": "生活 / 恋愛を楽しみたい"},
+    }
+    inactive_exact_clone = {
+        "id": "canonical-inactive-dup",
+        "public_id": "reflection:canonical-inactive-dup",
+        "owner_user_id": "owner-cleanup-3",
+        "source_type": "generated",
+        "status": "archived",
+        "is_active": False,
+        "q_key": "generated:q:canonical-values",
+        "question": "大切にしていることは？",
+        "answer": "無理をしすぎず心と体を整えることを大切にしたい。",
+        "category": "生活",
+        "updated_at": "2026-04-03T09:00:00+00:00",
+        "content_json": {"focus_key": "values", "topic_summary_text": "生活 / 無理をしすぎず整える"},
+    }
+
+    async def fake_fetch_generated_reflection_rows(*, user_id=None, batch_size=500, max_rows=None):
+        return [latest_ready, older_ready, inactive_exact_clone]
+
+    monkeypatch.setattr(maintenance_module, "fetch_generated_reflection_rows", fake_fetch_generated_reflection_rows)
+
+    summary = asyncio.run(
+        maintenance_module.run_generated_reflection_backfill_cleanup(
+            do_backfill=False,
+            do_cleanup=True,
+            canonicalize_active_only=True,
+            allow_delete=False,
+            apply=False,
+        )
+    )
+
+    assert summary["cleanup"]["counts"]["delete"] == 0
+    assert summary["cleanup"]["counts"]["archive"] == 1
+    assert summary["cleanup"]["canonicalized_qkey_group_count"] == 1
+    assert summary["cleanup"]["planned_action_count"] == 1
 
 
 

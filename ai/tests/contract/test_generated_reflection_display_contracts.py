@@ -225,3 +225,62 @@ def test_generated_reflection_display_rewrites_fun_song_fragment():
     assert result.answer_display_state in {"ready", "masked"}
     assert result.answer_display_text is not None
     assert "歌うこと" in result.answer_display_text
+
+
+def test_generated_canonicalization_is_owner_scoped_not_global_qkey():
+    import api_mymodel_qna as qna_module
+
+    owner_a_row = {
+        "id": "owner-a-generated-1",
+        "public_id": "reflection:owner-a-generated-1",
+        "owner_user_id": "owner-a",
+        "source_type": "generated",
+        "question": "最近夢中なことは？",
+        "answer": "配信を通して人と話すこと。",
+        "updated_at": "2026-04-03T18:00:00+00:00",
+    }
+    owner_b_row = {
+        "id": "owner-b-generated-1",
+        "public_id": "reflection:owner-b-generated-1",
+        "owner_user_id": "owner-b",
+        "source_type": "generated",
+        "question": "最近夢中なことは？",
+        "answer": "写真を撮りに出かけること。",
+        "updated_at": "2026-04-03T17:00:00+00:00",
+    }
+
+    canonical = qna_module._canonicalize_generated_rows_latest_by_qkey([owner_a_row, owner_b_row])
+
+    assert len(canonical) == 2
+    assert {row["public_id"] for row in canonical} == {
+        "reflection:owner-a-generated-1",
+        "reflection:owner-b-generated-1",
+    }
+
+
+def test_generated_canonicalization_keeps_latest_per_owner_qkey():
+    import api_mymodel_qna as qna_module
+
+    latest_row = {
+        "id": "owner-latest-generated-1",
+        "public_id": "reflection:owner-latest-generated-1",
+        "owner_user_id": "owner-latest",
+        "source_type": "generated",
+        "question": "大切にしていることは？",
+        "answer": "無理をしすぎず整えること。",
+        "updated_at": "2026-04-03T18:00:00+00:00",
+    }
+    older_row = {
+        "id": "owner-latest-generated-2",
+        "public_id": "reflection:owner-latest-generated-2",
+        "owner_user_id": "owner-latest",
+        "source_type": "generated",
+        "question": "大切にしていることは？",
+        "answer": "恋愛を楽しむこと。",
+        "updated_at": "2026-04-03T10:00:00+00:00",
+    }
+
+    canonical = qna_module._canonicalize_generated_rows_latest_by_qkey([older_row, latest_row])
+
+    assert len(canonical) == 1
+    assert canonical[0]["public_id"] == "reflection:owner-latest-generated-1"
