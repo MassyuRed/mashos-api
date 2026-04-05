@@ -397,9 +397,10 @@ def _merge_settings(row: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
 
 def _merge_plan_catalog(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
     catalog = _default_plan_catalog()
+    resolved_plan_codes: set[str] = set()
     for row in rows or []:
         plan_code = _clean(row.get("plan_code")).lower()
-        if plan_code not in catalog:
+        if plan_code not in catalog or plan_code in resolved_plan_codes:
             continue
         target = dict(catalog[plan_code])
         target["visible"] = _bool(row.get("visible"), default=target.get("visible", True))
@@ -413,12 +414,14 @@ def _merge_plan_catalog(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str
         target["cta_label"] = _string_or_none(row.get("cta_label")) or target.get("cta_label")
         target["recommended"] = _bool(row.get("recommended"), default=target.get("recommended", False))
         catalog[plan_code] = _normalize_plan_catalog_item(plan_code, target)
+        resolved_plan_codes.add(plan_code)
     return {code: _normalize_plan_catalog_item(code, plan) for code, plan in catalog.items()}
 
 
 def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping[str, Any]]) -> Dict[str, Dict[str, Any]]:
     now_utc = _now_utc()
     merged = {key: dict(value) for key, value in (catalog or {}).items()}
+    purchase_default_resolved: set[tuple[str, str]] = set()
     for plan_code, plan in merged.items():
         plan["purchase_product_id"] = dict(plan.get("purchase_product_id") or {})
         plan["recognized_product_ids"] = {
@@ -437,7 +440,10 @@ def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping
         if product_id not in recognized:
             recognized.append(product_id)
         if _bool(row.get("is_purchase_default"), default=False):
-            merged[plan_code]["purchase_product_id"][platform] = product_id
+            default_key = (plan_code, platform)
+            if default_key not in purchase_default_resolved:
+                merged[plan_code]["purchase_product_id"][platform] = product_id
+                purchase_default_resolved.add(default_key)
     return merged
 
 
@@ -608,13 +614,13 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
 
     if _bool(premium.get("purchasable"), default=False):
         if not premium_ios_purchase:
-            warnings.append("Premium iOS purchase product ID is missing while Premium is purchasable.")
+            missing_required.append(f"{ALIASES_TABLE}[premium/ios].is_purchase_default")
         if not premium_android_purchase:
-            warnings.append("Premium Android purchase product ID is missing while Premium is purchasable.")
+            missing_required.append(f"{ALIASES_TABLE}[premium/android].is_purchase_default")
         if len(_string_list((premium.get("recognized_product_ids") or {}).get("ios"), [])) == 0:
-            warnings.append("Premium iOS recognized product IDs are empty while Premium is purchasable.")
+            missing_required.append(f"{ALIASES_TABLE}[premium/ios].store_product_id")
         if len(_string_list((premium.get("recognized_product_ids") or {}).get("android"), [])) == 0:
-            warnings.append("Premium Android recognized product IDs are empty while Premium is purchasable.")
+            missing_required.append(f"{ALIASES_TABLE}[premium/android].store_product_id")
 
     ready = len(missing_required) == 0
     return {

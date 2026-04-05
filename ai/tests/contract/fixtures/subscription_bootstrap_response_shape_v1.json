@@ -38,22 +38,22 @@
     },
     "premium": {
       "visible": true,
-      "purchasable": false,
-      "launch_stage": "coming_soon",
+      "purchasable": true,
+      "launch_stage": "live",
       "title": "Premiumプラン",
       "price_label": "月額980円",
       "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
       "features": ["feature-p"],
-      "note_lines": ["※Premiumプランは準備中です。"],
-      "cta_label": "準備中",
+      "note_lines": ["月額980円で自動更新されます。"],
+      "cta_label": "このプランを選ぶ",
       "recommended": false,
       "purchase_product_id": {
-        "ios": null,
-        "android": null
+        "ios": "cocolon_premium_monthly",
+        "android": "cocolon_premium_monthly"
       },
       "recognized_product_ids": {
-        "ios": [],
-        "android": []
+        "ios": ["cocolon_premium_monthly"],
+        "android": ["cocolon_premium_monthly"]
       }
     }
   }

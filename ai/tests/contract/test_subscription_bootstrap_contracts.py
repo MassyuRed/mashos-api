@@ -47,17 +47,23 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                 },
                 "premium": {
                     "visible": True,
-                    "purchasable": False,
-                    "launch_stage": "coming_soon",
+                    "purchasable": True,
+                    "launch_stage": "live",
                     "title": "Premiumプラン",
                     "price_label": "月額980円",
                     "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
                     "features": ["feature-p"],
-                    "note_lines": ["※Premiumプランは準備中です。"],
-                    "cta_label": "準備中",
+                    "note_lines": ["月額980円で自動更新されます。"],
+                    "cta_label": "このプランを選ぶ",
                     "recommended": False,
-                    "purchase_product_id": {"ios": None, "android": None},
-                    "recognized_product_ids": {"ios": [], "android": []},
+                    "purchase_product_id": {
+                        "ios": "cocolon_premium_monthly",
+                        "android": "cocolon_premium_monthly",
+                    },
+                    "recognized_product_ids": {
+                        "ios": ["cocolon_premium_monthly"],
+                        "android": ["cocolon_premium_monthly"],
+                    },
                 },
             },
         }
@@ -80,7 +86,7 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
     assert body["client_sales_enabled"] is True
     assert body["links"]["terms_url"] == "https://example.com/terms"
     assert body["plans"]["plus"]["purchase_product_id"]["ios"] == "cocolon_plus_monthly"
-    assert body["plans"]["premium"]["purchasable"] is False
+    assert body["plans"]["premium"]["purchasable"] is True
 
 
 def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypatch):
@@ -102,7 +108,7 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
                 "ios_manage_url": "https://apps.apple.com/account/subscriptions",
                 "android_manage_mode": "specific_subscription",
                 "android_package_name": "com.example.cocolon",
-                "review_notice": "現在、Plusプランのみ販売中です。",
+                "review_notice": "現在、サブスクリプション販売を一時停止しています。",
             },
             "plans": {
                 "plus": {
@@ -128,4 +134,4 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
     body = response.json()
     assert body["client_sales_enabled"] is False
     assert body["client_sales_disabled_reason"] == "このバージョンでは購入できません。"
-    assert body["policy"]["review_notice"] == "現在、Plusプランのみ販売中です。"
+    assert body["policy"]["review_notice"] == "現在、サブスクリプション販売を一時停止しています。"

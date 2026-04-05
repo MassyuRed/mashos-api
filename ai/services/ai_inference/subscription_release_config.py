@@ -255,6 +255,10 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         backend_missing.append("COCOLON_IAP_GOOGLE_SERVICE_ACCOUNT_JSON / FILE")
     if not android_plus_ids:
         backend_missing.append("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
+    if not ios_premium_ids:
+        backend_missing.append("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
+    if not android_premium_ids:
+        backend_missing.append("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
 
     warnings: list[str] = []
     if allow_unverified:
@@ -263,10 +267,6 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         warnings.append("COCOLON_IAP_GOOGLE_WEBHOOK_BEARER is not set. Add a bearer token if the Google webhook endpoint is internet-reachable.")
     if not _internal_admin_tokens():
         warnings.append("No internal admin bearer token is configured. /subscription/config/release-check will be publicly readable until an admin token is set.")
-    if not ios_premium_ids:
-        warnings.append("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS is empty. This is acceptable only while Premium remains unavailable.")
-    if not android_premium_ids:
-        warnings.append("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS is empty. This is acceptable only while Premium remains unavailable.")
 
     backend_resolved = {
         "public_api_base_url": public_api_base_url,
@@ -299,16 +299,17 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
             "EXPO_PUBLIC_MYMODEL_API_URL",
             "EXPO_PUBLIC_IAP_PLUS_SKU_IOS",
             "EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID",
+            "EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS",
+            "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID",
             "EXPO_PUBLIC_ANDROID_PACKAGE_NAME",
         ],
         "recommended": [
             "EXPO_PUBLIC_IOS_BUNDLE_ID",
-            "EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS",
-            "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID",
             "EXPO_PUBLIC_SUPPORT_URL",
         ],
         "notes": [
             "Legal/support links are runtime-managed via /subscription/bootstrap.",
+            "Premium is now sold live. Keep premium SKUs aligned with backend/runtime aliases.",
         ],
     }
 
