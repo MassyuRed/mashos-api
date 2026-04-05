@@ -48,6 +48,50 @@ def _csv_env(*names: str) -> list[str]:
     return []
 
 
+def _android_shared_product_ids() -> list[str]:
+    ids = _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
+    if ids:
+        return ids
+    ids = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
+    if ids:
+        return ids
+    fallback = _string_or_none(
+        _first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID", "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID")
+    )
+    return [fallback] if fallback else []
+
+
+def _android_base_plan_ids(plan_code: str) -> list[str]:
+    if plan_code == "premium":
+        values = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_BASE_PLAN_IDS")
+        fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_ANDROID_PREMIUM_BASE_PLAN_ID")) or "premium"
+    else:
+        values = _csv_env("COCOLON_IAP_ANDROID_PLUS_BASE_PLAN_IDS")
+        fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_ANDROID_PLUS_BASE_PLAN_ID")) or "plus"
+    return _string_list(values or ([fallback] if fallback else []), [])
+
+
+def _primary_android_base_plan_id(plan_code: str) -> Optional[str]:
+    values = _android_base_plan_ids(plan_code)
+    return values[0] if values else None
+
+
+def _android_plan_code_from_base_plan_id(base_plan_id: Optional[str]) -> Optional[str]:
+    raw = _string_or_none(base_plan_id)
+    if not raw:
+        return None
+    low = raw.lower()
+    if "premium" in low:
+        return "premium"
+    if "plus" in low or "trial" in low:
+        return "plus"
+    if raw in set(_android_base_plan_ids("premium")):
+        return "premium"
+    if raw in set(_android_base_plan_ids("plus")):
+        return "plus"
+    return None
+
+
 def _bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -266,14 +310,23 @@ def _default_runtime_settings() -> Dict[str, Any]:
 
 def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
     plus_ios = _csv_env("COCOLON_IAP_IOS_PLUS_PRODUCT_IDS")
-    plus_android = _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
     premium_ios = _csv_env("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
-    premium_android = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
+    android_shared = _android_shared_product_ids()
 
     plus_ios_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_IOS"))
-    plus_android_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID"))
     premium_ios_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS"))
-    premium_android_fallback = _string_or_none(_first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID"))
+    android_shared_fallback = _string_or_none(
+        _first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID", "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID")
+    )
+
+    android_purchase_product_id = (
+        android_shared[0] if android_shared else android_shared_fallback
+    )
+    android_recognized_product_ids = (
+        android_shared or ([android_shared_fallback] if android_shared_fallback else [])
+    )
+    plus_android_base_plan_ids = _android_base_plan_ids("plus")
+    premium_android_base_plan_ids = _android_base_plan_ids("premium")
 
     return {
         "plus": {
@@ -299,11 +352,19 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "recommended": True,
             "purchase_product_id": {
                 "ios": plus_ios[0] if plus_ios else plus_ios_fallback,
-                "android": plus_android[0] if plus_android else plus_android_fallback,
+                "android": android_purchase_product_id,
             },
             "recognized_product_ids": {
                 "ios": plus_ios or ([plus_ios_fallback] if plus_ios_fallback else []),
-                "android": plus_android or ([plus_android_fallback] if plus_android_fallback else []),
+                "android": android_recognized_product_ids,
+            },
+            "purchase_base_plan_id": {
+                "ios": None,
+                "android": _primary_android_base_plan_id("plus"),
+            },
+            "recognized_base_plan_ids": {
+                "ios": [],
+                "android": plus_android_base_plan_ids,
             },
         },
         "premium": {
@@ -327,11 +388,19 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "recommended": False,
             "purchase_product_id": {
                 "ios": premium_ios[0] if premium_ios else premium_ios_fallback,
-                "android": premium_android[0] if premium_android else premium_android_fallback,
+                "android": android_purchase_product_id,
             },
             "recognized_product_ids": {
                 "ios": premium_ios or ([premium_ios_fallback] if premium_ios_fallback else []),
-                "android": premium_android or ([premium_android_fallback] if premium_android_fallback else []),
+                "android": android_recognized_product_ids,
+            },
+            "purchase_base_plan_id": {
+                "ios": None,
+                "android": _primary_android_base_plan_id("premium"),
+            },
+            "recognized_base_plan_ids": {
+                "ios": [],
+                "android": premium_android_base_plan_ids,
             },
         },
     }
@@ -422,12 +491,34 @@ def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping
     now_utc = _now_utc()
     merged = {key: dict(value) for key, value in (catalog or {}).items()}
     purchase_default_resolved: set[tuple[str, str]] = set()
+
+    android_shared_product = _string_or_none(
+        ((merged.get("plus") or {}).get("purchase_product_id") or {}).get("android")
+    ) or _string_or_none(
+        ((merged.get("premium") or {}).get("purchase_product_id") or {}).get("android")
+    )
+    android_shared_mode = bool(
+        android_shared_product
+        and _string_or_none(((merged.get("plus") or {}).get("purchase_base_plan_id") or {}).get("android"))
+        and _string_or_none(((merged.get("premium") or {}).get("purchase_base_plan_id") or {}).get("android"))
+    )
+
     for plan_code, plan in merged.items():
         plan["purchase_product_id"] = dict(plan.get("purchase_product_id") or {})
         plan["recognized_product_ids"] = {
             "ios": list((plan.get("recognized_product_ids") or {}).get("ios") or []),
             "android": list((plan.get("recognized_product_ids") or {}).get("android") or []),
         }
+        plan["purchase_base_plan_id"] = dict(plan.get("purchase_base_plan_id") or {})
+        plan["recognized_base_plan_ids"] = {
+            "ios": list((plan.get("recognized_base_plan_ids") or {}).get("ios") or []),
+            "android": list((plan.get("recognized_base_plan_ids") or {}).get("android") or []),
+        }
+
+        if android_shared_mode:
+            plan["purchase_product_id"]["android"] = android_shared_product
+            plan["recognized_product_ids"]["android"] = [android_shared_product]
+
     for row in rows or []:
         plan_code = _clean(row.get("plan_code")).lower()
         if plan_code not in merged or not _alias_active(row, now_utc=now_utc):
@@ -436,6 +527,16 @@ def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping
         product_id = _string_or_none(row.get("store_product_id"))
         if not product_id:
             continue
+
+        if platform == "android" and android_shared_mode:
+            if product_id != android_shared_product:
+                continue
+            recognized = merged[plan_code]["recognized_product_ids"].setdefault("android", [])
+            if product_id not in recognized:
+                recognized.append(product_id)
+            merged[plan_code]["purchase_product_id"]["android"] = android_shared_product
+            continue
+
         recognized = merged[plan_code]["recognized_product_ids"].setdefault(platform, [])
         if product_id not in recognized:
             recognized.append(product_id)
@@ -444,12 +545,15 @@ def _apply_alias_rows(catalog: Dict[str, Dict[str, Any]], rows: Iterable[Mapping
             if default_key not in purchase_default_resolved:
                 merged[plan_code]["purchase_product_id"][platform] = product_id
                 purchase_default_resolved.add(default_key)
+
     return merged
 
 
 def _plan_public(plan: Mapping[str, Any]) -> Dict[str, Any]:
     purchase_map = plan.get("purchase_product_id") or {}
     recognized = plan.get("recognized_product_ids") or {}
+    purchase_base_plan_map = plan.get("purchase_base_plan_id") or {}
+    recognized_base_plan_map = plan.get("recognized_base_plan_ids") or {}
     return {
         "visible": _bool(plan.get("visible"), default=True),
         "purchasable": _bool(plan.get("purchasable"), default=False),
@@ -468,6 +572,14 @@ def _plan_public(plan: Mapping[str, Any]) -> Dict[str, Any]:
         "recognized_product_ids": {
             "ios": _string_list((recognized or {}).get("ios"), []),
             "android": _string_list((recognized or {}).get("android"), []),
+        },
+        "purchase_base_plan_id": {
+            "ios": _string_or_none((purchase_base_plan_map or {}).get("ios")),
+            "android": _string_or_none((purchase_base_plan_map or {}).get("android")),
+        },
+        "recognized_base_plan_ids": {
+            "ios": _string_list((recognized_base_plan_map or {}).get("ios"), []),
+            "android": _string_list((recognized_base_plan_map or {}).get("android"), []),
         },
     }
 
@@ -539,11 +651,13 @@ def _env_plan_code_from_product_id(store: Optional[str], product_id: Optional[st
         plus_ids = set(_csv_env("COCOLON_IAP_IOS_PLUS_PRODUCT_IDS"))
         premium_ids = set(_csv_env("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS"))
     else:
-        plus_ids = set(_csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS"))
-        premium_ids = set(_csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS"))
-    if pid in premium_ids:
+        plus_ids = set(_android_shared_product_ids() or _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS"))
+        premium_ids = set(_android_shared_product_ids() or _csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS"))
+    plus_match = pid in plus_ids
+    premium_match = pid in premium_ids
+    if premium_match and not plus_match:
         return "premium"
-    if pid in plus_ids:
+    if plus_match and not premium_match:
         return "plus"
     return None
 
@@ -563,12 +677,28 @@ async def resolve_plan_code_by_product_id(store: Optional[str], product_id: Opti
         },
     )
     now_utc = _now_utc()
+    matched_plan_codes: set[str] = set()
     for row in rows:
         if _alias_active(row, now_utc=now_utc):
             plan_code = _clean(row.get("plan_code")).lower()
             if plan_code in {"plus", "premium"}:
-                return plan_code
+                matched_plan_codes.add(plan_code)
+    if len(matched_plan_codes) == 1:
+        return next(iter(matched_plan_codes))
     return _env_plan_code_from_product_id(platform, pid)
+
+
+async def resolve_plan_code_for_purchase(
+    store: Optional[str],
+    product_id: Optional[str],
+    base_plan_id: Optional[str] = None,
+) -> Optional[str]:
+    platform = _normalize_platform(store)
+    if platform == "android":
+        by_base_plan = _android_plan_code_from_base_plan_id(base_plan_id)
+        if by_base_plan:
+            return by_base_plan
+    return await resolve_plan_code_by_product_id(platform, product_id)
 
 
 async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
@@ -602,6 +732,11 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
     plus_android_purchase = _string_or_none((plus.get("purchase_product_id") or {}).get("android"))
     premium_ios_purchase = _string_or_none((premium.get("purchase_product_id") or {}).get("ios"))
     premium_android_purchase = _string_or_none((premium.get("purchase_product_id") or {}).get("android"))
+    plus_android_base_plan = _string_or_none((plus.get("purchase_base_plan_id") or {}).get("android"))
+    premium_android_base_plan = _string_or_none((premium.get("purchase_base_plan_id") or {}).get("android"))
+    plus_android_recognized_base_plans = _string_list((plus.get("recognized_base_plan_ids") or {}).get("android"), [])
+    premium_android_recognized_base_plans = _string_list((premium.get("recognized_base_plan_ids") or {}).get("android"), [])
+
     if not plus_ios_purchase:
         missing_required.append(f"{ALIASES_TABLE}[plus/ios].is_purchase_default")
     if not plus_android_purchase:
@@ -612,7 +747,13 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
     if len(_string_list((plus.get("recognized_product_ids") or {}).get("android"), [])) == 0:
         missing_required.append(f"{ALIASES_TABLE}[plus/android].store_product_id")
 
-    if _bool(premium.get("purchasable"), default=False):
+    if not plus_android_base_plan:
+        missing_required.append("android.plus.purchase_base_plan_id")
+    if len(plus_android_recognized_base_plans) == 0:
+        missing_required.append("android.plus.recognized_base_plan_ids")
+
+    premium_purchasable = _bool(premium.get("purchasable"), default=False)
+    if premium_purchasable:
         if not premium_ios_purchase:
             missing_required.append(f"{ALIASES_TABLE}[premium/ios].is_purchase_default")
         if not premium_android_purchase:
@@ -621,6 +762,15 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
             missing_required.append(f"{ALIASES_TABLE}[premium/ios].store_product_id")
         if len(_string_list((premium.get("recognized_product_ids") or {}).get("android"), [])) == 0:
             missing_required.append(f"{ALIASES_TABLE}[premium/android].store_product_id")
+        if not premium_android_base_plan:
+            missing_required.append("android.premium.purchase_base_plan_id")
+        if len(premium_android_recognized_base_plans) == 0:
+            missing_required.append("android.premium.recognized_base_plan_ids")
+
+    if plus_android_purchase and premium_android_purchase and plus_android_purchase == premium_android_purchase:
+        warnings.append(
+            "Android plus/premium share the same subscription product id. This is expected when Google Play uses one subscription with multiple base plans."
+        )
 
     ready = len(missing_required) == 0
     return {
@@ -639,10 +789,15 @@ async def audit_subscription_bootstrap_runtime() -> Dict[str, Any]:
             "support_url": _string_or_none(settings.get("support_url")),
             "plus_ios_purchase": plus_ios_purchase,
             "plus_android_purchase": plus_android_purchase,
+            "plus_android_base_plan": plus_android_base_plan,
+            "plus_android_recognized_base_plans": plus_android_recognized_base_plans,
             "premium_ios_purchase": premium_ios_purchase,
             "premium_android_purchase": premium_android_purchase,
+            "premium_android_base_plan": premium_android_base_plan,
+            "premium_android_recognized_base_plans": premium_android_recognized_base_plans,
             "premium_launch_stage": _string_or_none(premium.get("launch_stage")) or "coming_soon",
-            "premium_purchasable": _bool(premium.get("purchasable"), default=False),
+            "premium_purchasable": premium_purchasable,
         },
         "ready": ready,
     }
+

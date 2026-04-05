@@ -44,6 +44,14 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                         "ios": ["cocolon_plus_monthly"],
                         "android": ["emlis"],
                     },
+                    "purchase_base_plan_id": {
+                        "ios": None,
+                        "android": "plus",
+                    },
+                    "recognized_base_plan_ids": {
+                        "ios": [],
+                        "android": ["plus"],
+                    },
                 },
                 "premium": {
                     "visible": True,
@@ -58,11 +66,19 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                     "recommended": False,
                     "purchase_product_id": {
                         "ios": "cocolon_premium_monthly",
-                        "android": "cocolon_premium_monthly",
+                        "android": "emlis",
                     },
                     "recognized_product_ids": {
                         "ios": ["cocolon_premium_monthly"],
-                        "android": ["cocolon_premium_monthly"],
+                        "android": ["emlis"],
+                    },
+                    "purchase_base_plan_id": {
+                        "ios": None,
+                        "android": "premium",
+                    },
+                    "recognized_base_plan_ids": {
+                        "ios": [],
+                        "android": ["premium"],
                     },
                 },
             },
@@ -124,6 +140,8 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
                     "recommended": True,
                     "purchase_product_id": {"ios": "cocolon_plus_monthly", "android": "emlis"},
                     "recognized_product_ids": {"ios": ["cocolon_plus_monthly"], "android": ["emlis"]},
+                    "purchase_base_plan_id": {"ios": None, "android": "plus"},
+                    "recognized_base_plan_ids": {"ios": [], "android": ["plus"]},
                 }
             },
         }

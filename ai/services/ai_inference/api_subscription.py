@@ -14,7 +14,7 @@ from active_users_store import touch_active_user
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
 from subscription import SubscriptionTier, normalize_subscription_tier
-from subscription_bootstrap_store import build_subscription_bootstrap, resolve_plan_code_by_product_id
+from subscription_bootstrap_store import build_subscription_bootstrap, resolve_plan_code_for_purchase
 from subscription_projection import (
     CanonicalSubscriptionState,
     PurchaseOwnershipConflictError,
@@ -25,6 +25,7 @@ from subscription_projection import (
     find_purchase_claim,
     normalize_plan_code,
     persist_verified_purchase,
+    plan_code_from_android_purchase,
     plan_code_from_product_id,
     project_profile_tier,
 )
@@ -64,6 +65,7 @@ class SubscriptionMeResponse(BaseModel):
 class SubscriptionUpdateRequest(BaseModel):
     platform: Optional[str] = Field(default=None, description="android | ios")
     product_id: Optional[str] = Field(default=None, description="IAP product id")
+    base_plan_id: Optional[str] = Field(default=None, description="Android base plan id")
     purchase_token: Optional[str] = Field(default=None, description="Android purchaseToken")
     transaction_receipt: Optional[str] = Field(default=None, description="iOS receipt / Android raw receipt")
     transaction_id: Optional[str] = Field(default=None, description="iOS transaction id")
@@ -112,6 +114,8 @@ class SubscriptionBootstrapPlan(BaseModel):
     recommended: bool = False
     purchase_product_id: Dict[str, Optional[str]] = Field(default_factory=dict)
     recognized_product_ids: Dict[str, list[str]] = Field(default_factory=dict)
+    purchase_base_plan_id: Dict[str, Optional[str]] = Field(default_factory=dict)
+    recognized_base_plan_ids: Dict[str, list[str]] = Field(default_factory=dict)
 
 
 class SubscriptionBootstrapResponse(BaseModel):
@@ -184,16 +188,26 @@ def _infer_platform_from_request(req: SubscriptionUpdateRequest) -> Optional[str
 
 
 
+def _resolve_plan_code_from_request(req: SubscriptionUpdateRequest) -> Optional[str]:
+    explicit = normalize_plan_code(req.subscription_tier)
+    if explicit:
+        return explicit
+
+    platform = _infer_platform_from_request(req)
+    if platform == "android":
+        plan = plan_code_from_android_purchase(req.product_id, req.base_plan_id)
+    else:
+        plan = plan_code_from_product_id(platform, req.product_id)
+    return normalize_plan_code(plan)
+
+
 def _resolve_tier_from_request(req: SubscriptionUpdateRequest) -> SubscriptionTier:
-    if req.subscription_tier:
-        return normalize_subscription_tier(req.subscription_tier, default=SubscriptionTier.FREE)
-    plan = plan_code_from_product_id(_infer_platform_from_request(req), req.product_id)
+    plan = _resolve_plan_code_from_request(req)
     if plan == SubscriptionTier.PLUS.value:
         return SubscriptionTier.PLUS
     if plan == SubscriptionTier.PREMIUM.value:
         return SubscriptionTier.PREMIUM
     return SubscriptionTier.FREE
-
 
 
 def _resolve_request_refs(req: SubscriptionUpdateRequest) -> tuple[str, Optional[str], Optional[str], Optional[str], str]:
@@ -228,6 +242,7 @@ def _storage_payload(req: SubscriptionUpdateRequest, *, plan_code: Optional[str]
     return {
         "platform": _infer_platform_from_request(req),
         "product_id": clean_optional_str(req.product_id),
+        "base_plan_id": clean_optional_str(req.base_plan_id),
         "subscription_tier_hint": clean_optional_str(req.subscription_tier),
         "plan_code": normalize_plan_code(plan_code),
         "purchase_token_present": bool(clean_optional_str(req.purchase_token)),
@@ -387,9 +402,15 @@ def register_subscription_routes(app: FastAPI) -> None:
         store, purchase_token, transaction_id, original_transaction_id, store_ref = _resolve_request_refs(req)
 
         desired_tier = _resolve_tier_from_request(req)
-        desired_plan_code = normalize_plan_code(desired_tier.value)
+        desired_plan_code = normalize_plan_code(
+            desired_tier.value if desired_tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) else None
+        )
         if desired_tier not in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) or not desired_plan_code:
-            runtime_plan_code = await resolve_plan_code_by_product_id(store, req.product_id)
+            runtime_plan_code = await resolve_plan_code_for_purchase(
+                store,
+                req.product_id,
+                req.base_plan_id,
+            )
             runtime_plan_code = normalize_plan_code(runtime_plan_code)
             if runtime_plan_code == SubscriptionTier.PLUS.value:
                 desired_tier = SubscriptionTier.PLUS
@@ -397,15 +418,6 @@ def register_subscription_routes(app: FastAPI) -> None:
             elif runtime_plan_code == SubscriptionTier.PREMIUM.value:
                 desired_tier = SubscriptionTier.PREMIUM
                 desired_plan_code = runtime_plan_code
-
-        if desired_tier not in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) or not desired_plan_code:
-            raise HTTPException(
-                status_code=422,
-                detail=_http_detail(
-                    "tier_resolution_failed",
-                    "Could not resolve a paid subscription tier from the purchase payload.",
-                ),
-            )
 
         raw_payload = _storage_payload(req, plan_code=desired_plan_code, store_ref=store_ref)
         verification_mode = ""
@@ -490,6 +502,15 @@ def register_subscription_routes(app: FastAPI) -> None:
                 snapshot = await project_profile_tier(user_id)
                 verification_mode = "existing_entitlement_projection"
             else:
+                if desired_tier not in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) or not desired_plan_code:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=_http_detail(
+                            "tier_resolution_failed",
+                            "Could not resolve a paid subscription tier from the purchase payload.",
+                        ),
+                    )
+
                 allow_unverified, dev_mode = _verification_mode_for_user(user_id)
                 if not allow_unverified:
                     raise HTTPException(
@@ -507,6 +528,7 @@ def register_subscription_routes(app: FastAPI) -> None:
                     status="active",
                     verification_status="verified",
                     store_ref=store_ref,
+                    base_plan_id=clean_optional_str(req.base_plan_id) if store == "android" else None,
                     purchase_token=purchase_token,
                     transaction_id=transaction_id,
                     original_transaction_id=original_transaction_id,

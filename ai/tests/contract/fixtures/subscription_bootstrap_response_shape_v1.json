@@ -23,8 +23,12 @@
       "title": "Plusプラン",
       "price_label": "月額300円",
       "subtitle": "レポート閲覧 / ReflectionCreate拡張",
-      "features": ["feature-a"],
-      "note_lines": ["note-a"],
+      "features": [
+        "feature-a"
+      ],
+      "note_lines": [
+        "note-a"
+      ],
       "cta_label": "このプランを選ぶ",
       "recommended": true,
       "purchase_product_id": {
@@ -32,8 +36,22 @@
         "android": "emlis"
       },
       "recognized_product_ids": {
-        "ios": ["cocolon_plus_monthly"],
-        "android": ["emlis"]
+        "ios": [
+          "cocolon_plus_monthly"
+        ],
+        "android": [
+          "emlis"
+        ]
+      },
+      "purchase_base_plan_id": {
+        "ios": null,
+        "android": "plus"
+      },
+      "recognized_base_plan_ids": {
+        "ios": [],
+        "android": [
+          "plus"
+        ]
       }
     },
     "premium": {
@@ -43,17 +61,35 @@
       "title": "Premiumプラン",
       "price_label": "月額980円",
       "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
-      "features": ["feature-p"],
-      "note_lines": ["月額980円で自動更新されます。"],
+      "features": [
+        "feature-p"
+      ],
+      "note_lines": [
+        "月額980円で自動更新されます。"
+      ],
       "cta_label": "このプランを選ぶ",
       "recommended": false,
       "purchase_product_id": {
         "ios": "cocolon_premium_monthly",
-        "android": "cocolon_premium_monthly"
+        "android": "emlis"
       },
       "recognized_product_ids": {
-        "ios": ["cocolon_premium_monthly"],
-        "android": ["cocolon_premium_monthly"]
+        "ios": [
+          "cocolon_premium_monthly"
+        ],
+        "android": [
+          "emlis"
+        ]
+      },
+      "purchase_base_plan_id": {
+        "ios": null,
+        "android": "premium"
+      },
+      "recognized_base_plan_ids": {
+        "ios": [],
+        "android": [
+          "premium"
+        ]
       }
     }
   }

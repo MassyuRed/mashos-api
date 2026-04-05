@@ -52,6 +52,7 @@ class VerifiedPurchase:
     status: str
     verification_status: str
     store_ref: str
+    base_plan_id: Optional[str] = None
     purchase_token: Optional[str] = None
     transaction_id: Optional[str] = None
     original_transaction_id: Optional[str] = None
@@ -186,12 +187,41 @@ def plan_code_from_product_id(store: Optional[str], product_id: Optional[str]) -
         plus_ids = set()
         premium_ids = set()
 
-    if pid in premium_ids:
+    plus_match = pid in plus_ids
+    premium_match = pid in premium_ids
+    if premium_match and not plus_match:
         return SubscriptionTier.PREMIUM.value
-    if pid in plus_ids:
+    if plus_match and not premium_match:
         return SubscriptionTier.PLUS.value
     return None
 
+
+def plan_code_from_android_purchase(
+    product_id: Optional[str],
+    base_plan_id: Optional[str],
+) -> Optional[str]:
+    base_plan = clean_optional_str(base_plan_id)
+    if base_plan:
+        low = base_plan.lower()
+        if "premium" in low:
+            return SubscriptionTier.PREMIUM.value
+        if "plus" in low or "trial" in low:
+            return SubscriptionTier.PLUS.value
+
+        plus_base_plan_ids = set(
+            _split_env_list("COCOLON_IAP_ANDROID_PLUS_BASE_PLAN_IDS")
+            or ["plus"]
+        )
+        premium_base_plan_ids = set(
+            _split_env_list("COCOLON_IAP_ANDROID_PREMIUM_BASE_PLAN_IDS")
+            or ["premium"]
+        )
+        if base_plan in premium_base_plan_ids:
+            return SubscriptionTier.PREMIUM.value
+        if base_plan in plus_base_plan_ids:
+            return SubscriptionTier.PLUS.value
+
+    return plan_code_from_product_id("android", product_id)
 
 
 def entitlement_confers_access(row: Optional[Dict[str, Any]]) -> bool:

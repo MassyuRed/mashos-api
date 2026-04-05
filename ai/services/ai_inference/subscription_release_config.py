@@ -146,6 +146,8 @@ def _detected_public_snapshot() -> Dict[str, Any]:
         "plus_sku_android": _first_env("EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID"),
         "premium_sku_ios": _first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS"),
         "premium_sku_android": _first_env("EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID"),
+        "android_plus_base_plan_id": _first_env("EXPO_PUBLIC_IAP_ANDROID_PLUS_BASE_PLAN_ID"),
+        "android_premium_base_plan_id": _first_env("EXPO_PUBLIC_IAP_ANDROID_PREMIUM_BASE_PLAN_ID"),
         "terms_url": _first_env("EXPO_PUBLIC_TERMS_URL"),
         "privacy_url": _first_env("EXPO_PUBLIC_PRIVACY_URL"),
         "support_url": _first_env("EXPO_PUBLIC_SUPPORT_URL"),
@@ -191,6 +193,8 @@ def _comparison_payload(public_snapshot: Optional[Dict[str, Any]], *, backend: D
     compare_membership("plus_sku_android", snapshot.get("plus_sku_android"), backend.get("android_plus_product_ids") or [])
     compare_membership("premium_sku_ios", snapshot.get("premium_sku_ios"), backend.get("ios_premium_product_ids") or [])
     compare_membership("premium_sku_android", snapshot.get("premium_sku_android"), backend.get("android_premium_product_ids") or [])
+    compare_membership("android_plus_base_plan_id", snapshot.get("android_plus_base_plan_id"), backend.get("android_plus_base_plan_ids") or [])
+    compare_membership("android_premium_base_plan_id", snapshot.get("android_premium_base_plan_id"), backend.get("android_premium_base_plan_ids") or [])
 
     if _clean(snapshot.get("terms_url")):
         warnings.append("terms_url: EXPO_PUBLIC_TERMS_URL is set, but runtime legal links are now sourced from /subscription/bootstrap.")
@@ -217,6 +221,8 @@ class PublicSubscriptionConfigRequest(BaseModel):
     plus_sku_android: Optional[str] = Field(default=None)
     premium_sku_ios: Optional[str] = Field(default=None)
     premium_sku_android: Optional[str] = Field(default=None)
+    android_plus_base_plan_id: Optional[str] = Field(default=None)
+    android_premium_base_plan_id: Optional[str] = Field(default=None)
     terms_url: Optional[str] = Field(default=None)
     privacy_url: Optional[str] = Field(default=None)
     support_url: Optional[str] = Field(default=None)
@@ -227,6 +233,8 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
     ios_premium_ids = _csv_env("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
     android_plus_ids = _csv_env("COCOLON_IAP_ANDROID_PLUS_PRODUCT_IDS")
     android_premium_ids = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
+    android_plus_base_plan_ids = _csv_env("COCOLON_IAP_ANDROID_PLUS_BASE_PLAN_IDS") or ["plus"]
+    android_premium_base_plan_ids = _csv_env("COCOLON_IAP_ANDROID_PREMIUM_BASE_PLAN_IDS") or ["premium"]
 
     public_api_base_url = _public_api_base_url()
     ios_bundle_id = _ios_bundle_id()
@@ -259,6 +267,10 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         backend_missing.append("COCOLON_IAP_IOS_PREMIUM_PRODUCT_IDS")
     if not android_premium_ids:
         backend_missing.append("COCOLON_IAP_ANDROID_PREMIUM_PRODUCT_IDS")
+    if not _csv_env("COCOLON_IAP_ANDROID_PLUS_BASE_PLAN_IDS"):
+        backend_missing.append("COCOLON_IAP_ANDROID_PLUS_BASE_PLAN_IDS")
+    if not _csv_env("COCOLON_IAP_ANDROID_PREMIUM_BASE_PLAN_IDS"):
+        backend_missing.append("COCOLON_IAP_ANDROID_PREMIUM_BASE_PLAN_IDS")
 
     warnings: list[str] = []
     if allow_unverified:
@@ -267,6 +279,8 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         warnings.append("COCOLON_IAP_GOOGLE_WEBHOOK_BEARER is not set. Add a bearer token if the Google webhook endpoint is internet-reachable.")
     if not _internal_admin_tokens():
         warnings.append("No internal admin bearer token is configured. /subscription/config/release-check will be publicly readable until an admin token is set.")
+    if android_plus_ids and android_premium_ids and set(android_plus_ids) == set(android_premium_ids):
+        warnings.append("Android plus/premium product ids are shared. This is expected when Google Play uses one subscription product with multiple base plans.")
 
     backend_resolved = {
         "public_api_base_url": public_api_base_url,
@@ -276,6 +290,8 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         "ios_premium_product_ids": ios_premium_ids,
         "android_plus_product_ids": android_plus_ids,
         "android_premium_product_ids": android_premium_ids,
+        "android_plus_base_plan_ids": android_plus_base_plan_ids,
+        "android_premium_base_plan_ids": android_premium_base_plan_ids,
         "apple_private_key_source": apple_key_source or None,
         "google_service_account_source": google_sa_source or None,
         "google_webhook_bearer_configured": bool(_clean(os.getenv("COCOLON_IAP_GOOGLE_WEBHOOK_BEARER", ""))),
@@ -301,6 +317,8 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
             "EXPO_PUBLIC_IAP_PLUS_SKU_ANDROID",
             "EXPO_PUBLIC_IAP_PREMIUM_SKU_IOS",
             "EXPO_PUBLIC_IAP_PREMIUM_SKU_ANDROID",
+            "EXPO_PUBLIC_IAP_ANDROID_PLUS_BASE_PLAN_ID",
+            "EXPO_PUBLIC_IAP_ANDROID_PREMIUM_BASE_PLAN_ID",
             "EXPO_PUBLIC_ANDROID_PACKAGE_NAME",
         ],
         "recommended": [
@@ -309,7 +327,8 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
         ],
         "notes": [
             "Legal/support links are runtime-managed via /subscription/bootstrap.",
-            "Premium is now sold live. Keep premium SKUs aligned with backend/runtime aliases.",
+            "Android uses a shared subscription product with base plans (for example emlis + plus/premium).",
+            "Premium is now sold live. Keep premium identifiers aligned with backend/runtime aliases.",
         ],
     }
 
@@ -348,9 +367,10 @@ async def build_subscription_release_report(*, public_snapshot: Optional[Dict[st
             },
             "google": {
                 "package_name": android_package_name,
-                "plus_product_ids": android_plus_ids,
-                "premium_product_ids": android_premium_ids,
-                "offer_expectation": "Plus should have at least one active base plan under the expected Google Play subscription product.",
+                "shared_product_ids": sorted(set(android_plus_ids + android_premium_ids)),
+                "plus_base_plan_ids": android_plus_base_plan_ids,
+                "premium_base_plan_ids": android_premium_base_plan_ids,
+                "offer_expectation": "Plus and Premium should be active base plans under the expected Google Play subscription product.",
                 "rtdn_push_url": backend_resolved["google_notifications"]["push_url"],
             },
         },

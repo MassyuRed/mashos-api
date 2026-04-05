@@ -11,7 +11,7 @@ from urllib.parse import quote
 import httpx
 import jwt
 
-from subscription_bootstrap_store import resolve_plan_code_by_product_id
+from subscription_bootstrap_store import resolve_plan_code_for_purchase
 from subscription_projection import (
     VerifiedPurchase,
     clean_optional_str,
@@ -171,6 +171,17 @@ def _select_line_item(data: Dict[str, Any], product_id: Optional[str]) -> Dict[s
     return {}
 
 
+def _base_plan_id_from_line_item(line_item: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(line_item, dict):
+        return None
+    offer_details = line_item.get("offerDetails")
+    if isinstance(offer_details, dict):
+        base_plan_id = clean_optional_str(offer_details.get("basePlanId"))
+        if base_plan_id:
+            return base_plan_id
+    return clean_optional_str(line_item.get("basePlanId"))
+
+
 
 def _map_google_state_to_status(state: Optional[str]) -> str:
     raw = str(state or "").strip().upper()
@@ -255,10 +266,15 @@ async def verify_android_subscription(*, purchase_token: str, product_id: Option
     data = resp.json()
     line_item = _select_line_item(data, product_id)
     resolved_product_id = clean_optional_str(line_item.get("productId")) or clean_optional_str(product_id)
-    plan_code = normalize_plan_code(await resolve_plan_code_by_product_id("android", resolved_product_id))
+    base_plan_id = _base_plan_id_from_line_item(line_item)
+    plan_code = normalize_plan_code(
+        await resolve_plan_code_for_purchase("android", resolved_product_id, base_plan_id)
+    )
     if not plan_code:
         raise AndroidVerificationError(
-            f"Could not map Android product_id to plan_code: {resolved_product_id or '<empty>'}"
+            "Could not map Android purchase to plan_code: "
+            f"product_id={resolved_product_id or '<empty>'} "
+            f"base_plan_id={base_plan_id or '<empty>'}"
         )
 
     status = _map_google_state_to_status(data.get("subscriptionState"))
@@ -279,6 +295,7 @@ async def verify_android_subscription(*, purchase_token: str, product_id: Option
         status=status,
         verification_status=verification_status,
         store_ref=token,
+        base_plan_id=base_plan_id,
         purchase_token=token,
         transaction_id=clean_optional_str(data.get("latestOrderId")),
         original_transaction_id=clean_optional_str(data.get("linkedPurchaseToken")),
