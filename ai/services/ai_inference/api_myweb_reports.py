@@ -897,8 +897,8 @@ def _find_peak_time_bucket(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     return best
 
 COMMON_OBSERVATION_NOTE_LINES = (
-    "このレポートは、入力から見えてきた流れを受け取りやすい言葉に整えたものです。",
-    "診断ではなく、その期間の状態を振り返るための読みものです。",
+    "このレポートは、入力から見える変化をまとめた『観測』です。",
+    "診断や断定を目的としたものではありません。",
 )
 
 
