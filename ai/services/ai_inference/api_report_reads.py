@@ -399,20 +399,32 @@ async def get_myweb_unread_status_payload_for_user(
         daily_task = _fetch_latest_ready_myweb_ids(uid, "daily", tier_str=tier_str, limit=lim)
         weekly_task = _fetch_latest_ready_myweb_ids(uid, "weekly", tier_str=tier_str, limit=lim)
         monthly_task = _fetch_latest_ready_myweb_ids(uid, "monthly", tier_str=tier_str, limit=lim)
-        self_structure_task = None
-        if include_self_structure and tier_str in {"plus", "premium"}:
-            self_structure_task = _fetch_latest_self_structure_ids(uid, tier_str=tier_str, limit=lim)
 
-        daily_ids, weekly_ids, monthly_ids = await asyncio.gather(daily_task, weekly_task, monthly_task)
+        gather_tasks = [daily_task, weekly_task, monthly_task]
+        include_self_structure_task = include_self_structure and tier_str in {"plus", "premium"}
+        if include_self_structure_task:
+            gather_tasks.append(
+                _fetch_latest_self_structure_ids(uid, tier_str=tier_str, limit=lim)
+            )
+
+        gather_results = await asyncio.gather(*gather_tasks, return_exceptions=True)
+        daily_ids, weekly_ids, monthly_ids = gather_results[:3]
+
+        for result in (daily_ids, weekly_ids, monthly_ids):
+            if isinstance(result, HTTPException):
+                raise result
+            if isinstance(result, Exception):
+                raise result
+
         self_structure_ids: List[str] = []
-        if self_structure_task is not None:
-            try:
-                self_structure_ids = await self_structure_task
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.warning("failed to load self-structure unread ids: %s", exc)
-                self_structure_ids = []
+        if include_self_structure_task:
+            self_structure_result = gather_results[3]
+            if isinstance(self_structure_result, HTTPException):
+                raise self_structure_result
+            if isinstance(self_structure_result, Exception):
+                logger.warning("failed to load self-structure unread ids: %s", self_structure_result)
+            else:
+                self_structure_ids = self_structure_result
 
         ids_by_type = {
             "daily": daily_ids,

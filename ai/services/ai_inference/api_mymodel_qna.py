@@ -26,6 +26,7 @@ Unread ("New") is tracked per viewer x q_instance_id.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import random
@@ -173,6 +174,8 @@ class QnaDetailResponse(BaseModel):
     discoveries: int = 0
     is_new: bool = False
     is_resonated: bool = False
+    my_discovery_latest: Optional[Dict[str, Any]] = None
+    my_discovery_latest_loaded: bool = False
 
 
 class QnaViewRequest(BaseModel):
@@ -530,6 +533,19 @@ async def _filter_recommendation_enabled(user_ids: List[str]) -> List[str]:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _run_in_background(coro: Any, *, label: str) -> None:
+    async def _runner() -> None:
+        try:
+            await coro
+        except Exception as exc:
+            logger.warning("%s: %s", label, exc)
+
+    try:
+        asyncio.create_task(_runner())
+    except Exception as exc:
+        logger.warning("%s: %s", label, exc)
 
 
 def _build_tier_for_subscription(tier: SubscriptionTier) -> str:
@@ -952,6 +968,206 @@ async def _fetch_discovery_counts_for_instances(q_instance_ids: Set[str]) -> Dic
             logger.warning("discoveries count fetch failed: %s", exc)
 
     return out
+async def _fetch_discovery_count_for_instance(q_instance_id: str) -> int:
+    iid = str(q_instance_id or "").strip()
+    if not iid:
+        return 0
+    try:
+        return await _sb_count_rows(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={"q_instance_id": f"eq.{iid}"},
+        )
+    except Exception as exc:
+        logger.warning("discoveries count failed (instance=%s): %s", iid, exc)
+        return 0
+
+
+async def _fetch_latest_discovery_for_viewer(*, viewer_user_id: str, q_instance_id: str) -> Optional[Dict[str, Any]]:
+    uid = str(viewer_user_id or "").strip()
+    iid = str(q_instance_id or "").strip()
+    if not uid or not iid:
+        return None
+
+    try:
+        resp = await _sb_get(
+            f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
+            params={
+                "select": "id,category,memo,created_at",
+                "viewer_user_id": f"eq.{uid}",
+                "q_instance_id": f"eq.{iid}",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+        )
+        if resp.status_code >= 300:
+            logger.warning(
+                "Supabase %s latest discovery select failed: %s %s",
+                DISCOVERY_LOGS_TABLE,
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            return None
+
+        rows = resp.json()
+        if not isinstance(rows, list) or not rows:
+            return None
+        row = rows[0]
+        if not isinstance(row, dict):
+            return None
+
+        item_id = str(row.get("id") or "").strip()
+        if not item_id:
+            return None
+
+        memo = row.get("memo")
+        created_at = str(row.get("created_at") or "").strip()
+        return {
+            "id": item_id,
+            "category": str(row.get("category") or "").strip(),
+            "memo": None if memo is None else str(memo),
+            "created_at": created_at,
+        }
+    except Exception as exc:
+        logger.warning("latest discovery fetch failed (instance=%s): %s", iid, exc)
+        return None
+
+
+async def _build_qna_detail_response(
+    *,
+    viewer_user_id: str,
+    target_user_id: str,
+    q_instance_id: str,
+    q_key: str,
+    title: str,
+    body: str,
+    question_id: int = 0,
+    include_my_discovery_latest: bool = False,
+    mark_viewed: bool = False,
+) -> QnaDetailResponse:
+    iid = str(q_instance_id or "").strip()
+    tgt = str(target_user_id or "").strip()
+    qk = str(q_key or "").strip()
+    is_self = tgt == str(viewer_user_id)
+
+    discovery_count_task = asyncio.create_task(_fetch_discovery_count_for_instance(iid))
+    resonated_task = asyncio.create_task(_is_resonated(viewer_user_id, iid))
+    latest_discovery_task = (
+        asyncio.create_task(
+            _fetch_latest_discovery_for_viewer(
+                viewer_user_id=str(viewer_user_id),
+                q_instance_id=iid,
+            )
+        )
+        if include_my_discovery_latest and not is_self
+        else None
+    )
+
+    views = 0
+    resonances = 0
+    is_new = False
+
+    if mark_viewed:
+        await _upsert_read(viewer_user_id, iid)
+        is_new = False
+
+        if is_self:
+            metrics = await _fetch_instance_metrics({iid})
+            m = metrics.get(iid) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                resonances = int(m.get("resonances") or 0)
+            except Exception:
+                resonances = 0
+        else:
+            if question_id > 0:
+                _run_in_background(
+                    _insert_view_log(
+                        target_user_id=tgt,
+                        viewer_user_id=viewer_user_id,
+                        question_id=int(question_id),
+                        q_key=qk,
+                        q_instance_id=iid,
+                    ),
+                    label="view log insert failed (qna_detail)",
+                )
+
+            counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="views", delta=1)
+            try:
+                views = int(counts.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                resonances = int(counts.get("resonances") or 0)
+            except Exception:
+                resonances = 0
+
+            requested_at = _now_iso()
+            _run_in_background(
+                enqueue_ranking_board_refresh(
+                    metric_key="mymodel_views",
+                    user_id=viewer_user_id,
+                    trigger="qna_detail_mark_viewed",
+                    requested_at=requested_at,
+                    debounce=True,
+                ),
+                label="ranking enqueue failed (qna_detail)",
+            )
+            _run_in_background(
+                enqueue_account_status_refresh(
+                    target_user_id=tgt,
+                    actor_user_id=viewer_user_id,
+                    trigger="qna_detail_mark_viewed",
+                    requested_at=requested_at,
+                    debounce=True,
+                ),
+                label="account status enqueue failed (qna_detail)",
+            )
+            _run_in_background(
+                enqueue_global_summary_refresh(
+                    trigger="qna_detail_mark_viewed",
+                    requested_at=requested_at,
+                    actor_user_id=viewer_user_id,
+                    debounce=True,
+                ),
+                label="global summary enqueue failed (qna_detail)",
+            )
+    else:
+        metrics_task = asyncio.create_task(_fetch_instance_metrics({iid}))
+        reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, {iid}))
+        metrics, read_set = await asyncio.gather(metrics_task, reads_task)
+        m = metrics.get(iid) or {}
+        try:
+            views = int(m.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            resonances = int(m.get("resonances") or 0)
+        except Exception:
+            resonances = 0
+        is_new = iid not in read_set
+
+    discoveries = await discovery_count_task
+    is_resonated = await resonated_task
+    my_discovery_latest = await latest_discovery_task if latest_discovery_task else None
+
+    return QnaDetailResponse(
+        title=title,
+        body=body,
+        q_key=qk,
+        q_instance_id=iid,
+        views=int(views or 0),
+        resonances=int(resonances or 0),
+        discoveries=int(discoveries or 0),
+        is_new=bool(is_new),
+        is_resonated=bool(is_resonated),
+        my_discovery_latest=my_discovery_latest,
+        my_discovery_latest_loaded=bool(include_my_discovery_latest and not is_self),
+    )
+
+
 async def _fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
     if not viewer_user_id or not q_instance_ids:
         return set()
@@ -3762,9 +3978,14 @@ async def _fetch_create_list_items(
         return []
 
     q_instance_ids: Set[str] = {f"{target_user_id}:{qid}" for qid in visible_answer_ids}
-    metrics = await _fetch_instance_metrics(q_instance_ids)
-    discoveries_map = await _fetch_discovery_counts_for_instances(q_instance_ids)
-    read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
+    metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
+    discoveries_task = asyncio.create_task(_fetch_discovery_counts_for_instances(q_instance_ids))
+    reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, q_instance_ids))
+    metrics, discoveries_map, read_set = await asyncio.gather(
+        metrics_task,
+        discoveries_task,
+        reads_task,
+    )
 
     items: List[QnaListItem] = []
     for qid in ordered_qids:
@@ -3807,9 +4028,14 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
         return []
 
     q_instance_ids: Set[str] = {_generated_public_id(r) for r in rows if _generated_public_id(r)}
-    metrics = await _fetch_instance_metrics(q_instance_ids)
-    discoveries_map = await _fetch_discovery_counts_for_instances(q_instance_ids)
-    read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
+    metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
+    discoveries_task = asyncio.create_task(_fetch_discovery_counts_for_instances(q_instance_ids))
+    reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, q_instance_ids))
+    metrics, discoveries_map, read_set = await asyncio.gather(
+        metrics_task,
+        discoveries_task,
+        reads_task,
+    )
 
     items: List[QnaListItem] = []
     for r in rows:
@@ -4105,18 +4331,25 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         )
 
         try:
-            create_items = await _fetch_create_list_items(
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=str(tgt),
-                effective_tier=str(effective_tier),
+            create_task = asyncio.create_task(
+                _fetch_create_list_items(
+                    viewer_user_id=str(viewer_user_id),
+                    target_user_id=str(tgt),
+                    effective_tier=str(effective_tier),
+                )
             )
+            generated_task = asyncio.create_task(
+                _fetch_generated_list_items(
+                    viewer_user_id=str(viewer_user_id),
+                    target_user_id=str(tgt),
+                )
+            )
+            create_items, generated_items = await asyncio.gather(create_task, generated_task)
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("create list build failed: %s", exc)
+            logger.error("reflection list build failed: %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        generated_items = await _fetch_generated_list_items(viewer_user_id=str(viewer_user_id), target_user_id=str(tgt))
 
         items = [*create_items, *generated_items]
 
@@ -4232,6 +4465,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(
         q_instance_id: str = Query(..., description="<target_user_id>:<question_id> or reflection:<uuid>"),
+        mark_viewed: bool = Query(default=False, description="If true, also mark read and apply view counts in the same request"),
+        include_my_discovery_latest: bool = Query(default=False, description="If true, include the viewer's latest discovery for this reflection when available"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDetailResponse:
         token = _extract_bearer_token(authorization) if authorization else None
@@ -4248,76 +4483,60 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             if not body:
                 raise HTTPException(status_code=404, detail="Reflection not found")
             qk = _build_generated_q_key(row)
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                resonances = int(m.get("resonances") or 0)
-            except Exception:
-                resonances = 0
-            discoveries = 0
-            try:
-                discoveries = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"q_instance_id": f"eq.{iid}"})
-            except Exception as exc:
-                logger.warning("discoveries count failed (detail/generated): %s", exc)
-            read_set = await _fetch_reads(viewer_user_id, {iid})
-            is_new = iid not in read_set
-            is_resonated = await _is_resonated(viewer_user_id, iid)
-            return QnaDetailResponse(
-                title=str((row or {}).get("question") or "").strip(),
-                body=body,
-                q_key=qk,
+            title = str((row or {}).get("question") or "").strip()
+            if not title:
+                raise HTTPException(status_code=404, detail="Reflection not found")
+            owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+            return await _build_qna_detail_response(
+                viewer_user_id=str(viewer_user_id),
+                target_user_id=owner_user_id,
                 q_instance_id=iid,
-                views=views,
-                resonances=resonances,
-                discoveries=int(discoveries or 0),
-                is_new=is_new,
-                is_resonated=bool(is_resonated),
+                q_key=qk,
+                title=title,
+                body=body,
+                question_id=0,
+                include_my_discovery_latest=bool(include_my_discovery_latest),
+                mark_viewed=bool(mark_viewed),
             )
 
-        # legacy create path
         try:
             tgt, qid = _parse_instance_id(iid)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+
         if tgt != viewer_user_id:
             allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
             if not allowed:
                 raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
         _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
         qrows = await _fetch_create_questions(build_tier=effective_tier)
-        qmap = {int(r.get("id")): str(r.get("question_text") or "").strip() for r in (qrows or []) if r.get("id") is not None}
+        qmap = {
+            int(r.get("id")): str(r.get("question_text") or "").strip()
+            for r in (qrows or [])
+            if r.get("id") is not None
+        }
         title = qmap.get(int(qid))
         if not title:
             raise HTTPException(status_code=404, detail="Question not found")
+
         answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
         body = _public_create_body_from_answer_row(a)
         if not body:
             raise HTTPException(status_code=404, detail="Answer not found")
-        qk = _q_key_for_question_id(int(qid))
-        metrics = await _fetch_instance_metrics({iid})
-        m = metrics.get(iid) or {}
-        try:
-            views = int(m.get("views") or 0)
-        except Exception:
-            views = 0
-        try:
-            resonances = int(m.get("resonances") or 0)
-        except Exception:
-            resonances = 0
-        discoveries = 0
-        try:
-            discoveries = await _sb_count_rows(f"/rest/v1/{DISCOVERY_LOGS_TABLE}", params={"q_instance_id": f"eq.{iid}"})
-        except Exception as exc:
-            logger.warning("discoveries count failed (detail): %s", exc)
-        read_set = await _fetch_reads(viewer_user_id, {iid})
-        is_new = iid not in read_set
-        is_resonated = await _is_resonated(viewer_user_id, iid)
-        return QnaDetailResponse(title=title, body=body, q_key=qk, q_instance_id=iid, views=views, resonances=resonances, discoveries=int(discoveries or 0), is_new=is_new, is_resonated=bool(is_resonated))
+
+        return await _build_qna_detail_response(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=str(tgt),
+            q_instance_id=iid,
+            q_key=_q_key_for_question_id(int(qid)),
+            title=title,
+            body=body,
+            question_id=int(qid),
+            include_my_discovery_latest=bool(include_my_discovery_latest),
+            mark_viewed=bool(mark_viewed),
+        )
 
     @app.post("/mymodel/qna/view", response_model=QnaViewResponse)
     async def qna_view(
