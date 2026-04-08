@@ -1965,6 +1965,11 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             logger.exception("emotion_submit: input summary cache invalidate failed")
 
         try:
+            await invalidate_prefix(f"myweb_home_summary:{user_id}")
+        except Exception:
+            logger.exception("emotion_submit: myweb home summary cache invalidate failed")
+
+        try:
             global_summary_activity_date = _global_summary_activity_date_from_created_at(
                 inserted.get("created_at", created_at)
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections import Counter
@@ -7,10 +8,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Path
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _require_user_id
 from publish_governance import decide_myweb_report_publish
+from response_microcache import get_or_compute
 from supabase_client import sb_get
 
 try:
@@ -22,6 +25,7 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger("myweb_reads_api")
 JST = timezone(timedelta(hours=9))
+MYWEB_HOME_SUMMARY_CACHE_TTL_SECONDS = 10.0
 
 STRENGTH_SCORE: Dict[str, int] = {"weak": 1, "medium": 2, "strong": 3}
 JP_TO_KEY: Dict[str, str] = {
@@ -46,10 +50,20 @@ class MyWebMonthlySummary(BaseModel):
     error: str = ""
 
 
+class MyWebInputStatusSummary(BaseModel):
+    today_count: int = 0
+    week_count: int = 0
+    month_count: int = 0
+    streak_days: int = 0
+    last_input_at: Optional[str] = None
+    error: str = ""
+
+
 class MyWebHomeSummaryResponse(BaseModel):
     status: str = "ok"
     weekly: MyWebWeeklySummary
     monthly: MyWebMonthlySummary
+    input_status: MyWebInputStatusSummary = Field(default_factory=MyWebInputStatusSummary)
 
 
 class MyWebWeeklyDay(BaseModel):
@@ -335,17 +349,37 @@ async def _fetch_myweb_report_row(user_id: str, report_id: str, *, tier_str: str
     return published_row
 
 
-def register_myweb_read_routes(app: FastAPI) -> None:
-    @app.get("/myweb/home-summary", response_model=MyWebHomeSummaryResponse)
-    async def get_myweb_home_summary(
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> MyWebHomeSummaryResponse:
-        me = await _require_user_id(authorization)
+def _input_status_from_payload(payload: Dict[str, Any]) -> MyWebInputStatusSummary:
+    raw = payload if isinstance(payload, dict) else {}
+    return MyWebInputStatusSummary(
+        today_count=_coerce_int(raw.get("today_count")),
+        week_count=_coerce_int(raw.get("week_count")),
+        month_count=_coerce_int(raw.get("month_count")),
+        streak_days=_coerce_int(raw.get("streak_days")),
+        last_input_at=(str(raw.get("last_input_at") or "").strip() or None),
+        error="",
+    )
+
+
+async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return jsonable_encoder(
+            MyWebHomeSummaryResponse(
+                weekly=MyWebWeeklySummary(error="missing_user_id"),
+                monthly=MyWebMonthlySummary(error="missing_user_id"),
+                input_status=MyWebInputStatusSummary(error="missing_user_id"),
+            )
+        )
+
+    async def _build_payload() -> Dict[str, Any]:
+        from api_input_summary import get_input_summary_payload_for_user
+
         week_start, week_end = _jst_week_range_for_now()
         month_start, next_month_start = _jst_month_range_for_now()
 
-        weekly_rows = await _fetch_emotions(
-            me,
+        weekly_task = _fetch_emotions(
+            uid,
             select="id,emotions,created_at",
             start_iso=week_start,
             end_iso=week_end,
@@ -353,8 +387,8 @@ def register_myweb_read_routes(app: FastAPI) -> None:
             include_secret=True,
             ascending=False,
         )
-        monthly_rows = await _fetch_emotions(
-            me,
+        monthly_task = _fetch_emotions(
+            uid,
             select="id,created_at",
             start_iso=month_start,
             end_iso=next_month_start,
@@ -362,11 +396,56 @@ def register_myweb_read_routes(app: FastAPI) -> None:
             include_secret=True,
             ascending=False,
         )
+        input_status_task = get_input_summary_payload_for_user(uid)
 
-        return MyWebHomeSummaryResponse(
-            weekly=_summarize_weekly(weekly_rows),
-            monthly=MyWebMonthlySummary(count=len(monthly_rows), error=""),
+        weekly_rows_res, monthly_rows_res, input_status_res = await asyncio.gather(
+            weekly_task,
+            monthly_task,
+            input_status_task,
+            return_exceptions=True,
         )
+
+        if isinstance(weekly_rows_res, Exception):
+            logger.warning("myweb home summary: weekly summary load failed user_id=%s err=%r", uid, weekly_rows_res)
+            weekly = MyWebWeeklySummary(error="failed_to_load_weekly_summary")
+        else:
+            weekly = _summarize_weekly(weekly_rows_res)
+
+        if isinstance(monthly_rows_res, Exception):
+            logger.warning("myweb home summary: monthly summary load failed user_id=%s err=%r", uid, monthly_rows_res)
+            monthly = MyWebMonthlySummary(error="failed_to_load_monthly_summary")
+        else:
+            monthly = MyWebMonthlySummary(count=len(monthly_rows_res), error="")
+
+        if isinstance(input_status_res, Exception):
+            logger.warning("myweb home summary: input status load failed user_id=%s err=%r", uid, input_status_res)
+            input_status = MyWebInputStatusSummary(error="failed_to_load_input_status")
+        else:
+            input_status = _input_status_from_payload(input_status_res)
+
+        return jsonable_encoder(
+            MyWebHomeSummaryResponse(
+                weekly=weekly,
+                monthly=monthly,
+                input_status=input_status,
+            )
+        )
+
+    return await get_or_compute(
+        f"myweb_home_summary:{uid}",
+        MYWEB_HOME_SUMMARY_CACHE_TTL_SECONDS,
+        _build_payload,
+    )
+
+
+def register_myweb_read_routes(app: FastAPI) -> None:
+    @app.get("/myweb/home-summary", response_model=MyWebHomeSummaryResponse)
+    async def get_myweb_home_summary(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> MyWebHomeSummaryResponse:
+        me = await _require_user_id(authorization)
+        payload = await get_myweb_home_summary_payload_for_user(me)
+        return MyWebHomeSummaryResponse(**payload)
 
     @app.get("/myweb/reports/{report_id}/weekly-days", response_model=MyWebWeeklyDaysResponse)
     async def get_myweb_report_weekly_days(
