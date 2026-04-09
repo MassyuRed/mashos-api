@@ -7,7 +7,8 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _get_profile_row, _pick_row, _require_user_id
-from supabase_client import sb_auth_headers, sb_delete, sb_get, sb_patch, sb_post
+from account_delete_service import execute_account_delete
+from supabase_client import sb_auth_headers, sb_get, sb_patch, sb_post
 
 logger = logging.getLogger("account_lifecycle_api")
 
@@ -311,33 +312,17 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
     ) -> AccountDeleteResponse:
         me = await _require_user_id(authorization)
 
-        deleted_tables: List[str] = []
-        failed_tables: List[str] = []
-
-        async def _try_delete(label: str, path: str, params: Dict[str, str]) -> None:
-            try:
-                resp = await sb_delete(path, params=params, prefer="return=minimal", timeout=8.0)
-                if resp.status_code >= 300:
-                    raise RuntimeError(resp.text[:800])
-                deleted_tables.append(label)
-            except Exception as exc:
-                logger.warning("account/delete failed: %s %s", label, exc)
-                failed_tables.append(label)
-
-        await _try_delete("report_reads", "/rest/v1/report_reads", {"user_id": f"eq.{me}"})
-        await _try_delete("friend_requests", "/rest/v1/friend_requests", {"or": f"(requester_user_id.eq.{me},requested_user_id.eq.{me})"})
-        await _try_delete("friendships", "/rest/v1/friendships", {"or": f"(user_id.eq.{me},friend_user_id.eq.{me})"})
-        await _try_delete("myprofile_requests", "/rest/v1/myprofile_requests", {"or": f"(requester_user_id.eq.{me},requested_user_id.eq.{me})"})
-        await _try_delete("myprofile_links", "/rest/v1/myprofile_links", {"or": f"(owner_user_id.eq.{me},viewer_user_id.eq.{me})"})
-        await _try_delete("myprofile_reports", "/rest/v1/myprofile_reports", {"user_id": f"eq.{me}"})
-        await _try_delete("myweb_reports", "/rest/v1/myweb_reports", {"user_id": f"eq.{me}"})
-        await _try_delete("emotions", "/rest/v1/emotions", {"user_id": f"eq.{me}"})
-        await _try_delete("account_visibility_settings", "/rest/v1/account_visibility_settings", {"user_id": f"eq.{me}"})
-        await _try_delete("profiles", "/rest/v1/profiles", {"id": f"eq.{me}"})
+        try:
+            result = await execute_account_delete(me)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("account/delete failed user_id=%s err=%r", me, exc)
+            raise HTTPException(status_code=502, detail="Failed to delete account")
 
         return AccountDeleteResponse(
             user_id=me,
-            deleted_tables=deleted_tables,
-            failed_tables=failed_tables,
+            deleted_tables=result.deleted_tables,
+            failed_tables=[],
             sign_out_required=True,
         )

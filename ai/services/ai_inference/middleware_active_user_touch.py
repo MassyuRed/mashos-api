@@ -414,7 +414,7 @@ def install_active_user_touch_middleware(app: FastAPI) -> None:
     excluded_prefixes = _split_csv(
         os.getenv(
             "ACTIVE_USERS_MIDDLEWARE_EXCLUDED_PATH_PREFIXES",
-            "/healthz,/docs,/redoc,/openapi.json,/favicon.ico,/cron",
+            "/healthz,/docs,/redoc,/openapi.json,/favicon.ico,/cron,/account/delete",
         )
     )
 

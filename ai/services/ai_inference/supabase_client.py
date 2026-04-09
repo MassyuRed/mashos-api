@@ -326,6 +326,22 @@ async def sb_delete(
     )
 
 
+async def sb_delete_auth_user(
+    user_id: str,
+    *,
+    timeout: Optional[float] = None,
+) -> httpx.Response:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    return await sb_request(
+        "DELETE",
+        f"/auth/v1/admin/users/{uid}",
+        timeout=timeout,
+        headers=sb_service_role_headers_json(),
+    )
+
+
 async def sb_post_rpc(
     fn: str,
     payload: Dict[str, Any],
