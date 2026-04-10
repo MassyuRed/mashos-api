@@ -912,6 +912,9 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
 
 
 
+FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"
+
+
 async def _filter_viewer_ids_by_friend_notification_settings(
     *,
     viewer_user_ids: List[str],
@@ -927,6 +930,9 @@ async def _filter_viewer_ids_by_friend_notification_settings(
 
     Rule:
         - If a row exists with is_enabled=false for (viewer, owner), exclude that viewer.
+        - If a row exists with is_enabled=false for
+          (viewer, FRIEND_NOTIFICATION_GLOBAL_OWNER_ID), exclude that viewer
+          from all friend notifications.
         - Missing row => enabled (do not exclude).
     Backward compatibility:
         - If the table/columns are missing, filtering is skipped (treat as all enabled).
@@ -949,18 +955,24 @@ async def _filter_viewer_ids_by_friend_notification_settings(
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
     }
 
-    quoted = ",".join([f"\"{uid}\"" for uid in ids])
+    quoted_viewer_ids = ",".join([f"\"{uid}\"" for uid in ids])
+    quoted_owner_ids = ",".join(
+        [
+            f'"{owner_user_id}"',
+            f'"{FRIEND_NOTIFICATION_GLOBAL_OWNER_ID}"',
+        ]
+    )
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Fetch only disabled rows
+            # Fetch only disabled rows for this owner or the global friend-notification mute.
             resp = await client.get(
                 url,
                 headers=headers,
                 params={
                     "select": "viewer_user_id",
-                    "owner_user_id": f"eq.{owner_user_id}",
-                    "viewer_user_id": f"in.({quoted})",
+                    "owner_user_id": f"in.({quoted_owner_ids})",
+                    "viewer_user_id": f"in.({quoted_viewer_ids})",
                     "is_enabled": "eq.false",
                 },
             )

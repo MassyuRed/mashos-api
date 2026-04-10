@@ -11,13 +11,14 @@ Design
 - best-effort: enqueue に失敗しても API 成功/失敗は巻き込まない
 - coalescing: 同一 activity_date + timezone の refresh は job_key で 1 本へ自然に集約
 - debounce: 入力連打を吸収し、日次 aggregate の無駄な再生成を抑える
-- system actor: job の user_id は `system_global_summary` を採用し、監査用 actor は payload に積む
+- system actor: job の user_id は system 用の UUID を採用し、監査用 actor は payload に積む
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
@@ -43,11 +44,22 @@ def _env_truthy(name: str, default: str = "true") -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_uuid_or_none(value: Optional[str]) -> Optional[str]:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        return str(uuid.UUID(s))
+    except Exception:
+        return None
+
+
 GLOBAL_SUMMARY_REFRESH_JOB_TYPE = "refresh_global_summary_v1"
 GLOBAL_SUMMARY_REFRESH_JOB_KEY_PREFIX = "global_summary_refresh_v1"
 GLOBAL_SUMMARY_SYSTEM_USER_ID = (
-    os.getenv("ASTOR_GLOBAL_SUMMARY_SYSTEM_USER_ID") or "system_global_summary"
-).strip() or "system_global_summary"
+    _normalize_uuid_or_none(os.getenv("ASTOR_GLOBAL_SUMMARY_SYSTEM_USER_ID"))
+    or "00000000-0000-0000-0000-000000000000"
+)
 
 ASTOR_WORKER_QUEUE_ENABLED = _env_truthy("ASTOR_WORKER_QUEUE_ENABLED", "false")
 ASTOR_GLOBAL_SUMMARY_ENQUEUE_ENABLED = _env_truthy(
@@ -138,7 +150,7 @@ async def enqueue_global_summary_refresh(
         activity_date=activity_date,
         timezone_name=tz_name,
     )
-    system_uid = str(system_user_id or GLOBAL_SUMMARY_SYSTEM_USER_ID).strip() or GLOBAL_SUMMARY_SYSTEM_USER_ID
+    system_uid = _normalize_uuid_or_none(system_user_id) or GLOBAL_SUMMARY_SYSTEM_USER_ID
 
     if not trig:
         logger.warning(

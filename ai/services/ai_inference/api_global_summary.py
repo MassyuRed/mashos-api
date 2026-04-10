@@ -67,6 +67,10 @@ try:
 except Exception:
     GLOBAL_SUMMARY_READY_REFRESH_ENQUEUE_THROTTLE_SECONDS = 90.0
 
+GLOBAL_SUMMARY_MODE_DEFAULT = "default"
+GLOBAL_SUMMARY_MODE_READY_FIRST = "ready_first"
+GLOBAL_SUMMARY_MODE_SYNC = "sync"
+
 
 class GlobalSummaryResponse(BaseModel):
     date: str = Field(..., description="Target activity date in JST (YYYY-MM-DD)")
@@ -107,6 +111,17 @@ def _resolve_global_summary_date(raw_date: Optional[str]) -> str:
         return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
     except Exception as exc:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+
+
+def _normalize_global_summary_mode(raw_mode: Optional[str]) -> str:
+    s = str(raw_mode or "").strip().lower().replace("-", "_")
+    if not s:
+        return GLOBAL_SUMMARY_MODE_DEFAULT
+    if s in {"ready_first", "ready", "cache", "passive"}:
+        return GLOBAL_SUMMARY_MODE_READY_FIRST
+    if s in {"sync", "fresh", "force_refresh"}:
+        return GLOBAL_SUMMARY_MODE_SYNC
+    raise HTTPException(status_code=400, detail="mode must be ready_first or sync")
 
 
 def _to_text(value: Any) -> Optional[str]:
@@ -363,14 +378,17 @@ async def _fetch_current_day_synchronous_response(
 async def get_global_summary_payload(
     date: Optional[str] = None,
     tz: Optional[str] = GLOBAL_SUMMARY_RESPONSE_TZ,
+    mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     db_tz, response_tz = _normalize_global_summary_tz(tz)
     activity_date = _resolve_global_summary_date(date)
+    mode_key = _normalize_global_summary_mode(mode)
     ttl_seconds = GLOBAL_SUMMARY_TODAY_CACHE_TTL_SECONDS if _is_today_jst(activity_date) else GLOBAL_SUMMARY_HISTORY_CACHE_TTL_SECONDS
     cache_key = build_cache_key(
         f"global_summary:{activity_date}:{response_tz}",
         {
             "db_tz": db_tz,
+            "mode": mode_key,
             "ready_reader_id": id(fetch_latest_ready_global_summary),
             "fallback_reader_id": id(generate_global_summary_payload),
             "pytest_current_test": os.getenv("PYTEST_CURRENT_TEST") or None,
@@ -382,6 +400,41 @@ async def get_global_summary_payload(
             is_today = _is_today_jst(activity_date)
 
             if is_today:
+                if mode_key == GLOBAL_SUMMARY_MODE_READY_FIRST:
+                    ready_response = await _fetch_ready_summary_response(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        response_tz=response_tz,
+                    )
+                    if ready_response is not None:
+                        if _ready_summary_is_stale(ready_response.updated_at):
+                            _schedule_global_summary_ready_refresh(
+                                activity_date=activity_date,
+                                timezone_name=db_tz,
+                                reason="current_day_ready_first_stale_ready_used",
+                            )
+                        return jsonable_encoder(ready_response)
+
+                    fallback_response = await _fetch_migration_fallback_response(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        response_tz=response_tz,
+                    )
+                    if fallback_response is not None:
+                        _schedule_global_summary_ready_refresh(
+                            activity_date=activity_date,
+                            timezone_name=db_tz,
+                            reason="current_day_ready_first_legacy_fallback",
+                        )
+                        return jsonable_encoder(fallback_response)
+
+                    _schedule_global_summary_ready_refresh(
+                        activity_date=activity_date,
+                        timezone_name=db_tz,
+                        reason="current_day_ready_first_zero_used",
+                    )
+                    return jsonable_encoder(_global_summary_zero(activity_date=activity_date, response_tz=response_tz))
+
                 sync_response = await _fetch_current_day_synchronous_response(
                     activity_date=activity_date,
                     timezone_name=db_tz,
@@ -459,8 +512,9 @@ def register_global_summary_routes(app: FastAPI) -> None:
     async def global_summary(
         date: Optional[str] = Query(default=None, description="YYYY-MM-DD. Defaults to today in JST."),
         tz: Optional[str] = Query(default=GLOBAL_SUMMARY_RESPONSE_TZ, description="Currently fixed to +09:00 / Asia/Tokyo."),
+        mode: Optional[str] = Query(default=None, description="Set ready_first to skip the current-day synchronous refresh and prefer READY artifacts."),
     ) -> GlobalSummaryResponse:
-        payload = await get_global_summary_payload(date=date, tz=tz)
+        payload = await get_global_summary_payload(date=date, tz=tz, mode=mode)
         return GlobalSummaryResponse(**payload)
 
 
