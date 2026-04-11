@@ -421,12 +421,14 @@ def _build_input_feedback_comment(
     emotion_details: Sequence[Dict[str, Any]],
     memo: Optional[str],
     memo_action: Optional[str],
+    category: Optional[Sequence[str]] = None,
     selection_seed: Optional[str] = None,
 ) -> str:
     return _build_input_feedback_comment_from_templates(
         emotion_details=emotion_details,
         memo=memo,
         memo_action=memo_action,
+        category=category,
         selection_seed=selection_seed,
     )
 
@@ -2009,6 +2011,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             emotion_details=emotion_details,
             memo=payload.memo,
             memo_action=payload.memo_action,
+            category=normalized_categories,
             selection_seed=input_feedback_seed,
         )
 

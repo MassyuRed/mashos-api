@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -63,6 +64,12 @@ class InputFeedbackContext:
     @property
     def emotion_signature(self) -> str:
         return ",".join(self.emotion_types)
+
+
+@dataclass(frozen=True)
+class InputFeedbackSentence:
+    role: str
+    text: str
 
 
 _INPUT_FEEDBACK_TEXT_TEMPLATES: Dict[str, Dict[str, Any]] = {
@@ -640,7 +647,7 @@ def _stable_choice(
 
 
 
-def build_input_feedback_comment(
+def _build_observation_comment_from_templates(
     *,
     emotion_details: Sequence[Dict[str, Any]],
     memo: Optional[str],
@@ -674,3 +681,652 @@ def build_input_feedback_comment(
     ]
     resolved_seed = "|".join(seed_parts)
     return _stable_choice(options=candidates, selection_seed=resolved_seed)
+
+
+_EMOTION_FEELING_LABELS: Dict[str, str] = {
+    "喜び": "うれしさ",
+    "悲しみ": "悲しみ",
+    "怒り": "怒り",
+    "不安": "不安",
+    "平穏": "落ち着き",
+}
+
+_EMOTION_RECEIVE_TEMPLATES: Dict[str, Tuple[str, ...]] = {
+    "joy": (
+        "そのうれしさを受け取ります。",
+        "その明るさが戻っていたのですね。",
+    ),
+    "sadness": (
+        "その悲しみを受け取ります。",
+        "その悲しさが大きかったのですね。",
+    ),
+    "anger": (
+        "その怒りを受け取ります。",
+        "その引っかかりが大きかったのですね。",
+    ),
+    "anxiety": (
+        "その不安を受け取ります。",
+        "その気がかりが大きかったのですね。",
+    ),
+    "calm": (
+        "その落ち着きを受け取ります。",
+        "その静けさが戻っていたのですね。",
+    ),
+    "mixed": (
+        "その重なりを受け取ります。",
+        "その気持ちの重なりがあったのですね。",
+    ),
+}
+
+_CATEGORY_TOPIC_ANCHORS: Dict[str, str] = {
+    "生活": "生活のこと",
+    "仕事": "仕事のこと",
+    "趣味": "趣味のこと",
+    "人間関係": "人間関係のこと",
+    "恋愛": "恋愛のこと",
+    "健康": "健康のこと",
+    "学習": "学びのこと",
+    "価値観": "価値観のこと",
+    "人生": "人生のこと",
+}
+
+_CATEGORY_SELF_INSIGHT_ANCHORS: Dict[str, str] = {
+    "生活": "生活の中で",
+    "仕事": "仕事の中で",
+    "趣味": "趣味の中で",
+    "人間関係": "人間関係の中で",
+    "恋愛": "恋愛の中で",
+    "健康": "健康の中で",
+    "学習": "学びの中で",
+    "価値観": "価値観の中で",
+    "人生": "人生の中で",
+}
+
+_SAFE_EXACT_PHRASE_REPLACEMENTS: Dict[str, str] = {
+    "たのしかた": "たのしかった",
+    "たのしかっt": "たのしかった",
+    "かなしかた": "かなしかった",
+    "うれしかた": "うれしかった",
+    "こわかた": "こわかった",
+    "つらかた": "つらかった",
+    "しんどかた": "しんどかった",
+    "ほんとは": "本当は",
+    "ほんとうは": "本当は",
+}
+
+_GENERIC_SHORT_PHRASES = {
+    "むり",
+    "無理",
+    "やばい",
+    "しんどい",
+    "しんどかった",
+    "つらい",
+    "つらかった",
+    "悲しい",
+    "悲しかった",
+    "かなしかった",
+    "不安",
+    "不安だった",
+    "イライラ",
+    "イライラした",
+    "嫌",
+    "嫌だった",
+    "こわい",
+    "こわかった",
+    "嬉しい",
+    "うれしい",
+    "うれしかった",
+    "楽しかった",
+    "たのしかった",
+    "疲れた",
+    "さみしい",
+    "寂しい",
+    "もやもや",
+}
+
+_SELF_INSIGHT_CUE_RE = re.compile(r"(自分|本当は|と思った|と感じた|と気づいた|と認識した|と理解した|かもしれない)")
+
+
+def _normalize_categories(raw: Optional[Sequence[str]]) -> Tuple[str, ...]:
+    if not raw:
+        return ()
+
+    out: List[str] = []
+    seen = set()
+    for value in raw:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return tuple(out)
+
+
+def _primary_category(categories: Sequence[str]) -> str:
+    for category in categories or ():
+        text = str(category or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _sanitize_source_text(value: Optional[str]) -> str:
+    text = str(value or "")
+    text = text.replace("　", " ")
+    text = re.sub(r"[ 	]+", " ", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+
+def _strip_terminal_punctuation(text: str) -> str:
+    return str(text or "").strip().rstrip("。！？!?、, ")
+
+
+def _apply_safe_phrase_replacements(text: str) -> str:
+    base = _strip_terminal_punctuation(text)
+    if base in _SAFE_EXACT_PHRASE_REPLACEMENTS:
+        return _SAFE_EXACT_PHRASE_REPLACEMENTS[base]
+    return base
+
+
+def _combined_source_text(memo: Optional[str], memo_action: Optional[str]) -> str:
+    parts = []
+    memo_text = _sanitize_source_text(memo)
+    memo_action_text = _sanitize_source_text(memo_action)
+    if memo_text:
+        parts.append(memo_text)
+    if memo_action_text:
+        parts.append(memo_action_text)
+    return "。".join(parts)
+
+
+def _text_length_bucket(text: str) -> str:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    length = len(compact)
+    if length <= 25:
+        return "short"
+    if length <= 70:
+        return "medium"
+    return "long"
+
+
+def _split_source_clauses(text: str) -> List[str]:
+    base = _sanitize_source_text(text)
+    if not base:
+        return []
+    pieces = re.split(r"(?:[。！？!?\n]+|[、,]|けれども|けれど|けど|なのに|のに)", base)
+    out: List[str] = []
+    seen = set()
+    for piece in pieces:
+        current = _apply_safe_phrase_replacements(piece)
+        current = _strip_terminal_punctuation(current)
+        if not current:
+            continue
+        if current in seen:
+            continue
+        seen.add(current)
+        out.append(current)
+    return out
+
+
+def _looks_like_self_insight(text: str) -> bool:
+    return bool(_SELF_INSIGHT_CUE_RE.search(str(text or "")))
+
+
+def _needs_category_grounding(text: str, *, self_insight: bool) -> bool:
+    current = _strip_terminal_punctuation(text)
+    if not current:
+        return True
+    if current in _GENERIC_SHORT_PHRASES:
+        return True
+    if len(current) <= 4 and not _looks_like_self_insight(current):
+        return True
+    if self_insight and (len(current) <= 6 and not _looks_like_self_insight(current)):
+        return True
+    return False
+
+
+def _pick_repetition_clauses(
+    text: str,
+    *,
+    self_insight: bool,
+    bucket: str,
+) -> List[str]:
+    clauses = _split_source_clauses(text)
+    if not clauses:
+        return []
+
+    if self_insight:
+        cue_clauses = [clause for clause in clauses if _looks_like_self_insight(clause)]
+        working = cue_clauses or clauses
+    else:
+        working = clauses
+
+    if bucket in {"short", "medium"}:
+        return working[:1]
+
+    picked: List[str] = []
+    first = working[0]
+    picked.append(first)
+    for clause in reversed(working):
+        if clause != first:
+            picked.append(clause)
+            break
+    return picked[:2]
+
+
+def _category_topic_anchor(category: str) -> str:
+    return _CATEGORY_TOPIC_ANCHORS.get(str(category or "").strip(), "")
+
+
+def _category_self_insight_anchor(category: str) -> str:
+    return _CATEGORY_SELF_INSIGHT_ANCHORS.get(str(category or "").strip(), "")
+
+
+def _is_self_insight_context(ctx: InputFeedbackContext) -> bool:
+    return ctx.dominant_type == SELF_INSIGHT_EMOTION_TYPE
+
+
+def _emotion_label_for_sentence(emotion_type: str) -> str:
+    return _EMOTION_FEELING_LABELS.get(str(emotion_type or "").strip(), str(emotion_type or "").strip())
+
+
+def _sorted_emotion_labels(ctx: InputFeedbackContext) -> List[str]:
+    labels = []
+    for emotion_type in ctx.emotion_types:
+        if emotion_type == SELF_INSIGHT_EMOTION_TYPE:
+            continue
+        label = _emotion_label_for_sentence(emotion_type)
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _build_emotion_echo_sentence(ctx: InputFeedbackContext) -> str:
+    labels = _sorted_emotion_labels(ctx)
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return f"{labels[0]}があったのですね。"
+    if len(labels) == 2:
+        return f"{labels[0]}と{labels[1]}が重なっていたのですね。"
+    return "いくつかの気持ちが重なっていたのですね。"
+
+
+def _build_receive_sentence(ctx: InputFeedbackContext, selection_seed: str) -> str:
+    key = "mixed" if ctx.multiple else (_emotion_key(ctx.dominant_type) or "mixed")
+    candidates = _EMOTION_RECEIVE_TEMPLATES.get(key) or _EMOTION_RECEIVE_TEMPLATES["mixed"]
+    return _stable_choice(options=candidates, selection_seed=selection_seed)
+
+
+def _build_normal_category_fallback(*, category: str, ctx: InputFeedbackContext) -> str:
+    anchor = _category_topic_anchor(category)
+    if not anchor:
+        labels = _sorted_emotion_labels(ctx)
+        if labels:
+            if len(labels) == 1:
+                return f"{labels[0]}が大きかったのですね。"
+            if len(labels) == 2:
+                return f"{labels[0]}と{labels[1]}が重なっていたのですね。"
+        return "いまの気持ちが大きかったのですね。"
+
+    key = "mixed" if ctx.multiple else (_emotion_key(ctx.dominant_type) or "mixed")
+    if key == "sadness":
+        return f"{anchor}で、悲しさが大きかったのですね。"
+    if key == "anxiety":
+        return f"{anchor}で、不安が大きかったのですね。"
+    if key == "anger":
+        return f"{anchor}で、引っかかりが大きかったのですね。"
+    if key == "joy":
+        return f"{anchor}で、うれしい気持ちがあったのですね。"
+    if key == "calm":
+        return f"{anchor}で、落ち着きたい気持ちがあったのですね。"
+    return f"{anchor}で、いくつかの気持ちが重なっていたのですね。"
+
+
+def _render_normal_echo_sentence(*, phrase: str, category: str, ctx: InputFeedbackContext) -> str:
+    current = _apply_safe_phrase_replacements(phrase)
+    current = _strip_terminal_punctuation(current)
+    if not current or _needs_category_grounding(current, self_insight=False):
+        return _build_normal_category_fallback(category=category, ctx=ctx)
+    return f"{current}のですね。"
+
+
+def _build_self_insight_category_fallback(category: str) -> str:
+    anchor = _category_self_insight_anchor(category)
+    if anchor:
+        return f"{anchor}、自分のことを見つめたのですね。"
+    return "自分のことを見つめたのですね。"
+
+
+def _render_self_insight_echo_sentence(*, phrase: str, category: str) -> str:
+    current = _apply_safe_phrase_replacements(phrase)
+    current = _strip_terminal_punctuation(current)
+    anchor = _category_self_insight_anchor(category)
+    prefix = f"{anchor}、" if anchor else ""
+
+    if not current or _needs_category_grounding(current, self_insight=True):
+        return _build_self_insight_category_fallback(category)
+
+    if current.startswith("自分は"):
+        if re.search(r"(と思った|と感じた|と気づいた|と認識した|と理解した)$", current):
+            return f"{prefix}{current}のですね。"
+        if current.endswith("かもしれない"):
+            return f"{prefix}{current}と感じたのですね。"
+        return f"{prefix}{current}と認識したのですね。"
+
+    if current.startswith("本当は"):
+        if re.search(r"(と思った|と感じた|と気づいた)$", current):
+            return f"{prefix}{current}のですね。"
+        return f"{prefix}{current}のだと気づいたのですね。"
+
+    if re.search(r"(と思った|と感じた|と気づいた|と認識した|と理解した)$", current):
+        return f"{prefix}{current}のですね。"
+
+    return f"{prefix}{current}と感じたのですね。"
+
+
+def _build_normal_agreement_sentence(*, phrase: str, category: str, ctx: InputFeedbackContext) -> str:
+    category_anchor = _category_topic_anchor(category)
+    key = "mixed" if ctx.multiple else (_emotion_key(ctx.dominant_type) or "mixed")
+
+    if category_anchor:
+        if key == "joy":
+            return f"{category_anchor}だと、うれしくなりますよね。"
+        if key == "sadness":
+            return f"{category_anchor}だと、悲しく感じますよね。"
+        if key == "anxiety":
+            return f"{category_anchor}だと、不安になりますよね。"
+        if key == "anger":
+            return f"{category_anchor}だと、引っかかりも残りますよね。"
+        if key == "calm":
+            return f"{category_anchor}だと、ほっとしますよね。"
+        return f"{category_anchor}だと、気持ちが揺れますよね。"
+
+    if key == "joy":
+        return "そう感じるとうれしいですよね。"
+    if key == "sadness":
+        return "そう感じるのは自然ですよね。"
+    if key == "anxiety":
+        return "そう不安になるのも自然ですよね。"
+    if key == "anger":
+        return "そう引っかかるのも自然ですよね。"
+    if key == "calm":
+        return "そういうときは、ほっとしますよね。"
+    return "いくつかの気持ちが重なることもありますよね。"
+
+
+def _build_self_insight_receive_sentence(*, phrase: str, selection_seed: str) -> str:
+    current = _strip_terminal_punctuation(phrase)
+    if "本当は" in current or "気づ" in current:
+        candidates = (
+            "そうやって自分の状態を受け取ったのですね。",
+            "その気づきを言葉にしたのですね。",
+        )
+    elif current.startswith("自分は"):
+        candidates = (
+            "そうやって自分を理解したのですね。",
+            "そうやって自分の反応を見つめたのですね。",
+        )
+    else:
+        candidates = (
+            "そうやって自分を見つめたのですね。",
+            "その見方を言葉にしたのですね。",
+        )
+    return _stable_choice(options=candidates, selection_seed=selection_seed)
+
+
+def _build_self_insight_agreement_sentence(*, phrase: str, category: str) -> str:
+    current = _strip_terminal_punctuation(phrase)
+    if "本当は" in current or "気づ" in current:
+        return "そこに気づくのは重たいことですよね。"
+    if current.startswith("自分は") or _looks_like_self_insight(current):
+        return "そう認識するのは自然ですよね。"
+    anchor = _category_self_insight_anchor(category)
+    if anchor:
+        return f"{anchor}で、そう感じることもありますよね。"
+    return "そう理解したくなるのも無理はないですよね。"
+
+
+def _build_long_summary_sentence(*, ctx: InputFeedbackContext, self_insight: bool, clause_count: int) -> str:
+    if clause_count <= 1:
+        return ""
+    if self_insight:
+        return "その見方が、自分の中で大きかったのですね。"
+    if ctx.multiple:
+        return "いくつかの気持ちが重なっていたのですね。"
+    return "その出来事が、大きく残っていたのですね。"
+
+
+def _ensure_sentence(text: str) -> str:
+    current = str(text or "").strip()
+    if not current:
+        return ""
+    if current[-1] not in "。！？!?":
+        current = f"{current}。"
+    return current
+
+
+def _smooth_repeated_endings(sentences: List[str]) -> List[str]:
+    out: List[str] = []
+    prev = ""
+    prev_prev = ""
+    for sentence in sentences:
+        current = _ensure_sentence(sentence)
+        if not current:
+            continue
+
+        if prev.endswith("のですね。") and current.endswith("のですね。"):
+            current = current.replace("があったのですね。", "があったようですね。")
+            current = current.replace("が重なっていたのですね。", "が重なっていたようですね。")
+            if current.endswith("のですね。"):
+                current = current[:-5] + "ようですね。"
+
+        if prev.endswith("ですよね。") and current.endswith("ですよね。"):
+            if "自然ですよね。" not in current:
+                current = current[:-5] + "のも自然ですよね。"
+            else:
+                current = current[:-5] + "こともありますよね。"
+
+        if prev.endswith("受け取ります。") and current.endswith("受け取ります。"):
+            current = current.replace("受け取ります。", "があったのですね。")
+
+        if prev_prev and prev_prev == current:
+            continue
+
+        out.append(current)
+        prev_prev = prev
+        prev = current
+    return out
+
+
+def _dedupe_semantically_close_sentences(sentences: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for sentence in sentences:
+        normalized = re.sub(r"[。！？!?、,\s]", "", sentence)
+        normalized = normalized.replace("ようですね", "のですね")
+        normalized = normalized.replace("自然ですよね", "ですよね")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(sentence)
+    return out
+
+
+def _render_feedback_parts(parts: Sequence[InputFeedbackSentence]) -> str:
+    sentences = [part.text for part in parts if str(part.text or "").strip()]
+    sentences = _dedupe_semantically_close_sentences(sentences)
+    sentences = _smooth_repeated_endings(sentences)
+    return "".join(sentences).strip()
+
+
+def _build_normal_feedback_parts(
+    *,
+    ctx: InputFeedbackContext,
+    memo: Optional[str],
+    memo_action: Optional[str],
+    categories: Sequence[str],
+    selection_seed: str,
+    observation_comment: str,
+) -> List[InputFeedbackSentence]:
+    parts: List[InputFeedbackSentence] = []
+    source_text = _combined_source_text(memo, memo_action)
+    primary_category = _primary_category(categories)
+
+    if source_text:
+        bucket = _text_length_bucket(source_text)
+        clauses = _pick_repetition_clauses(source_text, self_insight=False, bucket=bucket)
+        for clause in clauses:
+            sentence = _render_normal_echo_sentence(phrase=clause, category=primary_category, ctx=ctx)
+            if sentence:
+                parts.append(InputFeedbackSentence(role="echo", text=sentence))
+
+        emotion_sentence = _build_emotion_echo_sentence(ctx)
+        if emotion_sentence:
+            parts.append(InputFeedbackSentence(role="emotion", text=emotion_sentence))
+
+        if bucket == "long":
+            summary_sentence = _build_long_summary_sentence(
+                ctx=ctx,
+                self_insight=False,
+                clause_count=len(clauses),
+            )
+            if summary_sentence:
+                parts.append(InputFeedbackSentence(role="summary", text=summary_sentence))
+
+        agreement_phrase = clauses[-1] if clauses else source_text
+        agreement_sentence = _build_normal_agreement_sentence(
+            phrase=agreement_phrase,
+            category=primary_category,
+            ctx=ctx,
+        )
+        if agreement_sentence:
+            parts.append(InputFeedbackSentence(role="agreement", text=agreement_sentence))
+    else:
+        emotion_sentence = _build_emotion_echo_sentence(ctx)
+        if emotion_sentence:
+            parts.append(InputFeedbackSentence(role="emotion", text=emotion_sentence))
+        receive_sentence = _build_receive_sentence(ctx, selection_seed)
+        if receive_sentence:
+            parts.append(InputFeedbackSentence(role="receive", text=receive_sentence))
+
+    if observation_comment:
+        parts.append(InputFeedbackSentence(role="observation", text=observation_comment))
+
+    return parts
+
+
+def _build_self_insight_feedback_parts(
+    *,
+    ctx: InputFeedbackContext,
+    memo: Optional[str],
+    memo_action: Optional[str],
+    categories: Sequence[str],
+    selection_seed: str,
+) -> List[InputFeedbackSentence]:
+    parts: List[InputFeedbackSentence] = []
+    source_text = _combined_source_text(memo, memo_action)
+    primary_category = _primary_category(categories)
+    bucket = _text_length_bucket(source_text) if source_text else "short"
+    clauses = _pick_repetition_clauses(source_text, self_insight=True, bucket=bucket)
+
+    if clauses:
+        first_sentence = _render_self_insight_echo_sentence(phrase=clauses[0], category=primary_category)
+        if first_sentence:
+            parts.append(InputFeedbackSentence(role="echo", text=first_sentence))
+        if bucket == "long" and len(clauses) >= 2:
+            second_sentence = _render_self_insight_echo_sentence(phrase=clauses[-1], category="")
+            if second_sentence and second_sentence != first_sentence:
+                parts.append(InputFeedbackSentence(role="echo", text=second_sentence))
+    else:
+        parts.append(
+            InputFeedbackSentence(
+                role="echo",
+                text=_build_self_insight_category_fallback(primary_category),
+            )
+        )
+
+    key_phrase = clauses[-1] if clauses else source_text
+    receive_sentence = _build_self_insight_receive_sentence(
+        phrase=key_phrase,
+        selection_seed=selection_seed,
+    )
+    if receive_sentence:
+        parts.append(InputFeedbackSentence(role="receive", text=receive_sentence))
+
+    if bucket == "long":
+        summary_sentence = _build_long_summary_sentence(
+            ctx=ctx,
+            self_insight=True,
+            clause_count=len(clauses),
+        )
+        if summary_sentence:
+            parts.append(InputFeedbackSentence(role="summary", text=summary_sentence))
+
+    agreement_sentence = _build_self_insight_agreement_sentence(
+        phrase=key_phrase,
+        category=primary_category,
+    )
+    if agreement_sentence:
+        parts.append(InputFeedbackSentence(role="agreement", text=agreement_sentence))
+
+    return parts
+
+
+def build_input_feedback_comment(
+    *,
+    emotion_details: Sequence[Dict[str, Any]],
+    memo: Optional[str],
+    memo_action: Optional[str],
+    category: Optional[Sequence[str]] = None,
+    selection_seed: Optional[str] = None,
+    template_id: str = DEFAULT_INPUT_FEEDBACK_TEXT_TEMPLATE_ID,
+) -> str:
+    ctx = _build_context(
+        emotion_details=emotion_details,
+        memo=memo,
+        memo_action=memo_action,
+    )
+    if ctx is None:
+        return ""
+
+    categories = _normalize_categories(category)
+    resolved_seed = "|".join(
+        [
+            str(selection_seed or "").strip(),
+            ctx.dominant_type,
+            ctx.dominant_strength,
+            ctx.memo_mode,
+            ctx.emotion_signature,
+            template_id,
+            ",".join(categories),
+        ]
+    )
+
+    if _is_self_insight_context(ctx):
+        parts = _build_self_insight_feedback_parts(
+            ctx=ctx,
+            memo=memo,
+            memo_action=memo_action,
+            categories=categories,
+            selection_seed=resolved_seed,
+        )
+        return _render_feedback_parts(parts)
+
+    observation_comment = _build_observation_comment_from_templates(
+        emotion_details=emotion_details,
+        memo=memo,
+        memo_action=memo_action,
+        selection_seed=selection_seed,
+        template_id=template_id,
+    )
+    parts = _build_normal_feedback_parts(
+        ctx=ctx,
+        memo=memo,
+        memo_action=memo_action,
+        categories=categories,
+        selection_seed=resolved_seed,
+        observation_comment=observation_comment,
+    )
+    return _render_feedback_parts(parts)
