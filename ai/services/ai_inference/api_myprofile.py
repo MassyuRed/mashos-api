@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
@@ -502,6 +503,26 @@ def _extract_saved_skip_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
     history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
     s = str(history.get("skip_reason") or cj.get("skip_reason") or "").strip()
     return s or None
+
+
+SELF_STRUCTURE_MONTHLY_TITLE_BASE = "自己構造レポート"
+_SELF_STRUCTURE_MONTHLY_LABEL_PATTERN = re.compile(r"自己構造分析レポート[（(]月次[）)]")
+
+
+def _sanitize_self_structure_report_text(text: Any) -> str:
+    s = str(text or "")
+    if not s:
+        return ""
+    return _SELF_STRUCTURE_MONTHLY_LABEL_PATTERN.sub("自己構造分析レポート", s)
+
+
+def _sanitize_self_structure_monthly_title(title: Any) -> str:
+    s = str(title or "").strip()
+    if not s:
+        return SELF_STRUCTURE_MONTHLY_TITLE_BASE
+    if re.match(r"^自己構造レポート[：:]", s):
+        return SELF_STRUCTURE_MONTHLY_TITLE_BASE
+    return s
 
 
 def _build_latest_version_key(row: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -1807,7 +1828,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 period_start=period_start_value,
                 period_end=period_end_value,
                 title=(row.get("title") if row else None),
-                content_text=(row.get("content_text") if row else None),
+                content_text=_sanitize_self_structure_report_text(
+                    row.get("content_text") if row else None
+                ),
                 meta=report_meta,
                 has_visible_content=_extract_saved_has_visible_content(row) if row else False,
                 skip_reason=_extract_saved_skip_reason(row) if row else None,
@@ -1939,7 +1962,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     report_type="latest",
                     distribution_utc=now.isoformat().replace("+00:00", "Z"),
                 )
-                text = str(text or "").strip()
+                text = _sanitize_self_structure_report_text(str(text or "").strip())
                 if not text:
                     raise RuntimeError("report text is empty")
 
@@ -2184,8 +2207,7 @@ def register_myprofile_routes(app: FastAPI) -> None:
             or dist_jst.date().isoformat()
         )
 
-        title_range = f"{_format_jst_md(period_start_utc)} ～ {_format_jst_md(period_end_utc)}"
-        title = f"自己構造レポート：{title_range}（{period_days}日分）"
+        title = SELF_STRUCTURE_MONTHLY_TITLE_BASE
 
         # ---- helper: fetch existing row for this period ----
         async def _fetch_report_for_period(ps: str, pe: str) -> Optional[Dict[str, Any]]:
@@ -2278,8 +2300,12 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 period_start=period_start_iso,
                 period_end=period_end_iso,
                 generated_at=generated_at_value or (row.get("generated_at") if row else None) or (row.get("updated_at") if row else None),
-                title=title_override or (row.get("title") if row else None) or title,
-                content_text=text_override if text_override is not None else (row.get("content_text") if row else None),
+                title=_sanitize_self_structure_monthly_title(
+                    title_override or (row.get("title") if row else None) or title
+                ),
+                content_text=_sanitize_self_structure_report_text(
+                    text_override if text_override is not None else (row.get("content_text") if row else None)
+                ),
                 meta=report_meta,
                 history_saved=history_saved,
                 has_visible_content=has_visible,
@@ -2398,7 +2424,9 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 logger.error("Failed to build monthly MyProfile report: %s", exc)
                 raise HTTPException(status_code=500, detail="Failed to generate monthly MyProfile report")
 
-            report_text = str(report_text or "").strip()
+            report_text = _sanitize_self_structure_report_text(
+                str(report_text or "").strip()
+            )
             if not report_text:
                 raise HTTPException(status_code=500, detail="Monthly MyProfile report text was empty")
 
