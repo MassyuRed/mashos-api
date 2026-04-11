@@ -3821,18 +3821,18 @@ def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, 
 
     if report_type == "daily":
         title_date = _format_jst_md(ps)
-        title = f"日報：{title_date}（1日分）"
+        title = f"日報：{title_date}"
         meta = {"titleDate": title_date}
     elif report_type == "weekly":
         s = _format_jst_md(ps)
         e = _format_jst_md(pe)
         title_range = f"{s} ～ {e}"
-        title = f"週報：{title_range}（7日分）"
+        title = f"週報：{title_range}"
         meta = {"titleRange": title_range}
     elif report_type == "monthly":
         end_jst = pe.astimezone(JST)
         title_month = f"{end_jst.year}/{end_jst.month}"
-        title = f"月報：{title_month}（28日分）"
+        title = f"月報：{title_month}"
         meta = {"titleMonth": title_month}
     else:
         raise HTTPException(status_code=400, detail="Unsupported report type for snapshot-driven generation")
@@ -3922,21 +3922,21 @@ def _build_target_period(report_type: str, now_utc: datetime) -> TargetPeriod:
     if report_type == "daily":
         period_start_utc = dist_utc - DAY
         title_date = _format_jst_md(period_start_utc)
-        title = f"日報：{title_date}（1日分）"
+        title = f"日報：{title_date}"
         meta = {"titleDate": title_date}
     elif report_type == "weekly":
         period_start_utc = dist_utc - 7 * DAY
         s = _format_jst_md(period_start_utc)
         e = _format_jst_md(period_end_utc)
         title_range = f"{s} ～ {e}"
-        title = f"週報：{title_range}（7日分）"
+        title = f"週報：{title_range}"
         meta = {"titleRange": title_range}
     else:
         # monthly (28 days)
         period_start_utc = dist_utc - 28 * DAY
         end_jst = period_end_utc.astimezone(JST)
         title_month = f"{end_jst.year}/{end_jst.month}"
-        title = f"月報：{title_month}（28日分）"
+        title = f"月報：{title_month}"
         meta = {"titleMonth": title_month}
 
     # ISO: always UTC with milliseconds like JS's toISOString()
