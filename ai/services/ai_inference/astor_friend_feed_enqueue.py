@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Shared helper for enqueuing ASTOR friend feed refresh jobs.
+"""Shared helper for enqueuing ASTOR emotion log feed refresh jobs.
 
 Purpose
 -------
-emotion submit などのイベントから、Friend tab の viewer 単位 feed 再生成ジョブ
+emotion submit などのイベントから、EmotionLog の viewer 単位 feed 再生成ジョブ
 `refresh_friend_feed_v1` を安全に enqueue するための共通ヘルパー。
 
 Design
@@ -12,6 +12,12 @@ Design
 - coalescing: 同一 viewer_user_id の feed refresh は job_key で 1 本へ自然に集約
 - debounce: 連続入力を吸収し、不要な再生成を抑える
 - per-viewer feed: job の user_id は viewer_user_id を採用し、worker 側でそのまま扱える
+
+Notes
+-----
+- worker / queue / DB 互換のため、job_type・job_key_prefix・env 名は legacy の
+  ``friend_*`` を維持する。
+- このモジュール名も互換優先で ``astor_friend_feed_enqueue.py`` のまま残す。
 """
 
 from __future__ import annotations
@@ -45,8 +51,14 @@ try:
 except Exception:
     ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = 10
 
+# Canonical aliases for the follow / emotion-log implementation.
+EMOTION_LOG_FEED_REFRESH_JOB_TYPE = FRIEND_FEED_REFRESH_JOB_TYPE
+EMOTION_LOG_FEED_REFRESH_JOB_KEY_PREFIX = FRIEND_FEED_REFRESH_JOB_KEY_PREFIX
+ASTOR_EMOTION_LOG_FEED_ENQUEUE_ENABLED = ASTOR_FRIEND_FEED_ENQUEUE_ENABLED
+ASTOR_EMOTION_LOG_FEED_DEBOUNCE_SECONDS = ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS
 
-async def enqueue_friend_feed_refresh(
+
+async def enqueue_emotion_log_feed_refresh(
     *,
     viewer_user_id: str,
     trigger: str,
@@ -57,12 +69,12 @@ async def enqueue_friend_feed_refresh(
     owner_user_id: Optional[str] = None,
     extra_payload: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Enqueue a Friend feed refresh job for one viewer user.
+    """Enqueue an EmotionLog feed refresh job for one viewer user.
 
     Parameters
     ----------
     viewer_user_id:
-        User whose Friend tab feed should be regenerated.
+        User whose EmotionLog feed should be regenerated.
     trigger:
         Source event name, e.g. ``emotion_submit``.
     requested_at:
@@ -89,18 +101,18 @@ async def enqueue_friend_feed_refresh(
     owner_uid = str(owner_user_id or "").strip() or None
 
     if not viewer_uid:
-        logger.warning("friend feed enqueue skipped: empty viewer_user_id")
+        logger.warning("emotion log feed enqueue skipped: empty viewer_user_id")
         return False
     if not trig:
         logger.warning(
-            "friend feed enqueue skipped: empty trigger (viewer_user_id=%s)",
+            "emotion log feed enqueue skipped: empty trigger (viewer_user_id=%s)",
             viewer_uid,
         )
         return False
 
     if not ASTOR_WORKER_QUEUE_ENABLED:
         logger.debug(
-            "friend feed enqueue skipped: ASTOR_WORKER_QUEUE_ENABLED=false (viewer_user_id=%s trigger=%s)",
+            "emotion log feed enqueue skipped: ASTOR_WORKER_QUEUE_ENABLED=false (viewer_user_id=%s trigger=%s)",
             viewer_uid,
             trig,
         )
@@ -108,7 +120,7 @@ async def enqueue_friend_feed_refresh(
 
     if not ASTOR_FRIEND_FEED_ENQUEUE_ENABLED:
         logger.debug(
-            "friend feed enqueue skipped: ASTOR_FRIEND_FEED_ENQUEUE_ENABLED=false (viewer_user_id=%s trigger=%s)",
+            "emotion log feed enqueue skipped: ASTOR_FRIEND_FEED_ENQUEUE_ENABLED=false (viewer_user_id=%s trigger=%s)",
             viewer_uid,
             trig,
         )
@@ -153,8 +165,8 @@ async def enqueue_friend_feed_refresh(
         from astor_job_queue import enqueue_job
 
         await enqueue_job(
-            job_key=f"{FRIEND_FEED_REFRESH_JOB_KEY_PREFIX}:{viewer_uid}",
-            job_type=FRIEND_FEED_REFRESH_JOB_TYPE,
+            job_key=f"{EMOTION_LOG_FEED_REFRESH_JOB_KEY_PREFIX}:{viewer_uid}",
+            job_type=EMOTION_LOG_FEED_REFRESH_JOB_TYPE,
             user_id=viewer_uid,
             payload=payload,
             priority=int(priority or 18),
@@ -163,7 +175,7 @@ async def enqueue_friend_feed_refresh(
         return True
     except Exception as exc:
         logger.error(
-            "friend feed enqueue failed (viewer_user_id=%s trigger=%s owner_user_id=%s): %s",
+            "emotion log feed enqueue failed (viewer_user_id=%s trigger=%s owner_user_id=%s): %s",
             viewer_uid,
             trig,
             owner_uid or "",
@@ -172,7 +184,7 @@ async def enqueue_friend_feed_refresh(
         return False
 
 
-async def enqueue_friend_feed_refresh_many(
+async def enqueue_emotion_log_feed_refresh_many(
     *,
     viewer_user_ids: Iterable[str],
     trigger: str,
@@ -183,7 +195,7 @@ async def enqueue_friend_feed_refresh_many(
     owner_user_id: Optional[str] = None,
     extra_payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, bool]:
-    """Enqueue Friend feed refresh jobs for multiple viewer users.
+    """Enqueue EmotionLog feed refresh jobs for multiple viewer users.
 
     Duplicate / empty viewer_user_ids are ignored. The same ``requested_at`` and
     ``trigger`` are reused for all viewers so a single owner event can fan out
@@ -197,7 +209,7 @@ async def enqueue_friend_feed_refresh_many(
         if not viewer_uid or viewer_uid in seen:
             continue
         seen.add(viewer_uid)
-        results[viewer_uid] = await enqueue_friend_feed_refresh(
+        results[viewer_uid] = await enqueue_emotion_log_feed_refresh(
             viewer_user_id=viewer_uid,
             trigger=trigger,
             requested_at=requested_at,
@@ -210,12 +222,66 @@ async def enqueue_friend_feed_refresh_many(
     return results
 
 
+async def enqueue_friend_feed_refresh(
+    *,
+    viewer_user_id: str,
+    trigger: str,
+    requested_at: Optional[str] = None,
+    debounce: bool = True,
+    debounce_seconds: Optional[int] = None,
+    priority: int = 18,
+    owner_user_id: Optional[str] = None,
+    extra_payload: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Backward-compatible wrapper for the legacy friend-named API."""
+    return await enqueue_emotion_log_feed_refresh(
+        viewer_user_id=viewer_user_id,
+        trigger=trigger,
+        requested_at=requested_at,
+        debounce=debounce,
+        debounce_seconds=debounce_seconds,
+        priority=priority,
+        owner_user_id=owner_user_id,
+        extra_payload=extra_payload,
+    )
+
+
+async def enqueue_friend_feed_refresh_many(
+    *,
+    viewer_user_ids: Iterable[str],
+    trigger: str,
+    requested_at: Optional[str] = None,
+    debounce: bool = True,
+    debounce_seconds: Optional[int] = None,
+    priority: int = 18,
+    owner_user_id: Optional[str] = None,
+    extra_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, bool]:
+    """Backward-compatible wrapper for the legacy friend-named bulk API."""
+    return await enqueue_emotion_log_feed_refresh_many(
+        viewer_user_ids=viewer_user_ids,
+        trigger=trigger,
+        requested_at=requested_at,
+        debounce=debounce,
+        debounce_seconds=debounce_seconds,
+        priority=priority,
+        owner_user_id=owner_user_id,
+        extra_payload=extra_payload,
+    )
+
+
 __all__ = [
     "FRIEND_FEED_REFRESH_JOB_TYPE",
     "FRIEND_FEED_REFRESH_JOB_KEY_PREFIX",
+    "EMOTION_LOG_FEED_REFRESH_JOB_TYPE",
+    "EMOTION_LOG_FEED_REFRESH_JOB_KEY_PREFIX",
     "ASTOR_WORKER_QUEUE_ENABLED",
     "ASTOR_FRIEND_FEED_ENQUEUE_ENABLED",
     "ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS",
+    "ASTOR_EMOTION_LOG_FEED_ENQUEUE_ENABLED",
+    "ASTOR_EMOTION_LOG_FEED_DEBOUNCE_SECONDS",
+    "enqueue_emotion_log_feed_refresh",
+    "enqueue_emotion_log_feed_refresh_many",
     "enqueue_friend_feed_refresh",
     "enqueue_friend_feed_refresh_many",
 ]

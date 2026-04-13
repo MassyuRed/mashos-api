@@ -8,7 +8,7 @@ Emotion Submit API for Cocolon
 - React Native アプリからの感情入力を受け取る
 - Supabase Auth の JWT(Access Token) を検証して user_id を確定する
 - Supabase の emotions テーブルに1件保存する
-- （将来用）friend_emotion_feed への通知作成の土台を用意しておく
+- （運用上は legacy 名の friend_emotion_feed テーブルを使って）感情ログ通知を作成する
 
 設計メモ:
 - 認証:
@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 from astor_account_status_enqueue import enqueue_account_status_refresh
-from astor_friend_feed_enqueue import enqueue_friend_feed_refresh_many
+from astor_friend_feed_enqueue import enqueue_emotion_log_feed_refresh_many
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
 from astor_snapshot_enqueue import ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS
 
@@ -276,7 +276,7 @@ EMOTION_INPUT_CATEGORY_OPTIONS: Tuple[str, ...] = (
     "人生",
 )
 
-# 「自己理解」はプライベート用途：フレンド通知/フレンドログ（friend_emotion_feed）対象外
+# 「自己理解」はプライベート用途：感情通知/感情ログ（legacy table: friend_emotion_feed）対象外
 SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 
 def _ensure_supabase_config() -> None:
@@ -803,15 +803,15 @@ class EmotionSubmitRequest(BaseModel):
     )
     is_secret: Optional[bool] = Field(
         default=False,
-        description="MyModel external からの照会制御用フラグ（Frend通知には影響しない）。",
+        description="MyModel external からの照会制御用フラグ（感情通知には影響しない）。",
     )
 
     notify_friends: Optional[bool] = Field(
         default=True,
         alias="send_friend_notification",
         description=(
-            "フレンドに通知を送るかどうか。true のとき friend_emotion_feed と Push 通知を作成する。"
-            "後方互換のため未指定は true。"
+            "感情通知を送るかどうか。true のとき legacy table の friend_emotion_feed と "
+            "Push 通知を作成する。後方互換のため未指定は true。"
         ),
     )
 
@@ -840,7 +840,7 @@ class EmotionSubmitResponse(BaseModel):
     )
 
 
-async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
+async def _fetch_follow_viewer_ids(user_id: str) -> List[str]:
     """myprofile_links テーブルから、指定ユーザーをフォローしている viewer を取得する。
 
     前提:
@@ -889,18 +889,19 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
 
 
 
-FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"
+EMOTION_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"
+FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = EMOTION_NOTIFICATION_GLOBAL_OWNER_ID  # backward-compatible alias
 
 
-async def _filter_viewer_ids_by_friend_notification_settings(
+async def _filter_viewer_ids_by_emotion_notification_settings(
     *,
     viewer_user_ids: List[str],
     owner_user_id: str,
 ) -> List[str]:
-    """Apply per-friend notification mute settings (viewer-side).
+    """Apply per-viewer emotion notification mute settings.
 
     Expected table (Supabase):
-        friend_notification_settings
+        friend_notification_settings  # legacy table name
             - viewer_user_id (who receives notifications)
             - owner_user_id  (who triggers notifications)
             - is_enabled     (bool, true=receive, false=mute)
@@ -908,8 +909,8 @@ async def _filter_viewer_ids_by_friend_notification_settings(
     Rule:
         - If a row exists with is_enabled=false for (viewer, owner), exclude that viewer.
         - If a row exists with is_enabled=false for
-          (viewer, FRIEND_NOTIFICATION_GLOBAL_OWNER_ID), exclude that viewer
-          from all friend notifications.
+          (viewer, EMOTION_NOTIFICATION_GLOBAL_OWNER_ID), exclude that viewer
+          from all emotion notifications.
         - Missing row => enabled (do not exclude).
     Backward compatibility:
         - If the table/columns are missing, filtering is skipped (treat as all enabled).
@@ -936,13 +937,13 @@ async def _filter_viewer_ids_by_friend_notification_settings(
     quoted_owner_ids = ",".join(
         [
             f'"{owner_user_id}"',
-            f'"{FRIEND_NOTIFICATION_GLOBAL_OWNER_ID}"',
+            f'"{EMOTION_NOTIFICATION_GLOBAL_OWNER_ID}"',
         ]
     )
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Fetch only disabled rows for this owner or the global friend-notification mute.
+            # Fetch only disabled rows for this owner or the global emotion-notification mute.
             resp = await client.get(
                 url,
                 headers=headers,
@@ -957,7 +958,7 @@ async def _filter_viewer_ids_by_friend_notification_settings(
         # If table doesn't exist / columns missing, skip filtering (treat as enabled)
         if resp.status_code >= 300:
             logger.warning(
-                "Supabase select friend_notification_settings failed (skip filtering): status=%s body=%s",
+                "Supabase select friend_notification_settings failed (skip emotion filtering): status=%s body=%s",
                 resp.status_code,
                 resp.text[:500],
             )
@@ -976,7 +977,7 @@ async def _filter_viewer_ids_by_friend_notification_settings(
             return ids
         return [uid for uid in ids if uid not in disabled]
     except Exception as exc:
-        logger.warning("Failed to apply friend_notification_settings (skip filtering): %s", exc)
+        logger.warning("Failed to apply friend_notification_settings (skip emotion filtering): %s", exc)
         return ids
 
 
@@ -1471,7 +1472,7 @@ async def _send_fcm_push(
 
     await _send_fcm_push_legacy(tokens=tokens, title=title, body=body, data=data)
 
-async def _push_notify_friends_about_emotion(
+async def _push_notify_followers_about_emotion(
     *,
     viewer_user_ids: List[str],
     owner_user_id: str,
@@ -1479,7 +1480,7 @@ async def _push_notify_friends_about_emotion(
     emotion_details: List[Dict[str, Any]],
     created_at: str,
 ) -> None:
-    """フレンド向けに Push 通知を送る（FCM）。"""
+    """フォロー基盤の viewer 向けに Push 通知を送る（FCM）。"""
     if not _is_fcm_enabled():
         return
 
@@ -1514,7 +1515,7 @@ async def _push_notify_friends_about_emotion(
 
     if filtered_owner_token_count:
         logger.info(
-            "Friend push filtered owner-matching tokens: owner_user_id=%s count=%s",
+            "Emotion notification push filtered owner-matching tokens: owner_user_id=%s count=%s",
             owner_user_id,
             filtered_owner_token_count,
         )
@@ -1536,7 +1537,7 @@ async def _push_notify_friends_about_emotion(
     # 本文(body)に「誰が + 感情選択内容」を入れる。
     await _send_fcm_push(tokens=tokens, title="Cocolon", body=body, data=None)
 
-async def _insert_friend_emotion_feed_rows(
+async def _insert_emotion_log_feed_rows(
     *,
     viewer_user_ids: List[str],
     owner_user_id: str,
@@ -1544,7 +1545,7 @@ async def _insert_friend_emotion_feed_rows(
     items: List[Dict[str, Any]],
     created_at: str,
 ) -> bool:
-    """Supabase の friend_emotion_feed テーブルに通知レコードを複数件INSERTする。"""
+    """legacy table の friend_emotion_feed に感情ログ通知レコードを複数件 INSERT する。"""
     _ensure_supabase_config()
     if not viewer_user_ids:
         return False
@@ -1579,29 +1580,29 @@ async def _insert_friend_emotion_feed_rows(
             resp = await client.post(url, headers=headers, json=payload)
         if resp.status_code not in (200, 201, 204):
             logger.error(
-                "Supabase insert into friend_emotion_feed failed: status=%s body=%s",
+                "Supabase insert into friend_emotion_feed failed (emotion log rows): status=%s body=%s",
                 resp.status_code,
                 resp.text[:2000],
             )
             return False
         return True
     except Exception as exc:
-        logger.error("Failed to insert friend_emotion_feed rows: %s", exc)
+        logger.error("Failed to insert friend_emotion_feed rows (emotion log): %s", exc)
         return False
 
 
-async def _notify_friends_about_emotion(
+async def _notify_follow_viewers_about_emotion(
     *,
     owner_user_id: str,
     emotion_details: List[Dict[str, Any]],
     created_at: str,
 ) -> None:
-    """感情ログ登録後に、フレンド向けの通知レコードを friend_emotion_feed に作成する。"""
+    """感情ログ登録後に、フォロー基盤の viewer 向け通知レコードを friend_emotion_feed に作成する。"""
     if not owner_user_id:
         return
 
     # --- Privacy rule ---
-    # 「自己理解」はフレンド通知で飛ばさず、フレンドログにも表示しない。
+    # 「自己理解」は感情通知で飛ばさず、感情ログにも表示しない。
     # ただし他の感情が一緒に入力されている場合は、それらだけ通知/ログ対象にする。
     filtered_details: List[Dict[str, Any]] = []
     for it in emotion_details or []:
@@ -1618,13 +1619,13 @@ async def _notify_friends_about_emotion(
     if not filtered_details:
         return
 
-    viewer_user_ids = await _fetch_friend_viewer_ids(owner_user_id)
+    viewer_user_ids = await _fetch_follow_viewer_ids(owner_user_id)
     if not viewer_user_ids:
-        # フレンドがいない場合は何もしない
+        # フォロー viewer がいない場合は何もしない
         return
 
-    # Per-friend notification settings (viewer-side mute)
-    viewer_user_ids = await _filter_viewer_ids_by_friend_notification_settings(
+    # Per-viewer emotion notification settings (viewer-side mute)
+    viewer_user_ids = await _filter_viewer_ids_by_emotion_notification_settings(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
     )
@@ -1632,7 +1633,7 @@ async def _notify_friends_about_emotion(
         return
 
     owner_name = await _fetch_profile_display_name(owner_user_id)
-    feed_rows_inserted = await _insert_friend_emotion_feed_rows(
+    feed_rows_inserted = await _insert_emotion_log_feed_rows(
         viewer_user_ids=viewer_user_ids,
         owner_user_id=owner_user_id,
         owner_name=owner_name,
@@ -1642,7 +1643,7 @@ async def _notify_friends_about_emotion(
 
     if feed_rows_inserted:
         try:
-            await enqueue_friend_feed_refresh_many(
+            await enqueue_emotion_log_feed_refresh_many(
                 viewer_user_ids=viewer_user_ids,
                 trigger="emotion_submit",
                 requested_at=created_at,
@@ -1651,11 +1652,11 @@ async def _notify_friends_about_emotion(
                 debounce_seconds=10,
             )
         except Exception as exc:
-            logger.error("Friend feed enqueue failed (bg): %s", exc)
+            logger.error("Emotion log feed enqueue failed (bg): %s", exc)
 
     # Push notification (FCM). 失敗しても感情ログ本体は成功させたいので best-effort。
     try:
-        await _push_notify_friends_about_emotion(
+        await _push_notify_followers_about_emotion(
             viewer_user_ids=viewer_user_ids,
             owner_user_id=owner_user_id,
             owner_name=owner_name,
@@ -1666,11 +1667,20 @@ async def _notify_friends_about_emotion(
         logger.error("Failed to send FCM push notification: %s", exc)
 
 
+# Backward-compatible aliases for legacy private helper names.
+_fetch_friend_viewer_ids = _fetch_follow_viewer_ids
+_filter_viewer_ids_by_friend_notification_settings = (
+    _filter_viewer_ids_by_emotion_notification_settings
+)
+_push_notify_friends_about_emotion = _push_notify_followers_about_emotion
+_insert_friend_emotion_feed_rows = _insert_emotion_log_feed_rows
+_notify_friends_about_emotion = _notify_follow_viewers_about_emotion
+
 
 # ---------- Post-submit background processing ----------
 # 目的:
 # - ユーザー体感の入力処理を短縮するため、感情保存(insert)後の重い処理をバックグラウンドで実行する。
-# - 具体的には、フレンド通知 / ASTOR ingest / MyProfile latest auto-refresh をレスポンス後に回す。
+# - 具体的には、感情通知 / ASTOR ingest / MyProfile latest auto-refresh をレスポンス後に回す。
 #
 # NOTE:
 # - Render 環境での安定性を優先し、別スレッドで asyncio.run() を使って完結させる。
@@ -1686,16 +1696,16 @@ async def _post_submit_background_async(
     is_secret: bool,
     notify_friends: bool,
 ) -> None:
-    # 1) フレンド通知（Friend タブ用タイムライン + Push）
+    # 1) 感情通知（EmotionLog 用タイムライン + Push）
     if notify_friends:
         try:
-            await _notify_friends_about_emotion(
+            await _notify_follow_viewers_about_emotion(
                 owner_user_id=user_id,
                 emotion_details=emotion_details,
                 created_at=created_at,
             )
         except Exception as exc:
-            logger.error("Failed to notify friends about emotion (bg): %s", exc)
+            logger.error("Failed to notify follow viewers about emotion (bg): %s", exc)
 
     # 2) ASTOR への感情インジェスト（失敗しても致命的ではない）
     try:
@@ -1967,7 +1977,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             logger.exception("emotion_submit: global summary cache invalidate failed")
 
         # 5) 残りの重い処理（通知/分析/レポート更新）はバックグラウンドで実行する
-        # - notify_friends=false（または send_friend_notification=false）の場合は通知しない。
+        # - notify_friends=false（または send_friend_notification=false）の場合は感情通知しない。
         notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
         _start_post_submit_background_tasks(
             user_id=user_id,
