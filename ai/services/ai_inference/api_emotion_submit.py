@@ -841,18 +841,17 @@ class EmotionSubmitResponse(BaseModel):
 
 
 async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
-    """friendships テーブルから、指定ユーザーのフレンド（通知の配布先）を取得する。
+    """myprofile_links テーブルから、指定ユーザーをフォローしている viewer を取得する。
 
     前提:
-    - friendships は (user_id, friend_user_id) の行で表現する。
-    - 実装上は「双方向2行」を作る運用が最もシンプルだが、
-      片方向しか入っていない場合にも耐えるため、両方向を問い合わせて set で統合する。
+    - myprofile_links は (viewer_user_id -> owner_user_id) の片方向リンクで表現する。
+    - 第1段階では friendships への fallback は行わず、Follow 関係のみを通知配布先として扱う。
     """
     _ensure_supabase_config()
     if not user_id:
         return []
 
-    url = f"{SUPABASE_URL}/rest/v1/friendships"
+    url = f"{SUPABASE_URL}/rest/v1/myprofile_links"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -862,53 +861,29 @@ async def _fetch_friend_viewer_ids(user_id: str) -> List[str]:
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # 自分が user_id 側の行（標準運用：ここだけで十分）
-            resp1 = await client.get(
+            resp = await client.get(
                 url,
                 headers=headers,
                 params={
-                    "select": "user_id,friend_user_id",
-                    "user_id": f"eq.{user_id}",
+                    "select": "viewer_user_id",
+                    "owner_user_id": f"eq.{user_id}",
                 },
             )
-            if resp1.status_code < 300:
-                rows1 = resp1.json()
-                if isinstance(rows1, list):
-                    for row in rows1:
-                        fid = row.get("friend_user_id")
-                        if isinstance(fid, str) and fid and fid != user_id:
-                            viewer_ids_set.add(fid)
+            if resp.status_code < 300:
+                rows = resp.json()
+                if isinstance(rows, list):
+                    for row in rows:
+                        viewer_id = row.get("viewer_user_id")
+                        if isinstance(viewer_id, str) and viewer_id and viewer_id != user_id:
+                            viewer_ids_set.add(viewer_id)
             else:
                 logger.error(
-                    "Supabase select from friendships (user_id side) failed: status=%s body=%s",
-                    resp1.status_code,
-                    resp1.text[:2000],
-                )
-
-            # 自分が friend_user_id 側の行（片方向しか存在しないケースの救済）
-            resp2 = await client.get(
-                url,
-                headers=headers,
-                params={
-                    "select": "user_id,friend_user_id",
-                    "friend_user_id": f"eq.{user_id}",
-                },
-            )
-            if resp2.status_code < 300:
-                rows2 = resp2.json()
-                if isinstance(rows2, list):
-                    for row in rows2:
-                        uid = row.get("user_id")
-                        if isinstance(uid, str) and uid and uid != user_id:
-                            viewer_ids_set.add(uid)
-            else:
-                logger.error(
-                    "Supabase select from friendships (friend_user_id side) failed: status=%s body=%s",
-                    resp2.status_code,
-                    resp2.text[:2000],
+                    "Supabase select from myprofile_links failed: status=%s body=%s",
+                    resp.status_code,
+                    resp.text[:2000],
                 )
     except Exception as exc:
-        logger.error("Failed to fetch friendships for user %s: %s", user_id, exc)
+        logger.error("Failed to fetch myprofile_links for user %s: %s", user_id, exc)
 
     return list(viewer_ids_set)
 
@@ -1007,10 +982,10 @@ async def _filter_viewer_ids_by_friend_notification_settings(
 
 
 async def _fetch_profile_display_name(user_id: str) -> str:
-    """profiles テーブルから display_name を取得する。レコードが無い場合は 'Friend' を返す。"""
+    """profiles テーブルから display_name を取得する。レコードが無い場合は「ユーザー」を返す。"""
     _ensure_supabase_config()
     if not user_id:
-        return "Friend"
+        return "ユーザー"
 
     url = f"{SUPABASE_URL}/rest/v1/profiles"
     headers = {
@@ -1032,7 +1007,7 @@ async def _fetch_profile_display_name(user_id: str) -> str:
                 resp.status_code,
                 resp.text[:2000],
             )
-            return "Friend"
+            return "ユーザー"
 
         rows = resp.json()
         if isinstance(rows, list) and rows:
@@ -1042,7 +1017,7 @@ async def _fetch_profile_display_name(user_id: str) -> str:
     except Exception as exc:
         logger.error("Failed to fetch profile for user %s: %s", user_id, exc)
 
-    return "Friend"
+    return "ユーザー"
 
 
 
@@ -1552,9 +1527,9 @@ async def _push_notify_friends_about_emotion(
     if not emotion_body:
         return
 
-    owner_label = (owner_name or "").strip() or "フレンド"
+    owner_label = (owner_name or "").strip() or "ユーザー"
     if owner_label == "Friend":
-        owner_label = "フレンド"
+        owner_label = "ユーザー"
     body = f"{owner_label}さんが{emotion_body}を入力しました"
 
     # iOS は notification.body が空だと通知が表示されない/抑制されるケースがあるため、
