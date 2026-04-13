@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Friends API for Cocolon (MashOS / FastAPI)
+"""Legacy Friends / EmotionLog API for Cocolon (MashOS / FastAPI)
+
+This module keeps legacy ``/friends/*`` routes for compatibility while serving
+the current EmotionLog / emotion-notification behavior used by the app.
 
 Implements the minimum endpoints required for the MVP:
 
@@ -45,8 +48,8 @@ from api_emotion_submit import (
     _send_fcm_push,
 )
 from astor_friend_feed_store import (
-    fetch_latest_ready_friend_feed_summary,
-    select_friend_feed_items,
+    fetch_latest_ready_friend_feed_summary as fetch_latest_ready_emotion_log_feed_summary,
+    select_friend_feed_items as select_emotion_log_feed_items,
 )
 from response_microcache import get_or_compute, invalidate_prefix
 from supabase_client import sb_count, sb_delete, sb_get, sb_patch, sb_post
@@ -109,6 +112,13 @@ class FriendNotificationSettingResponse(BaseModel):
 class FriendNotificationSettingsResponse(BaseModel):
     status: str = Field(..., description="ok")
     settings: List[FriendNotificationSettingItem]
+
+
+# Canonical aliases for the current emotion-notification behavior.
+EmotionNotificationSettingUpsertBody = FriendNotificationSettingUpsertBody
+EmotionNotificationSettingItem = FriendNotificationSettingItem
+EmotionNotificationSettingResponse = FriendNotificationSettingResponse
+EmotionNotificationSettingsResponse = FriendNotificationSettingsResponse
 
 
 class FriendUnreadStatusResponse(BaseModel):
@@ -287,7 +297,7 @@ async def get_friend_unread_status_payload_for_user(user_id: str) -> Dict[str, A
         feed_last_read_at, requests_last_read_at, latest_feed_created_at, pending_request_head = await asyncio.gather(
             _fetch_last_read_at("friend_feed_reads", uid),
             _fetch_last_read_at("friend_request_reads", uid),
-            _latest_friend_feed_created_at(uid),
+            _latest_emotion_log_feed_created_at(uid),
             _fetch_latest_pending_request_head_and_count(uid),
         )
 
@@ -451,7 +461,7 @@ def _dedupe_user_ids(values: List[str]) -> List[str]:
     return out
 
 
-def _format_friend_feed_time_label(iso_value: Any) -> str:
+def _format_emotion_log_feed_time_label(iso_value: Any) -> str:
     s = str(iso_value or "").strip()
     if not s:
         return ""
@@ -467,7 +477,7 @@ def _format_friend_feed_time_label(iso_value: Any) -> str:
         return ""
 
 
-def _normalize_friend_feed_emotions(raw_items: Any) -> List[Dict[str, Any]]:
+def _normalize_emotion_log_feed_items(raw_items: Any) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     if not isinstance(raw_items, list):
         return out
@@ -485,7 +495,7 @@ def _normalize_friend_feed_emotions(raw_items: Any) -> List[Dict[str, Any]]:
     return out
 
 
-def _build_friend_feed_response_items(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_emotion_log_feed_response_items(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     for row in rows or []:
         if not isinstance(row, dict):
@@ -497,8 +507,8 @@ def _build_friend_feed_response_items(rows: List[Dict[str, Any]]) -> List[Dict[s
             {
                 "id": feed_id,
                 "ownerName": owner_name,
-                "items": _normalize_friend_feed_emotions(row.get("items")),
-                "timeLabel": _format_friend_feed_time_label(created_at),
+                "items": _normalize_emotion_log_feed_items(row.get("items")),
+                "timeLabel": _format_emotion_log_feed_time_label(created_at),
                 "createdAt": created_at,
                 "created_at": created_at,
             }
@@ -506,7 +516,7 @@ def _build_friend_feed_response_items(rows: List[Dict[str, Any]]) -> List[Dict[s
     return items
 
 
-def _summary_latest_friend_feed_created_at(summary: Optional[Dict[str, Any]]) -> Optional[str]:
+def _summary_latest_emotion_log_feed_created_at(summary: Optional[Dict[str, Any]]) -> Optional[str]:
     if not isinstance(summary, dict):
         return None
 
@@ -535,7 +545,7 @@ def _summary_latest_friend_feed_created_at(summary: Optional[Dict[str, Any]]) ->
     return fallback or None
 
 
-async def _fetch_live_friend_feed_rows(viewer_user_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
+async def _fetch_live_emotion_log_feed_rows(viewer_user_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
     resp = await _sb_get(
         "/rest/v1/friend_emotion_feed",
         params={
@@ -546,8 +556,8 @@ async def _fetch_live_friend_feed_rows(viewer_user_id: str, *, limit: int = 20) 
         },
     )
     if resp.status_code >= 300:
-        logger.error("Supabase friend_emotion_feed select failed: %s %s", resp.status_code, resp.text[:1500])
-        raise HTTPException(status_code=502, detail="Failed to query friend feed")
+        logger.error("Supabase friend_emotion_feed select failed (emotion log feed): %s %s", resp.status_code, resp.text[:1500])
+        raise HTTPException(status_code=502, detail="Failed to query emotion log feed")
     rows = resp.json()
     return rows if isinstance(rows, list) else []
 
@@ -732,7 +742,7 @@ async def _fetch_manage_request_rows(user_id: str) -> List[Dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
-async def _fetch_friend_notification_map(
+async def _fetch_emotion_notification_map(
     viewer_user_id: str,
     owner_user_ids: Optional[List[str]] = None,
 ) -> Dict[str, bool]:
@@ -833,7 +843,7 @@ async def _upsert_last_read_at(table_name: str, user_id: str, last_read_at: str)
     return resp.status_code in (200, 201)
 
 
-async def _latest_friend_feed_created_at(user_id: str) -> Optional[str]:
+async def _latest_emotion_log_feed_created_at(user_id: str) -> Optional[str]:
     resp = await _sb_get(
         "/rest/v1/friend_emotion_feed",
         params={
@@ -844,7 +854,7 @@ async def _latest_friend_feed_created_at(user_id: str) -> Optional[str]:
         },
     )
     if resp.status_code >= 300:
-        logger.warning("Supabase friend_emotion_feed latest failed: %s %s", resp.status_code, resp.text[:1500])
+        logger.warning("Supabase friend_emotion_feed latest failed (emotion log): %s %s", resp.status_code, resp.text[:1500])
         return None
     rows = resp.json()
     if isinstance(rows, list) and rows and isinstance(rows[0], dict):
@@ -874,7 +884,7 @@ async def _latest_friend_request_created_at(user_id: str) -> Optional[str]:
     return None
 
 
-async def _has_newer_friend_feed(user_id: str, last_read_at: str) -> bool:
+async def _has_newer_emotion_log_feed(user_id: str, last_read_at: str) -> bool:
     resp = await _sb_get(
         "/rest/v1/friend_emotion_feed",
         params={
@@ -886,7 +896,7 @@ async def _has_newer_friend_feed(user_id: str, last_read_at: str) -> bool:
         },
     )
     if resp.status_code >= 300:
-        logger.warning("Supabase friend_emotion_feed unread failed: %s %s", resp.status_code, resp.text[:1500])
+        logger.warning("Supabase friend_emotion_feed unread failed (emotion log): %s %s", resp.status_code, resp.text[:1500])
         return False
     rows = resp.json()
     return bool(isinstance(rows, list) and rows)
@@ -909,6 +919,17 @@ async def _has_newer_friend_requests(user_id: str, last_read_at: str) -> bool:
         return False
     rows = resp.json()
     return bool(isinstance(rows, list) and rows)
+
+
+# Backward-compatible aliases for legacy helper names.
+_format_friend_feed_time_label = _format_emotion_log_feed_time_label
+_normalize_friend_feed_emotions = _normalize_emotion_log_feed_items
+_build_friend_feed_response_items = _build_emotion_log_feed_response_items
+_summary_latest_friend_feed_created_at = _summary_latest_emotion_log_feed_created_at
+_fetch_live_friend_feed_rows = _fetch_live_emotion_log_feed_rows
+_fetch_friend_notification_map = _fetch_emotion_notification_map
+_latest_friend_feed_created_at = _latest_emotion_log_feed_created_at
+_has_newer_friend_feed = _has_newer_emotion_log_feed
 
 def register_friend_routes(app: FastAPI) -> None:
     """Register friend request endpoints on the given FastAPI app."""
@@ -1150,7 +1171,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
 
     @app.get("/friends/feed")
-    async def get_friend_feed(
+    async def get_emotion_log_feed(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Dict[str, Any]:
         access_token = _extract_bearer_token(authorization)
@@ -1163,42 +1184,42 @@ def register_friend_routes(app: FastAPI) -> None:
         latest_live_created_at: Optional[str] = None
         try:
             summary, latest_live_created_at = await asyncio.gather(
-                fetch_latest_ready_friend_feed_summary(me),
-                _latest_friend_feed_created_at(me),
+                fetch_latest_ready_emotion_log_feed_summary(me),
+                _latest_emotion_log_feed_created_at(me),
             )
         except Exception as exc:
-            logger.warning("Failed to prefetch friend feed freshness info: %s", exc)
+            logger.warning("Failed to prefetch emotion log feed freshness info: %s", exc)
             try:
-                summary = await fetch_latest_ready_friend_feed_summary(me)
+                summary = await fetch_latest_ready_emotion_log_feed_summary(me)
             except Exception as inner_exc:
-                logger.warning("Failed to fetch ready friend feed summary: %s", inner_exc)
+                logger.warning("Failed to fetch ready emotion log feed summary: %s", inner_exc)
                 summary = None
             try:
-                latest_live_created_at = await _latest_friend_feed_created_at(me)
+                latest_live_created_at = await _latest_emotion_log_feed_created_at(me)
             except Exception as inner_exc:
-                logger.warning("Failed to fetch latest live friend feed created_at: %s", inner_exc)
+                logger.warning("Failed to fetch latest live emotion log feed created_at: %s", inner_exc)
                 latest_live_created_at = None
 
-        summary_latest_created_at = _summary_latest_friend_feed_created_at(summary)
+        summary_latest_created_at = _summary_latest_emotion_log_feed_created_at(summary)
         summary_is_fresh = bool(summary) and not _has_newer_iso(
             latest_live_created_at,
             summary_latest_created_at,
         )
 
         if summary_is_fresh and summary:
-            items = _build_friend_feed_response_items(select_friend_feed_items(summary))
+            items = _build_friend_feed_response_items(select_emotion_log_feed_items(summary))
             return {"status": "ok", "items": items}
 
         try:
-            live_rows = await _fetch_live_friend_feed_rows(me, limit=20)
+            live_rows = await _fetch_live_emotion_log_feed_rows(me, limit=20)
             return {"status": "ok", "items": _build_friend_feed_response_items(live_rows)}
         except HTTPException:
             if summary:
                 logger.warning(
-                    "Friend feed live fetch failed; falling back to ready summary (viewer_user_id=%s)",
+                    "Emotion log feed live fetch failed; falling back to ready summary (viewer_user_id=%s)",
                     me,
                 )
-                items = _build_friend_feed_response_items(select_friend_feed_items(summary))
+                items = _build_friend_feed_response_items(select_emotion_log_feed_items(summary))
                 return {"status": "ok", "items": items}
             raise
 
@@ -1238,7 +1259,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
             profiles, friend_notif_map = await asyncio.gather(
                 _fetch_profiles_map(profile_ids) if profile_ids else asyncio.sleep(0, result={}),
-                _fetch_friend_notification_map(me, owner_user_ids=friend_ids) if friend_ids else asyncio.sleep(0, result={}),
+                _fetch_emotion_notification_map(me, owner_user_ids=friend_ids) if friend_ids else asyncio.sleep(0, result={}),
             )
 
             friends_list: List[Dict[str, Any]] = []
@@ -1312,7 +1333,7 @@ def register_friend_routes(app: FastAPI) -> None:
         return FriendUnreadStatusResponse(**payload)
 
     @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
-    async def post_friend_feed_mark_read(
+    async def post_emotion_log_feed_mark_read(
         body: Optional[FriendUnreadMarkReadBody] = None,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> FriendUnreadMarkReadResponse:
@@ -1327,7 +1348,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
         current_last_read_at_task = _fetch_last_read_at("friend_feed_reads", me)
         latest_live_created_at_task = (
-            _latest_friend_feed_created_at(me)
+            _latest_emotion_log_feed_created_at(me)
             if not requested_last_read_at
             else asyncio.sleep(0, result=None)
         )
@@ -1373,10 +1394,10 @@ def register_friend_routes(app: FastAPI) -> None:
         return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
     @app.get("/friends/notification-settings", response_model=FriendNotificationSettingsResponse)
-    async def list_friend_notification_settings(
+    async def list_emotion_notification_settings(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> FriendNotificationSettingsResponse:
-        """List per-friend notification settings for the caller (viewer).
+        """List per-owner emotion-notification settings for the caller (viewer).
 
         Note:
         - Missing rows should be treated as enabled (true) by the client.
@@ -1397,7 +1418,7 @@ def register_friend_routes(app: FastAPI) -> None:
             },
         )
 
-        # If the table isn't provisioned yet, tell the client explicitly.
+        # If the legacy table isn't provisioned yet, tell the client explicitly.
         if resp.status_code == 404:
             raise HTTPException(status_code=501, detail="friend_notification_settings table is not configured")
 
@@ -1428,12 +1449,12 @@ def register_friend_routes(app: FastAPI) -> None:
         return FriendNotificationSettingsResponse(status="ok", settings=settings)
 
     @app.post("/friends/notification-settings/{friend_user_id}", response_model=FriendNotificationSettingResponse)
-    async def set_friend_notification_setting(
+    async def set_emotion_notification_setting(
         body: FriendNotificationSettingUpsertBody,
         friend_user_id: str = Path(..., min_length=1, max_length=128),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> FriendNotificationSettingResponse:
-        """Upsert per-friend notification setting (viewer -> owner)."""
+        """Upsert per-owner emotion-notification setting (viewer -> owner)."""
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
