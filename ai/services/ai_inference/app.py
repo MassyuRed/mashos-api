@@ -117,6 +117,7 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _ensure_supabase_config,
 )
+from api_emotion_reflection import register_emotion_reflection_routes
 from api_emotion_secret import register_emotion_secret_routes
 from api_emotion_history_search import register_emotion_history_search_routes
 from api_emotion_history_manage import register_emotion_history_manage_routes
@@ -244,6 +245,7 @@ install_request_perf_middleware(app)
 
 
 register_emotion_submit_routes(app)
+register_emotion_reflection_routes(app)
 register_emotion_secret_routes(app)
 register_emotion_history_search_routes(app)
 register_emotion_history_manage_routes(app)
