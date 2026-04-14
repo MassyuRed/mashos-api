@@ -3534,8 +3534,51 @@ async def _sb_get_json_local(path: str, *, params: Dict[str, str]) -> List[Dict[
     return []
 
 
+PUBLIC_REFLECTION_SOURCE_TYPES: Tuple[str, ...] = ("generated", "emotion_generated")
+EMOTION_GENERATED_SOURCE_TYPE = "emotion_generated"
+
+
+def _public_reflection_source_filter() -> str:
+    return "in.(generated,emotion_generated)"
+
+
+def _row_source_type(row: Dict[str, Any]) -> str:
+    return str((row or {}).get("source_type") or "").strip()
+
+
 def _is_generated_reflection_instance_id(q_instance_id: str) -> bool:
     return str(q_instance_id or "").strip().startswith("reflection:")
+
+
+def _is_emotion_generated_row(row: Dict[str, Any]) -> bool:
+    return _row_source_type(row) == EMOTION_GENERATED_SOURCE_TYPE
+
+
+def _is_legacy_generated_row(row: Dict[str, Any]) -> bool:
+    source_type = _row_source_type(row)
+    return source_type == "generated" or not source_type
+
+
+def _generated_lookup_values(q_instance_id: str) -> Set[str]:
+    raw = str(q_instance_id or "").strip()
+    if not raw:
+        return set()
+    values: Set[str] = {raw}
+    if raw.startswith("reflection:"):
+        values.add(raw.split(":", 1)[1].strip())
+    else:
+        values.add(f"reflection:{raw}")
+    return {value for value in values if str(value or "").strip()}
+
+
+def _generated_lookup_id(q_instance_id: str) -> str:
+    values = list(_generated_lookup_values(q_instance_id))
+    for value in values:
+        if value.startswith("reflection:"):
+            candidate = value.split(":", 1)[1].strip()
+            if candidate:
+                return candidate
+    return values[0] if values else ""
 
 
 def _build_generated_q_key(row: Dict[str, Any]) -> str:
@@ -3553,12 +3596,15 @@ def _build_generated_q_key(row: Dict[str, Any]) -> str:
 
 
 def _generated_public_id(row: Dict[str, Any]) -> str:
-    return str((row or {}).get("public_id") or "").strip()
+    raw = str((row or {}).get("public_id") or (row or {}).get("id") or "").strip()
+    if not raw:
+        return ""
+    return raw if raw.startswith("reflection:") else f"reflection:{raw}"
 
 
 def _generated_row_sort_key(row: Dict[str, Any]) -> Tuple[str, str]:
     return (
-        str((row or {}).get("updated_at") or (row or {}).get("created_at") or "").strip(),
+        str((row or {}).get("published_at") or (row or {}).get("updated_at") or (row or {}).get("created_at") or "").strip(),
         str((row or {}).get("id") or "").strip(),
     )
 
@@ -3570,9 +3616,13 @@ def _generated_owner_qkey(row: Dict[str, Any]) -> Tuple[str, str]:
 
 
 def _canonicalize_generated_rows_latest_by_qkey(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep legacy generated reflections latest-by-q_key, but keep emotion-generated posts as-is."""
     seen_qkeys: Set[Tuple[str, str]] = set()
     out: List[Dict[str, Any]] = []
     for row in sorted(list(rows or []), key=_generated_row_sort_key, reverse=True):
+        if _is_emotion_generated_row(row):
+            out.append(row)
+            continue
         qk = _generated_owner_qkey(row)
         if qk in seen_qkeys:
             continue
@@ -3653,13 +3703,27 @@ def _generated_sibling_priority(row: Dict[str, Any], cluster: str) -> int:
 
 
 def _suppress_overlapping_generated_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Suppress overlap only for legacy generated rows.
+
+    The new emotion-generated Reflection flow is post-based, so rows should remain
+    distinct even when question/q_key overlaps.
+    """
     if not rows:
         return []
-    visible_rows = [row for row in list(rows or []) if get_public_generated_reflection_text(row)]
+
+    emotion_rows = [
+        row for row in list(rows or [])
+        if _is_emotion_generated_row(row) and get_public_generated_reflection_text(row)
+    ]
+    legacy_rows = [
+        row for row in list(rows or [])
+        if (not _is_emotion_generated_row(row)) and get_public_generated_reflection_text(row)
+    ]
+
     passthrough: List[Dict[str, Any]] = []
     grouped: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
 
-    for row in visible_rows:
+    for row in legacy_rows:
         cluster = _generated_sibling_cluster(row)
         signature = _generated_semantic_signature(row)
         owner = str((row or {}).get("owner_user_id") or "").strip()
@@ -3668,7 +3732,7 @@ def _suppress_overlapping_generated_rows(rows: List[Dict[str, Any]]) -> List[Dic
             continue
         grouped.setdefault((owner, cluster, signature), []).append(row)
 
-    out: List[Dict[str, Any]] = list(passthrough)
+    out: List[Dict[str, Any]] = list(emotion_rows) + list(passthrough)
     for (owner, cluster, signature), items in grouped.items():
         if len(items) <= 1:
             out.extend(items)
@@ -3682,8 +3746,8 @@ def _suppress_overlapping_generated_rows(rows: List[Dict[str, Any]]) -> List[Dic
             owner,
             cluster,
             signature,
-            [str((row or {}).get("public_id") or "").strip() for row in items_sorted[1:]],
-            str((winner or {}).get("public_id") or "").strip(),
+            [_generated_public_id(row) for row in items_sorted[1:] if _generated_public_id(row)],
+            _generated_public_id(winner),
         )
 
     return sorted(out, key=_generated_row_sort_key, reverse=True)
@@ -3696,6 +3760,11 @@ async def _fetch_generated_public_group_rows_for_owner(
     question: str,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
+    """Legacy generated public grouping helper.
+
+    Emotion-generated rows are post-based and are resolved directly by id,
+    so this helper intentionally scans only legacy `generated` rows.
+    """
     owner_id = str(owner_user_id or "").strip()
     qk = str(q_key or "").strip()
     q = str(question or "").strip()
@@ -3746,23 +3815,56 @@ async def _fetch_generated_reflection_by_public_id(
     pid = str(public_id or "").strip()
     if not pid:
         return None
-    params: Dict[str, str] = {
-        "select": "*",
-        "public_id": f"eq.{pid}",
-        "source_type": "eq.generated",
-        "limit": "1",
-    }
+
     oid = str(owner_user_id or "").strip()
-    if oid:
-        params["owner_user_id"] = f"eq.{oid}"
-    if require_active:
-        params["is_active"] = "eq.true"
-    if require_ready:
-        params["status"] = "in.(ready,published)"
-    rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
-    row = rows[0] if rows else None
+    lookup_values = _generated_lookup_values(pid)
+    lookup_id = _generated_lookup_id(pid)
+
+    def _base_params() -> Dict[str, str]:
+        params: Dict[str, str] = {"select": "*", "limit": "1"}
+        if oid:
+            params["owner_user_id"] = f"eq.{oid}"
+        if require_active:
+            params["is_active"] = "eq.true"
+        if require_ready:
+            params["status"] = "in.(ready,published)"
+        params["source_type"] = _public_reflection_source_filter()
+        return params
+
+    row: Optional[Dict[str, Any]] = None
+
+    # Prefer id lookup first because emotion-generated rows do not currently set public_id.
+    if lookup_id:
+        params = _base_params()
+        params["id"] = f"eq.{lookup_id}"
+        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+        row = rows[0] if rows else None
+
+    if row is None:
+        for candidate in sorted(lookup_values):
+            params = _base_params()
+            params["public_id"] = f"eq.{candidate}"
+            rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+            row = rows[0] if rows else None
+            if row is not None:
+                break
+
     if not row:
         return None
+
+    source_type = _row_source_type(row)
+    if source_type == EMOTION_GENERATED_SOURCE_TYPE:
+        if not get_public_generated_reflection_text(row):
+            return None
+        if require_active and require_ready:
+            owner_id = str((row or {}).get("owner_user_id") or owner_user_id or "").strip()
+            owner_visible_rows = await _fetch_active_generated_reflections_for_owner(owner_id, limit=500)
+            visible_ids = {_generated_public_id(item) for item in owner_visible_rows if _generated_public_id(item)}
+            if _generated_public_id(row) not in visible_ids:
+                return None
+        return row
+
+    # Legacy generated rows remain canonicalized by latest q_key/public group.
     if require_active and require_ready:
         owner_id = str((row or {}).get("owner_user_id") or owner_user_id or "").strip()
         qk = _build_generated_q_key(row)
@@ -3772,7 +3874,7 @@ async def _fetch_generated_reflection_by_public_id(
         canonical_row = canonical_rows[0] if canonical_rows else None
         if canonical_row is None:
             return None
-        if _generated_public_id(canonical_row) != pid:
+        if _generated_public_id(canonical_row) != _generated_public_id(row):
             return None
         if not get_public_generated_reflection_text(canonical_row):
             logger.info(
@@ -3784,8 +3886,8 @@ async def _fetch_generated_reflection_by_public_id(
             )
             return None
         owner_visible_rows = await _fetch_active_generated_reflections_for_owner(owner_id, limit=200)
-        visible_ids = { _generated_public_id(item) for item in owner_visible_rows }
-        if pid not in visible_ids:
+        visible_ids = {_generated_public_id(item) for item in owner_visible_rows if _generated_public_id(item)}
+        if _generated_public_id(canonical_row) not in visible_ids:
             return None
         return canonical_row
     return row
@@ -3800,24 +3902,52 @@ async def _fetch_generated_reflections_by_public_ids(
     ids = {str(x).strip() for x in (public_ids or set()) if str(x).strip()}
     if not ids:
         return {}
-    params: Dict[str, str] = {
-        "select": "*",
-        "public_id": _quoted_in(ids),
-        "source_type": "eq.generated",
-        "limit": str(max(1, len(ids))),
-    }
-    if require_active:
-        params["is_active"] = "eq.true"
-    if require_ready:
-        params["status"] = "in.(ready,published)"
-    rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+
+    lookup_ids: Set[str] = set()
+    lookup_public_ids: Set[str] = set()
+    for value in ids:
+        lookup_public_ids.update(_generated_lookup_values(value))
+        lookup_id = _generated_lookup_id(value)
+        if lookup_id:
+            lookup_ids.add(lookup_id)
+
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    def _base_params() -> Dict[str, str]:
+        params: Dict[str, str] = {
+            "select": "*",
+            "source_type": _public_reflection_source_filter(),
+            "limit": str(max(1, len(ids) * 3)),
+        }
+        if require_active:
+            params["is_active"] = "eq.true"
+        if require_ready:
+            params["status"] = "in.(ready,published)"
+        return params
+
+    if lookup_ids:
+        params = _base_params()
+        params["id"] = _quoted_in(lookup_ids)
+        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+        for row in rows:
+            rid = str((row or {}).get("id") or "").strip()
+            if rid:
+                merged[rid] = row
+
+    if lookup_public_ids:
+        params = _base_params()
+        params["public_id"] = _quoted_in(lookup_public_ids)
+        rows = await _sb_get_json_local(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
+        for row in rows:
+            rid = str((row or {}).get("id") or "").strip()
+            if rid:
+                merged[rid] = row
+
     out: Dict[str, Dict[str, Any]] = {}
-    visible_rows = _suppress_overlapping_generated_rows(_canonicalize_generated_rows_latest_by_qkey(rows))
+    visible_rows = _suppress_overlapping_generated_rows(_canonicalize_generated_rows_latest_by_qkey(list(merged.values())))
     for r in visible_rows:
         pid = _generated_public_id(r)
-        if not pid:
-            continue
-        if pid not in ids:
+        if not pid or pid not in ids:
             continue
         if not get_public_generated_reflection_text(r):
             continue
@@ -3830,22 +3960,23 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
     if not oid:
         return []
     owner_policy = await _resolve_owner_reflection_policy(oid)
-    if not bool(owner_policy.get("can_expose_generated_reflections")):
-        return []
     rows = await _sb_get_json_local(
         f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
         params={
             "select": "*",
             "owner_user_id": f"eq.{oid}",
-            "source_type": "eq.generated",
+            "source_type": _public_reflection_source_filter(),
             "is_active": "eq.true",
             "status": "in.(ready,published)",
-            "order": "updated_at.desc",
+            "order": "published_at.desc,updated_at.desc",
             "limit": str(max(1, int(limit))),
         },
     )
     visible_rows: List[Dict[str, Any]] = []
     for row in _canonicalize_generated_rows_latest_by_qkey(rows):
+        source_type = _row_source_type(row)
+        if source_type == "generated" and not bool(owner_policy.get("can_expose_generated_reflections")):
+            continue
         if get_public_generated_reflection_text(row):
             visible_rows.append(row)
     return _suppress_overlapping_generated_rows(visible_rows)
@@ -3861,7 +3992,7 @@ async def _resolve_generated_reflection_access(
     if not owner_user_id:
         raise HTTPException(status_code=404, detail="Reflection not found")
     owner_policy = await _resolve_owner_reflection_policy(owner_user_id)
-    if not bool(owner_policy.get("can_expose_generated_reflections")):
+    if _is_legacy_generated_row(row) and not bool(owner_policy.get("can_expose_generated_reflections")):
         raise HTTPException(status_code=404, detail="Reflection not found")
     if owner_user_id != str(viewer_user_id):
         allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
@@ -4122,20 +4253,20 @@ async def _fetch_create_unread_counts(
 
 
 async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id: str) -> QnaUnreadResponse:
-    create_total = 0
-    create_unread = 0
-    try:
-        _, _, _, effective_tier = await _resolve_tiers(
-            viewer_user_id=viewer_user_id,
-            target_user_id=target_user_id,
-        )
-        create_total, create_unread = await _fetch_create_unread_counts(
+    """Unread for Nexus-facing reflections.
+
+    New unread badges should reflect published Reflection posts, not hidden
+    MyModelCreate progress. Self-owned reflections are excluded from unread.
+    """
+    if str(viewer_user_id or "").strip() == str(target_user_id or "").strip():
+        return QnaUnreadResponse(
+            status="ok",
             viewer_user_id=str(viewer_user_id),
             target_user_id=str(target_user_id),
-            effective_tier=str(effective_tier),
+            total_items=0,
+            unread_count=0,
+            has_unread=False,
         )
-    except Exception as exc:
-        logger.warning("create unread probe failed: %s", exc)
 
     gen_total = 0
     gen_unread = 0
@@ -4147,8 +4278,8 @@ async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id:
     except Exception as exc:
         logger.warning("generated unread probe failed: %s", exc)
 
-    total_items = int(create_total) + int(gen_total)
-    unread_count = int(create_unread) + int(gen_unread)
+    unread_count = int(gen_unread)
+    total_items = int(gen_total)
     return QnaUnreadResponse(
         status="ok",
         viewer_user_id=str(viewer_user_id),
@@ -4167,20 +4298,17 @@ async def _build_saved_generated_items(
         return []
     owner_ids = {str(owner) for _, owner, _ in prepared_rows if str(owner or "").strip()}
     owner_policies = await _resolve_owner_reflection_policies(owner_ids)
-    visible_rows = [
-        row
-        for row in prepared_rows
-        if bool((owner_policies.get(str(row[1])) or {}).get("can_expose_generated_reflections"))
-    ]
-    if not visible_rows:
-        return []
-    ids = {iid for iid, _, _ in visible_rows}
+    ids = {iid for iid, _, _ in prepared_rows}
     rows_map = await _fetch_generated_reflections_by_public_ids(ids, require_active=True, require_ready=True)
-    profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in visible_rows}))
+    profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in prepared_rows}))
     items: List[QnaSavedReflectionItem] = []
-    for iid, owner_uid, saved_at in visible_rows:
+    for iid, owner_uid, saved_at in prepared_rows:
         row = rows_map.get(iid)
         if not row:
+            continue
+        source_type = _row_source_type(row)
+        owner_policy = owner_policies.get(str(owner_uid)) or {}
+        if source_type == "generated" and not bool(owner_policy.get("can_expose_generated_reflections")):
             continue
         if not get_public_generated_reflection_text(row):
             continue

@@ -167,6 +167,7 @@ from api_myweb_reads import register_myweb_read_routes
 from api_myprofile_reports_read import register_myprofile_report_read_routes
 from api_mymodel_create import register_mymodel_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
+from api_nexus import register_nexus_routes
 from api_today_question import register_today_question_routes, run_today_question_push_once
 from supabase_client import aclose_async_client, sb_get as _shared_sb_get, sb_post as _shared_sb_post
 from api_report_distribution_settings import register_report_distribution_settings_routes
@@ -273,6 +274,7 @@ register_myweb_read_routes(app)
 register_myprofile_report_read_routes(app)
 register_mymodel_create_routes(app)
 register_mymodel_qna_routes(app)
+register_nexus_routes(app)
 register_today_question_routes(app)
 register_report_distribution_settings_routes(app)
 
