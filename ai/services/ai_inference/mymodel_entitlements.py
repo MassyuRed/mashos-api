@@ -25,7 +25,7 @@ STANDARD_BUILD_TIER = "standard"
 ALLOWED_BUILD_TIERS: Tuple[str, ...] = (LIGHT_BUILD_TIER, STANDARD_BUILD_TIER)
 
 FREE_TEMPLATE_QUESTION_LIMIT = 5
-PAID_TEMPLATE_QUESTION_LIMIT = 20
+PAID_TEMPLATE_QUESTION_LIMIT = 5
 
 _BUILD_TIER_VISIBLE_TIERS: Dict[str, Tuple[str, ...]] = {
     LIGHT_BUILD_TIER: (LIGHT_BUILD_TIER,),
@@ -69,13 +69,13 @@ def template_question_limit_for_build_tier(build_tier: Any) -> int:
 
 def resolve_mymodel_entitlement(subscription_tier: Any) -> MyModelEntitlement:
     tier = normalize_subscription_tier(subscription_tier, default=SubscriptionTier.FREE)
-    build_tier = LIGHT_BUILD_TIER if tier == SubscriptionTier.FREE else STANDARD_BUILD_TIER
+    build_tier = LIGHT_BUILD_TIER
     return MyModelEntitlement(
         subscription_tier=tier.value,
         build_tier=build_tier,
         visible_question_tiers=question_tiers_for_build_tier(build_tier),
         template_question_limit=template_question_limit_for_build_tier(build_tier),
-        can_edit_existing_answers=(tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM)),
+        can_edit_existing_answers=True,
         can_expose_original_reflections=(tier == SubscriptionTier.PREMIUM),
     )
 

@@ -10,13 +10,12 @@ Provides:
 
 This is the "Create" entry screen for the new fixed-question Q&A architecture.
 
-Key rules (2026-02)
+Key rules (2026-04)
+  - ProfileCreate uses the fixed free question set only (5 questions).
   - Users may leave questions unanswered.
-  - Create is considered "started" when at least one answer exists.
-  - Answers are always readable.
-  - Editing existing answers is allowed for Plus / Premium only.
-  - Free may still toggle secret memo on already-saved answers.
-  - Free / Plus / Premium differ only in how many questions are available.
+  - Answers are always readable by the owner.
+  - Editing existing answers is allowed for all plans.
+  - Secret answers remain hidden from other users on Account.
 
 Supabase tables (default names)
   - mymodel_create_questions
@@ -59,6 +58,7 @@ from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from mymodel_entitlements import (
     FREE_TEMPLATE_QUESTION_LIMIT,
+    LIGHT_BUILD_TIER,
     filter_question_rows_for_build_tier,
     resolve_mymodel_entitlement,
 )
@@ -82,22 +82,22 @@ ANSWERS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_crea
 # ----------------------------
 
 PLACEHOLDER_DEFAULT = (os.getenv("COCOLON_MYMODEL_CREATE_PLACEHOLDER_DEFAULT", "ここに書いてください。") or "").strip() or "ここに書いてください。"
-EDIT_LOCKED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_EDIT_LOCKED_MESSAGE", "編集はPlusプラン以上で利用できます") or "").strip() or "編集はPlusプラン以上で利用できます"
-CREATE_COMPLETED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_COMPLETED_MESSAGE", "MyModelが作成されました") or "").strip() or "MyModelが作成されました"
+EDIT_LOCKED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_EDIT_LOCKED_MESSAGE", "") or "").strip()
+CREATE_COMPLETED_MESSAGE = (os.getenv("COCOLON_MYMODEL_CREATE_COMPLETED_MESSAGE", "ProfileCreateを保存しました") or "").strip() or "ProfileCreateを保存しました"
 INTRO_SUBSCRIPTION_BENEFIT = (
     os.getenv(
         "COCOLON_MYMODEL_CREATE_INTRO_SUBSCRIPTION_BENEFIT",
-        "サブスク加入することで、回答後編集と追加の問いが表示されます。",
+        "ProfileCreate は固定的な自己紹介 / プロフィール資産です。",
     )
     or ""
-).strip() or "サブスク加入することで、回答後編集と追加の問いが表示されます。"
+).strip() or "ProfileCreate は固定的な自己紹介 / プロフィール資産です。"
 INTRO_SECRET_TOGGLE_NOTE = (
     os.getenv(
         "COCOLON_MYMODEL_CREATE_INTRO_SECRET_TOGGLE_NOTE",
-        "（シークレットメモのオンオフ切り替えは可能です。）",
+        "シークレットメモをオンにすると、他ユーザーの Account には表示されません。",
     )
     or ""
-).strip() or "（シークレットメモのオンオフ切り替えは可能です。）"
+).strip() or "シークレットメモをオンにすると、他ユーザーの Account には表示されません。"
 FREE_ACCESSIBLE_QUESTION_COUNT = int(FREE_TEMPLATE_QUESTION_LIMIT)
 
 ANSWER_SELECT_BASE = "question_id,answer_text,updated_at,is_secret"
@@ -158,6 +158,19 @@ class MyModelCreateQuestionItem(BaseModel):
 
 class MyModelCreateQuestionsResponse(BaseModel):
     questions: List[MyModelCreateQuestionItem]
+    meta: Dict[str, Any] = {}
+
+
+class AccountProfileCreateItem(BaseModel):
+    question_id: int = Field(..., description="Template question id")
+    question_text: str = Field(..., description="Question text")
+    answer_text: str = Field(..., description="Answer text for Account display")
+    updated_at: Optional[str] = Field(default=None, description="Answer updated_at (ISO)")
+    is_secret: bool = Field(default=False, description="Secret flag for this answer")
+
+
+class AccountProfileCreateResponse(BaseModel):
+    items: List[AccountProfileCreateItem]
     meta: Dict[str, Any] = {}
 
 
@@ -292,6 +305,60 @@ def _can_edit_answer_text(*, entitlement: Any, is_answered: bool) -> bool:
     return bool(getattr(entitlement, "can_edit_existing_answers", False))
 
 
+def _resolve_account_profile_answer_text(*, answer_row: Optional[Dict[str, Any]], is_self: bool) -> Optional[str]:
+    if not isinstance(answer_row, dict):
+        return None
+
+    raw_text = str(answer_row.get("answer_text") or "").strip()
+    if not raw_text:
+        return None
+
+    if is_self:
+        return raw_text
+
+    if bool(answer_row.get("is_secret")):
+        return None
+
+    display_state = str(answer_row.get("reflection_display_state") or "").strip().lower()
+    if display_state == "blocked":
+        return None
+
+    display_text = str(answer_row.get("reflection_display_text") or raw_text).strip()
+    return display_text or None
+
+
+def _build_account_profile_items(*, questions: List[Dict[str, Any]], answers: Dict[int, Dict[str, Any]], is_self: bool) -> Tuple[List[AccountProfileCreateItem], int]:
+    items: List[AccountProfileCreateItem] = []
+    answered_count = 0
+
+    for q in questions:
+        try:
+            qid = int(q.get("id"))
+        except Exception:
+            continue
+        question_text = str(q.get("question_text") or "").strip()
+        answer_row = answers.get(qid)
+        raw_answer_text = str((answer_row or {}).get("answer_text") or "").strip()
+        if raw_answer_text:
+            answered_count += 1
+
+        account_answer_text = _resolve_account_profile_answer_text(answer_row=answer_row, is_self=is_self)
+        if not account_answer_text:
+            continue
+
+        items.append(
+            AccountProfileCreateItem(
+                question_id=qid,
+                question_text=question_text,
+                answer_text=account_answer_text,
+                updated_at=(str((answer_row or {}).get("updated_at") or "").strip() or None),
+                is_secret=bool((answer_row or {}).get("is_secret") or False),
+            )
+        )
+
+    return items, answered_count
+
+
 def register_mymodel_create_routes(app: FastAPI) -> None:
     @app.get("/mymodel/create/questions", response_model=MyModelCreateQuestionsResponse)
     async def mymodel_create_questions(
@@ -310,10 +377,8 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
 
         tier_enum = await get_subscription_tier_for_user(user_id)
         entitlement = resolve_mymodel_entitlement(tier_enum)
-        effective_build_tier = entitlement.build_tier
+        effective_build_tier = LIGHT_BUILD_TIER
 
-        # Server-authoritative: returned questions are always limited by the
-        # user's current entitlement, regardless of the requested build_tier.
         questions = await _fetch_questions(build_tier=effective_build_tier)
         qids: Set[int] = set()
         for q in questions:
@@ -383,6 +448,55 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/account/profile-create", response_model=AccountProfileCreateResponse)
+    async def account_profile_create(
+        target_user_id: Optional[str] = Query(default=None, description="Target user id for Account display."),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> AccountProfileCreateResponse:
+        access_token = _extract_bearer_token(authorization)
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(access_token)
+        resolved_target_user_id = str(target_user_id or viewer_user_id or "").strip() or str(viewer_user_id)
+        is_self = resolved_target_user_id == str(viewer_user_id)
+
+        try:
+            await touch_active_user(viewer_user_id, activity="account_profile_create")
+        except Exception as exc:
+            logger.warning("Failed to touch active_users: %s", exc)
+
+        questions = await _fetch_questions(build_tier=LIGHT_BUILD_TIER)
+        question_ids: Set[int] = set()
+        for q in questions:
+            try:
+                question_ids.add(int(q.get("id")))
+            except Exception:
+                continue
+
+        answers = await _fetch_answers(user_id=resolved_target_user_id, question_ids=question_ids)
+        items, answered_count = _build_account_profile_items(
+            questions=questions,
+            answers=answers,
+            is_self=is_self,
+        )
+
+        return AccountProfileCreateResponse(
+            items=items,
+            meta={
+                "viewer_user_id": viewer_user_id,
+                "target_user_id": resolved_target_user_id,
+                "is_self": bool(is_self),
+                "total_questions": int(len(question_ids)),
+                "answered_count": int(answered_count),
+                "visible_answered_count": int(len(items)),
+                "can_edit": bool(is_self),
+                "label": "ProfileCreate",
+                "engine": "account.profile_create.v1",
+            },
+        )
+
+
     @app.post("/mymodel/create/answers", response_model=MyModelCreateAnswersResponse)
     async def mymodel_create_answers(
         body: MyModelCreateAnswersRequest,
@@ -400,7 +514,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
 
         tier_enum = await get_subscription_tier_for_user(user_id)
         entitlement = resolve_mymodel_entitlement(tier_enum)
-        effective_build_tier = entitlement.build_tier
+        effective_build_tier = LIGHT_BUILD_TIER
 
         raw_ids: Set[int] = set()
         for a in (body.answers or []):
