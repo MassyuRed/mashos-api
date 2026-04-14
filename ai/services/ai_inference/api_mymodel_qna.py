@@ -3534,12 +3534,12 @@ async def _sb_get_json_local(path: str, *, params: Dict[str, str]) -> List[Dict[
     return []
 
 
-PUBLIC_REFLECTION_SOURCE_TYPES: Tuple[str, ...] = ("generated", "emotion_generated")
 EMOTION_GENERATED_SOURCE_TYPE = "emotion_generated"
+PUBLIC_REFLECTION_SOURCE_TYPES: Tuple[str, ...] = (EMOTION_GENERATED_SOURCE_TYPE,)
 
 
 def _public_reflection_source_filter() -> str:
-    return "in.(generated,emotion_generated)"
+    return f"eq.{EMOTION_GENERATED_SOURCE_TYPE}"
 
 
 def _row_source_type(row: Dict[str, Any]) -> str:
@@ -3979,7 +3979,29 @@ async def _fetch_active_generated_reflections_for_owner(owner_user_id: str, *, l
             continue
         if get_public_generated_reflection_text(row):
             visible_rows.append(row)
+    
     return _suppress_overlapping_generated_rows(visible_rows)
+
+
+async def _fetch_active_emotion_generated_reflections_for_owner(owner_user_id: str, *, limit: int = 200) -> List[Dict[str, Any]]:
+    oid = str(owner_user_id or "").strip()
+    if not oid:
+        return []
+    rows = await _sb_get_json_local(
+        f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+        params={
+            "select": "*",
+            "owner_user_id": f"eq.{oid}",
+            "source_type": f"eq.{EMOTION_GENERATED_SOURCE_TYPE}",
+            "is_active": "eq.true",
+            "status": "in.(ready,published)",
+            "order": "published_at.desc,updated_at.desc",
+            "limit": str(max(1, int(limit))),
+        },
+    )
+    visible_rows = [row for row in rows if get_public_generated_reflection_text(row)]
+    return sorted(visible_rows, key=_generated_row_sort_key, reverse=True)
+
 
 
 async def _resolve_generated_reflection_access(
@@ -3988,11 +4010,10 @@ async def _resolve_generated_reflection_access(
     row = await _fetch_generated_reflection_by_public_id(q_instance_id)
     if not row:
         raise HTTPException(status_code=404, detail="Reflection not found")
+    if _row_source_type(row) != EMOTION_GENERATED_SOURCE_TYPE:
+        raise HTTPException(status_code=404, detail="Reflection not found")
     owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
     if not owner_user_id:
-        raise HTTPException(status_code=404, detail="Reflection not found")
-    owner_policy = await _resolve_owner_reflection_policy(owner_user_id)
-    if _is_legacy_generated_row(row) and not bool(owner_policy.get("can_expose_generated_reflections")):
         raise HTTPException(status_code=404, detail="Reflection not found")
     if owner_user_id != str(viewer_user_id):
         allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
@@ -4007,69 +4028,28 @@ async def _resolve_qna_context_for_reaction(
     *, viewer_user_id: str, q_instance_id: str, q_key: Optional[str]
 ) -> Dict[str, Any]:
     iid = str(q_instance_id or "").strip()
-    if _is_generated_reflection_instance_id(iid):
-        row = await _resolve_generated_reflection_access(
-            viewer_user_id=viewer_user_id,
-            q_instance_id=iid,
-        )
-        body = get_public_generated_reflection_text(row)
-        if not body:
-            raise HTTPException(status_code=404, detail="Reflection not found")
-        owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
-        return {
-            "kind": "generated",
-            "target_user_id": owner_user_id,
-            "question_id": 0,
-            "q_key": str(q_key or "").strip() or _build_generated_q_key(row),
-            "row": row,
-            "context_source_type": str((row or {}).get("source_type") or "generated").strip() or "generated",
-            "context_question": str((row or {}).get("question") or "").strip() or None,
-            "context_answer": body,
-            "context_topic_key": str((row or {}).get("topic_key") or "").strip() or None,
-            "context_category": str((row or {}).get("category") or "").strip() or None,
-        }
+    if not _is_generated_reflection_instance_id(iid):
+        raise HTTPException(status_code=404, detail="Reflection not found")
 
-    try:
-        tgt, qid = _parse_instance_id(iid)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid q_instance_id")
-
-    if tgt != viewer_user_id:
-        allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-        if not allowed:
-            raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-    _, _, _, effective_tier = await _resolve_tiers(
+    row = await _resolve_generated_reflection_access(
         viewer_user_id=viewer_user_id,
-        target_user_id=tgt,
+        q_instance_id=iid,
     )
-    qrows = await _fetch_create_questions(build_tier=effective_tier)
-    qmap = {
-        int(r.get("id")): str(r.get("question_text") or "").strip()
-        for r in (qrows or [])
-        if r.get("id") is not None
-    }
-    title = qmap.get(int(qid))
-    if not title:
-        raise HTTPException(status_code=404, detail="Question not found")
-
-    answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
-    a = answers.get(int(qid)) or {}
-    body = _public_create_body_from_answer_row(a)
+    body = get_public_generated_reflection_text(row)
     if not body:
-        raise HTTPException(status_code=404, detail="Answer not found")
-
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
     return {
-        "kind": "create",
-        "target_user_id": str(tgt),
-        "question_id": int(qid),
-        "q_key": str(q_key or "").strip() or _q_key_for_question_id(int(qid)),
-        "row": None,
-        "context_source_type": "create",
-        "context_question": title or None,
-        "context_answer": body or None,
-        "context_topic_key": None,
-        "context_category": None,
+        "kind": EMOTION_GENERATED_SOURCE_TYPE,
+        "target_user_id": owner_user_id,
+        "question_id": 0,
+        "q_key": str(q_key or "").strip() or _build_generated_q_key(row),
+        "row": row,
+        "context_source_type": EMOTION_GENERATED_SOURCE_TYPE,
+        "context_question": str((row or {}).get("question") or "").strip() or None,
+        "context_answer": body,
+        "context_topic_key": str((row or {}).get("topic_key") or "").strip() or None,
+        "context_category": str((row or {}).get("category") or "").strip() or None,
     }
 
 
@@ -4153,8 +4133,9 @@ async def _fetch_create_list_items(
     return items
 
 
+
 async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: str) -> List[QnaListItem]:
-    rows = await _fetch_active_generated_reflections_for_owner(target_user_id, limit=200)
+    rows = await _fetch_active_emotion_generated_reflections_for_owner(target_user_id, limit=200)
     if not rows:
         return []
 
@@ -4190,7 +4171,7 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
             discoveries = int(discoveries_map.get(iid) or 0)
         except Exception:
             discoveries = 0
-        generated_at = str((r or {}).get("updated_at") or (r or {}).get("created_at") or "").strip() or None
+        generated_at = str((r or {}).get("published_at") or (r or {}).get("updated_at") or (r or {}).get("created_at") or "").strip() or None
         items.append(
             QnaListItem(
                 title=title,
@@ -4207,7 +4188,7 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
 
 
 async def _fetch_generated_unread_counts(*, viewer_user_id: str, target_user_id: str) -> Tuple[int, int]:
-    rows = await _fetch_active_generated_reflections_for_owner(target_user_id, limit=500)
+    rows = await _fetch_active_emotion_generated_reflections_for_owner(target_user_id, limit=500)
     if not rows:
         return (0, 0)
     q_instance_ids: Set[str] = {_generated_public_id(r) for r in rows if _generated_public_id(r)}
@@ -4290,14 +4271,13 @@ async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id:
     )
 
 
+
 async def _build_saved_generated_items(
     *,
     prepared_rows: List[Tuple[str, str, str]],  # (q_instance_id, owner_user_id, saved_at)
 ) -> List[QnaSavedReflectionItem]:
     if not prepared_rows:
         return []
-    owner_ids = {str(owner) for _, owner, _ in prepared_rows if str(owner or "").strip()}
-    owner_policies = await _resolve_owner_reflection_policies(owner_ids)
     ids = {iid for iid, _, _ in prepared_rows}
     rows_map = await _fetch_generated_reflections_by_public_ids(ids, require_active=True, require_ready=True)
     profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in prepared_rows}))
@@ -4306,9 +4286,7 @@ async def _build_saved_generated_items(
         row = rows_map.get(iid)
         if not row:
             continue
-        source_type = _row_source_type(row)
-        owner_policy = owner_policies.get(str(owner_uid)) or {}
-        if source_type == "generated" and not bool(owner_policy.get("can_expose_generated_reflections")):
+        if _row_source_type(row) != EMOTION_GENERATED_SOURCE_TYPE:
             continue
         if not get_public_generated_reflection_text(row):
             continue
@@ -4430,6 +4408,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
     ]:
         _remove_registered_route(app, path, methods)
 
+
     @app.get("/mymodel/qna/list", response_model=QnaListResponse)
     async def qna_list(
         target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
@@ -4459,27 +4438,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         )
 
         try:
-            create_task = asyncio.create_task(
-                _fetch_create_list_items(
-                    viewer_user_id=str(viewer_user_id),
-                    target_user_id=str(tgt),
-                    effective_tier=str(effective_tier),
-                )
+            items = await _fetch_generated_list_items(
+                viewer_user_id=str(viewer_user_id),
+                target_user_id=str(tgt),
             )
-            generated_task = asyncio.create_task(
-                _fetch_generated_list_items(
-                    viewer_user_id=str(viewer_user_id),
-                    target_user_id=str(tgt),
-                )
-            )
-            create_items, generated_items = await asyncio.gather(create_task, generated_task)
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("reflection list build failed: %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        items = [*create_items, *generated_items]
 
         sort_key = str(sort or "newest").strip().lower()
         metric_key = str(metric or "views").strip().lower()
@@ -4493,7 +4460,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             else:
                 items.sort(key=lambda x: (x.views, x.resonances, x.generated_at or ""), reverse=True)
         else:
-            items.sort(key=lambda x: (x.generated_at or ""), reverse=True)
+            items.sort(key=lambda x: (x.generated_at or "", x.q_instance_id), reverse=True)
 
         meta = QnaListMeta(
             viewer_user_id=str(viewer_user_id),
@@ -4590,9 +4557,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             has_unread=bool(self_has_unread or following_has_unread),
         )
 
+
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(
-        q_instance_id: str = Query(..., description="<target_user_id>:<question_id> or reflection:<uuid>"),
+        q_instance_id: str = Query(..., description="reflection:<uuid>"),
         mark_viewed: bool = Query(default=False, description="If true, also mark read and apply view counts in the same request"),
         include_my_discovery_latest: bool = Query(default=False, description="If true, include the viewer's latest discovery for this reflection when available"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -4605,63 +4573,26 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             raise HTTPException(status_code=401, detail="Invalid token")
 
         iid = str(q_instance_id or "").strip()
-        if _is_generated_reflection_instance_id(iid):
-            row = await _resolve_generated_reflection_access(viewer_user_id=viewer_user_id, q_instance_id=iid)
-            body = get_public_generated_reflection_text(row)
-            if not body:
-                raise HTTPException(status_code=404, detail="Reflection not found")
-            qk = _build_generated_q_key(row)
-            title = str((row or {}).get("question") or "").strip()
-            if not title:
-                raise HTTPException(status_code=404, detail="Reflection not found")
-            owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
-            return await _build_qna_detail_response(
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=owner_user_id,
-                q_instance_id=iid,
-                q_key=qk,
-                title=title,
-                body=body,
-                question_id=0,
-                include_my_discovery_latest=bool(include_my_discovery_latest),
-                mark_viewed=bool(mark_viewed),
-            )
+        if not _is_generated_reflection_instance_id(iid):
+            raise HTTPException(status_code=404, detail="Reflection not found")
 
-        try:
-            tgt, qid = _parse_instance_id(iid)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
-
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-        _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-        qrows = await _fetch_create_questions(build_tier=effective_tier)
-        qmap = {
-            int(r.get("id")): str(r.get("question_text") or "").strip()
-            for r in (qrows or [])
-            if r.get("id") is not None
-        }
-        title = qmap.get(int(qid))
-        if not title:
-            raise HTTPException(status_code=404, detail="Question not found")
-
-        answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
-        a = answers.get(int(qid)) or {}
-        body = _public_create_body_from_answer_row(a)
+        row = await _resolve_generated_reflection_access(viewer_user_id=viewer_user_id, q_instance_id=iid)
+        body = get_public_generated_reflection_text(row)
         if not body:
-            raise HTTPException(status_code=404, detail="Answer not found")
-
+            raise HTTPException(status_code=404, detail="Reflection not found")
+        qk = _build_generated_q_key(row)
+        title = str((row or {}).get("question") or "").strip()
+        if not title:
+            raise HTTPException(status_code=404, detail="Reflection not found")
+        owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
         return await _build_qna_detail_response(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=str(tgt),
+            target_user_id=owner_user_id,
             q_instance_id=iid,
-            q_key=_q_key_for_question_id(int(qid)),
+            q_key=qk,
             title=title,
             body=body,
-            question_id=int(qid),
+            question_id=0,
             include_my_discovery_latest=bool(include_my_discovery_latest),
             mark_viewed=bool(mark_viewed),
         )
@@ -4776,6 +4707,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             res_cnt = 0
         return QnaResonanceResponse(status="already" if already else "noop", q_key=qk, q_instance_id=iid, resonated=bool(already), views=views, resonances=res_cnt)
 
+
     @app.get("/mymodel/qna/echoes/reflections", response_model=QnaSavedReflectionsResponse)
     async def qna_echoes_reflections(
         order: str = Query(default="newest", description="newest | oldest"),
@@ -4834,7 +4766,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 break
 
         generated_prepared: List[Tuple[str, str, str]] = []
-        create_prepared: List[Tuple[str, str, int, str, str]] = []
         for r in picked:
             iid = str((r or {}).get("q_instance_id") or "").strip()
             tgt = str((r or {}).get("target_user_id") or "").strip()
@@ -4843,26 +4774,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 continue
             if _is_generated_reflection_instance_id(iid):
                 generated_prepared.append((iid, tgt, saved_at))
-                continue
-            qid_val = None
-            try:
-                qid_val = int((r or {}).get("question_id") or 0)
-            except Exception:
-                qid_val = None
-            if not qid_val:
-                try:
-                    _, qid2 = _parse_instance_id(iid)
-                    qid_val = int(qid2)
-                except Exception:
-                    qid_val = None
-            if not qid_val:
-                continue
-            qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
-            create_prepared.append((iid, tgt, int(qid_val), qk, saved_at))
 
-        create_items = await _build_saved_create_items(prepared_rows=create_prepared)
-        generated_items = await _build_saved_generated_items(prepared_rows=generated_prepared)
-        items = [*generated_items, *create_items]
+        items = await _build_saved_generated_items(prepared_rows=generated_prepared)
         items.sort(key=lambda x: x.saved_at, reverse=(order_key == "newest"))
         return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=len(items), limit=int(limit), offset=int(offset), items=items)
 
@@ -5214,6 +5127,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             items=items,
         )
 
+
     @app.get("/mymodel/qna/discoveries/reflections", response_model=QnaSavedReflectionsResponse)
     async def qna_discoveries_reflections(
         order: str = Query(default="newest", description="newest | oldest"),
@@ -5272,7 +5186,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 break
 
         generated_prepared: List[Tuple[str, str, str]] = []
-        create_prepared: List[Tuple[str, str, int, str, str]] = []
         for r in picked:
             iid = str((r or {}).get("q_instance_id") or "").strip()
             tgt = str((r or {}).get("target_user_id") or "").strip()
@@ -5281,26 +5194,8 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
                 continue
             if _is_generated_reflection_instance_id(iid):
                 generated_prepared.append((iid, tgt, saved_at))
-                continue
-            qid_val = None
-            try:
-                qid_val = int((r or {}).get("question_id") or 0)
-            except Exception:
-                qid_val = None
-            if not qid_val:
-                try:
-                    _, qid2 = _parse_instance_id(iid)
-                    qid_val = int(qid2)
-                except Exception:
-                    qid_val = None
-            if not qid_val:
-                continue
-            qk = str((r or {}).get("q_key") or "").strip() or _q_key_for_question_id(int(qid_val))
-            create_prepared.append((iid, tgt, int(qid_val), qk, saved_at))
 
-        create_items = await _build_saved_create_items(prepared_rows=create_prepared)
-        generated_items = await _build_saved_generated_items(prepared_rows=generated_prepared)
-        items = [*generated_items, *create_items]
+        items = await _build_saved_generated_items(prepared_rows=generated_prepared)
         items.sort(key=lambda x: x.saved_at, reverse=(order_key == "newest"))
         return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=len(items), limit=int(limit), offset=int(offset), items=items)
 

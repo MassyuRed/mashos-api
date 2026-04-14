@@ -66,6 +66,7 @@ DISCOVERY_LOGS_TABLE = (
 DEFAULT_MAX_ACTIVE_GENERATED = int(os.getenv("REFLECTION_MAX_ACTIVE_GENERATED", "50") or "50")
 DEFAULT_MAX_LOCKED_GENERATED = int(os.getenv("REFLECTION_MAX_LOCKED_GENERATED", "10") or "10")
 DEFAULT_EVICTION_POLICY = (os.getenv("REFLECTION_EVICTION_POLICY") or "oldest").strip() or "oldest"
+LEGACY_GENERATED_REFLECTIONS_RETIRED = (os.getenv("LEGACY_GENERATED_REFLECTIONS_RETIRED") or "true").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -721,6 +722,27 @@ async def stage_generation_plan(
     inspection_targets: List[str] = []
     skipped_same_as_active_ids: List[str] = []
 
+    if LEGACY_GENERATED_REFLECTIONS_RETIRED:
+        deactivated_ids = await _apply_deactivates(user_id=uid, deactivates=deactivates)
+        return {
+            "user_id": uid,
+            "snapshot_id": sid,
+            "source_hash": sh,
+            "created_ids": [],
+            "updated_ids": [],
+            "deactivated_ids": deactivated_ids,
+            "skipped_same_as_active_ids": [],
+            "inspection_targets": [],
+            "retired": True,
+            "stats": {
+                "created_count": 0,
+                "updated_count": 0,
+                "deactivated_count": len(deactivated_ids),
+                "skipped_same_as_active_count": 0,
+                "inspection_target_count": 0,
+            },
+        }
+
     for proposal in creates:
         proposal = dict(proposal or {})
         proposal.setdefault("source_snapshot_id", sid)
@@ -784,6 +806,34 @@ async def promote_reflection(
     row = await _fetch_reflection_by_id(reflection_id)
     if not row:
         raise ValueError("reflection not found")
+
+    if LEGACY_GENERATED_REFLECTIONS_RETIRED:
+        rid = _row_id(row)
+        retired_rows = await _sb_patch_json(
+            f"/rest/v1/{REFLECTIONS_TABLE}",
+            params=[("id", f"eq.{rid}")],
+            json_body={
+                "status": "archived",
+                "is_active": False,
+                "published_at": None,
+            },
+            timeout=8.0,
+            prefer="return=representation",
+        )
+        retired_row = retired_rows[0] if retired_rows else {**row, "status": "archived", "is_active": False, "published_at": None}
+        return {
+            "promoted_id": rid,
+            "previous_archived_ids": [],
+            "post_verify_archived_ids": [],
+            "capacity": {
+                "evicted_ids": [],
+                "active_count": 0,
+                "max_active": int(max_active),
+                "policy": str(eviction_policy or DEFAULT_EVICTION_POLICY),
+            },
+            "retired": True,
+            "row": retired_row,
+        }
 
     uid = str(row.get("owner_user_id") or "").strip()
     topic_key = str(row.get("topic_key") or "").strip()
@@ -1069,6 +1119,78 @@ def _unique_keep_order(values: Iterable[str]) -> List[str]:
     return out
 
 
+
+
+async def retire_public_generated_reflections(*, user_id: str, limit: int = 1000) -> Dict[str, Any]:
+    """Archive / deactivate currently public legacy generated reflections for one user.
+
+    This helper is intentionally narrow and safe:
+    - source_type = generated only
+    - only rows that are still publicly visible (active or ready/published) are targeted
+    - emotion_generated posts are untouched
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return {
+            "user_id": "",
+            "archived_ids": [],
+            "archived_public_ids": [],
+            "affected_count": 0,
+        }
+
+    rows = await _sb_get_json(
+        f"/rest/v1/{REFLECTIONS_TABLE}",
+        params=[
+            ("select", "id,public_id,status,is_active,updated_at,created_at"),
+            ("owner_user_id", f"eq.{uid}"),
+            ("source_type", "eq.generated"),
+            ("order", "updated_at.desc,created_at.desc"),
+            ("limit", str(max(1, int(limit)))),
+        ],
+        timeout=10.0,
+    )
+
+    target_rows = []
+    for row in rows:
+        status = str((row or {}).get("status") or "").strip().lower()
+        is_active = bool((row or {}).get("is_active"))
+        if is_active or status in {"ready", "published"}:
+            target_rows.append(row)
+
+    target_ids = [_row_id(row) for row in target_rows if _row_id(row)]
+    if not target_ids:
+        return {
+            "user_id": uid,
+            "archived_ids": [],
+            "archived_public_ids": [],
+            "affected_count": 0,
+        }
+
+    updated_rows = await _sb_patch_json(
+        f"/rest/v1/{REFLECTIONS_TABLE}",
+        params=[
+            ("id", _quoted_in(target_ids)),
+            ("owner_user_id", f"eq.{uid}"),
+            ("source_type", "eq.generated"),
+        ],
+        json_body={
+            "status": "archived",
+            "is_active": False,
+            "published_at": None,
+        },
+        timeout=10.0,
+        prefer="return=representation",
+    )
+
+    archived_ids = [_row_id(row) for row in updated_rows if _row_id(row)]
+    archived_public_ids = [_row_public_id(row) for row in updated_rows if _row_public_id(row)]
+    return {
+        "user_id": uid,
+        "archived_ids": archived_ids,
+        "archived_public_ids": archived_public_ids,
+        "affected_count": len(archived_ids),
+    }
+
 __all__ = [
     "fetch_active_generated_reflections",
     "fetch_staged_generated_reflections",
@@ -1078,4 +1200,5 @@ __all__ = [
     "reject_reflection",
     "fail_reflection",
     "enforce_capacity_policy",
+    "retire_public_generated_reflections",
 ]
