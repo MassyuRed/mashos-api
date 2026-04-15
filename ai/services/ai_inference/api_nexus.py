@@ -6,9 +6,12 @@ Nexus read-side routes for the new emotion-generated Reflection feed.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
@@ -66,6 +69,109 @@ class NexusReflectionResponse(BaseModel):
     total_items: int = 0
     has_more: bool = False
     items: List[NexusReflectionItem] = Field(default_factory=list)
+
+
+NEXUS_SOURCE_PATHS: Dict[str, str] = {
+    "emotion_ranking": "/ranking/emotions",
+    "emotion_log": "/friends/feed",
+    "recommend_users": "/mymodel/recommend/users",
+    "trending_questions": "/mymodel/qna/trending",
+    "history_echoes": "/mymodel/qna/echoes/reflections",
+    "history_discoveries": "/mymodel/qna/discoveries/reflections",
+}
+
+
+def _fastapi_default_value(default: Any) -> Tuple[bool, Any]:
+    """Return (has_value, value) for FastAPI Query/Header defaults."""
+    if default is inspect.Signature.empty:
+        return False, None
+    if hasattr(default, "default"):
+        nested_default = getattr(default, "default")
+        if nested_default is not inspect.Signature.empty:
+            return True, nested_default
+    return True, default
+
+
+def _find_registered_route_endpoint(app: FastAPI, *, path: str, method: str = "GET"):
+    target_path = str(path or "").strip()
+    target_method = str(method or "GET").strip().upper()
+    for route in getattr(app, "routes", []) or []:
+        if str(getattr(route, "path", "") or "") != target_path:
+            continue
+        methods = {str(m or "").upper() for m in (getattr(route, "methods", set()) or set())}
+        if target_method not in methods:
+            continue
+        endpoint = getattr(route, "endpoint", None)
+        if endpoint is not None:
+            return endpoint
+    return None
+
+
+async def _call_registered_route_json(
+    app: FastAPI,
+    *,
+    path: str,
+    method: str = "GET",
+    detail: str,
+    **values: Any,
+) -> Any:
+    """Call another registered read route and return JSON-safe data.
+
+    Nexus uses these wrappers as stable /nexus/* entry points while preserving
+    the source endpoint semantics that already power the existing screens.
+    """
+    endpoint = _find_registered_route_endpoint(app, path=path, method=method)
+    if endpoint is None:
+        raise HTTPException(status_code=502, detail=f"{detail}: route not registered")
+
+    kwargs: Dict[str, Any] = {}
+    try:
+        signature = inspect.signature(endpoint)
+    except Exception:
+        signature = None
+
+    if signature is not None:
+        for name, param in signature.parameters.items():
+            if name in values:
+                kwargs[name] = values[name]
+                continue
+            has_default, default_value = _fastapi_default_value(param.default)
+            if has_default:
+                kwargs[name] = default_value
+    else:
+        kwargs = dict(values)
+
+    try:
+        result = endpoint(**kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        return jsonable_encoder(result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"{detail}: {exc}") from exc
+
+
+def _normalize_include_sections(raw: Optional[str]) -> Set[str]:
+    if raw is None:
+        return {"emotion_ranking", "reflections"}
+    values = {
+        str(part or "").strip().lower()
+        for part in str(raw or "").replace("|", ",").split(",")
+    }
+    values.discard("")
+    allowed = {
+        "emotion_ranking",
+        "reflections",
+        "emotion_log",
+        "recommend_users",
+        "trending_questions",
+        "history_echoes",
+        "history_discoveries",
+    }
+    if "all" in values:
+        return set(allowed)
+    return values & allowed
 
 
 def _row_instance_id(row: Dict[str, Any]) -> str:
@@ -183,7 +289,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         metrics_task = _fetch_instance_metrics(q_instance_ids)
         discoveries_task = _fetch_discovery_counts_for_instances(q_instance_ids)
         reads_task = _fetch_reads(str(viewer_user_id), q_instance_ids)
-        metrics, discoveries_map, read_set = await __import__("asyncio").gather(
+        metrics, discoveries_map, read_set = await asyncio.gather(
             metrics_task,
             discoveries_task,
             reads_task,
@@ -258,3 +364,164 @@ def register_nexus_routes(app: FastAPI) -> None:
             has_more=total_items > int(limit),
             items=sliced_items,
         )
+
+    @app.get("/nexus/emotion-ranking")
+    async def nexus_emotion_ranking(
+        limit: int = Query(default=5, ge=1, le=50),
+        period: str = Query(default="today"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["emotion_ranking"],
+            detail="Failed to load Nexus emotion ranking",
+            limit=int(limit),
+            period=str(period or "today"),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/emotion-log")
+    async def nexus_emotion_log(
+        limit: int = Query(default=20, ge=1, le=100),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["emotion_log"],
+            detail="Failed to load Nexus emotion log",
+            limit=int(limit),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/recommend/users")
+    async def nexus_recommend_users(
+        limit: int = Query(default=8, ge=1, le=100),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["recommend_users"],
+            detail="Failed to load Nexus recommend users",
+            limit=int(limit),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/recommend/questions")
+    async def nexus_recommend_questions(
+        limit: int = Query(default=8, ge=1, le=100),
+        mode: str = Query(default="overall"),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["trending_questions"],
+            detail="Failed to load Nexus trending questions",
+            limit=int(limit),
+            mode=str(mode or "overall"),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/history/echoes")
+    async def nexus_history_echoes(
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["history_echoes"],
+            detail="Failed to load Nexus echoes history",
+            limit=int(limit),
+            offset=int(offset),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/history/discoveries")
+    async def nexus_history_discoveries(
+        limit: int = Query(default=20, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path=NEXUS_SOURCE_PATHS["history_discoveries"],
+            detail="Failed to load Nexus discoveries history",
+            limit=int(limit),
+            offset=int(offset),
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/bootstrap")
+    async def nexus_bootstrap(
+        include: Optional[str] = Query(
+            default=None,
+            description="Comma-separated sections. Default: emotion_ranking,reflections. Use all for every Nexus tab.",
+        ),
+        reflection_limit: int = Query(default=20, ge=1, le=100),
+        ranking_limit: int = Query(default=5, ge=1, le=50),
+        tab_limit: int = Query(default=8, ge=1, le=100),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Dict[str, Any]:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        include_sections = _normalize_include_sections(include)
+        sections: Dict[str, Any] = {}
+        errors: Dict[str, str] = {}
+
+        async def _load_section(name: str, coro) -> None:
+            try:
+                sections[name] = await coro
+            except HTTPException as exc:
+                errors[name] = str(exc.detail)
+            except Exception as exc:
+                errors[name] = str(exc)
+
+        tasks = []
+        if "emotion_ranking" in include_sections:
+            tasks.append(_load_section("emotion_ranking", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["emotion_ranking"], detail="Failed to load Nexus emotion ranking",
+                limit=int(ranking_limit), period="today", authorization=authorization)))
+        if "reflections" in include_sections:
+            tasks.append(_load_section("reflections", _call_registered_route_json(
+                app, path="/nexus/reflections", detail="Failed to load Nexus reflections",
+                sort="latest", limit=int(reflection_limit), following_only=True, authorization=authorization)))
+        if "emotion_log" in include_sections:
+            tasks.append(_load_section("emotion_log", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["emotion_log"], detail="Failed to load Nexus emotion log",
+                limit=int(tab_limit), authorization=authorization)))
+        if "recommend_users" in include_sections:
+            tasks.append(_load_section("recommend_users", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["recommend_users"], detail="Failed to load Nexus recommend users",
+                limit=int(tab_limit), authorization=authorization)))
+        if "trending_questions" in include_sections:
+            tasks.append(_load_section("trending_questions", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["trending_questions"], detail="Failed to load Nexus trending questions",
+                limit=int(tab_limit), mode="overall", authorization=authorization)))
+        if "history_echoes" in include_sections:
+            tasks.append(_load_section("history_echoes", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["history_echoes"], detail="Failed to load Nexus echoes history",
+                limit=int(tab_limit), offset=0, authorization=authorization)))
+        if "history_discoveries" in include_sections:
+            tasks.append(_load_section("history_discoveries", _call_registered_route_json(
+                app, path=NEXUS_SOURCE_PATHS["history_discoveries"], detail="Failed to load Nexus discoveries history",
+                limit=int(tab_limit), offset=0, authorization=authorization)))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+        return {
+            "status": "partial" if errors else "ok",
+            "viewer_user_id": str(viewer_user_id),
+            "sections": sections,
+            "errors": errors,
+            "source_paths": {
+                key: value
+                for key, value in NEXUS_SOURCE_PATHS.items()
+                if key in include_sections or key == "emotion_ranking"
+            },
+        }
