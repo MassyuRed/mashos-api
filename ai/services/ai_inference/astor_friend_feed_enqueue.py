@@ -15,8 +15,9 @@ Design
 
 Notes
 -----
-- worker / queue / DB 互換のため、job_type・job_key_prefix・env 名は legacy の
+- worker / queue / DB 互換のため、job_type・job_key_prefix は legacy の
   ``friend_*`` を維持する。
+- env は canonical ``ASTOR_EMOTION_LOG_*`` を優先し、legacy ``ASTOR_FRIEND_*`` を fallback とする。
 - このモジュール名も互換優先で ``astor_friend_feed_enqueue.py`` のまま残す。
 """
 
@@ -40,13 +41,17 @@ FRIEND_FEED_REFRESH_JOB_KEY_PREFIX = "friend_feed_refresh_v1"
 
 ASTOR_WORKER_QUEUE_ENABLED = _env_truthy("ASTOR_WORKER_QUEUE_ENABLED", "false")
 ASTOR_FRIEND_FEED_ENQUEUE_ENABLED = _env_truthy(
-    "ASTOR_FRIEND_FEED_ENQUEUE_ENABLED",
-    "true",
+    "ASTOR_EMOTION_LOG_FEED_ENQUEUE_ENABLED",
+    os.getenv("ASTOR_FRIEND_FEED_ENQUEUE_ENABLED", "true"),
 )
 
 try:
     ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = int(
-        os.getenv("ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS", "10") or "10"
+        os.getenv(
+            "ASTOR_EMOTION_LOG_FEED_DEBOUNCE_SECONDS",
+            os.getenv("ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS", "10"),
+        )
+        or "10"
     )
 except Exception:
     ASTOR_FRIEND_FEED_DEBOUNCE_SECONDS = 10
@@ -138,7 +143,8 @@ async def enqueue_emotion_log_feed_refresh(
             "viewer_user_id": viewer_uid,
             "trigger": trig,
             "requested_at": req_at,
-            "phase": "feed_log_v1",
+            "phase": "emotion_log_feed_v1",
+            "surface": "emotion_log",
         }
     )
     if owner_uid:

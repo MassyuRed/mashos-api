@@ -8,7 +8,7 @@ Emotion Submit API for Cocolon
 - React Native アプリからの感情入力を受け取る
 - Supabase Auth の JWT(Access Token) を検証して user_id を確定する
 - Supabase の emotions テーブルに1件保存する
-- （運用上は legacy 名の friend_emotion_feed テーブルを使って）感情ログ通知を作成する
+- （物理テーブルは legacy 名の friend_emotion_feed を維持しつつ）感情ログ通知を作成する
 
 設計メモ:
 - 認証:
@@ -810,8 +810,8 @@ class EmotionSubmitRequest(BaseModel):
         default=True,
         alias="send_friend_notification",
         description=(
-            "感情通知を送るかどうか。true のとき legacy table の friend_emotion_feed と "
-            "Push 通知を作成する。後方互換のため未指定は true。"
+            "感情通知を送るかどうか。true のとき EmotionLog feed（物理テーブルは "
+            "legacy の friend_emotion_feed）と Push 通知を作成する。後方互換のため未指定は true。"
         ),
     )
 
@@ -1591,6 +1591,25 @@ async def _insert_emotion_log_feed_rows(
         return False
 
 
+async def _invalidate_emotion_log_receiver_caches(viewer_user_ids: List[str]) -> None:
+    """Invalidate EmotionLog unread/startup caches for receivers (best-effort)."""
+    seen = set()
+    for raw_uid in viewer_user_ids or []:
+        uid = str(raw_uid or "").strip()
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        for prefix in (
+            f"friends:unread:{uid}",      # legacy cache key
+            f"emotion_log:unread:{uid}",  # canonical cache key for future callers
+            f"startup_snapshot:{uid}",
+        ):
+            try:
+                await invalidate_prefix(prefix)
+            except Exception:
+                logger.debug("EmotionLog receiver cache invalidation skipped: prefix=%s", prefix, exc_info=True)
+
+
 async def _notify_follow_viewers_about_emotion(
     *,
     owner_user_id: str,
@@ -1642,6 +1661,7 @@ async def _notify_follow_viewers_about_emotion(
     )
 
     if feed_rows_inserted:
+        await _invalidate_emotion_log_receiver_caches(viewer_user_ids)
         try:
             await enqueue_emotion_log_feed_refresh_many(
                 viewer_user_ids=viewer_user_ids,

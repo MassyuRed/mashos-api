@@ -29,6 +29,8 @@ JST = timezone(timedelta(hours=9))
 STARTUP_SNAPSHOT_SCHEMA_VERSION = "startup_snapshot.v1"
 STARTUP_SNAPSHOT_SOURCE_VERSIONS: Dict[str, str] = {
     "schema": STARTUP_SNAPSHOT_SCHEMA_VERSION,
+    "emotion_log_unread": "emotion_log.unread.v1",
+    # Backward-compatible legacy alias for older clients.
     "friends_unread": "friends.unread.v1",
     "myweb_unread": "report_reads.myweb_unread.v1",
     "notices_current": "notices.current.v1",
@@ -141,7 +143,10 @@ async def _build_startup_snapshot_payload(
         }
 
     # Lazy imports keep startup light and avoid circular imports during app boot.
-    from api_friends import get_friend_unread_status_payload_for_user
+    try:
+        from api_friends import get_emotion_log_unread_status_payload_for_user
+    except Exception:
+        from api_friends import get_friend_unread_status_payload_for_user as get_emotion_log_unread_status_payload_for_user
     from api_global_summary import get_global_summary_payload
     from api_input_summary import get_input_summary_payload_for_user
     from api_notice import get_notice_current_payload_for_user
@@ -151,7 +156,7 @@ async def _build_startup_snapshot_payload(
     normalized_meta = _normalize_client_meta(client_meta)
 
     defaults: Dict[str, Any] = {
-        "friends_unread": {
+        "emotion_log_unread": {
             "status": "ok",
             "feed_unread": False,
             "requests_unread": False,
@@ -212,7 +217,7 @@ async def _build_startup_snapshot_payload(
     }
 
     section_results = await asyncio.gather(
-        _safe_section("friends_unread", get_friend_unread_status_payload_for_user(uid), defaults["friends_unread"]),
+        _safe_section("emotion_log_unread", get_emotion_log_unread_status_payload_for_user(uid), defaults["emotion_log_unread"]),
         _safe_section(
             "myweb_unread",
             get_myweb_unread_status_payload_for_user(uid, limit=1, include_self_structure=True),
@@ -237,14 +242,21 @@ async def _build_startup_snapshot_payload(
         if error:
             errors[name] = error
 
-    friends_unread = sections.get("friends_unread") if isinstance(sections.get("friends_unread"), Mapping) else {}
+    # Keep legacy friends_unread for older clients while exposing the canonical
+    # emotion_log_unread section for current clients. Both reference the same payload.
+    if "emotion_log_unread" in sections and "friends_unread" not in sections:
+        sections["friends_unread"] = sections["emotion_log_unread"]
+
+    emotion_log_unread = sections.get("emotion_log_unread") if isinstance(sections.get("emotion_log_unread"), Mapping) else {}
     myweb_unread = sections.get("myweb_unread") if isinstance(sections.get("myweb_unread"), Mapping) else {}
     notices_current = sections.get("notices_current") if isinstance(sections.get("notices_current"), Mapping) else {}
     today_question = sections.get("today_question") if isinstance(sections.get("today_question"), Mapping) else {}
 
     unread_by_type = myweb_unread.get("unread_by_type") if isinstance(myweb_unread.get("unread_by_type"), Mapping) else {}
     startup_flags = {
-        "has_any_friends_unread": bool(friends_unread.get("feed_unread") or friends_unread.get("requests_unread")),
+        "has_any_emotion_log_unread": bool(emotion_log_unread.get("feed_unread") or emotion_log_unread.get("requests_unread")),
+        # Backward-compatible legacy alias for older clients.
+        "has_any_friends_unread": bool(emotion_log_unread.get("feed_unread") or emotion_log_unread.get("requests_unread")),
         "has_any_myweb_unread": any(bool(unread_by_type.get(k)) for k in ("daily", "weekly", "monthly", "selfStructure")),
         "has_popup_notice": bool(notices_current.get("popup_notice")),
         "today_question_answered": str(today_question.get("answer_status") or "unanswered") == "answered",

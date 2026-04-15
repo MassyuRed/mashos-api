@@ -80,6 +80,8 @@ def _startup_fallback_payload(
         "generated_at": _iso_utc(),
         "source_versions": {"schema": "startup_snapshot.v1"},
         "flags": {
+            "has_any_emotion_log_unread": False,
+            # Backward-compatible legacy alias for older clients.
             "has_any_friends_unread": False,
             "has_any_myweb_unread": False,
             "has_popup_notice": False,

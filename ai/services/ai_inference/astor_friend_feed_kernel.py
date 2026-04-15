@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Friend feed generation kernel for ASTOR (Phase 1).
+"""EmotionLog feed generation kernel for ASTOR (Phase 1).
 
 Purpose
 -------
 既存の `friend_emotion_feed` を source log として、そのまま viewer 単位の
-Friend feed summary payload を生成する。
+EmotionLog feed summary payload を生成する。
 
 Phase 1 policy
 --------------
-- feed source は `friend_emotion_feed` をそのまま利用する
+- feed source は `friend_emotion_feed` をそのまま利用する（物理テーブル名は legacy 維持）
 - snapshot から再構成しない
 - request / accept / reject / cancel / remove / mute はここでは扱わない
 - push notification は live のまま残し、本 module は表示用 feed payload だけを作る
@@ -17,7 +17,7 @@ Phase 1 policy
 Design notes
 ------------
 - emotion submit 時点で viewer 別 materialization が完了しているため、
-  Friend feed の nationalization は source log -> summary artifact の形が最も安全
+  EmotionLog feed の nationalization は source log -> summary artifact の形が最も安全
 - 保存時に `timeLabel` は焼かず、公開 API 側で整形する
 - viewer 単位 summary なので global board ではない
 """
@@ -31,25 +31,38 @@ from typing import Any, Dict, Iterable, List, Mapping
 
 from supabase_client import ensure_supabase_config, sb_get
 from astor_friend_feed_store import (
-    FRIEND_FEED_MAX_ITEMS,
-    FRIEND_FEED_VERSION,
-    normalize_friend_feed_payload,
+    EMOTION_LOG_FEED_MAX_ITEMS,
+    EMOTION_LOG_FEED_VERSION,
+    normalize_emotion_log_feed_payload,
 )
+
+# Backward-compatible local aliases for legacy imports / callers.
+FRIEND_FEED_MAX_ITEMS = EMOTION_LOG_FEED_MAX_ITEMS
+FRIEND_FEED_VERSION = EMOTION_LOG_FEED_VERSION
+normalize_friend_feed_payload = normalize_emotion_log_feed_payload
 
 logger = logging.getLogger("astor_friend_feed_kernel")
 
 
 FRIEND_FEED_SOURCE_TABLE = (
-    os.getenv("ASTOR_FRIEND_FEED_SOURCE_TABLE")
+    os.getenv("ASTOR_EMOTION_LOG_FEED_SOURCE_TABLE")
+    or os.getenv("EMOTION_LOG_FEED_SOURCE_TABLE")
+    or os.getenv("ASTOR_FRIEND_FEED_SOURCE_TABLE")
     or os.getenv("FRIEND_FEED_SOURCE_TABLE")
     or "friend_emotion_feed"
 ).strip() or "friend_emotion_feed"
 
 FRIEND_FEED_TIMEZONE = (
-    os.getenv("ASTOR_FRIEND_FEED_TIMEZONE")
+    os.getenv("ASTOR_EMOTION_LOG_FEED_TIMEZONE")
+    or os.getenv("EMOTION_LOG_FEED_TIMEZONE")
+    or os.getenv("ASTOR_FRIEND_FEED_TIMEZONE")
     or os.getenv("FRIEND_FEED_TIMEZONE")
     or "Asia/Tokyo"
 ).strip() or "Asia/Tokyo"
+
+# Canonical aliases for EmotionLog naming.
+EMOTION_LOG_FEED_SOURCE_TABLE = FRIEND_FEED_SOURCE_TABLE
+EMOTION_LOG_FEED_TIMEZONE = FRIEND_FEED_TIMEZONE
 
 
 def _canonical_viewer_user_id(value: Any) -> str:
@@ -105,7 +118,7 @@ async def _fetch_friend_feed_rows(viewer_user_id: str, *, limit: int = FRIEND_FE
     p_limit = max(1, int(limit or FRIEND_FEED_MAX_ITEMS or 20))
 
     resp = await sb_get(
-        f"/rest/v1/{FRIEND_FEED_SOURCE_TABLE}",
+        f"/rest/v1/{EMOTION_LOG_FEED_SOURCE_TABLE}",
         params={
             "select": "id,viewer_user_id,owner_user_id,owner_name,items,created_at",
             "viewer_user_id": f"eq.{viewer_id}",
@@ -118,19 +131,19 @@ async def _fetch_friend_feed_rows(viewer_user_id: str, *, limit: int = FRIEND_FE
         body = (resp.text or "")[:1500]
         logger.error(
             "friend feed source fetch failed: table=%s viewer=%s status=%s body=%s",
-            FRIEND_FEED_SOURCE_TABLE,
+            EMOTION_LOG_FEED_SOURCE_TABLE,
             viewer_id,
             resp.status_code,
             body,
         )
-        raise RuntimeError(f"friend feed source fetch failed: {FRIEND_FEED_SOURCE_TABLE} ({resp.status_code})")
+        raise RuntimeError(f"emotion log feed source fetch failed: {EMOTION_LOG_FEED_SOURCE_TABLE} ({resp.status_code})")
 
     try:
         data = resp.json()
     except Exception as exc:
         logger.error(
             "friend feed source returned non-json: table=%s viewer=%s err=%s",
-            FRIEND_FEED_SOURCE_TABLE,
+            EMOTION_LOG_FEED_SOURCE_TABLE,
             viewer_id,
             exc,
         )
@@ -161,13 +174,13 @@ def _build_friend_feed_payload(viewer_user_id: str, rows: Iterable[Mapping[str, 
         )
 
     payload = {
-        "version": FRIEND_FEED_VERSION,
+        "version": EMOTION_LOG_FEED_VERSION,
         "viewer_user_id": viewer_id,
-        "timezone": FRIEND_FEED_TIMEZONE,
+        "timezone": EMOTION_LOG_FEED_TIMEZONE,
         "items": raw_items,
         "meta": {
-            "kernel": "friend_feed_source_v1",
-            "source_table": FRIEND_FEED_SOURCE_TABLE,
+            "kernel": "emotion_log_feed_source_v1",
+            "source_table": EMOTION_LOG_FEED_SOURCE_TABLE,
             "limit": int(FRIEND_FEED_MAX_ITEMS or 20),
         },
     }
@@ -201,9 +214,28 @@ async def generate_multiple_friend_feeds(
     return out
 
 
+
+async def generate_emotion_log_feed(viewer_user_id: str, *, limit: int = EMOTION_LOG_FEED_MAX_ITEMS) -> Dict[str, Any]:
+    """Generate a normalized EmotionLog feed payload for one viewer."""
+    return await generate_friend_feed(viewer_user_id, limit=limit)
+
+
+async def generate_multiple_emotion_log_feeds(
+    viewer_user_ids: Iterable[str],
+    *,
+    limit: int = EMOTION_LOG_FEED_MAX_ITEMS,
+) -> Dict[str, Dict[str, Any]]:
+    """Generate normalized EmotionLog feed payloads for multiple viewers sequentially."""
+    return await generate_multiple_friend_feeds(viewer_user_ids, limit=limit)
+
+
 __all__ = [
     "FRIEND_FEED_SOURCE_TABLE",
     "FRIEND_FEED_TIMEZONE",
+    "EMOTION_LOG_FEED_SOURCE_TABLE",
+    "EMOTION_LOG_FEED_TIMEZONE",
     "generate_friend_feed",
     "generate_multiple_friend_feeds",
+    "generate_emotion_log_feed",
+    "generate_multiple_emotion_log_feeds",
 ]

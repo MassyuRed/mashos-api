@@ -270,6 +270,7 @@ async def _invalidate_deleted_user_cache(user_id: str) -> None:
             f"report_reads:myweb_unread:{uid}",
             f"friends:manage:{uid}",
             f"friends:unread:{uid}",
+            f"emotion_log:unread:{uid}",
             f"notices:current:{uid}",
             f"today_question:current:{uid}",
             f"today_question:status:{uid}",
@@ -313,15 +314,17 @@ async def _refresh_related_users(related_user_ids: Set[str], deleted_user_id: st
         for related_user_id in sorted(targets):
             tasks.append(invalidate_prefix(f"friends:manage:{related_user_id}"))
             tasks.append(invalidate_prefix(f"friends:unread:{related_user_id}"))
+            tasks.append(invalidate_prefix(f"emotion_log:unread:{related_user_id}"))
+            tasks.append(invalidate_prefix(f"startup_snapshot:{related_user_id}"))
     except Exception as exc:
         logger.warning("account_delete related cache invalidation helper unavailable deleted_user_id=%s err=%r", deleted_user_id, exc)
 
     try:
-        from astor_friend_feed_enqueue import enqueue_friend_feed_refresh
+        from astor_friend_feed_enqueue import enqueue_emotion_log_feed_refresh
 
         for related_user_id in sorted(targets):
             tasks.append(
-                enqueue_friend_feed_refresh(
+                enqueue_emotion_log_feed_refresh(
                     viewer_user_id=related_user_id,
                     trigger="account_delete",
                     owner_user_id=deleted_user_id,

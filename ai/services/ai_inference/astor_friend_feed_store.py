@@ -1,15 +1,15 @@
 
 # -*- coding: utf-8 -*-
-"""Storage helpers for ASTOR Friend feed summary artifacts.
+"""Storage helpers for ASTOR EmotionLog feed summary artifacts.
 
 Purpose
 -------
-`friend_emotion_feed` を source log としながら、Friend tab の viewer 単位 feed を
+`friend_emotion_feed` を source log としながら、EmotionLog の viewer 単位 feed を
 `public.friend_feed_summaries` に DRAFT / READY artifact として保存・取得する。
 
 Scope (Phase 1)
 ---------------
-- per-viewer friend feed summary の保存
+- per-viewer EmotionLog feed summary の保存
 - latest READY summary の取得
 - inspection 後の READY promote / failed mark
 - payload から items を安全に取り出す
@@ -17,7 +17,7 @@ Scope (Phase 1)
 
 Design notes
 ------------
-- Friend feed は viewer 単位の受信 surface なので global board ではなく per-viewer artifact
+- EmotionLog feed は viewer 単位の受信 surface なので global board ではなく per-viewer artifact
 - request / accept / reject / cancel / remove / mute は transactional state なのでここでは扱わない
 - `friend_emotion_feed` の semantics（viewer 別 materialization）を壊さずに national artifact 化する
 - `timeLabel` は保存時に焼かず、publish 時に後付けする
@@ -39,12 +39,18 @@ logger = logging.getLogger("astor_friend_feed_store")
 
 
 FRIEND_FEED_SUMMARIES_TABLE = (
-    os.getenv("ASTOR_FRIEND_FEED_SUMMARIES_TABLE")
+    os.getenv("ASTOR_EMOTION_LOG_FEED_SUMMARIES_TABLE")
+    or os.getenv("EMOTION_LOG_FEED_SUMMARIES_TABLE")
+    or os.getenv("ASTOR_FRIEND_FEED_SUMMARIES_TABLE")
     or os.getenv("FRIEND_FEED_SUMMARIES_TABLE")
     or "friend_feed_summaries"
 ).strip() or "friend_feed_summaries"
 
 FRIEND_FEED_VERSION = "friend_feed.v1"
+
+# Canonical aliases for the current EmotionLog feed implementation.
+EMOTION_LOG_FEED_SUMMARIES_TABLE = FRIEND_FEED_SUMMARIES_TABLE
+EMOTION_LOG_FEED_VERSION = FRIEND_FEED_VERSION
 
 STATUS_DRAFT = "draft"
 STATUS_READY = "ready"
@@ -56,9 +62,17 @@ ALLOWED_STATUSES = {
 }
 
 try:
-    FRIEND_FEED_MAX_ITEMS = int(os.getenv("ASTOR_FRIEND_FEED_MAX_ITEMS", "20") or "20")
+    FRIEND_FEED_MAX_ITEMS = int(
+        os.getenv(
+            "ASTOR_EMOTION_LOG_FEED_MAX_ITEMS",
+            os.getenv("ASTOR_FRIEND_FEED_MAX_ITEMS", "20"),
+        )
+        or "20"
+    )
 except Exception:
     FRIEND_FEED_MAX_ITEMS = 20
+
+EMOTION_LOG_FEED_MAX_ITEMS = FRIEND_FEED_MAX_ITEMS
 
 ALLOWED_STRENGTHS = {"weak", "medium", "strong"}
 
@@ -196,7 +210,7 @@ def normalize_friend_feed_payload(
     viewer_user_id: str,
     payload: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Normalize a friend feed payload into the canonical v1 shape."""
+    """Normalize an EmotionLog feed payload into the canonical v1 shape."""
     viewer_id = _canonical_viewer_user_id(viewer_user_id) or _canonical_viewer_user_id(
         (payload or {}).get("viewer_user_id")
     )
@@ -341,7 +355,7 @@ async def upsert_friend_feed_draft(
     *,
     version: int = 1,
 ) -> Dict[str, Any]:
-    """Create or update a friend feed summary artifact.
+    """Create or update an EmotionLog feed summary artifact.
 
     Behavior
     --------
@@ -563,7 +577,7 @@ async def fail_friend_feed_summary(
 
 
 def select_friend_feed_items(summary_payload: Any) -> List[Dict[str, Any]]:
-    """Return normalized items from either a summary row or a raw payload."""
+    """Return normalized EmotionLog items from either a summary row or a raw payload."""
     if isinstance(summary_payload, dict) and isinstance(summary_payload.get("payload"), dict):
         payload = summary_payload.get("payload") or {}
     elif isinstance(summary_payload, dict):
@@ -577,14 +591,29 @@ def select_friend_feed_items(summary_payload: Any) -> List[Dict[str, Any]]:
     return _sort_feed_items(raw_items)
 
 
+
+# Canonical EmotionLog-named aliases. The physical table/function names remain
+# legacy-compatible so existing workers and migrations keep working.
+normalize_emotion_log_feed_payload = normalize_friend_feed_payload
+build_emotion_log_feed_source_hash = build_friend_feed_source_hash
+upsert_emotion_log_feed_draft = upsert_friend_feed_draft
+fetch_latest_emotion_log_feed_summary = fetch_latest_friend_feed_summary
+fetch_latest_ready_emotion_log_feed_summary = fetch_latest_ready_friend_feed_summary
+promote_emotion_log_feed_summary = promote_friend_feed_summary
+fail_emotion_log_feed_summary = fail_friend_feed_summary
+select_emotion_log_feed_items = select_friend_feed_items
+
 __all__ = [
     "FRIEND_FEED_SUMMARIES_TABLE",
+    "EMOTION_LOG_FEED_SUMMARIES_TABLE",
     "FRIEND_FEED_VERSION",
+    "EMOTION_LOG_FEED_VERSION",
     "STATUS_DRAFT",
     "STATUS_READY",
     "STATUS_FAILED",
     "ALLOWED_STATUSES",
     "FRIEND_FEED_MAX_ITEMS",
+    "EMOTION_LOG_FEED_MAX_ITEMS",
     "ALLOWED_STRENGTHS",
     "normalize_friend_feed_payload",
     "build_friend_feed_source_hash",
@@ -594,4 +623,12 @@ __all__ = [
     "promote_friend_feed_summary",
     "fail_friend_feed_summary",
     "select_friend_feed_items",
+    "normalize_emotion_log_feed_payload",
+    "build_emotion_log_feed_source_hash",
+    "upsert_emotion_log_feed_draft",
+    "fetch_latest_emotion_log_feed_summary",
+    "fetch_latest_ready_emotion_log_feed_summary",
+    "promote_emotion_log_feed_summary",
+    "fail_emotion_log_feed_summary",
+    "select_emotion_log_feed_items",
 ]
