@@ -1170,6 +1170,7 @@ def register_friend_routes(app: FastAPI) -> None:
         return FriendRemoveResponse(status="ok", friend_user_id=friend_user_id)
 
 
+    @app.get("/emotion-log/feed")
     @app.get("/friends/feed")
     async def get_emotion_log_feed(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1320,6 +1321,7 @@ def register_friend_routes(app: FastAPI) -> None:
         return await get_or_compute(cache_key, FRIENDS_MANAGE_CACHE_TTL_SECONDS, _build_payload)
 
 
+    @app.get("/emotion-log/unread-status", response_model=FriendUnreadStatusResponse)
     @app.get("/friends/unread-status", response_model=FriendUnreadStatusResponse)
     async def get_friend_unread_status(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1332,6 +1334,7 @@ def register_friend_routes(app: FastAPI) -> None:
         payload = await get_friend_unread_status_payload_for_user(me)
         return FriendUnreadStatusResponse(**payload)
 
+    @app.post("/emotion-log/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
     @app.post("/friends/unread/read-feed", response_model=FriendUnreadMarkReadResponse)
     async def post_emotion_log_feed_mark_read(
         body: Optional[FriendUnreadMarkReadBody] = None,
@@ -1375,6 +1378,7 @@ def register_friend_routes(app: FastAPI) -> None:
         await _invalidate_friend_api_caches(me)
         return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
+    @app.post("/emotion-log/unread/read-requests", response_model=FriendUnreadMarkReadResponse)
     @app.post("/friends/unread/read-requests", response_model=FriendUnreadMarkReadResponse)
     async def post_friend_requests_mark_read(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1393,6 +1397,7 @@ def register_friend_routes(app: FastAPI) -> None:
         await _invalidate_friend_api_caches(me)
         return FriendUnreadMarkReadResponse(last_read_at=last_read_at)
 
+    @app.get("/emotion-notifications/settings", response_model=FriendNotificationSettingsResponse)
     @app.get("/friends/notification-settings", response_model=FriendNotificationSettingsResponse)
     async def list_emotion_notification_settings(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
@@ -1448,6 +1453,7 @@ def register_friend_routes(app: FastAPI) -> None:
 
         return FriendNotificationSettingsResponse(status="ok", settings=settings)
 
+    @app.post("/emotion-notifications/settings/{friend_user_id}", response_model=FriendNotificationSettingResponse)
     @app.post("/friends/notification-settings/{friend_user_id}", response_model=FriendNotificationSettingResponse)
     async def set_emotion_notification_setting(
         body: FriendNotificationSettingUpsertBody,
@@ -1536,3 +1542,10 @@ def register_friend_routes(app: FastAPI) -> None:
             is_enabled=is_enabled,
         )
 
+
+# Canonical registration/helper aliases.
+# The registered routes above keep legacy /friends/* compatibility while exposing
+# EmotionLog / Emotion Notifications as the public interface names.
+register_emotion_log_routes = register_friend_routes
+register_emotion_notification_routes = register_friend_routes
+get_emotion_log_unread_status_payload_for_user = get_friend_unread_status_payload_for_user
