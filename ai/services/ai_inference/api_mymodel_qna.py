@@ -1049,18 +1049,7 @@ async def _build_qna_detail_response(
     qk = str(q_key or "").strip()
     is_self = tgt == str(viewer_user_id)
 
-    discovery_count_task = asyncio.create_task(_fetch_discovery_count_for_instance(iid))
     resonated_task = asyncio.create_task(_is_resonated(viewer_user_id, iid))
-    latest_discovery_task = (
-        asyncio.create_task(
-            _fetch_latest_discovery_for_viewer(
-                viewer_user_id=str(viewer_user_id),
-                q_instance_id=iid,
-            )
-        )
-        if include_my_discovery_latest and not is_self
-        else None
-    )
 
     views = 0
     resonances = 0
@@ -1149,9 +1138,7 @@ async def _build_qna_detail_response(
             resonances = 0
         is_new = iid not in read_set
 
-    discoveries = await discovery_count_task
     is_resonated = await resonated_task
-    my_discovery_latest = await latest_discovery_task if latest_discovery_task else None
 
     return QnaDetailResponse(
         title=title,
@@ -1160,11 +1147,11 @@ async def _build_qna_detail_response(
         q_instance_id=iid,
         views=int(views or 0),
         resonances=int(resonances or 0),
-        discoveries=int(discoveries or 0),
+        discoveries=0,
         is_new=bool(is_new),
         is_resonated=bool(is_resonated),
-        my_discovery_latest=my_discovery_latest,
-        my_discovery_latest_loaded=bool(include_my_discovery_latest and not is_self),
+        my_discovery_latest=None,
+        my_discovery_latest_loaded=False,
     )
 
 
@@ -3038,6 +3025,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         offset: int = Query(default=0, ge=0, description="Offset (best-effort)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaSavedReflectionsResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         """List reflections that the viewer has Discoveries-saved (履歴ありのみ).
 
         Notes:
@@ -3260,6 +3248,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         req: QnaDiscoverySubmitRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoverySubmitResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -3337,6 +3326,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         req: QnaDiscoveryDeleteRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoveryDeleteResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -3406,6 +3396,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         offset: Optional[int] = Query(default=None, description="Offset (Plus/Premium only)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoveryHistoryResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -4141,11 +4132,9 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
 
     q_instance_ids: Set[str] = {_generated_public_id(r) for r in rows if _generated_public_id(r)}
     metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
-    discoveries_task = asyncio.create_task(_fetch_discovery_counts_for_instances(q_instance_ids))
     reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, q_instance_ids))
-    metrics, discoveries_map, read_set = await asyncio.gather(
+    metrics, read_set = await asyncio.gather(
         metrics_task,
-        discoveries_task,
         reads_task,
     )
 
@@ -4167,10 +4156,6 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
             resonances = int(m.get("resonances") or 0)
         except Exception:
             resonances = 0
-        try:
-            discoveries = int(discoveries_map.get(iid) or 0)
-        except Exception:
-            discoveries = 0
         generated_at = str((r or {}).get("published_at") or (r or {}).get("updated_at") or (r or {}).get("created_at") or "").strip() or None
         items.append(
             QnaListItem(
@@ -4180,7 +4165,7 @@ async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: st
                 generated_at=generated_at,
                 views=views,
                 resonances=resonances,
-                discoveries=discoveries,
+                discoveries=0,
                 is_new=(iid not in read_set),
             )
         )
@@ -5135,6 +5120,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         offset: int = Query(default=0, ge=0, description="Offset (best-effort)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaSavedReflectionsResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -5204,6 +5190,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         req: QnaDiscoverySubmitRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoverySubmitResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -5298,6 +5285,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         req: QnaDiscoveryDeleteRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoveryDeleteResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -5397,6 +5385,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         offset: Optional[int] = Query(default=None, description="Offset"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDiscoveryHistoryResponse:
+        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
