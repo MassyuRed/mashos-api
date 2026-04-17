@@ -14,13 +14,13 @@ PLAN_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PLAN_CATALOG_TABLE") or "subscript
 ALIASES_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PRODUCT_ALIASES_TABLE") or "subscription_product_aliases").strip() or "subscription_product_aliases"
 IOS_MANAGE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
-PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / ReflectionCreate拡張"
-PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / Reflection生成"
+PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / Piece作成拡張"
+PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / Piece作成無制限"
 PREMIUM_CANONICAL_FEATURES = [
     "履歴全般：表示期間無制限",
-    "MyWeb：感情構造分析レポートがさらに深くなります",
-    "MyWeb：自己構造分析レポートがさらに深くなります",
-    "MyModel：Reflectionが入力内容から生成されます",
+    "Analysis：感情構造分析レポートがさらに深くなります",
+    "Analysis：自己構造分析レポートがさらに深くなります",
+    "Piece：今月の作成回数が無制限です",
 ]
 
 
@@ -149,7 +149,12 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
         s.replace("無料会員", "Freeプラン")
         .replace("Plus会員", "Plusプラン")
         .replace("Premium会員", "Premiumプラン")
-        .replace("MyModelCreate", "ReflectionCreate")
+        .replace("MyModelCreate", "ProfileCreate")
+        .replace("ReflectionCreate", "ProfileCreate")
+        .replace("Reflections", "Piece")
+        .replace("Reflection", "Piece")
+        .replace("MyModel", "Piece画面")
+        .replace("MyWeb", "Analysis")
     )
 
 
@@ -335,14 +340,14 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Plusプラン",
             "price_label": "月額300円",
-            "subtitle": "レポート閲覧 / ReflectionCreate拡張",
+            "subtitle": "レポート閲覧 / Piece作成拡張",
             "features": [
                 "履歴全般：表示期間１年",
-                "MyWeb：感情構造分析レポートが深くなります",
-                "MyWeb：自己構造分析レポートを閲覧できます",
-                "MyWeb：今日の問いを履歴から編集できます",
-                "MyModel：ReflectionCreateの20問すべてを利用できます",
-                "MyModel：ReflectionCreateの回答を入力後に編集できます",
+                "Analysis：感情構造分析レポートが深くなります",
+                "Analysis：自己構造分析レポートを閲覧できます",
+                "Analysis：今日の問いを履歴から編集できます",
+                "Piece：今月30回まで作成できます",
+                "ProfileCreate：回答を保存したあとでも編集できます",
             ],
             "note_lines": [
                 "月額300円で自動更新されます。",
@@ -373,12 +378,12 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Premiumプラン",
             "price_label": "月額980円",
-            "subtitle": "表示期間無制限 / 深いレポート / Reflection生成",
+            "subtitle": "表示期間無制限 / 深いレポート / Piece作成無制限",
             "features": [
                 "履歴全般：表示期間無制限",
-                "MyWeb：感情構造分析レポートがさらに深くなります",
-                "MyWeb：自己構造分析レポートがさらに深くなります",
-                "MyModel：Reflectionが入力内容から生成されます",
+                "Analysis：感情構造分析レポートがさらに深くなります",
+                "Analysis：自己構造分析レポートがさらに深くなります",
+                "Piece：今月の作成回数が無制限です",
             ],
             "note_lines": [
                 "月額980円で自動更新されます。",

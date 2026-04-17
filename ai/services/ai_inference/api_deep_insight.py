@@ -140,7 +140,7 @@ def _build_ui_config(tier: SubscriptionTier, lang: str = "ja") -> Dict[str, Any]
     if lang_norm == "en":
         strings: Dict[str, str] = {
             "panel_title": "Deep Insight",
-            "back_label": "MyWeb",
+            "back_label": "Analysis",
             "intro_title": "Generate questions and reflect them in your self-structure analysis.",
             "intro_text": "These questions help understand your structure a bit deeper. You can leave any you don't want to answer blank.",
             "answer_placeholder": "Write here.",
@@ -155,12 +155,12 @@ def _build_ui_config(tier: SubscriptionTier, lang: str = "ja") -> Dict[str, Any]
             "paywall_button": "Upgrade to Plus Plan",
             "paywall_alert_title": "Plus Plan required",
             "paywall_alert_text": "With your current plan, you cannot get another set.\n\nPlease check your plan from the Account screen.",
-            "footer_text": "* Deep Insight answers are used for MyProfile analysis. They are not reflected in MyWeb reports.",
+            "footer_text": "* Deep Insight answers are used for self-structure analysis. They are not reflected in Analysis reports.",
         }
     else:
         strings = {
             "panel_title": "Deep Insight",
-            "back_label": "MyWeb",
+            "back_label": "Analysis",
             "intro_title": "問いを生成し、自己構造分析に反映します。",
             "intro_text": "いまのあなたの構造をもう少し深く理解するための問いです。答えたくないものは空欄のままで大丈夫です。",
             "answer_placeholder": "ここに書いてください。",
@@ -175,7 +175,7 @@ def _build_ui_config(tier: SubscriptionTier, lang: str = "ja") -> Dict[str, Any]
             "paywall_button": "Plusプランになる",
             "paywall_alert_title": "Plusプランが必要です",
             "paywall_alert_text": "現在のプランでは「別の問いを受け取る」は利用できません。\n\nアカウント画面からプランをご確認ください。",
-            "footer_text": "※ Deep Insight の回答は MyProfile の分析に活用されます。MyWeb のレポートには反映されません。",
+            "footer_text": "※ Deep Insight の回答は自己構造分析に活用されます。Analysis のレポートには反映されません。",
         }
 
     return {
