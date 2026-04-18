@@ -12,7 +12,7 @@ This module defines:
 Design notes:
 - Keep this file dependency-free (std lib only).
 - Normalization helpers accept common variants (case, JP labels).
-- Other feature entitlements (MyWeb, Deep Insight limits, etc.) will be added
+- Other feature entitlements (MyWeb limits, etc.) may be added
   in later steps; Step 1 focuses on tier+mode primitives.
 """
 

@@ -71,9 +71,6 @@ def enhance_myprofile_qa_response(text: str, ctx: Optional[Dict[str, Any]] = Non
             top_keys = []
         top_keys = [k for k in (_safe_str(k).strip() for k in top_keys) if k]
 
-        deep_answers = ctx.get("deep_insight_answers") or []
-        if not isinstance(deep_answers, list):
-            deep_answers = []
 
         lines: List[str] = []
         lines.append("")
@@ -105,18 +102,6 @@ def enhance_myprofile_qa_response(text: str, ctx: Optional[Dict[str, Any]] = Non
             lines.append("  - 原因探しの前に『守りたいもの』を1語で言語化する（ズレやすい軸）")
         else:
             lines.append("  - いま一番強い感情を1語で言い、その感情が守っているものを1語で書く")
-
-        # Optional: reflect Deep Insight answers as short notes (if provided).
-        samples: List[str] = []
-        for a in deep_answers:
-            s = _truncate(_safe_str(a), 120)
-            if s:
-                samples.append(s)
-        if samples:
-            lines.append("")
-            lines.append("・Deep Insight メモ（参考・最大2）")
-            for s in samples[:2]:
-                lines.append(f"  - {s}")
 
         if question:
             lines.append("")

@@ -3,7 +3,7 @@
 
 Purpose
 -------
-Create / DeepInsight / QNA などの入力 API から、中央材料庁の
+Create / QNA などの入力 API から、中央材料庁の
 `snapshot_generate_v1` を安全に enqueue するための共通ヘルパー。
 
 Design

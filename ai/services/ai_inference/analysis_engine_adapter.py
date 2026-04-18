@@ -326,7 +326,7 @@ def _iter_self_structure_items(snapshot_payload: Any) -> Iterable[tuple[str, Dic
     - self_structure_view dict: {"items": [...]}
     - snapshot payload: {"self_structure_view": {...}}
     - snapshot payload: {"views": {"self_structure_view": {...}}}
-    - grouped payload: {"emotion_inputs": [...], "deep_insights": [...], ...}
+    - grouped payload: {"emotion_inputs": [...], ...}
     - direct list of items
     """
     if snapshot_payload is None:

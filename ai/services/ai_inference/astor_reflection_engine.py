@@ -22,7 +22,7 @@ Premium dynamic Reflections の「生成計画（create / update / deactivate）
 前提
 ----
 - 材料は `premium_reflection_view` のみ
-- `premium_reflection_view` は secret-OFF の InputScreen / DeepInsight 入力のみ
+- `premium_reflection_view` は secret-OFF の InputScreen 入力のみ
 - MyModelCreate は本エンジンでは使わない
 - 生成単位は 1ユーザー
 - 生成タイミングは snapshot 作成後
@@ -610,8 +610,6 @@ def _fallback_question(category: str, focus_key: str) -> str:
         if re.search(r"価値観|人生", cat):
             return "大切にしていることは？"
 
-        if re.search(r"deep_insight", cat):
-            return "最近気づいたことは？"
 
     generic = {
         "fun": "最近の楽しみは？",

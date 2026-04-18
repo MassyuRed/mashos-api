@@ -802,14 +802,10 @@ def compose_response(
             return "やわらかめ"
         return "かなりやわらかめ"
 
-    # ---- persona context（構造傾向/Deep Insight） ----
+    # ---- persona context（構造傾向） ----
     structures = []
-    deep_answers = []
     if persona_ctx and isinstance(persona_ctx, dict):
         structures = persona_ctx.get("structures") or []
-        deep_bundle = persona_ctx.get("deep_insight") or {}
-        if isinstance(deep_bundle, dict):
-            deep_answers = deep_bundle.get("answers") or []
 
     top_keys: List[str] = []
     top_meta: List[Tuple[str, float]] = []  # (key, avg_intensity)
@@ -896,13 +892,6 @@ def compose_response(
                 evidence.append(f"・構造傾向: 『{_fmt_key(k)}』が出やすい（強度: {intensity_label(inten)}）")
         if hot_words:
             evidence.append(f"・観測語: { '、'.join(hot_words[:3]) } が登場しやすい")
-        if deep_answers:
-            a0 = next((a for a in deep_answers if isinstance(a, dict) and str(a.get("text") or "").strip()), None)
-            if a0:
-                txt = str(a0.get("text") or "").strip()
-                if len(txt) > 80:
-                    txt = txt[:80] + "…"
-                evidence.append(f"・Deep Insight: 最近の言語化（抜粋）『{txt}』")
         if not evidence:
             evidence.append("・観測材料: まだ少なめ（入力が増えるほど精度が上がります）")
     else:
@@ -1001,7 +990,6 @@ def compose_response(
                 "question": q,
                 "top_keys": top_keys,
                 "structures": structures,
-                "deep_insight_answers": deep_answers,
             }
             out_text = enhance_myprofile_qa_response(out_text, ctx)
         except Exception:

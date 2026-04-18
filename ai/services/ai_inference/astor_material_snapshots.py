@@ -10,7 +10,7 @@ Phase X: Central Material Snapshot Generator (v1)
 
 v1 のスコープ
 - まずは `emotions` テーブル（InputScreen相当）を対象にする。
-- MyModelCreate / DeepInsight / Echoes / Discoveries は後続フェーズで追加できる設計にする。
+- MyModelCreate / Echoes / Discoveries は後続フェーズで追加できる設計にする。
 
 重要な方針（国家仕様）
 - internal: secret を含む材料
@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from reflection_text_formatter import resolve_create_reflection_display, sanitize_reflection_context_text
+from reflection_text_formatter import sanitize_reflection_context_text
 
 # Downstream jobs are best-effort.
 try:
@@ -87,11 +87,6 @@ try:
 except Exception:
     SNAPSHOT_SELF_STRUCTURE_MAX_ROWS = 20000
 
-MYMODEL_CREATE_ANSWERS_TABLE = (os.getenv("MYMODEL_CREATE_ANSWERS_TABLE") or "mymodel_create_answers").strip()
-MYMODEL_CREATE_USER_ID_COLUMN = (os.getenv("MYMODEL_CREATE_USER_ID_COLUMN") or "user_id").strip() or "user_id"
-
-DEEP_INSIGHT_INPUTS_TABLE = (os.getenv("DEEP_INSIGHT_INPUTS_TABLE") or "deep_insight_answers").strip()
-DEEP_INSIGHT_USER_ID_COLUMN = (os.getenv("DEEP_INSIGHT_USER_ID_COLUMN") or "user_id").strip() or "user_id"
 
 ECHO_INPUTS_TABLE = (
     os.getenv("ECHO_INPUTS_TABLE")
@@ -672,31 +667,6 @@ async def fetch_emotions_for_premium_reflection(
     return out
 
 
-async def fetch_mymodel_create_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
-    rows = await _fetch_optional_rows_by_user(
-        table=MYMODEL_CREATE_ANSWERS_TABLE,
-        user_id=user_id,
-        user_id_column=MYMODEL_CREATE_USER_ID_COLUMN,
-        include_secret=include_secret,
-    )
-    if include_secret:
-        return rows
-    out: List[Dict[str, Any]] = []
-    for row in rows or []:
-        public_row = _public_mymodel_create_row(row)
-        if public_row is not None:
-            out.append(public_row)
-    return out
-
-
-async def fetch_deep_insight_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
-    return await _fetch_optional_rows_by_user(
-        table=DEEP_INSIGHT_INPUTS_TABLE,
-        user_id=user_id,
-        user_id_column=DEEP_INSIGHT_USER_ID_COLUMN,
-        include_secret=include_secret,
-    )
-
 
 async def fetch_echo_rows_for_self_structure(user_id: str, *, include_secret: bool) -> List[Dict[str, Any]]:
     rows = await _fetch_optional_rows_by_user(
@@ -730,21 +700,6 @@ async def fetch_today_question_rows_for_self_structure(user_id: str, *, include_
         include_secret=include_secret,
     )
 
-
-def _public_mymodel_create_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if not isinstance(row, dict):
-        return None
-    result = resolve_create_reflection_display(row)
-    display_text = str(result.display_text or "").strip() if str(result.display_state) != "blocked" else ""
-    if not display_text:
-        return None
-    out = dict(row)
-    out["answer_text"] = display_text
-    out["reflection_display_text"] = display_text
-    out["reflection_display_state"] = result.display_state
-    out["reflection_format_version"] = result.version
-    out["reflection_format_meta"] = result.as_storage_meta()
-    return out
 
 
 def _sanitize_public_reaction_context_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -837,37 +792,6 @@ def _emotion_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _mymodel_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "source_type": "mymodel_create",
-        "source_id": str(row.get("id") or ""),
-        "timestamp": _row_timestamp(row),
-        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
-        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
-        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
-        "emotion_signals": [],
-        "action_signals": [],
-        "social_signals": [],
-        "source_weight": 0.9,
-    }
-
-
-def _deep_insight_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "source_type": "deep_insight",
-        "source_id": str(row.get("id") or ""),
-        "timestamp": _row_timestamp(row),
-        "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
-        "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-        "prompt_key": _pick_first_text(row, ["prompt_key", "question_key", "q_key"]) or None,
-        "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
-        "emotion_signals": [],
-        "action_signals": [],
-        "social_signals": [],
-        "source_weight": 1.1,
-    }
-
 
 def _extract_reflection_categories(row: Dict[str, Any]) -> List[str]:
     for key in [
@@ -909,34 +833,10 @@ def _emotion_row_to_premium_reflection_items(row: Dict[str, Any]) -> List[Dict[s
     return out
 
 
-def _deep_insight_row_to_premium_reflection_items(row: Dict[str, Any]) -> List[Dict[str, Any]]:
-    categories = _extract_reflection_categories(row)
-    if not categories:
-        categories = ["deep_insight"]
-
-    base_source_id = str(row.get("id") or "")
-    out: List[Dict[str, Any]] = []
-    for cat in categories:
-        out.append({
-            "source_type": "deep_insight",
-            "source_id": f"{base_source_id}:{cat}",
-            "material_source_id": base_source_id,
-            "timestamp": _row_timestamp(row),
-            "category": cat,
-            "categories": categories,
-            "text_primary": _pick_first_text(row, ["answer_text", "answer", "response_text", "text", "content", "body"]),
-            "text_secondary": _pick_first_text(row, ["text_secondary", "context_text", "notes"]),
-            "emotion_signals": [],
-            "question_text": _pick_first_text(row, ["question_text", "question", "prompt", "title"]) or None,
-            "source_weight": 1.1,
-        })
-    return out
-
 
 def build_premium_reflection_view(
     *,
     emotion_rows: List[Dict[str, Any]],
-    deep_insight_rows: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Build public-safe material view for Premium Reflection generation.
 
@@ -1127,8 +1027,6 @@ def build_reflection_reaction_view(
 def build_self_structure_view(
     *,
     emotion_rows: List[Dict[str, Any]],
-    mymodel_rows: List[Dict[str, Any]],
-    deep_insight_rows: List[Dict[str, Any]],
     echo_rows: List[Dict[str, Any]],
     discovery_rows: List[Dict[str, Any]],
     today_question_rows: Optional[List[Dict[str, Any]]] = None,
@@ -2282,15 +2180,9 @@ async def generate_and_store_material_snapshots(
     internal_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=True)
     public_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=False)
 
-    internal_mymodel_rows: List[Dict[str, Any]] = []
-    public_mymodel_rows: List[Dict[str, Any]] = []
-
-    internal_deep_rows: List[Dict[str, Any]] = []
-    public_deep_rows: List[Dict[str, Any]] = []
 
     # Premium reflections now use Home/Input-originated emotion materials only.
     premium_reflection_emotion_rows = await fetch_emotions_for_premium_reflection(uid, include_secret=False)
-    premium_reflection_deep_rows: List[Dict[str, Any]] = []
 
     internal_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=True)
     public_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=False)
@@ -2303,16 +2195,12 @@ async def generate_and_store_material_snapshots(
 
     internal_self_structure_view = build_self_structure_view(
         emotion_rows=internal_emotion_rows,
-        mymodel_rows=internal_mymodel_rows,
-        deep_insight_rows=internal_deep_rows,
         echo_rows=internal_echo_rows,
         discovery_rows=internal_discovery_rows,
         today_question_rows=internal_today_question_rows,
     )
     public_self_structure_view = build_self_structure_view(
         emotion_rows=public_emotion_rows,
-        mymodel_rows=public_mymodel_rows,
-        deep_insight_rows=public_deep_rows,
         echo_rows=public_echo_rows,
         discovery_rows=public_discovery_rows,
         today_question_rows=public_today_question_rows,
@@ -2320,7 +2208,6 @@ async def generate_and_store_material_snapshots(
 
     premium_reflection_view = build_premium_reflection_view(
         emotion_rows=premium_reflection_emotion_rows,
-        deep_insight_rows=premium_reflection_deep_rows,
     )
 
     internal_reflection_reaction_view = build_reflection_reaction_view(
@@ -2334,8 +2221,6 @@ async def generate_and_store_material_snapshots(
 
     internal_material_meta: List[Dict[str, Any]] = []
     internal_material_meta.extend(_material_meta_rows_from_rows("emotion_input", internal_emotion_rows))
-    internal_material_meta.extend(_material_meta_rows_from_rows("mymodel_create", internal_mymodel_rows))
-    internal_material_meta.extend(_material_meta_rows_from_rows("deep_insight", internal_deep_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("echo", internal_echo_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("discovery", internal_discovery_rows))
     internal_material_meta.extend(_material_meta_rows_from_rows("today_question", internal_today_question_rows))
@@ -2343,8 +2228,6 @@ async def generate_and_store_material_snapshots(
 
     public_material_meta: List[Dict[str, Any]] = []
     public_material_meta.extend(_material_meta_rows_from_rows("emotion_input", public_emotion_rows))
-    public_material_meta.extend(_material_meta_rows_from_rows("mymodel_create", public_mymodel_rows))
-    public_material_meta.extend(_material_meta_rows_from_rows("deep_insight", public_deep_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("echo", public_echo_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("discovery", public_discovery_rows))
     public_material_meta.extend(_material_meta_rows_from_rows("today_question", public_today_question_rows))

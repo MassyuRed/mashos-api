@@ -8,7 +8,6 @@ ASTOR MyProfile（月次）自己構造分析レポート生成
   - MyProfile の月次レポートを「読める構文」で安定生成する。
   - 現段階では LLM を必須にせず、ASTOR が保持している
     構造パターン（astor_structure_patterns.json）と
-    Deep Insight の回答（astor_deep_insight_answers.json）から、
     観測ベースの文章を組み立てる。
 
 注意
@@ -55,10 +54,6 @@ try:
 except Exception:  # pragma: no cover
     StructurePatternsStore = None  # type: ignore
 
-try:
-    from astor_deep_insight_store import DeepInsightAnswerStore
-except Exception:  # pragma: no cover
-    DeepInsightAnswerStore = None  # type: ignore
 
 
 # 構造辞書（ある場合のみ）
@@ -361,16 +356,6 @@ def _load_structures_map(user_id: str) -> Dict[str, Any]:
         return {}
 
 
-def _load_deep_insight_answers(user_id: str, *, include_secret: bool, limit: int = 6) -> List[Dict[str, Any]]:
-    if DeepInsightAnswerStore is None:
-        return []
-    try:
-        store = DeepInsightAnswerStore()
-        return store.get_user_answers(user_id, limit=limit, include_secret=include_secret)
-    except Exception:
-        return []
-
-
 # ---------- MyProfile v2: direct matching from raw logs ----------
 
 _STANDARD_DICT_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
@@ -507,43 +492,6 @@ def _build_text_events_from_emotions(
     self_insights.sort(key=lambda x: x[0])
     quotes = [q for _, q in self_insights[-2:]]  # latest 1~2
     return events, quotes
-
-
-def _build_text_events_from_deep_answers(
-    answers: List[Dict[str, Any]],
-    *,
-    start: _dt.datetime,
-    end: _dt.datetime,
-    include_secret: bool,
-    limit: int = 6,
-) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
-    for a in (answers or [])[: max(1, int(limit))]:
-        if not isinstance(a, dict):
-            continue
-        if (not include_secret) and bool(a.get("is_secret", False)):
-            continue
-        ts = _parse_ts(a.get("created_at"))
-        if ts is None:
-            continue
-        if ts < start or ts >= end:
-            continue
-        text = str(a.get("text") or a.get("answer_text") or "").strip()
-        if not text:
-            continue
-        events.append(
-            {
-                "ts": ts,
-                "kind": "deep",
-                "combined_text": text,
-                "thought": "",
-                "action": "",
-                "emotions": [],
-                "intensity": 0.0,
-                "excerpt": _build_event_excerpt("", "", deep_text=text),
-            }
-        )
-    return events
 
 
 def _score_standard_one(
@@ -1094,7 +1042,6 @@ def _build_myprofile_monthly_report_fallback(
     prev_start = prev_end - _dt.timedelta(days=max(days, 1))
 
     # Materials (Spec v2): thought/action logs + self-insight
-    deep_answers: List[Dict[str, Any]] = []
 
     analysis_source = "supabase_emotions" if _has_supabase_config() else "patterns_store"
 
@@ -1105,9 +1052,6 @@ def _build_myprofile_monthly_report_fallback(
     cur_events, self_insight_quotes = _build_text_events_from_emotions(cur_rows, start=start, end=end, include_secret=include_secret)
     prev_events, _ = _build_text_events_from_emotions(prev_rows, start=prev_start, end=prev_end, include_secret=include_secret)
 
-    # Deep Insight answers: include those within the window as additional text material (best-effort).
-    cur_events.extend(_build_text_events_from_deep_answers(deep_answers, start=start, end=end, include_secret=include_secret, limit=6))
-    prev_events.extend(_build_text_events_from_deep_answers(deep_answers, start=prev_start, end=prev_end, include_secret=include_secret, limit=6))
 
     cur_views = _collect_period_views_from_events(cur_events, mode=mode)
     prev_views = _collect_period_views_from_events(prev_events, mode=mode)
@@ -1126,8 +1070,6 @@ def _build_myprofile_monthly_report_fallback(
     top = cur_views[:3]
     top_keys = [v.key for v in top]
 
-    # Deep Insight (narrative)
-    deep_answers = deep_answers[:6]
 
     # 差分
     deltas: List[Tuple[str, int, float]] = []  # key, delta_count, delta_intensity
@@ -1182,16 +1124,10 @@ def _build_myprofile_monthly_report_fallback(
                 "・崩れ条件（揺れを強めやすい引き金）: 刺激が重なった場面で、意味づけが固定されやすい可能性",
             )
 
-        if deep_answers:
-            steady = P(
-                "summary_steady_deep",
-                "・安定に寄せるキー（整える1手）: 判断の前に『基準を1行だけ言語化』すると、構造の暴走が収まりやすい",
-            )
-        else:
-            steady = P(
-                "summary_steady_default",
-                "・安定に寄せるキー（整える1手）: 揺れた瞬間に「思考内容1文」「行動内容1文」を分けて書くと、迷いがほどけやすい",
-            )
+        steady = P(
+            "summary_steady_default",
+            "・安定に寄せるキー（整える1手）: 揺れた瞬間に「思考内容1文」「行動内容1文」を分けて書くと、迷いがほどけやすい",
+        )
 
         one_liner = PF(
             "summary_one_liner",
@@ -1299,8 +1235,6 @@ def _build_myprofile_monthly_report_fallback(
     lines.append(P("sec3_title", "3. 安定条件（安心が生まれやすい条件） / 崩れ条件（揺れやすい条件）"))
     lines.append(P("sec3_stable_heading", "安定条件:"))
     lines.append(P("sec3_stable_line_1", "・判断の前に『刺激/解釈/身体』を1行で切り分けられる"))
-    if deep_answers:
-        lines.append(P("sec3_stable_line_deep", "・Deep Insight の回答で自分の基準を言語化できているとき"))
     lines.append(P("sec3_stable_line_3", "・忙しい日は短文でもいいので“観測”だけは継続できる"))
     lines.append(P("sec3_shaky_heading", "崩れ条件:"))
     if top:
@@ -1470,7 +1404,6 @@ def _build_myprofile_monthly_report_fallback(
         "top_structures": [
             {"key": v.key, "count": v.count, "avg_intensity": v.avg_intensity} for v in top
         ],
-        "deep_insight_answers": len(deep_answers),
         "self_insight_quotes": len(self_insight_quotes),
         "thought_action_mismatch_count": len(mismatch_events),
     }

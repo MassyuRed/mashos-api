@@ -9,7 +9,6 @@
 位置づけ
 --------
 - prompt_templates.py: LLM向け instruction（/mymodel/infer で使用）
-- ui_text_templates.py: DeepInsight質問文などのUIテキスト
 - 本ファイル: レポート本文（content_text）のレンダリング
 
 注意

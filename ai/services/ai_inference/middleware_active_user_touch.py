@@ -38,7 +38,7 @@ ENV
 
 除外/包含（正規表現）
 - ACTIVE_USERS_MIDDLEWARE_INCLUDE_PATH_REGEXES
-  例: ^/myweb/ , ^/myprofile/ , ^/deep_insight/
+  例: ^/myweb/ , ^/myprofile/
   未指定なら「全て対象（prefix除外は別途）」
 - ACTIVE_USERS_MIDDLEWARE_EXCLUDE_PATH_REGEXES
   例: ^/mymodel/templates$ , ^/mymodel/infer$

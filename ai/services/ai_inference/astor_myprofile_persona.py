@@ -24,10 +24,6 @@ try:
 except ImportError:
     StructurePatternsStore = None  # type: ignore
 
-try:
-    from astor_deep_insight_store import DeepInsightAnswerStore
-except ImportError:
-    DeepInsightAnswerStore = None  # type: ignore
 
 
 # ユーザーに見せるエンジン名（リネーム時にここだけ替えられるようにする）
@@ -63,33 +59,6 @@ def _load_user_structures(user_id: str) -> Dict[str, Any]:
     return user_entry.get("structures", {})
 
 
-
-def _load_deep_insight_answers(user_id: str, *, limit: int = 5, include_secret: bool = True) -> Dict[str, Any]:
-    """Deep Insight の回答を取得する（MyProfile用）。
-
-    - MyWeb には反映しないため、astor_structure_patterns.json とは別ストアから読む。
-    - include_secret=False の場合は secret を除外した回答のみ返す（external用）。
-    """
-    if DeepInsightAnswerStore is None:
-        return {"answers": [], "count": 0, "last_updated": None}
-
-    try:
-        store = DeepInsightAnswerStore()
-        bundle = store.get_user_bundle(user_id)
-        answers = store.get_user_answers(user_id, limit=limit, include_secret=include_secret)
-        # count は include_secret に応じて再計算する（externalで secret を除外）
-        if not include_secret:
-            answers_all = store.get_user_answers(user_id, limit=9999, include_secret=False)
-            count = len(answers_all)
-        else:
-            count = int(bundle.get("count") or 0)
-        return {
-            "answers": answers,
-            "count": count,
-            "last_updated": bundle.get("last_updated"),
-        }
-    except Exception:
-        return {"answers": [], "count": 0, "last_updated": None}
 
 def _compute_stats_from_triggers(triggers: List[Dict[str, Any]]) -> tuple[int, float, float, Optional[str]]:
     """triggers から count/avg_score/avg_intensity/last_updated を算出する。
@@ -199,14 +168,12 @@ def persona_state_to_brief_text(
     state: AstorPersonaState,
     lang: str = "ja",
     include_secret: bool = True,
-    deep_insight: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     AstorPersonaState を MyModel 用のシンプルなテキストに変換する。
 
     - このテキストは、「いま ASTOR が観測している構造の傾向」を
       MyModel の内部プロンプトに添えるための下地を想定している。
-    - deep_insight は Deep Insight で得た回答（MyProfileのみ）を補助情報として差し込むための引数。
     """
     if lang != "ja":
         lang = "ja"
@@ -232,25 +199,6 @@ def persona_state_to_brief_text(
             f"- 「{v.key}」: 出現回数 {v.count} 回 / 平均強度 {v.avg_intensity:.1f} （{intensity_label}）"
         )
 
-    # Deep Insight の補助情報（MyProfileのみ）
-    if deep_insight and isinstance(deep_insight, dict):
-        entries = deep_insight.get("answers") or []
-        if isinstance(entries, list) and entries:
-            lines.append("")
-            lines.append("Deep Insight で補足できたこと（最新）:")
-            for a in entries[:3]:
-                if not isinstance(a, dict):
-                    continue
-                q = (a.get("question_text") or "").strip() or (a.get("question_id") or "")
-                ans = (a.get("text") or "").strip()
-                if not ans:
-                    continue
-                if q:
-                    lines.append(f"- Q: {q}")
-                # 長すぎる回答は切る（UIの形を作る段階なので、過剰に長い文字列を避ける）
-                if len(ans) > 120:
-                    ans = ans[:120] + "…"
-                lines.append(f"  A: {ans}")
 
     lines.append("")
     lines.append(
@@ -267,7 +215,7 @@ def build_persona_context_payload(user_id: str, limit: int = 5, include_secret: 
     構造サマリとテキストを1つの dict としてまとめて返す。
     """
     state = build_persona_state(user_id=user_id, limit=limit, include_secret=include_secret)
-    text = persona_state_to_brief_text(state, lang="ja", include_secret=include_secret, deep_insight=None)
+    text = persona_state_to_brief_text(state, lang="ja", include_secret=include_secret)
     return {
         "user_id": state.user_id,
         "generated_at": state.generated_at,

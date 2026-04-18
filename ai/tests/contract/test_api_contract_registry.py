@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.routing import APIRoute
 
-from api_contract_registry import API_CONTRACT_POLICY_VERSION, contract_ids, contract_route_keys, iter_public_api_contracts
+from api_contract_registry import API_CONTRACT_POLICY_VERSION, contract_ids, contract_route_keys, get_contract_entry, iter_public_api_contracts
 
 
 REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
@@ -152,3 +152,17 @@ def test_public_registry_doc_mentions_all_registered_routes():
     for entry in iter_public_api_contracts():
         assert f"`{entry.path}`" in doc, entry.path
         assert f"`{entry.contract_id}`" in doc, entry.contract_id
+
+
+
+def test_legacy_profilecreate_discovery_routes_are_marked_deprecated():
+    trending = get_contract_entry(method="GET", path="/mymodel/qna/trending")
+    holders = get_contract_entry(method="GET", path="/mymodel/qna/holders")
+
+    assert trending is not None
+    assert trending.deprecated is True
+    assert trending.replacement == "/nexus/reflections"
+
+    assert holders is not None
+    assert holders.deprecated is True
+    assert holders.replacement == "/nexus/reflections"

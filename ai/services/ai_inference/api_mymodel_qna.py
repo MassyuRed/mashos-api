@@ -370,6 +370,9 @@ class QnaTrendingResponse(BaseModel):
     view_tier: str = Field(..., description="light | standard")
     total_items: int
     items: List[QnaTrendingItem]
+    deprecated: bool = False
+    replacement_path: Optional[str] = None
+    disabled_reason: Optional[str] = None
 
 
 class QnaHolderUser(BaseModel):
@@ -388,6 +391,9 @@ class QnaHoldersResponse(BaseModel):
     q_key: str
     total_items: int
     users: List[QnaHolderUser]
+    deprecated: bool = False
+    replacement_path: Optional[str] = None
+    disabled_reason: Optional[str] = None
 
 
 
@@ -1800,13 +1806,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         mode: str = Query(default="overall", description="overall | resonance | views"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaTrendingResponse:
-        """Return trending questions (global popularity by q_key).
-
-        Notes:
-        - Uses global metrics rows where q_instance_id IS NULL.
-        - Filters to recent activity window (updated_at) to keep results fresh.
-        - Returned questions are filtered by viewer's view_tier (light|standard).
-        """
+        """Deprecated compatibility route for legacy ProfileCreate-based discovery."""
 
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
@@ -1816,7 +1816,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        # Viewer tier -> view_tier (light|standard) to avoid showing inaccessible questions.
         viewer_tier = SubscriptionTier.FREE
         try:
             viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
@@ -1825,118 +1824,14 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         view_tier = _view_tier_for_subscription(viewer_tier)
 
-        mode_key = str(mode or "overall").strip().lower()
-        if mode_key not in ("overall", "resonance", "views"):
-            mode_key = "overall"
-
-        # Fixed window for now (Mash decision): "今週の空気感"
-        window_days = 7
-        since_iso = (datetime.now(timezone.utc) - timedelta(days=int(window_days))).isoformat()
-
-        # Load questions allowed for this view_tier.
-        try:
-            qrows = await _fetch_create_questions(build_tier=view_tier)
-        except Exception as exc:
-            logger.error("failed to fetch create questions (trending): %s", exc)
-            raise HTTPException(status_code=502, detail="Failed to load questions")
-
-        qmap_by_key: Dict[str, Tuple[int, str]] = {}
-        for r in qrows or []:
-            try:
-                qid = int(r.get("id"))
-            except Exception:
-                continue
-            txt = str(r.get("question_text") or "").strip()
-            if not txt:
-                continue
-            qk = _q_key_for_question_id(qid)
-            qmap_by_key[qk] = (qid, txt)
-
-        if not qmap_by_key:
-            return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
-
-        order = "resonances.desc,views.desc"
-        if mode_key == "views":
-            order = "views.desc,resonances.desc"
-
-        # Fetch top global metrics and then filter to allowed q_keys.
-        scan_limit = int(max(50, min(500, int(limit) * 25)))
-        resp = await _sb_get(
-            f"/rest/v1/{METRICS_TABLE}",
-            params={
-                "select": "q_key,views,resonances",
-                "q_instance_id": "is.null",
-                "updated_at": f"gte.{since_iso}",
-                "order": order,
-                "limit": str(scan_limit),
-            },
-        )
-
-        if resp.status_code >= 300:
-            logger.error(
-                "Supabase %s trending select failed: %s %s",
-                METRICS_TABLE,
-                resp.status_code,
-                resp.text[:1500],
-            )
-            # Fail-soft
-            return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
-
-        rows = resp.json()
-
-        # Collect candidates (bounded by scan_limit)
-        candidates: List[Tuple[int, str, str, int, int]] = []
-        # tuple: (question_id, title, q_key, views, resonances)
-
-        if isinstance(rows, list):
-            for r in rows:
-                qk = str((r or {}).get("q_key") or "").strip()
-                if not qk or qk not in qmap_by_key:
-                    continue
-
-                qid, title = qmap_by_key[qk]
-
-                try:
-                    views = int((r or {}).get("views") or 0)
-                except Exception:
-                    views = 0
-                try:
-                    res_cnt = int((r or {}).get("resonances") or 0)
-                except Exception:
-                    res_cnt = 0
-
-                candidates.append((int(qid), str(title), qk, int(views), int(res_cnt)))
-
-        if not candidates:
-            return QnaTrendingResponse(status="ok", view_tier=view_tier, total_items=0, items=[])
-
-        # Ranking (mode)
-        if mode_key == "views":
-            candidates.sort(key=lambda x: (x[3], x[4]), reverse=True)
-        elif mode_key == "resonance":
-            candidates.sort(key=lambda x: (x[4], x[3]), reverse=True)
-        else:
-            # overall: views + (resonances * 3)
-            w_res = 3
-            candidates.sort(key=lambda x: (x[3] + (x[4] * w_res), x[4], x[3]), reverse=True)
-
-        items: List[QnaTrendingItem] = []
-        for qid, title, qk, views, res_cnt in candidates[: int(limit)]:
-            items.append(
-                QnaTrendingItem(
-                    question_id=int(qid),
-                    title=str(title),
-                    q_key=str(qk),
-                    views=int(views or 0),
-                    resonances=int(res_cnt or 0),
-                )
-            )
-
         return QnaTrendingResponse(
             status="ok",
             view_tier=view_tier,
-            total_items=len(items),
-            items=items,
+            total_items=0,
+            items=[],
+            deprecated=True,
+            replacement_path="/nexus/reflections",
+            disabled_reason="legacy_profilecreate_discovery_retired",
         )
 
 
@@ -1948,11 +1843,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         exclude_self: bool = Query(default=True, description="Exclude the viewer themselves"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaHoldersResponse:
-        """Return users who have answered (hold) the given question.
-
-        This endpoint is used for "問いで表示":
-        - Pick a trending question -> show users who have that Q&A -> jump to their Account page to follow.
-        """
+        """Deprecated compatibility route for legacy ProfileCreate-based discovery."""
 
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
@@ -1962,7 +1853,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        # Viewer tier -> view_tier (light|standard) to avoid leaking inaccessible questions.
         viewer_tier = SubscriptionTier.FREE
         try:
             viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
@@ -1970,163 +1860,18 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             viewer_tier = SubscriptionTier.FREE
         view_tier = _view_tier_for_subscription(viewer_tier)
 
-        # Validate question id within viewable tier and get title.
-        try:
-            qrows = await _fetch_create_questions(build_tier=view_tier)
-        except Exception as exc:
-            logger.error("failed to fetch create questions (holders): %s", exc)
-            raise HTTPException(status_code=502, detail="Failed to load questions")
-
-        title = None
-        for r in qrows or []:
-            try:
-                qid = int(r.get("id"))
-            except Exception:
-                continue
-            if int(qid) != int(question_id):
-                continue
-            txt = str(r.get("question_text") or "").strip()
-            if txt:
-                title = txt
-                break
-
-        if not title:
-            raise HTTPException(status_code=404, detail="Question not found")
-
-        qk = _q_key_for_question_id(int(question_id))
-
-        # Scan a bit more than limit to allow filtering
-        scan_limit = int(max(50, min(2000, int(limit) * 25)))
-
-        # Candidates:
-        # - Primary: order by per-answer resonances for this question (metrics)
-        # - Fallback: recent answer holders (updated_at desc)
-        metric_ordered_ids: List[str] = []
-        try:
-            resp_m = await _sb_get(
-                f"/rest/v1/{METRICS_TABLE}",
-                params={
-                    "select": "q_instance_id,resonances",
-                    "q_key": f"eq.{qk}",
-                    "q_instance_id": "not.is.null",
-                    "order": "resonances.desc",
-                    "limit": str(int(scan_limit)),
-                },
-            )
-            if resp_m.status_code < 300:
-                rows_m = resp_m.json()
-                if isinstance(rows_m, list):
-                    for r in rows_m:
-                        iid = str((r or {}).get("q_instance_id") or "").strip()
-                        if not iid:
-                            continue
-                        try:
-                            uid, qid2 = _parse_instance_id(iid)
-                        except Exception:
-                            continue
-                        if int(qid2) != int(question_id):
-                            continue
-                        if uid:
-                            metric_ordered_ids.append(uid)
-            else:
-                logger.warning(
-                    "Supabase %s select failed (holders metrics): %s %s",
-                    METRICS_TABLE,
-                    resp_m.status_code,
-                    (resp_m.text or "")[:800],
-                )
-        except Exception as exc:
-            logger.warning("holders metrics fetch failed: %s", exc)
-
-        recent_holder_ids = await _fetch_holder_user_ids_for_question(
-            question_id=int(question_id), scan_limit=scan_limit
-        )
-        public_holder_id_set = set(recent_holder_ids)
-        metric_ordered_ids = [uid for uid in metric_ordered_ids if str(uid or "").strip() in public_holder_id_set]
-
-        # Merge (unique) with size cap = scan_limit (avoid huge IN filters downstream)
-        holder_ids: List[str] = []
-        seen_ids: Set[str] = set()
-
-        for uid in metric_ordered_ids:
-            uid2 = str(uid or "").strip()
-            if not uid2 or uid2 in seen_ids:
-                continue
-            seen_ids.add(uid2)
-            holder_ids.append(uid2)
-            if len(holder_ids) >= int(scan_limit):
-                break
-
-        if len(holder_ids) < int(scan_limit):
-            for uid in recent_holder_ids:
-                uid2 = str(uid or "").strip()
-                if not uid2 or uid2 in seen_ids:
-                    continue
-                seen_ids.add(uid2)
-                holder_ids.append(uid2)
-                if len(holder_ids) >= int(scan_limit):
-                    break
-
-        # Optional filters
-        if exclude_self:
-            holder_ids = [x for x in holder_ids if str(x) != str(viewer_user_id)]
-
-        following_set: Set[str] = set()
-        if exclude_followed and holder_ids:
-            following_set = await _fetch_following_set(
-                viewer_user_id=str(viewer_user_id), owner_ids=set(holder_ids)
-            )
-            holder_ids = [x for x in holder_ids if str(x) not in following_set]
-
-        # Trim
-        holder_ids = holder_ids[: int(limit)]
-
-        if not holder_ids:
-            return QnaHoldersResponse(
-                status="ok",
-                view_tier=view_tier,
-                question_id=int(question_id),
-                title=title,
-                q_key=qk,
-                total_items=0,
-                users=[],
-            )
-
-        profiles_map = await _fetch_profiles_by_ids(holder_ids)
-
-        # Determine follow state for returned users (best-effort)
-        follow_state: Set[str] = following_set
-        if (not exclude_followed) and holder_ids:
-            follow_state = await _fetch_following_set(
-                viewer_user_id=str(viewer_user_id), owner_ids=set(holder_ids)
-            )
-
-        users: List[QnaHolderUser] = []
-        for uid in holder_ids:
-            p = profiles_map.get(str(uid))
-            if not p:
-                continue
-            users.append(
-                QnaHolderUser(
-                    id=str(p.get("id") or uid),
-                    display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
-                    friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
-                    myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
-                    is_following=(str(uid) in follow_state),
-                )
-            )
-
         return QnaHoldersResponse(
             status="ok",
             view_tier=view_tier,
             question_id=int(question_id),
-            title=title,
-            q_key=qk,
-            total_items=len(users),
-            users=users,
+            title="",
+            q_key=_q_key_for_question_id(int(question_id)),
+            total_items=0,
+            users=[],
+            deprecated=True,
+            replacement_path="/nexus/reflections",
+            disabled_reason="legacy_profilecreate_discovery_retired",
         )
-
-
 
 
     @app.get("/mymodel/recommend/users", response_model=QnaRecommendUsersResponse)

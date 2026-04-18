@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field
 
 from astor_structure_matcher import StructureMatcher
 from astor_myweb_insight import generate_myweb_insight_payload
-from astor_deep_insight import generate_deep_insight_questions_payload
 
 
 # ---------- モード定義 ----------
@@ -33,7 +32,6 @@ class AstorMode(str, Enum):
     EMOTION_INGEST = "EmotionIngest"
     MYMODEL_REPLY = "MyModelReply"
     MYWEB_INSIGHT = "MyWebInsight"
-    DEEP_INSIGHT = "DeepInsight"
 
 
 # ---------- ペイロード定義 ----------
@@ -146,8 +144,6 @@ class AstorEngine:
             return self._handle_mymodel_reply(req)
         elif req.mode == AstorMode.MYWEB_INSIGHT:
             return self._handle_myweb_insight(req)
-        elif req.mode == AstorMode.DEEP_INSIGHT:
-            return self._handle_deep_insight(req)
         else:
             return AstorResponse(text=None, meta={"error": "unsupported_mode", "mode": req.mode})
 
@@ -340,53 +336,3 @@ class AstorEngine:
                     "error": str(exc),
                 },
             )
-
-
-    # ------ DeepInsight: 能動的な問いかけ（MyProfile向け・MyWebには反映しない） ------
-
-    def _handle_deep_insight(self, req: AstorRequest) -> AstorResponse:
-        """Deep Insight の質問生成モード。
-
-        v0.1 方針:
-        - まずは画面/出力に必要な「構文」を提供する。
-        - 質問の内容・選定ロジックは astor_deep_insight.py 側に切り出し、後から差し替えやすくする。
-
-        重要:
-        - Deep Insight の回答は MyProfile（自己照会）にのみ活用し、MyWeb（期間レポート）には反映させない。
-          → 本モードは「質問生成」なので、構造パターン（MyWeb参照）を更新しない。
-        """
-
-        user_id = req.user_id
-        if not user_id:
-            return AstorResponse(
-                text=None,
-                meta={
-                    "mode": req.mode.value,
-                    "engine": "astor.deep_insight.v0.1",
-                    "status": "no_user_id",
-                    "error": "DeepInsight requires user_id",
-                },
-            )
-
-        opts = req.options or {}
-        payload = generate_deep_insight_questions_payload(
-            user_id=str(user_id),
-            max_questions=int(opts.get("max_questions", 3) or 3),
-            max_depth=int(opts.get("max_depth", 1) or 1),
-            period_days=int(opts.get("period_days", 30) or 30),
-            lang=str(opts.get("lang", "ja") or "ja"),
-            tier=str(opts.get("tier", "free") or "free"),
-            context=(opts.get("context") if isinstance(opts.get("context"), str) else None),
-        )
-
-        meta: Dict[str, Any] = {
-            "mode": req.mode.value,
-            "engine": "astor.deep_insight.v0.1",
-            # questions/meta を payload から展開
-            "questions": payload.get("questions") or [],
-        }
-        payload_meta = payload.get("meta") or {}
-        if isinstance(payload_meta, dict):
-            meta.update(payload_meta)
-
-        return AstorResponse(text=None, meta=meta)

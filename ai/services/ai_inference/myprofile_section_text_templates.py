@@ -99,7 +99,6 @@ _MYPROFILE_SECTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "sec3_stable_heading": "安定条件:",
         "sec3_shaky_heading": "崩れ条件:",
         "sec3_stable_line_1": "・揺れた瞬間に「思考内容」と「行動内容」を分けて短文で書けた日",
-        "sec3_stable_line_deep": "・Deep Insight の回答で自分の基準を言語化できているとき",
         "sec3_stable_line_3": "・忙しい日は短文でもいいので“観測”だけは継続できる",
         "sec3_shaky_line_top": "・『{structure_key}』が{intensity_label}で出ている日に、判断が硬直しやすい",
         "sec3_shaky_line_default": "・未確定/比較/評価が重なる場面で、解釈が一気に固定されやすい（視野が狭くなりやすい）",

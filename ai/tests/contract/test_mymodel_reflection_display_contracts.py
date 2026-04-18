@@ -111,73 +111,58 @@ def test_mymodel_create_answers_persists_reflection_display_columns(client, monk
 def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monkeypatch):
     import api_mymodel_qna as qna_module
 
-    answer_rows: Dict[int, Dict[str, Any]] = {
-        1: {
-            "question_id": 1,
-            "answer_text": "foo@example.com",
-            "updated_at": "2026-03-28T00:00:00Z",
-            "is_secret": False,
-            "reflection_display_text": "[メールアドレス]",
-            "reflection_display_state": "masked",
-            "reflection_format_version": "reflection.display.v1",
-            "reflection_format_meta": {"version": "reflection.display.v1", "changed": True},
-        }
+    reflection_row: Dict[str, Any] = {
+        "id": "reflection-row-1",
+        "owner_user_id": "owner-1",
+        "question": "Question 1",
+        "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
     }
+    current_body = {"value": "[メールアドレス]"}
 
     async def fake_resolve_user_id_from_token(_access_token: str) -> str:
         return "owner-1"
 
-    async def fake_resolve_tiers(*, viewer_user_id: str, target_user_id: str):
-        return ("free", "light", "light", "light")
+    async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
+        assert viewer_user_id == "owner-1"
+        assert q_instance_id == "reflection:test-1"
+        return dict(reflection_row)
 
-    async def fake_fetch_create_questions(*, build_tier: str):
-        return [{"id": 1, "question_text": "Question 1"}]
+    def fake_get_public_generated_reflection_text(row):
+        assert row.get("id") == "reflection-row-1"
+        return current_body["value"]
 
-    async def fake_fetch_create_answers(*, user_id: str, question_ids=None):
-        return dict(answer_rows)
-
-    async def fake_fetch_instance_metrics(_instance_ids):
-        return {"owner-1:1": {"views": 0, "resonances": 0}}
-
-    async def fake_sb_count_rows(path, *, params=None):
-        return 0
-
-    async def fake_fetch_reads(viewer_user_id: str, q_instance_ids):
-        return set()
-
-    async def fake_is_resonated(viewer_user_id: str, q_instance_id: str):
-        return False
+    async def fake_build_qna_detail_response(**kwargs):
+        return qna_module.QnaDetailResponse(
+            title=str(kwargs.get("title") or ""),
+            body=str(kwargs.get("body") or ""),
+            q_key=str(kwargs.get("q_key") or ""),
+            q_instance_id=str(kwargs.get("q_instance_id") or ""),
+            views=0,
+            resonances=0,
+            discoveries=0,
+            is_new=False,
+            is_resonated=False,
+            my_discovery_latest=None,
+            my_discovery_latest_loaded=False,
+        )
 
     monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "_resolve_tiers", fake_resolve_tiers)
-    monkeypatch.setattr(qna_module, "_fetch_create_questions", fake_fetch_create_questions)
-    monkeypatch.setattr(qna_module, "_fetch_create_answers", fake_fetch_create_answers)
-    monkeypatch.setattr(qna_module, "_fetch_instance_metrics", fake_fetch_instance_metrics)
-    monkeypatch.setattr(qna_module, "_sb_count_rows", fake_sb_count_rows)
-    monkeypatch.setattr(qna_module, "_fetch_reads", fake_fetch_reads)
-    monkeypatch.setattr(qna_module, "_is_resonated", fake_is_resonated)
+    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(qna_module, "get_public_generated_reflection_text", fake_get_public_generated_reflection_text)
+    monkeypatch.setattr(qna_module, "_build_qna_detail_response", fake_build_qna_detail_response)
 
     response = client.get(
-        "/mymodel/qna/detail?q_instance_id=owner-1:1",
+        "/mymodel/qna/detail?q_instance_id=reflection:test-1",
         headers={"Authorization": "Bearer test-token"},
     )
 
     assert response.status_code == 200, response.text
     assert response.json()["body"] == "[メールアドレス]"
 
-    answer_rows[1] = {
-        "question_id": 1,
-        "answer_text": "住所を晒してやる。殺してやる。",
-        "updated_at": "2026-03-28T00:00:00Z",
-        "is_secret": False,
-        "reflection_display_text": None,
-        "reflection_display_state": "blocked",
-        "reflection_format_version": "reflection.display.v1",
-        "reflection_format_meta": {"version": "reflection.display.v1", "changed": True},
-    }
+    current_body["value"] = None
 
     blocked_response = client.get(
-        "/mymodel/qna/detail?q_instance_id=owner-1:1",
+        "/mymodel/qna/detail?q_instance_id=reflection:test-1",
         headers={"Authorization": "Bearer test-token"},
     )
     assert blocked_response.status_code == 404, blocked_response.text
@@ -186,74 +171,84 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
 def test_qna_reaction_context_uses_display_text(monkeypatch):
     import api_mymodel_qna as qna_module
 
-    async def fake_resolve_tiers(*, viewer_user_id: str, target_user_id: str):
-        return ("free", "light", "light", "light")
-
-    async def fake_fetch_create_questions(*, build_tier: str):
-        return [{"id": 3, "question_text": "Question 3"}]
-
-    async def fake_fetch_create_answers(*, user_id: str, question_ids=None):
+    async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
+        assert viewer_user_id == "owner-ctx"
+        assert q_instance_id == "reflection:test-ctx"
         return {
-            3: {
-                "question_id": 3,
-                "answer_text": "foo@example.com",
-                "updated_at": "2026-03-28T00:00:00Z",
-                "is_secret": False,
-                "reflection_display_text": "[メールアドレス]",
-                "reflection_display_state": "masked",
-                "reflection_format_version": "reflection.display.v1",
-                "reflection_format_meta": {"version": "reflection.display.v1", "changed": True},
-            }
+            "id": "reflection-row-ctx",
+            "owner_user_id": "owner-ctx",
+            "question": "Question 3",
+            "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
         }
 
-    monkeypatch.setattr(qna_module, "_resolve_tiers", fake_resolve_tiers)
-    monkeypatch.setattr(qna_module, "_fetch_create_questions", fake_fetch_create_questions)
-    monkeypatch.setattr(qna_module, "_fetch_create_answers", fake_fetch_create_answers)
+    def fake_get_public_generated_reflection_text(row):
+        assert row.get("id") == "reflection-row-ctx"
+        return "[メールアドレス]"
+
+    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(qna_module, "get_public_generated_reflection_text", fake_get_public_generated_reflection_text)
 
     ctx = asyncio.run(
         qna_module._resolve_qna_context_for_reaction(
             viewer_user_id="owner-ctx",
-            q_instance_id="owner-ctx:3",
-            q_key=None,
+            q_instance_id="reflection:test-ctx",
+            q_key="generated:test",
         )
     )
 
-    assert ctx["kind"] == "create"
+    assert ctx["kind"] == qna_module.EMOTION_GENERATED_SOURCE_TYPE
     assert ctx["context_answer"] == "[メールアドレス]"
 
 
-def test_public_snapshot_uses_display_text_and_excludes_blocked(monkeypatch):
-    import astor_material_snapshots as snapshots_module
+def test_qna_trending_returns_deprecated_empty_payload(client, monkeypatch):
+    import api_mymodel_qna as qna_module
 
-    async def fake_fetch_optional_rows_by_user(*, table: str, user_id: str, user_id_column: str = "user_id", include_secret: bool = True, page_size: int = 1000, max_rows: int = 20000):
-        return [
-            {
-                "id": "row-1",
-                "user_id": user_id,
-                "answer_text": "連絡先は foo@example.com です。",
-                "updated_at": "2026-03-28T00:00:00Z",
-                "created_at": "2026-03-27T00:00:00Z",
-                "is_secret": False,
-            },
-            {
-                "id": "row-2",
-                "user_id": user_id,
-                "answer_text": "住所を晒してやる。殺してやる。",
-                "updated_at": "2026-03-28T00:00:00Z",
-                "created_at": "2026-03-27T00:00:00Z",
-                "is_secret": False,
-            },
-        ]
+    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
+        return "viewer-deprecated"
 
-    monkeypatch.setattr(snapshots_module, "_fetch_optional_rows_by_user", fake_fetch_optional_rows_by_user)
+    async def fake_get_subscription_tier_for_user(_user_id: str, default=None):
+        return qna_module.SubscriptionTier.FREE
 
-    rows = asyncio.run(
-        snapshots_module.fetch_mymodel_create_rows_for_self_structure(
-            "snapshot-user",
-            include_secret=False,
-        )
+    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(qna_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
+
+    response = client.get(
+        "/mymodel/qna/trending?limit=5&mode=overall",
+        headers={"Authorization": "Bearer test-token"},
     )
 
-    assert len(rows) == 1
-    assert rows[0]["answer_text"] == "連絡先は [メールアドレス] です。"
-    assert rows[0]["reflection_display_state"] == "masked"
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["deprecated"] is True
+    assert body["replacement_path"] == "/nexus/reflections"
+    assert body["disabled_reason"] == "legacy_profilecreate_discovery_retired"
+    assert body["items"] == []
+    assert body["total_items"] == 0
+
+
+def test_qna_holders_returns_deprecated_empty_payload(client, monkeypatch):
+    import api_mymodel_qna as qna_module
+
+    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
+        return "viewer-deprecated"
+
+    async def fake_get_subscription_tier_for_user(_user_id: str, default=None):
+        return qna_module.SubscriptionTier.PLUS
+
+    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(qna_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
+
+    response = client.get(
+        "/mymodel/qna/holders?question_id=7",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["deprecated"] is True
+    assert body["replacement_path"] == "/nexus/reflections"
+    assert body["disabled_reason"] == "legacy_profilecreate_discovery_retired"
+    assert body["question_id"] == 7
+    assert body["q_key"] == qna_module._q_key_for_question_id(7)
+    assert body["users"] == []
+    assert body["total_items"] == 0

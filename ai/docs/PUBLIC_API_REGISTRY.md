@@ -68,9 +68,9 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | POST | `/mymodel/infer` | `mymodel.infer.v1` | `false` |  |  |
 | GET | `/mymodel/qna/discoveries/reflections` | `mymodel.qna.discoveries.reflections.v1` | `false` |  |  |
 | GET | `/mymodel/qna/echoes/reflections` | `mymodel.qna.echoes.reflections.v1` | `false` |  |  |
-| GET | `/mymodel/qna/holders` | `mymodel.qna.holders.v1` | `false` |  |  |
+| GET | `/mymodel/qna/holders` | `mymodel.qna.holders.v1` | `true` | `/nexus/reflections` | Deprecated compatibility route; returns disabled/empty payload after ProfileCreate discovery retirement |
 | GET | `/mymodel/qna/list` | `mymodel.qna.list.v1` | `false` |  |  |
-| GET | `/mymodel/qna/trending` | `mymodel.qna.trending.v1` | `false` |  |  |
+| GET | `/mymodel/qna/trending` | `mymodel.qna.trending.v1` | `true` | `/nexus/reflections` | Deprecated compatibility route; returns disabled/empty payload after ProfileCreate discovery retirement |
 | GET | `/mymodel/qna/unread` | `mymodel.qna.unread.v1` | `false` |  |  |
 | GET | `/mymodel/qna/unread-status` | `mymodel.qna.unread_status.v1` | `false` |  | MyModel Home reflections unread aggregated across self + followed owners |
 | POST | `/mymodel/qna/view` | `mymodel.qna.view.v1` | `false` |  |  |
