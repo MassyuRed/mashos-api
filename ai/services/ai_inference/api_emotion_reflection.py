@@ -241,7 +241,10 @@ def register_emotion_reflection_routes(app: FastAPI) -> None:
             reflection_text=reflection_text,
             quota=EmotionReflectionQuotaResponse(**next_quota),
             input_feedback=(
-                {"comment_text": persisted.get("input_feedback_comment")}
+                {
+                    "comment_text": persisted.get("input_feedback_comment"),
+                    "emlis_ai": persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None,
+                }
                 if str(persisted.get("input_feedback_comment") or "").strip()
                 else None
             ),

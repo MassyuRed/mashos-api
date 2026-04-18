@@ -116,6 +116,7 @@ class SubscriptionBootstrapPlan(BaseModel):
     recognized_product_ids: Dict[str, list[str]] = Field(default_factory=dict)
     purchase_base_plan_id: Dict[str, Optional[str]] = Field(default_factory=dict)
     recognized_base_plan_ids: Dict[str, list[str]] = Field(default_factory=dict)
+    emlis_ai: Optional[Dict[str, Any]] = None
 
 
 class SubscriptionBootstrapResponse(BaseModel):

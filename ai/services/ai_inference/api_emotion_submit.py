@@ -828,6 +828,10 @@ class EmotionSubmitRequest(BaseModel):
 
 class EmotionSubmitInputFeedback(BaseModel):
     comment_text: str = Field(..., description="入力直後に表示する短い受け取りコメント")
+    emlis_ai: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="EmlisAI additive metadata",
+    )
 
 
 class EmotionSubmitResponse(BaseModel):
@@ -1939,18 +1943,8 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         client_meta = extract_client_meta(request.headers)
-
-        # 2) emotions / category を正規化
-        emotions_tags, emotion_details, avg_strength = _normalize_emotions(payload.emotions)
-
-        if not emotions_tags:
-            raise HTTPException(status_code=400, detail="At least one emotion is required")
-
-        normalized_categories = _normalize_categories(payload.category)
         has_memo_input = bool(str(payload.memo or "").strip() or str(payload.memo_action or "").strip())
-        if not has_memo_input:
-            normalized_categories = []
-        elif not normalized_categories:
+        if has_memo_input and not payload.category:
             logger.info(
                 "emotion_submit accepted without category for compatibility: user_id=%s version=%s build=%s platform=%s",
                 user_id,
@@ -1959,73 +1953,29 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 client_meta.get("platform"),
             )
 
-        # 3) created_at を決定
-        if payload.created_at:
-            created_at = payload.created_at
-        else:
-            created_at = datetime.now(timezone.utc).isoformat()
+        from emotion_submit_service import persist_emotion_submission
 
-        # 4) Supabase の emotions に INSERT
-        inserted = await _insert_emotion_row(
+        notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
+        persisted = await persist_emotion_submission(
             user_id=user_id,
-            emotions=emotions_tags,
-            emotion_details=emotion_details,
-            emotion_strength_avg=avg_strength,
+            emotions=payload.emotions,
             memo=payload.memo,
             memo_action=payload.memo_action,
-            category=normalized_categories,
-            created_at=created_at,
-            is_secret=bool(payload.is_secret),
-        )
-
-        try:
-            await invalidate_prefix(f"input_summary:{user_id}")
-        except Exception:
-            logger.exception("emotion_submit: input summary cache invalidate failed")
-
-        try:
-            await invalidate_prefix(f"myweb_home_summary:{user_id}")
-        except Exception:
-            logger.exception("emotion_submit: myweb home summary cache invalidate failed")
-
-        try:
-            global_summary_activity_date = _global_summary_activity_date_from_created_at(
-                inserted.get("created_at", created_at)
-            )
-            await invalidate_prefix(f"global_summary:{global_summary_activity_date}:")
-        except Exception:
-            logger.exception("emotion_submit: global summary cache invalidate failed")
-
-        # 5) 残りの重い処理（通知/分析/レポート更新）はバックグラウンドで実行する
-        # - notify_friends=false（または send_friend_notification=false）の場合は感情通知しない。
-        notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
-        _start_post_submit_background_tasks(
-            user_id=user_id,
-            emotion_details=emotion_details,
-            created_at=created_at,
-            avg_strength=avg_strength,
-            memo=payload.memo,
+            category=payload.category,
+            created_at=payload.created_at,
             is_secret=bool(payload.is_secret),
             notify_friends=notify_friends,
         )
 
-        input_feedback_seed = (
-            f"{inserted.get('id') or ''}|{inserted.get('created_at', created_at) or created_at}"
-        )
-        input_feedback_comment = _build_input_feedback_comment(
-            emotion_details=emotion_details,
-            memo=payload.memo,
-            memo_action=payload.memo_action,
-            category=normalized_categories,
-            selection_seed=input_feedback_seed,
-        )
+        input_feedback_comment = str(persisted.get("input_feedback_comment") or "").strip()
+        input_feedback_meta = persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None
 
         return EmotionSubmitResponse(
             status="ok",
-            id=inserted.get("id"),
-            created_at=inserted.get("created_at", created_at),
+            id=(persisted.get("inserted") or {}).get("id") if isinstance(persisted.get("inserted"), dict) else None,
+            created_at=str(persisted.get("created_at") or payload.created_at or datetime.now(timezone.utc).isoformat()),
             input_feedback=(
-                EmotionSubmitInputFeedback(comment_text=input_feedback_comment)
+                EmotionSubmitInputFeedback(comment_text=input_feedback_comment, emlis_ai=input_feedback_meta)
                 if input_feedback_comment
                 else None
             ),

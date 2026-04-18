@@ -36,7 +36,10 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _start_post_submit_background_tasks,
 )
+from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
+from subscription import SubscriptionTier
+from subscription_store import get_subscription_tier_for_user
 
 
 async def resolve_authenticated_user_id(
@@ -147,18 +150,64 @@ async def persist_emotion_submission(
     input_feedback_seed = (
         f"{inserted.get('id') or ''}|{inserted.get('created_at', effective_created_at) or effective_created_at}"
     )
-    input_feedback_comment = _build_input_feedback_comment(
-        emotion_details=normalized["emotion_details"],
-        memo=memo,
-        memo_action=memo_action,
-        category=normalized["category"],
-        selection_seed=input_feedback_seed,
-    )
+
+    current_input = {
+        "id": inserted.get("id"),
+        "created_at": inserted.get("created_at", effective_created_at),
+        "emotions": normalized["emotions_tags"],
+        "emotion_details": normalized["emotion_details"],
+        "memo": memo,
+        "memo_action": memo_action,
+        "category": normalized["category"],
+        "is_secret": bool(is_secret),
+        "selection_seed": input_feedback_seed,
+    }
+
+    input_feedback_comment = ""
+    input_feedback_meta: Dict[str, Any] = {}
+    try:
+        subscription_tier = await get_subscription_tier_for_user(
+            str(user_id or "").strip(),
+            default=SubscriptionTier.FREE,
+        )
+    except Exception:
+        subscription_tier = SubscriptionTier.FREE
+
+    try:
+        reply = await render_emlis_ai_reply(
+            user_id=str(user_id or "").strip(),
+            subscription_tier=subscription_tier,
+            current_input=current_input,
+        )
+        input_feedback_comment = str(reply.comment_text or "").strip()
+        input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
+    except Exception:
+        input_feedback_comment = _build_input_feedback_comment(
+            emotion_details=normalized["emotion_details"],
+            memo=memo,
+            memo_action=memo_action,
+            category=normalized["category"],
+            selection_seed=input_feedback_seed,
+        )
+        input_feedback_meta = {
+            "version": "emlis_ai_v1",
+            "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
+            "capability": {
+                "history_mode": "none",
+                "continuity_mode": "off",
+                "style_mode": "base",
+                "partner_mode": "off",
+            },
+            "used_sources": ["current_input"],
+            "evidence_count": 0,
+            "fallback_used": True,
+        }
 
     return {
         "inserted": inserted,
         "created_at": inserted.get("created_at", effective_created_at),
         "input_feedback_comment": input_feedback_comment,
+        "input_feedback_meta": input_feedback_meta,
         "normalized": normalized,
     }
 

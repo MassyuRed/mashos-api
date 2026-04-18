@@ -28,7 +28,7 @@ class ApiContractEntry:
 PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/app/bootstrap', 'app.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime guardrail / maintenance switch'),
     ApiContractEntry('GET', '/app/startup', 'app.startup.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Auth-required startup bundle (bootstrap + cached user-scoped snapshot)'),
-    ApiContractEntry('POST', '/emotion/submit', 'emotion.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Legacy payloads must remain accepted'),
+    ApiContractEntry('POST', '/emotion/submit', 'emotion.submit.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Legacy payloads must remain accepted; input_feedback.comment_text stays stable and input_feedback.emlis_ai is additive-only'),
     ApiContractEntry('GET', '/input/summary', 'input.summary.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/account/profile/me', 'account.profile.me.read.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/account/display-name/availability', 'account.display_name.availability.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Self-edit display name preflight availability check'),
@@ -118,7 +118,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/ranking/mymodel_questions', 'ranking.mymodel_questions.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/ranking/mymodel_resonances', 'ranking.mymodel_resonances.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/ranking/mymodel_discoveries', 'ranking.mymodel_discoveries.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
-    ApiContractEntry('GET', '/subscription/bootstrap', 'subscription.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime subscription sales / plan config'),
+    ApiContractEntry('GET', '/subscription/bootstrap', 'subscription.bootstrap.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines'),
     ApiContractEntry('GET', '/subscription/me', 'subscription.me.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/subscription/update', 'subscription.update.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Client purchase sync / tier refresh'),
 )

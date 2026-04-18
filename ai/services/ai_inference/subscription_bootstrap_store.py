@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from emlis_ai_capability import build_emlis_ai_public_plan_meta
 from supabase_client import ensure_supabase_config, sb_get
 
 SETTINGS_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_RUNTIME_SETTINGS_TABLE") or "subscription_runtime_settings").strip() or "subscription_runtime_settings"
@@ -22,6 +23,51 @@ PREMIUM_CANONICAL_FEATURES = [
     "Analysis：自己構造分析レポートがさらに深くなります",
     "Piece：今月の作成回数が無制限です",
 ]
+
+
+PLUS_EMLIS_AI_MARKETING_LINES = [
+    "EmlisAI：最近の流れを見ながら返してくれます",
+    "EmlisAI：入力履歴を踏まえた返答になります",
+]
+PREMIUM_EMLIS_AI_MARKETING_LINES = [
+    "EmlisAI：あなたの流れに合わせて返し方まで変わります",
+    "EmlisAI：長い時間の変化や回復も踏まえて寄り添います",
+]
+
+
+def _append_unique_strings(values: Any, additions: Iterable[str]) -> List[str]:
+    out = _string_list(values, [])
+    seen = {item for item in out}
+    for item in additions:
+        value = _string_or_none(item)
+        if not value or value in seen:
+            continue
+        out.append(value)
+        seen.add(value)
+    return out
+
+
+def _emlis_ai_marketing_lines_for_plan(plan_code: str) -> List[str]:
+    normalized = _clean(plan_code).lower()
+    if normalized == "premium":
+        return list(PREMIUM_EMLIS_AI_MARKETING_LINES)
+    if normalized == "plus":
+        return list(PLUS_EMLIS_AI_MARKETING_LINES)
+    return []
+
+
+def _attach_emlis_ai_plan_meta(plan_code: str, plan: Mapping[str, Any]) -> Dict[str, Any]:
+    normalized = _clean(plan_code).lower()
+    out = dict(plan)
+    if normalized not in {"plus", "premium"}:
+        return out
+    marketing_lines = _emlis_ai_marketing_lines_for_plan(normalized)
+    out["features"] = _append_unique_strings(out.get("features"), marketing_lines)
+    out["emlis_ai"] = {
+        **build_emlis_ai_public_plan_meta(normalized),
+        "marketing_lines": marketing_lines,
+    }
+    return out
 
 
 def _clean(value: Any) -> str:
@@ -619,6 +665,7 @@ async def build_subscription_bootstrap(*, client_meta: Optional[Dict[str, Any]] 
         item = _plan_public(plan)
         if not client_sales_enabled:
             item["purchasable"] = False
+        item = _attach_emlis_ai_plan_meta(plan_code, item)
         public_catalog[plan_code] = item
 
     return {

@@ -28,6 +28,7 @@ def test_app_bootstrap_returns_contract_headers(client):
 
 def test_legacy_emotion_submit_accepts_memo_without_category(client, monkeypatch):
     import api_emotion_submit as emotion_submit_module
+    import emotion_submit_service as emotion_submit_service_module
 
     inserted_payload = {}
     background_payload = {}
@@ -35,16 +36,21 @@ def test_legacy_emotion_submit_accepts_memo_without_category(client, monkeypatch
     async def fake_resolve_user_id_from_token(_access_token: str) -> str:
         return "user-123"
 
-    async def fake_insert_emotion_row(**kwargs):
-        inserted_payload.update(kwargs)
-        return {"id": "emo-1", "created_at": kwargs["created_at"]}
-
-    def fake_start_background_tasks(**kwargs):
-        background_payload.update(kwargs)
+    async def fake_persist_emotion_submission(**kwargs):
+        payload = dict(kwargs)
+        if payload.get("category") is None:
+            payload["category"] = []
+        inserted_payload.update(payload)
+        background_payload.update({"memo": kwargs.get("memo")})
+        return {
+            "inserted": {"id": "emo-1"},
+            "created_at": kwargs.get("created_at") or "2026-04-18T00:00:00Z",
+            "input_feedback_comment": "compat comment",
+            "input_feedback_meta": None,
+        }
 
     monkeypatch.setattr(emotion_submit_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(emotion_submit_module, "_insert_emotion_row", fake_insert_emotion_row)
-    monkeypatch.setattr(emotion_submit_module, "_start_post_submit_background_tasks", fake_start_background_tasks)
+    monkeypatch.setattr(emotion_submit_service_module, "persist_emotion_submission", fake_persist_emotion_submission)
 
     response = client.post(
         "/emotion/submit",

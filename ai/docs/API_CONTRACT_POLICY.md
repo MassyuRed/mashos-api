@@ -33,6 +33,7 @@ Public responses carry these headers:
 
 - New required request fields must not be added to existing public routes.
 - Existing response keys must not be renamed, removed, or type-changed.
+- Nested additive metadata is allowed when existing primary fields remain stable (for example `input_feedback.comment_text` stays stable while `input_feedback.emlis_ai` is additive-only).
 - Older payloads must be normalized server-side with defaults, aliases, and enum coercion when feasible.
 - Any truly breaking evolution must move to a fresh route (for example `/v2/...`).
 
