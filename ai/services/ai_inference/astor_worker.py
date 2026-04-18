@@ -2053,11 +2053,6 @@ def _coerce_str_list(value: Any) -> List[str]:
 _SOURCE_TYPE_ALIASES: Dict[str, str] = {
     "emotion": "emotion_input",
     "emotion_input": "emotion_input",
-    "mymodel": "mymodel_create",
-    "my_model_create": "mymodel_create",
-    "mymodel_create": "mymodel_create",
-    "deepinsight": "deep_insight",
-    "deep_insight": "deep_insight",
     "echo": "echo",
     "echoes": "echo",
     "discovery": "discovery",
@@ -2075,10 +2070,6 @@ def _normalize_self_structure_source_type(raw: Any, default: str = "emotion_inpu
 _SOURCE_VIEW_KEYS: List[tuple[str, str]] = [
     ("emotion_input", "emotion_inputs"),
     ("emotion_input", "emotion_input"),
-    ("mymodel_create", "mymodel_creates"),
-    ("mymodel_create", "mymodel_create"),
-    ("deep_insight", "deep_insights"),
-    ("deep_insight", "deep_insight"),
     ("echo", "echoes"),
     ("echo", "echo"),
     ("discovery", "discoveries"),

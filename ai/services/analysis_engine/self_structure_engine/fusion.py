@@ -180,7 +180,7 @@ def split_lanes(results: Sequence[SignalExtractionResult]) -> Dict[str, List[Sig
     for r in results:
         if r.source_type == "emotion_input":
             lanes["reaction"].append(r)
-        elif r.source_type in ("mymodel_create", "deep_insight", "today_question"):
+        elif r.source_type == "today_question":
             lanes["declarative"].append(r)
         elif r.source_type in ("echo", "discovery"):
             lanes["relational"].append(r)

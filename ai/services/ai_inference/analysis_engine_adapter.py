@@ -62,13 +62,6 @@ _SOURCE_TYPE_ALIASES = {
     "emotion": "emotion_input",
     "emotion_input": "emotion_input",
     "emotion_inputs": "emotion_input",
-    "mymodel": "mymodel_create",
-    "my_model_create": "mymodel_create",
-    "mymodel_create": "mymodel_create",
-    "mymodel_creates": "mymodel_create",
-    "deepinsight": "deep_insight",
-    "deep_insight": "deep_insight",
-    "deep_insights": "deep_insight",
     "echo": "echo",
     "echoes": "echo",
     "discovery": "discovery",
@@ -79,8 +72,6 @@ _SOURCE_TYPE_ALIASES = {
 
 _DEFAULT_SOURCE_WEIGHT = {
     "emotion_input": 1.0,
-    "mymodel_create": 0.9,
-    "deep_insight": 1.1,
     "echo": 0.4,
     "discovery": 0.4,
     "today_question": 1.05,
@@ -90,10 +81,6 @@ _DEFAULT_SOURCE_WEIGHT = {
 _SOURCE_VIEW_KEYS: List[tuple[str, str]] = [
     ("emotion_input", "emotion_inputs"),
     ("emotion_input", "emotion_input"),
-    ("mymodel_create", "mymodel_creates"),
-    ("mymodel_create", "mymodel_create"),
-    ("deep_insight", "deep_insights"),
-    ("deep_insight", "deep_insight"),
     ("echo", "echoes"),
     ("echo", "echo"),
     ("discovery", "discoveries"),

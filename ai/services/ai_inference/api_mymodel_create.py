@@ -54,7 +54,7 @@ from supabase_client import (
 from active_users_store import touch_active_user
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
-from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
+from astor_snapshot_enqueue import enqueue_global_snapshot_refresh  # backward-compat for tests / legacy monkeypatches
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from mymodel_entitlements import (
     FREE_TEMPLATE_QUESTION_LIMIT,
@@ -767,16 +767,6 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         ]
 
         if int(saved or 0) > 0 or int(deleted or 0) > 0:
-            try:
-                await enqueue_global_snapshot_refresh(
-                    user_id=user_id,
-                    trigger="mymodel_create_answers",
-                    requested_at=now_iso,
-                    debounce=True,
-                )
-            except Exception as exc:
-                logger.warning("snapshot enqueue failed (mymodel_create_answers): %s", exc)
-
             try:
                 await enqueue_account_status_refresh(
                     target_user_id=user_id,

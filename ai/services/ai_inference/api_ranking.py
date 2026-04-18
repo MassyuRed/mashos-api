@@ -48,6 +48,7 @@ from supabase_client import (
     sb_service_role_headers_json as _sb_headers_json_shared,
 )
 from astor_ranking_boards import fetch_latest_ready_ranking_board, select_board_rows
+from piece_generated_metrics import build_piece_generated_ranking_rows
 
 
 logger = logging.getLogger("ranking_api")
@@ -620,6 +621,19 @@ async def _publish_user_metric_items_from_board_rows(
     return items
 
 
+def _alias_piece_metric_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for raw in items or []:
+        row = dict(raw or {})
+        value = _pick_first_int(row, ["piece_generated_total", "mymodel_questions_total", "questions_total", "value"], default=0)
+        row["piece_generated_total"] = value
+        row["mymodel_questions_total"] = value
+        row["questions_total"] = value
+        row["value"] = value
+        out.append(row)
+    return out
+
+
 def register_ranking_routes(app: FastAPI) -> None:
     """Register ranking endpoints on the given FastAPI app."""
 
@@ -831,55 +845,28 @@ def register_ranking_routes(app: FastAPI) -> None:
 
         try:
             board_rows = await _fetch_ready_board_rows("mymodel_questions", p_range)
-            if board_rows is not None:
+            if board_rows is not None and any(isinstance(r, dict) and r.get("piece_generated_total") is not None for r in board_rows):
                 items = await _publish_user_metric_items_from_board_rows(
                     board_rows,
-                    value_keys=["mymodel_questions_total", "questions_total"],
-                    primary_value_key="mymodel_questions_total",
+                    value_keys=["piece_generated_total", "mymodel_questions_total", "questions_total"],
+                    primary_value_key="piece_generated_total",
                 )
+                items = _alias_piece_metric_items(items)
                 resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
                 _ranking_cache_set(cache_key, resp_out)
                 return resp_out
         except Exception as exc:
             logger.warning("ranking board publish failed: metric=mymodel_questions range=%s err=%s", p_range, exc)
 
-        # Phase3 fallback: Use enriched/filtered server-side RPC (JOIN profiles + visibility).
-        rows = await _rpc("rank_mymodel_questions_v2", {"p_range": p_range, "p_limit": int(p_limit)})
+        live_rows = await build_piece_generated_ranking_rows(range_key=p_range)
+        items = await _publish_user_metric_items_from_board_rows(
+            live_rows,
+            value_keys=["piece_generated_total", "mymodel_questions_total", "questions_total"],
+            primary_value_key="piece_generated_total",
+        )
+        items = _alias_piece_metric_items(items)
 
-        items: List[Dict[str, Any]] = []
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            uid = str(r.get("user_id") or "").strip()
-            if not uid:
-                continue
-            try:
-                rk = int(r.get("rank") or 0)
-            except Exception:
-                rk = 0
-            try:
-                cnt = int(r.get("mymodel_questions_total") or 0)
-            except Exception:
-                cnt = 0
-
-            dn = r.get("display_name")
-            if dn is not None and not isinstance(dn, str):
-                dn = str(dn)
-
-            is_private = bool(r.get("is_private_account") or False)
-
-            items.append(
-                {
-                    "rank": rk,
-                    "user_id": uid,
-                    "display_name": dn,
-                    "is_private_account": is_private,
-                    "mymodel_questions_total": cnt,
-                    "value": cnt,
-                }
-            )
-
-        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
+        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
         _ranking_cache_set(cache_key, resp_out)
         return resp_out
     @app.get("/ranking/mymodel_used")

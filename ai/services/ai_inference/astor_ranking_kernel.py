@@ -33,6 +33,7 @@ from astor_ranking_boards import (
     RANKING_BOARD_VERSION,
     normalize_board_payload,
 )
+from piece_generated_metrics import build_piece_generated_ranking_rows
 
 logger = logging.getLogger("astor_ranking_kernel")
 
@@ -212,11 +213,22 @@ def _normalize_input_length_rows(rows: Iterable[Mapping[str, Any]]) -> List[Dict
 
 
 def _normalize_mymodel_questions_rows(rows: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    return _normalize_user_rows(
+    base_items = _normalize_user_rows(
         rows,
-        value_keys=("mymodel_questions_total", "questions_total", "value"),
-        primary_value_key="mymodel_questions_total",
+        value_keys=("piece_generated_total", "mymodel_questions_total", "questions_total", "value"),
+        primary_value_key="piece_generated_total",
     )
+    out: List[Dict[str, Any]] = []
+    for item in base_items:
+        value = _coerce_int(item.get("piece_generated_total"), 0)
+        out.append({
+            **item,
+            "piece_generated_total": value,
+            "mymodel_questions_total": value,
+            "questions_total": value,
+            "value": value,
+        })
+    return out
 
 
 def _normalize_login_streak_rows(rows: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
@@ -327,6 +339,12 @@ async def generate_metric_range_rows(
     rk = _canonical_range_key(range_key)
     if rk not in RANKING_RANGE_KEYS:
         raise ValueError(f"Unsupported ranking range: {range_key}")
+
+    if mk == "mymodel_questions":
+        rows = await build_piece_generated_ranking_rows(range_key=rk)
+        if limit is not None:
+            return list(rows[: max(1, int(limit))])
+        return rows
 
     cfg = get_metric_config(mk)
     rpc_fn = str(cfg.get("rpc_fn") or "").strip()

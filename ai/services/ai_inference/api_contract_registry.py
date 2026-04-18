@@ -57,8 +57,6 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/mymodel/qna/echoes/history', 'mymodel.qna.echoes.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/mymodel/qna/discoveries/history', 'mymodel.qna.discoveries.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('POST', '/activity/login', 'activity.login.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Client login heartbeat / streak touch'),
-    ApiContractEntry('GET', '/deep_insight/questions', 'deep_insight.questions.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
-    ApiContractEntry('POST', '/deep_insight/answers', 'deep_insight.answers.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/today-question/current', 'today_question.current.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/today-question/status', 'today_question.status.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Lightweight Today Question popup/badge state without question body or choices'),
     ApiContractEntry('POST', '/today-question/answers', 'today_question.answers.create.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),

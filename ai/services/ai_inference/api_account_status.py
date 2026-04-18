@@ -45,6 +45,7 @@ from astor_account_status_store import (
     extract_account_status_totals,
     fetch_latest_ready_account_status_summary,
 )
+from piece_generated_metrics import count_piece_generated_total_for_owner
 
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
@@ -139,6 +140,7 @@ class AccountStatusResponse(BaseModel):
     login_streak_max: int = 0
     input_count_total: int = 0
     input_chars_total: int = 0
+    piece_generated_total: int = 0
     mymodel_questions_total: int = 0
     mymodel_views_total: int = 0
     mymodel_resonances_total: int = 0
@@ -302,16 +304,29 @@ def register_account_status_routes(app: FastAPI) -> None:
             elif isinstance(data, dict):
                 row = data
 
+            legacy_piece_total = _to_int(
+                row.get("piece_generated_total")
+                if row.get("piece_generated_total") is not None
+                else row.get("mymodel_questions_total")
+            )
             payload = {
                 "login_days_total": _to_int(row.get("login_days_total")),
                 "login_streak_max": _to_int(row.get("login_streak_max")),
                 "input_count_total": _to_int(row.get("input_count_total")),
                 "input_chars_total": _to_int(row.get("input_chars_total")),
-                "mymodel_questions_total": _to_int(row.get("mymodel_questions_total")),
+                "piece_generated_total": legacy_piece_total,
+                "mymodel_questions_total": legacy_piece_total,
                 "mymodel_views_total": _to_int(row.get("mymodel_views_total")),
                 "mymodel_resonances_total": _to_int(row.get("mymodel_resonances_total")),
                 "mymodel_discoveries_total": _to_int(row.get("mymodel_discoveries_total")),
             }
+
+        try:
+            piece_total = await count_piece_generated_total_for_owner(tgt)
+            payload["piece_generated_total"] = int(piece_total or 0)
+            payload["mymodel_questions_total"] = int(piece_total or 0)
+        except Exception as exc:
+            logger.warning("Failed to resolve live piece_generated_total for %s: %s", tgt, exc)
 
         # Update cache (best-effort) for non-self only
         if not is_self_request:

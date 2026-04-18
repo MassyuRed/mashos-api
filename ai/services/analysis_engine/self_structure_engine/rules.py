@@ -64,8 +64,6 @@ TARGET_TYPE_PRIORITY = {
 
 SOURCE_WEIGHT = {
     "emotion_input": 1.0,
-    "mymodel_create": 0.9,
-    "deep_insight": 1.1,
     "echo": 0.4,
     "discovery": 0.4,
     "today_question": 1.05,
@@ -81,14 +79,6 @@ SOURCE_BIAS = {
     "emotion_input": {
         "primary": {"thinking_weight": 1.0, "action_weight": 0.6},
         "secondary": {"thinking_weight": 0.4, "action_weight": 1.2},
-    },
-    "mymodel_create": {
-        "primary": {"thinking_weight": 1.1, "action_weight": 0.7},
-        "secondary": {"thinking_weight": 0.7, "action_weight": 0.5},
-    },
-    "deep_insight": {
-        "primary": {"thinking_weight": 1.2, "action_weight": 0.8},
-        "secondary": {"thinking_weight": 0.8, "action_weight": 0.6},
     },
     "echo": {
         "primary": {"thinking_weight": 0.5, "action_weight": 0.4},
@@ -884,9 +874,6 @@ def estimate_reliability(text: str, source_type: str, surface: Optional[SurfaceS
     if surface.has_intent:
         score += 1
     if extract_target_candidates(norm):
-        score += 1
-
-    if source_type in {"deep_insight", "mymodel_create"} and len(norm) >= 10:
         score += 1
 
     if score <= 1:

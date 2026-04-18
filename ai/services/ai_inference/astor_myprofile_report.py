@@ -1093,8 +1093,8 @@ def _build_myprofile_monthly_report_fallback(
     prev_end = start
     prev_start = prev_end - _dt.timedelta(days=max(days, 1))
 
-    # Materials (Spec v2): thought/action logs + self-insight + deep answers
-    deep_answers = _load_deep_insight_answers(uid, include_secret=include_secret, limit=12)
+    # Materials (Spec v2): thought/action logs + self-insight
+    deep_answers: List[Dict[str, Any]] = []
 
     analysis_source = "supabase_emotions" if _has_supabase_config() else "patterns_store"
 

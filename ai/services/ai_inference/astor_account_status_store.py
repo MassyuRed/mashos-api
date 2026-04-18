@@ -60,6 +60,7 @@ ACCOUNT_STATUS_TOTAL_KEYS: Sequence[str] = (
     "login_streak_max",
     "input_count_total",
     "input_chars_total",
+    "piece_generated_total",
     "mymodel_questions_total",
     "mymodel_views_total",
     "mymodel_resonances_total",
@@ -137,8 +138,20 @@ def _json_ready(value: Any) -> Any:
 def _normalize_totals(raw: Any) -> Dict[str, int]:
     src = raw if isinstance(raw, dict) else {}
     out: Dict[str, int] = {}
+
+    piece_total = max(0, _to_int(
+        src.get("piece_generated_total")
+        if src.get("piece_generated_total") is not None
+        else src.get("mymodel_questions_total")
+    ))
+
     for key in ACCOUNT_STATUS_TOTAL_KEYS:
+        if key in {"piece_generated_total", "mymodel_questions_total"}:
+            continue
         out[key] = max(0, _to_int(src.get(key)))
+
+    out["piece_generated_total"] = piece_total
+    out["mymodel_questions_total"] = piece_total
     return out
 
 

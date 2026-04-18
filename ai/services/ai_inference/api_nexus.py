@@ -75,7 +75,6 @@ NEXUS_SOURCE_PATHS: Dict[str, str] = {
     "emotion_ranking": "/ranking/emotions",
     "emotion_log": "/friends/feed",
     "recommend_users": "/mymodel/recommend/users",
-    "trending_questions": "/mymodel/qna/trending",
     "history_echoes": "/mymodel/qna/echoes/reflections",
     "history_discoveries": "/mymodel/qna/discoveries/reflections",
 }
@@ -165,7 +164,6 @@ def _normalize_include_sections(raw: Optional[str]) -> Set[str]:
         "reflections",
         "emotion_log",
         "recommend_users",
-        "trending_questions",
         "history_echoes",
         "history_discoveries",
     }
@@ -406,21 +404,6 @@ def register_nexus_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
 
-    @app.get("/nexus/recommend/questions")
-    async def nexus_recommend_questions(
-        limit: int = Query(default=8, ge=1, le=100),
-        mode: str = Query(default="overall"),
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> Any:
-        return await _call_registered_route_json(
-            app,
-            path=NEXUS_SOURCE_PATHS["trending_questions"],
-            detail="Failed to load Nexus trending questions",
-            limit=int(limit),
-            mode=str(mode or "overall"),
-            authorization=authorization,
-        )
-
     @app.get("/nexus/history/echoes")
     async def nexus_history_echoes(
         limit: int = Query(default=20, ge=1, le=100),
@@ -498,10 +481,6 @@ def register_nexus_routes(app: FastAPI) -> None:
             tasks.append(_load_section("recommend_users", _call_registered_route_json(
                 app, path=NEXUS_SOURCE_PATHS["recommend_users"], detail="Failed to load Nexus recommend users",
                 limit=int(tab_limit), authorization=authorization)))
-        if "trending_questions" in include_sections:
-            tasks.append(_load_section("trending_questions", _call_registered_route_json(
-                app, path=NEXUS_SOURCE_PATHS["trending_questions"], detail="Failed to load Nexus trending questions",
-                limit=int(tab_limit), mode="overall", authorization=authorization)))
         if "history_echoes" in include_sections:
             tasks.append(_load_section("history_echoes", _call_registered_route_json(
                 app, path=NEXUS_SOURCE_PATHS["history_echoes"], detail="Failed to load Nexus echoes history",

@@ -38,8 +38,6 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/mymodel/qna/echoes/history'),
     ('GET', '/mymodel/qna/discoveries/history'),
     ('POST', '/activity/login'),
-    ('GET', '/deep_insight/questions'),
-    ('POST', '/deep_insight/answers'),
     ('GET', '/today-question/current'),
     ('GET', '/today-question/status'),
     ('POST', '/today-question/answers'),

@@ -940,15 +940,13 @@ def build_premium_reflection_view(
 ) -> Dict[str, Any]:
     """Build public-safe material view for Premium Reflection generation.
 
-    Premium Reflections are generated only from secret-OFF InputScreen rows and
-    secret-OFF DeepInsight inputs, so this view is intentionally public-safe.
+    Premium Reflections are generated only from secret-OFF InputScreen rows,
+    so this view is intentionally public-safe.
     """
     items: List[Dict[str, Any]] = []
 
     for row in emotion_rows or []:
         items.extend(_emotion_row_to_premium_reflection_items(row))
-    for row in deep_insight_rows or []:
-        items.extend(_deep_insight_row_to_premium_reflection_items(row))
 
     items = [
         it for it in items
@@ -969,7 +967,6 @@ def build_premium_reflection_view(
         "items": items,
         "source_counts": {
             "emotion_input": len(emotion_rows or []),
-            "deep_insight": len(deep_insight_rows or []),
         },
         "category_counts": category_counts,
         "time_span_start": timestamps[0] if timestamps else None,
@@ -1140,10 +1137,6 @@ def build_self_structure_view(
 
     for row in emotion_rows or []:
         items.append(_emotion_row_to_self_structure_item(row))
-    for row in mymodel_rows or []:
-        items.append(_mymodel_row_to_self_structure_item(row))
-    for row in deep_insight_rows or []:
-        items.append(_deep_insight_row_to_self_structure_item(row))
     for row in echo_rows or []:
         items.append(_echo_row_to_self_structure_item(row))
     for row in discovery_rows or []:
@@ -1155,8 +1148,6 @@ def build_self_structure_view(
     timestamps = [str(it.get("timestamp") or "") for it in items if str(it.get("timestamp") or "").strip()]
     source_counts = {
         "emotion_input": len(emotion_rows or []),
-        "mymodel_create": len(mymodel_rows or []),
-        "deep_insight": len(deep_insight_rows or []),
         "echo": len(echo_rows or []),
         "discovery": len(discovery_rows or []),
         "today_question": len(today_question_rows or []),
@@ -2291,16 +2282,15 @@ async def generate_and_store_material_snapshots(
     internal_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=True)
     public_emotion_rows = await fetch_emotions_for_self_structure(uid, include_secret=False)
 
-    internal_mymodel_rows = await fetch_mymodel_create_rows_for_self_structure(uid, include_secret=True)
-    public_mymodel_rows = await fetch_mymodel_create_rows_for_self_structure(uid, include_secret=False)
+    internal_mymodel_rows: List[Dict[str, Any]] = []
+    public_mymodel_rows: List[Dict[str, Any]] = []
 
-    internal_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=True)
-    public_deep_rows = await fetch_deep_insight_rows_for_self_structure(uid, include_secret=False)
+    internal_deep_rows: List[Dict[str, Any]] = []
+    public_deep_rows: List[Dict[str, Any]] = []
 
-    # Premium Reflections are intentionally built from public-safe materials only
-    # to avoid secret contamination in topic clustering / question / answer generation.
+    # Premium reflections now use Home/Input-originated emotion materials only.
     premium_reflection_emotion_rows = await fetch_emotions_for_premium_reflection(uid, include_secret=False)
-    premium_reflection_deep_rows = public_deep_rows
+    premium_reflection_deep_rows: List[Dict[str, Any]] = []
 
     internal_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=True)
     public_echo_rows = await fetch_echo_rows_for_self_structure(uid, include_secret=False)

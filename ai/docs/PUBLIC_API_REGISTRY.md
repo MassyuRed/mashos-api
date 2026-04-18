@@ -39,8 +39,6 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | GET | `/mymodel/qna/echoes/history` | `mymodel.qna.echoes.history.v1` | `false` |  |  |
 | GET | `/mymodel/qna/discoveries/history` | `mymodel.qna.discoveries.history.v1` | `false` |  |  |
 | POST | `/activity/login` | `activity.login.v1` | `false` |  | Client login heartbeat / streak touch |
-| GET | `/deep_insight/questions` | `deep_insight.questions.v1` | `false` |  |  |
-| POST | `/deep_insight/answers` | `deep_insight.answers.v1` | `false` |  |  |
 | GET | `/today-question/current` | `today_question.current.v1` | `false` |  |  |
 | GET | `/today-question/status` | `today_question.status.v1` | `false` |  | Lightweight Today Question popup/badge state without question body or choices |
 | POST | `/today-question/answers` | `today_question.answers.create.v1` | `false` |  |  |

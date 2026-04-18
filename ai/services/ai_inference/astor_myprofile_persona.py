@@ -267,8 +267,7 @@ def build_persona_context_payload(user_id: str, limit: int = 5, include_secret: 
     構造サマリとテキストを1つの dict としてまとめて返す。
     """
     state = build_persona_state(user_id=user_id, limit=limit, include_secret=include_secret)
-    deep_bundle = _load_deep_insight_answers(user_id=user_id, limit=5, include_secret=include_secret)
-    text = persona_state_to_brief_text(state, lang="ja", include_secret=include_secret, deep_insight=deep_bundle)
+    text = persona_state_to_brief_text(state, lang="ja", include_secret=include_secret, deep_insight=None)
     return {
         "user_id": state.user_id,
         "generated_at": state.generated_at,
@@ -276,5 +275,4 @@ def build_persona_context_payload(user_id: str, limit: int = 5, include_secret: 
         "include_secret": bool(include_secret),
         "structures": [asdict(v) for v in state.top_structures],
         "brief_text": text,
-        "deep_insight": deep_bundle,
     }

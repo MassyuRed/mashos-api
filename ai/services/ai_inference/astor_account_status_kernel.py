@@ -33,6 +33,7 @@ from astor_account_status_store import (
     ACCOUNT_STATUS_VERSION,
     normalize_account_status_payload,
 )
+from piece_generated_metrics import count_piece_generated_total_for_owner
 
 logger = logging.getLogger("astor_account_status_kernel")
 
@@ -111,8 +112,21 @@ async def _rpc_account_status_row(target_user_id: str) -> Dict[str, Any]:
 def _normalize_totals_from_rpc_row(row: Mapping[str, Any]) -> Dict[str, int]:
     src = row if isinstance(row, Mapping) else {}
     totals: Dict[str, int] = {}
+
+    piece_total = max(0, _to_int(
+        src.get("piece_generated_total")
+        if src.get("piece_generated_total") is not None
+        else src.get("mymodel_questions_total"),
+        0,
+    ))
+
     for key in SUPPORTED_ACCOUNT_STATUS_TOTAL_KEYS:
+        if str(key) in {"piece_generated_total", "mymodel_questions_total"}:
+            continue
         totals[str(key)] = max(0, _to_int(src.get(key), 0))
+
+    totals["piece_generated_total"] = piece_total
+    totals["mymodel_questions_total"] = piece_total
     return totals
 
 
@@ -138,6 +152,13 @@ async def generate_account_status_summary(target_user_id: str) -> Dict[str, Any]
         raise ValueError("target_user_id is required")
 
     row = await _rpc_account_status_row(tgt)
+    row = dict(row or {})
+    try:
+        piece_total = await count_piece_generated_total_for_owner(tgt)
+        row["piece_generated_total"] = int(piece_total or 0)
+        row["mymodel_questions_total"] = int(piece_total or 0)
+    except Exception as exc:
+        logger.warning("account status live piece count failed: target=%s err=%s", tgt, exc)
     payload = _build_summary_payload(tgt, row)
     return payload
 

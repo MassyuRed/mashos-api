@@ -124,7 +124,6 @@ from api_emotion_history_manage import register_emotion_history_manage_routes
 from api_friends import register_friend_routes
 from api_myprofile import register_myprofile_routes
 from api_public_profile import register_public_profile_routes
-from api_deep_insight import register_deep_insight_routes
 from api_subscription import register_subscription_routes
 from subscription_webhooks import register_subscription_webhook_routes
 from subscription_runtime_config import (
@@ -253,7 +252,6 @@ register_emotion_history_manage_routes(app)
 register_friend_routes(app)
 register_myprofile_routes(app)
 register_public_profile_routes(app)
-register_deep_insight_routes(app)
 register_subscription_routes(app)
 register_subscription_webhook_routes(app)
 register_subscription_release_config_routes(app)

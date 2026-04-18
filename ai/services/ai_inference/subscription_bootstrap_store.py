@@ -204,6 +204,12 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
     )
 
 
+
+def _should_hide_obsolete_profile_create_feature(value: Any) -> bool:
+    text = _clean(value)
+    return "ProfileCreate" in text and "編集" in text
+
+
 def _normalize_platform(value: Any) -> str:
     return "ios" if _clean(value).lower() == "ios" else "android"
 
@@ -393,7 +399,6 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
                 "Analysis：自己構造分析レポートを閲覧できます",
                 "Analysis：今日の問いを履歴から編集できます",
                 "Piece：今月30回まで作成できます",
-                "ProfileCreate：回答を保存したあとでも編集できます",
             ],
             "note_lines": [
                 "月額300円で自動更新されます。",
@@ -469,7 +474,7 @@ def _normalize_plan_catalog_item(plan_code: str, plan: Optional[Mapping[str, Any
         out["features"] = []
         for item in _string_list(src.get("features"), src.get("features") or []):
             text = _replace_legacy_subscription_text(item) or _clean(item)
-            if text:
+            if text and not _should_hide_obsolete_profile_create_feature(text):
                 out["features"].append(text)
     elif plan_code == "premium":
         out["title"] = "Premiumプラン"
