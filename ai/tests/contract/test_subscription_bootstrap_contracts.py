@@ -52,6 +52,15 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                         "ios": [],
                         "android": ["plus"],
                     },
+                    "emlis_ai": {
+                        "history_mode": "extended",
+                        "continuity_mode": "basic",
+                        "style_mode": "adaptive",
+                        "partner_mode": "on_basic",
+                        "model_mode": "compact",
+                        "interpretation_mode": "memory_aligned",
+                        "reply_length_mode": "input_scaled",
+                    },
                 },
                 "premium": {
                     "visible": True,
@@ -80,6 +89,15 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
                         "ios": [],
                         "android": ["premium"],
                     },
+                    "emlis_ai": {
+                        "history_mode": "full",
+                        "continuity_mode": "advanced",
+                        "style_mode": "personalized",
+                        "partner_mode": "on_advanced",
+                        "model_mode": "deep",
+                        "interpretation_mode": "precision_aligned",
+                        "reply_length_mode": "input_and_history_scaled",
+                    },
                 },
             },
         }
@@ -102,7 +120,11 @@ def test_subscription_bootstrap_contract_shape(client, monkeypatch):
     assert body["client_sales_enabled"] is True
     assert body["links"]["terms_url"] == "https://example.com/terms"
     assert body["plans"]["plus"]["purchase_product_id"]["ios"] == "cocolon_plus_monthly"
+    assert body["plans"]["plus"]["emlis_ai"]["model_mode"] == "compact"
+    assert body["plans"]["plus"]["emlis_ai"]["interpretation_mode"] == "memory_aligned"
     assert body["plans"]["premium"]["purchasable"] is True
+    assert body["plans"]["premium"]["emlis_ai"]["model_mode"] == "deep"
+    assert body["plans"]["premium"]["emlis_ai"]["interpretation_mode"] == "precision_aligned"
 
 
 def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypatch):
@@ -142,6 +164,15 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
                     "recognized_product_ids": {"ios": ["cocolon_plus_monthly"], "android": ["emlis"]},
                     "purchase_base_plan_id": {"ios": None, "android": "plus"},
                     "recognized_base_plan_ids": {"ios": [], "android": ["plus"]},
+                    "emlis_ai": {
+                        "history_mode": "extended",
+                        "continuity_mode": "basic",
+                        "style_mode": "adaptive",
+                        "partner_mode": "on_basic",
+                        "model_mode": "compact",
+                        "interpretation_mode": "memory_aligned",
+                        "reply_length_mode": "input_scaled",
+                    },
                 }
             },
         }
@@ -153,3 +184,4 @@ def test_subscription_bootstrap_respects_disabled_reason_shape(client, monkeypat
     assert body["client_sales_enabled"] is False
     assert body["client_sales_disabled_reason"] == "このバージョンでは購入できません。"
     assert body["policy"]["review_notice"] == "現在、サブスクリプション販売を一時停止しています。"
+    assert body["plans"]["plus"]["emlis_ai"]["reply_length_mode"] == "input_scaled"

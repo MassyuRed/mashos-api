@@ -15,17 +15,27 @@ def test_emotion_submit_contract_allows_additive_emlis_ai_meta(client, monkeypat
             "created_at": "2026-04-18T00:00:00Z",
             "input_feedback_comment": "Mashさん、こんにちは。Emlisです。今回は不安が近かったのですね。",
             "input_feedback_meta": {
-                "version": "emlis_ai_v1",
+                "version": "emlis_ai_v2",
+                "kernel_version": "observation_kernel.v2",
                 "tier": "plus",
                 "capability": {
                     "history_mode": "extended",
                     "continuity_mode": "basic",
                     "style_mode": "adaptive",
                     "partner_mode": "on_basic",
+                    "model_mode": "compact",
+                    "interpretation_mode": "memory_aligned",
                 },
-                "used_sources": ["current_input", "history", "greeting_state"],
+                "used_sources": ["current_input", "history", "greeting_state", "derived_user_model"],
+                "used_memory_layers": ["canonical_history", "derived_user_model", "side_state"],
+                "reply_length_mode": "input_scaled",
                 "evidence_count": 2,
+                "evidence_by_line": {
+                    "receive": [{"kind": "emotion", "ref_id": "emo-1", "weight": 1.0, "note": None}],
+                },
+                "rejected_candidate_count": 1,
                 "fallback_used": False,
+                "model_revision": "2026-04-18T00:00:00Z",
             },
         }
 
@@ -42,8 +52,15 @@ def test_emotion_submit_contract_allows_additive_emlis_ai_meta(client, monkeypat
     assert response.headers["X-Cocolon-Contract-Id"] == "emotion.submit.v1"
     body = response.json()
     assert body["input_feedback"]["comment_text"] == "Mashさん、こんにちは。Emlisです。今回は不安が近かったのですね。"
-    assert body["input_feedback"]["emlis_ai"]["version"] == "emlis_ai_v1"
+    assert body["input_feedback"]["emlis_ai"]["version"] == "emlis_ai_v2"
+    assert body["input_feedback"]["emlis_ai"]["kernel_version"] == "observation_kernel.v2"
     assert body["input_feedback"]["emlis_ai"]["capability"]["history_mode"] == "extended"
+    assert body["input_feedback"]["emlis_ai"]["capability"]["model_mode"] == "compact"
+    assert body["input_feedback"]["emlis_ai"]["capability"]["interpretation_mode"] == "memory_aligned"
+    assert body["input_feedback"]["emlis_ai"]["used_memory_layers"] == ["canonical_history", "derived_user_model", "side_state"]
+    assert body["input_feedback"]["emlis_ai"]["reply_length_mode"] == "input_scaled"
+    assert body["input_feedback"]["emlis_ai"]["evidence_by_line"]["receive"][0]["ref_id"] == "emo-1"
+    assert body["input_feedback"]["emlis_ai"]["rejected_candidate_count"] == 1
     assert body["input_feedback"]["emlis_ai"]["fallback_used"] is False
 
 
@@ -90,6 +107,9 @@ def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monke
                         "continuity_mode": "basic",
                         "style_mode": "adaptive",
                         "partner_mode": "on_basic",
+                        "model_mode": "compact",
+                        "interpretation_mode": "memory_aligned",
+                        "reply_length_mode": "input_scaled",
                         "marketing_lines": [
                             "EmlisAI：最近の流れを見ながら返してくれます",
                             "EmlisAI：入力履歴を踏まえた返答になります",
@@ -116,6 +136,9 @@ def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monke
                         "continuity_mode": "advanced",
                         "style_mode": "personalized",
                         "partner_mode": "on_advanced",
+                        "model_mode": "deep",
+                        "interpretation_mode": "precision_aligned",
+                        "reply_length_mode": "input_and_history_scaled",
                         "marketing_lines": [
                             "EmlisAI：あなたの流れに合わせて返し方まで変わります",
                             "EmlisAI：長い時間の変化や回復も踏まえて寄り添います",
@@ -137,5 +160,109 @@ def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monke
     body = response.json()
     assert body["plans"]["plus"]["emlis_ai"]["history_mode"] == "extended"
     assert body["plans"]["plus"]["emlis_ai"]["partner_mode"] == "on_basic"
+    assert body["plans"]["plus"]["emlis_ai"]["model_mode"] == "compact"
+    assert body["plans"]["plus"]["emlis_ai"]["interpretation_mode"] == "memory_aligned"
+    assert body["plans"]["plus"]["emlis_ai"]["reply_length_mode"] == "input_scaled"
     assert body["plans"]["premium"]["emlis_ai"]["history_mode"] == "full"
     assert body["plans"]["premium"]["emlis_ai"]["partner_mode"] == "on_advanced"
+    assert body["plans"]["premium"]["emlis_ai"]["model_mode"] == "deep"
+    assert body["plans"]["premium"]["emlis_ai"]["interpretation_mode"] == "precision_aligned"
+    assert body["plans"]["premium"]["emlis_ai"]["reply_length_mode"] == "input_and_history_scaled"
+
+
+
+def test_emotion_reflection_publish_contract_keeps_additive_emlis_ai_meta(client, monkeypatch):
+    import api_emotion_reflection as reflection_module
+
+    async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
+        return "user-123"
+
+    async def fake_fetch_preview_draft(*, preview_id: str, user_id: str):
+        assert preview_id == "preview-1"
+        assert user_id == "user-123"
+        return {
+            "id": "preview-1",
+            "status": "draft",
+            "question": "今日の気持ちは？",
+            "content_json": {
+                "emotion_preview": {
+                    "emotions": ["不安"],
+                    "memo": "メモ",
+                    "memo_action": "",
+                    "category": ["仕事"],
+                    "created_at": "2026-04-18T00:00:00Z",
+                    "notify_friends": False,
+                },
+                "display": {
+                    "answer_display_text": "preview reflection",
+                },
+            },
+        }
+
+    async def fake_persist_emotion_submission(**kwargs):
+        assert kwargs["user_id"] == "user-123"
+        return {
+            "inserted": {"id": "emo-2"},
+            "created_at": "2026-04-18T00:00:00Z",
+            "input_feedback_comment": "Mashさん、Emlisです。今回は不安が近かったのですね。",
+            "input_feedback_meta": {
+                "version": "emlis_ai_v2",
+                "kernel_version": "observation_kernel.v2",
+                "tier": "premium",
+                "capability": {
+                    "history_mode": "full",
+                    "continuity_mode": "advanced",
+                    "style_mode": "personalized",
+                    "partner_mode": "on_advanced",
+                    "model_mode": "deep",
+                    "interpretation_mode": "precision_aligned",
+                },
+                "used_memory_layers": ["canonical_history", "derived_user_model", "side_state"],
+                "reply_length_mode": "input_and_history_scaled",
+                "evidence_count": 3,
+                "evidence_by_line": {
+                    "receive": [{"kind": "emotion", "ref_id": "emo-2", "weight": 1.0, "note": None}],
+                },
+                "rejected_candidate_count": 1,
+                "fallback_used": False,
+                "model_revision": "2026-04-18T00:00:01Z",
+            },
+        }
+
+    async def fake_publish_preview_draft(*, preview_id: str, user_id: str, published_at: str, emotion_entry=None):
+        return {
+            "id": "reflection-1",
+            "question": "今日の気持ちは？",
+            "answer": "published reflection",
+        }
+
+    async def fake_build_quota_status(_user_id: str):
+        return {
+            "status": "ok",
+            "subscription_tier": "premium",
+            "month_key": "2026-04",
+            "publish_limit": None,
+            "published_count": 4,
+            "remaining_count": None,
+            "can_publish": True,
+        }
+
+    monkeypatch.setattr(reflection_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(reflection_module, "fetch_preview_draft", fake_fetch_preview_draft)
+    monkeypatch.setattr(reflection_module, "persist_emotion_submission", fake_persist_emotion_submission)
+    monkeypatch.setattr(reflection_module, "publish_preview_draft", fake_publish_preview_draft)
+    monkeypatch.setattr(reflection_module, "_build_quota_status", fake_build_quota_status)
+
+    response = client.post(
+        "/emotion/reflection/publish",
+        headers={"Authorization": "Bearer test-token"},
+        json={"preview_id": "preview-1"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["input_feedback"]["comment_text"] == "Mashさん、Emlisです。今回は不安が近かったのですね。"
+    assert body["input_feedback"]["emlis_ai"]["version"] == "emlis_ai_v2"
+    assert body["input_feedback"]["emlis_ai"]["capability"]["model_mode"] == "deep"
+    assert body["input_feedback"]["emlis_ai"]["used_memory_layers"] == ["canonical_history", "derived_user_model", "side_state"]
+    assert body["input_feedback"]["emlis_ai"]["reply_length_mode"] == "input_and_history_scaled"

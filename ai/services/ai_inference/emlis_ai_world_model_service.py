@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""World-model construction for EmlisAI."""
+"""World-model construction for EmlisAI.
+
+This module builds raw facts and lightweight hypothesis candidates. Final
+interpretation arbitration is handled later by the observation kernel.
+"""
 
 from typing import Any, Dict, List, Optional
 
@@ -77,6 +81,14 @@ def _latest_today_question_answer_text(bundle: SourceBundle) -> Optional[str]:
     return text or None
 
 
+def _current_ref(bundle: SourceBundle) -> EvidenceRef:
+    return EvidenceRef(
+        kind="emotion",
+        ref_id=str(bundle.current_input.get("id") or bundle.current_input.get("created_at") or "current"),
+        weight=1.0,
+    )
+
+
 def _build_same_day_change(bundle: SourceBundle) -> Optional[WorldModelHypothesis]:
     if not bundle.same_day_recent_inputs:
         return None
@@ -98,10 +110,7 @@ def _build_same_day_change(bundle: SourceBundle) -> Optional[WorldModelHypothesi
         return WorldModelHypothesis(
             key="same_day_change",
             text=f"さっきの入力から、気持ちの中心が {prev_top} から {current_top} に移ってきていますね。",
-            evidence=[
-                EvidenceRef(kind="emotion", ref_id=str(bundle.current_input.get("id") or bundle.current_input.get("created_at") or "current"), weight=1.0),
-                EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0),
-            ],
+            evidence=[_current_ref(bundle), EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0)],
             confidence=0.72,
         )
 
@@ -109,10 +118,7 @@ def _build_same_day_change(bundle: SourceBundle) -> Optional[WorldModelHypothesi
         return WorldModelHypothesis(
             key="same_day_change",
             text="同じ感情でも、さっきより強さが少し動いていますね。",
-            evidence=[
-                EvidenceRef(kind="emotion", ref_id=str(bundle.current_input.get("id") or bundle.current_input.get("created_at") or "current"), weight=1.0),
-                EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0),
-            ],
+            evidence=[_current_ref(bundle), EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0)],
             confidence=0.66,
         )
 
@@ -158,11 +164,30 @@ def _build_recovery_signal(bundle: SourceBundle) -> Optional[WorldModelHypothesi
             text="直近の流れだけを見ると、少し落ち着く方向へ寄ってきていますね。",
             evidence=[
                 EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0),
-                EvidenceRef(kind="emotion", ref_id=str(bundle.current_input.get("id") or bundle.current_input.get("created_at") or "current"), weight=1.0),
+                _current_ref(bundle),
             ],
             confidence=0.67,
         )
     return None
+
+
+def _collect_unknowns(bundle: SourceBundle, facts: WorldModelFacts) -> List[str]:
+    unknowns: List[str] = []
+    if not facts.current_emotion_labels:
+        unknowns.append("current_emotion_labels_missing")
+    if not facts.current_categories:
+        unknowns.append("current_categories_sparse")
+    if not bundle.same_day_recent_inputs and not bundle.similar_inputs:
+        unknowns.append("history_signal_sparse")
+    return unknowns
+
+
+def _collect_conflicts(hypotheses: List[WorldModelHypothesis]) -> List[str]:
+    keys = {item.key for item in hypotheses}
+    conflicts: List[str] = []
+    if "same_day_change" in keys and "recovery_signal" in keys:
+        conflicts.append("same_day_change_and_recovery_both_present")
+    return conflicts
 
 
 def build_emlis_ai_world_model(
@@ -197,21 +222,35 @@ def build_emlis_ai_world_model(
     )
 
     hypotheses: List[WorldModelHypothesis] = []
+    rejected_hypotheses: List[WorldModelHypothesis] = []
     if capability.continuity_mode != "off":
         for candidate in (
             _build_same_day_change(bundle),
             _build_repeated_topic_signal(bundle),
             _build_recovery_signal(bundle),
         ):
-            if candidate is not None and candidate.evidence:
+            if candidate is None:
+                continue
+            if candidate.evidence:
                 hypotheses.append(candidate)
+            else:
+                rejected_hypotheses.append(candidate)
+
+    unknowns = _collect_unknowns(bundle, facts)
+    conflicts = _collect_conflicts(hypotheses)
+    if bundle.derived_user_model is not None and not bundle.derived_user_model.interpretive_frame.meaning_map:
+        unknowns.append("derived_model_meaning_map_sparse")
 
     return WorldModel(
         facts=facts,
         hypotheses=hypotheses,
+        unknowns=unknowns,
+        conflicts=conflicts,
+        rejected_hypotheses=rejected_hypotheses,
         debug={
             "history_mode": capability.history_mode,
             "same_day_recent_inputs": len(bundle.same_day_recent_inputs),
             "similar_inputs": len(bundle.similar_inputs),
+            "derived_model_loaded": bool(bundle.derived_user_model is not None),
         },
     )

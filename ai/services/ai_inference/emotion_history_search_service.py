@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
 """Internal history-search helpers for EmlisAI."""
+
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
 from fastapi import HTTPException
+
 from supabase_client import sb_get
+
 EMOTIONS_TABLE = "emotions"
 JST = timezone(timedelta(hours=9))
+
+
 def _pick_rows(resp: Any) -> List[Dict[str, Any]]:
     try:
         data = resp.json()
@@ -17,6 +25,8 @@ def _pick_rows(resp: Any) -> List[Dict[str, Any]]:
     if isinstance(data, dict):
         return [data]
     return []
+
+
 def _parse_iso(value: Any) -> Optional[datetime]:
     raw = str(value or "").strip()
     if not raw:
@@ -28,12 +38,16 @@ def _parse_iso(value: Any) -> Optional[datetime]:
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+
 def _to_jst_date_key(value: Any) -> Optional[str]:
     dt = _parse_iso(value)
     if dt is None:
         return None
     local = dt.astimezone(JST)
     return f"{local.year:04d}-{local.month:02d}-{local.day:02d}"
+
+
 def _emotion_labels_from_details(raw: Any) -> set[str]:
     out: set[str] = set()
     if not isinstance(raw, list):
@@ -45,10 +59,14 @@ def _emotion_labels_from_details(raw: Any) -> set[str]:
         if label:
             out.add(label)
     return out
+
+
 def _category_labels(raw: Any) -> set[str]:
     if not isinstance(raw, list):
         return set()
     return {str(v).strip() for v in raw if str(v).strip()}
+
+
 def _memo_tokens(*values: Optional[str]) -> set[str]:
     tokens: set[str] = set()
     for value in values:
@@ -60,6 +78,8 @@ def _memo_tokens(*values: Optional[str]) -> set[str]:
             if len(t) >= 2:
                 tokens.add(t)
     return tokens
+
+
 async def get_last_input_for_user(
     user_id: str,
     *,
@@ -84,6 +104,8 @@ async def get_last_input_for_user(
             continue
         return row
     return None
+
+
 async def list_same_day_recent_inputs(
     user_id: str,
     *,
@@ -125,6 +147,8 @@ async def list_same_day_recent_inputs(
         if len(rows) >= max(0, int(limit)):
             break
     return rows
+
+
 async def search_similar_inputs(
     user_id: str,
     *,
@@ -179,3 +203,59 @@ async def search_similar_inputs(
         )
     )
     return ranked[: max(0, int(limit))]
+
+
+def extract_repeated_categories(inputs: List[Dict[str, Any]], *, topn: int = 5) -> List[Dict[str, Any]]:
+    counter: Counter[str] = Counter()
+    last_seen: Dict[str, str] = {}
+    for row in inputs:
+        for label in _category_labels(row.get("category")):
+            counter[label] += 1
+            created_at = str(row.get("created_at") or "").strip()
+            if created_at and (label not in last_seen or created_at > last_seen[label]):
+                last_seen[label] = created_at
+    out: List[Dict[str, Any]] = []
+    for label, count in counter.most_common(max(0, int(topn))):
+        out.append({"label": label, "count": int(count), "last_seen_at": last_seen.get(label)})
+    return out
+
+
+def extract_repeated_memo_tokens(inputs: List[Dict[str, Any]], *, topn: int = 8) -> List[Dict[str, Any]]:
+    counter: Counter[str] = Counter()
+    last_seen: Dict[str, str] = {}
+    for row in inputs:
+        tokens = _memo_tokens(row.get("memo"), row.get("memo_action"))
+        for token in tokens:
+            counter[token] += 1
+            created_at = str(row.get("created_at") or "").strip()
+            if created_at and (token not in last_seen or created_at > last_seen[token]):
+                last_seen[token] = created_at
+    out: List[Dict[str, Any]] = []
+    for token, count in counter.most_common(max(0, int(topn))):
+        out.append({"token": token, "count": int(count), "last_seen_at": last_seen.get(token)})
+    return out
+
+
+def build_open_topic_anchor_candidates(inputs: List[Dict[str, Any]], *, topn: int = 5) -> List[Dict[str, Any]]:
+    anchors: List[Dict[str, Any]] = []
+    for item in extract_repeated_categories(inputs, topn=topn):
+        anchors.append(
+            {
+                "anchor_key": f"category:{item['label']}",
+                "label": str(item["label"]),
+                "count": int(item.get("count") or 0),
+                "last_seen_at": item.get("last_seen_at"),
+            }
+        )
+    remaining = max(0, int(topn) - len(anchors))
+    if remaining > 0:
+        for item in extract_repeated_memo_tokens(inputs, topn=remaining):
+            anchors.append(
+                {
+                    "anchor_key": f"token:{item['token']}",
+                    "label": str(item["token"]),
+                    "count": int(item.get("count") or 0),
+                    "last_seen_at": item.get("last_seen_at"),
+                }
+            )
+    return anchors[: max(0, int(topn))]

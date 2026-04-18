@@ -10,7 +10,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 |---|---|---|---|---|---|
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle (bootstrap + cached user-scoped snapshot) |
-| POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted |
+| POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted; `input_feedback.comment_text` stays stable while `input_feedback.emlis_ai` remains additive-only across observation-kernel metadata expansions |
 | GET | `/input/summary` | `input.summary.v1` | `false` |  |  |
 | GET | `/account/profile/me` | `account.profile.me.read.v1` | `false` |  |  |
 | GET | `/account/display-name/availability` | `account.display_name.availability.v1` | `false` |  | Self-edit display name preflight availability check |
@@ -98,7 +98,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | GET | `/ranking/mymodel_questions` | `ranking.mymodel_questions.v1` | `false` |  |  |
 | GET | `/ranking/mymodel_resonances` | `ranking.mymodel_resonances.v1` | `false` |  |  |
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `false` |  |  |
-| GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config |
+| GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config; `plans.*.emlis_ai` metadata is additive-only and may expand with server-owned capability hints |
 | GET | `/subscription/me` | `subscription.me.v1` | `false` |  |  |
 | POST | `/subscription/update` | `subscription.update.v1` | `false` |  | Client purchase sync / tier refresh |
 

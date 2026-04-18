@@ -190,17 +190,26 @@ async def persist_emotion_submission(
             selection_seed=input_feedback_seed,
         )
         input_feedback_meta = {
-            "version": "emlis_ai_v1",
+            "version": "emlis_ai_v2",
+            "kernel_version": "observation_kernel.v2",
             "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
             "capability": {
                 "history_mode": "none",
                 "continuity_mode": "off",
                 "style_mode": "base",
                 "partner_mode": "off",
+                "model_mode": "off",
+                "interpretation_mode": "current_only",
             },
             "used_sources": ["current_input"],
+            "used_memory_layers": ["canonical_history"],
+            "reply_length_mode": "short_present_only",
             "evidence_count": 0,
+            "evidence_by_line": {},
+            "rejected_candidate_count": 0,
             "fallback_used": True,
+            "model_revision": None,
+            "world_model_debug": {},
         }
 
     return {
