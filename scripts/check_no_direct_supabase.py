@@ -9,13 +9,24 @@ from typing import Iterable, List, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PATTERNS: Sequence[Tuple[str, re.Pattern[str]]] = (
-    ("supabase.from(", re.compile(r"\bsupabase\.from\s*\(")),
-    ("supabase.rpc(", re.compile(r"\bsupabase\.rpc\s*\(")),
-    ("supabase.channel(", re.compile(r"\bsupabase\.channel\s*\(")),
+    ("supabase.from(", re.compile(r"\bsupabase\s*\.\s*from\s*\(")),
+    ("supabase.rpc(", re.compile(r"\bsupabase\s*\.\s*rpc\s*\(")),
+    ("supabase.channel(", re.compile(r"\bsupabase\s*\.\s*channel\s*\(")),
     ("raw fetch(", re.compile(r"(?<![\w$.])fetch\s*\(")),
 )
 SOURCE_SUFFIXES = {".js", ".jsx", ".ts", ".tsx"}
 RN_ROOT_ENV_VARS = ("COCOLON_RN_ROOT", "RN_ROOT")
+ROOT_LEVEL_TARGETS = (
+    "App.js",
+    "AuthContext.js",
+    "SubscriptionContext.js",
+    "TutorialContext.js",
+    "UnreadContext.js",
+)
+RAW_FETCH_ALLOWLIST = {
+    "lib/apiClient.js",
+    "lib/api/client.js",
+}
 
 
 def _looks_like_rn_root(path: Path) -> bool:
@@ -85,8 +96,7 @@ def find_violations() -> List[str]:
     if RN_ROOT is None:
         return []
 
-    targets: Sequence[Path] = (
-        RN_ROOT / "App.js",
+    targets: Sequence[Path] = tuple(RN_ROOT / name for name in ROOT_LEVEL_TARGETS) + (
         RN_ROOT / "lib",
         RN_ROOT / "screens",
     )
@@ -98,8 +108,9 @@ def find_violations() -> List[str]:
             text = file_path.read_text(encoding="utf-8", errors="ignore")
 
         rel = file_path.relative_to(RN_ROOT)
+        rel_posix = rel.as_posix()
         for label, pattern in FORBIDDEN_PATTERNS:
-            if label == "raw fetch(" and rel.as_posix() == "lib/apiClient.js":
+            if label == "raw fetch(" and rel_posix in RAW_FETCH_ALLOWLIST:
                 continue
             for match in pattern.finditer(text):
                 line_no = text.count("\n", 0, match.start()) + 1

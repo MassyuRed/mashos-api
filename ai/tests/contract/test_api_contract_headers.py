@@ -227,3 +227,247 @@ def test_myprofile_latest_status_returns_contract_headers(client, monkeypatch):
     assert response.headers["X-Cocolon-Contract-Id"] == "myprofile.latest.status.v1"
     assert response.headers["X-Cocolon-Deprecated"] == "false"
     assert response.headers["X-Cocolon-Request-Id"]
+
+
+
+def test_app_startup_returns_contract_headers_and_fixed_boundary(client, monkeypatch):
+    import api_app_bootstrap as app_bootstrap_module
+    import startup_snapshot_store as startup_snapshot_store_module
+
+    async def fake_require_user_id(_authorization):
+        return "user-123"
+
+    async def fake_get_startup_snapshot(_user_id: str, *, client_meta=None, timezone_name=None, force_refresh=False):
+        assert _user_id == "user-123"
+        assert bool(force_refresh) is True
+        return {
+            "schema_version": "startup_snapshot.v1",
+            "user_id": "user-123",
+            "generated_at": "2026-04-19T00:00:00Z",
+            "source_versions": {
+                "schema": "startup_snapshot.v1",
+                "emotion_log_unread": "emotion_log.unread.v1",
+                "friends_unread": "friends.unread.v1",
+                "myweb_unread": "report_reads.myweb_unread.v1",
+                "notices_current": "notice.current.v1",
+                "today_question_light": "today_question.current.light.v1",
+            },
+            "flags": {
+                "has_any_emotion_log_unread": True,
+                "has_any_friends_unread": True,
+                "has_any_myweb_unread": False,
+                "has_popup_notice": True,
+                "today_question_answered": False,
+            },
+            "sections": {
+                "emotion_log_unread": {
+                    "status": "ok",
+                    "feed_unread": True,
+                    "requests_unread": False,
+                    "incoming_pending_count": 1,
+                    "feed_last_read_at": None,
+                    "requests_last_read_at": None,
+                },
+                "friends_unread": {
+                    "status": "ok",
+                    "feed_unread": True,
+                    "requests_unread": False,
+                    "incoming_pending_count": 1,
+                    "feed_last_read_at": None,
+                    "requests_last_read_at": None,
+                },
+                "myweb_unread": {
+                    "status": "ok",
+                    "viewer_tier": "free",
+                    "ids_by_type": {"daily": [], "weekly": [], "monthly": [], "selfStructure": []},
+                    "read_ids": [],
+                    "unread_by_type": {"daily": False, "weekly": False, "monthly": False, "selfStructure": False},
+                },
+                "notices_current": {
+                    "feature_enabled": True,
+                    "unread_count": 1,
+                    "has_unread": True,
+                    "badge": {"show": True, "count": 1},
+                    "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"},
+                },
+                "today_question_light": {
+                    "service_day_key": "2026-04-19",
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "free_text_enabled": True,
+                    },
+                    "delivery": {},
+                    "progress": {},
+                },
+                "today_question": {
+                    "service_day_key": "2026-04-19",
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "free_text_enabled": True,
+                    },
+                    "delivery": {},
+                    "progress": {},
+                },
+            },
+            "errors": {},
+            "timezone_name": timezone_name,
+        }
+
+    monkeypatch.setattr(app_bootstrap_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(startup_snapshot_store_module, "get_startup_snapshot", fake_get_startup_snapshot)
+
+    response = client.get(
+        "/app/startup?force_refresh=true&timezone_name=Asia%2FTokyo",
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-App-Version": "1.2.3",
+            "X-App-Build": "123",
+            "X-Platform": "ios",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Api-Policy-Version"] == API_CONTRACT_POLICY_VERSION
+    assert response.headers["X-Cocolon-Contract-Id"] == "app.startup.v1"
+    body = response.json()
+    assert body["client_meta"]["app_version"] == "1.2.3"
+    assert body["startup"]["sections"].get("today_question_light") is not None
+    assert "input_summary" not in body["startup"]["sections"]
+    assert "global_summary" not in body["startup"]["sections"]
+
+
+
+def test_home_state_returns_contract_headers_and_shape(client, monkeypatch):
+    import api_home_state as home_state_module
+
+    async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
+        return "user-123"
+
+    async def fake_get_home_state(_user_id: str, *, client_meta=None, timezone_name=None, force_refresh=False):
+        assert _user_id == "user-123"
+        return {
+            "status": "ok",
+            "user_id": "user-123",
+            "generated_at": "2026-04-19T00:00:00Z",
+            "service_day_key": "2026-04-19",
+            "source_versions": {"schema": "home_state.v1"},
+            "popup_candidates": [
+                {"kind": "notice", "notice_id": "notice-1", "service_day_key": None, "question_id": None}
+            ],
+            "notice_popup_notice_id": "notice-1",
+            "sections": {
+                "input_summary": {
+                    "status": "ok",
+                    "user_id": "user-123",
+                    "today_count": 1,
+                    "week_count": 2,
+                    "month_count": 3,
+                    "streak_days": 4,
+                    "last_input_at": "2026-04-19T00:00:00Z",
+                },
+                "global_summary": {
+                    "date": "2026-04-19",
+                    "tz": "+09:00",
+                    "emotion_users": 5,
+                    "reflection_views": 6,
+                    "echo_count": 7,
+                    "discovery_count": 8,
+                    "updated_at": "2026-04-19T00:00:00Z",
+                },
+                "notices_current": {
+                    "feature_enabled": True,
+                    "unread_count": 1,
+                    "has_unread": True,
+                    "badge": {"show": True, "count": 1},
+                    "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"},
+                },
+                "today_question_current": {
+                    "service_day_key": "2026-04-19",
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "choices": [
+                            {"choice_id": "c-1", "choice_key": "one", "label": "はい"}
+                        ],
+                        "free_text_enabled": True,
+                    },
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "delivery": {},
+                    "progress": {},
+                },
+                "emotion_reflection_quota": {
+                    "status": "ok",
+                    "subscription_tier": "free",
+                    "month_key": "2026-04",
+                    "publish_limit": 0,
+                    "published_count": 0,
+                    "remaining_count": 0,
+                    "can_publish": False,
+                },
+            },
+            "errors": {},
+        }
+
+    monkeypatch.setattr(home_state_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(home_state_module, "get_home_state", fake_get_home_state)
+
+    response = client.get(
+        "/home/state?timezone_name=Asia%2FTokyo&force_refresh=true",
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-App-Version": "1.2.3",
+            "X-App-Build": "123",
+            "X-Platform": "ios",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Api-Policy-Version"] == API_CONTRACT_POLICY_VERSION
+    assert response.headers["X-Cocolon-Contract-Id"] == "home.state.v1"
+    body = response.json()
+    assert body["sections"]["input_summary"]["today_count"] == 1
+    assert body["sections"]["emotion_reflection_quota"]["subscription_tier"] == "free"
+
+
+
+def test_emotion_reflection_cancel_returns_contract_headers(client, monkeypatch):
+    import api_emotion_reflection as reflection_module
+
+    async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
+        return "user-123"
+
+    async def fake_fetch_preview_draft(*, preview_id: str, user_id: str):
+        return {"id": preview_id, "user_id": user_id}
+
+    async def fake_cancel_preview_draft(*, preview_id: str, user_id: str):
+        return {"status": "cancelled", "preview_id": preview_id, "user_id": user_id}
+
+    monkeypatch.setattr(reflection_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(reflection_module, "fetch_preview_draft", fake_fetch_preview_draft)
+    monkeypatch.setattr(reflection_module, "cancel_preview_draft", fake_cancel_preview_draft)
+
+    response = client.post(
+        "/emotion/reflection/cancel",
+        headers={"Authorization": "Bearer test-token"},
+        json={"preview_id": "preview-1"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Contract-Id"] == "emotion.reflection.cancel.v1"
+    assert response.json()["result"] == "cancelled"

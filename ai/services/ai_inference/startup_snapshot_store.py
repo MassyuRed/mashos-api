@@ -33,10 +33,8 @@ STARTUP_SNAPSHOT_SOURCE_VERSIONS: Dict[str, str] = {
     # Backward-compatible legacy alias for older clients.
     "friends_unread": "friends.unread.v1",
     "myweb_unread": "report_reads.myweb_unread.v1",
-    "notices_current": "notices.current.v1",
+    "notices_current": "notice.current.v1",
     "today_question_light": "today_question.current.light.v1",
-    "input_summary": "input.summary.v1",
-    "global_summary": "global_summary.ready_first.v1",
 }
 
 
@@ -147,8 +145,6 @@ async def _build_startup_snapshot_payload(
         from api_friends import get_emotion_log_unread_status_payload_for_user
     except Exception:
         from api_friends import get_friend_unread_status_payload_for_user as get_emotion_log_unread_status_payload_for_user
-    from api_global_summary import get_global_summary_payload
-    from api_input_summary import get_input_summary_payload_for_user
     from api_notice import get_notice_current_payload_for_user
     from api_report_reads import get_myweb_unread_status_payload_for_user
     from api_today_question import get_today_question_current_payload_for_user
@@ -188,31 +184,13 @@ async def _build_startup_snapshot_payload(
             "badge": {"show": False, "count": 0},
             "popup_notice": None,
         },
-        "today_question": {
+        "today_question_light": {
             "service_day_key": _today_jst_date_iso(),
             "answer_status": "unanswered",
             "answer_summary": None,
             "question": None,
             "delivery": {},
             "progress": {},
-        },
-        "input_summary": {
-            "status": "ok",
-            "user_id": uid,
-            "today_count": 0,
-            "week_count": 0,
-            "month_count": 0,
-            "streak_days": 0,
-            "last_input_at": None,
-        },
-        "global_summary": {
-            "date": _today_jst_date_iso(),
-            "tz": "+09:00",
-            "emotion_users": 0,
-            "reflection_views": 0,
-            "echo_count": 0,
-            "discovery_count": 0,
-            "updated_at": None,
         },
     }
 
@@ -225,18 +203,16 @@ async def _build_startup_snapshot_payload(
         ),
         _safe_section("notices_current", get_notice_current_payload_for_user(uid, normalized_meta), defaults["notices_current"]),
         _safe_section(
-            "today_question",
+            "today_question_light",
             get_today_question_current_payload_for_user(uid, timezone_name=timezone_name),
-            defaults["today_question"],
+            defaults["today_question_light"],
         ),
-        _safe_section("input_summary", get_input_summary_payload_for_user(uid), defaults["input_summary"]),
-        _safe_section("global_summary", get_global_summary_payload(), defaults["global_summary"]),
     )
 
     sections: Dict[str, Any] = {}
     errors: Dict[str, str] = {}
     for name, payload, error in section_results:
-        if name == "today_question":
+        if name == "today_question_light":
             payload = _light_today_question_payload(payload if isinstance(payload, Mapping) else defaults[name])
         sections[name] = payload
         if error:
@@ -250,7 +226,10 @@ async def _build_startup_snapshot_payload(
     emotion_log_unread = sections.get("emotion_log_unread") if isinstance(sections.get("emotion_log_unread"), Mapping) else {}
     myweb_unread = sections.get("myweb_unread") if isinstance(sections.get("myweb_unread"), Mapping) else {}
     notices_current = sections.get("notices_current") if isinstance(sections.get("notices_current"), Mapping) else {}
-    today_question = sections.get("today_question") if isinstance(sections.get("today_question"), Mapping) else {}
+    if "today_question_light" in sections and "today_question" not in sections:
+        sections["today_question"] = sections["today_question_light"]
+
+    today_question = sections.get("today_question_light") if isinstance(sections.get("today_question_light"), Mapping) else {}
 
     unread_by_type = myweb_unread.get("unread_by_type") if isinstance(myweb_unread.get("unread_by_type"), Mapping) else {}
     startup_flags = {

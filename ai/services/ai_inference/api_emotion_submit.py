@@ -64,6 +64,7 @@ from astor_snapshot_enqueue import ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECOND
 
 # Shared Supabase HTTP client (connection pooled)
 from client_compat import extract_client_meta
+from home_gateway.command_gateway import execute_home_command
 
 from supabase_client import (
     sb_auth_headers as _sb_auth_headers_shared,
@@ -1953,19 +1954,23 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
                 client_meta.get("platform"),
             )
 
-        from emotion_submit_service import persist_emotion_submission
-
         notify_friends = True if payload.notify_friends is None else bool(payload.notify_friends)
-        persisted = await persist_emotion_submission(
+        execution = await execute_home_command(
+            "emotion.submit",
+            payload={
+                "emotions": payload.emotions,
+                "memo": payload.memo,
+                "memo_action": payload.memo_action,
+                "category": payload.category,
+                "created_at": payload.created_at,
+                "is_secret": bool(payload.is_secret),
+                "notify_friends": notify_friends,
+            },
             user_id=user_id,
-            emotions=payload.emotions,
-            memo=payload.memo,
-            memo_action=payload.memo_action,
-            category=payload.category,
-            created_at=payload.created_at,
-            is_secret=bool(payload.is_secret),
-            notify_friends=notify_friends,
+            requested_at=payload.created_at,
+            source="emotion.submit.route",
         )
+        persisted = execution.result.data
 
         input_feedback_comment = str(persisted.get("input_feedback_comment") or "").strip()
         input_feedback_meta = persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None

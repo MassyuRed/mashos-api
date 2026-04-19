@@ -8,6 +8,8 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
+from home_gateway.command_gateway import execute_home_command
+
 from active_users_store import touch_active_user
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from client_compat import extract_client_meta
@@ -150,13 +152,16 @@ def register_notice_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NoticeReadResponse:
         uid = await _require_user_id(authorization)
-        updated_count = await store.mark_notices_read(uid, body.notice_ids)
-        await invalidate_prefix(f"notices:current:{uid}")
-        current = await store.fetch_current_notice_bundle(uid, extract_client_meta(request.headers))
-        return NoticeReadResponse(
-            updated_count=updated_count,
-            unread_count=int(current.get("unread_count") or 0),
+        execution = await execute_home_command(
+            "notice.read",
+            payload={
+                "notice_ids": body.notice_ids,
+                "client_meta": extract_client_meta(request.headers),
+            },
+            user_id=uid,
+            source="notice.read.route",
         )
+        return NoticeReadResponse(**execution.result.data)
 
     @app.post("/notices/popup-seen", response_model=NoticePopupSeenResponse)
     async def notices_popup_seen(
@@ -164,6 +169,10 @@ def register_notice_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NoticePopupSeenResponse:
         uid = await _require_user_id(authorization)
-        popup_seen = await store.mark_notice_popup_seen(uid, body.notice_id)
-        await invalidate_prefix(f"notices:current:{uid}")
-        return NoticePopupSeenResponse(popup_seen=bool(popup_seen))
+        execution = await execute_home_command(
+            "notice.popup_seen",
+            payload={"notice_id": body.notice_id},
+            user_id=uid,
+            source="notice.popup_seen.route",
+        )
+        return NoticePopupSeenResponse(**execution.result.data)

@@ -158,13 +158,14 @@ from api_account_status import register_account_status_routes
 from api_account_visibility import register_account_visibility_routes
 from api_account_lifecycle import register_account_lifecycle_routes
 from api_app_bootstrap import register_app_bootstrap_routes
+from api_home_state import register_home_state_routes
 from api_notice import register_notice_routes
 from api_input_summary import register_input_summary_routes
 from api_global_summary import register_global_summary_routes
 from api_report_reads import register_report_reads_routes
 from api_myweb_reads import register_myweb_read_routes
 from api_myprofile_reports_read import register_myprofile_report_read_routes
-from api_mymodel_create import register_mymodel_create_routes
+from api_profile_create import register_profile_create_routes
 from api_mymodel_qna import register_mymodel_qna_routes
 from api_nexus import register_nexus_routes
 from api_today_question import register_today_question_routes, run_today_question_push_once
@@ -264,13 +265,14 @@ register_account_status_routes(app)
 register_account_visibility_routes(app)
 register_account_lifecycle_routes(app)
 register_app_bootstrap_routes(app)
+register_home_state_routes(app)
 register_notice_routes(app)
 register_input_summary_routes(app)
 register_global_summary_routes(app)
 register_report_reads_routes(app)
 register_myweb_read_routes(app)
 register_myprofile_report_read_routes(app)
-register_mymodel_create_routes(app)
+register_profile_create_routes(app)
 register_mymodel_qna_routes(app)
 register_nexus_routes(app)
 register_today_question_routes(app)

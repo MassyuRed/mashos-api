@@ -9,8 +9,13 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
-| GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle (bootstrap + cached user-scoped snapshot) |
+| GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to `/home/state` |
+| GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); `/app/startup` intentionally excludes heavy Home counters |
 | POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted; `input_feedback.comment_text` stays stable while `input_feedback.emlis_ai` remains additive-only across observation-kernel metadata expansions |
+| GET | `/emotion/reflection/quota` | `emotion.reflection.quota.v1` | `false` |  | Current-month publish quota / capability probe for Home reflection flow |
+| POST | `/emotion/reflection/preview` | `emotion.reflection.preview.v1` | `false` |  | Preview-only reflection generation; does not canonical-save Home input |
+| POST | `/emotion/reflection/publish` | `emotion.reflection.publish.v1` | `false` |  | Publishes a preview draft and reuses Home write fan-out / cache invalidation |
+| POST | `/emotion/reflection/cancel` | `emotion.reflection.cancel.v1` | `false` |  | Cancels a preview draft without mutating canonical Home input state |
 | GET | `/input/summary` | `input.summary.v1` | `false` |  |  |
 | GET | `/account/profile/me` | `account.profile.me.read.v1` | `false` |  |  |
 | GET | `/account/display-name/availability` | `account.display_name.availability.v1` | `false` |  | Self-edit display name preflight availability check |
@@ -63,14 +68,12 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | GET | `/friends/notification-settings` | `friends.notification_settings.read.v1` | `false` |  |  |
 | POST | `/friends/notification-settings/{friend_user_id}` | `friends.notification_settings.update.v1` | `false` |  |  |
 | GET | `/global_summary` | `global_summary.read.v1` | `false` |  | Daily app-wide aggregate counters; READY artifact preferred, legacy table/RPC fallback during migration |
-| GET | `/mymodel/create/questions` | `mymodel.create.questions.v1` | `false` |  |  |
-| POST | `/mymodel/create/answers` | `mymodel.create.answers.v1` | `false` |  |  |
+| GET | `/profile-create/questions` | `profile.create.questions.v1` | `false` |  |  |
+| POST | `/profile-create/answers` | `profile.create.answers.v1` | `false` |  |  |
 | POST | `/mymodel/infer` | `mymodel.infer.v1` | `false` |  |  |
 | GET | `/mymodel/qna/discoveries/reflections` | `mymodel.qna.discoveries.reflections.v1` | `false` |  |  |
 | GET | `/mymodel/qna/echoes/reflections` | `mymodel.qna.echoes.reflections.v1` | `false` |  |  |
-| GET | `/mymodel/qna/holders` | `mymodel.qna.holders.v1` | `true` | `/nexus/reflections` | Deprecated compatibility route; returns disabled/empty payload after ProfileCreate discovery retirement |
 | GET | `/mymodel/qna/list` | `mymodel.qna.list.v1` | `false` |  |  |
-| GET | `/mymodel/qna/trending` | `mymodel.qna.trending.v1` | `true` | `/nexus/reflections` | Deprecated compatibility route; returns disabled/empty payload after ProfileCreate discovery retirement |
 | GET | `/mymodel/qna/unread` | `mymodel.qna.unread.v1` | `false` |  |  |
 | GET | `/mymodel/qna/unread-status` | `mymodel.qna.unread_status.v1` | `false` |  | MyModel Home reflections unread aggregated across self + followed owners |
 | POST | `/mymodel/qna/view` | `mymodel.qna.view.v1` | `false` |  |  |

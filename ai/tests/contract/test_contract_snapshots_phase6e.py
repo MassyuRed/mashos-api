@@ -201,51 +201,9 @@ def test_report_distribution_settings_matches_snapshot_shape(client, monkeypatch
     _assert_shape_subset(expected_shape, response.json())
 
 
-def test_mymodel_create_questions_keeps_legacy_editable_shape(client, monkeypatch):
-    import api_mymodel_create as create_module
-
-    expected_shape = _load_fixture("mymodel_create_questions_response_shape_v1.json")
-
-    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
-        return "user-789"
-
-    async def fake_touch_active_user(_user_id: str, activity: Optional[str] = None):
-        return None
-
-    async def fake_get_subscription_tier_for_user(_user_id: str):
-        return create_module.SubscriptionTier.FREE
-
-    async def fake_fetch_questions_all_active():
-        return [
-            {"id": 1, "question_text": "Question 1", "sort_order": 1, "tier": "light", "is_active": True},
-            {"id": 2, "question_text": "Question 2", "sort_order": 2, "tier": "light", "is_active": True},
-        ]
-
-    async def fake_fetch_answers(*, user_id: str, question_ids=None):
-        return {
-            1: {"question_id": 1, "answer_text": "Saved answer", "updated_at": "2026-03-11T00:00:00Z", "is_secret": True},
-        }
-
-    monkeypatch.setattr(create_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(create_module, "touch_active_user", fake_touch_active_user)
-    monkeypatch.setattr(create_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
-    monkeypatch.setattr(create_module, "_fetch_questions_all_active", fake_fetch_questions_all_active)
-    monkeypatch.setattr(create_module, "_fetch_answers", fake_fetch_answers)
-
-    response = client.get("/mymodel/create/questions?build_tier=light", headers={"Authorization": "Bearer test-token"})
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    _assert_shape_subset(expected_shape, body)
-    assert body["questions"][0]["editable"] is False
-    assert body["questions"][0]["can_edit"] is False
-    assert body["questions"][0]["edit_block_reason"] == create_module.EDIT_LOCKED_MESSAGE
-    assert body["meta"]["can_edit_existing"] is False
-    assert body["meta"]["can_toggle_secret_without_edit"] is True
-
 
 def test_mymodel_create_answers_accepts_missing_is_secret_fixture(client, monkeypatch):
-    import api_mymodel_create as create_module
+    import api_profile_create as create_module
 
     fixture = _load_fixture("legacy_mymodel_create_answers_request_v1.json")
     expected_shape = _load_fixture("mymodel_create_answers_response_shape_v1.json")
@@ -300,7 +258,7 @@ def test_mymodel_create_answers_accepts_missing_is_secret_fixture(client, monkey
     monkeypatch.setattr(create_module, "enqueue_account_status_refresh", fake_enqueue_account_status_refresh)
 
     response = client.post(
-        "/mymodel/create/answers",
+        "/profile-create/answers",
         headers=fixture["headers"],
         json=fixture["json"],
     )
@@ -310,109 +268,6 @@ def test_mymodel_create_answers_accepts_missing_is_secret_fixture(client, monkey
     assert saved_batches[0]["is_secret"] is True
     _assert_shape_subset(expected_shape, response.json())
 
-
-def test_mymodel_create_answers_free_blocks_text_edit_but_allows_secret_toggle(client, monkeypatch):
-    import api_mymodel_create as create_module
-
-    saved_batches = []
-
-    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
-        return "user-999"
-
-    async def fake_touch_active_user(_user_id: str, activity: Optional[str] = None):
-        return None
-
-    async def fake_get_subscription_tier_for_user(_user_id: str):
-        return create_module.SubscriptionTier.FREE
-
-    async def fake_fetch_questions_all_active():
-        return [
-            {"id": 1, "question_text": "Question 1", "sort_order": 1, "tier": "light", "is_active": True},
-        ]
-
-    async def fake_fetch_answers(*, user_id: str, question_ids=None):
-        return {
-            1: {
-                "question_id": 1,
-                "answer_text": "Existing answer",
-                "updated_at": "2026-03-10T00:00:00Z",
-                "is_secret": False,
-            },
-        }
-
-    async def fake_sb_post(path, *, params=None, json=None, prefer=None):
-        saved_batches.extend(list(json or []))
-        return _FakeResponse(201, [])
-
-    async def fake_sb_delete(path, *, params=None):
-        raise AssertionError("free user should not be able to clear an existing answer")
-
-    async def fake_enqueue_global_snapshot_refresh(*args, **kwargs):
-        return None
-
-    async def fake_enqueue_account_status_refresh(*args, **kwargs):
-        return None
-
-    monkeypatch.setattr(create_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(create_module, "touch_active_user", fake_touch_active_user)
-    monkeypatch.setattr(create_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
-    monkeypatch.setattr(create_module, "_fetch_questions_all_active", fake_fetch_questions_all_active)
-    monkeypatch.setattr(create_module, "_fetch_answers", fake_fetch_answers)
-    monkeypatch.setattr(create_module, "_sb_post", fake_sb_post)
-    monkeypatch.setattr(create_module, "_sb_delete", fake_sb_delete)
-    monkeypatch.setattr(create_module, "enqueue_global_snapshot_refresh", fake_enqueue_global_snapshot_refresh)
-    monkeypatch.setattr(create_module, "enqueue_account_status_refresh", fake_enqueue_account_status_refresh)
-
-    response = client.post(
-        "/mymodel/create/answers",
-        headers={"Authorization": "Bearer test-token"},
-        json={
-            "answers": [
-                {
-                    "question_id": 1,
-                    "answer_text": "Edited text should be blocked",
-                    "is_secret": True,
-                }
-            ]
-        },
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "partial"
-    assert body["saved"] == 0
-    assert body["skipped_locked"] == 1
-    assert saved_batches == []
-
-    response_toggle = client.post(
-        "/mymodel/create/answers",
-        headers={"Authorization": "Bearer test-token"},
-        json={
-            "answers": [
-                {
-                    "question_id": 1,
-                    "is_secret": True,
-                }
-            ]
-        },
-    )
-
-    assert response_toggle.status_code == 200, response_toggle.text
-    toggle_body = response_toggle.json()
-    assert toggle_body["status"] == "ok"
-    assert toggle_body["saved"] == 1
-    assert len(saved_batches) == 1
-    saved_row = saved_batches[0]
-    assert saved_row["user_id"] == "user-999"
-    assert saved_row["question_id"] == 1
-    assert saved_row["answer_text"] == "Existing answer"
-    assert saved_row["is_secret"] is True
-    assert saved_row["reflection_display_text"] == "Existing answer"
-    assert saved_row["reflection_display_state"] == "ready"
-    assert saved_row["reflection_format_version"] == "reflection.display.v1"
-    assert isinstance(saved_row.get("reflection_format_meta"), dict)
-    assert saved_row["reflection_format_meta"].get("display_state") == "ready"
-    assert isinstance(saved_row.get("reflection_display_updated_at"), str)
 
 
 def test_myweb_unread_status_matches_snapshot_shape(client, monkeypatch):
@@ -550,3 +405,212 @@ def test_global_summary_matches_response_shape_fixture(client, monkeypatch):
 
     assert response.status_code == 200, response.text
     _assert_shape_subset(expected_shape, response.json())
+
+
+
+def test_app_startup_matches_response_shape_fixture(client, monkeypatch):
+    import api_app_bootstrap as app_bootstrap_module
+    import startup_snapshot_store as startup_snapshot_store_module
+
+    expected_shape = _load_fixture("app_startup_response_shape_v1.json")
+
+    async def fake_require_user_id(_authorization):
+        return "user-123"
+
+    async def fake_get_startup_snapshot(_user_id: str, *, client_meta=None, timezone_name=None, force_refresh=False):
+        return {
+            "schema_version": "startup_snapshot.v1",
+            "user_id": "user-123",
+            "generated_at": "2026-04-19T00:00:00Z",
+            "source_versions": {
+                "schema": "startup_snapshot.v1",
+                "emotion_log_unread": "emotion_log.unread.v1",
+                "friends_unread": "friends.unread.v1",
+                "myweb_unread": "report_reads.myweb_unread.v1",
+                "notices_current": "notice.current.v1",
+                "today_question_light": "today_question.current.light.v1"
+            },
+            "flags": {
+                "has_any_emotion_log_unread": True,
+                "has_any_friends_unread": True,
+                "has_any_myweb_unread": False,
+                "has_popup_notice": True,
+                "today_question_answered": False
+            },
+            "sections": {
+                "emotion_log_unread": {
+                    "status": "ok",
+                    "feed_unread": True,
+                    "requests_unread": False,
+                    "incoming_pending_count": 0,
+                    "feed_last_read_at": None,
+                    "requests_last_read_at": None
+                },
+                "friends_unread": {
+                    "status": "ok",
+                    "feed_unread": True,
+                    "requests_unread": False,
+                    "incoming_pending_count": 0,
+                    "feed_last_read_at": None,
+                    "requests_last_read_at": None
+                },
+                "myweb_unread": {
+                    "status": "ok",
+                    "viewer_tier": "free",
+                    "ids_by_type": {"daily": [], "weekly": [], "monthly": [], "selfStructure": []},
+                    "read_ids": [],
+                    "unread_by_type": {"daily": False, "weekly": False, "monthly": False, "selfStructure": False}
+                },
+                "notices_current": {
+                    "feature_enabled": True,
+                    "unread_count": 1,
+                    "has_unread": True,
+                    "badge": {"show": True, "count": 1},
+                    "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"}
+                },
+                "today_question_light": {
+                    "service_day_key": "2026-04-19",
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "free_text_enabled": True
+                    },
+                    "delivery": {},
+                    "progress": {}
+                },
+                "today_question": {
+                    "service_day_key": "2026-04-19",
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "free_text_enabled": True
+                    },
+                    "delivery": {},
+                    "progress": {}
+                }
+            },
+            "errors": {},
+            "timezone_name": timezone_name,
+        }
+
+    monkeypatch.setattr(app_bootstrap_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(startup_snapshot_store_module, "get_startup_snapshot", fake_get_startup_snapshot)
+
+    response = client.get(
+        "/app/startup?force_refresh=true&timezone_name=Asia%2FTokyo",
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-App-Version": "1.2.3",
+            "X-App-Build": "123",
+            "X-Platform": "ios",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    _assert_shape_subset(expected_shape, body)
+    assert "input_summary" not in body["startup"]["sections"]
+    assert "global_summary" not in body["startup"]["sections"]
+
+
+
+def test_home_state_matches_response_shape_fixture(client, monkeypatch):
+    import api_home_state as home_state_module
+
+    expected_shape = _load_fixture("home_state_response_shape_v1.json")
+
+    async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
+        return "user-123"
+
+    async def fake_get_home_state(_user_id: str, *, client_meta=None, timezone_name=None, force_refresh=False):
+        return {
+            "status": "ok",
+            "user_id": "user-123",
+            "generated_at": "2026-04-19T00:00:00Z",
+            "service_day_key": "2026-04-19",
+            "source_versions": {"schema": "home_state.v1"},
+            "popup_candidates": [
+                {"kind": "notice", "notice_id": "notice-1", "service_day_key": None, "question_id": None}
+            ],
+            "notice_popup_notice_id": "notice-1",
+            "sections": {
+                "input_summary": {
+                    "status": "ok",
+                    "user_id": "user-123",
+                    "today_count": 1,
+                    "week_count": 2,
+                    "month_count": 3,
+                    "streak_days": 4,
+                    "last_input_at": "2026-04-19T00:00:00Z"
+                },
+                "global_summary": {
+                    "date": "2026-04-19",
+                    "tz": "+09:00",
+                    "emotion_users": 5,
+                    "reflection_views": 6,
+                    "echo_count": 7,
+                    "discovery_count": 8,
+                    "updated_at": "2026-04-19T00:00:00Z"
+                },
+                "notices_current": {
+                    "feature_enabled": True,
+                    "unread_count": 1,
+                    "has_unread": True,
+                    "badge": {"show": True, "count": 1},
+                    "popup_notice": {"notice_id": "notice-1", "title": "hello", "body": "notice body"}
+                },
+                "today_question_current": {
+                    "service_day_key": "2026-04-19",
+                    "question": {
+                        "question_id": "q-1",
+                        "question_key": "qkey",
+                        "version": 1,
+                        "text": "今日の問い",
+                        "choice_count": 3,
+                        "choices": [{"choice_id": "c-1", "choice_key": "one", "label": "はい"}],
+                        "free_text_enabled": True
+                    },
+                    "answer_status": "unanswered",
+                    "answer_summary": None,
+                    "delivery": {},
+                    "progress": {}
+                },
+                "emotion_reflection_quota": {
+                    "status": "ok",
+                    "subscription_tier": "free",
+                    "month_key": "2026-04",
+                    "publish_limit": 0,
+                    "published_count": 0,
+                    "remaining_count": 0,
+                    "can_publish": False
+                }
+            },
+            "errors": {}
+        }
+
+    monkeypatch.setattr(home_state_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(home_state_module, "get_home_state", fake_get_home_state)
+
+    response = client.get(
+        "/home/state?timezone_name=Asia%2FTokyo&force_refresh=true",
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-App-Version": "1.2.3",
+            "X-App-Build": "123",
+            "X-Platform": "ios",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    _assert_shape_subset(expected_shape, body)

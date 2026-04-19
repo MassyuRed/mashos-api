@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""api_mymodel_create.py
+"""api_profile_create.py
 
-MyModel Create (template Q&A) API
+ProfileCreate API
 --------------------------------
 
 Provides:
-  - GET  /mymodel/create/questions
-  - POST /mymodel/create/answers
+  - GET  /profile-create/questions
+  - POST /profile-create/answers
 
 This is the "Create" entry screen for the new fixed-question Q&A architecture.
 
@@ -68,7 +68,7 @@ from reflection_text_formatter import (
 )
 
 
-logger = logging.getLogger("mymodel_create_api")
+logger = logging.getLogger("profile_create_api")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -141,7 +141,7 @@ def _ui_texts() -> Dict[str, str]:
 # ----------------------------
 
 
-class MyModelCreateQuestionItem(BaseModel):
+class ProfileCreateQuestionItem(BaseModel):
     question_id: int = Field(..., description="Template question id (1..)")
     question_text: str = Field(..., description="Question text")
     answer_text: Optional[str] = Field(default=None, description="Saved answer (if any)")
@@ -156,8 +156,8 @@ class MyModelCreateQuestionItem(BaseModel):
     placeholder: Optional[str] = Field(default=None, description="Placeholder text for the input")
 
 
-class MyModelCreateQuestionsResponse(BaseModel):
-    questions: List[MyModelCreateQuestionItem]
+class ProfileCreateQuestionsResponse(BaseModel):
+    questions: List[ProfileCreateQuestionItem]
     meta: Dict[str, Any] = {}
 
 
@@ -174,7 +174,7 @@ class AccountProfileCreateResponse(BaseModel):
     meta: Dict[str, Any] = {}
 
 
-class MyModelCreateAnswerItem(BaseModel):
+class ProfileCreateAnswerItem(BaseModel):
     question_id: int = Field(..., description="Template question id")
     answer_text: Optional[str] = Field(default=None, description="Answer text. Empty/blank means 'clear'.")
     is_secret: Optional[bool] = Field(
@@ -183,11 +183,11 @@ class MyModelCreateAnswerItem(BaseModel):
     )
 
 
-class MyModelCreateAnswersRequest(BaseModel):
-    answers: List[MyModelCreateAnswerItem] = Field(default_factory=list)
+class ProfileCreateAnswersRequest(BaseModel):
+    answers: List[ProfileCreateAnswerItem] = Field(default_factory=list)
 
 
-class MyModelCreateAnswersResponse(BaseModel):
+class ProfileCreateAnswersResponse(BaseModel):
     status: str = Field(..., description="ok | partial")
     saved: int = Field(..., description="Number of answers inserted/updated")
     deleted: int = Field(..., description="Number of answers deleted (cleared)")
@@ -249,7 +249,7 @@ async def _fetch_questions_all_active() -> List[Dict[str, Any]]:
     )
     if resp.status_code >= 300:
         logger.error("Supabase %s select failed: %s %s", QUESTIONS_TABLE, resp.status_code, resp.text[:1500])
-        raise HTTPException(status_code=502, detail="Failed to load create questions")
+        raise HTTPException(status_code=502, detail="Failed to load profile create questions")
     rows = resp.json()
     return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
@@ -359,19 +359,19 @@ def _build_account_profile_items(*, questions: List[Dict[str, Any]], answers: Di
     return items, answered_count
 
 
-def register_mymodel_create_routes(app: FastAPI) -> None:
-    @app.get("/mymodel/create/questions", response_model=MyModelCreateQuestionsResponse)
-    async def mymodel_create_questions(
+def register_profile_create_routes(app: FastAPI) -> None:
+    @app.get("/profile-create/questions", response_model=ProfileCreateQuestionsResponse)
+    async def profile_create_questions(
         build_tier: str = Query(default="light", description="Build tier (light|standard)."),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> MyModelCreateQuestionsResponse:
+    ) -> ProfileCreateQuestionsResponse:
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         user_id = await _resolve_user_id_from_token(access_token)
         try:
-            await touch_active_user(user_id, activity="mymodel_create_questions")
+            await touch_active_user(user_id, activity="profile_create_questions")
         except Exception as exc:
             logger.warning("Failed to touch active_users: %s", exc)
 
@@ -389,7 +389,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
 
         answers = await _fetch_answers(user_id=user_id, question_ids=qids)
 
-        items: List[MyModelCreateQuestionItem] = []
+        items: List[ProfileCreateQuestionItem] = []
         answered_count = 0
         for q in questions:
             try:
@@ -409,7 +409,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             edit_block_reason = None if editable else EDIT_LOCKED_MESSAGE
 
             items.append(
-                MyModelCreateQuestionItem(
+                ProfileCreateQuestionItem(
                     question_id=qid,
                     question_text=qtext,
                     answer_text=(ans_text if is_answered else None),
@@ -427,7 +427,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         has_unanswered = (answered_count < total) if total > 0 else True
         is_created = answered_count > 0
 
-        return MyModelCreateQuestionsResponse(
+        return ProfileCreateQuestionsResponse(
             questions=items,
             meta={
                 "user_id": user_id,
@@ -497,18 +497,18 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
         )
 
 
-    @app.post("/mymodel/create/answers", response_model=MyModelCreateAnswersResponse)
-    async def mymodel_create_answers(
-        body: MyModelCreateAnswersRequest,
+    @app.post("/profile-create/answers", response_model=ProfileCreateAnswersResponse)
+    async def profile_create_answers(
+        body: ProfileCreateAnswersRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> MyModelCreateAnswersResponse:
+    ) -> ProfileCreateAnswersResponse:
         access_token = _extract_bearer_token(authorization)
         if not access_token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         user_id = await _resolve_user_id_from_token(access_token)
         try:
-            await touch_active_user(user_id, activity="mymodel_create_answers")
+            await touch_active_user(user_id, activity="profile_create_answers")
         except Exception as exc:
             logger.warning("Failed to touch active_users: %s", exc)
 
@@ -693,7 +693,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             )
             if resp_del.status_code not in (200, 202, 204):
                 logger.error("Supabase %s delete failed: %s %s", ANSWERS_TABLE, resp_del.status_code, resp_del.text[:1500])
-                raise HTTPException(status_code=502, detail="Failed to clear create answers")
+                raise HTTPException(status_code=502, detail="Failed to clear profile create answers")
             deleted = len(delete_ids)
 
         saved = 0
@@ -716,7 +716,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 )
             if resp.status_code not in (200, 201, 204):
                 logger.error("Supabase %s upsert failed: %s %s", ANSWERS_TABLE, resp.status_code, resp.text[:1500])
-                raise HTTPException(status_code=502, detail="Failed to save create answers")
+                raise HTTPException(status_code=502, detail="Failed to save profile create answers")
             saved = len(saved_payload)
 
         skipped_locked = len(skipped_locked_ids)
@@ -770,14 +770,14 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
             try:
                 await enqueue_account_status_refresh(
                     target_user_id=user_id,
-                    trigger="mymodel_create_answers",
+                    trigger="profile_create_answers",
                     requested_at=now_iso,
                     debounce=True,
                 )
             except Exception as exc:
                 logger.warning("account status enqueue failed (mymodel_create_answers): %s", exc)
 
-        return MyModelCreateAnswersResponse(
+        return ProfileCreateAnswersResponse(
             status=status,
             saved=int(saved),
             deleted=int(deleted),
@@ -791,7 +791,7 @@ def register_mymodel_create_routes(app: FastAPI) -> None:
                 "can_edit_answers": True,
                 "can_toggle_secret_without_edit": True,
                 "saved_at": now_iso,
-                "engine": "mymodel.create.answers.v1",
+                "engine": "profile.create.answers.v1",
                 # Optional: expose which ids were blocked (helps client debug)
                 "locked_question_ids": sorted(skipped_locked_ids),
                 "invalid_question_ids": sorted(skipped_invalid_ids),

@@ -129,10 +129,10 @@ async def persist_emotion_submission(
     except Exception:
         pass
 
+    activity_date = _global_summary_activity_date_from_created_at(
+        inserted.get("created_at", effective_created_at)
+    )
     try:
-        activity_date = _global_summary_activity_date_from_created_at(
-            inserted.get("created_at", effective_created_at)
-        )
         await invalidate_prefix(f"global_summary:{activity_date}:")
     except Exception:
         pass
@@ -215,6 +215,7 @@ async def persist_emotion_submission(
     return {
         "inserted": inserted,
         "created_at": inserted.get("created_at", effective_created_at),
+        "global_summary_activity_date": activity_date,
         "input_feedback_comment": input_feedback_comment,
         "input_feedback_meta": input_feedback_meta,
         "normalized": normalized,

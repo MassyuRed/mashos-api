@@ -32,7 +32,12 @@ from fastapi import FastAPI, Header, HTTPException, Path, Query
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
-from publish_governance import decide_myweb_report_publish, history_retention_bounds_for_query
+from access_policy.viewer_access_policy import (
+    apply_myweb_report_access_for_viewer,
+    build_report_history_retention,
+    resolve_report_view_context,
+    resolve_viewer_tier_str as _resolve_viewer_tier_str_from_policy,
+)
 
 from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
 from supabase_client import sb_get, sb_post
@@ -284,14 +289,7 @@ def _coerce_int(value: Any) -> int:
 
 
 async def _resolve_viewer_tier_str(user_id: str) -> str:
-    tier_str = "free"
-    if SubscriptionTier is not None and get_subscription_tier_for_user is not None:
-        try:
-            tier_enum = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
-            tier_str = tier_enum.value if hasattr(tier_enum, "value") else str(tier_enum)
-        except Exception:
-            tier_str = "free"
-    return str(tier_str or "free")
+    return await _resolve_viewer_tier_str_from_policy(user_id)
 
 
 def _build_myweb_report_record(row: Dict[str, Any], *, include_body: bool) -> MyWebReportRecord:
@@ -390,9 +388,10 @@ async def _build_myweb_ready_payload_legacy(
     off: int,
     include_body: bool,
 ) -> Dict[str, Any]:
-    tier_str = await _resolve_viewer_tier_str(user_id)
     now_utc = datetime.now(timezone.utc)
-    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+    view_ctx = await resolve_report_view_context(user_id, now_utc=now_utc)
+    tier_str = str(view_ctx.subscription_tier)
+    retention = dict(view_ctx.history_retention or {})
 
     needed = off + lim + 1
     raw_page_size = max(lim * 4, 30)
@@ -424,9 +423,9 @@ async def _build_myweb_ready_payload_legacy(
         raw_offset += len(rows)
 
         for row in rows:
-            published_row = decide_myweb_report_publish(
+            published_row = apply_myweb_report_access_for_viewer(
                 row,
-                tier_str=tier_str,
+                context=view_ctx,
                 requested_report_type=report_type,
                 now_utc=now_utc,
             )
@@ -465,9 +464,10 @@ async def _build_myweb_ready_payload_projection_first(
     off: int,
     include_body: bool,
 ) -> Dict[str, Any]:
-    tier_str = await _resolve_viewer_tier_str(user_id)
     now_utc = datetime.now(timezone.utc)
-    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+    view_ctx = await resolve_report_view_context(user_id, now_utc=now_utc)
+    tier_str = str(view_ctx.subscription_tier)
+    retention = dict(view_ctx.history_retention or {})
 
     needed = off + lim + 1
     raw_page_size = max(lim * 4, 30)
@@ -488,9 +488,9 @@ async def _build_myweb_ready_payload_projection_first(
         raw_offset += len(rows)
 
         for row in rows:
-            published_row = decide_myweb_report_publish(
+            published_row = apply_myweb_report_access_for_viewer(
                 row,
-                tier_str=tier_str,
+                context=view_ctx,
                 requested_report_type=report_type,
                 now_utc=now_utc,
             )
@@ -517,9 +517,9 @@ async def _build_myweb_ready_payload_projection_first(
             full_row = full_row_map.get(rid)
             if not isinstance(full_row, dict):
                 continue
-            published_row = decide_myweb_report_publish(
+            published_row = apply_myweb_report_access_for_viewer(
                 full_row,
-                tier_str=tier_str,
+                context=view_ctx,
                 requested_report_type=report_type,
                 now_utc=now_utc,
             )
@@ -544,16 +544,17 @@ async def _build_myweb_ready_payload_projection_first(
 
 
 async def _build_myweb_detail_payload(*, user_id: str, report_id: str) -> Dict[str, Any]:
-    tier_str = await _resolve_viewer_tier_str(user_id)
     now_utc = datetime.now(timezone.utc)
+    view_ctx = await resolve_report_view_context(user_id, now_utc=now_utc)
+    tier_str = str(view_ctx.subscription_tier)
 
     rows = await _fetch_myweb_full_rows_by_ids(user_id, [report_id])
     if not rows:
         raise HTTPException(status_code=404, detail="MyWeb report not found")
 
-    published_row = decide_myweb_report_publish(
+    published_row = apply_myweb_report_access_for_viewer(
         rows[0],
-        tier_str=tier_str,
+        context=view_ctx,
         now_utc=now_utc,
     )
     if not published_row:

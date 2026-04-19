@@ -26,6 +26,12 @@ class AccountProfileMeResponse(BaseModel):
 class AccountProfileMePatchBody(BaseModel):
     display_name: Optional[str] = None
     push_enabled: Optional[bool] = None
+    push_platform: Optional[str] = None
+    push_token: Optional[str] = None
+    push_token_updated_at: Optional[str] = None
+    tutorial_completed: Optional[bool] = None
+    tutorial_skipped: Optional[bool] = None
+    tutorial_completed_at: Optional[str] = None
 
 
 class AccountDisplayNameAvailabilityResponse(BaseModel):
@@ -61,6 +67,13 @@ def _coerce_display_name(value: Any) -> Optional[str]:
         if s:
             return s
     return None
+
+
+def _coerce_optional_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
 
 
 def _looks_like_display_name_conflict(error_like: Any) -> bool:
@@ -198,24 +211,45 @@ async def _resolve_insert_display_name(
     return "ユーザー"
 
 
+_UNSET = object()
+
+
 async def _update_or_create_profile_me(
     user_id: str,
     *,
     authorization: Optional[str],
-    display_name: Optional[str] = None,
-    push_enabled: Optional[bool] = None,
+    display_name: Any = _UNSET,
+    push_enabled: Any = _UNSET,
+    push_platform: Any = _UNSET,
+    push_token: Any = _UNSET,
+    push_token_updated_at: Any = _UNSET,
+    tutorial_completed: Any = _UNSET,
+    tutorial_skipped: Any = _UNSET,
+    tutorial_completed_at: Any = _UNSET,
 ) -> Dict[str, Any]:
     existing = await _fetch_profile_me(user_id)
 
     update_fields: Dict[str, Any] = {}
-    if display_name is not None:
+    if display_name is not _UNSET:
         update_fields["display_name"] = await _resolve_insert_display_name(
             authorization,
             requested_display_name=display_name,
             existing_row=existing,
         )
-    if push_enabled is not None:
+    if push_enabled is not _UNSET:
         update_fields["push_enabled"] = bool(push_enabled)
+    if push_platform is not _UNSET:
+        update_fields["push_platform"] = _coerce_optional_text(push_platform)
+    if push_token is not _UNSET:
+        update_fields["push_token"] = _coerce_optional_text(push_token)
+    if push_token_updated_at is not _UNSET:
+        update_fields["push_token_updated_at"] = _coerce_optional_text(push_token_updated_at)
+    if tutorial_completed is not _UNSET:
+        update_fields["tutorial_completed"] = bool(tutorial_completed)
+    if tutorial_skipped is not _UNSET:
+        update_fields["tutorial_skipped"] = bool(tutorial_skipped)
+    if tutorial_completed_at is not _UNSET:
+        update_fields["tutorial_completed_at"] = _coerce_optional_text(tutorial_completed_at)
 
     if not update_fields:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -290,11 +324,22 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
     ) -> AccountProfileMeResponse:
         me = await _require_user_id(authorization)
 
+        try:
+            payload = body.model_dump(exclude_unset=True)
+        except AttributeError:
+            payload = body.dict(exclude_unset=True)
+
         row = await _update_or_create_profile_me(
             me,
             authorization=authorization,
-            display_name=body.display_name,
-            push_enabled=body.push_enabled,
+            display_name=payload.get("display_name", _UNSET),
+            push_enabled=payload.get("push_enabled", _UNSET),
+            push_platform=payload.get("push_platform", _UNSET),
+            push_token=payload.get("push_token", _UNSET),
+            push_token_updated_at=payload.get("push_token_updated_at", _UNSET),
+            tutorial_completed=payload.get("tutorial_completed", _UNSET),
+            tutorial_skipped=payload.get("tutorial_skipped", _UNSET),
+            tutorial_completed_at=payload.get("tutorial_completed_at", _UNSET),
         )
         return AccountProfileMeResponse(
             user_id=me,

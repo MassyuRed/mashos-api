@@ -40,7 +40,7 @@ def test_reflection_formatter_blocks_severe_text():
 
 
 def test_mymodel_create_answers_persists_reflection_display_columns(client, monkeypatch):
-    import api_mymodel_create as create_module
+    import api_profile_create as create_module
 
     saved_batches = []
 
@@ -85,7 +85,7 @@ def test_mymodel_create_answers_persists_reflection_display_columns(client, monk
     monkeypatch.setattr(create_module, "enqueue_account_status_refresh", fake_enqueue_account_status_refresh)
 
     response = client.post(
-        "/mymodel/create/answers",
+        "/profile-create/answers",
         headers={"Authorization": "Bearer test-token"},
         json={
             "answers": [
@@ -200,55 +200,9 @@ def test_qna_reaction_context_uses_display_text(monkeypatch):
     assert ctx["context_answer"] == "[メールアドレス]"
 
 
-def test_qna_trending_returns_deprecated_empty_payload(client, monkeypatch):
-    import api_mymodel_qna as qna_module
+def test_legacy_profilecreate_discovery_routes_are_removed(client):
+    trending = client.get("/mymodel/qna/trending?limit=5&mode=overall")
+    assert trending.status_code == 404, trending.text
 
-    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
-        return "viewer-deprecated"
-
-    async def fake_get_subscription_tier_for_user(_user_id: str, default=None):
-        return qna_module.SubscriptionTier.FREE
-
-    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
-
-    response = client.get(
-        "/mymodel/qna/trending?limit=5&mode=overall",
-        headers={"Authorization": "Bearer test-token"},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["deprecated"] is True
-    assert body["replacement_path"] == "/nexus/reflections"
-    assert body["disabled_reason"] == "legacy_profilecreate_discovery_retired"
-    assert body["items"] == []
-    assert body["total_items"] == 0
-
-
-def test_qna_holders_returns_deprecated_empty_payload(client, monkeypatch):
-    import api_mymodel_qna as qna_module
-
-    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
-        return "viewer-deprecated"
-
-    async def fake_get_subscription_tier_for_user(_user_id: str, default=None):
-        return qna_module.SubscriptionTier.PLUS
-
-    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "get_subscription_tier_for_user", fake_get_subscription_tier_for_user)
-
-    response = client.get(
-        "/mymodel/qna/holders?question_id=7",
-        headers={"Authorization": "Bearer test-token"},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["deprecated"] is True
-    assert body["replacement_path"] == "/nexus/reflections"
-    assert body["disabled_reason"] == "legacy_profilecreate_discovery_retired"
-    assert body["question_id"] == 7
-    assert body["q_key"] == qna_module._q_key_for_question_id(7)
-    assert body["users"] == []
-    assert body["total_items"] == 0
+    holders = client.get("/mymodel/qna/holders?question_id=7")
+    assert holders.status_code == 404, holders.text

@@ -1,0 +1,40 @@
+{
+  "minimum_supported_version": "<str_or_null>",
+  "recommended_version": "<str_or_null>",
+  "maintenance_message": "<str_or_null>",
+  "feature_flags": {
+    "account_delete_enabled": "<bool>",
+    "myweb_mock_enabled": "<bool>"
+  },
+  "client_meta": {
+    "app_version": "<str_or_null>",
+    "app_build": "<str_or_null>",
+    "platform": "<str_or_null>"
+  },
+  "timezone_name": "<str_or_null>",
+  "startup": {
+    "schema_version": "<str>",
+    "user_id": "<str>",
+    "generated_at": "<str>",
+    "source_versions": {
+      "schema": "<str>"
+    },
+    "flags": {
+      "has_any_emotion_log_unread": "<bool>",
+      "has_any_friends_unread": "<bool>",
+      "has_any_myweb_unread": "<bool>",
+      "has_popup_notice": "<bool>",
+      "today_question_answered": "<bool>"
+    },
+    "sections": {
+      "emotion_log_unread": "<dict>",
+      "friends_unread": "<dict>",
+      "myweb_unread": "<dict>",
+      "notices_current": "<dict>",
+      "today_question_light": "<dict>",
+      "today_question": "<dict>"
+    },
+    "errors": "<dict>",
+    "timezone_name": "<str_or_null>"
+  }
+}

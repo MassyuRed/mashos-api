@@ -28,21 +28,22 @@ from client_compat import extract_client_meta
 from emotion_reflection_generation_service import generate_emotion_reflection_preview
 from emotion_reflection_store import (
     cancel_preview_draft,
-    count_published_emotion_reflections_for_month,
     create_preview_draft,
     fetch_preview_draft,
     publish_preview_draft,
 )
-from emotion_submit_service import (
+from home_gateway.command_gateway import execute_home_command
+from home_gateway.emotion_reflection_publish_service import (
+    build_emotion_reflection_quota_status,
+)
+from home_gateway.emotion_submit_service import (
     normalize_submission_payload,
     persist_emotion_submission,
     resolve_authenticated_user_id,
 )
-from reflection_publish_entitlements import (
-    get_reflection_publish_policy_for_user,
-    resolve_reflection_publish_limit_for_tier,
-)
-from subscription import SubscriptionTier, normalize_subscription_tier
+
+
+_build_quota_status = build_emotion_reflection_quota_status
 
 
 class EmotionReflectionPreviewRequest(BaseModel):
@@ -101,23 +102,11 @@ class EmotionReflectionPublishResponse(BaseModel):
     input_feedback: Optional[Dict[str, Any]] = None
 
 
-async def _build_quota_status(user_id: str) -> Dict[str, Any]:
-    policy = await get_reflection_publish_policy_for_user(user_id)
-    usage = await count_published_emotion_reflections_for_month(user_id=user_id)
-    tier = normalize_subscription_tier(policy.get("subscription_tier"), default=SubscriptionTier.FREE)
-    publish_limit = resolve_reflection_publish_limit_for_tier(tier)
-    published_count = int(usage.get("published_count") or 0)
-    remaining_count = None if publish_limit is None else max(0, int(publish_limit) - published_count)
-    can_publish = True if publish_limit is None else published_count < int(publish_limit)
-    return {
-        "status": "ok",
-        "subscription_tier": tier.value,
-        "month_key": usage.get("month_key"),
-        "publish_limit": publish_limit,
-        "published_count": published_count,
-        "remaining_count": remaining_count,
-        "can_publish": can_publish,
-    }
+class EmotionReflectionCancelResponse(BaseModel):
+    status: str = Field(default="ok")
+    preview_id: str
+    result: str
+
 
 
 
@@ -127,7 +116,7 @@ def register_emotion_reflection_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> EmotionReflectionQuotaResponse:
         user_id = await resolve_authenticated_user_id(authorization=authorization)
-        quota = await _build_quota_status(user_id)
+        quota = await build_emotion_reflection_quota_status(user_id)
         return EmotionReflectionQuotaResponse(**quota)
 
     @app.post("/emotion/reflection/preview", response_model=EmotionReflectionPreviewResponse)
@@ -170,7 +159,7 @@ def register_emotion_reflection_routes(app: FastAPI) -> None:
                 "notify_friends": True if payload.notify_friends is None else bool(payload.notify_friends),
             },
         )
-        quota = await _build_quota_status(user_id)
+        quota = await build_emotion_reflection_quota_status(user_id)
         return EmotionReflectionPreviewResponse(
             preview_id=str(draft.get("id") or ""),
             question=str(preview["question"]),
@@ -189,79 +178,37 @@ def register_emotion_reflection_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> EmotionReflectionPublishResponse:
         user_id = await resolve_authenticated_user_id(authorization=authorization)
-        draft = await fetch_preview_draft(preview_id=body.preview_id, user_id=user_id)
-        if not draft:
-            raise HTTPException(status_code=404, detail="Reflection preview not found")
-        if str(draft.get("status") or "").strip().lower() != "draft":
-            raise HTTPException(status_code=400, detail="Reflection preview is no longer publishable")
-
-        quota = await _build_quota_status(user_id)
-        if not quota.get("can_publish"):
-            raise HTTPException(status_code=403, detail="Reflection publish quota exceeded")
-
-        content_json = draft.get("content_json") if isinstance(draft.get("content_json"), dict) else {}
-        preview_input = content_json.get("emotion_preview") if isinstance(content_json.get("emotion_preview"), dict) else {}
-        stored_emotions = preview_input.get("emotions") if isinstance(preview_input.get("emotions"), list) else []
-        created_at = str(preview_input.get("created_at") or "").strip() or None
-        notify_friends = True if preview_input.get("notify_friends") is None else bool(preview_input.get("notify_friends"))
-        category = preview_input.get("category") if isinstance(preview_input.get("category"), list) else []
-        memo = preview_input.get("memo")
-        memo_action = preview_input.get("memo_action")
-
-        persisted = await persist_emotion_submission(
+        execution = await execute_home_command(
+            "emotion.reflection.publish",
+            payload={"preview_id": body.preview_id},
             user_id=user_id,
-            emotions=stored_emotions,
-            memo=memo,
-            memo_action=memo_action,
-            category=category,
-            created_at=created_at,
-            is_secret=False,
-            notify_friends=notify_friends,
+            source="emotion.reflection.publish.route",
         )
-        published_row = await publish_preview_draft(
-            preview_id=body.preview_id,
-            user_id=user_id,
-            published_at=str(persisted.get("created_at") or created_at or ""),
-            emotion_entry=persisted.get("inserted") if isinstance(persisted.get("inserted"), dict) else None,
-        )
-        next_quota = await _build_quota_status(user_id)
-        display_bundle = content_json.get("display") if isinstance(content_json.get("display"), dict) else {}
-        reflection_text = str(
-            display_bundle.get("answer_display_text")
-            or content_json.get("answer_display_text")
-            or published_row.get("answer")
-            or ""
-        )
+        result = execution.result.data
         return EmotionReflectionPublishResponse(
-            preview_id=str(body.preview_id),
-            reflection_id=str(published_row.get("id") or body.preview_id),
-            emotion_id=(persisted.get("inserted") or {}).get("id") if isinstance(persisted.get("inserted"), dict) else None,
-            created_at=str(persisted.get("created_at") or created_at or ""),
-            question=str(published_row.get("question") or draft.get("question") or ""),
-            reflection_text=reflection_text,
-            quota=EmotionReflectionQuotaResponse(**next_quota),
-            input_feedback=(
-                {
-                    "comment_text": persisted.get("input_feedback_comment"),
-                    "emlis_ai": persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None,
-                }
-                if str(persisted.get("input_feedback_comment") or "").strip()
-                else None
-            ),
+            preview_id=str(result.get("preview_id") or body.preview_id),
+            reflection_id=str(result.get("reflection_id") or body.preview_id),
+            emotion_id=result.get("emotion_id"),
+            created_at=str(result.get("created_at") or ""),
+            question=str(result.get("question") or ""),
+            reflection_text=str(result.get("reflection_text") or ""),
+            quota=EmotionReflectionQuotaResponse(**(result.get("quota") if isinstance(result.get("quota"), dict) else {})),
+            input_feedback=result.get("input_feedback") if isinstance(result.get("input_feedback"), dict) else None,
         )
 
-    @app.post("/emotion/reflection/cancel")
+
+    @app.post("/emotion/reflection/cancel", response_model=EmotionReflectionCancelResponse)
     async def emotion_reflection_cancel(
         body: EmotionReflectionCancelRequest,
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> Dict[str, Any]:
+    ) -> EmotionReflectionCancelResponse:
         user_id = await resolve_authenticated_user_id(authorization=authorization)
         draft = await fetch_preview_draft(preview_id=body.preview_id, user_id=user_id)
         if not draft:
             raise HTTPException(status_code=404, detail="Reflection preview not found")
         result = await cancel_preview_draft(preview_id=body.preview_id, user_id=user_id)
-        return {
-            "status": "ok",
-            "preview_id": str(body.preview_id),
-            "result": str(result.get("status") or "rejected"),
-        }
+        return EmotionReflectionCancelResponse(
+            status="ok",
+            preview_id=str(body.preview_id),
+            result=str(result.get("status") or "rejected"),
+        )

@@ -9,15 +9,13 @@ from fastapi import FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from api_account_visibility import _require_user_id
-from publish_governance import decide_myprofile_report_publish, history_retention_bounds_for_query
+from access_policy.viewer_access_policy import (
+    apply_myprofile_report_access_for_viewer,
+    build_report_history_retention,
+    resolve_report_view_context,
+    resolve_viewer_tier_str as _resolve_viewer_tier_str_from_policy,
+)
 from supabase_client import sb_get
-
-try:
-    from subscription import SubscriptionTier
-    from subscription_store import get_subscription_tier_for_user
-except Exception:  # pragma: no cover
-    SubscriptionTier = None  # type: ignore
-    get_subscription_tier_for_user = None  # type: ignore
 
 logger = logging.getLogger("myprofile_reports_read_api")
 
@@ -86,13 +84,7 @@ def _normalize_content_json(raw: Any) -> Dict[str, Any]:
 
 
 async def _resolve_subscription_tier(user_id: str) -> str:
-    if SubscriptionTier is None or get_subscription_tier_for_user is None:
-        return "free"
-    try:
-        tier = await get_subscription_tier_for_user(user_id, default=SubscriptionTier.FREE)
-        return str(getattr(tier, "value", tier) or "free").strip().lower() or "free"
-    except Exception:
-        return "free"
+    return await _resolve_viewer_tier_str_from_policy(user_id)
 
 
 async def _fetch_history_rows(
@@ -111,7 +103,7 @@ async def _fetch_history_rows(
     raw_page_size = max(50, min(200, lim * 2))
     filtered_rows: List[Dict[str, Any]] = []
 
-    retention = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
+    retention = build_report_history_retention(tier_str, now_utc=now_utc)
     gte_iso = str(retention.get("gte_iso") or "").strip()
     lt_iso = str(retention.get("lt_iso") or "").strip()
 
@@ -177,10 +169,10 @@ async def _fetch_history_rows(
         raw_offset += len(chunk)
 
         for row in chunk:
-            published_row = decide_myprofile_report_publish(
+            published_row = apply_myprofile_report_access_for_viewer(
                 row,
-                requested_report_type=report_type,
                 tier_str=tier_str,
+                requested_report_type=report_type,
                 now_utc=now_utc,
             )
             if published_row:
@@ -220,7 +212,7 @@ async def _fetch_detail_row(
     rows = _pick_rows(resp)
     if not rows:
         raise HTTPException(status_code=404, detail="Self-structure report not found")
-    published_row = decide_myprofile_report_publish(rows[0], tier_str=tier_str, now_utc=now_utc)
+    published_row = apply_myprofile_report_access_for_viewer(rows[0], tier_str=tier_str, now_utc=now_utc)
     if not published_row:
         raise HTTPException(status_code=404, detail="Self-structure report not found")
     return published_row

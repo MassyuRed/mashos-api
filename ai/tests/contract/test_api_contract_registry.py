@@ -9,7 +9,13 @@ from api_contract_registry import API_CONTRACT_POLICY_VERSION, contract_ids, con
 
 REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/app/bootstrap'),
+    ('GET', '/app/startup'),
+    ('GET', '/home/state'),
     ('POST', '/emotion/submit'),
+    ('GET', '/emotion/reflection/quota'),
+    ('POST', '/emotion/reflection/preview'),
+    ('POST', '/emotion/reflection/publish'),
+    ('POST', '/emotion/reflection/cancel'),
     ('GET', '/input/summary'),
     ('GET', '/account/profile/me'),
     ('GET', '/account/display-name/availability'),
@@ -62,14 +68,12 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/friends/notification-settings'),
     ('POST', '/friends/notification-settings/{friend_user_id}'),
     ('GET', '/global_summary'),
-    ('GET', '/mymodel/create/questions'),
-    ('POST', '/mymodel/create/answers'),
+    ('GET', '/profile-create/questions'),
+    ('POST', '/profile-create/answers'),
     ('POST', '/mymodel/infer'),
     ('GET', '/mymodel/qna/discoveries/reflections'),
     ('GET', '/mymodel/qna/echoes/reflections'),
-    ('GET', '/mymodel/qna/holders'),
     ('GET', '/mymodel/qna/list'),
-    ('GET', '/mymodel/qna/trending'),
     ('GET', '/mymodel/qna/unread'),
     ('GET', '/mymodel/qna/unread-status'),
     ('POST', '/mymodel/qna/view'),
@@ -155,14 +159,6 @@ def test_public_registry_doc_mentions_all_registered_routes():
 
 
 
-def test_legacy_profilecreate_discovery_routes_are_marked_deprecated():
-    trending = get_contract_entry(method="GET", path="/mymodel/qna/trending")
-    holders = get_contract_entry(method="GET", path="/mymodel/qna/holders")
-
-    assert trending is not None
-    assert trending.deprecated is True
-    assert trending.replacement == "/nexus/reflections"
-
-    assert holders is not None
-    assert holders.deprecated is True
-    assert holders.replacement == "/nexus/reflections"
+def test_legacy_profilecreate_discovery_routes_are_removed_from_registry():
+    assert get_contract_entry(method="GET", path="/mymodel/qna/trending") is None
+    assert get_contract_entry(method="GET", path="/mymodel/qna/holders") is None

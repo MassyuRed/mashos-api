@@ -14,7 +14,7 @@ This module implements the *view* side of the new Q&A architecture:
 
 Implementation note (v1):
 -------------------------
-To keep this change set small and deterministic, v1 uses **MyModel Create**
+To keep this change set small and deterministic, v1 uses **ProfileCreate**
 questions + answers as the Q&A corpus.
 
 - "title" := mymodel_create_questions.question_text
@@ -42,15 +42,26 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
 )
-from api_mymodel_create import _fetch_answers as _fetch_create_answers
-from api_mymodel_create import _fetch_questions as _fetch_create_questions
+from api_profile_create import _fetch_answers as _fetch_profile_answers
+from api_profile_create import _fetch_questions as _fetch_profile_questions
 from generated_reflection_display import get_public_generated_reflection_text
 from generated_reflection_identity import compute_generated_question_q_key
 from reflection_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
-from subscription_store import get_subscription_tier_for_user
-from publish_governance import history_retention_bounds_for_query, normalize_tier_str
-from mymodel_entitlements import resolve_mymodel_entitlement
+from access_policy.piece_access_policy import (
+    build_tier_for_subscription as _build_tier_for_subscription_from_policy,
+    effective_tier as _effective_tier_from_policy,
+    owner_reflection_policy_from_tier as _owner_reflection_policy_from_policy,
+    view_tier_for_subscription as _view_tier_for_subscription_from_policy,
+)
+from access_policy.viewer_access_policy import (
+    piece_viewer_history_retention as _piece_viewer_history_retention_from_policy,
+    resolve_piece_owner_reflection_policies as _resolve_piece_owner_reflection_policies_from_policy,
+    resolve_piece_owner_reflection_policy as _resolve_piece_owner_reflection_policy_from_policy,
+    resolve_piece_view_tier_for_user as _resolve_piece_view_tier_for_user_from_policy,
+    resolve_piece_view_tiers as _resolve_piece_view_tiers_from_policy,
+    resolve_viewer_tier_str as _resolve_viewer_tier_str_from_policy,
+)
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
 from astor_account_status_enqueue import enqueue_account_status_refresh
@@ -95,9 +106,24 @@ FREE_HISTORY_LIMIT = int(os.getenv("COCOLON_MYMODEL_QNA_FREE_HISTORY_LIMIT", "5"
 
 
 def _viewer_history_retention(viewer_tier: Any, *, now_utc: Optional[datetime] = None) -> Tuple[str, Dict[str, Any]]:
-    tier_str = normalize_tier_str(getattr(viewer_tier, "value", viewer_tier))
-    bounds = history_retention_bounds_for_query(tier_str, now_utc=now_utc)
-    return tier_str, bounds
+    return _piece_viewer_history_retention_from_policy(viewer_tier, now_utc=now_utc)
+
+
+async def _resolve_subscription_tier_str_for_user(user_id: str) -> str:
+    return await _resolve_viewer_tier_str_from_policy(user_id)
+
+
+async def _resolve_view_tier_for_user(user_id: str) -> str:
+    return await _resolve_piece_view_tier_for_user_from_policy(user_id)
+
+
+async def _resolve_history_retention_for_user(
+    user_id: str,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    tier_str = await _resolve_subscription_tier_str_for_user(user_id)
+    return _viewer_history_retention(tier_str, now_utc=now_utc)
 
 
 def _apply_created_at_retention_params(params: Dict[str, str], bounds: Dict[str, Any]) -> Dict[str, str]:
@@ -555,22 +581,15 @@ def _run_in_background(coro: Any, *, label: str) -> None:
 
 
 def _build_tier_for_subscription(tier: SubscriptionTier) -> str:
-    entitlement = resolve_mymodel_entitlement(tier)
-    return str(entitlement.build_tier or "light")
+    return _build_tier_for_subscription_from_policy(tier)
 
 
 def _view_tier_for_subscription(tier: SubscriptionTier) -> str:
-    # Viewing (Reflections) is open for all tiers.
-    # Subscription affects **creation/build** side only, not the viewer's readable range.
-    # Therefore we always allow the viewer to see up to the target's build_tier.
-    return "standard"
+    return _view_tier_for_subscription_from_policy(tier)
 
 
 def _effective_tier(*, view_tier: str, build_tier: str) -> str:
-    order = {"light": 0, "standard": 1}
-    v = order.get(str(view_tier), 0)
-    b = order.get(str(build_tier), 0)
-    return "standard" if min(v, b) >= 1 else "light"
+    return _effective_tier_from_policy(view_tier=view_tier, build_tier=build_tier)
 
 
 def _parse_instance_id(q_instance_id: str) -> Tuple[str, int]:
@@ -629,7 +648,7 @@ async def _fetch_secret_question_ids(*, target_user_id: str, question_ids: Set[i
     if not ids:
         return set()
 
-    answers = await _fetch_create_answers(user_id=uid, question_ids=ids)
+    answers = await _fetch_profile_answers(user_id=uid, question_ids=ids)
     secret_ids: Set[int] = set()
     for qid in ids:
         a = answers.get(int(qid)) if isinstance(answers, dict) else None
@@ -1449,63 +1468,35 @@ async def _inc_metric(
 async def _resolve_tiers(*, viewer_user_id: str, target_user_id: str) -> Tuple[str, str, str, str]:
     """Return (subscription_tier, view_tier, build_tier, effective_tier)."""
 
-    viewer_tier = SubscriptionTier.FREE
-    target_tier = SubscriptionTier.FREE
-    try:
-        viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-    except Exception as exc:
-        logger.warning("viewer subscription tier resolve failed: %s", exc)
-        viewer_tier = SubscriptionTier.FREE
-    try:
-        target_tier = await get_subscription_tier_for_user(target_user_id, default=SubscriptionTier.FREE)
-    except Exception as exc:
-        logger.warning("target subscription tier resolve failed: %s", exc)
-        target_tier = SubscriptionTier.FREE
-
-    view_tier = _view_tier_for_subscription(viewer_tier)
-    build_tier = _build_tier_for_subscription(target_tier)
-    eff = _effective_tier(view_tier=view_tier, build_tier=build_tier)
-    return (viewer_tier.value, view_tier, build_tier, eff)
+    resolved = await _resolve_piece_view_tiers_from_policy(
+        viewer_user_id=viewer_user_id,
+        target_user_id=target_user_id,
+    )
+    return (
+        str(resolved.subscription_tier),
+        str(resolved.view_tier),
+        str(resolved.build_tier),
+        str(resolved.effective_tier),
+    )
 
 
 def _owner_reflection_policy_from_tier(tier: SubscriptionTier) -> Dict[str, Any]:
-    entitlement = resolve_mymodel_entitlement(tier)
-    return {
-        "subscription_tier": str(tier.value),
-        "build_tier": str(entitlement.build_tier or "light"),
-        "template_question_limit": int(entitlement.template_question_limit),
-        "can_expose_generated_reflections": bool(entitlement.can_expose_generated_reflections),
-        "can_expose_original_reflections": bool(entitlement.can_expose_original_reflections),
-    }
+    return _owner_reflection_policy_from_policy(tier)
 
 
 async def _resolve_owner_reflection_policy(owner_user_id: str) -> Dict[str, Any]:
-    oid = str(owner_user_id or "").strip()
-    tier = SubscriptionTier.FREE
-    if oid:
-        try:
-            tier = await get_subscription_tier_for_user(oid, default=SubscriptionTier.FREE)
-        except Exception as exc:
-            logger.warning("owner subscription tier resolve failed: %s", exc)
-            tier = SubscriptionTier.FREE
-    return _owner_reflection_policy_from_tier(tier)
+    return await _resolve_piece_owner_reflection_policy_from_policy(owner_user_id)
 
 
 async def _resolve_owner_reflection_policies(owner_user_ids: Set[str]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-    for owner_user_id in owner_user_ids or set():
-        oid = str(owner_user_id or "").strip()
-        if not oid or oid in out:
-            continue
-        out[oid] = await _resolve_owner_reflection_policy(oid)
-    return out
+    return await _resolve_piece_owner_reflection_policies_from_policy(owner_user_ids)
 
 
 async def _fetch_question_maps_for_build_tiers(build_tiers: Set[str]) -> Dict[str, Dict[int, str]]:
     order = {"light": 0, "standard": 1}
     out: Dict[str, Dict[int, str]] = {}
     for build_tier in sorted({str(t or "light").strip() or "light" for t in (build_tiers or set())}, key=lambda x: order.get(x, 99)):
-        qrows = await _fetch_create_questions(build_tier=build_tier)
+        qrows = await _fetch_profile_questions(build_tier=build_tier)
         qmap: Dict[int, str] = {}
         for r in qrows or []:
             try:
@@ -1800,80 +1791,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
                 has_unread=False,
             )
 
-    @app.get("/mymodel/qna/trending", response_model=QnaTrendingResponse)
-    async def qna_trending(
-        limit: int = Query(default=5, ge=1, le=20, description="Number of trending questions to return"),
-        mode: str = Query(default="overall", description="overall | resonance | views"),
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaTrendingResponse:
-        """Deprecated compatibility route for legacy ProfileCreate-based discovery."""
-
-        token = _extract_bearer_token(authorization) if authorization else None
-        if not token:
-            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
-
-        viewer_user_id = await _resolve_user_id_from_token(token)
-        if not viewer_user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-
-        view_tier = _view_tier_for_subscription(viewer_tier)
-
-        return QnaTrendingResponse(
-            status="ok",
-            view_tier=view_tier,
-            total_items=0,
-            items=[],
-            deprecated=True,
-            replacement_path="/nexus/reflections",
-            disabled_reason="legacy_profilecreate_discovery_retired",
-        )
-
-
-    @app.get("/mymodel/qna/holders", response_model=QnaHoldersResponse)
-    async def qna_holders(
-        question_id: int = Query(..., ge=1, description="Create question id"),
-        limit: int = Query(default=20, ge=1, le=200, description="Max users to return"),
-        exclude_followed: bool = Query(default=True, description="Exclude users already followed by viewer"),
-        exclude_self: bool = Query(default=True, description="Exclude the viewer themselves"),
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaHoldersResponse:
-        """Deprecated compatibility route for legacy ProfileCreate-based discovery."""
-
-        token = _extract_bearer_token(authorization) if authorization else None
-        if not token:
-            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
-
-        viewer_user_id = await _resolve_user_id_from_token(token)
-        if not viewer_user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-        view_tier = _view_tier_for_subscription(viewer_tier)
-
-        return QnaHoldersResponse(
-            status="ok",
-            view_tier=view_tier,
-            question_id=int(question_id),
-            title="",
-            q_key=_q_key_for_question_id(int(question_id)),
-            total_items=0,
-            users=[],
-            deprecated=True,
-            replacement_path="/nexus/reflections",
-            disabled_reason="legacy_profilecreate_discovery_retired",
-        )
-
-
     @app.get("/mymodel/recommend/users", response_model=QnaRecommendUsersResponse)
     async def recommend_users(
         limit: int = Query(default=5, ge=1, le=20, description="Number of users to return"),
@@ -1972,13 +1889,13 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         # Tier gating (viewer can only see effective tier)
         _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-        qrows = await _fetch_create_questions(build_tier=effective_tier)
+        qrows = await _fetch_profile_questions(build_tier=effective_tier)
         qmap = {int(r.get("id")): str(r.get("question_text") or "").strip() for r in (qrows or []) if r.get("id") is not None}
         title = qmap.get(int(qid))
         if not title:
             raise HTTPException(status_code=404, detail="Question not found")
 
-        answers = await _fetch_create_answers(user_id=tgt, question_ids={int(qid)})
+        answers = await _fetch_profile_answers(user_id=tgt, question_ids={int(qid)})
         a = answers.get(int(qid)) or {}
         body = _public_create_body_from_answer_row(a)
         if not body:
@@ -2199,16 +2116,11 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
 
         # Viewer tier -> view_tier (light|standard) to avoid leaking inaccessible questions.
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-        view_tier = _view_tier_for_subscription(viewer_tier)
+        view_tier = await _resolve_view_tier_for_user(viewer_user_id)
 
         # Load questions allowed for this view_tier.
         try:
-            qrows = await _fetch_create_questions(build_tier=view_tier)
+            qrows = await _fetch_profile_questions(build_tier=view_tier)
         except Exception as exc:
             logger.error("failed to fetch create questions (echoes reflections): %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load questions")
@@ -2648,14 +2560,9 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         qk = str(q_key or "").strip() or _q_key_for_question_id(int(qid))
 
         # Entitlement (Free: latest N only; Plus/Premium: pagination)
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception as exc:
-            logger.warning("viewer subscription tier resolve failed (echoes history): %s", exc)
-            viewer_tier = SubscriptionTier.FREE
+        viewer_tier_str = await _resolve_subscription_tier_str_for_user(viewer_user_id)
 
-        is_free = viewer_tier == SubscriptionTier.FREE
+        is_free = viewer_tier_str == "free"
         eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
         eff_limit = max(1, min(eff_limit, 1000))
         eff_offset = 0 if is_free else int(offset or 0)
@@ -2746,7 +2653,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             status="ok",
             q_key=qk,
             q_instance_id=q_instance_id,
-            subscription_tier=str(viewer_tier.value),
+            subscription_tier=str(viewer_tier_str),
             total=int(total or 0),
             count_small=int(cnt_small or 0),
             count_medium=int(cnt_medium or 0),
@@ -2792,16 +2699,11 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
 
         # Viewer tier -> view_tier (light|standard) to avoid leaking inaccessible questions.
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-        view_tier = _view_tier_for_subscription(viewer_tier)
+        view_tier = await _resolve_view_tier_for_user(viewer_user_id)
 
         # Load questions allowed for this view_tier.
         try:
-            qrows = await _fetch_create_questions(build_tier=view_tier)
+            qrows = await _fetch_profile_questions(build_tier=view_tier)
         except Exception as exc:
             logger.error("failed to fetch create questions (discoveries reflections): %s", exc)
             raise HTTPException(status_code=502, detail="Failed to load questions")
@@ -3163,14 +3065,9 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
 
         qk = str(q_key or "").strip() or _q_key_for_question_id(int(qid))
 
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception as exc:
-            logger.warning("viewer subscription tier resolve failed (discoveries history): %s", exc)
-            viewer_tier = SubscriptionTier.FREE
+        viewer_tier_str = await _resolve_subscription_tier_str_for_user(viewer_user_id)
 
-        is_free = viewer_tier == SubscriptionTier.FREE
+        is_free = viewer_tier_str == "free"
         eff_limit = int(FREE_HISTORY_LIMIT) if is_free else int(limit or 200)
         eff_limit = max(1, min(eff_limit, 1000))
         eff_offset = 0 if is_free else int(offset or 0)
@@ -3223,7 +3120,7 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             status="ok",
             q_key=qk,
             q_instance_id=q_instance_id,
-            subscription_tier=str(viewer_tier.value),
+            subscription_tier=str(viewer_tier_str),
             total=int(total or 0),
             limit=int(eff_limit),
             is_limited=bool(is_free),
@@ -3776,7 +3673,7 @@ async def _resolve_qna_context_for_reaction(
         raise HTTPException(status_code=404, detail="Reflection not found")
     owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
     return {
-        "kind": EMOTION_GENERATED_SOURCE_TYPE,
+        "kind": (_row_source_type(row) or "generated"),
         "target_user_id": owner_user_id,
         "question_id": 0,
         "q_key": str(q_key or "").strip() or _build_generated_q_key(row),
@@ -3792,7 +3689,7 @@ async def _resolve_qna_context_for_reaction(
 async def _fetch_create_list_items(
     *, viewer_user_id: str, target_user_id: str, effective_tier: str
 ) -> List[QnaListItem]:
-    qrows = await _fetch_create_questions(build_tier=effective_tier)
+    qrows = await _fetch_profile_questions(build_tier=effective_tier)
     if not qrows:
         return []
 
@@ -3812,7 +3709,7 @@ async def _fetch_create_list_items(
     if not qmap:
         return []
 
-    answers = await _fetch_create_answers(user_id=target_user_id, question_ids=set(qmap.keys()))
+    answers = await _fetch_profile_answers(user_id=target_user_id, question_ids=set(qmap.keys()))
     visible_answer_ids: Set[int] = set()
     for qid in ordered_qids:
         row = answers.get(int(qid)) or {}
@@ -3931,7 +3828,7 @@ async def _fetch_generated_unread_counts(*, viewer_user_id: str, target_user_id:
 async def _fetch_create_unread_counts(
     *, viewer_user_id: str, target_user_id: str, effective_tier: str
 ) -> Tuple[int, int]:
-    qrows = await _fetch_create_questions(build_tier=effective_tier)
+    qrows = await _fetch_profile_questions(build_tier=effective_tier)
     if not qrows:
         return (0, 0)
 
@@ -3945,7 +3842,7 @@ async def _fetch_create_unread_counts(
     if not question_ids:
         return (0, 0)
 
-    answers = await _fetch_create_answers(user_id=target_user_id, question_ids=question_ids)
+    answers = await _fetch_profile_answers(user_id=target_user_id, question_ids=question_ids)
     visible_instance_ids: Set[str] = set()
     for qid in question_ids:
         answer_row = answers.get(int(qid)) or {}
@@ -3967,7 +3864,7 @@ async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id:
     """Unread for Nexus-facing reflections.
 
     New unread badges should reflect published Reflection posts, not hidden
-    MyModelCreate progress. Self-owned reflections are excluded from unread.
+    ProfileCreate progress. Self-owned reflections are excluded from unread.
     """
     if str(viewer_user_id or "").strip() == str(target_user_id or "").strip():
         return QnaUnreadResponse(
@@ -4071,7 +3968,7 @@ async def _build_saved_create_items(
     public_pairs: Set[Tuple[str, int]] = set()
     for owner_id, qids in qids_by_owner.items():
         try:
-            owner_answers = await _fetch_create_answers(user_id=str(owner_id), question_ids=set(qids))
+            owner_answers = await _fetch_profile_answers(user_id=str(owner_id), question_ids=set(qids))
         except Exception as exc:
             logger.warning("public reflection check failed (saved reflections): %s", exc)
             owner_answers = {}
@@ -4455,12 +4352,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if order_key not in ("newest", "oldest"):
             order_key = "newest"
         sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-        retention = history_retention_bounds_for_query(str(viewer_tier.value), now_utc=datetime.now(timezone.utc))
+        _, retention = await _resolve_history_retention_for_user(
+            viewer_user_id,
+            now_utc=datetime.now(timezone.utc),
+        )
         followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
@@ -4751,14 +4646,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         ctx = await _resolve_qna_context_for_reaction(viewer_user_id=viewer_user_id, q_instance_id=q_instance_id, q_key=q_key)
         qk = str(ctx.get("q_key") or "")
         iid = str(q_instance_id or "").strip()
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception as exc:
-            logger.warning("viewer subscription tier resolve failed (echoes history): %s", exc)
-            viewer_tier = SubscriptionTier.FREE
-        tier_str = str(viewer_tier.value)
-        retention = history_retention_bounds_for_query(tier_str, now_utc=datetime.now(timezone.utc))
+        tier_str, retention = await _resolve_history_retention_for_user(
+            viewer_user_id,
+            now_utc=datetime.now(timezone.utc),
+        )
         gte_iso = str(retention.get("gte_iso") or "").strip()
         lt_iso = str(retention.get("lt_iso") or "").strip()
         eff_limit = max(1, min(int(limit or 50), 1000))
@@ -4876,12 +4767,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if order_key not in ("newest", "oldest"):
             order_key = "newest"
         sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception:
-            viewer_tier = SubscriptionTier.FREE
-        retention = history_retention_bounds_for_query(str(viewer_tier.value), now_utc=datetime.now(timezone.utc))
+        _, retention = await _resolve_history_retention_for_user(
+            viewer_user_id,
+            now_utc=datetime.now(timezone.utc),
+        )
         followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
         if not followed_set:
             return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
@@ -5140,14 +5029,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         ctx = await _resolve_qna_context_for_reaction(viewer_user_id=viewer_user_id, q_instance_id=q_instance_id, q_key=q_key)
         qk = str(ctx.get("q_key") or "")
         iid = str(q_instance_id or "").strip()
-        viewer_tier = SubscriptionTier.FREE
-        try:
-            viewer_tier = await get_subscription_tier_for_user(viewer_user_id, default=SubscriptionTier.FREE)
-        except Exception as exc:
-            logger.warning("viewer subscription tier resolve failed (discoveries history): %s", exc)
-            viewer_tier = SubscriptionTier.FREE
-        tier_str = str(viewer_tier.value)
-        retention = history_retention_bounds_for_query(tier_str, now_utc=datetime.now(timezone.utc))
+        tier_str, retention = await _resolve_history_retention_for_user(
+            viewer_user_id,
+            now_utc=datetime.now(timezone.utc),
+        )
         gte_iso = str(retention.get("gte_iso") or "").strip()
         lt_iso = str(retention.get("lt_iso") or "").strip()
         eff_limit = max(1, min(int(limit or 50), 1000))

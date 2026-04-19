@@ -10,6 +10,8 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
+from home_gateway.command_gateway import execute_home_command
+
 from active_users_store import touch_active_user
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token, _send_fcm_push
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
@@ -372,25 +374,23 @@ def register_today_question_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> TodayQuestionAnswerWriteResponse:
         uid = await _require_user_id(authorization)
-        row = await store.create_answer(
-            uid,
-            service_day_key=body.service_day_key,
-            question_id=body.question_id,
-            sequence_no=body.sequence_no,
-            answer_mode=body.answer_mode,
-            selected_choice_id=body.selected_choice_id,
-            selected_choice_key=body.selected_choice_key,
-            free_text=body.free_text,
-            timezone_name=body.timezone_name,
+        execution = await execute_home_command(
+            "today_question.answer.create",
+            payload={
+                "service_day_key": body.service_day_key,
+                "question_id": body.question_id,
+                "sequence_no": body.sequence_no,
+                "answer_mode": body.answer_mode,
+                "selected_choice_id": body.selected_choice_id,
+                "selected_choice_key": body.selected_choice_key,
+                "free_text": body.free_text,
+                "timezone_name": body.timezone_name,
+            },
+            user_id=uid,
+            requested_at=datetime.now(timezone.utc).isoformat(),
+            source="today_question.answer.route",
         )
-        await _invalidate_today_question_caches(uid)
-        enqueued = await _enqueue_self_structure_refresh(uid, trigger="today_question_answer")
-        return TodayQuestionAnswerWriteResponse(
-            answer_id=str(row.get("id") or ""),
-            saved=True,
-            snapshot_refresh_enqueued=enqueued,
-            answer_summary=_answer_summary(row),
-        )
+        return TodayQuestionAnswerWriteResponse(**execution.result.data)
 
     @app.get("/today-question/history", response_model=TodayQuestionHistoryResponse)
     async def today_question_history(
