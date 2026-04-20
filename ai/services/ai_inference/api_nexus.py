@@ -203,6 +203,7 @@ async def _fetch_emotion_generated_rows_for_owner_ids(
     owner_ids: Set[str],
     *,
     scan_limit: int,
+    ascending: bool = False,
 ) -> List[Dict[str, Any]]:
     ids = [str(owner_id).strip() for owner_id in (owner_ids or set()) if str(owner_id).strip()]
     if not ids:
@@ -218,7 +219,7 @@ async def _fetch_emotion_generated_rows_for_owner_ids(
             "source_type": f"eq.{EMOTION_GENERATED_SOURCE_TYPE}",
             "is_active": "eq.true",
             "status": "in.(ready,published)",
-            "order": "published_at.desc,updated_at.desc",
+            "order": "published_at.asc,updated_at.asc" if ascending else "published_at.desc,updated_at.desc",
             "limit": str(max(50, int(scan_limit))),
         }
         rows = await _sb_get_json(f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}", params=params)
@@ -228,11 +229,13 @@ async def _fetch_emotion_generated_rows_for_owner_ids(
                 merged[row_id] = row
 
     visible_rows = [row for row in merged.values() if get_public_generated_reflection_text(row)]
-    return sorted(visible_rows, key=_row_sort_key, reverse=True)
+    return sorted(visible_rows, key=_row_sort_key, reverse=(not ascending))
 
 
 def _sort_items(items: List[NexusReflectionItem], sort_key: str) -> List[NexusReflectionItem]:
     mode = str(sort_key or "latest").strip().lower()
+    if mode == "oldest":
+        return sorted(items, key=lambda item: (item.created_at or "", item.q_instance_id))
     if mode == "views":
         return sorted(items, key=lambda item: (item.metrics.views, item.metrics.resonances, item.created_at or ""), reverse=True)
     if mode == "resonance":
@@ -245,7 +248,7 @@ def _sort_items(items: List[NexusReflectionItem], sort_key: str) -> List[NexusRe
 def register_nexus_routes(app: FastAPI) -> None:
     @app.get("/nexus/reflections", response_model=NexusReflectionResponse)
     async def nexus_reflections(
-        sort: str = Query(default="latest", description="latest | views | resonance | discovery"),
+        sort: str = Query(default="latest", description="latest | oldest | views | resonance | discovery"),
         limit: int = Query(default=20, ge=1, le=100),
         user_id: Optional[str] = Query(default=None, description="Optional followed user filter"),
         following_only: bool = Query(default=True),
@@ -276,7 +279,12 @@ def register_nexus_routes(app: FastAPI) -> None:
             return NexusReflectionResponse(status="ok", sort=str(sort or "latest"), total_items=0, has_more=False, items=[])
 
         scan_limit = max(int(limit) * 3, 50)
-        rows = await _fetch_emotion_generated_rows_for_owner_ids(target_owner_ids, scan_limit=scan_limit)
+        fetch_oldest_first = str(sort or "latest").strip().lower() == "oldest"
+        rows = await _fetch_emotion_generated_rows_for_owner_ids(
+            target_owner_ids,
+            scan_limit=scan_limit,
+            ascending=fetch_oldest_first,
+        )
         if not rows:
             return NexusReflectionResponse(status="ok", sort=str(sort or "latest"), total_items=0, has_more=False, items=[])
 
