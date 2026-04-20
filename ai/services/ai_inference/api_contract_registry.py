@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple
 
 from fastapi import Request
 
-API_CONTRACT_POLICY_VERSION = "2026-03-20.mymodel-qna-unread-status.v1"
+API_CONTRACT_POLICY_VERSION = "2026-04-20.myprofile-lookup.v1"
 
 REQUEST_POLICY_ADDITIVE_ONLY = "additive-only"
 RESPONSE_POLICY_ADDITIVE_ONLY = "additive-only"
@@ -58,6 +58,7 @@ PUBLIC_API_CONTRACTS: Tuple[ApiContractEntry, ...] = (
     ApiContractEntry('GET', '/myprofile/reports/{report_id}', 'myprofile.reports.detail.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Detail is readable only for publishable self-structure rows'),
     ApiContractEntry('DELETE', '/emotion/history/{emotion_id}', 'emotion.history.delete.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/myprofile/follow-list', 'myprofile.follow_list.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
+    ApiContractEntry('GET', '/myprofile/lookup', 'myprofile.lookup.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY, notes='Exact-match Connect ID lookup for in-app search/follow only; no display_name or Share ID fallback'),
     ApiContractEntry('GET', '/mymodel/qna/detail', 'mymodel.qna.detail.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/mymodel/qna/echoes/history', 'mymodel.qna.echoes.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),
     ApiContractEntry('GET', '/mymodel/qna/discoveries/history', 'mymodel.qna.discoveries.history.v1', OWNER_PUBLIC_API, REQUEST_POLICY_ADDITIVE_ONLY, RESPONSE_POLICY_ADDITIVE_ONLY),

@@ -1,10 +1,10 @@
 # Cocolon Public API Registry
 
-Policy version: `2026-03-20.mymodel-qna-unread-status.v1`
+Policy version: `2026-04-20.myprofile-lookup.v1`
 
-This policy revision adds `/mymodel/qna/unread-status` so the MyModel Home Reflections
-NEW badge stays API-owned across the viewer's accessible reflection set (self + followed
-owners), while preserving the single-target `/mymodel/qna/unread` contract.
+This policy revision adds `/myprofile/lookup` so Connect ID exact-match lookup stays API-owned
+for the in-app search / follow flow, while preserving the separate Share ID (`friend_code`) and
+Connect ID (`myprofile_code`) roles.
 
 | Method | Path | Contract ID | Deprecated | Replacement | Notes |
 |---|---|---|---|---|---|
@@ -40,6 +40,7 @@ owners), while preserving the single-target `/mymodel/qna/unread` contract.
 | GET | `/myprofile/reports/{report_id}` | `myprofile.reports.detail.v1` | `false` |  | Detail is readable only for publishable self-structure rows |
 | DELETE | `/emotion/history/{emotion_id}` | `emotion.history.delete.v1` | `false` |  |  |
 | GET | `/myprofile/follow-list` | `myprofile.follow_list.v1` | `false` |  |  |
+| GET | `/myprofile/lookup` | `myprofile.lookup.v1` | `false` |  | Exact-match Connect ID lookup for in-app search / follow only; no display_name or Share ID fallback |
 | GET | `/mymodel/qna/detail` | `mymodel.qna.detail.v1` | `false` |  |  |
 | GET | `/mymodel/qna/echoes/history` | `mymodel.qna.echoes.history.v1` | `false` |  |  |
 | GET | `/mymodel/qna/discoveries/history` | `mymodel.qna.discoveries.history.v1` | `false` |  |  |
