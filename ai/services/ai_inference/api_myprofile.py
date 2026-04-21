@@ -2363,20 +2363,20 @@ def register_myprofile_routes(app: FastAPI) -> None:
         # ---- generate + save (server-side) ----
         try:
             try:
-                from astor_myprofile_report import build_myprofile_monthly_report
+                from astor_myprofile_report import refresh_myprofile_monthly_report
 
-                # Use dist_utc as "now" so the range is anchored to month boundary (end exclusive)
-                report_text, report_meta = build_myprofile_monthly_report(
+                refresh_result = await refresh_myprofile_monthly_report(
                     user_id=uid,
-                    period=effective_period,
-                    report_mode=effective_report_mode,
+                    period_override=effective_period,
+                    report_mode_override=effective_report_mode,
                     include_secret=include_secret,
                     now=dist_utc,
                     prev_report_text=prev_report_text,
                     prev_report_json=prev_report_json,
-                    report_type="monthly",
                     distribution_utc=_to_iso_z(dist_utc),
                 )
+                report_text = str(refresh_result.get("report_text") or "")
+                report_meta = refresh_result.get("report_meta") if isinstance(refresh_result, dict) else {}
             except Exception as exc:
                 logger.error("Failed to build monthly MyProfile report: %s", exc)
                 raise HTTPException(status_code=500, detail="Failed to generate monthly MyProfile report")

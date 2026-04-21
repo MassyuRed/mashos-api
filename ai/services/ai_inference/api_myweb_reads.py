@@ -16,6 +16,8 @@ from api_account_visibility import _require_user_id
 from publish_governance import decide_myweb_report_publish
 from response_microcache import get_or_compute
 from supabase_client import sb_get
+from analysis_summary_reader import get_myweb_home_summary_from_artifacts
+from input_summary_reader import get_input_summary_snapshot
 
 try:
     from subscription import SubscriptionTier  # type: ignore
@@ -377,52 +379,42 @@ async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any
         )
 
     async def _build_payload() -> Dict[str, Any]:
-        from api_input_summary import get_input_summary_payload_for_user
+        analysis_summary_task = get_myweb_home_summary_from_artifacts(uid)
+        input_status_task = get_input_summary_snapshot(uid)
 
-        week_start, week_end = _jst_week_range_for_now()
-        month_start, next_month_start = _jst_month_range_for_now()
-
-        weekly_task = _fetch_emotions(
-            uid,
-            select="id,emotions,created_at",
-            start_iso=week_start,
-            end_iso=week_end,
-            end_op="lte",
-            include_secret=True,
-            ascending=False,
-        )
-        monthly_task = _fetch_emotions(
-            uid,
-            select="id,created_at",
-            start_iso=month_start,
-            end_iso=next_month_start,
-            end_op="lt",
-            include_secret=True,
-            ascending=False,
-        )
-        input_status_task = get_input_summary_payload_for_user(uid)
-
-        weekly_rows_res, monthly_rows_res, input_status_res = await asyncio.gather(
-            weekly_task,
-            monthly_task,
+        analysis_summary_res, input_status_res = await asyncio.gather(
+            analysis_summary_task,
             input_status_task,
             return_exceptions=True,
         )
 
-        if isinstance(weekly_rows_res, Exception):
-            logger.warning("myweb home summary: weekly summary load failed user_id=%s err=%r", uid, weekly_rows_res)
+        if isinstance(analysis_summary_res, Exception):
+            logger.warning(
+                "myweb home summary: artifact summary load failed user_id=%s err=%r",
+                uid,
+                analysis_summary_res,
+            )
             weekly = MyWebWeeklySummary(error="failed_to_load_weekly_summary")
-        else:
-            weekly = _summarize_weekly(weekly_rows_res)
-
-        if isinstance(monthly_rows_res, Exception):
-            logger.warning("myweb home summary: monthly summary load failed user_id=%s err=%r", uid, monthly_rows_res)
             monthly = MyWebMonthlySummary(error="failed_to_load_monthly_summary")
         else:
-            monthly = MyWebMonthlySummary(count=len(monthly_rows_res), error="")
+            weekly_raw = analysis_summary_res.get("weekly") if isinstance(analysis_summary_res, dict) else {}
+            monthly_raw = analysis_summary_res.get("monthly") if isinstance(analysis_summary_res, dict) else {}
+            weekly = MyWebWeeklySummary(
+                count=_coerce_int((weekly_raw or {}).get("count"), 0),
+                top=list((weekly_raw or {}).get("top") or []),
+                error=str((weekly_raw or {}).get("error") or "").strip(),
+            )
+            monthly = MyWebMonthlySummary(
+                count=_coerce_int((monthly_raw or {}).get("count"), 0),
+                error=str((monthly_raw or {}).get("error") or "").strip(),
+            )
 
         if isinstance(input_status_res, Exception):
-            logger.warning("myweb home summary: input status load failed user_id=%s err=%r", uid, input_status_res)
+            logger.warning(
+                "myweb home summary: input status load failed user_id=%s err=%r",
+                uid,
+                input_status_res,
+            )
             input_status = MyWebInputStatusSummary(error="failed_to_load_input_status")
         else:
             input_status = _input_status_from_payload(input_status_res)
@@ -472,30 +464,8 @@ def register_myweb_read_routes(app: FastAPI) -> None:
                 days=saved_days,
             )
 
-        if not MYWEB_WEEKLY_DAYS_ALLOW_COMPUTED_FALLBACK:
-            return MyWebWeeklyDaysResponse(
-                report_id=str(row.get("id") or report_id),
-                source="artifact_missing",
-                days=[],
-            )
-
-        period_start = str(row.get("period_start") or "").strip()
-        period_end = str(row.get("period_end") or "").strip()
-        if not period_start or not period_end:
-            raise HTTPException(status_code=400, detail="Report period is missing")
-
-        emotion_rows = await _fetch_emotions(
-            me,
-            select="created_at,emotions,emotion_details,is_secret",
-            start_iso=period_start,
-            end_iso=period_end,
-            end_op="lte",
-            include_secret=False,
-            ascending=True,
-        )
-        days = _build_days_from_rows(emotion_rows)
         return MyWebWeeklyDaysResponse(
             report_id=str(row.get("id") or report_id),
-            source="computed",
-            days=days,
+            source="artifact_missing",
+            days=[],
         )

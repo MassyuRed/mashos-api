@@ -5348,34 +5348,19 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                     include_body=include_body_bool,
                 )
             except Exception as exc:
-                if not MYWEB_READY_ALLOW_LEGACY_FALLBACK:
-                    logger.error(
-                        "myweb ready projection-first failed with legacy fallback disabled: user_id=%s report_type=%s include_body=%s err=%r",
-                        user_id,
-                        report_type,
-                        include_body_bool,
-                        exc,
-                    )
-                    if isinstance(exc, HTTPException):
-                        raise
-                    raise HTTPException(
-                        status_code=503,
-                        detail="MyWeb artifact projection is unavailable",
-                    ) from exc
-                logger.warning(
-                    "myweb ready projection-first fallback activated: user_id=%s report_type=%s include_body=%s err=%s",
+                logger.error(
+                    "myweb ready artifact-only projection failed: user_id=%s report_type=%s include_body=%s err=%r",
                     user_id,
                     report_type,
                     include_body_bool,
                     exc,
                 )
-                return await _build_myweb_ready_payload_legacy(
-                    user_id=user_id,
-                    report_type=str(report_type),
-                    lim=lim,
-                    off=off,
-                    include_body=include_body_bool,
-                )
+                if isinstance(exc, HTTPException):
+                    raise
+                raise HTTPException(
+                    status_code=503,
+                    detail="MyWeb artifact projection is unavailable",
+                ) from exc
 
         payload = await get_or_compute(
             cache_key,

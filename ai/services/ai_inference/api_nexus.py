@@ -18,6 +18,7 @@ from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_toke
 from api_mymodel_qna import (
     MYMODEL_REFLECTIONS_TABLE,
     QnaDetailResponse,
+    QnaUnreadStatusResponse,
     _build_qna_detail_response,
     _fetch_discovery_counts_for_instances,
     _fetch_followed_owner_ids,
@@ -409,15 +410,54 @@ def register_nexus_routes(app: FastAPI) -> None:
             items=sliced_items,
         )
 
-    @app.get("/nexus/reflections/unread-status")
+    @app.get("/nexus/reflections/unread-status", response_model=QnaUnreadStatusResponse)
     async def nexus_reflections_unread_status(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> Any:
-        return await _call_registered_route_json(
-            app,
-            path="/mymodel/qna/unread-status",
-            detail="Failed to load Nexus reflection unread status",
-            authorization=authorization,
+    ) -> QnaUnreadStatusResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        viewer_id = str(viewer_user_id)
+        try:
+            followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer_id, limit=5000)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to load Nexus reflection unread status: {exc}") from exc
+
+        followed_owner_ids.discard(viewer_id)
+        accessible_target_count = 1 + len(followed_owner_ids)
+        self_has_unread = False
+        following_has_unread = False
+
+        if followed_owner_ids:
+            rows = await _fetch_emotion_generated_rows_for_owner_ids(
+                set(followed_owner_ids),
+                scan_limit=max(500, len(followed_owner_ids) * 50),
+                ascending=False,
+            )
+            q_instance_ids: Set[str] = {_row_instance_id(row) for row in rows if _row_instance_id(row)}
+            read_set = await _fetch_reads(viewer_id, q_instance_ids)
+            for row in rows:
+                owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+                q_instance_id = _row_instance_id(row)
+                if not owner_user_id or not q_instance_id or owner_user_id == viewer_id:
+                    continue
+                if q_instance_id not in read_set:
+                    following_has_unread = True
+                    break
+
+        return QnaUnreadStatusResponse(
+            status="ok",
+            viewer_user_id=viewer_id,
+            scope="accessible",
+            accessible_target_count=int(accessible_target_count),
+            self_has_unread=bool(self_has_unread),
+            following_has_unread=bool(following_has_unread),
+            has_unread=bool(self_has_unread or following_has_unread),
         )
 
     @app.get("/nexus/reflections/{q_instance_id}", response_model=QnaDetailResponse)

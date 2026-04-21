@@ -3264,6 +3264,56 @@ async def _upsert_myprofile_latest_report_row(payload: _Dict[str, _Any]) -> None
             f"Upsert myprofile_reports(latest) failed: HTTP {resp.status_code} {(resp.text or '')[:800]}"
         )
 
+async def refresh_myprofile_monthly_report(
+    *,
+    user_id: str,
+    period_override: _Optional[str] = None,
+    report_mode_override: _Optional[str] = None,
+    include_secret: bool = True,
+    now: _Optional[_dt.datetime] = None,
+    prev_report_text: _Optional[str] = None,
+    prev_report_json: _Optional[_Dict[str, _Any]] = None,
+    distribution_utc: _Optional[str] = None,
+) -> _Dict[str, _Any]:
+    """Build the monthly MyProfile report through a shared refresher contract.
+
+    This keeps route façades from calling `build_myprofile_monthly_report(...)` directly.
+    The function returns a small orchestration payload that callers can persist or shape
+    into their own API responses.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+
+    period_used = str(period_override or "28d").strip() or "28d"
+    report_mode = _normalize_report_mode(report_mode_override)
+    now_dt = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone(_dt.timezone.utc).replace(microsecond=0)
+    distribution_value = str(distribution_utc or "").strip() or _to_iso_z(now_dt)
+
+    text, meta = await _asyncio.to_thread(
+        build_myprofile_monthly_report,
+        user_id=uid,
+        period=period_used,
+        report_mode=report_mode,
+        include_secret=include_secret,
+        now=now_dt,
+        prev_report_text=prev_report_text,
+        prev_report_json=prev_report_json,
+        report_type="monthly",
+        distribution_utc=distribution_value,
+    )
+
+    return {
+        "status": "ok",
+        "user_id": uid,
+        "period": period_used,
+        "report_mode": report_mode,
+        "distribution_utc": distribution_value,
+        "generated_at": _now_iso_z(),
+        "report_text": str(text or "").strip(),
+        "report_meta": meta if isinstance(meta, dict) else {},
+    }
+
 
 async def refresh_myprofile_latest_report(
     *,
