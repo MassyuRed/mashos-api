@@ -15,7 +15,6 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
-from api_mymodel_qna import QnaDetailResponse, QnaUnreadStatusResponse
 from piece_public_read_service import (
     EMOTION_GENERATED_SOURCE_TYPE,
     build_nexus_reflections_payload,
@@ -38,7 +37,6 @@ class NexusQuestion(BaseModel):
 class NexusMetrics(BaseModel):
     views: int = 0
     resonances: int = 0
-    discoveries: int = 0
 
 
 class NexusViewerState(BaseModel):
@@ -62,6 +60,28 @@ class NexusReflectionResponse(BaseModel):
     total_items: int = 0
     has_more: bool = False
     items: List[NexusReflectionItem] = Field(default_factory=list)
+
+
+
+class NexusReflectionsUnreadStatusResponse(BaseModel):
+    status: str = Field(default="ok")
+    viewer_user_id: str
+    scope: str = Field(default="accessible")
+    accessible_target_count: int = 0
+    self_has_unread: bool = False
+    following_has_unread: bool = False
+    has_unread: bool = False
+
+
+class NexusReflectionDetailResponse(BaseModel):
+    title: str
+    body: str
+    q_key: str
+    q_instance_id: str
+    views: int = 0
+    resonances: int = 0
+    is_new: bool = False
+    is_resonated: bool = False
 
 
 NEXUS_SOURCE_PATHS: Dict[str, str] = {
@@ -183,10 +203,10 @@ def register_nexus_routes(app: FastAPI) -> None:
         )
         return NexusReflectionResponse(**payload)
 
-    @app.get("/nexus/reflections/unread-status", response_model=QnaUnreadStatusResponse)
+    @app.get("/nexus/reflections/unread-status", response_model=NexusReflectionsUnreadStatusResponse)
     async def nexus_reflections_unread_status(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaUnreadStatusResponse:
+    ) -> NexusReflectionsUnreadStatusResponse:
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -198,18 +218,14 @@ def register_nexus_routes(app: FastAPI) -> None:
         payload = await build_qna_public_unread_status_payload(
             viewer_user_id=str(viewer_user_id),
         )
-        return QnaUnreadStatusResponse(**payload)
+        return NexusReflectionsUnreadStatusResponse(**payload)
 
-    @app.get("/nexus/reflections/{q_instance_id}", response_model=QnaDetailResponse)
+    @app.get("/nexus/reflections/{q_instance_id}", response_model=NexusReflectionDetailResponse)
     async def nexus_reflection_detail(
         q_instance_id: str,
         mark_viewed: bool = Query(default=False, description="If true, mark the reflection as viewed"),
-        include_my_discovery_latest: bool = Query(
-            default=False,
-            description="Compatibility flag forwarded to the reaction layer",
-        ),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaDetailResponse:
+    ) -> NexusReflectionDetailResponse:
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -222,9 +238,8 @@ def register_nexus_routes(app: FastAPI) -> None:
             viewer_user_id=str(viewer_user_id),
             q_instance_id=q_instance_id,
             mark_viewed=bool(mark_viewed),
-            include_my_discovery_latest=bool(include_my_discovery_latest),
         )
-        return QnaDetailResponse(**payload)
+        return NexusReflectionDetailResponse(**payload)
 
     @app.get("/nexus/emotion-ranking")
     async def nexus_emotion_ranking(
@@ -282,9 +297,6 @@ def register_nexus_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
 
-    @app.get("/nexus/history/discoveries")
-    async def nexus_history_discoveries() -> Any:
-        raise HTTPException(status_code=410, detail="Discoveries is no longer available")
 
     @app.get("/nexus/bootstrap")
     async def nexus_bootstrap(

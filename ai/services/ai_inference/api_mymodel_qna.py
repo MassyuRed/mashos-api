@@ -1465,7 +1465,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
             viewer_user_id=str(viewer_user_id),
             q_instance_id=str(q_instance_id or "").strip(),
             mark_viewed=bool(mark_viewed),
-            include_my_discovery_latest=bool(include_my_discovery_latest),
         )
         return QnaDetailResponse(**payload)
 
@@ -3500,7 +3499,6 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
             viewer_user_id=str(viewer_user_id),
             q_instance_id=str(q_instance_id or "").strip(),
             mark_viewed=bool(mark_viewed),
-            include_my_discovery_latest=bool(include_my_discovery_latest),
         )
         return QnaDetailResponse(**payload)
 

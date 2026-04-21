@@ -44,8 +44,6 @@ def _normalize_public_sort(raw_sort: str) -> str:
     mode = str(raw_sort or "latest").strip().lower()
     if mode in {"latest", "oldest", "views", "resonance"}:
         return mode
-    if mode == "discovery":
-        return "resonance"
     return "latest"
 
 
@@ -147,7 +145,6 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
                 "metrics": {
                     "views": views,
                     "resonances": resonances,
-                    "discoveries": 0,
                 },
                 "viewer_state": {"is_new": iid not in read_set},
             }
@@ -168,7 +165,6 @@ async def _fetch_generated_list_items_public(*, viewer_user_id: str, target_user
                 "generated_at": item.get("created_at"),
                 "views": int(((item.get("metrics") or {}).get("views") or 0)),
                 "resonances": int(((item.get("metrics") or {}).get("resonances") or 0)),
-                "discoveries": 0,
                 "is_new": bool(((item.get("viewer_state") or {}).get("is_new") or False)),
             }
         )
@@ -277,11 +273,8 @@ async def _build_public_piece_detail_response(
         "q_instance_id": iid,
         "views": int(views or 0),
         "resonances": int(resonances or 0),
-        "discoveries": 0,
         "is_new": bool(is_new),
         "is_resonated": bool(is_resonated_now),
-        "my_discovery_latest": None,
-        "my_discovery_latest_loaded": False,
     }
 
 
@@ -425,7 +418,6 @@ async def build_qna_public_detail_payload(
     viewer_user_id: str,
     q_instance_id: str,
     mark_viewed: bool,
-    include_my_discovery_latest: bool,
 ) -> Dict[str, Any]:
     iid = str(q_instance_id or "").strip()
     if not is_generated_reflection_instance_id(iid):
