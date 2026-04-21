@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
 from api_mymodel_qna import (
     MYMODEL_REFLECTIONS_TABLE,
+    QnaDetailResponse,
+    _build_qna_detail_response,
     _fetch_discovery_counts_for_instances,
     _fetch_followed_owner_ids,
     _fetch_instance_metrics,
@@ -186,6 +188,15 @@ def _row_sort_key(row: Dict[str, Any]) -> Tuple[str, str]:
     )
 
 
+def _strip_reflection_instance_prefix(q_instance_id: str) -> str:
+    raw = str(q_instance_id or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("reflection:"):
+        return raw.split(":", 1)[1].strip()
+    return raw
+
+
 async def _sb_get_json(path: str, *, params: Dict[str, str]) -> List[Dict[str, Any]]:
     resp = await _sb_get(path, params=params)
     if resp.status_code >= 300:
@@ -230,6 +241,33 @@ async def _fetch_emotion_generated_rows_for_owner_ids(
 
     visible_rows = [row for row in merged.values() if get_public_generated_reflection_text(row)]
     return sorted(visible_rows, key=_row_sort_key, reverse=(not ascending))
+
+
+async def _fetch_emotion_generated_row_by_instance_id(q_instance_id: str) -> Optional[Dict[str, Any]]:
+    reflection_id = _strip_reflection_instance_prefix(q_instance_id)
+    if not reflection_id:
+        return None
+
+    rows = await _sb_get_json(
+        f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+        params={
+            "select": "*",
+            "id": f"eq.{reflection_id}",
+            "source_type": f"eq.{EMOTION_GENERATED_SOURCE_TYPE}",
+            "is_active": "eq.true",
+            "status": "in.(ready,published)",
+            "limit": "1",
+        },
+    )
+    if not rows:
+        return None
+
+    row = rows[0] if isinstance(rows[0], dict) else None
+    if not row:
+        return None
+    if not get_public_generated_reflection_text(row):
+        return None
+    return row
 
 
 def _sort_items(items: List[NexusReflectionItem], sort_key: str) -> List[NexusReflectionItem]:
@@ -371,10 +409,79 @@ def register_nexus_routes(app: FastAPI) -> None:
             items=sliced_items,
         )
 
+    @app.get("/nexus/reflections/unread-status")
+    async def nexus_reflections_unread_status(
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> Any:
+        return await _call_registered_route_json(
+            app,
+            path="/mymodel/qna/unread-status",
+            detail="Failed to load Nexus reflection unread status",
+            authorization=authorization,
+        )
+
+    @app.get("/nexus/reflections/{q_instance_id}", response_model=QnaDetailResponse)
+    async def nexus_reflection_detail(
+        q_instance_id: str,
+        mark_viewed: bool = Query(default=False, description="If true, mark the reflection as viewed"),
+        include_my_discovery_latest: bool = Query(
+            default=False,
+            description="Compatibility flag forwarded to the reaction layer",
+        ),
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> QnaDetailResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        row = await _fetch_emotion_generated_row_by_instance_id(q_instance_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Nexus reflection not found")
+
+        owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+        if not owner_user_id:
+            raise HTTPException(status_code=404, detail="Nexus reflection owner is missing")
+
+        if owner_user_id != str(viewer_user_id):
+            followed_owner_ids = await _fetch_followed_owner_ids(str(viewer_user_id), limit=5000)
+            if owner_user_id not in followed_owner_ids:
+                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
+
+        question_text = str((row or {}).get("question") or "").strip()
+        body = get_public_generated_reflection_text(row)
+        if not question_text or not body:
+            raise HTTPException(status_code=404, detail="Nexus reflection is not readable")
+
+        q_key = str((row or {}).get("q_key") or "").strip()
+        if not q_key:
+            q_key = f"emotion_generated:{_strip_reflection_instance_prefix(q_instance_id) or 'unknown'}"
+
+        question_id = 0
+        try:
+            question_id = int((row or {}).get("question_id") or 0)
+        except Exception:
+            question_id = 0
+
+        return await _build_qna_detail_response(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=owner_user_id,
+            q_instance_id=_row_instance_id(row),
+            q_key=q_key,
+            title=question_text,
+            body=body,
+            question_id=question_id,
+            include_my_discovery_latest=bool(include_my_discovery_latest),
+            mark_viewed=bool(mark_viewed),
+        )
+
     @app.get("/nexus/emotion-ranking")
     async def nexus_emotion_ranking(
         limit: int = Query(default=5, ge=1, le=50),
-        period: str = Query(default="today"),
+        range: str = Query(default="day"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Any:
         return await _call_registered_route_json(
@@ -382,7 +489,7 @@ def register_nexus_routes(app: FastAPI) -> None:
             path=NEXUS_SOURCE_PATHS["emotion_ranking"],
             detail="Failed to load Nexus emotion ranking",
             limit=int(limit),
-            period=str(period or "today"),
+            range=str(range or "day"),
             authorization=authorization,
         )
 

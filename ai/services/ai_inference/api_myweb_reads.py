@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +27,9 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger("myweb_reads_api")
 JST = timezone(timedelta(hours=9))
 MYWEB_HOME_SUMMARY_CACHE_TTL_SECONDS = 10.0
+MYWEB_WEEKLY_DAYS_ALLOW_COMPUTED_FALLBACK = str(
+    os.getenv("MYWEB_WEEKLY_DAYS_ALLOW_COMPUTED_FALLBACK", "false") or "false"
+).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 STRENGTH_SCORE: Dict[str, int] = {"weak": 1, "medium": 2, "strong": 3}
 JP_TO_KEY: Dict[str, str] = {
@@ -466,6 +470,13 @@ def register_myweb_read_routes(app: FastAPI) -> None:
                 report_id=str(row.get("id") or report_id),
                 source="saved",
                 days=saved_days,
+            )
+
+        if not MYWEB_WEEKLY_DAYS_ALLOW_COMPUTED_FALLBACK:
+            return MyWebWeeklyDaysResponse(
+                report_id=str(row.get("id") or report_id),
+                source="artifact_missing",
+                days=[],
             )
 
         period_start = str(row.get("period_start") or "").strip()

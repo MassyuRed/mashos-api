@@ -102,6 +102,9 @@ MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120
 MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
 MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "15") or "15")
 MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS", "30") or "30")
+MYWEB_READY_ALLOW_LEGACY_FALLBACK = str(
+    os.getenv("MYWEB_READY_ALLOW_LEGACY_FALLBACK", "false") or "false"
+).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 MYWEB_READY_CANDIDATE_SELECT = (
     "id,report_type,period_start,period_end,title,generated_at,updated_at,"
@@ -5345,6 +5348,20 @@ def register_myweb_report_routes(app: FastAPI) -> None:
                     include_body=include_body_bool,
                 )
             except Exception as exc:
+                if not MYWEB_READY_ALLOW_LEGACY_FALLBACK:
+                    logger.error(
+                        "myweb ready projection-first failed with legacy fallback disabled: user_id=%s report_type=%s include_body=%s err=%r",
+                        user_id,
+                        report_type,
+                        include_body_bool,
+                        exc,
+                    )
+                    if isinstance(exc, HTTPException):
+                        raise
+                    raise HTTPException(
+                        status_code=503,
+                        detail="MyWeb artifact projection is unavailable",
+                    ) from exc
                 logger.warning(
                     "myweb ready projection-first fallback activated: user_id=%s report_type=%s include_body=%s err=%s",
                     user_id,

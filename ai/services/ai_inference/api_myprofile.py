@@ -1938,11 +1938,6 @@ def register_myprofile_routes(app: FastAPI) -> None:
                 reason = "no_analysis"
 
         if ensure and stale:
-            # ---- Phase10: generation lock (avoid duplicate compute) ----
-            lock_key = None
-            lock_owner = None
-            lock_acquired = True
-
             async def _refetch_latest_row() -> Optional[Dict[str, Any]]:
                 try:
                     resp = await _sb_get(
@@ -1963,35 +1958,26 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     return None
                 return None
 
-            if build_lock_key is not None and try_acquire_lock is not None:
-                try:
-                    lock_key = build_lock_key(
-                        namespace="myprofile",
-                        user_id=uid,
-                        report_type="latest",
-                        period_start=LATEST_REPORT_PERIOD_START,
-                        period_end=LATEST_REPORT_PERIOD_END,
-                    )
-                    lock_owner = (make_owner_id("myprofile_latest") if make_owner_id is not None else None)
-                    lr = await try_acquire_lock(
-                        lock_key=lock_key,
-                        ttl_seconds=MYPROFILE_LATEST_LOCK_TTL_SECONDS,
-                        owner_id=lock_owner,
-                        context={
-                            "namespace": "myprofile",
-                            "user_id": uid,
-                            "report_type": "latest",
-                            "period": effective_period,
-                            "report_mode": effective_report_mode,
-                            "source": "on_demand_myprofile_latest",
-                        },
-                    )
-                    lock_acquired = bool(getattr(lr, "acquired", False))
-                    lock_owner = getattr(lr, "owner_id", lock_owner)
-                except Exception:
-                    lock_acquired = True
+            try:
+                from astor_myprofile_report import refresh_myprofile_latest_report
 
-            if not lock_acquired:
+                refresh_result = await refresh_myprofile_latest_report(
+                    user_id=uid,
+                    trigger="on_demand_myprofile_latest",
+                    force=True,
+                    period_override=effective_period,
+                    report_mode_override=effective_report_mode,
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.error("Failed to refresh latest MyProfile report: %s", exc)
+                raise HTTPException(
+                    status_code=500, detail="Failed to generate latest MyProfile report"
+                )
+
+            refresh_status = str((refresh_result or {}).get("status") or "").strip().lower()
+            if refresh_status == "skipped_locked":
                 waited = None
                 if poll_until is not None and MYPROFILE_LATEST_LOCK_WAIT_SECONDS > 0:
                     waited = await poll_until(
@@ -2007,129 +1993,40 @@ def register_myprofile_routes(app: FastAPI) -> None:
                     reason_value="in_progress",
                 )
 
-            try:
-                from astor_myprofile_report import build_myprofile_monthly_report
-
-                now = datetime.now(timezone.utc).replace(microsecond=0)
-                text, meta = build_myprofile_monthly_report(
-                    user_id=uid,
-                    period=effective_period,
-                    report_mode=effective_report_mode,
-                    include_secret=True,
-                    now=now,
-                    prev_report_text=None,
-                    prev_report_json=None,
-                    report_type="latest",
-                    distribution_utc=now.isoformat().replace("+00:00", "Z"),
+            if refresh_status == "empty":
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate latest MyProfile report",
                 )
-                text = _sanitize_self_structure_report_text(str(text or "").strip())
-                if not text:
-                    raise RuntimeError("report text is empty")
 
-                visibility = meta.get("visibility") if isinstance(meta, dict) else {}
-                history_meta = meta.get("history") if isinstance(meta, dict) else {}
-                has_visible_content = bool((visibility or {}).get("has_visible_content"))
-                generated_at = now.isoformat().replace("+00:00", "Z")
-
-                if not has_visible_content:
-                    period_start_value = str(((meta or {}).get("distribution") or {}).get("period_start") or "").strip() or None
-                    period_end_value = str(((meta or {}).get("distribution") or {}).get("period_end") or "").strip() or None
-                    return MyProfileLatestEnsureResponse(
-                        refreshed=False,
-                        reason=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
-                        report_mode=effective_report_mode,
-                        period=effective_period,
-                        patterns_updated_at=patterns_updated_at,
-                        latest_generated_at=latest_generated_at,
-                        generated_at=generated_at,
-                        period_start=period_start_value,
-                        period_end=period_end_value,
-                        title="現在の自己構造",
-                        content_text=text,
-                        meta=meta,
-                        has_visible_content=False,
-                        skip_reason=str((history_meta or {}).get("skip_reason") or "no_visible_content"),
-                    )
-
-                payload = {
-                    "user_id": uid,
-                    "report_type": "latest",
-                    "period_start": LATEST_REPORT_PERIOD_START,
-                    "period_end": LATEST_REPORT_PERIOD_END,
-                    "title": "自己構造レポート（最新版）",
-                    "content_text": text,
-                    "content_json": {
-                        **(meta or {}),
-                        "source": "on_demand_myprofile_latest",
-                        "report_type": "latest",
-                        "report_mode": effective_report_mode,
-                        "snapshot_period": effective_period,
-                        "generated_at_server": generated_at,
-                    },
-                    "generated_at": generated_at,
-                }
-
-                if latest_row and latest_row.get("id") is not None:
-                    rid = latest_row.get("id")
-                    resp2 = await _sb_patch(
-                        "/rest/v1/myprofile_reports",
-                        params={"id": f"eq.{rid}"},
-                        json=payload,
-                        prefer="return=minimal",
-                    )
-                    if resp2.status_code not in (200, 204):
-                        logger.error(
-                            "Supabase update myprofile_reports(latest) failed: %s %s",
-                            resp2.status_code,
-                            resp2.text[:1500],
-                        )
-                        raise HTTPException(
-                            status_code=502,
-                            detail="Failed to save latest MyProfile report",
-                        )
-                else:
-                    resp2 = await _sb_post(
-                        "/rest/v1/myprofile_reports",
-                        json=payload,
-                        prefer="return=minimal",
-                    )
-                    if resp2.status_code not in (200, 201, 204):
-                        logger.error(
-                            "Supabase insert myprofile_reports(latest) failed: %s %s",
-                            resp2.status_code,
-                            resp2.text[:1500],
-                        )
-                        raise HTTPException(
-                            status_code=502,
-                            detail="Failed to save latest MyProfile report",
-                        )
-
+            if refresh_status == "no_visible_content":
                 return MyProfileLatestEnsureResponse(
-                    refreshed=True,
-                    reason=reason,
+                    refreshed=False,
+                    reason=str((refresh_result or {}).get("skip_reason") or "no_visible_content"),
                     report_mode=effective_report_mode,
                     period=effective_period,
                     patterns_updated_at=patterns_updated_at,
                     latest_generated_at=latest_generated_at,
-                    generated_at=generated_at,
-                    period_start=str(((meta or {}).get("distribution") or {}).get("period_start") or "").strip() or None,
-                    period_end=str(((meta or {}).get("distribution") or {}).get("period_end") or "").strip() or None,
-                    title="現在の自己構造",
-                    content_text=text,
-                    meta=payload.get("content_json"),
-                    has_visible_content=True,
-                    skip_reason=None,
+                    generated_at=(str((refresh_result or {}).get("generated_at") or "").strip() or None),
+                    period_start=(str((refresh_result or {}).get("period_start") or "").strip() or None),
+                    period_end=(str((refresh_result or {}).get("period_end") or "").strip() or None),
+                    title=(str((refresh_result or {}).get("title") or "").strip() or None),
+                    content_text=_sanitize_self_structure_report_text((refresh_result or {}).get("content_text")),
+                    meta=((refresh_result or {}).get("meta") if isinstance((refresh_result or {}).get("meta"), dict) else None),
+                    has_visible_content=False,
+                    skip_reason=(str((refresh_result or {}).get("skip_reason") or "").strip() or None),
                 )
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.error("Failed to build/save latest MyProfile report: %s", exc)
-                raise HTTPException(
-                    status_code=500, detail="Failed to generate latest MyProfile report"
-                )
-            finally:
-                if lock_key and release_lock is not None:
-                    await release_lock(lock_key=lock_key, owner_id=lock_owner)
+
+            refreshed_row = await _refetch_latest_row()
+            if refreshed_row and (not _row_matches_requested_mode(refreshed_row, effective_report_mode)):
+                refreshed_row = None
+
+            return _latest_response_from_row(
+                refreshed_row or latest_row,
+                refreshed=(refresh_status == "ok"),
+                reason_value=reason,
+                generated_at_value=(str((refresh_result or {}).get("generated_at") or "").strip() or None),
+            )
 
         return _latest_response_from_row(
             latest_row,

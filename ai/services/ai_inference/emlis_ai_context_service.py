@@ -6,6 +6,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from emlis_ai_readers import (
+    get_input_summary_for_emlis_ai,
+    get_myweb_home_summary_for_emlis_ai,
+)
 from emlis_ai_greeting_state_store import decide_greeting_for_user
 from emlis_ai_types import DerivedUserModel, EmlisAICapabilityConfig, SourceBundle
 from emlis_ai_user_model_store import load_emlis_ai_user_model_for_user
@@ -34,21 +38,11 @@ def _pick_rows(resp: Any) -> List[Dict[str, Any]]:
 
 
 async def _get_input_summary_for_user(user_id: str) -> Dict[str, Any]:
-    try:
-        from api_input_summary import get_input_summary_payload_for_user
-
-        return await get_input_summary_payload_for_user(user_id)
-    except Exception:
-        return {}
+    return await get_input_summary_for_emlis_ai(user_id)
 
 
 async def _get_myweb_home_summary_for_user(user_id: str) -> Dict[str, Any]:
-    try:
-        from api_myweb_reads import get_myweb_home_summary_payload_for_user
-
-        return await get_myweb_home_summary_payload_for_user(user_id)
-    except Exception:
-        return {}
+    return await get_myweb_home_summary_for_emlis_ai(user_id)
 
 
 async def _get_latest_today_question_answer_for_user(user_id: str) -> Dict[str, Any]:

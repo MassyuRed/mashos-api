@@ -3270,16 +3270,20 @@ async def refresh_myprofile_latest_report(
     user_id: str,
     trigger: str = "worker",
     force: bool = False,
+    period_override: _Optional[str] = None,
+    report_mode_override: _Optional[str] = None,
 ) -> _Dict[str, _Any]:
     """Generate + upsert the latest MyProfile report (preview).
 
     Returns a small dict for logging/observability:
       - status: ok / skipped_throttle / skipped_locked / empty
-      - report_mode, generated_at (when ok)
+      - report_mode, period, generated_at (when ok)
     """
     uid = str(user_id or "").strip()
     if not uid:
         raise ValueError("user_id is required")
+
+    period_used = str(period_override or MYPROFILE_LATEST_PERIOD or "28d").strip() or "28d"
 
     # ---- throttle ----
     if not force:
@@ -3303,20 +3307,23 @@ async def refresh_myprofile_latest_report(
 
     # ---- determine report_mode (fail-closed) ----
     # Spec v2: Plus=standard, Premium=structural, Free=not entitled (keep "light" for compatibility).
-    report_mode = "light"
-    try:
-        from subscription_store import get_subscription_tier_for_user
-        from subscription import SubscriptionTier
-
-        tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
-        if tier == SubscriptionTier.PREMIUM:
-            report_mode = "structural"
-        elif tier == SubscriptionTier.PLUS:
-            report_mode = "standard"
-        else:
-            report_mode = "light"
-    except Exception:
+    if str(report_mode_override or "").strip():
+        report_mode = _normalize_report_mode(report_mode_override)
+    else:
         report_mode = "light"
+        try:
+            from subscription_store import get_subscription_tier_for_user
+            from subscription import SubscriptionTier
+
+            tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            if tier == SubscriptionTier.PREMIUM:
+                report_mode = "structural"
+            elif tier == SubscriptionTier.PLUS:
+                report_mode = "standard"
+            else:
+                report_mode = "light"
+        except Exception:
+            report_mode = "light"
 
     # ---- generation lock (best-effort) ----
     lock_key = None
@@ -3342,7 +3349,7 @@ async def refresh_myprofile_latest_report(
                 "namespace": "myprofile",
                 "user_id": uid,
                 "report_type": "latest",
-                "period": MYPROFILE_LATEST_PERIOD,
+                    "period": period_used,
                 "report_mode": report_mode,
                 "source": trigger,
             },
@@ -3363,7 +3370,7 @@ async def refresh_myprofile_latest_report(
         text, meta = await _asyncio.to_thread(
             build_myprofile_monthly_report,
             user_id=uid,
-            period=MYPROFILE_LATEST_PERIOD or "28d",
+            period=period_used,
             report_mode=report_mode,
             include_secret=True,
             now=now_dt,
@@ -3373,13 +3380,23 @@ async def refresh_myprofile_latest_report(
         text = str(text or "").strip()
         visibility = meta.get("visibility") if isinstance(meta, dict) else {}
         has_visible_content = bool((visibility or {}).get("has_visible_content"))
+        generated_at = _now_iso_z()
         if not text:
             return {"status": "empty", "user_id": uid}
         if not has_visible_content:
+            distribution_meta = ((meta or {}).get("distribution") or {}) if isinstance(meta, dict) else {}
             return {
                 "status": "no_visible_content",
                 "user_id": uid,
                 "report_mode": report_mode,
+                "period": period_used,
+                "generated_at": generated_at,
+                "period_start": str(distribution_meta.get("period_start") or "").strip() or None,
+                "period_end": str(distribution_meta.get("period_end") or "").strip() or None,
+                "title": "現在の自己構造",
+                "content_text": text,
+                "meta": meta,
+                "has_visible_content": False,
                 "skip_reason": ((meta or {}).get("history") or {}).get("skip_reason") if isinstance(meta, dict) else None,
             }
 
@@ -3388,7 +3405,7 @@ async def refresh_myprofile_latest_report(
         try:
             days = 28
             try:
-                days = int(parse_period_days(MYPROFILE_LATEST_PERIOD))
+                days = int(parse_period_days(period_used))
             except Exception:
                 pass
             end_dt = _datetime.now(_timezone.utc).replace(microsecond=0)
@@ -3396,12 +3413,10 @@ async def refresh_myprofile_latest_report(
             snap = {
                 "start": start_dt.isoformat().replace("+00:00", "Z"),
                 "end": end_dt.isoformat().replace("+00:00", "Z"),
-                "period": MYPROFILE_LATEST_PERIOD,
+                "period": period_used,
             }
         except Exception:
             pass
-
-        generated_at = _now_iso_z()
 
         payload = {
             "user_id": uid,
@@ -3414,6 +3429,7 @@ async def refresh_myprofile_latest_report(
                 **(meta or {}),
                 "source": trigger,
                 "snapshot": snap,
+                "snapshot_period": period_used,
                 "generated_at_server": generated_at,
             },
             "generated_at": generated_at,
@@ -3425,7 +3441,15 @@ async def refresh_myprofile_latest_report(
             "status": "ok",
             "user_id": uid,
             "report_mode": report_mode,
+            "period": period_used,
             "generated_at": generated_at,
+            "period_start": str((((meta or {}).get("distribution") or {}).get("period_start") or "")).strip() or None,
+            "period_end": str((((meta or {}).get("distribution") or {}).get("period_end") or "")).strip() or None,
+            "title": "現在の自己構造",
+            "content_text": text,
+            "meta": payload.get("content_json"),
+            "has_visible_content": True,
+            "skip_reason": None,
         }
     finally:
         try:
