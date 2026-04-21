@@ -46,6 +46,7 @@ from api_profile_create import _fetch_answers as _fetch_profile_answers
 from api_profile_create import _fetch_questions as _fetch_profile_questions
 from generated_reflection_display import get_public_generated_reflection_text
 from generated_reflection_identity import compute_generated_question_q_key
+from piece_generated_reflection_access import resolve_generated_reflection_access
 from reflection_text_formatter import get_public_create_reflection_text
 from subscription import SubscriptionTier
 from access_policy.piece_access_policy import (
@@ -1056,128 +1057,6 @@ async def _fetch_latest_discovery_for_viewer(*, viewer_user_id: str, q_instance_
         logger.warning("latest discovery fetch failed (instance=%s): %s", iid, exc)
         return None
 
-
-async def _build_qna_detail_response(
-    *,
-    viewer_user_id: str,
-    target_user_id: str,
-    q_instance_id: str,
-    q_key: str,
-    title: str,
-    body: str,
-    question_id: int = 0,
-    include_my_discovery_latest: bool = False,
-    mark_viewed: bool = False,
-) -> QnaDetailResponse:
-    iid = str(q_instance_id or "").strip()
-    tgt = str(target_user_id or "").strip()
-    qk = str(q_key or "").strip()
-    is_self = tgt == str(viewer_user_id)
-
-    resonated_task = asyncio.create_task(_is_resonated(viewer_user_id, iid))
-
-    views = 0
-    resonances = 0
-    is_new = False
-
-    if mark_viewed:
-        await _upsert_read(viewer_user_id, iid)
-        is_new = False
-
-        if is_self:
-            metrics = await _fetch_instance_metrics({iid})
-            m = metrics.get(iid) or {}
-            try:
-                views = int(m.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                resonances = int(m.get("resonances") or 0)
-            except Exception:
-                resonances = 0
-        else:
-            if question_id > 0:
-                _run_in_background(
-                    _insert_view_log(
-                        target_user_id=tgt,
-                        viewer_user_id=viewer_user_id,
-                        question_id=int(question_id),
-                        q_key=qk,
-                        q_instance_id=iid,
-                    ),
-                    label="view log insert failed (qna_detail)",
-                )
-
-            counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="views", delta=1)
-            try:
-                views = int(counts.get("views") or 0)
-            except Exception:
-                views = 0
-            try:
-                resonances = int(counts.get("resonances") or 0)
-            except Exception:
-                resonances = 0
-
-            requested_at = _now_iso()
-            _run_in_background(
-                enqueue_ranking_board_refresh(
-                    metric_key="mymodel_views",
-                    user_id=viewer_user_id,
-                    trigger="qna_detail_mark_viewed",
-                    requested_at=requested_at,
-                    debounce=True,
-                ),
-                label="ranking enqueue failed (qna_detail)",
-            )
-            _run_in_background(
-                enqueue_account_status_refresh(
-                    target_user_id=tgt,
-                    actor_user_id=viewer_user_id,
-                    trigger="qna_detail_mark_viewed",
-                    requested_at=requested_at,
-                    debounce=True,
-                ),
-                label="account status enqueue failed (qna_detail)",
-            )
-            _run_in_background(
-                enqueue_global_summary_refresh(
-                    trigger="qna_detail_mark_viewed",
-                    requested_at=requested_at,
-                    actor_user_id=viewer_user_id,
-                    debounce=True,
-                ),
-                label="global summary enqueue failed (qna_detail)",
-            )
-    else:
-        metrics_task = asyncio.create_task(_fetch_instance_metrics({iid}))
-        reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, {iid}))
-        metrics, read_set = await asyncio.gather(metrics_task, reads_task)
-        m = metrics.get(iid) or {}
-        try:
-            views = int(m.get("views") or 0)
-        except Exception:
-            views = 0
-        try:
-            resonances = int(m.get("resonances") or 0)
-        except Exception:
-            resonances = 0
-        is_new = iid not in read_set
-
-    is_resonated = await resonated_task
-
-    return QnaDetailResponse(
-        title=title,
-        body=body,
-        q_key=qk,
-        q_instance_id=iid,
-        views=int(views or 0),
-        resonances=int(resonances or 0),
-        discoveries=0,
-        is_new=bool(is_new),
-        is_resonated=bool(is_resonated),
-        my_discovery_latest=None,
-        my_discovery_latest_loaded=False,
-    )
 
 
 async def _fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
@@ -3285,25 +3164,6 @@ async def _fetch_active_emotion_generated_reflections_for_owner(owner_user_id: s
 
 
 
-async def _resolve_generated_reflection_access(
-    *, viewer_user_id: str, q_instance_id: str
-) -> Dict[str, Any]:
-    row = await _fetch_generated_reflection_by_public_id(q_instance_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Reflection not found")
-    if _row_source_type(row) != EMOTION_GENERATED_SOURCE_TYPE:
-        raise HTTPException(status_code=404, detail="Reflection not found")
-    owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
-    if not owner_user_id:
-        raise HTTPException(status_code=404, detail="Reflection not found")
-    if owner_user_id != str(viewer_user_id):
-        allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=owner_user_id)
-        if not allowed:
-            raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-    if not get_public_generated_reflection_text(row):
-        raise HTTPException(status_code=404, detail="Reflection not found")
-    return row
-
 
 async def _resolve_qna_context_for_reaction(
     *, viewer_user_id: str, q_instance_id: str, q_key: Optional[str]
@@ -3312,7 +3172,7 @@ async def _resolve_qna_context_for_reaction(
     if not _is_generated_reflection_instance_id(iid):
         raise HTTPException(status_code=404, detail="Reflection not found")
 
-    row = await _resolve_generated_reflection_access(
+    row = await resolve_generated_reflection_access(
         viewer_user_id=viewer_user_id,
         q_instance_id=iid,
     )
@@ -3413,137 +3273,6 @@ async def _fetch_create_list_items(
         )
     return items
 
-
-
-async def _fetch_generated_list_items(*, viewer_user_id: str, target_user_id: str) -> List[QnaListItem]:
-    rows = await _fetch_active_emotion_generated_reflections_for_owner(target_user_id, limit=200)
-    if not rows:
-        return []
-
-    q_instance_ids: Set[str] = {_generated_public_id(r) for r in rows if _generated_public_id(r)}
-    metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
-    reads_task = asyncio.create_task(_fetch_reads(viewer_user_id, q_instance_ids))
-    metrics, read_set = await asyncio.gather(
-        metrics_task,
-        reads_task,
-    )
-
-    items: List[QnaListItem] = []
-    for r in rows:
-        iid = _generated_public_id(r)
-        if not iid:
-            continue
-        qk = _build_generated_q_key(r)
-        title = str((r or {}).get("question") or "").strip()
-        if not title:
-            continue
-        m = metrics.get(iid) or {}
-        try:
-            views = int(m.get("views") or 0)
-        except Exception:
-            views = 0
-        try:
-            resonances = int(m.get("resonances") or 0)
-        except Exception:
-            resonances = 0
-        generated_at = str((r or {}).get("published_at") or (r or {}).get("updated_at") or (r or {}).get("created_at") or "").strip() or None
-        items.append(
-            QnaListItem(
-                title=title,
-                q_key=qk,
-                q_instance_id=iid,
-                generated_at=generated_at,
-                views=views,
-                resonances=resonances,
-                discoveries=0,
-                is_new=(iid not in read_set),
-            )
-        )
-    return items
-
-
-async def _fetch_generated_unread_counts(*, viewer_user_id: str, target_user_id: str) -> Tuple[int, int]:
-    rows = await _fetch_active_emotion_generated_reflections_for_owner(target_user_id, limit=500)
-    if not rows:
-        return (0, 0)
-    q_instance_ids: Set[str] = {_generated_public_id(r) for r in rows if _generated_public_id(r)}
-    read_set = await _fetch_reads(viewer_user_id, q_instance_ids)
-    total = len(q_instance_ids)
-    unread = sum(1 for iid in q_instance_ids if iid not in read_set)
-    return (total, unread)
-
-
-async def _fetch_create_unread_counts(
-    *, viewer_user_id: str, target_user_id: str, effective_tier: str
-) -> Tuple[int, int]:
-    qrows = await _fetch_profile_questions(build_tier=effective_tier)
-    if not qrows:
-        return (0, 0)
-
-    question_ids: Set[int] = set()
-    for row in qrows or []:
-        try:
-            question_ids.add(int((row or {}).get("id")))
-        except Exception:
-            continue
-
-    if not question_ids:
-        return (0, 0)
-
-    answers = await _fetch_profile_answers(user_id=target_user_id, question_ids=question_ids)
-    visible_instance_ids: Set[str] = set()
-    for qid in question_ids:
-        answer_row = answers.get(int(qid)) or {}
-        answer_text = _public_create_body_from_answer_row(answer_row)
-        if not answer_text:
-            continue
-        visible_instance_ids.add(f"{target_user_id}:{int(qid)}")
-
-    if not visible_instance_ids:
-        return (0, 0)
-
-    read_set = await _fetch_reads(viewer_user_id, visible_instance_ids)
-    total_items = len(visible_instance_ids)
-    unread_count = sum(1 for iid in visible_instance_ids if iid not in read_set)
-    return (total_items, unread_count)
-
-
-async def _compute_qna_unread_for_target(*, viewer_user_id: str, target_user_id: str) -> QnaUnreadResponse:
-    """Unread for Nexus-facing reflections.
-
-    New unread badges should reflect published Reflection posts, not hidden
-    ProfileCreate progress. Self-owned reflections are excluded from unread.
-    """
-    if str(viewer_user_id or "").strip() == str(target_user_id or "").strip():
-        return QnaUnreadResponse(
-            status="ok",
-            viewer_user_id=str(viewer_user_id),
-            target_user_id=str(target_user_id),
-            total_items=0,
-            unread_count=0,
-            has_unread=False,
-        )
-
-    gen_total = 0
-    gen_unread = 0
-    try:
-        gen_total, gen_unread = await _fetch_generated_unread_counts(
-            viewer_user_id=str(viewer_user_id),
-            target_user_id=str(target_user_id),
-        )
-    except Exception as exc:
-        logger.warning("generated unread probe failed: %s", exc)
-
-    unread_count = int(gen_unread)
-    total_items = int(gen_total)
-    return QnaUnreadResponse(
-        status="ok",
-        viewer_user_id=str(viewer_user_id),
-        target_user_id=str(target_user_id),
-        total_items=total_items,
-        unread_count=unread_count,
-        has_unread=unread_count > 0,
-    )
 
 
 
