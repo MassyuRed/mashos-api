@@ -102,9 +102,6 @@ MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120
 MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
 MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "15") or "15")
 MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS", "30") or "30")
-MYWEB_READY_ALLOW_LEGACY_FALLBACK = str(
-    os.getenv("MYWEB_READY_ALLOW_LEGACY_FALLBACK", "false") or "false"
-).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 MYWEB_READY_CANDIDATE_SELECT = (
     "id,report_type,period_start,period_end,title,generated_at,updated_at,"
@@ -382,81 +379,6 @@ async def _fetch_myweb_full_rows_by_ids(user_id: str, report_ids: List[str]) -> 
         raise HTTPException(status_code=502, detail="Supabase query failed")
     return _pick_rows_from_response(resp)
 
-
-async def _build_myweb_ready_payload_legacy(
-    *,
-    user_id: str,
-    report_type: str,
-    lim: int,
-    off: int,
-    include_body: bool,
-) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc)
-    view_ctx = await resolve_report_view_context(user_id, now_utc=now_utc)
-    tier_str = str(view_ctx.subscription_tier)
-    retention = dict(view_ctx.history_retention or {})
-
-    needed = off + lim + 1
-    raw_page_size = max(lim * 4, 30)
-    raw_offset = 0
-    visible_rows: List[Dict[str, Any]] = []
-
-    while len(visible_rows) < needed:
-        params: List[Tuple[str, str]] = [
-            ("select", MYWEB_READY_FULL_SELECT),
-            ("user_id", f"eq.{user_id}"),
-            ("report_type", f"eq.{report_type}"),
-            ("order", "period_start.desc"),
-            ("limit", str(raw_page_size)),
-            ("offset", str(raw_offset)),
-        ]
-        params.extend(_build_myweb_retention_params(retention))
-
-        resp = await _sb_get(
-            f"/rest/v1/{REPORTS_TABLE}",
-            params=params,
-        )
-        if resp.status_code not in (200, 206):
-            logger.error("Supabase select myweb_reports failed: %s %s", resp.status_code, (resp.text or "")[:800])
-            raise HTTPException(status_code=502, detail="Supabase query failed")
-        rows = _pick_rows_from_response(resp)
-        if not rows:
-            break
-
-        raw_offset += len(rows)
-
-        for row in rows:
-            published_row = apply_myweb_report_access_for_viewer(
-                row,
-                context=view_ctx,
-                requested_report_type=report_type,
-                now_utc=now_utc,
-            )
-            if not published_row:
-                continue
-            visible_rows.append(published_row)
-            if len(visible_rows) >= needed:
-                break
-
-        if len(rows) < raw_page_size:
-            break
-
-    page_rows = visible_rows[off : off + lim]
-    has_more = len(visible_rows) > (off + lim)
-    next_offset = (off + lim) if has_more else None
-    items = [_build_myweb_report_record(row, include_body=include_body) for row in page_rows]
-
-    response = MyWebReadyReportsResponse(
-        user_id=user_id,
-        report_type=str(report_type),
-        viewer_tier=str(tier_str),
-        limit=lim,
-        offset=off,
-        has_more=bool(has_more),
-        next_offset=next_offset,
-        items=items,
-    )
-    return jsonable_encoder(response)
 
 
 async def _build_myweb_ready_payload_projection_first(

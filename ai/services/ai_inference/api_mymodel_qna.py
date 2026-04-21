@@ -1522,9 +1522,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
     async def qna_list(
         target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
         sort: str = Query(default="newest", description="newest | popular"),
-        metric: str = Query(default="views", description="views | resonances | discoveries (only for popular)"),
+        metric: str = Query(default="views", description="views | resonances (compatibility only)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaListResponse:
+        """Compatibility-only façade for the legacy qna list route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -1533,342 +1534,45 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        tgt = str(target_user_id or viewer_user_id).strip()
-        if not tgt:
-            raise HTTPException(status_code=400, detail="target_user_id is required")
+        from piece_public_read_service import build_qna_public_list_payload
 
-        # External access control (same as /mymodel/infer)
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-        subscription_tier, view_tier, build_tier, effective_tier = await _resolve_tiers(
-            viewer_user_id=viewer_user_id, target_user_id=tgt
-        )
-
-        # Fetch answered reflections with JOINed metrics / discoveries / reads in a single RPC call.
-        try:
-            resp = await _sb_post_rpc(
-                QNA_LIST_RPC,
-                {
-                    "p_viewer_user_id": str(viewer_user_id),
-                    "p_target_user_id": str(tgt),
-                    "p_effective_tier": str(effective_tier or "").strip() or None,
-                    "p_limit": int(QNA_LIST_RPC_LIMIT),
-                },
-            )
-        except Exception as exc:
-            logger.error("Supabase rpc %s failed (network): %s", QNA_LIST_RPC, exc)
-            raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        if resp.status_code >= 300:
-            logger.error(
-                "Supabase rpc %s failed: %s %s",
-                QNA_LIST_RPC,
-                resp.status_code,
-                (resp.text or "")[:1500],
-            )
-            raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        rows: Any = []
-        try:
-            rows = resp.json()
-        except Exception:
-            rows = []
-
-        items: List[QnaListItem] = []
-
-        if isinstance(rows, list):
-            for r in rows:
-                if not isinstance(r, dict):
-                    continue
-
-                title = str(r.get("title") or "").strip()
-                q_key = str(r.get("q_key") or "").strip()
-                q_instance_id = str(r.get("q_instance_id") or "").strip()
-                if not title or not q_key or not q_instance_id:
-                    continue
-
-                gen_raw = r.get("generated_at")
-                generated_at = None if gen_raw is None else (str(gen_raw).strip() or None)
-
-                try:
-                    views = int(r.get("views") or 0)
-                except Exception:
-                    views = 0
-                try:
-                    resonances = int(r.get("resonances") or 0)
-                except Exception:
-                    resonances = 0
-                try:
-                    discoveries = int(r.get("discoveries") or 0)
-                except Exception:
-                    discoveries = 0
-
-                is_new = True if r.get("is_new") is True else False
-
-                items.append(
-                    QnaListItem(
-                        title=title,
-                        q_key=q_key,
-                        q_instance_id=q_instance_id,
-                        generated_at=generated_at,
-                        views=views,
-                        resonances=resonances,
-                        discoveries=discoveries,
-                        is_new=is_new,
-                    )
-                )
-
-        # Sort (same behavior as v1)
-        sort_key = str(sort or "newest").strip().lower()
-        metric_key = str(metric or "views").strip().lower()
-
-        if sort_key == "popular":
-            if metric_key not in ("views", "resonances", "discoveries"):
-                metric_key = "views"
-
-            if metric_key == "discoveries":
-                items.sort(
-                    key=lambda x: (x.discoveries, x.resonances, x.views, x.generated_at or ""),
-                    reverse=True,
-                )
-            elif metric_key == "resonances":
-                items.sort(key=lambda x: (x.resonances, x.views, x.generated_at or ""), reverse=True)
-            else:
-                items.sort(key=lambda x: (x.views, x.resonances, x.generated_at or ""), reverse=True)
-        else:
-            items.sort(key=lambda x: (x.generated_at or ""), reverse=True)
-
-        # MyModel Create "secret" answers are never visible (to self or others).
-        if items:
-            try:
-                qids: Set[int] = set()
-                qid_by_instance: Dict[str, int] = {}
-                for it in items:
-                    try:
-                        _, qid_val = _parse_instance_id(it.q_instance_id)
-                        qids.add(int(qid_val))
-                        qid_by_instance[str(it.q_instance_id)] = int(qid_val)
-                    except Exception:
-                        continue
-
-                secret_qids = (
-                    await _fetch_secret_question_ids(target_user_id=str(tgt), question_ids=qids)
-                    if qids
-                    else set()
-                )
-                if secret_qids:
-                    items = [
-                        it
-                        for it in items
-                        if qid_by_instance.get(str(it.q_instance_id)) not in secret_qids
-                    ]
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.error("secret filter failed (list): %s", exc)
-                raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        meta = QnaListMeta(
+        payload = await build_qna_public_list_payload(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=tgt,
-            subscription_tier=subscription_tier,
-            view_tier=view_tier,
-            build_tier=build_tier,
-            effective_tier=effective_tier,
-            total_items=len(items),
+            target_user_id=str(target_user_id or "").strip() or None,
+            sort=str(sort or "newest"),
+            metric=str(metric or "views"),
         )
-        return QnaListResponse(items=items, meta=meta)
+        return QnaListResponse(**payload)
 
     @app.get("/mymodel/qna/unread", response_model=QnaUnreadResponse)
     async def qna_unread(
-        target_user_id: Optional[str] = Query(
-            default=None,
-            description="Owner of the MyModel (defaults to viewer)",
-        ),
+        target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaUnreadResponse:
-        """Lightweight unread badge endpoint (for bottom tab prefetch)."""
-
-        token = _extract_bearer_token(authorization) if authorization else None
-        if not token:
-            raise HTTPException(
-                status_code=401,
-                detail="Authorization header with Bearer token is required",
-            )
-
-        viewer_user_id = await _resolve_user_id_from_token(token)
-        if not viewer_user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        tgt = str(target_user_id or viewer_user_id).strip()
-        if not tgt:
-            raise HTTPException(status_code=400, detail="target_user_id is required")
-
-        # External access control (same as /mymodel/qna/list)
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(
-                viewer_user_id=viewer_user_id, owner_user_id=tgt
-            )
-            if not allowed:
-                raise HTTPException(
-                    status_code=403, detail="You are not allowed to query this MyProfile"
-                )
-
-        try:
-            _, _, _, effective_tier = await _resolve_tiers(
-                viewer_user_id=viewer_user_id, target_user_id=tgt
-            )
-
-            # Single RPC for unread counts (answered reflections only).
-            resp = await _sb_post_rpc(
-                QNA_UNREAD_RPC,
-                {
-                    "p_viewer_user_id": str(viewer_user_id),
-                    "p_target_user_id": str(tgt),
-                    "p_effective_tier": str(effective_tier or "").strip() or None,
-                },
-            )
-
-            if resp.status_code >= 300:
-                logger.warning(
-                    "Supabase rpc %s failed (unread): %s %s",
-                    QNA_UNREAD_RPC,
-                    resp.status_code,
-                    (resp.text or "")[:800],
-                )
-                return QnaUnreadResponse(
-                    status="ok",
-                    viewer_user_id=str(viewer_user_id),
-                    target_user_id=tgt,
-                    total_items=0,
-                    unread_count=0,
-                    has_unread=False,
-                )
-
-            data: Any = None
-            try:
-                data = resp.json()
-            except Exception:
-                data = None
-
-            row: Dict[str, Any] = {}
-            if isinstance(data, list) and data and isinstance(data[0], dict):
-                row = data[0]
-            elif isinstance(data, dict):
-                row = data
-
-            try:
-                total_items = int(row.get("total_items") or 0)
-            except Exception:
-                total_items = 0
-            try:
-                unread_count = int(row.get("unread_count") or 0)
-            except Exception:
-                unread_count = 0
-
-            return QnaUnreadResponse(
-                status="ok",
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=tgt,
-                total_items=int(total_items or 0),
-                unread_count=int(unread_count or 0),
-                has_unread=int(unread_count or 0) > 0,
-            )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.warning("qna_unread failed: %s", exc)
-            # Fail-soft: badge endpoint should never crash the app
-            return QnaUnreadResponse(
-                status="ok",
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=tgt,
-                total_items=0,
-                unread_count=0,
-                has_unread=False,
-            )
-
-    @app.get("/mymodel/recommend/users", response_model=QnaRecommendUsersResponse)
-    async def recommend_users(
-        limit: int = Query(default=5, ge=1, le=20, description="Number of users to return"),
-        days: int = Query(default=7, ge=1, le=30, description="Activity window in days"),
-        authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> QnaRecommendUsersResponse:
-        """Recommend active users not yet followed by the viewer.
-
-        Active definition (Mash confirmed):
-        - within `days` (default 3), either
-          - emotions.created_at >= now - days
-          - OR mymodel_create_answers.updated_at >= now - days
-        - count not required; either table is enough
-        """
-
+        """Compatibility-only façade for the legacy qna unread route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
-
         viewer_user_id = await _resolve_user_id_from_token(token)
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        window_days = int(days)
-        since_iso = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+        from piece_public_read_service import build_qna_public_unread_payload
 
-        # Scan a bit more than limit to allow filtering + randomness
-        scan_limit = int(max(300, min(5000, int(limit) * 800)))
-
-        candidate_ids = await _fetch_active_user_ids(since_iso=since_iso, scan_limit=scan_limit)
-        if not candidate_ids:
-            return QnaRecommendUsersResponse(status="ok", days=window_days, total_items=0, users=[])
-
-        # Exclude self
-        candidate_ids.discard(str(viewer_user_id))
-
-        # Exclude already-followed users
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
-
-        pool = [uid for uid in candidate_ids if uid and (uid not in followed_set)]
-
-        # Exclude users who disabled recommendations
-        pool = await _filter_recommendation_enabled(pool)
-        if not pool:
-            return QnaRecommendUsersResponse(status="ok", days=window_days, total_items=0, users=[])
-
-        random.shuffle(pool)
-        picked = pool[: int(limit)]
-
-        profiles_map = await _fetch_profiles_by_ids(picked)
-
-        users: List[QnaHolderUser] = []
-        for uid in picked:
-            p = profiles_map.get(str(uid))
-            if not p:
-                continue
-            users.append(
-                QnaHolderUser(
-                    id=str(p.get("id") or uid),
-                    display_name=(p.get("display_name") if isinstance(p.get("display_name"), str) else None),
-                    friend_code=(p.get("friend_code") if isinstance(p.get("friend_code"), str) else None),
-                    myprofile_code=(p.get("myprofile_code") if isinstance(p.get("myprofile_code"), str) else None),
-                    is_following=False,
-                )
-            )
-
-        return QnaRecommendUsersResponse(
-            status="ok",
-            days=window_days,
-            total_items=len(users),
-            users=users,
+        payload = await build_qna_public_unread_payload(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=str(target_user_id or "").strip() or None,
         )
+        return QnaUnreadResponse(**payload)
 
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(
-        q_instance_id: str = Query(..., description="<target_user_id>:<question_id>"),
+        q_instance_id: str = Query(..., description="reflection:<uuid>"),
+        mark_viewed: bool = Query(default=False, description="If true, also mark read and apply view counts in the same request"),
+        include_my_discovery_latest: bool = Query(default=False, description="Compatibility flag; discoveries are retired and ignored by the canonical public read path"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDetailResponse:
+        """Compatibility-only façade for the legacy qna detail route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -1876,71 +1580,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        try:
-            tgt, qid = _parse_instance_id(q_instance_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid q_instance_id")
+        from piece_public_read_service import build_qna_public_detail_payload
 
-        # External access control
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-        # Tier gating (viewer can only see effective tier)
-        _, _, _, effective_tier = await _resolve_tiers(viewer_user_id=viewer_user_id, target_user_id=tgt)
-        qrows = await _fetch_profile_questions(build_tier=effective_tier)
-        qmap = {int(r.get("id")): str(r.get("question_text") or "").strip() for r in (qrows or []) if r.get("id") is not None}
-        title = qmap.get(int(qid))
-        if not title:
-            raise HTTPException(status_code=404, detail="Question not found")
-
-        answers = await _fetch_profile_answers(user_id=tgt, question_ids={int(qid)})
-        a = answers.get(int(qid)) or {}
-        body = _public_create_body_from_answer_row(a)
-        if not body:
-            raise HTTPException(status_code=404, detail="Answer not found")
-
-        qk = _q_key_for_question_id(int(qid))
-        metrics = await _fetch_instance_metrics({str(q_instance_id)})
-        m = metrics.get(str(q_instance_id)) or {}
-        try:
-            views = int(m.get("views") or 0)
-        except Exception:
-            views = 0
-        try:
-            resonances = int(m.get("resonances") or 0)
-        except Exception:
-            resonances = 0
-
-
-        discoveries = 0
-        try:
-            # Discoveries are stored as rows in the discovery logs table.
-            discoveries = await _sb_count_rows(
-                f"/rest/v1/{DISCOVERY_LOGS_TABLE}",
-                params={"q_instance_id": f"eq.{q_instance_id}"},
-            )
-        except Exception as exc:
-            # Fail-soft: discoveries are non-critical for reading the Q&A
-            logger.warning("discoveries count failed (detail): %s", exc)
-            discoveries = 0
-
-        read_set = await _fetch_reads(viewer_user_id, {str(q_instance_id)})
-        is_new = str(q_instance_id) not in read_set
-        is_resonated = await _is_resonated(viewer_user_id, str(q_instance_id))
-
-        return QnaDetailResponse(
-            title=title,
-            body=body,
-            q_key=qk,
-            q_instance_id=str(q_instance_id),
-            views=views,
-            resonances=resonances,
-            discoveries=int(discoveries or 0),
-            is_new=is_new,
-            is_resonated=bool(is_resonated),
+        payload = await build_qna_public_detail_payload(
+            viewer_user_id=str(viewer_user_id),
+            q_instance_id=str(q_instance_id or "").strip(),
+            mark_viewed=bool(mark_viewed),
+            include_my_discovery_latest=bool(include_my_discovery_latest),
         )
+        return QnaDetailResponse(**payload)
 
     @app.post("/mymodel/qna/view", response_model=QnaViewResponse)
     async def qna_view(
@@ -4040,9 +3688,10 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
     async def qna_list(
         target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
         sort: str = Query(default="newest", description="newest | popular"),
-        metric: str = Query(default="views", description="views | resonances | discoveries (only for popular)"),
+        metric: str = Query(default="views", description="views | resonances (compatibility only)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaListResponse:
+        """Compatibility-only façade for the legacy qna list route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -4051,83 +3700,42 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        tgt = str(target_user_id or viewer_user_id).strip()
-        if not tgt:
-            raise HTTPException(status_code=400, detail="target_user_id is required")
+        from piece_public_read_service import build_qna_public_list_payload
 
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
-
-        subscription_tier, view_tier, build_tier, effective_tier = await _resolve_tiers(
-            viewer_user_id=viewer_user_id, target_user_id=tgt
-        )
-
-        try:
-            items = await _fetch_generated_list_items(
-                viewer_user_id=str(viewer_user_id),
-                target_user_id=str(tgt),
-            )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.error("reflection list build failed: %s", exc)
-            raise HTTPException(status_code=502, detail="Failed to load reflections")
-
-        sort_key = str(sort or "newest").strip().lower()
-        metric_key = str(metric or "views").strip().lower()
-        if sort_key == "popular":
-            if metric_key not in ("views", "resonances", "discoveries"):
-                metric_key = "views"
-            if metric_key == "discoveries":
-                items.sort(key=lambda x: (x.discoveries, x.resonances, x.views, x.generated_at or ""), reverse=True)
-            elif metric_key == "resonances":
-                items.sort(key=lambda x: (x.resonances, x.views, x.generated_at or ""), reverse=True)
-            else:
-                items.sort(key=lambda x: (x.views, x.resonances, x.generated_at or ""), reverse=True)
-        else:
-            items.sort(key=lambda x: (x.generated_at or "", x.q_instance_id), reverse=True)
-
-        meta = QnaListMeta(
+        payload = await build_qna_public_list_payload(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=tgt,
-            subscription_tier=subscription_tier,
-            view_tier=view_tier,
-            build_tier=build_tier,
-            effective_tier=effective_tier,
-            total_items=len(items),
+            target_user_id=str(target_user_id or "").strip() or None,
+            sort=str(sort or "newest"),
+            metric=str(metric or "views"),
         )
-        return QnaListResponse(items=items, meta=meta)
+        return QnaListResponse(**payload)
 
     @app.get("/mymodel/qna/unread", response_model=QnaUnreadResponse)
     async def qna_unread(
         target_user_id: Optional[str] = Query(default=None, description="Owner of the MyModel (defaults to viewer)"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaUnreadResponse:
+        """Compatibility-only façade for the legacy qna unread route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
         viewer_user_id = await _resolve_user_id_from_token(token)
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
-        tgt = str(target_user_id or viewer_user_id).strip()
-        if not tgt:
-            raise HTTPException(status_code=400, detail="target_user_id is required")
-        if tgt != viewer_user_id:
-            allowed = await _has_myprofile_link(viewer_user_id=viewer_user_id, owner_user_id=tgt)
-            if not allowed:
-                raise HTTPException(status_code=403, detail="You are not allowed to query this MyProfile")
 
-        return await _compute_qna_unread_for_target(
+        from piece_public_read_service import build_qna_public_unread_payload
+
+        payload = await build_qna_public_unread_payload(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=str(tgt),
+            target_user_id=str(target_user_id or "").strip() or None,
         )
+        return QnaUnreadResponse(**payload)
 
     @app.get("/mymodel/qna/unread-status", response_model=QnaUnreadStatusResponse)
     async def qna_unread_status(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaUnreadStatusResponse:
+        """Compatibility-only façade for the legacy qna unread-status route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -4135,63 +3743,21 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        viewer_id = str(viewer_user_id)
-        try:
-            followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer_id, limit=5000)
-        except Exception as exc:
-            logger.warning("qna unread status follow-list load failed: %s", exc)
-            followed_owner_ids = set()
-        followed_owner_ids.discard(viewer_id)
+        from piece_public_read_service import build_qna_public_unread_status_payload
 
-        accessible_target_count = 1 + len(followed_owner_ids)
-        self_has_unread = False
-        following_has_unread = False
-
-        try:
-            self_unread = await _compute_qna_unread_for_target(
-                viewer_user_id=viewer_id,
-                target_user_id=viewer_id,
-            )
-            self_has_unread = bool(self_unread.has_unread)
-        except Exception as exc:
-            logger.warning("qna unread status self probe failed: %s", exc)
-
-        if followed_owner_ids:
-            for owner_user_id in sorted(followed_owner_ids):
-                try:
-                    owner_unread = await _compute_qna_unread_for_target(
-                        viewer_user_id=viewer_id,
-                        target_user_id=str(owner_user_id),
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "qna unread status probe failed for owner=%s: %s",
-                        owner_user_id,
-                        exc,
-                    )
-                    continue
-                if bool(owner_unread.has_unread):
-                    following_has_unread = True
-                    break
-
-        return QnaUnreadStatusResponse(
-            status="ok",
-            viewer_user_id=viewer_id,
-            scope="accessible",
-            accessible_target_count=int(accessible_target_count),
-            self_has_unread=bool(self_has_unread),
-            following_has_unread=bool(following_has_unread),
-            has_unread=bool(self_has_unread or following_has_unread),
+        payload = await build_qna_public_unread_status_payload(
+            viewer_user_id=str(viewer_user_id),
         )
-
+        return QnaUnreadStatusResponse(**payload)
 
     @app.get("/mymodel/qna/detail", response_model=QnaDetailResponse)
     async def qna_detail(
         q_instance_id: str = Query(..., description="reflection:<uuid>"),
         mark_viewed: bool = Query(default=False, description="If true, also mark read and apply view counts in the same request"),
-        include_my_discovery_latest: bool = Query(default=False, description="If true, include the viewer's latest discovery for this reflection when available"),
+        include_my_discovery_latest: bool = Query(default=False, description="Compatibility flag; discoveries are retired and ignored by the canonical public read path"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> QnaDetailResponse:
+        """Compatibility-only façade for the legacy qna detail route."""
         token = _extract_bearer_token(authorization) if authorization else None
         if not token:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
@@ -4199,30 +3765,15 @@ def register_mymodel_qna_routes(app: FastAPI) -> None:  # type: ignore[override]
         if not viewer_user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        iid = str(q_instance_id or "").strip()
-        if not _is_generated_reflection_instance_id(iid):
-            raise HTTPException(status_code=404, detail="Reflection not found")
+        from piece_public_read_service import build_qna_public_detail_payload
 
-        row = await _resolve_generated_reflection_access(viewer_user_id=viewer_user_id, q_instance_id=iid)
-        body = get_public_generated_reflection_text(row)
-        if not body:
-            raise HTTPException(status_code=404, detail="Reflection not found")
-        qk = _build_generated_q_key(row)
-        title = str((row or {}).get("question") or "").strip()
-        if not title:
-            raise HTTPException(status_code=404, detail="Reflection not found")
-        owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
-        return await _build_qna_detail_response(
+        payload = await build_qna_public_detail_payload(
             viewer_user_id=str(viewer_user_id),
-            target_user_id=owner_user_id,
-            q_instance_id=iid,
-            q_key=qk,
-            title=title,
-            body=body,
-            question_id=0,
-            include_my_discovery_latest=bool(include_my_discovery_latest),
+            q_instance_id=str(q_instance_id or "").strip(),
             mark_viewed=bool(mark_viewed),
+            include_my_discovery_latest=bool(include_my_discovery_latest),
         )
+        return QnaDetailResponse(**payload)
 
     @app.post("/mymodel/qna/view", response_model=QnaViewResponse)
     async def qna_view(

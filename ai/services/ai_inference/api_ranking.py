@@ -835,40 +835,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
         await _require_user_id(authorization)
-        p_range = _normalize_range(range)
-        p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-
-        cache_key = f"ranking:mymodel_questions:{p_range}:{int(p_limit)}"
-        cached = _ranking_cache_get(cache_key)
-        if cached is not None:
-            return cached
-
-        try:
-            board_rows = await _fetch_ready_board_rows("mymodel_questions", p_range)
-            if board_rows is not None and any(isinstance(r, dict) and r.get("piece_generated_total") is not None for r in board_rows):
-                items = await _publish_user_metric_items_from_board_rows(
-                    board_rows,
-                    value_keys=["piece_generated_total", "mymodel_questions_total", "questions_total"],
-                    primary_value_key="piece_generated_total",
-                )
-                items = _alias_piece_metric_items(items)
-                resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
-                _ranking_cache_set(cache_key, resp_out)
-                return resp_out
-        except Exception as exc:
-            logger.warning("ranking board publish failed: metric=mymodel_questions range=%s err=%s", p_range, exc)
-
-        live_rows = await build_piece_generated_ranking_rows(range_key=p_range)
-        items = await _publish_user_metric_items_from_board_rows(
-            live_rows,
-            value_keys=["piece_generated_total", "mymodel_questions_total", "questions_total"],
-            primary_value_key="piece_generated_total",
-        )
-        items = _alias_piece_metric_items(items)
-
-        resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items[: int(p_limit)]}
-        _ranking_cache_set(cache_key, resp_out)
-        return resp_out
+        raise HTTPException(status_code=410, detail="Piece question ranking is no longer available")
     @app.get("/ranking/mymodel_used")
     async def ranking_mymodel_used(
         range: str = Query(default="week"),

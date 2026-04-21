@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 
 # Reuse the existing ranking helpers (auth, range/limit normalization, RPC, profiles).
 from api_ranking import (  # noqa: F401
@@ -137,37 +137,5 @@ def register_ranking_mymodel_discoveries_routes(app: FastAPI) -> None:
         limit: Optional[int] = Query(default=30),
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
-        # Auth required (prevents public scraping)
         await _require_user_id(authorization)
-
-        p_range = _normalize_range(range)
-        p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
-
-        try:
-            board_rows = await _fetch_ready_board_rows("mymodel_discoveries", p_range)
-            if board_rows is not None:
-                items = await _publish_discovery_items(board_rows, limit=p_limit)
-                return {
-                    "status": "ok",
-                    "range": p_range,
-                    "timezone": "Asia/Tokyo",
-                    "limit": p_limit,
-                    "items": items,
-                }
-        except Exception as exc:
-            logger.warning(
-                "ranking board publish failed: metric=mymodel_discoveries range=%s err=%s",
-                p_range,
-                exc,
-            )
-
-        rows = await _rpc("rank_mymodel_discoveries", {"p_range": p_range, "p_limit": p_limit})
-        items = await _publish_discovery_items(rows, limit=p_limit)
-
-        return {
-            "status": "ok",
-            "range": p_range,
-            "timezone": "Asia/Tokyo",
-            "limit": p_limit,
-            "items": items,
-        }
+        raise HTTPException(status_code=410, detail="Piece discoveries ranking is no longer available")
