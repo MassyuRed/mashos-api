@@ -25,11 +25,15 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/account/visibility/me'),
     ('PATCH', '/account/visibility/me'),
     ('GET', '/account/status'),
+    ('GET', '/account/profile-create'),
     ('GET', '/friends/feed'),
     ('GET', '/friends/manage'),
     ('GET', '/friends/unread-status'),
     ('POST', '/friends/unread/read-feed'),
     ('POST', '/friends/unread/read-requests'),
+    ('GET', '/emotion-log/feed'),
+    ('GET', '/emotion-log/unread-status'),
+    ('POST', '/emotion-log/unread/read-feed'),
     ('GET', '/report-reads/status'),
     ('POST', '/report-reads/mark'),
     ('GET', '/report-reads/myweb-unread-status'),
@@ -67,6 +71,8 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('POST', '/friends/remove'),
     ('GET', '/friends/notification-settings'),
     ('POST', '/friends/notification-settings/{friend_user_id}'),
+    ('GET', '/emotion-notifications/settings'),
+    ('POST', '/emotion-notifications/settings/{friend_user_id}'),
     ('GET', '/global_summary'),
     ('GET', '/profile-create/questions'),
     ('POST', '/profile-create/answers'),
@@ -101,6 +107,8 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/ranking/mymodel_questions'),
     ('GET', '/ranking/mymodel_resonances'),
     ('GET', '/ranking/mymodel_discoveries'),
+    ('GET', '/nexus/emotion-log'),
+    ('GET', '/nexus/emotion-ranking'),
     ('GET', '/subscription/bootstrap'),
     ('GET', '/subscription/me'),
     ('POST', '/subscription/update'),
@@ -165,6 +173,23 @@ def test_legacy_myprofile_and_myweb_aliases_are_marked_deprecated_with_replaceme
         ("POST", "/myprofile/monthly/ensure"): "/self-structure/monthly/ensure",
         ("GET", "/myweb/reports/ready"): "/analysis/reports/ready",
         ("POST", "/myweb/reports/ensure"): "/analysis/reports/ensure",
+    }
+    for (method, path), replacement in expected.items():
+        entry = get_contract_entry(method=method, path=path)
+        assert entry is not None, (method, path)
+        assert entry.deprecated is True, (method, path)
+        assert entry.replacement == replacement, (method, path)
+
+
+def test_legacy_friends_aliases_are_marked_deprecated_with_replacements():
+    expected = {
+        ("POST", "/friends/request"): "/follow/request",
+        ("POST", "/friends/requests/{request_id}/accept"): "/follow/requests/{request_id}/accept",
+        ("POST", "/friends/requests/{request_id}/reject"): "/follow/requests/{request_id}/reject",
+        ("POST", "/friends/requests/{request_id}/cancel"): "/follow/requests/{request_id}/cancel",
+        ("POST", "/friends/remove"): "/follow/remove",
+        ("GET", "/friends/notification-settings"): "/emotion-notifications/settings",
+        ("POST", "/friends/notification-settings/{friend_user_id}"): "/emotion-notifications/settings/{friend_user_id}",
     }
     for (method, path), replacement in expected.items():
         entry = get_contract_entry(method=method, path=path)

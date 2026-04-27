@@ -316,7 +316,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         )
         return NexusReflectionDetailResponse(**payload)
 
-    @app.get("/nexus/emotion-ranking")
+    @app.get("/nexus/emotion-ranking", response_model=Any)
     async def nexus_emotion_ranking(
         limit: int = Query(default=5, ge=1, le=50),
         range: str = Query(default="day"),
@@ -331,7 +331,7 @@ def register_nexus_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
 
-    @app.get("/nexus/emotion-log")
+    @app.get("/nexus/emotion-log", response_model=Any)
     async def nexus_emotion_log(
         limit: int = Query(default=20, ge=1, le=100),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),

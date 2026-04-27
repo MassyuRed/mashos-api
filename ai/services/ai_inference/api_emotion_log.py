@@ -43,7 +43,7 @@ get_emotion_log_unread_status_payload_for_user = get_friend_unread_status_payloa
 def register_emotion_log_routes(app: FastAPI) -> None:
     """Register current EmotionLog feed / unread routes on the given FastAPI app."""
 
-    @app.get("/emotion-log/feed")
+    @app.get("/emotion-log/feed", response_model=Dict[str, Any])
     async def get_emotion_log_feed(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Dict[str, Any]:
