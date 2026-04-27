@@ -59,10 +59,14 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 VISIBILITY_TABLE = (os.getenv("COCOLON_VISIBILITY_SETTINGS_TABLE", "account_visibility_settings") or "account_visibility_settings").strip()
 
-# MyModel Create (template Q&A) answers table. Used for input_count / input_length aggregation.
-MYMODEL_CREATE_ANSWERS_TABLE = (
-    os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_create_answers") or "mymodel_create_answers"
-).strip() or "mymodel_create_answers"
+# ProfileCreate answers read table. Used for input_count / input_length aggregation only.
+# Keep profile-create answer writes/deletes on COCOLON_MYMODEL_CREATE_ANSWERS_TABLE
+# in api_profile_create.py; this ranking path is SELECT-only.
+PROFILE_CREATE_ANSWERS_READ_TABLE = (
+    os.getenv("COCOLON_PROFILE_CREATE_ANSWERS_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_READ_TABLE")
+    or "profile_create_answers"
+).strip() or "profile_create_answers"
 
 _JST = ZoneInfo("Asia/Tokyo")
 
@@ -190,11 +194,11 @@ async def _fetch_mymodel_create_agg(*, p_range: str) -> Dict[str, Dict[str, int]
         params = dict(base_params)
         params["limit"] = str(chunk)
         params["offset"] = str(offset)
-        resp = await _sb_get(f"/rest/v1/{MYMODEL_CREATE_ANSWERS_TABLE}", params=params)
+        resp = await _sb_get(f"/rest/v1/{PROFILE_CREATE_ANSWERS_READ_TABLE}", params=params)
         if resp.status_code >= 300:
             logger.warning(
                 "Supabase %s fetch failed (create agg): %s %s",
-                MYMODEL_CREATE_ANSWERS_TABLE,
+                PROFILE_CREATE_ANSWERS_READ_TABLE,
                 resp.status_code,
                 (resp.text or "")[:800],
             )
@@ -828,7 +832,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         resp_out = {"status": "ok", "range": p_range, "timezone": "Asia/Tokyo", "limit": p_limit, "items": items}
         _ranking_cache_set(cache_key, resp_out)
         return resp_out
-    @app.get("/ranking/mymodel_questions")
+    @app.get("/_compat-retired/ranking/mymodel_questions")
     async def ranking_mymodel_questions(
         range: str = Query(default="year"),
         limit: Optional[int] = Query(default=30),

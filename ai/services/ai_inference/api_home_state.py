@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from fastapi import FastAPI, Header, Query, Request
 from pydantic import BaseModel, Field
 
-from api_emotion_reflection import EmotionReflectionQuotaResponse
+from api_emotion_piece import EmotionPieceQuotaResponse
 from api_global_summary import GlobalSummaryResponse
 from api_input_summary import InputSummaryResponse
 from api_notice import NoticeCurrentResponse
@@ -27,7 +27,7 @@ class HomeStateSections(BaseModel):
     global_summary: GlobalSummaryResponse
     notices_current: NoticeCurrentResponse
     today_question_current: TodayQuestionCurrentResponse
-    emotion_reflection_quota: EmotionReflectionQuotaResponse
+    emotion_reflection_quota: EmotionPieceQuotaResponse
 
 
 class HomeStateResponse(BaseModel):

@@ -320,7 +320,7 @@ async def _refresh_related_users(related_user_ids: Set[str], deleted_user_id: st
         logger.warning("account_delete related cache invalidation helper unavailable deleted_user_id=%s err=%r", deleted_user_id, exc)
 
     try:
-        from astor_friend_feed_enqueue import enqueue_emotion_log_feed_refresh
+        from astor_emotion_log_feed_enqueue import enqueue_emotion_log_feed_refresh
 
         for related_user_id in sorted(targets):
             tasks.append(

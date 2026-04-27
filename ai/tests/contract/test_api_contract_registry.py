@@ -119,7 +119,7 @@ def _route_map(app):
 
 
 def test_policy_version_is_fixed():
-    assert API_CONTRACT_POLICY_VERSION == "2026-03-20.mymodel-qna-unread-status.v1"
+    assert API_CONTRACT_POLICY_VERSION == "2026-04-20.myprofile-lookup.v1"
 
 
 def test_registry_has_unique_contract_ids_and_routes():
@@ -149,6 +149,28 @@ def test_registry_routes_have_response_models(app_module):
         if route.response_model is None:
             missing.append(f"{entry.method} {entry.path}")
     assert not missing, f"Routes missing response_model: {missing}"
+
+
+def test_legacy_myprofile_and_myweb_aliases_are_marked_deprecated_with_replacements():
+    expected = {
+        ("POST", "/myprofile/follow"): "/follow/create",
+        ("GET", "/myprofile/follow-requests/incoming"): "/follow/requests/incoming",
+        ("GET", "/myprofile/follow-requests/outgoing"): "/follow/requests/outgoing",
+        ("POST", "/myprofile/follow-request/cancel"): "/follow/request/cancel",
+        ("POST", "/myprofile/follow-requests/approve"): "/follow/requests/approve",
+        ("POST", "/myprofile/follow-requests/reject"): "/follow/requests/reject",
+        ("GET", "/myprofile/follow-stats"): "/follow/stats",
+        ("POST", "/myprofile/unfollow"): "/follow/delete",
+        ("POST", "/myprofile/remove-follower"): "/follow/remove-follower",
+        ("POST", "/myprofile/monthly/ensure"): "/self-structure/monthly/ensure",
+        ("GET", "/myweb/reports/ready"): "/analysis/reports/ready",
+        ("POST", "/myweb/reports/ensure"): "/analysis/reports/ensure",
+    }
+    for (method, path), replacement in expected.items():
+        entry = get_contract_entry(method=method, path=path)
+        assert entry is not None, (method, path)
+        assert entry.deprecated is True, (method, path)
+        assert entry.replacement == replacement, (method, path)
 
 
 def test_public_registry_doc_mentions_all_registered_routes():

@@ -110,7 +110,7 @@ async def _fake_get_subscription_tier_for_user(_user_id: str, *, default=subscri
 
 
 def test_myprofile_latest_current_schema_row_does_not_500(client, monkeypatch):
-    import api_myprofile as myprofile_module
+    import api_self_structure as self_structure_module
 
     async def fake_fetch_latest_self_structure_analysis_row(_user_id: str, _stage: str):
         return {
@@ -120,12 +120,12 @@ def test_myprofile_latest_current_schema_row_does_not_500(client, monkeypatch):
         }
 
     async def fake_sb_get(path: str, *, params=None):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return _FakeResponse(200, [_saved_latest_row()])
 
-    monkeypatch.setattr(myprofile_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
-    monkeypatch.setattr(myprofile_module, "_fetch_latest_self_structure_analysis_row", fake_fetch_latest_self_structure_analysis_row)
-    monkeypatch.setattr(myprofile_module, "_sb_get", fake_sb_get)
+    monkeypatch.setattr(self_structure_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
+    monkeypatch.setattr(self_structure_module, "_fetch_latest_self_structure_analysis_row", fake_fetch_latest_self_structure_analysis_row)
+    monkeypatch.setattr(self_structure_module, "_sb_get", fake_sb_get)
     monkeypatch.setattr(
         subscription_store_module,
         "get_subscription_tier_for_user",
@@ -151,7 +151,7 @@ def test_myprofile_latest_current_schema_row_does_not_500(client, monkeypatch):
 
 
 def test_myprofile_latest_deep_row_returns_visual_contract(client, monkeypatch):
-    import api_myprofile as myprofile_module
+    import api_self_structure as self_structure_module
 
     async def fake_fetch_latest_self_structure_analysis_row(_user_id: str, _stage: str):
         return {
@@ -161,7 +161,7 @@ def test_myprofile_latest_deep_row_returns_visual_contract(client, monkeypatch):
         }
 
     async def fake_sb_get(path: str, *, params=None):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return _FakeResponse(
             200,
             [
@@ -179,9 +179,9 @@ def test_myprofile_latest_deep_row_returns_visual_contract(client, monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(myprofile_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
-    monkeypatch.setattr(myprofile_module, "_fetch_latest_self_structure_analysis_row", fake_fetch_latest_self_structure_analysis_row)
-    monkeypatch.setattr(myprofile_module, "_sb_get", fake_sb_get)
+    monkeypatch.setattr(self_structure_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
+    monkeypatch.setattr(self_structure_module, "_fetch_latest_self_structure_analysis_row", fake_fetch_latest_self_structure_analysis_row)
+    monkeypatch.setattr(self_structure_module, "_sb_get", fake_sb_get)
     async def fake_get_subscription_tier_for_user_premium(_user_id: str, *, default=subscription_module.SubscriptionTier.FREE):
         return subscription_module.SubscriptionTier.PREMIUM
 
@@ -207,16 +207,16 @@ def test_myprofile_latest_deep_row_returns_visual_contract(client, monkeypatch):
 
 
 def test_myprofile_latest_status_matches_fixture_shape(client, monkeypatch):
-    import api_myprofile as myprofile_module
+    import api_self_structure as self_structure_module
 
     expected_shape = _load_fixture("myprofile_latest_status_response_shape_v1.json")
 
     async def fake_sb_get(path: str, *, params=None):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return _FakeResponse(200, [_saved_latest_row()])
 
-    monkeypatch.setattr(myprofile_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
-    monkeypatch.setattr(myprofile_module, "_sb_get", fake_sb_get)
+    monkeypatch.setattr(self_structure_module, "_resolve_user_id_from_token", _fake_resolve_user_id_from_token)
+    monkeypatch.setattr(self_structure_module, "_sb_get", fake_sb_get)
 
     response = client.get(
         "/myprofile/latest/status",

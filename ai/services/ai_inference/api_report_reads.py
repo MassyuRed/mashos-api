@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -28,7 +29,22 @@ except Exception:  # pragma: no cover
 
 
 logger = logging.getLogger("report_reads_api")
-MYWEB_UNREAD_STATUS_CACHE_TTL_SECONDS = 8.0
+ANALYSIS_UNREAD_STATUS_CACHE_TTL_SECONDS = 8.0
+ANALYSIS_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
+    or os.getenv("MYWEB_REPORTS_READ_TABLE")
+    or "analysis_reports"
+).strip() or "analysis_reports"
+SELF_STRUCTURE_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYPROFILE_REPORTS_READ_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_READ_TABLE")
+    or "self_structure_reports"
+).strip() or "self_structure_reports"
+MYWEB_UNREAD_STATUS_CACHE_TTL_SECONDS = ANALYSIS_UNREAD_STATUS_CACHE_TTL_SECONDS
 
 
 class ReportReadStatusResponse(BaseModel):
@@ -50,26 +66,31 @@ class ReportReadMarkResponse(BaseModel):
     marked: bool = True
 
 
-class MyWebUnreadIdsByType(BaseModel):
+class AnalysisUnreadIdsByType(BaseModel):
     daily: List[str] = Field(default_factory=list)
     weekly: List[str] = Field(default_factory=list)
     monthly: List[str] = Field(default_factory=list)
     selfStructure: List[str] = Field(default_factory=list)
 
 
-class MyWebUnreadFlags(BaseModel):
+class AnalysisUnreadFlags(BaseModel):
     daily: bool = False
     weekly: bool = False
     monthly: bool = False
     selfStructure: bool = False
 
 
-class MyWebUnreadStatusResponse(BaseModel):
+class AnalysisUnreadStatusResponse(BaseModel):
     status: str = "ok"
     viewer_tier: str = "free"
-    ids_by_type: MyWebUnreadIdsByType
+    ids_by_type: AnalysisUnreadIdsByType
     read_ids: List[str] = Field(default_factory=list)
-    unread_by_type: MyWebUnreadFlags
+    unread_by_type: AnalysisUnreadFlags
+
+
+MyWebUnreadIdsByType = AnalysisUnreadIdsByType
+MyWebUnreadFlags = AnalysisUnreadFlags
+MyWebUnreadStatusResponse = AnalysisUnreadStatusResponse
 
 
 def _pick_rows(resp) -> List[Dict[str, Any]]:
@@ -250,7 +271,7 @@ async def _fetch_latest_ready_myweb_ids(user_id: str, report_type: str, *, tier_
     fallback_select = "id,report_type,period_start,period_end,content_json"
 
     resp = await sb_get(
-        "/rest/v1/myweb_reports",
+        f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
         params={
             "select": projection_select,
             "user_id": f"eq.{user_id}",
@@ -275,7 +296,7 @@ async def _fetch_latest_ready_myweb_ids(user_id: str, report_type: str, *, tier_
             (resp.text or "")[:800],
         )
         resp = await sb_get(
-            "/rest/v1/myweb_reports",
+            f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
             params={
                 "select": fallback_select,
                 "user_id": f"eq.{user_id}",
@@ -339,7 +360,7 @@ async def _fetch_latest_self_structure_ids(user_id: str, *, tier_str: str, limit
     fallback_select = "id,report_type,period_end,content_text,content_json"
 
     resp = await sb_get(
-        "/rest/v1/myprofile_reports",
+        f"/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}",
         params=_params(projection_select),
         timeout=8.0,
     )
@@ -355,7 +376,7 @@ async def _fetch_latest_self_structure_ids(user_id: str, *, tier_str: str, limit
             (resp.text or "")[:800],
         )
         resp = await sb_get(
-            "/rest/v1/myprofile_reports",
+            f"/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}",
             params=_params(fallback_select),
             timeout=8.0,
         )
@@ -381,7 +402,7 @@ async def _fetch_latest_self_structure_ids(user_id: str, *, tier_str: str, limit
     return ids[:limit]
 
 
-async def get_myweb_unread_status_payload_for_user(
+async def get_analysis_unread_status_payload_for_user(
     user_id: str,
     *,
     limit: int = 1,
@@ -390,7 +411,7 @@ async def get_myweb_unread_status_payload_for_user(
     uid = str(user_id or "").strip()
     lim = max(1, min(int(limit or 1), 10))
     cache_key = build_cache_key(
-        f"report_reads:myweb_unread:{uid}",
+        f"report_reads:analysis_unread:{uid}",
         {"limit": lim, "include_self_structure": bool(include_self_structure)},
     )
 
@@ -444,11 +465,11 @@ async def get_myweb_unread_status_payload_for_user(
             latest_id = ids[0] if ids else None
             return bool(latest_id) and latest_id not in read_set
 
-        response = MyWebUnreadStatusResponse(
+        response = AnalysisUnreadStatusResponse(
             viewer_tier=tier_str,
-            ids_by_type=MyWebUnreadIdsByType(**ids_by_type),
+            ids_by_type=AnalysisUnreadIdsByType(**ids_by_type),
             read_ids=[rid for rid in all_ids if rid in read_set],
-            unread_by_type=MyWebUnreadFlags(
+            unread_by_type=AnalysisUnreadFlags(
                 daily=_latest_unread(ids_by_type["daily"]),
                 weekly=_latest_unread(ids_by_type["weekly"]),
                 monthly=_latest_unread(ids_by_type["monthly"]),
@@ -457,7 +478,20 @@ async def get_myweb_unread_status_payload_for_user(
         )
         return jsonable_encoder(response)
 
-    return await get_or_compute(cache_key, MYWEB_UNREAD_STATUS_CACHE_TTL_SECONDS, _build_payload)
+    return await get_or_compute(cache_key, ANALYSIS_UNREAD_STATUS_CACHE_TTL_SECONDS, _build_payload)
+
+
+async def get_myweb_unread_status_payload_for_user(
+    user_id: str,
+    *,
+    limit: int = 1,
+    include_self_structure: bool = True,
+) -> Dict[str, Any]:
+    return await get_analysis_unread_status_payload_for_user(
+        user_id,
+        limit=limit,
+        include_self_structure=include_self_structure,
+    )
 
 
 def register_report_reads_routes(app: FastAPI) -> None:
@@ -497,19 +531,20 @@ def register_report_reads_routes(app: FastAPI) -> None:
         if not marked:
             raise HTTPException(status_code=502, detail="Failed to mark report as read")
 
+        await invalidate_prefix(f"report_reads:analysis_unread:{me}")
         await invalidate_prefix(f"report_reads:myweb_unread:{me}")
         return ReportReadMarkResponse(report_id=rid, marked=True)
 
-    @app.get("/report-reads/myweb-unread-status", response_model=MyWebUnreadStatusResponse)
-    async def get_myweb_unread_status(
+    @app.get("/report-reads/analysis-unread-status", response_model=AnalysisUnreadStatusResponse)
+    async def get_analysis_unread_status(
         limit: int = Query(default=1, ge=1, le=10),
         include_self_structure: bool = Query(default=True),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> MyWebUnreadStatusResponse:
+    ) -> AnalysisUnreadStatusResponse:
         me = await _require_user_id(authorization)
-        payload = await get_myweb_unread_status_payload_for_user(
+        payload = await get_analysis_unread_status_payload_for_user(
             me,
             limit=limit,
             include_self_structure=include_self_structure,
         )
-        return MyWebUnreadStatusResponse(**payload)
+        return AnalysisUnreadStatusResponse(**payload)

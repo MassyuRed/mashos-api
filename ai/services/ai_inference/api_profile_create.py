@@ -18,8 +18,9 @@ Key rules (2026-04)
   - Secret answers remain hidden from other users on Account.
 
 Supabase tables (default names)
-  - mymodel_create_questions
-  - mymodel_create_answers
+  - profile_create_questions (current-name bridge view; read-only questions)
+  - profile_create_answers (current-name bridge view; read-only answer reads)
+  - mymodel_create_answers (legacy physical table; writes/deletes only)
 
 Notes
   - This API uses Supabase service_role to read/write via PostgREST.
@@ -56,13 +57,13 @@ from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh  # backward-compat for tests / legacy monkeypatches
 from astor_account_status_enqueue import enqueue_account_status_refresh
-from mymodel_entitlements import (
+from profile_create_entitlements import (
     FREE_TEMPLATE_QUESTION_LIMIT,
     LIGHT_BUILD_TIER,
     filter_question_rows_for_build_tier,
     resolve_mymodel_entitlement,
 )
-from reflection_text_formatter import (
+from piece_text_formatter import (
     REFLECTION_DISPLAY_VERSION,
     apply_reflection_storage_fields,
 )
@@ -73,7 +74,14 @@ logger = logging.getLogger("profile_create_api")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-QUESTIONS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_QUESTIONS_TABLE", "mymodel_create_questions") or "").strip() or "mymodel_create_questions"
+QUESTIONS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_QUESTIONS_TABLE", "profile_create_questions") or "").strip() or "profile_create_questions"
+# Read-only answer paths can use the current-name bridge view. Keep writes/deletes on
+# ANSWERS_TABLE until profile_create_answers is promoted from bridge view to writable table.
+ANSWERS_READ_TABLE = (
+    os.getenv("COCOLON_PROFILE_CREATE_ANSWERS_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_READ_TABLE")
+    or "profile_create_answers"
+).strip() or "profile_create_answers"
 ANSWERS_TABLE = (os.getenv("COCOLON_MYMODEL_CREATE_ANSWERS_TABLE", "mymodel_create_answers") or "").strip() or "mymodel_create_answers"
 
 
@@ -270,15 +278,15 @@ async def _fetch_answers(*, user_id: str, question_ids: Optional[Set[int]] = Non
 
     params_v2 = dict(base_params)
     params_v2["select"] = ANSWER_SELECT_WITH_DISPLAY
-    resp = await _sb_get(f"/rest/v1/{ANSWERS_TABLE}", params=params_v2)
+    resp = await _sb_get(f"/rest/v1/{ANSWERS_READ_TABLE}", params=params_v2)
     if resp.status_code >= 300 and _looks_like_missing_reflection_display_columns(resp.text):
-        logger.warning("Reflection display columns not available on %s yet; falling back to base select", ANSWERS_TABLE)
+        logger.warning("Reflection display columns not available on %s yet; falling back to base select", ANSWERS_READ_TABLE)
         params_v1 = dict(base_params)
         params_v1["select"] = ANSWER_SELECT_BASE
-        resp = await _sb_get(f"/rest/v1/{ANSWERS_TABLE}", params=params_v1)
+        resp = await _sb_get(f"/rest/v1/{ANSWERS_READ_TABLE}", params=params_v1)
 
     if resp.status_code >= 300:
-        logger.error("Supabase %s select failed: %s %s", ANSWERS_TABLE, resp.status_code, resp.text[:1500])
+        logger.error("Supabase %s select failed: %s %s", ANSWERS_READ_TABLE, resp.status_code, resp.text[:1500])
         raise HTTPException(status_code=502, detail="Failed to load create answers")
 
     rows = resp.json()

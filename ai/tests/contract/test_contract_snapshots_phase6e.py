@@ -282,7 +282,7 @@ def test_myweb_unread_status_matches_snapshot_shape(client, monkeypatch):
         return "free"
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        if path == "/rest/v1/myweb_reports":
+        if path == "/rest/v1/analysis_reports":
             report_type = params.get("report_type", "").replace("eq.", "")
             rows = [
                 {
@@ -319,7 +319,8 @@ def test_myweb_unread_status_matches_snapshot_shape(client, monkeypatch):
 
 
 def test_myprofile_history_matches_snapshot_shape(client, monkeypatch):
-    import api_myprofile_reports_read as myprofile_reports_module
+    import api_self_structure_reports as self_structure_reports_module
+    import report_artifact_read_service as report_read_service
 
     expected_shape = _load_fixture("myprofile_reports_history_response_shape_v1.json")
 
@@ -327,7 +328,7 @@ def test_myprofile_history_matches_snapshot_shape(client, monkeypatch):
         return "user-789"
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return _FakeResponse(
             200,
             [
@@ -356,8 +357,19 @@ def test_myprofile_history_matches_snapshot_shape(client, monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(myprofile_reports_module, "_require_user_id", fake_require_user_id)
-    monkeypatch.setattr(myprofile_reports_module, "sb_get", fake_sb_get)
+    async def fake_resolve_subscription_tier(_user_id: str) -> str:
+        return "premium"
+
+    class FakeReportViewContext:
+        subscription_tier = "premium"
+
+    async def fake_resolve_report_view_context(_user_id: str, *, now_utc=None):
+        return FakeReportViewContext()
+
+    monkeypatch.setattr(self_structure_reports_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(report_read_service, "_resolve_subscription_tier", fake_resolve_subscription_tier)
+    monkeypatch.setattr(report_read_service, "resolve_report_view_context", fake_resolve_report_view_context)
+    monkeypatch.setattr(report_read_service, "sb_get", fake_sb_get)
 
     response = client.get(
         "/myprofile/reports/history?report_type=monthly&limit=60",

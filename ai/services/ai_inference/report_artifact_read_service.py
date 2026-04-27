@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -17,6 +18,21 @@ from access_policy.viewer_access_policy import (
 from supabase_client import sb_get
 
 logger = logging.getLogger("report_artifact_read_service")
+
+ANALYSIS_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
+    or os.getenv("MYWEB_REPORTS_READ_TABLE")
+    or "analysis_reports"
+).strip() or "analysis_reports"
+SELF_STRUCTURE_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYPROFILE_REPORTS_READ_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_READ_TABLE")
+    or "self_structure_reports"
+).strip() or "self_structure_reports"
 
 REPORT_FULL_SELECT = (
     "id,report_type,title,period_start,period_end,content_text,content_json,generated_at,updated_at"
@@ -35,12 +51,12 @@ class ReportArtifactFamilyConfig:
 
 FAMILY_CONFIGS: Dict[str, ReportArtifactFamilyConfig] = {
     "self_structure": ReportArtifactFamilyConfig(
-        table="myprofile_reports",
+        table=SELF_STRUCTURE_REPORTS_READ_TABLE,
         access_fn=apply_myprofile_report_access_for_viewer,
         not_found_detail="Self-structure report not found",
     ),
     "myweb": ReportArtifactFamilyConfig(
-        table="myweb_reports",
+        table=ANALYSIS_REPORTS_READ_TABLE,
         access_fn=apply_myweb_report_access_for_viewer,
         not_found_detail="MyWeb report not found",
     ),

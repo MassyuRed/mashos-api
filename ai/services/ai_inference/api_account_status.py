@@ -141,6 +141,7 @@ class AccountStatusResponse(BaseModel):
     input_count_total: int = 0
     input_chars_total: int = 0
     piece_generated_total: int = 0
+    piece_resonances_total: int = 0
     mymodel_questions_total: int = 0
     mymodel_views_total: int = 0
     mymodel_resonances_total: int = 0
@@ -148,6 +149,7 @@ class AccountStatusResponse(BaseModel):
 
     # Visibility flags (current settings, joined at read time)
     is_private_account: bool = False
+    is_share_code_public: bool = True
     is_friend_code_public: bool = True
 
 
@@ -265,6 +267,7 @@ def register_account_status_routes(app: FastAPI) -> None:
                     status="ok",
                     target_user_id=tgt,
                     is_private_account=bool(visibility.get("is_private_account") or False),
+                    is_share_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
                     is_friend_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
                     **cached,
                 )
@@ -315,6 +318,11 @@ def register_account_status_routes(app: FastAPI) -> None:
                 "input_count_total": _to_int(row.get("input_count_total")),
                 "input_chars_total": _to_int(row.get("input_chars_total")),
                 "piece_generated_total": legacy_piece_total,
+                "piece_resonances_total": _to_int(
+                    row.get("piece_resonances_total")
+                    if row.get("piece_resonances_total") is not None
+                    else row.get("mymodel_resonances_total")
+                ),
                 "mymodel_questions_total": legacy_piece_total,
                 "mymodel_views_total": _to_int(row.get("mymodel_views_total")),
                 "mymodel_resonances_total": _to_int(row.get("mymodel_resonances_total")),
@@ -328,6 +336,9 @@ def register_account_status_routes(app: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Failed to resolve live piece_generated_total for %s: %s", tgt, exc)
 
+        if payload.get("piece_resonances_total") is None:
+            payload["piece_resonances_total"] = _to_int(payload.get("mymodel_resonances_total"))
+
         # Update cache (best-effort) for non-self only
         if not is_self_request:
             try:
@@ -339,6 +350,7 @@ def register_account_status_routes(app: FastAPI) -> None:
             status="ok",
             target_user_id=tgt,
             is_private_account=bool(visibility.get("is_private_account") or False),
+            is_share_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
             is_friend_code_public=bool(visibility.get("is_friend_code_public") if visibility.get("is_friend_code_public") is not None else True),
             **payload,
         )

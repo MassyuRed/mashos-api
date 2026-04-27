@@ -1,23 +1,9 @@
 # -*- coding: utf-8 -*-
-"""MyModel QnA Discoveries Ranking API (Cocolon / MashOS / FastAPI)
+"""Current Piece resonances ranking API owner.
 
-Endpoint
---------
-- GET /ranking/mymodel_discoveries?range=week&limit=30
-
-Notes
------
-* Requires Supabase Auth access token via Authorization: Bearer <access_token>
-* Uses Supabase PostgREST RPC (service role) to call SQL function:
-  - rank_mymodel_discoveries(p_range, p_limit)
-* Timezone / boundary: JST (Asia/Tokyo) at 00:00, handled in SQL.
-
-Expected RPC result schema
---------------------------
-rank_mymodel_discoveries(...) should return a list of rows like:
-- rank: int
-- user_id: uuid
-- discovery_count: int
+This module owns the current-vocabulary Piece resonances ranking route and its
+runtime helpers. Legacy MyModel-named modules should delegate here during the
+rename-safe phase.
 """
 
 from __future__ import annotations
@@ -25,22 +11,21 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, Query
 
-# Reuse the existing ranking helpers (auth, range/limit normalization, RPC, profiles).
 from api_ranking import (  # noqa: F401
     _fetch_private_account_map,
     _fetch_profiles_map,
+    _filter_rows_by_ranking_visibility,
     _normalize_limit,
     _normalize_range,
     _require_user_id,
     _rpc,
-    _filter_rows_by_ranking_visibility,
 )
 from astor_ranking_boards import fetch_latest_ready_ranking_board, select_board_rows
 
 
-logger = logging.getLogger("ranking_mymodel_discoveries")
+logger = logging.getLogger("ranking_piece_resonances")
 
 
 async def _fetch_ready_board_rows(metric_key: str, range_key: str) -> Optional[List[Dict[str, Any]]]:
@@ -78,14 +63,14 @@ def _coerce_text(value: Any) -> Optional[str]:
     return s or None
 
 
-def _pick_discovery_count(row: Dict[str, Any]) -> int:
-    for key in ("discovery_count", "discoveries", "count", "value"):
+def _pick_resonance_count(row: Dict[str, Any]) -> int:
+    for key in ("resonance_count", "resonances", "count", "value"):
         if row.get(key) is not None:
             return _coerce_int(row.get(key), 0)
     return 0
 
 
-async def _publish_discovery_items(rows: List[Dict[str, Any]], *, limit: int) -> List[Dict[str, Any]]:
+async def _publish_resonance_items(rows: List[Dict[str, Any]], *, limit: int) -> List[Dict[str, Any]]:
     raw_rows = [dict(r) for r in (rows or []) if isinstance(r, dict)]
     if not raw_rows:
         return []
@@ -109,7 +94,7 @@ async def _publish_discovery_items(rows: List[Dict[str, Any]], *, limit: int) ->
             continue
 
         rank = _coerce_int(r.get("rank"), len(items) + 1)
-        cnt = _pick_discovery_count(r)
+        cnt = _pick_resonance_count(r)
         prof = profiles.get(uid) if isinstance(profiles.get(uid), dict) else {}
         is_private = bool(private_map.get(uid, bool(r.get("is_private_account") or False)))
 
@@ -119,7 +104,7 @@ async def _publish_discovery_items(rows: List[Dict[str, Any]], *, limit: int) ->
                 "user_id": uid,
                 "display_name": _coerce_text((prof or {}).get("display_name")),
                 "is_private_account": is_private,
-                "discovery_count": cnt,
+                "resonance_count": cnt,
                 "value": cnt,
             }
         )
@@ -128,14 +113,78 @@ async def _publish_discovery_items(rows: List[Dict[str, Any]], *, limit: int) ->
     return items[: max(1, int(limit or 30))]
 
 
-def register_ranking_mymodel_discoveries_routes(app: FastAPI) -> None:
-    """Register /ranking/mymodel_discoveries endpoint."""
+async def _build_ranking_piece_resonances_payload(
+    *,
+    range: str,
+    limit: Optional[int],
+    authorization: Optional[str],
+) -> Dict[str, Any]:
+    await _require_user_id(authorization)
 
-    @app.get("/ranking/mymodel_discoveries")
-    async def ranking_mymodel_discoveries(
+    p_range = _normalize_range(range)
+    p_limit = _normalize_limit(limit, default=30, min_v=1, max_v=100)
+
+    try:
+        board_rows = await _fetch_ready_board_rows("mymodel_resonances", p_range)
+        if board_rows is not None:
+            items = await _publish_resonance_items(board_rows, limit=p_limit)
+            return {
+                "status": "ok",
+                "range": p_range,
+                "timezone": "Asia/Tokyo",
+                "limit": p_limit,
+                "items": items,
+            }
+    except Exception as exc:
+        logger.warning(
+            "ranking board publish failed: metric=mymodel_resonances range=%s err=%s",
+            p_range,
+            exc,
+        )
+
+    rows = await _rpc("rank_mymodel_resonances", {"p_range": p_range, "p_limit": p_limit})
+    items = await _publish_resonance_items(rows, limit=p_limit)
+
+    return {
+        "status": "ok",
+        "range": p_range,
+        "timezone": "Asia/Tokyo",
+        "limit": p_limit,
+        "items": items,
+    }
+
+
+def register_ranking_piece_resonances_routes(app: FastAPI) -> None:
+    """Register current Piece ranking and deprecated MyModel resonance alias routes."""
+
+    @app.get("/ranking/piece_resonances")
+    async def ranking_piece_resonances(
         range: str = Query(default="week"),
         limit: Optional[int] = Query(default=30),
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
-        await _require_user_id(authorization)
-        raise HTTPException(status_code=410, detail="Piece discoveries ranking is no longer available")
+        return await _build_ranking_piece_resonances_payload(
+            range=range,
+            limit=limit,
+            authorization=authorization,
+        )
+
+    @app.get("/ranking/mymodel_resonances")
+    async def compat_ranking_mymodel_resonances(
+        range: str = Query(default="week"),
+        limit: Optional[int] = Query(default=30),
+        authorization: Optional[str] = Header(default=None),
+    ) -> Dict[str, Any]:
+        return await _build_ranking_piece_resonances_payload(
+            range=range,
+            limit=limit,
+            authorization=authorization,
+        )
+
+
+__all__ = [
+    "_build_ranking_piece_resonances_payload",
+    "_fetch_ready_board_rows",
+    "_publish_resonance_items",
+    "register_ranking_piece_resonances_routes",
+]

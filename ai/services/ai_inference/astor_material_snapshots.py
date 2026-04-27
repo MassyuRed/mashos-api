@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
-from reflection_text_formatter import sanitize_reflection_context_text
+from piece_text_formatter import sanitize_reflection_context_text
 
 # Downstream jobs are best-effort.
 try:

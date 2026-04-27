@@ -22,7 +22,7 @@ import json
 from pydantic import BaseModel, Field
 
 from astor_structure_matcher import StructureMatcher
-from astor_myweb_insight import generate_myweb_insight_payload
+from astor_analysis_insight import generate_myweb_insight_payload
 
 
 # ---------- モード定義 ----------

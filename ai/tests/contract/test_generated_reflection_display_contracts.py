@@ -23,7 +23,8 @@ def test_generated_reflection_display_rewrites_broken_answer():
 
 
 def test_generated_qna_detail_uses_display_text(client, monkeypatch):
-    import api_mymodel_qna as qna_module
+    import api_piece_runtime as piece_runtime_module
+    import piece_public_read_service as piece_read_service
 
     generated_row: Dict[str, Any] = {
         "id": "generated-row-1",
@@ -49,21 +50,17 @@ def test_generated_qna_detail_uses_display_text(client, monkeypatch):
     async def fake_fetch_instance_metrics(_instance_ids):
         return {"reflection:test-generated-1": {"views": 3, "resonances": 2}}
 
-    async def fake_sb_count_rows(path, *, params=None):
-        return 1
-
     async def fake_fetch_reads(viewer_user_id: str, q_instance_ids):
         return set()
 
     async def fake_is_resonated(viewer_user_id: str, q_instance_id: str):
         return False
 
-    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
-    monkeypatch.setattr(qna_module, "_fetch_instance_metrics", fake_fetch_instance_metrics)
-    monkeypatch.setattr(qna_module, "_sb_count_rows", fake_sb_count_rows)
-    monkeypatch.setattr(qna_module, "_fetch_reads", fake_fetch_reads)
-    monkeypatch.setattr(qna_module, "_is_resonated", fake_is_resonated)
+    monkeypatch.setattr(piece_runtime_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(piece_read_service, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(piece_read_service, "fetch_instance_metrics", fake_fetch_instance_metrics)
+    monkeypatch.setattr(piece_read_service, "fetch_reads", fake_fetch_reads)
+    monkeypatch.setattr(piece_read_service, "is_resonated", fake_is_resonated)
 
     response = client.get(
         "/mymodel/qna/detail?q_instance_id=reflection:test-generated-1",
@@ -78,6 +75,7 @@ def test_generated_qna_detail_uses_display_text(client, monkeypatch):
 
 def test_generated_reaction_context_uses_display_text(monkeypatch):
     import api_mymodel_qna as qna_module
+    import api_piece_runtime as piece_runtime_module
 
     generated_row: Dict[str, Any] = {
         "id": "generated-row-ctx",
@@ -97,10 +95,10 @@ def test_generated_reaction_context_uses_display_text(monkeypatch):
     async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
         return dict(generated_row)
 
-    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(qna_module, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
 
     ctx = asyncio.run(
-        qna_module._resolve_qna_context_for_reaction(
+        piece_runtime_module._resolve_qna_context_for_reaction(
             viewer_user_id="viewer-generated-ctx",
             q_instance_id="reflection:test-generated-ctx",
             q_key=None,
@@ -114,7 +112,8 @@ def test_generated_reaction_context_uses_display_text(monkeypatch):
 
 
 def test_generated_detail_hides_blocked_text(client, monkeypatch):
-    import api_mymodel_qna as qna_module
+    import api_piece_runtime as piece_runtime_module
+    import piece_public_read_service as piece_read_service
 
     generated_row: Dict[str, Any] = {
         "id": "generated-row-blocked",
@@ -134,8 +133,8 @@ def test_generated_detail_hides_blocked_text(client, monkeypatch):
     async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
         return dict(generated_row)
 
-    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(piece_runtime_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(piece_read_service, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
 
     response = client.get(
         "/mymodel/qna/detail?q_instance_id=reflection:test-generated-blocked",

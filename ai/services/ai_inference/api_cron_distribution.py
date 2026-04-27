@@ -115,13 +115,13 @@ except Exception:  # pragma: no cover
 
 # MyWeb: reuse Phase1 helpers (on-demand ensure implementation)
 try:
-    from api_myweb_reports import _build_target_period as _myweb_build_target_period
-    from api_myweb_reports import _generate_and_save as _myweb_generate_and_save
-    from api_myweb_reports import _report_exists as _myweb_report_exists
+    from api_analysis_reports import _build_analysis_target_period
+    from api_analysis_reports import _generate_analysis_report_and_save
+    from api_analysis_reports import _analysis_report_exists
 except Exception:  # pragma: no cover
-    _myweb_build_target_period = None  # type: ignore
-    _myweb_generate_and_save = None  # type: ignore
-    _myweb_report_exists = None  # type: ignore
+    _build_analysis_target_period = None  # type: ignore
+    _generate_analysis_report_and_save = None  # type: ignore
+    _analysis_report_exists = None  # type: ignore
 
 # Shared publish visibility guard for past empty MyWeb rows.
 try:
@@ -132,7 +132,7 @@ except Exception:  # pragma: no cover
 
 # MyProfile monthly report generator
 try:
-    from astor_myprofile_report import build_myprofile_monthly_report, parse_period_days
+    from astor_self_structure_report import build_myprofile_monthly_report, parse_period_days
 except Exception:  # pragma: no cover
     build_myprofile_monthly_report = None  # type: ignore
     parse_period_days = None  # type: ignore
@@ -180,7 +180,21 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 PROFILES_TABLE = (os.getenv("COCOLON_PROFILES_TABLE", "profiles") or "profiles").strip()
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE", "myweb_reports") or "myweb_reports").strip()
+MYWEB_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
+    or os.getenv("MYWEB_REPORTS_READ_TABLE")
+    or "analysis_reports"
+).strip() or "analysis_reports"
 MYPROFILE_REPORTS_TABLE = (os.getenv("MYPROFILE_REPORTS_TABLE", "myprofile_reports") or "myprofile_reports").strip()
+MYPROFILE_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYPROFILE_REPORTS_READ_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_READ_TABLE")
+    or "self_structure_reports"
+).strip() or "self_structure_reports"
 
 MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v4"
 
@@ -605,7 +619,7 @@ async def _myprofile_monthly_exists(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Optional[int]:
-    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_READ_TABLE}"
     params = {
         "select": "id",
         "user_id": f"eq.{user_id}",
@@ -683,7 +697,7 @@ async def _fetch_myprofile_monthly_row(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_READ_TABLE}"
     params = {
         "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
         "user_id": f"eq.{user_id}",
@@ -719,7 +733,7 @@ async def _fetch_previous_myprofile_monthly_row(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_READ_TABLE}"
     params = {
         "select": "id,title,content_text,content_json,generated_at,updated_at,period_start,period_end",
         "user_id": f"eq.{user_id}",
@@ -893,7 +907,7 @@ async def _fetch_myweb_report_row(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    url = f"{SUPABASE_URL}/rest/v1/{MYWEB_REPORTS_TABLE}"
+    url = f"{SUPABASE_URL}/rest/v1/{MYWEB_REPORTS_READ_TABLE}"
     params = {
         "select": "id,report_type,period_start,period_end,content_json",
         "user_id": f"eq.{user_id}",
@@ -935,8 +949,8 @@ async def _run_myweb_for_users(
     run_id: Optional[str] = None,
     job: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    if _myweb_build_target_period is None or _myweb_generate_and_save is None or _myweb_report_exists is None:
-        raise HTTPException(status_code=500, detail="api_myweb_reports is not available")
+    if _build_analysis_target_period is None or _generate_analysis_report_and_save is None or _analysis_report_exists is None:
+        raise HTTPException(status_code=500, detail="api_analysis_reports is not available")
 
     sem = asyncio.Semaphore(max(1, DEFAULT_CONCURRENCY))
     errors: List[str] = []
@@ -945,8 +959,8 @@ async def _run_myweb_for_users(
     async def one(uid: str) -> Dict[str, Any]:
         async with sem:
             try:
-                target = _myweb_build_target_period(report_type, now_utc)
-                existing_id = await _myweb_report_exists(uid, report_type, target.period_start_iso, target.period_end_iso)
+                target = _build_analysis_target_period(report_type, now_utc)
+                existing_id = await _analysis_report_exists(uid, report_type, target.period_start_iso, target.period_end_iso)
                 if existing_id is not None and not force:
                     existing_row = await _fetch_myweb_report_row(
                         user_id=uid,
@@ -1014,7 +1028,7 @@ async def _run_myweb_for_users(
                     return {"user_id": uid, "status": "exists", "skipped": "locked"}
 
                 try:
-                    _text, _cjson, _astor_text, meta = await _myweb_generate_and_save(
+                    _text, _cjson, _astor_text, meta = await _generate_analysis_report_and_save(
                         uid,
                         target,
                         include_astor=include_astor,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -20,6 +21,12 @@ from piece_public_read_service import (
     build_nexus_reflections_payload,
     build_qna_public_detail_payload,
     build_qna_public_unread_status_payload,
+)
+from api_piece_runtime import (
+    _fetch_active_user_ids,
+    _fetch_followed_owner_ids,
+    _fetch_profiles_by_ids,
+    _filter_recommendation_enabled,
 )
 
 
@@ -84,11 +91,28 @@ class NexusReflectionDetailResponse(BaseModel):
     is_resonated: bool = False
 
 
+class NexusRecommendUser(BaseModel):
+    id: str
+    display_name: Optional[str] = None
+    share_code: Optional[str] = None
+    friend_code: Optional[str] = None
+    connect_code: Optional[str] = None
+    myprofile_code: Optional[str] = None
+    is_following: bool = False
+
+
+class NexusRecommendUsersResponse(BaseModel):
+    status: str = Field(default="ok")
+    days: int = 7
+    total_items: int = 0
+    users: List[NexusRecommendUser] = Field(default_factory=list)
+
+
 NEXUS_SOURCE_PATHS: Dict[str, str] = {
     "emotion_ranking": "/ranking/emotions",
-    "emotion_log": "/friends/feed",
-    "recommend_users": "/mymodel/recommend/users",
-    "history_echoes": "/mymodel/qna/echoes/reflections",
+    "emotion_log": "/emotion-log/feed",
+    "recommend_users": "/nexus/recommend/users",
+    "history_echoes": "/piece/resonances/pieces",
 }
 
 
@@ -177,8 +201,59 @@ def _normalize_include_sections(raw: Optional[str]) -> Set[str]:
     return values & allowed
 
 
+async def _build_nexus_recommend_users_payload(
+    *,
+    viewer_user_id: str,
+    limit: int,
+    days: int = 7,
+) -> Dict[str, Any]:
+    viewer = str(viewer_user_id or "").strip()
+    if not viewer:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    safe_limit = max(1, min(int(limit or 8), 100))
+    safe_days = max(1, min(int(days or 7), 30))
+    since_dt = datetime.now(timezone.utc) - timedelta(days=safe_days)
+    since_iso = since_dt.isoformat().replace("+00:00", "Z")
+    scan_limit = max(200, safe_limit * 30)
+
+    active_ids = await _fetch_active_user_ids(since_iso=since_iso, scan_limit=scan_limit)
+    candidate_ids = [uid for uid in sorted(active_ids) if uid and uid != viewer]
+
+    followed_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer, limit=5000)
+    candidate_ids = [uid for uid in candidate_ids if uid not in followed_ids]
+    candidate_ids = await _filter_recommendation_enabled(candidate_ids)
+    candidate_ids = candidate_ids[:safe_limit]
+
+    profiles_map = await _fetch_profiles_by_ids(candidate_ids)
+    users: List[NexusRecommendUser] = []
+    for uid in candidate_ids:
+        profile = profiles_map.get(str(uid)) or {}
+        display_name = profile.get("display_name") if isinstance(profile, dict) else None
+        friend_code = profile.get("friend_code") if isinstance(profile, dict) else None
+        myprofile_code = profile.get("myprofile_code") if isinstance(profile, dict) else None
+        users.append(
+            NexusRecommendUser(
+                id=str(uid),
+                display_name=(str(display_name).strip() if display_name is not None else None) or None,
+                share_code=(str(friend_code).strip() if friend_code is not None else None) or None,
+                friend_code=(str(friend_code).strip() if friend_code is not None else None) or None,
+                connect_code=(str(myprofile_code).strip() if myprofile_code is not None else None) or None,
+                myprofile_code=(str(myprofile_code).strip() if myprofile_code is not None else None) or None,
+                is_following=False,
+            )
+        )
+
+    return {
+        "status": "ok",
+        "days": safe_days,
+        "total_items": len(users),
+        "users": [user.dict() for user in users],
+    }
+
+
 def register_nexus_routes(app: FastAPI) -> None:
-    @app.get("/nexus/reflections", response_model=NexusReflectionResponse)
+    @app.get("/nexus/pieces", response_model=NexusReflectionResponse)
     async def nexus_reflections(
         sort: str = Query(default="latest", description="latest | oldest | views | resonance"),
         limit: int = Query(default=20, ge=1, le=100),
@@ -203,7 +278,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         )
         return NexusReflectionResponse(**payload)
 
-    @app.get("/nexus/reflections/unread-status", response_model=NexusReflectionsUnreadStatusResponse)
+    @app.get("/nexus/pieces/unread-status", response_model=NexusReflectionsUnreadStatusResponse)
     async def nexus_reflections_unread_status(
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> NexusReflectionsUnreadStatusResponse:
@@ -220,7 +295,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         )
         return NexusReflectionsUnreadStatusResponse(**payload)
 
-    @app.get("/nexus/reflections/{q_instance_id}", response_model=NexusReflectionDetailResponse)
+    @app.get("/nexus/pieces/{q_instance_id}", response_model=NexusReflectionDetailResponse)
     async def nexus_reflection_detail(
         q_instance_id: str,
         mark_viewed: bool = Query(default=False, description="If true, mark the reflection as viewed"),
@@ -269,20 +344,26 @@ def register_nexus_routes(app: FastAPI) -> None:
             authorization=authorization,
         )
 
-    @app.get("/nexus/recommend/users")
+    @app.get("/nexus/recommend/users", response_model=NexusRecommendUsersResponse)
     async def nexus_recommend_users(
         limit: int = Query(default=8, ge=1, le=100),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    ) -> Any:
-        return await _call_registered_route_json(
-            app,
-            path=NEXUS_SOURCE_PATHS["recommend_users"],
-            detail="Failed to load Nexus recommend users",
-            limit=int(limit),
-            authorization=authorization,
-        )
+    ) -> NexusRecommendUsersResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
-    @app.get("/nexus/history/echoes")
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        payload = await _build_nexus_recommend_users_payload(
+            viewer_user_id=str(viewer_user_id),
+            limit=int(limit),
+        )
+        return NexusRecommendUsersResponse(**payload)
+
+    @app.get("/nexus/history/resonances")
     async def nexus_history_echoes(
         limit: int = Query(default=20, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
@@ -291,7 +372,7 @@ def register_nexus_routes(app: FastAPI) -> None:
         return await _call_registered_route_json(
             app,
             path=NEXUS_SOURCE_PATHS["history_echoes"],
-            detail="Failed to load Nexus echoes history",
+            detail="Failed to load Nexus resonance history",
             limit=int(limit),
             offset=int(offset),
             authorization=authorization,
@@ -351,7 +432,7 @@ def register_nexus_routes(app: FastAPI) -> None:
                 limit=int(tab_limit), authorization=authorization)))
         if "history_echoes" in include_sections:
             tasks.append(_load_section("history_echoes", _call_registered_route_json(
-                app, path=NEXUS_SOURCE_PATHS["history_echoes"], detail="Failed to load Nexus echoes history",
+                app, path=NEXUS_SOURCE_PATHS["history_echoes"], detail="Failed to load Nexus resonance history",
                 limit=int(tab_limit), offset=0, authorization=authorization)))
 
         if tasks:

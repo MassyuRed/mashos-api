@@ -54,6 +54,7 @@ class SubscriptionMeResponse(BaseModel):
     user_id: str = Field(..., description="Supabase user id")
     subscription_tier: str = Field(..., description="free | plus | premium")
     allowed_myprofile_modes: list[str] = Field(..., description="Allowed MyProfile modes for the tier")
+    allowed_self_structure_modes: list[str] = Field(..., description="Allowed Self Structure modes for the tier")
     plan_code: Optional[str] = Field(default=None, description="plus | premium | null")
     entitlement_status: str = Field(default=ENTITLEMENT_STATUS_NONE, description="Canonical entitlement status")
     expires_at: Optional[str] = Field(default=None, description="ISO datetime when the entitlement expires")
@@ -76,6 +77,7 @@ class SubscriptionUpdateResponse(BaseModel):
     user_id: str = Field(..., description="Supabase user id")
     subscription_tier: str = Field(..., description="free | plus | premium")
     allowed_myprofile_modes: list[str] = Field(..., description="Allowed MyProfile modes for the tier")
+    allowed_self_structure_modes: list[str] = Field(..., description="Allowed Self Structure modes for the tier")
     plan_code: Optional[str] = Field(default=None, description="plus | premium | null")
     entitlement_status: str = Field(default=ENTITLEMENT_STATUS_NONE, description="Canonical entitlement status")
     expires_at: Optional[str] = Field(default=None, description="ISO datetime when the entitlement expires")
@@ -271,9 +273,15 @@ def _http_detail(code: str, message: str, **extra: Any) -> Dict[str, Any]:
 
 
 
+def _snapshot_wire_dict(snapshot: CanonicalSubscriptionState) -> Dict[str, Any]:
+    payload = dict(snapshot.as_dict())
+    payload["allowed_self_structure_modes"] = list(snapshot.allowed_myprofile_modes)
+    return payload
+
+
 def _response_from_snapshot(snapshot: CanonicalSubscriptionState, *, updated: bool, verification: str) -> SubscriptionUpdateResponse:
     return SubscriptionUpdateResponse(
-        **snapshot.as_dict(),
+        **_snapshot_wire_dict(snapshot),
         updated=updated,
         verification=verification,
     )
@@ -378,7 +386,7 @@ def register_subscription_routes(app: FastAPI) -> None:
 
         user_id = await _resolve_user_id_from_token(access_token)
         snapshot = await build_subscription_state(user_id)
-        return SubscriptionMeResponse(**snapshot.as_dict())
+        return SubscriptionMeResponse(**_snapshot_wire_dict(snapshot))
 
     @app.post("/subscription/update", response_model=SubscriptionUpdateResponse)
     async def subscription_update(

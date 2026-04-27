@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Cocolon MyModel Inference API (Release-oriented)
+Cocolon API (Release-oriented)
 ------------------------------------------------
 - POST /mymodel/infer : structure-first, privacy-preserving response
 - GET  /healthz      : health check
@@ -117,12 +117,16 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _ensure_supabase_config,
 )
-from api_emotion_reflection import register_emotion_reflection_routes
+from api_emotion_piece import register_emotion_piece_routes
 from api_emotion_secret import register_emotion_secret_routes
 from api_emotion_history_search import register_emotion_history_search_routes
 from api_emotion_history_manage import register_emotion_history_manage_routes
-from api_friends import register_friend_routes
-from api_myprofile import register_myprofile_routes
+from api_self_structure import register_myprofile_legacy_request_routes
+from api_connect import register_connect_routes
+from api_follow import register_follow_routes
+from api_follow_graph import register_follow_graph_routes
+from api_emotion_log import register_emotion_log_routes
+from api_emotion_notification_settings import register_emotion_notification_settings_routes
 from api_public_profile import register_public_profile_routes
 from api_subscription import register_subscription_routes
 from subscription_webhooks import register_subscription_webhook_routes
@@ -132,16 +136,15 @@ from subscription_runtime_config import (
 )
 from subscription_release_config import register_subscription_release_config_routes
 from subscription_live_console_check import register_subscription_live_console_routes
-from api_myweb_reports import register_myweb_report_routes, _build_target_period as _myweb_build_target_period
+from api_analysis_reports import register_analysis_report_routes, _build_analysis_target_period
 from api_cron_distribution import (
     ReportDistributionPushBatchRequest,
     register_cron_distribution_routes,
     run_report_distribution_push_once,
 )
 from api_ranking import register_ranking_routes
-from api_ranking_mymodel_views import register_ranking_mymodel_views_routes
-from api_ranking_mymodel_resonances import register_ranking_mymodel_resonances_routes
-from api_ranking_mymodel_discoveries import register_ranking_mymodel_discoveries_routes
+from api_ranking_piece_views import register_ranking_piece_views_routes
+from api_ranking_piece_resonances import register_ranking_piece_resonances_routes
 
 # Optional: login streak routes may live in a dedicated module in some deployments.
 try:
@@ -163,19 +166,24 @@ from api_notice import register_notice_routes
 from api_input_summary import register_input_summary_routes
 from api_global_summary import register_global_summary_routes
 from api_report_reads import register_report_reads_routes
-from api_myweb_reads import register_myweb_read_routes
-from api_myprofile_reports_read import register_myprofile_report_read_routes
+from api_analysis_reads import register_analysis_read_routes
+from api_self_structure import register_self_structure_routes
+from api_self_structure_reports import register_self_structure_report_routes
 from api_profile_create import register_profile_create_routes
-from api_mymodel_qna import register_mymodel_qna_routes
+from api_piece_runtime import register_piece_runtime_routes
 from api_nexus import register_nexus_routes
 from api_nexus_compat import register_nexus_compat_routes
+from api_analysis_compat import register_analysis_compat_routes
+from api_piece_compat import register_piece_compat_routes
+from api_relationship_compat import register_relationship_compat_routes
+from api_retired_legacy_compat import register_retired_legacy_compat_routes
 from api_today_question import register_today_question_routes, run_today_question_push_once
 from supabase_client import aclose_async_client, sb_get as _shared_sb_get, sb_post as _shared_sb_post
 from api_report_distribution_settings import register_report_distribution_settings_routes
 from prompt_templates import render_prompt_template, list_prompt_templates
-from astor_myprofile_persona import build_persona_context_payload
-from astor_myweb_insight import generate_myweb_insight_text
-from astor_myprofile_report import (
+from astor_self_structure_persona import build_persona_context_payload
+from astor_analysis_insight import generate_myweb_insight_text
+from astor_self_structure_report import (
     is_myprofile_monthly_report_instruction,
     build_myprofile_monthly_report,
 )
@@ -196,6 +204,13 @@ ALLOWED_ORIGINS = [o.strip() for o in ALLOWED_ORIGINS_RAW.split(",")] if ALLOWED
 # Supabase (for MyProfileID access control)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SELF_STRUCTURE_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYPROFILE_REPORTS_READ_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_READ_TABLE")
+    or "self_structure_reports"
+).strip() or "self_structure_reports"
 
 # Internal rollover (Cron -> single server entry)
 def _configured_internal_rollover_tokens() -> List[str]:
@@ -247,18 +262,22 @@ install_request_perf_middleware(app)
 
 
 register_emotion_submit_routes(app)
-register_emotion_reflection_routes(app)
+register_emotion_piece_routes(app)
 register_emotion_secret_routes(app)
 register_emotion_history_search_routes(app)
 register_emotion_history_manage_routes(app)
-register_friend_routes(app)
-register_myprofile_routes(app)
+register_connect_routes(app)
+register_follow_routes(app)
+register_follow_graph_routes(app)
+register_emotion_log_routes(app)
+register_emotion_notification_settings_routes(app)
+register_myprofile_legacy_request_routes(app)
 register_public_profile_routes(app)
 register_subscription_routes(app)
 register_subscription_webhook_routes(app)
 register_subscription_release_config_routes(app)
 register_subscription_live_console_routes(app)
-register_myweb_report_routes(app)
+register_analysis_report_routes(app)
 register_cron_distribution_routes(app)
 register_ranking_routes(app)
 register_activity_login_routes(app)
@@ -271,14 +290,19 @@ register_notice_routes(app)
 register_input_summary_routes(app)
 register_global_summary_routes(app)
 register_report_reads_routes(app)
-register_myweb_read_routes(app)
-register_myprofile_report_read_routes(app)
+register_analysis_read_routes(app)
+register_self_structure_routes(app)
+register_self_structure_report_routes(app)
 register_profile_create_routes(app)
-register_mymodel_qna_routes(app)
+register_piece_runtime_routes(app)
 register_nexus_routes(app)
 register_nexus_compat_routes(app)
 register_today_question_routes(app)
 register_report_distribution_settings_routes(app)
+register_analysis_compat_routes(app)
+register_piece_compat_routes(app)
+register_relationship_compat_routes(app)
+register_retired_legacy_compat_routes(app)
 
 # Extra ranking routes (Phase: MyModel views/resonances + login streak)
 # NOTE: Some ranking endpoints live in separate modules; ensure they are registered.
@@ -288,14 +312,11 @@ def _route_exists(_path: str, _method: str) -> bool:
             return True
     return False
 
-if not _route_exists("/ranking/mymodel_views", "GET"):
-    register_ranking_mymodel_views_routes(app)
+if not _route_exists("/ranking/piece_views", "GET"):
+    register_ranking_piece_views_routes(app)
 
-if not _route_exists("/ranking/mymodel_resonances", "GET"):
-    register_ranking_mymodel_resonances_routes(app)
-
-if not _route_exists("/ranking/mymodel_discoveries", "GET"):
-    register_ranking_mymodel_discoveries_routes(app)
+if not _route_exists("/ranking/piece_resonances", "GET"):
+    register_ranking_piece_resonances_routes(app)
 
 # /ranking/login_streak may already exist in api_ranking.py; register it here only if missing.
 if not _route_exists("/ranking/login_streak", "GET"):
@@ -306,7 +327,7 @@ if not _route_exists("/ranking/login_streak", "GET"):
         register_ranking_routes_login_streak(app)  # type: ignore
 
 
-# ASTOR engine for MyWeb insight (構造分析レポート用)
+# ASTOR engine for Analysis insight (構造分析レポート用)
 astor_myweb_engine = AstorEngine()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -433,7 +454,7 @@ async def _fetch_latest_monthly_report_text(*, user_id: str) -> Optional[str]:
         return None
     try:
         resp = await _sb_get(
-            "/rest/v1/myprofile_reports",
+            f"/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}",
             params={
                 "select": "content_text,period_end",
                 "user_id": f"eq.{uid}",
@@ -566,20 +587,20 @@ def _build_rollover_plan(now_utc: datetime) -> Dict[str, Any]:
     now_jst = now_utc.astimezone(JST)
     distribution_key = now_jst.date().isoformat()
 
-    daily_target = _myweb_build_target_period("daily", now_utc)
+    daily_target = _build_analysis_target_period("daily", now_utc)
     daily_day_jst = daily_target.period_start_utc.astimezone(JST)
     daily_scope = f"emotion_daily:{daily_day_jst.year:04d}-{daily_day_jst.month:02d}-{daily_day_jst.day:02d}"
 
     weekly_scope: Optional[str] = None
     if now_jst.weekday() == 6:
-        weekly_target = _myweb_build_target_period("weekly", now_utc)
+        weekly_target = _build_analysis_target_period("weekly", now_utc)
         weekly_dist_jst = weekly_target.dist_utc.astimezone(JST)
         weekly_scope = f"emotion_weekly:{weekly_dist_jst.year:04d}-{weekly_dist_jst.month:02d}-{weekly_dist_jst.day:02d}"
 
     monthly_scope: Optional[str] = None
     run_self_structure_monthly = False
     if now_jst.day == 1:
-        monthly_target = _myweb_build_target_period("monthly", now_utc)
+        monthly_target = _build_analysis_target_period("monthly", now_utc)
         monthly_end_jst = monthly_target.period_end_utc.astimezone(JST)
         monthly_scope = f"emotion_monthly:{monthly_end_jst.year:04d}-{monthly_end_jst.month:02d}"
         run_self_structure_monthly = True

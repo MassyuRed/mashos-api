@@ -20,7 +20,7 @@ def test_myweb_unread_status_ignores_non_publishable_reports(client, monkeypatch
             return self._payload
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        if path == "/rest/v1/myweb_reports":
+        if path == "/rest/v1/analysis_reports":
             report_type = params.get("report_type", "").replace("eq.", "")
             rows = [
                 {
@@ -84,7 +84,7 @@ def test_myweb_weekly_days_rejects_non_publishable_reports(client, monkeypatch):
             ]
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        assert path == "/rest/v1/myweb_reports"
+        assert path == "/rest/v1/analysis_reports"
         return FakeResponse()
 
     monkeypatch.setattr(myweb_reads_module, "_require_user_id", fake_require_user_id)
@@ -96,7 +96,8 @@ def test_myweb_weekly_days_rejects_non_publishable_reports(client, monkeypatch):
 
 
 def test_myprofile_history_filters_non_publishable_rows(client, monkeypatch):
-    import api_myprofile_reports_read as myprofile_reports_module
+    import api_self_structure_reports as self_structure_reports_module
+    import report_artifact_read_service as report_read_service
 
     async def fake_require_user_id(_authorization):
         return "user-789"
@@ -132,11 +133,22 @@ def test_myprofile_history_filters_non_publishable_rows(client, monkeypatch):
             ]
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return FakeResponse()
 
-    monkeypatch.setattr(myprofile_reports_module, "_require_user_id", fake_require_user_id)
-    monkeypatch.setattr(myprofile_reports_module, "sb_get", fake_sb_get)
+    async def fake_resolve_subscription_tier(_user_id: str) -> str:
+        return "premium"
+
+    class FakeReportViewContext:
+        subscription_tier = "premium"
+
+    async def fake_resolve_report_view_context(_user_id: str, *, now_utc=None):
+        return FakeReportViewContext()
+
+    monkeypatch.setattr(self_structure_reports_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(report_read_service, "_resolve_subscription_tier", fake_resolve_subscription_tier)
+    monkeypatch.setattr(report_read_service, "resolve_report_view_context", fake_resolve_report_view_context)
+    monkeypatch.setattr(report_read_service, "sb_get", fake_sb_get)
 
     response = client.get("/myprofile/reports/history?report_type=monthly&limit=60", headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 200, response.text
@@ -145,7 +157,8 @@ def test_myprofile_history_filters_non_publishable_rows(client, monkeypatch):
 
 
 def test_myprofile_detail_rejects_non_publishable_row(client, monkeypatch):
-    import api_myprofile_reports_read as myprofile_reports_module
+    import api_self_structure_reports as self_structure_reports_module
+    import report_artifact_read_service as report_read_service
 
     async def fake_require_user_id(_authorization):
         return "user-789"
@@ -170,11 +183,22 @@ def test_myprofile_detail_rejects_non_publishable_row(client, monkeypatch):
             ]
 
     async def fake_sb_get(path, *, params=None, timeout=8.0):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return FakeResponse()
 
-    monkeypatch.setattr(myprofile_reports_module, "_require_user_id", fake_require_user_id)
-    monkeypatch.setattr(myprofile_reports_module, "sb_get", fake_sb_get)
+    async def fake_resolve_subscription_tier(_user_id: str) -> str:
+        return "premium"
+
+    class FakeReportViewContext:
+        subscription_tier = "premium"
+
+    async def fake_resolve_report_view_context(_user_id: str, *, now_utc=None):
+        return FakeReportViewContext()
+
+    monkeypatch.setattr(self_structure_reports_module, "_require_user_id", fake_require_user_id)
+    monkeypatch.setattr(report_read_service, "_resolve_subscription_tier", fake_resolve_subscription_tier)
+    monkeypatch.setattr(report_read_service, "resolve_report_view_context", fake_resolve_report_view_context)
+    monkeypatch.setattr(report_read_service, "sb_get", fake_sb_get)
 
     response = client.get("/myprofile/reports/monthly-hidden", headers={"Authorization": "Bearer test-token"})
     assert response.status_code == 404

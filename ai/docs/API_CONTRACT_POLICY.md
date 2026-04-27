@@ -1,6 +1,6 @@
 # Cocolon Public API Contract Policy
 
-Policy version: `2026-03-20.mymodel-qna-unread-status.v1`
+Policy version: `2026-04-20.myprofile-lookup.v1`
 
 ## Core rules
 
@@ -15,9 +15,10 @@ Policy version: `2026-03-20.mymodel-qna-unread-status.v1`
 
 ## Why this policy exists
 
-This policy revision adds `/mymodel/qna/unread-status` so MyModel Home unread
-aggregation stays server-owned across the viewer's accessible reflections, while existing
-v1 routes remain additive-only and backward compatible.
+This policy revision keeps public v1 routes additive-only while moving current
+surfaces to current-vocabulary endpoints. In particular, `/connect/lookup` is the
+current Connect ID lookup surface, with legacy `/myprofile/lookup` retained as a
+deprecated compatibility route.
 
 ## Runtime headers
 

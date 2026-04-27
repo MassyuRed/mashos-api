@@ -16,7 +16,9 @@ logger = logging.getLogger("account_lifecycle_api")
 class AccountProfileMeResponse(BaseModel):
     user_id: str
     display_name: Optional[str] = None
+    share_code: Optional[str] = None
     friend_code: Optional[str] = None
+    connect_code: Optional[str] = None
     myprofile_code: Optional[str] = None
     push_enabled: bool = True
     tutorial_completed: bool = False
@@ -310,7 +312,9 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
         return AccountProfileMeResponse(
             user_id=me,
             display_name=(row.get("display_name") if isinstance(row.get("display_name"), str) else None),
+            share_code=(row.get("friend_code") if isinstance(row.get("friend_code"), str) else None),
             friend_code=(row.get("friend_code") if isinstance(row.get("friend_code"), str) else None),
+            connect_code=(row.get("myprofile_code") if isinstance(row.get("myprofile_code"), str) else None),
             myprofile_code=(row.get("myprofile_code") if isinstance(row.get("myprofile_code"), str) else None),
             push_enabled=(bool(row.get("push_enabled")) if row.get("push_enabled") is not None else True),
             tutorial_completed=(bool(row.get("tutorial_completed")) if row.get("tutorial_completed") is not None else False),
@@ -344,7 +348,9 @@ def register_account_lifecycle_routes(app: FastAPI) -> None:
         return AccountProfileMeResponse(
             user_id=me,
             display_name=(row.get("display_name") if isinstance(row.get("display_name"), str) else None),
+            share_code=(row.get("friend_code") if isinstance(row.get("friend_code"), str) else None),
             friend_code=(row.get("friend_code") if isinstance(row.get("friend_code"), str) else None),
+            connect_code=(row.get("myprofile_code") if isinstance(row.get("myprofile_code"), str) else None),
             myprofile_code=(row.get("myprofile_code") if isinstance(row.get("myprofile_code"), str) else None),
             push_enabled=(bool(row.get("push_enabled")) if row.get("push_enabled") is not None else True),
             tutorial_completed=(bool(row.get("tutorial_completed")) if row.get("tutorial_completed") is not None else False),

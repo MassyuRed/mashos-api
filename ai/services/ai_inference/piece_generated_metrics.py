@@ -33,6 +33,12 @@ from supabase_client import ensure_supabase_config, sb_get
 MYMODEL_REFLECTIONS_TABLE = (
     os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections"
 ).strip() or "mymodel_reflections"
+MYMODEL_REFLECTIONS_READ_TABLE = (
+    os.getenv("COCOLON_PIECES_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
+    or "pieces"
+).strip() or "pieces"
 EMOTION_GENERATED_SOURCE_TYPE = "emotion_generated"
 _READY_STATUS_FILTER = "in.(ready,published)"
 _JST = ZoneInfo("Asia/Tokyo")
@@ -118,7 +124,7 @@ async def count_piece_generated_total_for_owner(
         "limit": "0",
     }
     resp = await sb_get(
-        f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+        f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}",
         params=params,
         prefer="count=exact",
         timeout=10.0,
@@ -147,7 +153,7 @@ async def build_piece_generated_ranking_rows(*, range_key: str = "year") -> List
         params["limit"] = str(chunk)
         params["offset"] = str(offset)
         resp = await sb_get(
-            f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+            f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}",
             params=params,
             timeout=12.0,
         )
@@ -188,6 +194,7 @@ async def build_piece_generated_ranking_rows(*, range_key: str = "year") -> List
 __all__ = [
     "EMOTION_GENERATED_SOURCE_TYPE",
     "MYMODEL_REFLECTIONS_TABLE",
+    "MYMODEL_REFLECTIONS_READ_TABLE",
     "build_piece_generated_ranking_rows",
     "count_piece_generated_total_for_owner",
 ]

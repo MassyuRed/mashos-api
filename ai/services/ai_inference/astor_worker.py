@@ -125,7 +125,7 @@ from supabase_client import sb_get, sb_patch, sb_post  # type: ignore
 # NOTE:
 # In your repo, the module is expected to be `astor_myprofile_report.py`.
 # (This patch provides an updated version that adds `refresh_myprofile_latest_report`.)
-from astor_myprofile_report import refresh_myprofile_latest_report  # type: ignore
+from astor_self_structure_report import refresh_myprofile_latest_report  # type: ignore
 
 # Phase X: material snapshots (central input snapshots)
 from astor_material_snapshots import (
@@ -138,10 +138,10 @@ from astor_material_snapshots import (
     _exclude_rows_by_ids,
 )  # type: ignore
 
-# Phase X+: emotion structure reports (MyWeb weekly/monthly)
-from api_myweb_reports import (
-    _build_target_period as _myweb_build_target_period,
-    _generate_and_save_from_snapshot as _myweb_generate_and_save_from_snapshot,
+# Phase X+: emotion structure reports (Analysis weekly/monthly)
+from api_analysis_reports import (
+    _build_analysis_target_period,
+    _generate_analysis_report_and_save_from_snapshot,
 )  # type: ignore
 
 from api_emotion_submit import _fetch_push_tokens_for_users, _send_fcm_push  # type: ignore
@@ -198,11 +198,11 @@ try:
 except Exception:  # pragma: no cover - backward compatibility while adapter lands
     build_self_structure_inputs_from_snapshot_payload = None  # type: ignore
 
-from generated_reflection_display import resolve_generated_reflection_display
+from piece_generated_display import resolve_generated_reflection_display
 
 
-from astor_reflection_engine import build_generation_plan as build_reflection_generation_plan  # type: ignore
-from astor_reflection_store import (  # type: ignore
+from piece_generation_engine import build_generation_plan as build_reflection_generation_plan  # type: ignore
+from piece_generation_store import (  # type: ignore
     fetch_active_generated_reflections,
     stage_generation_plan as stage_reflection_generation_plan,
     promote_reflection as promote_generated_reflection,
@@ -238,19 +238,19 @@ from astor_account_status_kernel import (  # type: ignore
     generate_account_status_summary,
 )
 
-from astor_friend_feed_store import (  # type: ignore
-    FRIEND_FEED_SUMMARIES_TABLE,
-    FRIEND_FEED_VERSION,
-    FRIEND_FEED_MAX_ITEMS,
+from astor_emotion_log_feed_store import (  # type: ignore
+    EMOTION_LOG_FEED_SUMMARIES_READ_TABLE as FRIEND_FEED_SUMMARIES_READ_TABLE,
+    EMOTION_LOG_FEED_VERSION as FRIEND_FEED_VERSION,
+    EMOTION_LOG_FEED_MAX_ITEMS as FRIEND_FEED_MAX_ITEMS,
     ALLOWED_STRENGTHS as FRIEND_FEED_ALLOWED_STRENGTHS,
     STATUS_READY as FRIEND_FEED_STATUS_READY,
-    fail_friend_feed_summary,
-    promote_friend_feed_summary,
-    select_friend_feed_items,
-    upsert_friend_feed_draft,
+    fail_emotion_log_feed_summary as fail_friend_feed_summary,
+    promote_emotion_log_feed_summary as promote_friend_feed_summary,
+    select_emotion_log_feed_items as select_friend_feed_items,
+    upsert_emotion_log_feed_draft as upsert_friend_feed_draft,
 )
-from astor_friend_feed_kernel import (  # type: ignore
-    generate_friend_feed,
+from astor_emotion_log_feed_kernel import (  # type: ignore
+    generate_emotion_log_feed as generate_friend_feed,
 )
 
 from astor_global_summary_store import (  # type: ignore
@@ -275,10 +275,23 @@ from astor_global_summary_enqueue import (  # type: ignore
 
 
 MYWEB_REPORTS_TABLE = (os.getenv("MYWEB_REPORTS_TABLE") or "myweb_reports").strip() or "myweb_reports"
+MYWEB_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
+    or os.getenv("MYWEB_REPORTS_READ_TABLE")
+    or "analysis_reports"
+).strip() or "analysis_reports"
 MATERIAL_SNAPSHOTS_TABLE = (os.getenv("MATERIAL_SNAPSHOTS_TABLE") or "material_snapshots").strip() or "material_snapshots"
 SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip() or "global"
 ANALYSIS_RESULTS_TABLE = (os.getenv("ANALYSIS_RESULTS_TABLE") or "analysis_results").strip() or "analysis_results"
 MYMODEL_REFLECTIONS_TABLE = (os.getenv("MYMODEL_REFLECTIONS_TABLE") or "mymodel_reflections").strip() or "mymodel_reflections"
+MYMODEL_REFLECTIONS_READ_TABLE = (
+    os.getenv("COCOLON_PIECES_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
+    or "pieces"
+).strip() or "pieces"
 
 # JST (UTC+9) fixed for MyWeb periods
 JST = timezone(timedelta(hours=9))
@@ -534,7 +547,7 @@ async def _handle_generate_emotion_report_v2(*, user_id: str, payload: dict) -> 
     errors: Dict[str, str] = {}
     for sc in scopes:
         try:
-            _text, _json, _astor_text, meta = await _myweb_generate_and_save_from_snapshot(uid, scope=sc, include_astor=include_astor)
+            _text, _json, _astor_text, meta = await _generate_analysis_report_and_save_from_snapshot(uid, scope=sc, include_astor=include_astor)
             rid = None
             rt = None
             pub_hash = None
@@ -726,7 +739,7 @@ async def _fetch_myweb_report_row(report_id: str, *, user_id: str) -> Optional[D
         return None
     try:
         resp = await sb_get(
-            f"/rest/v1/{MYWEB_REPORTS_TABLE}",
+            f"/rest/v1/{MYWEB_REPORTS_READ_TABLE}",
             params={
                 "select": "id,user_id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at",
                 "id": f"eq.{rid}",
@@ -1047,7 +1060,7 @@ async def _fetch_reflection_row(*, reflection_id: str, user_id: str) -> Optional
         return None
     try:
         resp = await sb_get(
-            f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+            f"/rest/v1/{MYMODEL_REFLECTIONS_READ_TABLE}",
             params={
                 "select": "*",
                 "id": f"eq.{rid}",
@@ -1600,7 +1613,7 @@ async def _fetch_friend_feed_summary_row_by_id(summary_id: str) -> Optional[Dict
     if not sid:
         return None
     resp = await sb_get(
-        f"/rest/v1/{FRIEND_FEED_SUMMARIES_TABLE}",
+        f"/rest/v1/{FRIEND_FEED_SUMMARIES_READ_TABLE}",
         params={
             "select": "id,viewer_user_id,status,payload,source_hash,version,meta,created_at,updated_at,published_at",
             "id": f"eq.{sid}",
@@ -3790,11 +3803,11 @@ async def _worker_loop() -> None:
                                 # distribution timing path.
                                 try:
                                     now_utc = datetime.now(timezone.utc)
-                                    weekly_target = _myweb_build_target_period("weekly", now_utc)
+                                    weekly_target = _build_analysis_target_period("weekly", now_utc)
                                     weekly_dist_jst = weekly_target.dist_utc.astimezone(JST)
                                     weekly_scope = f"emotion_weekly:{weekly_dist_jst.year:04d}-{weekly_dist_jst.month:02d}-{weekly_dist_jst.day:02d}"
 
-                                    monthly_target = _myweb_build_target_period("monthly", now_utc)
+                                    monthly_target = _build_analysis_target_period("monthly", now_utc)
                                     monthly_end_jst = monthly_target.period_end_utc.astimezone(JST)
                                     monthly_scope = f"emotion_monthly:{monthly_end_jst.year:04d}-{monthly_end_jst.month:02d}"
 

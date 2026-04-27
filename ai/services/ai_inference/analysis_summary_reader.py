@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Dict, List, Optional
 
 from publish_governance import decide_myweb_report_publish, normalize_content_json
@@ -15,6 +16,13 @@ except Exception:  # pragma: no cover
     get_subscription_tier_for_user = None  # type: ignore
 
 ANALYSIS_SUMMARY_READER_CACHE_TTL_SECONDS = 10.0
+ANALYSIS_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("ANALYSIS_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYWEB_REPORTS_READ_TABLE")
+    or os.getenv("MYWEB_REPORTS_READ_TABLE")
+    or "analysis_reports"
+).strip() or "analysis_reports"
 EMOTION_KEYS = ("joy", "sadness", "anxiety", "anger", "calm")
 KEY_TO_JP: Dict[str, str] = {
     "joy": "喜び",
@@ -60,7 +68,7 @@ async def _resolve_viewer_tier(user_id: str) -> str:
 
 async def _fetch_latest_report_row(user_id: str, report_type: str, *, tier_str: str) -> Optional[Dict[str, Any]]:
     resp = await sb_get(
-        "/rest/v1/myweb_reports",
+        f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
         params={
             "select": "id,report_type,period_start,period_end,content_json,updated_at,generated_at,status,publish_status,title",
             "user_id": f"eq.{user_id}",

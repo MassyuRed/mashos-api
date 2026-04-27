@@ -110,9 +110,12 @@ def test_mymodel_create_answers_persists_reflection_display_columns(client, monk
 
 def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monkeypatch):
     import api_mymodel_qna as qna_module
+    import api_piece_runtime as piece_runtime_module
+    import piece_public_read_service as piece_read_service
 
     reflection_row: Dict[str, Any] = {
         "id": "reflection-row-1",
+        "public_id": "reflection:test-1",
         "owner_user_id": "owner-1",
         "question": "Question 1",
         "source_type": qna_module.EMOTION_GENERATED_SOURCE_TYPE,
@@ -131,25 +134,25 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
         assert row.get("id") == "reflection-row-1"
         return current_body["value"]
 
-    async def fake_build_qna_detail_response(**kwargs):
-        return qna_module.QnaDetailResponse(
-            title=str(kwargs.get("title") or ""),
-            body=str(kwargs.get("body") or ""),
-            q_key=str(kwargs.get("q_key") or ""),
-            q_instance_id=str(kwargs.get("q_instance_id") or ""),
-            views=0,
-            resonances=0,
-            discoveries=0,
-            is_new=False,
-            is_resonated=False,
-            my_discovery_latest=None,
-            my_discovery_latest_loaded=False,
-        )
+    async def fake_fetch_instance_metrics(_instance_ids):
+        return {"reflection:test-1": {"views": 0, "resonances": 0}}
 
-    monkeypatch.setattr(qna_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
-    monkeypatch.setattr(qna_module, "get_public_generated_reflection_text", fake_get_public_generated_reflection_text)
-    monkeypatch.setattr(qna_module, "_build_qna_detail_response", fake_build_qna_detail_response)
+    async def fake_fetch_reads(_viewer_user_id: str, _q_instance_ids):
+        return set()
+
+    async def fake_is_resonated(_viewer_user_id: str, _q_instance_id: str):
+        return False
+
+    def fake_build_generated_q_key(_row):
+        return "generated:test"
+
+    monkeypatch.setattr(piece_runtime_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(piece_read_service, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(piece_read_service, "get_public_generated_reflection_text", fake_get_public_generated_reflection_text)
+    monkeypatch.setattr(piece_read_service, "fetch_instance_metrics", fake_fetch_instance_metrics)
+    monkeypatch.setattr(piece_read_service, "fetch_reads", fake_fetch_reads)
+    monkeypatch.setattr(piece_read_service, "is_resonated", fake_is_resonated)
+    monkeypatch.setattr(piece_read_service, "build_generated_q_key", fake_build_generated_q_key)
 
     response = client.get(
         "/mymodel/qna/detail?q_instance_id=reflection:test-1",
@@ -170,6 +173,7 @@ def test_qna_detail_uses_public_display_text_and_hides_blocked_rows(client, monk
 
 def test_qna_reaction_context_uses_display_text(monkeypatch):
     import api_mymodel_qna as qna_module
+    import api_piece_runtime as piece_runtime_module
 
     async def fake_resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str):
         assert viewer_user_id == "owner-ctx"
@@ -185,11 +189,11 @@ def test_qna_reaction_context_uses_display_text(monkeypatch):
         assert row.get("id") == "reflection-row-ctx"
         return "[メールアドレス]"
 
-    monkeypatch.setattr(qna_module, "_resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
+    monkeypatch.setattr(qna_module, "resolve_generated_reflection_access", fake_resolve_generated_reflection_access)
     monkeypatch.setattr(qna_module, "get_public_generated_reflection_text", fake_get_public_generated_reflection_text)
 
     ctx = asyncio.run(
-        qna_module._resolve_qna_context_for_reaction(
+        piece_runtime_module._resolve_qna_context_for_reaction(
             viewer_user_id="owner-ctx",
             q_instance_id="reflection:test-ctx",
             q_key="generated:test",

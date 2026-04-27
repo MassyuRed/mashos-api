@@ -1,46 +1,53 @@
 # -*- coding: utf-8 -*-
-"""Helpers for Premium generated Reflection public identity.
+"""Legacy generated reflection identity compat facade.
 
-Public/generated Reflections are exposed as question cards.
-The stable public identity is the generated q_key derived from the public
-question text, not the internal topic_key.
+Runtime body now lives in ``piece_generated_identity``. This file is intentionally
+kept as a thin compatibility import path until public legacy contracts and DB
+physical names are retired in a separate release step.
 """
 
 from __future__ import annotations
 
-import hashlib
-import re
-from typing import Any
+import sys
+import types
 
-_WS_RE = re.compile(r"\s+")
-_QKEY_PUNCT_RE = re.compile(r"[。．.!！?？、,「」『』【】\[\]（）()<>＜＞\"'`]+")
+import piece_generated_identity as _current
 
 
-
-def collapse_generated_question_text(question: Any) -> str:
-    text = str(question or "")
-    text = _WS_RE.sub(" ", text).strip().lower()
-    return text
-
-
-
-def normalize_generated_question_text_for_key(question: Any) -> str:
-    text = collapse_generated_question_text(question)
-    text = _QKEY_PUNCT_RE.sub("", text)
-    text = _WS_RE.sub("", text)
-    return text
-
-
-
-def compute_generated_question_q_key(question: Any) -> str:
-    normalized = normalize_generated_question_text_for_key(question)
-    if not normalized:
-        return "generated:q:unknown"
-    return f"generated:q:{hashlib.md5(normalized.encode('utf-8')).hexdigest()}"
+def _export_public_names() -> list[str]:
+    names = getattr(_current, "__all__", None)
+    if names is None:
+        names = [name for name in dir(_current) if not name.startswith("__")]
+    out: list[str] = []
+    for name in names:
+        if not isinstance(name, str) or not name:
+            continue
+        try:
+            globals()[name] = getattr(_current, name)
+        except AttributeError:
+            continue
+        out.append(name)
+    return out
 
 
-__all__ = [
-    "collapse_generated_question_text",
-    "compute_generated_question_q_key",
-    "normalize_generated_question_text_for_key",
-]
+__all__ = _export_public_names()
+
+
+class _CompatModule(types.ModuleType):
+    def __getattr__(self, name: str):
+        return getattr(_current, name)
+
+    def __setattr__(self, name: str, value):
+        if not name.startswith("__"):
+            try:
+                setattr(_current, name, value)
+            except Exception:
+                pass
+        return super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _CompatModule
+
+
+def __getattr__(name: str):
+    return getattr(_current, name)

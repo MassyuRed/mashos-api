@@ -188,13 +188,13 @@ class _FakeResponse:
 
 
 def test_myprofile_latest_status_returns_contract_headers(client, monkeypatch):
-    import api_myprofile as myprofile_module
+    import api_self_structure as self_structure_module
 
     async def fake_resolve_user_id_from_token(_access_token: str) -> str:
         return "user-123"
 
     async def fake_sb_get(path: str, *, params=None):
-        assert path == "/rest/v1/myprofile_reports"
+        assert path == "/rest/v1/self_structure_reports"
         return _FakeResponse(
             200,
             [
@@ -217,15 +217,16 @@ def test_myprofile_latest_status_returns_contract_headers(client, monkeypatch):
             ],
         )
 
-    monkeypatch.setattr(myprofile_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
-    monkeypatch.setattr(myprofile_module, "_sb_get", fake_sb_get)
+    monkeypatch.setattr(self_structure_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(self_structure_module, "_sb_get", fake_sb_get)
 
     response = client.get("/myprofile/latest/status", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 200, response.text
     assert response.headers["X-Cocolon-Api-Policy-Version"] == API_CONTRACT_POLICY_VERSION
     assert response.headers["X-Cocolon-Contract-Id"] == "myprofile.latest.status.v1"
-    assert response.headers["X-Cocolon-Deprecated"] == "false"
+    assert response.headers["X-Cocolon-Deprecated"] == "true"
+    assert response.headers["X-Cocolon-Replacement"] == "/self-structure/latest/status"
     assert response.headers["X-Cocolon-Request-Id"]
 
 
@@ -447,7 +448,7 @@ def test_home_state_returns_contract_headers_and_shape(client, monkeypatch):
 
 
 def test_emotion_reflection_cancel_returns_contract_headers(client, monkeypatch):
-    import api_emotion_reflection as reflection_module
+    import api_emotion_piece as emotion_piece_module
 
     async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
         return "user-123"
@@ -458,9 +459,9 @@ def test_emotion_reflection_cancel_returns_contract_headers(client, monkeypatch)
     async def fake_cancel_preview_draft(*, preview_id: str, user_id: str):
         return {"status": "cancelled", "preview_id": preview_id, "user_id": user_id}
 
-    monkeypatch.setattr(reflection_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
-    monkeypatch.setattr(reflection_module, "fetch_preview_draft", fake_fetch_preview_draft)
-    monkeypatch.setattr(reflection_module, "cancel_preview_draft", fake_cancel_preview_draft)
+    monkeypatch.setattr(emotion_piece_module, "ResolveEmotionPieceAuthenticatedUserId", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(emotion_piece_module, "FetchEmotionPiecePreviewDraft", fake_fetch_preview_draft)
+    monkeypatch.setattr(emotion_piece_module, "CancelEmotionPiecePreviewDraft", fake_cancel_preview_draft)
 
     response = client.post(
         "/emotion/reflection/cancel",
@@ -470,4 +471,6 @@ def test_emotion_reflection_cancel_returns_contract_headers(client, monkeypatch)
 
     assert response.status_code == 200, response.text
     assert response.headers["X-Cocolon-Contract-Id"] == "emotion.reflection.cancel.v1"
+    assert response.headers["X-Cocolon-Deprecated"] == "true"
+    assert response.headers["X-Cocolon-Replacement"] == "/emotion/piece/cancel"
     assert response.json()["result"] == "cancelled"

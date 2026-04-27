@@ -7,12 +7,12 @@ from typing import Any, Dict
 from fastapi import HTTPException
 
 from api_emotion_submit import EmotionItem
-from emotion_reflection_store import (
+from emotion_piece_store import (
     count_published_emotion_reflections_for_month,
     fetch_preview_draft,
     publish_preview_draft,
 )
-from reflection_publish_entitlements import (
+from piece_publish_entitlements import (
     get_reflection_publish_policy_for_user,
     resolve_reflection_publish_limit_for_tier,
 )
@@ -22,7 +22,7 @@ from .emotion_submit_service import persist_emotion_submission
 
 
 def _reflection_module_override(name: str, default: Any) -> Any:
-    module = sys.modules.get("api_emotion_reflection")
+    module = sys.modules.get("api_emotion_piece") or sys.modules.get("api_emotion_reflection")
     if module is None:
         return None
     candidate = getattr(module, name, None)

@@ -172,86 +172,66 @@ def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monke
 
 
 def test_emotion_reflection_publish_contract_keeps_additive_emlis_ai_meta(client, monkeypatch):
-    import api_emotion_reflection as reflection_module
+    import api_emotion_piece as emotion_piece_module
 
     async def fake_resolve_authenticated_user_id(*, authorization=None, legacy_user_id=None):
         return "user-123"
 
-    async def fake_fetch_preview_draft(*, preview_id: str, user_id: str):
-        assert preview_id == "preview-1"
-        assert user_id == "user-123"
-        return {
-            "id": "preview-1",
-            "status": "draft",
-            "question": "今日の気持ちは？",
-            "content_json": {
-                "emotion_preview": {
-                    "emotions": ["不安"],
-                    "memo": "メモ",
-                    "memo_action": "",
-                    "category": ["仕事"],
-                    "created_at": "2026-04-18T00:00:00Z",
-                    "notify_friends": False,
-                },
-                "display": {
-                    "answer_display_text": "preview reflection",
-                },
-            },
-        }
-
-    async def fake_persist_emotion_submission(**kwargs):
-        assert kwargs["user_id"] == "user-123"
-        return {
-            "inserted": {"id": "emo-2"},
+    class _FakeExecutionResult:
+        data = {
+            "preview_id": "preview-1",
+            "reflection_id": "reflection-1",
+            "emotion_id": "emo-2",
             "created_at": "2026-04-18T00:00:00Z",
-            "input_feedback_comment": "Mashさん、Emlisです。今回は不安が近かったのですね。",
-            "input_feedback_meta": {
-                "version": "emlis_ai_v2",
-                "kernel_version": "observation_kernel.v2",
-                "tier": "premium",
-                "capability": {
-                    "history_mode": "full",
-                    "continuity_mode": "advanced",
-                    "style_mode": "personalized",
-                    "partner_mode": "on_advanced",
-                    "model_mode": "deep",
-                    "interpretation_mode": "precision_aligned",
+            "question": "今日の気持ちは？",
+            "reflection_text": "published reflection",
+            "quota": {
+                "status": "ok",
+                "subscription_tier": "premium",
+                "month_key": "2026-04",
+                "publish_limit": None,
+                "published_count": 4,
+                "remaining_count": None,
+                "can_publish": True,
+            },
+            "input_feedback": {
+                "comment_text": "Mashさん、Emlisです。今回は不安が近かったのですね。",
+                "emlis_ai": {
+                    "version": "emlis_ai_v2",
+                    "kernel_version": "observation_kernel.v2",
+                    "tier": "premium",
+                    "capability": {
+                        "history_mode": "full",
+                        "continuity_mode": "advanced",
+                        "style_mode": "personalized",
+                        "partner_mode": "on_advanced",
+                        "model_mode": "deep",
+                        "interpretation_mode": "precision_aligned",
+                    },
+                    "used_memory_layers": ["canonical_history", "derived_user_model", "side_state"],
+                    "reply_length_mode": "input_and_history_scaled",
+                    "evidence_count": 3,
+                    "evidence_by_line": {
+                        "receive": [{"kind": "emotion", "ref_id": "emo-2", "weight": 1.0, "note": None}],
+                    },
+                    "rejected_candidate_count": 1,
+                    "fallback_used": False,
+                    "model_revision": "2026-04-18T00:00:01Z",
                 },
-                "used_memory_layers": ["canonical_history", "derived_user_model", "side_state"],
-                "reply_length_mode": "input_and_history_scaled",
-                "evidence_count": 3,
-                "evidence_by_line": {
-                    "receive": [{"kind": "emotion", "ref_id": "emo-2", "weight": 1.0, "note": None}],
-                },
-                "rejected_candidate_count": 1,
-                "fallback_used": False,
-                "model_revision": "2026-04-18T00:00:01Z",
             },
         }
 
-    async def fake_publish_preview_draft(*, preview_id: str, user_id: str, published_at: str, emotion_entry=None):
-        return {
-            "id": "reflection-1",
-            "question": "今日の気持ちは？",
-            "answer": "published reflection",
-        }
+    class _FakeExecution:
+        result = _FakeExecutionResult()
 
-    async def fake_build_quota_status(_user_id: str):
-        return {
-            "status": "ok",
-            "subscription_tier": "premium",
-            "month_key": "2026-04",
-            "publish_limit": None,
-            "published_count": 4,
-            "remaining_count": None,
-            "can_publish": True,
-        }
+    async def fake_execute_home_command(command: str, *, payload=None, user_id: str, source: str):
+        assert command == "emotion.reflection.publish"
+        assert payload == {"preview_id": "preview-1"}
+        assert user_id == "user-123"
+        return _FakeExecution()
 
-    monkeypatch.setattr(reflection_module, "resolve_authenticated_user_id", fake_resolve_authenticated_user_id)
-    monkeypatch.setattr(reflection_module, "fetch_preview_draft", fake_fetch_preview_draft)
-    monkeypatch.setattr(reflection_module, "persist_emotion_submission", fake_persist_emotion_submission)
-    monkeypatch.setattr(reflection_module, "publish_preview_draft", fake_publish_preview_draft)
-    monkeypatch.setattr(reflection_module, "_build_quota_status", fake_build_quota_status)
+    monkeypatch.setattr(emotion_piece_module, "ResolveEmotionPieceAuthenticatedUserId", fake_resolve_authenticated_user_id)
+    monkeypatch.setattr(emotion_piece_module, "ExecuteEmotionPieceHomeCommand", fake_execute_home_command)
 
     response = client.post(
         "/emotion/reflection/publish",
@@ -260,6 +240,9 @@ def test_emotion_reflection_publish_contract_keeps_additive_emlis_ai_meta(client
     )
 
     assert response.status_code == 200, response.text
+    assert response.headers["X-Cocolon-Contract-Id"] == "emotion.reflection.publish.v1"
+    assert response.headers["X-Cocolon-Deprecated"] == "true"
+    assert response.headers["X-Cocolon-Replacement"] == "/emotion/piece/publish"
     body = response.json()
     assert body["input_feedback"]["comment_text"] == "Mashさん、Emlisです。今回は不安が近かったのですね。"
     assert body["input_feedback"]["emlis_ai"]["version"] == "emlis_ai_v2"

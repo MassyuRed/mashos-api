@@ -52,6 +52,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 class AccountVisibilityResponse(BaseModel):
     user_id: str
+    is_share_code_public: bool = True
     is_friend_code_public: bool = True
     is_recommendation_enabled: bool = True
     is_ranking_visible: bool = True
@@ -60,6 +61,7 @@ class AccountVisibilityResponse(BaseModel):
 
 
 class AccountVisibilityUpdateBody(BaseModel):
+    is_share_code_public: Optional[bool] = None
     is_friend_code_public: Optional[bool] = None
     is_recommendation_enabled: Optional[bool] = None
     is_ranking_visible: Optional[bool] = None
@@ -71,11 +73,18 @@ class FriendCodeVisibilityInfo(BaseModel):
     reason: str
 
 
+class ShareCodeVisibilityInfo(FriendCodeVisibilityInfo):
+    pass
+
+
 class AccountProfileResponse(BaseModel):
     target_user_id: str
     display_name: Optional[str] = None
+    connect_code: Optional[str] = None
     myprofile_code: Optional[str] = None
+    share_code: Optional[str] = None
     friend_code: Optional[str] = None
+    share_code_visibility: ShareCodeVisibilityInfo
     friend_code_visibility: FriendCodeVisibilityInfo
 
 
@@ -219,6 +228,9 @@ def register_account_visibility_routes(app: FastAPI) -> None:
 
         return AccountVisibilityResponse(
             user_id=str(row.get("user_id") or me),
+            is_share_code_public=bool(
+                row.get("is_friend_code_public") if row.get("is_friend_code_public") is not None else True
+            ),
             is_friend_code_public=bool(
                 row.get("is_friend_code_public") if row.get("is_friend_code_public") is not None else True
             ),
@@ -242,7 +254,9 @@ def register_account_visibility_routes(app: FastAPI) -> None:
         me = await _require_user_id(authorization)
 
         payload: Dict[str, Any] = {}
-        if body.is_friend_code_public is not None:
+        if body.is_share_code_public is not None:
+            payload["is_friend_code_public"] = bool(body.is_share_code_public)
+        elif body.is_friend_code_public is not None:
             payload["is_friend_code_public"] = bool(body.is_friend_code_public)
         if body.is_recommendation_enabled is not None:
             payload["is_recommendation_enabled"] = bool(body.is_recommendation_enabled)
@@ -286,11 +300,9 @@ def register_account_visibility_routes(app: FastAPI) -> None:
                     metric_keys=[
                         "input_count",
                         "input_length",
-                        "mymodel_questions",
                         "login_streak",
                         "mymodel_views",
                         "mymodel_resonances",
-                        "mymodel_discoveries",
                     ],
                     user_id=me,
                     trigger="account_visibility_patch",
@@ -310,6 +322,9 @@ def register_account_visibility_routes(app: FastAPI) -> None:
 
         return AccountVisibilityResponse(
             user_id=str(row.get("user_id") or me),
+            is_share_code_public=bool(
+                row.get("is_friend_code_public") if row.get("is_friend_code_public") is not None else True
+            ),
             is_friend_code_public=bool(
                 row.get("is_friend_code_public") if row.get("is_friend_code_public") is not None else True
             ),
@@ -363,7 +378,10 @@ def register_account_visibility_routes(app: FastAPI) -> None:
         return AccountProfileResponse(
             target_user_id=str(tgt),
             display_name=(prof.get("display_name") if isinstance(prof.get("display_name"), str) else None),
+            connect_code=(prof.get("myprofile_code") if isinstance(prof.get("myprofile_code"), str) else None),
             myprofile_code=(prof.get("myprofile_code") if isinstance(prof.get("myprofile_code"), str) else None),
+            share_code=friend_code,
             friend_code=friend_code,
+            share_code_visibility=ShareCodeVisibilityInfo(can_view=can_view, reason=reason),
             friend_code_visibility=FriendCodeVisibilityInfo(can_view=can_view, reason=reason),
         )

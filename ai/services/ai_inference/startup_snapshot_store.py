@@ -33,8 +33,10 @@ STARTUP_SNAPSHOT_SOURCE_VERSIONS: Dict[str, str] = {
     # Backward-compatible legacy alias for older clients.
     "friends_unread": "friends.unread.v1",
     "myweb_unread": "report_reads.myweb_unread.v1",
-    "notices_current": "notice.current.v1",
-    "today_question_light": "today_question.current.light.v1",
+    # Input/Home-owned sections remain available for compatibility, but their
+    # payload is projected from the canonical /home/state read model.
+    "notices_current": "home_state.notices_current.compat.v1",
+    "today_question_light": "home_state.today_question_current.light.compat.v1",
 }
 
 
@@ -141,13 +143,11 @@ async def _build_startup_snapshot_payload(
         }
 
     # Lazy imports keep startup light and avoid circular imports during app boot.
-    try:
-        from api_friends import get_emotion_log_unread_status_payload_for_user
-    except Exception:
-        from api_friends import get_friend_unread_status_payload_for_user as get_emotion_log_unread_status_payload_for_user
-    from api_notice import get_notice_current_payload_for_user
-    from api_report_reads import get_myweb_unread_status_payload_for_user
-    from api_today_question import get_today_question_current_payload_for_user
+    # Current unread owner is api_emotion_log; do not route startup imports back
+    # through the legacy aggregate api_friends module.
+    from api_emotion_log import get_emotion_log_unread_status_payload_for_user
+    from api_report_reads import get_analysis_unread_status_payload_for_user
+    from home_gateway.read_model_service import get_home_state
 
     normalized_meta = _normalize_client_meta(client_meta)
 
@@ -194,26 +194,54 @@ async def _build_startup_snapshot_payload(
         },
     }
 
+    home_state_projection_default = {
+        "status": "ok",
+        "user_id": uid,
+        "generated_at": _iso_utc(),
+        "service_day_key": _today_jst_date_iso(),
+        "source_versions": {},
+        "popup_candidates": [],
+        "notice_popup_notice_id": None,
+        "sections": {
+            "notices_current": defaults["notices_current"],
+            "today_question_current": defaults["today_question_light"],
+        },
+        "errors": {},
+    }
+
     section_results = await asyncio.gather(
         _safe_section("emotion_log_unread", get_emotion_log_unread_status_payload_for_user(uid), defaults["emotion_log_unread"]),
         _safe_section(
             "myweb_unread",
-            get_myweb_unread_status_payload_for_user(uid, limit=1, include_self_structure=True),
+            get_analysis_unread_status_payload_for_user(uid, limit=1, include_self_structure=True),
             defaults["myweb_unread"],
         ),
-        _safe_section("notices_current", get_notice_current_payload_for_user(uid, normalized_meta), defaults["notices_current"]),
         _safe_section(
-            "today_question_light",
-            get_today_question_current_payload_for_user(uid, timezone_name=timezone_name),
-            defaults["today_question_light"],
+            "home_state_projection",
+            get_home_state(uid, client_meta=normalized_meta, timezone_name=timezone_name, force_refresh=False),
+            home_state_projection_default,
         ),
     )
 
     sections: Dict[str, Any] = {}
     errors: Dict[str, str] = {}
     for name, payload, error in section_results:
-        if name == "today_question_light":
-            payload = _light_today_question_payload(payload if isinstance(payload, Mapping) else defaults[name])
+        if name == "home_state_projection":
+            home_sections = payload.get("sections") if isinstance(payload.get("sections"), Mapping) else {}
+            sections["notices_current"] = (
+                home_sections.get("notices_current")
+                if isinstance(home_sections.get("notices_current"), Mapping)
+                else defaults["notices_current"]
+            )
+            sections["today_question_light"] = _light_today_question_payload(
+                home_sections.get("today_question_current")
+                if isinstance(home_sections.get("today_question_current"), Mapping)
+                else defaults["today_question_light"]
+            )
+            if error:
+                errors["notices_current"] = error
+                errors["today_question_light"] = error
+            continue
         sections[name] = payload
         if error:
             errors[name] = error

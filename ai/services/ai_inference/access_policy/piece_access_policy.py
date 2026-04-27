@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Set, Tuple
 
-from mymodel_entitlements import resolve_mymodel_entitlement
+from profile_create_entitlements import resolve_mymodel_entitlement
 from publish_governance import history_retention_bounds_for_query, normalize_tier_str
 
 try:

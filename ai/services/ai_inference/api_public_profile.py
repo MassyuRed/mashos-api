@@ -46,7 +46,7 @@ def _sb_headers() -> Dict[str, str]:
 def register_public_profile_routes(app):
     router = APIRouter()
 
-    @router.get("/public/profile/by-friend-code")
+    @router.get("/public/profile/by-share-code")
     async def get_profile_by_friend_code(code: str) -> Dict[str, Any]:
         _ensure_supabase_config()
 
@@ -117,9 +117,12 @@ def register_public_profile_routes(app):
                     "status": "ok",
                     "user_id": user_id,
                     "display_name": None,
+                    "share_code": row.get("friend_code"),
                     "friend_code": row.get("friend_code"),
+                    "connect_code": None,
                     "myprofile_code": None,
                     "is_private_account": True,
+                    "is_share_code_public": is_friend_code_public,
                     "is_friend_code_public": is_friend_code_public,
                 }
 
@@ -127,9 +130,12 @@ def register_public_profile_routes(app):
                 "status": "ok",
                 "user_id": user_id,
                 "display_name": row.get("display_name"),
+                "share_code": row.get("friend_code"),
                 "friend_code": row.get("friend_code"),
+                "connect_code": row.get("myprofile_code"),
                 "myprofile_code": row.get("myprofile_code"),
                 "is_private_account": False,
+                "is_share_code_public": is_friend_code_public,
                 "is_friend_code_public": is_friend_code_public,
             }
 

@@ -10,8 +10,8 @@ from access_policy.viewer_access_policy import resolve_piece_view_tiers
 from astor_account_status_enqueue import enqueue_account_status_refresh
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
 from astor_ranking_enqueue import enqueue_ranking_board_refresh
-from generated_reflection_display import get_public_generated_reflection_text
-from piece_generated_reflection_access import (
+from piece_generated_display import get_public_generated_reflection_text
+from piece_generated_access import (
     EMOTION_GENERATED_SOURCE_TYPE,
     build_generated_q_key,
     fetch_active_emotion_generated_reflections_for_owner,

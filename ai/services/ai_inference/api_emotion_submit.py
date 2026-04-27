@@ -43,6 +43,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
+try:
+    from pydantic import model_validator  # type: ignore
+except ImportError:  # pragma: no cover
+    model_validator = None  # type: ignore
+try:
+    from pydantic import root_validator  # type: ignore
+except ImportError:  # pragma: no cover
+    root_validator = None  # type: ignore
 
 # NOTE:
 # - Pydantic v2 では "alias" を指定したフィールドに対して、
@@ -58,7 +66,7 @@ except ImportError:  # pragma: no cover
 from astor_core import AstorEngine, AstorRequest, AstorMode, AstorEmotionPayload
 from astor_ranking_enqueue import enqueue_ranking_board_refresh_many
 from astor_account_status_enqueue import enqueue_account_status_refresh
-from astor_friend_feed_enqueue import enqueue_emotion_log_feed_refresh_many
+from astor_emotion_log_feed_enqueue import enqueue_emotion_log_feed_refresh_many
 from astor_global_summary_enqueue import enqueue_global_summary_refresh
 from astor_snapshot_enqueue import ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS
 
@@ -84,11 +92,36 @@ astor_engine = AstorEngine()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SELF_STRUCTURE_REPORTS_READ_TABLE = (
+    os.getenv("COCOLON_SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("SELF_STRUCTURE_REPORTS_READ_TABLE")
+    or os.getenv("COCOLON_MYPROFILE_REPORTS_READ_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_READ_TABLE")
+    or "self_structure_reports"
+).strip() or "self_structure_reports"
+MYPROFILE_REPORTS_TABLE = (
+    os.getenv("COCOLON_MYPROFILE_REPORTS_TABLE")
+    or os.getenv("MYPROFILE_REPORTS_TABLE")
+    or "myprofile_reports"
+).strip() or "myprofile_reports"
+FRIEND_EMOTION_FEED_TABLE = (
+    os.getenv("COCOLON_FRIEND_EMOTION_FEED_TABLE")
+    or os.getenv("FRIEND_EMOTION_FEED_TABLE")
+    or "friend_emotion_feed"
+).strip() or "friend_emotion_feed"
 ALLOW_LEGACY_USER_ID = os.getenv("EMOTION_SUBMIT_ALLOW_LEGACY_USER_ID", "false").lower() in (
     "1",
     "true",
     "yes",
 )
+
+# Current bridge view is backend read-only. Emotion notification write paths stay
+# on public.friend_notification_settings; this table is for SELECT-only filtering.
+EMOTION_NOTIFICATION_SETTINGS_READ_TABLE = (
+    os.getenv("COCOLON_EMOTION_NOTIFICATION_SETTINGS_READ_TABLE")
+    or os.getenv("COCOLON_FRIEND_NOTIFICATION_SETTINGS_READ_TABLE")
+    or "emotion_notification_settings"
+).strip() or "emotion_notification_settings"
 
 
 # ---------- Push Notifications (FCM) ----------
@@ -553,7 +586,7 @@ async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
     """myprofile_reports(latest) の generated_at を取得する（無ければ None）。"""
     _ensure_supabase_config()
 
-    url = f"{SUPABASE_URL}/rest/v1/myprofile_reports"
+    url = f"{SUPABASE_URL}/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -595,7 +628,7 @@ async def _upsert_myprofile_latest_report_row(payload: Dict[str, Any]) -> None:
     """myprofile_reports に latest を upsert（失敗したら例外）。"""
     _ensure_supabase_config()
 
-    url = f"{SUPABASE_URL}/rest/v1/myprofile_reports"
+    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -699,7 +732,7 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
 
     # ---- generate latest text (rule-based; no LLM) ----
     try:
-        from astor_myprofile_report import build_myprofile_monthly_report
+        from astor_self_structure_report import build_myprofile_monthly_report
 
         now_dt = datetime.now(timezone.utc).replace(microsecond=0)
         text, meta = build_myprofile_monthly_report(
@@ -727,7 +760,7 @@ async def _auto_refresh_myprofile_latest_report(user_id: str) -> None:
         days = 28
         try:
             # reuse astor_myprofile_report's parser if available
-            from astor_myprofile_report import parse_period_days
+            from astor_self_structure_report import parse_period_days
             days = int(parse_period_days(MYPROFILE_LATEST_PERIOD))
         except Exception:
             pass
@@ -826,6 +859,25 @@ class EmotionSubmitRequest(BaseModel):
             # payload に notify_friends / send_friend_notification のどちらが来ても受け取れるようにする
             allow_population_by_field_name = True
 
+    if model_validator is not None:  # pragma: no cover
+        @model_validator(mode="before")
+        @classmethod
+        def _accept_current_notification_alias_v2(cls, data: Any) -> Any:
+            if isinstance(data, dict) and "send_emotion_notification" in data and "send_friend_notification" not in data and "notify_friends" not in data:
+                payload = dict(data)
+                payload["send_friend_notification"] = payload.get("send_emotion_notification")
+                return payload
+            return data
+
+    if root_validator is not None:  # pragma: no cover
+        @root_validator(pre=True)
+        def _accept_current_notification_alias_v1(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+            if isinstance(values, dict) and "send_emotion_notification" in values and "send_friend_notification" not in values and "notify_friends" not in values:
+                payload = dict(values)
+                payload["send_friend_notification"] = payload.get("send_emotion_notification")
+                return payload
+            return values
+
 
 class EmotionSubmitInputFeedback(BaseModel):
     comment_text: str = Field(..., description="入力直後に表示する短い受け取りコメント")
@@ -894,8 +946,9 @@ async def _fetch_follow_viewer_ids(user_id: str) -> List[str]:
 
 
 
-EMOTION_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"
-FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = EMOTION_NOTIFICATION_GLOBAL_OWNER_ID  # backward-compatible alias
+EMOTION_NOTIFICATION_GLOBAL_OWNER_ID = "__global_emotion_notifications__"
+EMOTION_NOTIFICATION_GLOBAL_OWNER_IDS = (EMOTION_NOTIFICATION_GLOBAL_OWNER_ID, "__global_friend_notifications__")
+FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"  # backward-compatible alias
 
 
 async def _filter_viewer_ids_by_emotion_notification_settings(
@@ -905,8 +958,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
 ) -> List[str]:
     """Apply per-viewer emotion notification mute settings.
 
-    Expected table (Supabase):
-        friend_notification_settings  # legacy table name
+    Expected SELECT source (Supabase):
+        emotion_notification_settings  # current-name read bridge view
             - viewer_user_id (who receives notifications)
             - owner_user_id  (who triggers notifications)
             - is_enabled     (bool, true=receive, false=mute)
@@ -932,7 +985,7 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     if not ids:
         return []
 
-    url = f"{SUPABASE_URL}/rest/v1/friend_notification_settings"
+    url = f"{SUPABASE_URL}/rest/v1/{EMOTION_NOTIFICATION_SETTINGS_READ_TABLE}"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -942,7 +995,7 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     quoted_owner_ids = ",".join(
         [
             f'"{owner_user_id}"',
-            f'"{EMOTION_NOTIFICATION_GLOBAL_OWNER_ID}"',
+            *[f'"{oid}"' for oid in EMOTION_NOTIFICATION_GLOBAL_OWNER_IDS],
         ]
     )
 
@@ -963,7 +1016,8 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
         # If table doesn't exist / columns missing, skip filtering (treat as enabled)
         if resp.status_code >= 300:
             logger.warning(
-                "Supabase select friend_notification_settings failed (skip emotion filtering): status=%s body=%s",
+                "Supabase select %s failed (skip emotion filtering): status=%s body=%s",
+                EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
                 resp.status_code,
                 resp.text[:500],
             )
@@ -982,7 +1036,7 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
             return ids
         return [uid for uid in ids if uid not in disabled]
     except Exception as exc:
-        logger.warning("Failed to apply friend_notification_settings (skip emotion filtering): %s", exc)
+        logger.warning("Failed to apply %s (skip emotion filtering): %s", EMOTION_NOTIFICATION_SETTINGS_READ_TABLE, exc)
         return ids
 
 
@@ -1558,7 +1612,7 @@ async def _insert_emotion_log_feed_rows(
         # items が空配列の場合は通知をスキップ
         return False
 
-    url = f"{SUPABASE_URL}/rest/v1/friend_emotion_feed"
+    url = f"{SUPABASE_URL}/rest/v1/{FRIEND_EMOTION_FEED_TABLE}"
     headers = {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
         "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",

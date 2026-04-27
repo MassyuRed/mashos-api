@@ -15,13 +15,31 @@ from supabase_client import (
 
 logger = logging.getLogger("piece.public_read.store")
 
+# Current bridge views are backend read-only. Read helpers use dedicated current-name
+# view constants; write/upsert/log paths keep the legacy physical table constants.
 METRICS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_METRICS_TABLE", "mymodel_qna_metrics")
+METRICS_READ_TABLE = (
+    os.getenv("COCOLON_PIECE_METRICS_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_QNA_METRICS_READ_TABLE")
+    or "piece_metrics"
+).strip() or "piece_metrics"
 READS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_READS_TABLE", "mymodel_qna_reads")
+READS_READ_TABLE = (
+    os.getenv("COCOLON_PIECE_READS_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_QNA_READS_READ_TABLE")
+    or "piece_reads"
+).strip() or "piece_reads"
 RESONANCES_TABLE = os.getenv("COCOLON_MYMODEL_QNA_RESONANCES_TABLE", "mymodel_qna_resonances")
 VIEW_LOGS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_VIEW_LOGS_TABLE", "mymodel_qna_view_logs")
 MYMODEL_REFLECTIONS_TABLE = (
     os.getenv("MYMODEL_REFLECTIONS_TABLE", "mymodel_reflections") or "mymodel_reflections"
 ).strip() or "mymodel_reflections"
+MYMODEL_REFLECTIONS_READ_TABLE = (
+    os.getenv("COCOLON_PIECES_READ_TABLE")
+    or os.getenv("COCOLON_MYMODEL_REFLECTIONS_READ_TABLE")
+    or os.getenv("MYMODEL_REFLECTIONS_READ_TABLE")
+    or "pieces"
+).strip() or "pieces"
 
 
 def _now_iso() -> str:
@@ -123,7 +141,7 @@ async def fetch_instance_metrics(q_instance_ids: Set[str]) -> Dict[str, Dict[str
         return {}
     try:
         rows = await sb_get_json(
-            f"/rest/v1/{METRICS_TABLE}",
+            f"/rest/v1/{METRICS_READ_TABLE}",
             params={
                 "select": "q_instance_id,q_key,views,resonances",
                 "q_instance_id": quoted_in(set(q_instance_ids)),
@@ -145,7 +163,7 @@ async def fetch_reads(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]
         return set()
     try:
         rows = await sb_get_json(
-            f"/rest/v1/{READS_TABLE}",
+            f"/rest/v1/{READS_READ_TABLE}",
             params={
                 "select": "q_instance_id",
                 "viewer_user_id": f"eq.{viewer_user_id}",
@@ -317,7 +335,10 @@ async def inc_metric(*, q_key: str, q_instance_id: Optional[str] = None, field: 
 
 __all__ = [
     "METRICS_TABLE",
+    "METRICS_READ_TABLE",
+    "READS_READ_TABLE",
     "MYMODEL_REFLECTIONS_TABLE",
+    "MYMODEL_REFLECTIONS_READ_TABLE",
     "quoted_in",
     "sb_get",
     "sb_get_json",
