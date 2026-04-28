@@ -54,6 +54,18 @@ except Exception:  # pragma: no cover
     # schema check during /myprofile/latest reads before any regeneration path.
     MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v5"
 
+# New national system: Analysis core validity gate (additive content_json meta).
+try:
+    from analysis_report_validity_gate import (
+        attach_report_validity_meta,
+        evaluate_analysis_report_validity,
+        infer_self_structure_material_fields_from_items,
+    )
+except Exception:  # pragma: no cover
+    attach_report_validity_meta = None  # type: ignore
+    evaluate_analysis_report_validity = None  # type: ignore
+    infer_self_structure_material_fields_from_items = None  # type: ignore
+
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
     sb_delete as _sb_delete_shared,
@@ -358,6 +370,33 @@ class MyProfileMonthlyEnsureBody(BaseModel):
         description="true の場合、0:00配布由来として通知候補を積む。",
     )
 
+
+
+
+def _attach_self_structure_report_validity_meta_if_available(
+    content_json: Dict[str, Any],
+    *,
+    material_count: int,
+    output_text: Any,
+    output_payload: Any = None,
+    material_fields: Optional[list[str]] = None,
+    target_period: Optional[str] = None,
+) -> Dict[str, Any]:
+    if evaluate_analysis_report_validity is None or attach_report_validity_meta is None:
+        return content_json
+    try:
+        result = evaluate_analysis_report_validity(
+            domain="self_structure",
+            material_count=material_count,
+            output_text=output_text,
+            output_payload=output_payload,
+            material_fields=material_fields or [],
+            target_period=target_period,
+            save_requested=True,
+        )
+        return attach_report_validity_meta(content_json, result)
+    except Exception:
+        return content_json
 
 
 
@@ -1887,6 +1926,20 @@ def register_self_structure_routes(app: FastAPI) -> None:
                 "period_end": period_end_iso,
                 "period_days": period_days,
             }
+
+            visible_sections = visibility.get("visible_sections") if isinstance(visibility, dict) else []
+            material_count = max(
+                len(visible_sections) if isinstance(visible_sections, list) else 0,
+                1 if has_visible_content else 0,
+            )
+            content_json = _attach_self_structure_report_validity_meta_if_available(
+                content_json,
+                material_count=material_count,
+                output_text=report_text,
+                output_payload=content_json,
+                material_fields=["text_primary", "text_secondary", "target_hint", "role_hint", "action_signals"],
+                target_period=f"{period_start_iso}/{period_end_iso}",
+            )
 
             if not has_visible_content:
                 if existing_row_is_legacy:

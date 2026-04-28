@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
+from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta
 from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_observation_kernel
 from emlis_ai_style_profile_service import build_style_profile
 from emlis_ai_types import (
@@ -464,16 +465,24 @@ async def render_emlis_ai_reply(
     if bundle.side_state:
         used_memory_layers.append("side_state")
 
+    meta = _build_meta(
+        capability=capability,
+        bundle=bundle,
+        world_model=world_model,
+        plan=plan,
+        fallback_used=fallback_used,
+        working_model=working_model,
+    )
+    meta = attach_emlis_ai_quality_gate_meta(
+        meta,
+        comment_text=comment_text,
+        capability=capability,
+        fallback_used=fallback_used,
+    )
+
     return ReplyEnvelope(
         comment_text=comment_text,
-        meta=_build_meta(
-            capability=capability,
-            bundle=bundle,
-            world_model=world_model,
-            plan=plan,
-            fallback_used=fallback_used,
-            working_model=working_model,
-        ),
+        meta=meta,
         used_evidence=plan.used_evidence,
         evidence_by_line=evidence_by_line,
         used_memory_layers=used_memory_layers,

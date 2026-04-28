@@ -18,6 +18,12 @@ Design (minimal, no RPC)
     3) process
     4) patch done / queued / failed
 
+Worker operation additions
+- debounce_seconds: callers can request a delayed run without manually building run_after.
+- queue stats: ops scripts / worker logs can see backlog, delayed jobs, running jobs, and stale jobs.
+- stale running requeue: if a worker process dies while a job is running, another worker can put
+  old running jobs back into queued without touching active jobs.
+
 Important: running 中に enqueue が来た場合
 - enqueue は status を勝手に queued に戻さない（= 二重実行を避ける）
 - 代わりに payload と updated_at だけ更新する
@@ -38,6 +44,7 @@ from supabase_client import ensure_supabase_config, sb_get, sb_post, sb_patch
 logger = logging.getLogger("astor_job_queue")
 
 JOBS_TABLE = (os.getenv("ASTOR_JOBS_TABLE", "astor_jobs") or "astor_jobs").strip() or "astor_jobs"
+QUEUE_STATS_LIMIT = int(os.getenv("ASTOR_QUEUE_STATS_LIMIT", "5000") or "5000")
 
 
 def _now_iso_z() -> str:
@@ -49,11 +56,37 @@ def _now_iso_z() -> str:
     )
 
 
+def _parse_iso_z(value: Any) -> Optional[datetime]:
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _age_seconds(value: Any, *, now_dt: Optional[datetime] = None) -> Optional[float]:
+    dt = _parse_iso_z(value)
+    if dt is None:
+        return None
+    now = now_dt or datetime.now(timezone.utc)
+    try:
+        return max(0.0, (now - dt).total_seconds())
+    except Exception:
+        return None
+
+
 def _in_list(values: List[str]) -> str:
     """PostgREST in.(...) filter with quotes."""
     xs: List[str] = []
     for v in values:
-        s = str(v or "").replace('"', '\"')
+        s = str(v or "").replace('"', '\\"')
         xs.append(f'"{s}"')
     return f"in.({','.join(xs)})"
 
@@ -91,6 +124,24 @@ def _row_to_job(row: Dict[str, Any]) -> AstorJob:
     )
 
 
+def _run_after_from_debounce(
+    *,
+    run_after_iso: Optional[str],
+    debounce_seconds: Optional[int],
+    now_dt: Optional[datetime] = None,
+) -> str:
+    if run_after_iso:
+        return str(run_after_iso)
+    if debounce_seconds is None:
+        return _now_iso_z()
+    try:
+        delay = max(0, int(debounce_seconds or 0))
+    except Exception:
+        delay = 0
+    base = now_dt or datetime.now(timezone.utc).replace(microsecond=0)
+    return (base + timedelta(seconds=delay)).isoformat().replace("+00:00", "Z")
+
+
 async def enqueue_job(
     *,
     job_key: str,
@@ -99,6 +150,7 @@ async def enqueue_job(
     payload: Dict[str, Any],
     priority: int = 0,
     run_after_iso: Optional[str] = None,
+    debounce_seconds: Optional[int] = None,
     max_attempts: int = 8,
 ) -> None:
     """Enqueue a job (coalescing by job_key).
@@ -107,7 +159,7 @@ async def enqueue_job(
     - If job exists and status == running:
         - update payload / meta (updated_at) only (do NOT flip to queued)
     - Else if job exists (queued/done/failed):
-        - set status=queued and run_after=now
+        - set status=queued and run_after=(explicit run_after or debounce delay or now)
     - Else:
         - insert new row (defaults to queued)
     """
@@ -119,8 +171,13 @@ async def enqueue_job(
     if not jk or not jt or not uid:
         raise ValueError("job_key/job_type/user_id are required")
 
-    now_iso = _now_iso_z()
-    run_after = str(run_after_iso or now_iso)
+    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+    run_after = _run_after_from_debounce(
+        run_after_iso=run_after_iso,
+        debounce_seconds=debounce_seconds,
+        now_dt=now_dt,
+    )
 
     # 1) If running: update payload only
     patch_running = {
@@ -384,3 +441,180 @@ async def mark_failed(
     )
     if resp.status_code not in (200, 204):
         logger.error("mark_failed failed: %s %s", resp.status_code, (resp.text or "")[:500])
+
+
+async def fetch_queue_stats(
+    *,
+    job_types: Optional[List[str]] = None,
+    stale_running_seconds: int = 900,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Return lightweight queue stats for worker operation and scaling decisions.
+
+    This intentionally reads only queued/running/failed rows. ``done`` jobs are not
+    counted because they can accumulate historically and do not represent current pressure.
+    """
+    ensure_supabase_config()
+    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+    max_rows = max(1, int(limit or QUEUE_STATS_LIMIT or 5000))
+    params: Dict[str, str] = {
+        "select": "job_key,job_type,status,priority,run_after,attempts,max_attempts,worker_id,updated_at,started_at,last_error",
+        "status": _in_list(["queued", "running", "failed"]),
+        "order": "priority.desc,updated_at.asc",
+        "limit": str(max_rows),
+    }
+    if job_types:
+        params["job_type"] = _in_list(job_types)
+
+    resp = await sb_get(f"/rest/v1/{JOBS_TABLE}", params=params, timeout=8.0)
+    if resp.status_code not in (200, 206):
+        raise RuntimeError(f"fetch_queue_stats failed: {resp.status_code} {(resp.text or '')[:800]}")
+    rows = resp.json()
+    if not isinstance(rows, list):
+        rows = []
+
+    by_status: Dict[str, int] = {}
+    by_type: Dict[str, Dict[str, int]] = {}
+    oldest_ready_age: Optional[float] = None
+    oldest_running_age: Optional[float] = None
+    stale_running: List[Dict[str, Any]] = []
+    delayed_count = 0
+    ready_count = 0
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "unknown")
+        job_type = str(row.get("job_type") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        bucket = by_type.setdefault(job_type, {})
+        bucket[status] = bucket.get(status, 0) + 1
+
+        if status == "queued":
+            run_after = _parse_iso_z(row.get("run_after"))
+            if run_after and run_after > now_dt:
+                delayed_count += 1
+            else:
+                ready_count += 1
+                age = _age_seconds(row.get("updated_at") or row.get("run_after"), now_dt=now_dt)
+                if age is not None:
+                    oldest_ready_age = age if oldest_ready_age is None else max(oldest_ready_age, age)
+        elif status == "running":
+            age = _age_seconds(row.get("started_at") or row.get("updated_at"), now_dt=now_dt)
+            if age is not None:
+                oldest_running_age = age if oldest_running_age is None else max(oldest_running_age, age)
+                if stale_running_seconds > 0 and age >= stale_running_seconds:
+                    stale_running.append(
+                        {
+                            "job_key": str(row.get("job_key") or ""),
+                            "job_type": job_type,
+                            "worker_id": row.get("worker_id"),
+                            "age_seconds": int(age),
+                            "started_at": row.get("started_at"),
+                            "updated_at": row.get("updated_at"),
+                        }
+                    )
+
+    return {
+        "table": JOBS_TABLE,
+        "checked_at": now_iso,
+        "row_sample_limit": max_rows,
+        "sampled_rows": len(rows),
+        "by_status": by_status,
+        "by_type": by_type,
+        "ready_queued": ready_count,
+        "delayed_queued": delayed_count,
+        "oldest_ready_age_seconds": int(oldest_ready_age) if oldest_ready_age is not None else 0,
+        "oldest_running_age_seconds": int(oldest_running_age) if oldest_running_age is not None else 0,
+        "stale_running_seconds": int(stale_running_seconds or 0),
+        "stale_running_count": len(stale_running),
+        "stale_running_jobs": stale_running[:50],
+    }
+
+
+async def requeue_stale_running_jobs(
+    *,
+    job_types: Optional[List[str]] = None,
+    stale_running_seconds: int = 900,
+    limit: int = 25,
+    worker_id: Optional[str] = None,
+) -> int:
+    """Requeue running jobs that look abandoned by a dead worker process.
+
+    The default threshold is intentionally conservative. Long-running jobs should
+    either finish before this threshold or set a larger ASTOR_WORKER_STALE_RUNNING_SECONDS.
+    """
+    ensure_supabase_config()
+    threshold = max(60, int(stale_running_seconds or 900))
+    max_rows = max(1, int(limit or 25))
+    now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+
+    params: Dict[str, str] = {
+        "select": "job_key,job_type,status,worker_id,started_at,updated_at",
+        "status": "eq.running",
+        "order": "started_at.asc,updated_at.asc",
+        "limit": str(max_rows * 4),
+    }
+    if job_types:
+        params["job_type"] = _in_list(job_types)
+
+    resp = await sb_get(f"/rest/v1/{JOBS_TABLE}", params=params, timeout=8.0)
+    if resp.status_code not in (200, 206):
+        logger.error("requeue_stale_running_jobs scan failed: %s %s", resp.status_code, (resp.text or "")[:500])
+        return 0
+    try:
+        rows = resp.json()
+    except Exception:
+        rows = []
+    if not isinstance(rows, list):
+        rows = []
+
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        age = _age_seconds(row.get("started_at") or row.get("updated_at"), now_dt=now_dt)
+        if age is None or age < threshold:
+            continue
+        jk = str(row.get("job_key") or "").strip()
+        if not jk:
+            continue
+        candidates.append(row)
+        if len(candidates) >= max_rows:
+            break
+
+    requeued = 0
+    now_iso = now_dt.isoformat().replace("+00:00", "Z")
+    for row in candidates:
+        jk = str(row.get("job_key") or "").strip()
+        if not jk:
+            continue
+        patch = {
+            "status": "queued",
+            "worker_id": str(worker_id or "").strip() or None,
+            "run_after": now_iso,
+            "last_error": "stale_running_requeued",
+            "updated_at": now_iso,
+        }
+        try:
+            r = await sb_patch(
+                f"/rest/v1/{JOBS_TABLE}",
+                json=patch,
+                params={"job_key": f"eq.{jk}", "status": "eq.running"},
+                prefer="return=representation",
+                timeout=8.0,
+            )
+            if r.status_code in (200, 204):
+                if r.status_code == 204:
+                    requeued += 1
+                else:
+                    try:
+                        data = r.json()
+                    except Exception:
+                        data = []
+                    if isinstance(data, list) and data:
+                        requeued += 1
+        except Exception as exc:
+            logger.error("requeue stale running job failed. key=%s err=%s", jk, exc)
+    return requeued

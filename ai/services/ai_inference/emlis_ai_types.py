@@ -47,6 +47,11 @@ ReplyLengthMode = Literal[
     "input_scaled",
     "input_and_history_scaled",
 ]
+SourceScope = Literal[
+    "current_input_only",
+    "current_input_with_owned_history",
+    "current_input_with_owned_history_and_cross_core",
+]
 HypothesisStatus = Literal["active", "stale", "suppressed"]
 
 
@@ -74,6 +79,9 @@ class EmlisAICapabilityConfig:
     max_reply_lines: int = 3
     reply_length_mode: ReplyLengthMode = "short_present_only"
     include_derived_user_model: bool = False
+    source_scope: SourceScope = "current_input_only"
+    cross_core_enabled: bool = False
+    structure_model_enabled: bool = False
 
 
 @dataclass(frozen=True)

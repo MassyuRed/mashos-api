@@ -84,6 +84,18 @@ try:
 except Exception:  # pragma: no cover
     get_emotion_period_public_input_status = None  # type: ignore
 
+# New national system: Analysis core validity gate (additive content_json meta).
+try:
+    from analysis_report_validity_gate import (
+        attach_report_validity_meta,
+        evaluate_analysis_report_validity,
+        infer_emotion_material_fields_from_rows,
+    )
+except Exception:  # pragma: no cover
+    attach_report_validity_meta = None  # type: ignore
+    evaluate_analysis_report_validity = None  # type: ignore
+    infer_emotion_material_fields_from_rows = None  # type: ignore
+
 
 logger = logging.getLogger("myweb_reports_api")
 
@@ -124,6 +136,33 @@ JST_OFFSET = timedelta(hours=9)
 JST = timezone(JST_OFFSET)
 
 DAY = timedelta(days=1)
+
+
+def _attach_analysis_report_validity_meta_if_available(
+    content_json: Dict[str, Any],
+    *,
+    material_count: int,
+    output_text: Any,
+    output_payload: Any = None,
+    material_fields: Optional[List[str]] = None,
+    target_period: Optional[str] = None,
+) -> Dict[str, Any]:
+    if evaluate_analysis_report_validity is None or attach_report_validity_meta is None:
+        return content_json
+    try:
+        result = evaluate_analysis_report_validity(
+            domain="emotion_structure",
+            material_count=material_count,
+            output_text=output_text,
+            output_payload=output_payload,
+            material_fields=material_fields or [],
+            target_period=target_period,
+            save_requested=True,
+        )
+        return attach_report_validity_meta(content_json, result)
+    except Exception:
+        return content_json
+
 
 # Strength weights (match client)
 STRENGTH_SCORE: Dict[str, int] = {"weak": 1, "medium": 2, "strong": 3}
@@ -4660,6 +4699,21 @@ async def _generate_and_save(
     except Exception:
         pass
 
+    material_fields = []
+    try:
+        if infer_emotion_material_fields_from_rows is not None:
+            material_fields = infer_emotion_material_fields_from_rows(rows)
+    except Exception:
+        material_fields = []
+    content_json = _attach_analysis_report_validity_meta_if_available(
+        content_json,
+        material_count=len(rows or []),
+        output_text=text,
+        output_payload=content_json,
+        material_fields=material_fields,
+        target_period=f"{target.period_start_iso}/{target.period_end_iso}",
+    )
+
     payload = {
         "user_id": user_id,
         "report_type": target.report_type,
@@ -4948,6 +5002,18 @@ async def _generate_and_save_from_snapshot(
         content_json["publish"] = pub
     except Exception:
         pass
+
+    snapshot_material_count = metrics_total
+    if summary_public is not None:
+        snapshot_material_count = max(snapshot_material_count, summary_public)
+    content_json = _attach_analysis_report_validity_meta_if_available(
+        content_json,
+        material_count=snapshot_material_count,
+        output_text=light_text,
+        output_payload=content_json,
+        material_fields=["emotion_details", "timestamp", "memo", "categories"],
+        target_period=f"{target.period_start_iso}/{target.period_end_iso}",
+    )
 
     payload_upsert = {
         "user_id": uid,

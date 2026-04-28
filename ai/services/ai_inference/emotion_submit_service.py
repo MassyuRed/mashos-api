@@ -19,6 +19,8 @@ Notes
 
 from __future__ import annotations
 
+import asyncio
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Sequence, Union
 
@@ -40,6 +42,20 @@ from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
+
+
+def _emlis_ai_reply_timeout_seconds() -> float:
+    """Return the synchronous EmlisAI reply budget for /emotion/submit.
+
+    Emotion saving must not be held hostage by optional context reads.
+    If the reply path exceeds this budget, the existing deterministic fallback
+    comment is returned while the saved input itself remains successful.
+    """
+    try:
+        raw = float(os.getenv("EMLIS_AI_REPLY_TIMEOUT_SECONDS", "3.0") or "3.0")
+    except Exception:
+        raw = 3.0
+    return max(0.5, min(10.0, raw))
 
 
 async def resolve_authenticated_user_id(
@@ -174,10 +190,13 @@ async def persist_emotion_submission(
         subscription_tier = SubscriptionTier.FREE
 
     try:
-        reply = await render_emlis_ai_reply(
-            user_id=str(user_id or "").strip(),
-            subscription_tier=subscription_tier,
-            current_input=current_input,
+        reply = await asyncio.wait_for(
+            render_emlis_ai_reply(
+                user_id=str(user_id or "").strip(),
+                subscription_tier=subscription_tier,
+                current_input=current_input,
+            ),
+            timeout=_emlis_ai_reply_timeout_seconds(),
         )
         input_feedback_comment = str(reply.comment_text or "").strip()
         input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
@@ -208,6 +227,7 @@ async def persist_emotion_submission(
             "evidence_by_line": {},
             "rejected_candidate_count": 0,
             "fallback_used": True,
+            "fallback_reason": "emlis_ai_timeout_or_error",
             "model_revision": None,
             "world_model_debug": {},
         }

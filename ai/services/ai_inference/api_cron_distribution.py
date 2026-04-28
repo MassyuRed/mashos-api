@@ -35,8 +35,6 @@ from pydantic import BaseModel, Field
 from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
-    _fetch_push_tokens_for_users,
-    _send_fcm_push,
 )
 
 # Phase11: observability (structured logs + optional slack notifications)
@@ -1547,27 +1545,45 @@ async def _send_report_distribution_bundle_push(
     payload = _build_report_distribution_push_payload(bundle_rows, distribution_key=distribution_key)
     families = list(payload.get("families") or [])
     data_payload = dict(payload.get("data") or {})
-    token_map = await _fetch_push_tokens_for_users([str(user_id or "").strip()])
-    token = str((token_map or {}).get(str(user_id or "").strip()) or "").strip()
+    uid = str(user_id or "").strip()
 
-    send_status = "sent"
+    send_status = "queued"
     if dry_run:
         send_status = "dry_run"
-    elif token:
-        await _send_fcm_push(
-            tokens=[token],
-            title=str(payload.get("title") or "Cocolon"),
-            body=str(payload.get("body") or "新しいレポートが届きました"),
-            data=data_payload,
-        )
+    elif uid:
+        try:
+            from fcm_push_queue import enqueue_user_push_notification_jobs
+
+            queued = await enqueue_user_push_notification_jobs(
+                recipient_user_ids=[uid],
+                title=str(payload.get("title") or "Cocolon"),
+                body=str(payload.get("body") or "新しいレポートが届きました"),
+                data=data_payload,
+                actor_user_id=uid,
+                event_type="report_distribution",
+                job_key_prefix=f"report_distribution:{uid}:{distribution_key}",
+                priority=6,
+                chunk_size=1,
+            )
+            if queued <= 0:
+                send_status = "skipped_no_recipient"
+        except Exception as exc:
+            logger.warning(
+                "report_distribution_push enqueue FCM job failed. user=%s distribution_key=%s err=%s",
+                uid,
+                distribution_key,
+                exc,
+            )
+            raise
     else:
-        send_status = "skipped_no_token"
+        send_status = "skipped_no_user"
 
     return {
         "send_status": send_status,
         "payload": data_payload,
         "bundle_families": families,
     }
+
 
 
 def _build_slack_text_for_cron(
@@ -1800,7 +1816,7 @@ async def run_report_distribution_push_once(
                     bundle_families=families,
                     payload=payload_json,
                 )
-            if send_status == "sent":
+            if send_status in ("sent", "queued"):
                 sent += 1
                 sent_users.append(uid)
             else:

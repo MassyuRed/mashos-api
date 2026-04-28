@@ -43,7 +43,6 @@ import logging
 import os
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-import httpx
 
 from piece_generated_display import (
     apply_generated_display_to_content_json,
@@ -51,6 +50,7 @@ from piece_generated_display import (
     resolve_generated_reflection_display,
 )
 from piece_generated_identity import compute_generated_question_q_key
+from supabase_client import sb_delete, sb_get, sb_post, sb_patch
 
 logger = logging.getLogger("astor_reflection_store")
 
@@ -114,9 +114,7 @@ def _sb_headers(*, prefer: str = "") -> Dict[str, str]:
 async def _sb_get_json(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0) -> List[Dict[str, Any]]:
     if not _has_supabase_config():
         raise RuntimeError("Supabase config missing")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(url, headers=_sb_headers(), params=params)
+    resp = await sb_get(path, params=params, headers=_sb_headers(), timeout=timeout)  # type: ignore[arg-type]
     if resp.status_code not in (200, 206):
         raise RuntimeError(f"Supabase GET failed: {resp.status_code} {(resp.text or '')[:800]}")
     try:
@@ -138,9 +136,13 @@ async def _sb_patch_json(
 ) -> List[Dict[str, Any]]:
     if not _has_supabase_config():
         raise RuntimeError("Supabase config missing")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.patch(url, headers=_sb_headers_json(prefer=prefer), params=params, json=json_body)
+    resp = await sb_patch(
+        path,
+        params=params,  # type: ignore[arg-type]
+        json=json_body,
+        headers=_sb_headers_json(prefer=prefer),
+        timeout=timeout,
+    )
     if resp.status_code not in (200, 204):
         raise RuntimeError(f"Supabase PATCH failed: {resp.status_code} {(resp.text or '')[:800]}")
     if resp.status_code == 204:
@@ -163,9 +165,12 @@ async def _sb_post_json(
 ) -> List[Dict[str, Any]]:
     if not _has_supabase_config():
         raise RuntimeError("Supabase config missing")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, headers=_sb_headers_json(prefer=prefer), json=json_body)
+    resp = await sb_post(
+        path,
+        json=json_body,
+        headers=_sb_headers_json(prefer=prefer),
+        timeout=timeout,
+    )
     if resp.status_code not in (200, 201, 204):
         raise RuntimeError(f"Supabase POST failed: {resp.status_code} {(resp.text or '')[:800]}")
     if resp.status_code == 204:
@@ -188,20 +193,28 @@ async def _sb_delete(
 ) -> None:
     if not _has_supabase_config():
         raise RuntimeError("Supabase config missing")
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.delete(url, headers=_sb_headers(prefer=prefer), params=params)
+    resp = await sb_delete(
+        path,
+        params=params,  # type: ignore[arg-type]
+        headers=_sb_headers(prefer=prefer),
+        timeout=timeout,
+    )
     if resp.status_code not in (200, 204):
         raise RuntimeError(f"Supabase DELETE failed: {resp.status_code} {(resp.text or '')[:800]}")
 
 
 async def _sb_count(path: str, *, params: List[Tuple[str, str]], timeout: float = 8.0) -> int:
+    if not _has_supabase_config():
+        raise RuntimeError("Supabase config missing")
     p = list(params)
     p.insert(0, ("select", "id"))
     p.append(("limit", "0"))
-    url = f"{SUPABASE_URL}{path}"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.get(url, headers=_sb_headers(prefer="count=exact"), params=p)
+    resp = await sb_get(
+        path,
+        params=p,  # type: ignore[arg-type]
+        headers=_sb_headers(prefer="count=exact"),
+        timeout=timeout,
+    )
     if resp.status_code not in (200, 206):
         raise RuntimeError(f"Supabase COUNT failed: {resp.status_code} {(resp.text or '')[:800]}")
     cr = resp.headers.get("content-range") or resp.headers.get("Content-Range") or ""
@@ -212,7 +225,6 @@ async def _sb_count(path: str, *, params: List[Tuple[str, str]], timeout: float 
         return 0 if total in ("", "*") else int(total)
     except Exception:
         return 0
-
 
 def _quoted_in(values: Iterable[str]) -> str:
     vals = sorted({str(v).strip() for v in values if str(v).strip()})

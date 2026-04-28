@@ -12,8 +12,14 @@ Env:
   - SUPABASE_SERVICE_ROLE_KEY
   - ASTOR_JOBS_TABLE=astor_jobs
   - ASTOR_WORKER_ID (optional)
+  - ASTOR_WORKER_PROFILE=all|core|analysis|inspect|ranking|summary|notification
+  - ASTOR_WORKER_JOB_TYPES=... (optional comma separated override)
+  - ASTOR_WORKER_INCLUDE_REQUIRED_JOB_TYPES=true
   - ASTOR_WORKER_POLL_INTERVAL_SECONDS=1.0
-  - ASTOR_WORKER_JOB_TYPES=myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1,refresh_global_summary_v1,inspect_global_summary_v1   (comma separated)
+  - ASTOR_WORKER_MAINTENANCE_INTERVAL_SECONDS=60
+  - ASTOR_WORKER_STALE_RUNNING_SECONDS=900
+  - ASTOR_WORKER_STALE_REQUEUE_LIMIT=25
+  - ASTOR_WORKER_QUEUE_STATS_LOG_ENABLED=true
   - ASTOR_WORKER_LOG_LEVEL=INFO
 
 This worker consumes jobs enqueued by API (e.g., emotion/submit) and executes
@@ -29,8 +35,10 @@ import math
 import os
 import re
 import signal
+import socket
 import statistics
 import sys
+import time
 import types
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -118,6 +126,8 @@ from astor_job_queue import (
     mark_done_if_unchanged,
     requeue,
     mark_failed,
+    fetch_queue_stats,
+    requeue_stale_running_jobs,
 )
 from supabase_client import sb_get, sb_patch, sb_post  # type: ignore
 
@@ -410,6 +420,7 @@ _REQUIRED_WORKER_JOB_TYPES: List[str] = [
     "inspect_friend_feed_v1",
     "refresh_global_summary_v1",
     "inspect_global_summary_v1",
+    "send_fcm_push_v1",
 ]
 
 
@@ -424,6 +435,139 @@ def _merge_required_job_types(job_types: List[str]) -> List[str]:
         merged.append(s)
     return merged
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in ("1", "true", "yes", "on", "y")
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)) or default)
+    except Exception:
+        return int(default)
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except Exception:
+        return float(default)
+
+
+_WORKER_JOB_TYPE_PROFILES: Dict[str, List[str]] = {
+    "all": list(_REQUIRED_WORKER_JOB_TYPES),
+    "core": [
+        "myprofile_latest_refresh_v1",
+        "snapshot_generate_v1",
+        "refresh_account_status_v1",
+        "refresh_friend_feed_v1",
+        "refresh_global_summary_v1",
+        "refresh_ranking_board_v1",
+    ],
+    "analysis": [
+        "analyze_emotion_structure_standard_v1",
+        "analyze_emotion_structure_deep_v1",
+        "analyze_self_structure_standard_v1",
+        "analyze_self_structure_deep_v1",
+        "generate_emotion_report_v2",
+        "generate_premium_reflections_v1",
+    ],
+    "inspect": [
+        "inspect_reflection_v1",
+        "inspect_emotion_report_v1",
+        "inspect_ranking_board_v1",
+        "inspect_account_status_v1",
+        "inspect_friend_feed_v1",
+        "inspect_global_summary_v1",
+    ],
+    "ranking": [
+        "refresh_ranking_board_v1",
+        "inspect_ranking_board_v1",
+    ],
+    "summary": [
+        "refresh_account_status_v1",
+        "inspect_account_status_v1",
+        "refresh_friend_feed_v1",
+        "inspect_friend_feed_v1",
+        "refresh_global_summary_v1",
+        "inspect_global_summary_v1",
+    ],
+    "notification": [
+        "send_fcm_push_v1",
+    ],
+}
+
+
+def _resolve_worker_job_types() -> List[str]:
+    """Resolve worker scope for horizontal scaling.
+
+    Default remains backward compatible: if ASTOR_WORKER_JOB_TYPES is set, older
+    deployments still get required job types added unless explicitly disabled.
+    For specialized workers, set ASTOR_WORKER_PROFILE=analysis/core/inspect or
+    set ASTOR_WORKER_INCLUDE_REQUIRED_JOB_TYPES=false with ASTOR_WORKER_JOB_TYPES.
+    """
+    raw = os.getenv("ASTOR_WORKER_JOB_TYPES")
+    if raw is not None and str(raw).strip():
+        job_types = _parse_job_types(str(raw))
+        include_required = _env_bool("ASTOR_WORKER_INCLUDE_REQUIRED_JOB_TYPES", True)
+        return _merge_required_job_types(job_types) if include_required else job_types
+
+    profile = (os.getenv("ASTOR_WORKER_PROFILE") or "all").strip().lower() or "all"
+    return list(_WORKER_JOB_TYPE_PROFILES.get(profile) or _WORKER_JOB_TYPE_PROFILES["all"])
+
+
+def _format_queue_stats_for_log(stats: Dict[str, Any]) -> str:
+    by_status = stats.get("by_status") if isinstance(stats.get("by_status"), dict) else {}
+    return (
+        f"ready={int(stats.get('ready_queued') or 0)} "
+        f"delayed={int(stats.get('delayed_queued') or 0)} "
+        f"running={int(by_status.get('running') or 0)} "
+        f"failed={int(by_status.get('failed') or 0)} "
+        f"oldest_ready_s={int(stats.get('oldest_ready_age_seconds') or 0)} "
+        f"stale_running={int(stats.get('stale_running_count') or 0)}"
+    )
+
+
+async def _run_worker_maintenance(
+    *,
+    logger: logging.Logger,
+    worker_id: str,
+    job_types: List[str],
+    stale_running_seconds: int,
+    stale_requeue_limit: int,
+    stats_enabled: bool,
+) -> None:
+    requeued = 0
+    if stale_running_seconds > 0:
+        try:
+            requeued = await requeue_stale_running_jobs(
+                job_types=job_types,
+                stale_running_seconds=stale_running_seconds,
+                limit=stale_requeue_limit,
+                worker_id=worker_id,
+            )
+            if requeued:
+                logger.warning(
+                    "stale running jobs requeued. worker_id=%s count=%s stale_after_s=%s",
+                    worker_id,
+                    requeued,
+                    stale_running_seconds,
+                )
+        except Exception as exc:
+            logger.warning("stale running maintenance failed. worker_id=%s err=%s", worker_id, exc)
+
+    if stats_enabled:
+        try:
+            stats = await fetch_queue_stats(
+                job_types=job_types,
+                stale_running_seconds=stale_running_seconds,
+            )
+            logger.info("queue stats. worker_id=%s %s", worker_id, _format_queue_stats_for_log(stats))
+        except Exception as exc:
+            logger.warning("queue stats fetch failed. worker_id=%s err=%s", worker_id, exc)
 
 
 async def _handle_snapshot_generate_v1(*, user_id: str, payload: dict) -> dict:
@@ -800,13 +944,13 @@ def _build_myweb_ready_push_payload(report_type: str) -> Dict[str, Any]:
 
 
 async def _send_myweb_report_ready_push(*, user_id: str, report_row: Dict[str, Any]) -> bool:
+    """Queue a report-ready push notification.
+
+    The actual FCM external call is handled by `send_fcm_push_v1` notification
+    workers so report inspection jobs do not block on Firebase latency.
+    """
     uid = str(user_id or "").strip()
     if not uid:
-        return False
-
-    token_map = await _fetch_push_tokens_for_users([uid])
-    tokens = [str(tok or "").strip() for tok in list((token_map or {}).values()) if str(tok or "").strip()]
-    if not tokens:
         return False
 
     push_payload = _build_myweb_ready_push_payload(str((report_row or {}).get("report_type") or ""))
@@ -824,13 +968,30 @@ async def _send_myweb_report_ready_push(*, user_id: str, report_row: Dict[str, A
     if period_end:
         data_payload["period_end"] = str(period_end)
 
-    await _send_fcm_push(
-        tokens=tokens,
-        title=str((push_payload or {}).get("title") or "Cocolon"),
-        body=str((push_payload or {}).get("body") or "新しいレポートが届きました"),
-        data=data_payload,
-    )
-    return True
+    try:
+        from fcm_push_queue import enqueue_user_push_notification_jobs
+
+        queued = await enqueue_user_push_notification_jobs(
+            recipient_user_ids=[uid],
+            title=str((push_payload or {}).get("title") or "Cocolon"),
+            body=str((push_payload or {}).get("body") or "新しいレポートが届きました"),
+            data=data_payload,
+            actor_user_id=uid,
+            event_type="myweb_report_ready",
+            job_key_prefix=f"myweb_report_ready:{uid}:{report_id or _now_iso_z()}",
+            priority=6,
+            chunk_size=1,
+        )
+        return queued > 0
+    except Exception as exc:
+        WORKER_LOGGER.warning(
+            "Failed to enqueue myweb report ready FCM push. user=%s report_id=%s err=%s",
+            uid,
+            report_id,
+            exc,
+        )
+        return False
+
 
 
 async def _handle_inspect_emotion_report_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -3614,20 +3775,118 @@ async def _handle_analyze_emotion_structure_standard_v1(*, user_id: str, payload
     }
 
 
+async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve recipients and send an FCM push job.
+
+    Payload is normally created by fcm_push_queue.enqueue_user_push_notification_jobs.
+    Device tokens are resolved at worker time to respect current push_token /
+    push_enabled state and to avoid storing tokens in astor_jobs.
+    """
+    body = str((payload or {}).get("body") or "").strip()
+    title = str((payload or {}).get("title") or "Cocolon").strip() or "Cocolon"
+    if not body:
+        return {"status": "skipped_empty_body", "user_id": str(user_id or "").strip()}
+
+    mode = str((payload or {}).get("recipient_mode") or "user_ids").strip() or "user_ids"
+    data_payload = (payload or {}).get("data") if isinstance((payload or {}).get("data"), dict) else {}
+
+    tokens: List[str] = []
+    recipient_count = 0
+    if mode == "tokens":
+        raw_tokens = (payload or {}).get("tokens") or []
+        token_values = raw_tokens if isinstance(raw_tokens, list) else []
+        seen = set()
+        for raw in token_values:
+            tok = str(raw or "").strip()
+            if tok and tok not in seen:
+                seen.add(tok)
+                tokens.append(tok)
+        recipient_count = len(tokens)
+    else:
+        raw_recipient_ids = (payload or {}).get("recipient_user_ids") or []
+        raw_exclude_ids = (payload or {}).get("exclude_user_ids") or []
+        recipient_values = raw_recipient_ids if isinstance(raw_recipient_ids, list) else []
+        exclude_values = raw_exclude_ids if isinstance(raw_exclude_ids, list) else []
+        recipient_ids: List[str] = []
+        seen_users = set()
+        for raw in recipient_values:
+            uid = str(raw or "").strip()
+            if uid and uid not in seen_users:
+                seen_users.add(uid)
+                recipient_ids.append(uid)
+
+        exclude_ids: List[str] = []
+        seen_exclude = set()
+        for raw in exclude_values:
+            uid = str(raw or "").strip()
+            if uid and uid not in seen_exclude:
+                seen_exclude.add(uid)
+                exclude_ids.append(uid)
+
+        if exclude_ids:
+            excluded_set = set(exclude_ids)
+            recipient_ids = [uid for uid in recipient_ids if uid not in excluded_set]
+
+        recipient_count = len(recipient_ids)
+        if not recipient_ids:
+            return {"status": "skipped_no_recipient", "user_id": str(user_id or "").strip()}
+
+        token_map = await _fetch_push_tokens_for_users(recipient_ids)
+        exclude_token_map = await _fetch_push_tokens_for_users(exclude_ids) if exclude_ids else {}
+        exclude_tokens = {str(t or "").strip() for t in (exclude_token_map or {}).values() if str(t or "").strip()}
+        seen_tokens = set()
+        for raw_token in (token_map or {}).values():
+            tok = str(raw_token or "").strip()
+            if not tok or tok in seen_tokens or tok in exclude_tokens:
+                continue
+            seen_tokens.add(tok)
+            tokens.append(tok)
+
+    if not tokens:
+        return {
+            "status": "skipped_no_token",
+            "user_id": str(user_id or "").strip(),
+            "recipient_count": recipient_count,
+            "event_type": str((payload or {}).get("event_type") or ""),
+        }
+
+    await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    return {
+        "status": "sent",
+        "user_id": str(user_id or "").strip(),
+        "recipient_count": recipient_count,
+        "token_count": len(tokens),
+        "event_type": str((payload or {}).get("event_type") or ""),
+        "chunk_index": (payload or {}).get("chunk_index"),
+        "chunk_count": (payload or {}).get("chunk_count"),
+    }
+
+
 async def _worker_loop() -> None:
-    worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{os.getpid()}"
-    poll_interval = float(os.getenv("ASTOR_WORKER_POLL_INTERVAL_SECONDS", "1.0") or "1.0")
-    job_types = _merge_required_job_types(
-        _parse_job_types(
-            os.getenv(
-                "ASTOR_WORKER_JOB_TYPES",
-                "myprofile_latest_refresh_v1,snapshot_generate_v1,analyze_emotion_structure_standard_v1,analyze_emotion_structure_deep_v1,analyze_self_structure_standard_v1,analyze_self_structure_deep_v1,generate_premium_reflections_v1,inspect_reflection_v1,generate_emotion_report_v2,inspect_emotion_report_v1,refresh_ranking_board_v1,inspect_ranking_board_v1,refresh_account_status_v1,inspect_account_status_v1,refresh_friend_feed_v1,inspect_friend_feed_v1,refresh_global_summary_v1,inspect_global_summary_v1",
-            )
-        )
-    )
+    hostname = ""
+    try:
+        hostname = socket.gethostname()
+    except Exception:
+        hostname = "host"
+    worker_id = (os.getenv("ASTOR_WORKER_ID") or "").strip() or f"astor-worker-{hostname}-{os.getpid()}"
+    poll_interval = max(0.1, _env_float("ASTOR_WORKER_POLL_INTERVAL_SECONDS", 1.0))
+    job_types = _resolve_worker_job_types()
+
+    maintenance_interval = max(5.0, _env_float("ASTOR_WORKER_MAINTENANCE_INTERVAL_SECONDS", 60.0))
+    stale_running_seconds = max(0, _env_int("ASTOR_WORKER_STALE_RUNNING_SECONDS", 900))
+    stale_requeue_limit = max(1, _env_int("ASTOR_WORKER_STALE_REQUEUE_LIMIT", 25))
+    queue_stats_enabled = _env_bool("ASTOR_WORKER_QUEUE_STATS_LOG_ENABLED", True)
 
     logger = logging.getLogger("astor_worker")
-    logger.info("ASTOR worker started. worker_id=%s job_types=%s poll=%.2fs", worker_id, job_types, poll_interval)
+    logger.info(
+        "ASTOR worker started. worker_id=%s profile=%s job_types=%s poll=%.2fs maintenance=%.1fs stale_after=%ss",
+        worker_id,
+        (os.getenv("ASTOR_WORKER_PROFILE") or "all"),
+        job_types,
+        poll_interval,
+        maintenance_interval,
+        stale_running_seconds,
+    )
 
     stop_event = asyncio.Event()
 
@@ -3649,8 +3908,21 @@ async def _worker_loop() -> None:
         pass
 
     consecutive_poll_errors = 0
+    last_maintenance_at = 0.0
 
     while not stop_event.is_set():
+        now_mono = time.monotonic()
+        if (now_mono - last_maintenance_at) >= maintenance_interval:
+            last_maintenance_at = now_mono
+            await _run_worker_maintenance(
+                logger=logger,
+                worker_id=worker_id,
+                job_types=job_types,
+                stale_running_seconds=stale_running_seconds,
+                stale_requeue_limit=stale_requeue_limit,
+                stats_enabled=queue_stats_enabled,
+            )
+
         try:
             job = await fetch_next_queued_job(job_types=job_types)
             consecutive_poll_errors = 0
@@ -4470,6 +4742,31 @@ async def _worker_loop() -> None:
                     claimed.job_type,
                     claimed.user_id,
                     insp_res,
+                )
+
+            elif claimed.job_type == "send_fcm_push_v1":
+                push_res = await _handle_send_fcm_push_v1(
+                    user_id=claimed.user_id,
+                    payload=(claimed.payload or {}),
+                )
+                done = await mark_done_if_unchanged(
+                    job_key=claimed.job_key,
+                    worker_id=worker_id,
+                    expected_updated_at=claimed.updated_at,
+                )
+                if not done:
+                    await requeue(
+                        job_key=claimed.job_key,
+                        worker_id=worker_id,
+                        error="updated_while_running",
+                        delay_seconds=1,
+                    )
+                logger.info(
+                    "job done. key=%s type=%s user=%s res=%s",
+                    claimed.job_key,
+                    claimed.job_type,
+                    claimed.user_id,
+                    push_res,
                 )
 
             else:

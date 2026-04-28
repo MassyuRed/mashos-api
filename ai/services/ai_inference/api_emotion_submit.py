@@ -77,6 +77,7 @@ from home_gateway.command_gateway import execute_home_command
 from supabase_client import (
     sb_auth_headers as _sb_auth_headers_shared,
     sb_get as _sb_get_shared,
+    sb_post as _sb_post_shared,
 )
 from supabase_auth_token_cache import resolve_user_id_verified_cached
 from response_microcache import invalidate_prefix
@@ -141,6 +142,13 @@ EMOTION_NOTIFICATION_SETTINGS_READ_TABLE = (
 # Legacy fallback (may be unavailable on new Firebase projects):
 #   - FCM_SERVER_KEY=AAAA... (Legacy server key)
 FCM_PUSH_ENABLED = os.getenv("FCM_PUSH_ENABLED", "true").lower() in ("1", "true", "yes")
+# Dedicated FCM queue:
+# - true: enqueue send_fcm_push_v1 into astor_jobs and let notification workers send it.
+# - false: keep direct best-effort send behavior.
+# Fallback stays off by default so API/background paths do not suddenly take external FCM latency
+# during high-load operation. Turn on only for small/local environments without a worker.
+FCM_PUSH_QUEUE_ENABLED = os.getenv("FCM_PUSH_QUEUE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+FCM_PUSH_QUEUE_FALLBACK_DIRECT = os.getenv("FCM_PUSH_QUEUE_FALLBACK_DIRECT", "false").lower() in ("1", "true", "yes", "on")
 
 # v1 (Admin SDK) credentials
 FCM_SERVICE_ACCOUNT_FILE = (os.getenv("FCM_SERVICE_ACCOUNT_FILE") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
@@ -484,13 +492,6 @@ async def _insert_emotion_row(
     - Prefer: return=representation で挿入された行をそのまま返す。
     """
     _ensure_supabase_config()
-    url = f"{SUPABASE_URL}/rest/v1/emotions"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
 
     payload: Dict[str, Any] = {
         "user_id": user_id,
@@ -508,8 +509,12 @@ async def _insert_emotion_row(
     if emotion_strength_avg is not None:
         payload["emotion_strength_avg"] = emotion_strength_avg
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.post(url, headers=headers, json=payload)
+    resp = await _sb_post_shared(
+        "/rest/v1/emotions",
+        json=payload,
+        prefer="return=representation",
+        timeout=5.0,
+    )
 
     if resp.status_code not in (200, 201):
         logger.error(
@@ -570,8 +575,15 @@ MYPROFILE_LATEST_PERIOD = str(os.getenv("MYPROFILE_LATEST_PERIOD", "28d") or "28
 # --- Phase 6: ASTOR heavy processing -> worker queue ---
 # When enabled, the API will enqueue heavy MyProfile report generation to Supabase table `astor_jobs`.
 # The worker process will consume the job and update `myprofile_reports` (report_type='latest').
-ASTOR_WORKER_QUEUE_ENABLED = _env_truthy("ASTOR_WORKER_QUEUE_ENABLED", "false")
-ASTOR_WORKER_QUEUE_FALLBACK_LOCAL = _env_truthy("ASTOR_WORKER_QUEUE_FALLBACK_LOCAL", "true")
+COCOLON_HIGH_LOAD_MODE = _env_truthy("COCOLON_HIGH_LOAD_MODE", "false")
+ASTOR_WORKER_QUEUE_ENABLED = _env_truthy(
+    "ASTOR_WORKER_QUEUE_ENABLED",
+    "true" if COCOLON_HIGH_LOAD_MODE else "false",
+)
+ASTOR_WORKER_QUEUE_FALLBACK_LOCAL = _env_truthy(
+    "ASTOR_WORKER_QUEUE_FALLBACK_LOCAL",
+    "false" if COCOLON_HIGH_LOAD_MODE else "true",
+)
 
 # Phase X: Central material snapshots (debounced)
 # - Enqueue snapshot_generate_v1 after inputs are saved, so worker can build internal/public snapshots.
@@ -581,17 +593,32 @@ ASTOR_SELF_STRUCTURE_DEBOUNCE_SECONDS = max(
     int(ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECONDS or 20),
 )
 
+try:
+    POST_SUBMIT_BG_MAX_CONCURRENCY = int(os.getenv("POST_SUBMIT_BG_MAX_CONCURRENCY", "16") or "16")
+except Exception:
+    POST_SUBMIT_BG_MAX_CONCURRENCY = 16
+POST_SUBMIT_BG_MAX_CONCURRENCY = max(1, min(64, POST_SUBMIT_BG_MAX_CONCURRENCY))
+
+try:
+    POST_SUBMIT_BG_MAX_PENDING = int(os.getenv("POST_SUBMIT_BG_MAX_PENDING", "500") or "500")
+except Exception:
+    POST_SUBMIT_BG_MAX_PENDING = 500
+POST_SUBMIT_BG_MAX_PENDING = max(1, min(5000, POST_SUBMIT_BG_MAX_PENDING))
+
+try:
+    POST_SUBMIT_BG_TIMEOUT_SECONDS = float(os.getenv("POST_SUBMIT_BG_TIMEOUT_SECONDS", "30.0") or "30.0")
+except Exception:
+    POST_SUBMIT_BG_TIMEOUT_SECONDS = 30.0
+POST_SUBMIT_BG_TIMEOUT_SECONDS = max(3.0, min(120.0, POST_SUBMIT_BG_TIMEOUT_SECONDS))
+
+_POST_SUBMIT_BG_PENDING = 0
+_POST_SUBMIT_BG_SEMAPHORES: Dict[int, asyncio.Semaphore] = {}
+
 
 async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
     """myprofile_reports(latest) の generated_at を取得する（無ければ None）。"""
     _ensure_supabase_config()
 
-    url = f"{SUPABASE_URL}/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-    }
     params = {
         "select": "generated_at",
         "user_id": f"eq.{user_id}",
@@ -601,8 +628,11 @@ async def _fetch_myprofile_latest_generated_at(user_id: str) -> Optional[str]:
         "limit": "1",
     }
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(url, headers=headers, params=params)
+    resp = await _sb_get_shared(
+        f"/rest/v1/{SELF_STRUCTURE_REPORTS_READ_TABLE}",
+        params=params,
+        timeout=5.0,
+    )
 
     # 200: OK, 206: Partial Content（range）
     if resp.status_code not in (200, 206):
@@ -628,20 +658,17 @@ async def _upsert_myprofile_latest_report_row(payload: Dict[str, Any]) -> None:
     """myprofile_reports に latest を upsert（失敗したら例外）。"""
     _ensure_supabase_config()
 
-    url = f"{SUPABASE_URL}/rest/v1/{MYPROFILE_REPORTS_TABLE}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        # merge duplicates on conflict
-        "Prefer": "resolution=merge-duplicates,return=minimal",
-    }
     params = {
         "on_conflict": "user_id,report_type,period_start,period_end",
     }
 
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        resp = await client.post(url, headers=headers, params=params, json=payload)
+    resp = await _sb_post_shared(
+        f"/rest/v1/{MYPROFILE_REPORTS_TABLE}",
+        params=params,
+        json=payload,
+        prefer="resolution=merge-duplicates,return=minimal",
+        timeout=8.0,
+    )
 
     if resp.status_code not in (200, 201, 204):
         raise RuntimeError(
@@ -908,37 +935,30 @@ async def _fetch_follow_viewer_ids(user_id: str) -> List[str]:
     if not user_id:
         return []
 
-    url = f"{SUPABASE_URL}/rest/v1/myprofile_links"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
-
     viewer_ids_set = set()
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                url,
-                headers=headers,
-                params={
-                    "select": "viewer_user_id",
-                    "owner_user_id": f"eq.{user_id}",
-                },
+        resp = await _sb_get_shared(
+            "/rest/v1/myprofile_links",
+            params={
+                "select": "viewer_user_id",
+                "owner_user_id": f"eq.{user_id}",
+            },
+            timeout=5.0,
+        )
+        if resp.status_code < 300:
+            rows = resp.json()
+            if isinstance(rows, list):
+                for row in rows:
+                    viewer_id = row.get("viewer_user_id")
+                    if isinstance(viewer_id, str) and viewer_id and viewer_id != user_id:
+                        viewer_ids_set.add(viewer_id)
+        else:
+            logger.error(
+                "Supabase select from myprofile_links failed: status=%s body=%s",
+                resp.status_code,
+                resp.text[:2000],
             )
-            if resp.status_code < 300:
-                rows = resp.json()
-                if isinstance(rows, list):
-                    for row in rows:
-                        viewer_id = row.get("viewer_user_id")
-                        if isinstance(viewer_id, str) and viewer_id and viewer_id != user_id:
-                            viewer_ids_set.add(viewer_id)
-            else:
-                logger.error(
-                    "Supabase select from myprofile_links failed: status=%s body=%s",
-                    resp.status_code,
-                    resp.text[:2000],
-                )
     except Exception as exc:
         logger.error("Failed to fetch myprofile_links for user %s: %s", user_id, exc)
 
@@ -985,12 +1005,6 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     if not ids:
         return []
 
-    url = f"{SUPABASE_URL}/rest/v1/{EMOTION_NOTIFICATION_SETTINGS_READ_TABLE}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
-
     quoted_viewer_ids = ",".join([f"\"{uid}\"" for uid in ids])
     quoted_owner_ids = ",".join(
         [
@@ -1000,18 +1014,17 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     )
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            # Fetch only disabled rows for this owner or the global emotion-notification mute.
-            resp = await client.get(
-                url,
-                headers=headers,
-                params={
-                    "select": "viewer_user_id",
-                    "owner_user_id": f"in.({quoted_owner_ids})",
-                    "viewer_user_id": f"in.({quoted_viewer_ids})",
-                    "is_enabled": "eq.false",
-                },
-            )
+        # Fetch only disabled rows for this owner or the global emotion-notification mute.
+        resp = await _sb_get_shared(
+            f"/rest/v1/{EMOTION_NOTIFICATION_SETTINGS_READ_TABLE}",
+            params={
+                "select": "viewer_user_id",
+                "owner_user_id": f"in.({quoted_owner_ids})",
+                "viewer_user_id": f"in.({quoted_viewer_ids})",
+                "is_enabled": "eq.false",
+            },
+            timeout=5.0,
+        )
 
         # If table doesn't exist / columns missing, skip filtering (treat as enabled)
         if resp.status_code >= 300:
@@ -1047,11 +1060,6 @@ async def _fetch_profile_display_name(user_id: str) -> str:
     if not user_id:
         return "ユーザー"
 
-    url = f"{SUPABASE_URL}/rest/v1/profiles"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
     params = {
         "select": "display_name",
         "id": f"eq.{user_id}",
@@ -1059,8 +1067,11 @@ async def _fetch_profile_display_name(user_id: str) -> str:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url, headers=headers, params=params)
+        resp = await _sb_get_shared(
+            "/rest/v1/profiles",
+            params=params,
+            timeout=5.0,
+        )
         if resp.status_code >= 300:
             logger.error(
                 "Supabase select from profiles failed: status=%s body=%s",
@@ -1143,37 +1154,38 @@ async def _fetch_push_tokens_for_users(user_ids: List[str]) -> Dict[str, str]:
     if not ids:
         return {}
 
-    url = f"{SUPABASE_URL}/rest/v1/profiles"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-    }
-
     # PostgREST: id=in.("uuid1","uuid2",...)
     quoted = ",".join([f"\"{uid}\"" for uid in ids])
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            # まずは push_enabled も含めて取得（通知OFFを除外するため）
+        # まずは push_enabled も含めて取得（通知OFFを除外するため）
+        params = {
+            "select": "id,push_token,push_enabled",
+            "id": f"in.({quoted})",
+        }
+        resp = await _sb_get_shared(
+            "/rest/v1/profiles",
+            params=params,
+            timeout=5.0,
+        )
+
+        use_push_enabled = resp.status_code < 300
+        if resp.status_code >= 300:
+            # push_enabled 列が無い等でもここに来るので、後方互換で push_token のみにフォールバック
+            logger.warning(
+                "Supabase select id,push_token,push_enabled from profiles failed (fallback to push_token only): status=%s body=%s",
+                resp.status_code,
+                resp.text[:2000],
+            )
             params = {
-                "select": "id,push_token,push_enabled",
+                "select": "id,push_token",
                 "id": f"in.({quoted})",
             }
-            resp = await client.get(url, headers=headers, params=params)
-
-            use_push_enabled = resp.status_code < 300
-            if resp.status_code >= 300:
-                # push_enabled 列が無い等でもここに来るので、後方互換で push_token のみにフォールバック
-                logger.warning(
-                    "Supabase select id,push_token,push_enabled from profiles failed (fallback to push_token only): status=%s body=%s",
-                    resp.status_code,
-                    resp.text[:2000],
-                )
-                params = {
-                    "select": "id,push_token",
-                    "id": f"in.({quoted})",
-                }
-                resp = await client.get(url, headers=headers, params=params)
+            resp = await _sb_get_shared(
+                "/rest/v1/profiles",
+                params=params,
+                timeout=5.0,
+            )
 
         if resp.status_code >= 300:
             # push_token 列が無い等でもここに来るので、warn に留める
@@ -1539,7 +1551,12 @@ async def _push_notify_followers_about_emotion(
     emotion_details: List[Dict[str, Any]],
     created_at: str,
 ) -> None:
-    """フォロー基盤の viewer 向けに Push 通知を送る（FCM）。"""
+    """フォロー基盤の viewer 向けに Push 通知を送る（FCM）。
+
+    高負荷時は FCM 外部通信をこの関数内で直接実行せず、
+    `send_fcm_push_v1` job として astor_jobs に積む。
+    notification worker が push_token 解決と FCM送信を担当する。
+    """
     if not _is_fcm_enabled():
         return
 
@@ -1551,6 +1568,44 @@ async def _push_notify_followers_about_emotion(
     if not viewer_ids:
         return
 
+    # 仕様: 通知で飛ばす内容は「誰が + 感情選択内容」。
+    emotion_body = _format_emotion_push_body(emotion_details)
+    if not emotion_body:
+        return
+
+    owner_label = (owner_name or "").strip() or "ユーザー"
+    if owner_label == "Friend":
+        owner_label = "ユーザー"
+    body = f"{owner_label}さんが{emotion_body}を入力しました"
+
+    if FCM_PUSH_QUEUE_ENABLED:
+        try:
+            from fcm_push_queue import enqueue_user_push_notification_jobs
+
+            queued = await enqueue_user_push_notification_jobs(
+                recipient_user_ids=viewer_ids,
+                title="Cocolon",
+                body=body,
+                data=None,
+                actor_user_id=owner_user_id,
+                exclude_user_ids=[owner_user_id],
+                event_type="emotion_log",
+                job_key_prefix=f"emotion_log:{owner_user_id}:{created_at}",
+                priority=5,
+            )
+            logger.info(
+                "Emotion notification FCM queued: owner_user_id=%s recipients=%s jobs=%s",
+                owner_user_id,
+                len(viewer_ids),
+                queued,
+            )
+            return
+        except Exception as exc:
+            logger.error("Failed to enqueue emotion FCM push notification: %s", exc)
+            if not FCM_PUSH_QUEUE_FALLBACK_DIRECT:
+                return
+
+    # Small/local fallback only.  This path resolves tokens and sends FCM in-place.
     token_map = await _fetch_push_tokens_for_users(viewer_ids)
     owner_token_map = await _fetch_push_tokens_for_users([owner_user_id]) if owner_user_id else {}
     owner_tokens = {
@@ -1582,18 +1637,6 @@ async def _push_notify_followers_about_emotion(
     if not tokens:
         return
 
-    # 仕様: 通知で飛ばす内容は「誰が + 感情選択内容」。
-    emotion_body = _format_emotion_push_body(emotion_details)
-    if not emotion_body:
-        return
-
-    owner_label = (owner_name or "").strip() or "ユーザー"
-    if owner_label == "Friend":
-        owner_label = "ユーザー"
-    body = f"{owner_label}さんが{emotion_body}を入力しました"
-
-    # iOS は notification.body が空だと通知が表示されない/抑制されるケースがあるため、
-    # 本文(body)に「誰が + 感情選択内容」を入れる。
     await _send_fcm_push(tokens=tokens, title="Cocolon", body=body, data=None)
 
 async def _insert_emotion_log_feed_rows(
@@ -1612,14 +1655,6 @@ async def _insert_emotion_log_feed_rows(
         # items が空配列の場合は通知をスキップ
         return False
 
-    url = f"{SUPABASE_URL}/rest/v1/{FRIEND_EMOTION_FEED_TABLE}"
-    headers = {
-        "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
-    }
-
     payload = [
         {
             "viewer_user_id": vid,
@@ -1635,8 +1670,12 @@ async def _insert_emotion_log_feed_rows(
         return False
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
+        resp = await _sb_post_shared(
+            f"/rest/v1/{FRIEND_EMOTION_FEED_TABLE}",
+            json=payload,
+            prefer="return=minimal",
+            timeout=5.0,
+        )
         if resp.status_code not in (200, 201, 204):
             logger.error(
                 "Supabase insert into friend_emotion_feed failed (emotion log rows): status=%s body=%s",
@@ -1801,7 +1840,10 @@ async def _post_submit_background_async(
             emotion=astor_payload,
         )
         try:
-            astor_engine.handle(astor_req)
+            # AstorEngine.handle() performs synchronous file/Supabase I/O.
+            # Keep it out of the FastAPI event loop so burst submissions do not
+            # block unrelated requests while the ingest side-effect completes.
+            await asyncio.to_thread(astor_engine.handle, astor_req)
         except Exception as exc:
             logger.error("ASTOR EmotionIngest failed (bg): %s", exc)
 
@@ -1916,6 +1958,41 @@ def _post_submit_background_thread_entry(
         logger.error("post-submit background thread failed: %s", exc)
 
 
+def _post_submit_bg_semaphore_for_current_loop() -> asyncio.Semaphore:
+    loop_id = id(asyncio.get_running_loop())
+    sem = _POST_SUBMIT_BG_SEMAPHORES.get(loop_id)
+    if sem is None:
+        sem = asyncio.Semaphore(POST_SUBMIT_BG_MAX_CONCURRENCY)
+        _POST_SUBMIT_BG_SEMAPHORES[loop_id] = sem
+    return sem
+
+
+async def _post_submit_background_limited_async(
+    *,
+    user_id: str,
+    emotion_details: List[Dict[str, Any]],
+    created_at: str,
+    avg_strength: Optional[float],
+    memo: Optional[str],
+    is_secret: bool,
+    notify_friends: bool,
+) -> None:
+    sem = _post_submit_bg_semaphore_for_current_loop()
+    async with sem:
+        await asyncio.wait_for(
+            _post_submit_background_async(
+                user_id=user_id,
+                emotion_details=emotion_details,
+                created_at=created_at,
+                avg_strength=avg_strength,
+                memo=memo,
+                is_secret=is_secret,
+                notify_friends=notify_friends,
+            ),
+            timeout=POST_SUBMIT_BG_TIMEOUT_SECONDS,
+        )
+
+
 def _start_post_submit_background_tasks(
     *,
     user_id: str,
@@ -1937,9 +2014,20 @@ def _start_post_submit_background_tasks(
       enqueue / lock / httpx 等の async 処理を安全に流す。
     """
     try:
+        global _POST_SUBMIT_BG_PENDING
+        if _POST_SUBMIT_BG_PENDING >= POST_SUBMIT_BG_MAX_PENDING:
+            logger.warning(
+                "post-submit background queue is saturated; skip best-effort side effects. user_id=%s pending=%s limit=%s",
+                user_id,
+                _POST_SUBMIT_BG_PENDING,
+                POST_SUBMIT_BG_MAX_PENDING,
+            )
+            return
+
+        _POST_SUBMIT_BG_PENDING += 1
         loop = asyncio.get_running_loop()
         task = loop.create_task(
-            _post_submit_background_async(
+            _post_submit_background_limited_async(
                 user_id=user_id,
                 emotion_details=emotion_details,
                 created_at=created_at,
@@ -1951,6 +2039,8 @@ def _start_post_submit_background_tasks(
         )
 
         def _done(t) -> None:
+            global _POST_SUBMIT_BG_PENDING
+            _POST_SUBMIT_BG_PENDING = max(0, _POST_SUBMIT_BG_PENDING - 1)
             try:
                 exc = t.exception()
                 if exc:

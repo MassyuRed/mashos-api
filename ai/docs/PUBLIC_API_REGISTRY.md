@@ -109,16 +109,16 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/ranking/mymodel_discoveries` | `ranking.mymodel_discoveries.v1` | `true` |  | Retired compatibility route |
 | GET | `/subscription/bootstrap` | `subscription.bootstrap.v1` | `false` |  | Runtime subscription sales / plan config; plans may include additive emlis_ai metadata and marketing lines |
 | GET | `/analysis/home-summary` | `analysis.home_summary.v1` | `false` |  |  |
-| POST | `/analysis/reports/ensure` | `analysis.reports.ensure.v1` | `false` |  |  |
-| GET | `/analysis/reports/ready` | `analysis.reports.ready.v1` | `false` |  |  |
-| GET | `/analysis/reports/{report_id}` | `analysis.reports.detail.v1` | `false` |  |  |
+| POST | `/analysis/reports/ensure` | `analysis.reports.ensure.v1` | `false` |  | Analysis core reportValidity meta is additive under content_json.reportValidity; no diagnosis or overclaim output |
+| GET | `/analysis/reports/ready` | `analysis.reports.ready.v1` | `false` |  | Read-side contract may include additive content_json.reportValidity meta |
+| GET | `/analysis/reports/{report_id}` | `analysis.reports.detail.v1` | `false` |  | Detail may include additive content_json.reportValidity meta |
 | GET | `/analysis/reports/{report_id}/weekly-days` | `analysis.report.weekly_days.v1` | `false` |  |  |
 | GET | `/report-reads/analysis-unread-status` | `report_reads.analysis_unread.v1` | `false` |  |  |
 | GET | `/self-structure/latest/status` | `self_structure.latest.status.v1` | `false` |  |  |
-| GET | `/self-structure/latest` | `self_structure.latest.v1` | `false` |  |  |
-| POST | `/self-structure/monthly/ensure` | `self_structure.monthly.ensure.v1` | `false` |  |  |
+| GET | `/self-structure/latest` | `self_structure.latest.v1` | `false` |  | Latest self-structure meta may include additive reportValidity |
+| POST | `/self-structure/monthly/ensure` | `self_structure.monthly.ensure.v1` | `false` |  | Self-structure reports attach additive content_json.reportValidity meta |
 | GET | `/self-structure/reports/history` | `self_structure.reports.history.v1` | `false` |  |  |
-| GET | `/self-structure/reports/{report_id}` | `self_structure.reports.detail.v1` | `false` |  |  |
+| GET | `/self-structure/reports/{report_id}` | `self_structure.reports.detail.v1` | `false` |  | Detail meta may include additive reportValidity |
 | GET | `/connect/lookup` | `connect.lookup.v1` | `false` |  |  |
 | POST | `/follow/request` | `follow.request.v1` | `false` |  |  |
 | POST | `/follow/requests/{request_id}/accept` | `follow.requests.accept.v1` | `false` |  |  |
@@ -138,8 +138,8 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/follow/requests/read` | `follow.requests.read.v1` | `false` |  |  |
 | GET | `/public/profile/by-share-code` | `public.profile.by_share_code.v1` | `false` |  |  |
 | GET | `/emotion/piece/quota` | `emotion.piece.quota.v1` | `false` |  |  |
-| POST | `/emotion/piece/preview` | `emotion.piece.preview.v1` | `false` |  |  |
-| POST | `/emotion/piece/publish` | `emotion.piece.publish.v1` | `false` |  |  |
+| POST | `/emotion/piece/preview` | `emotion.piece.preview.v1` | `false` |  | Emotion input -> Piece preview; piece_text is the current display answer while reflection_text remains compat; visibility/generation/transform/safety metadata is additive |
+| POST | `/emotion/piece/publish` | `emotion.piece.publish.v1` | `false` |  | Publishes an existing preview draft by status transition only; publish must not regenerate or alter piece_text |
 | POST | `/emotion/piece/cancel` | `emotion.piece.cancel.v1` | `false` |  |  |
 | GET | `/nexus/pieces` | `nexus.pieces.list.v1` | `false` |  |  |
 | GET | `/nexus/pieces/unread-status` | `nexus.pieces.unread_status.v1` | `false` |  |  |

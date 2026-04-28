@@ -16,12 +16,15 @@ from dataclasses import replace
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from piece_generated_display import (
+    STATE_MASKED,
     STATE_READY,
     GeneratedReflectionDisplayResult,
     build_generated_reflection_display,
     compute_generated_answer_norm_hash,
 )
+from piece_text_formatter import STATE_BLOCKED, format_reflection_text
 from piece_generated_identity import compute_generated_question_q_key
+from piece_generation_policy import build_piece_generation_policy
 
 SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 _NEGATIVE_EMOTIONS = {"悲しみ", "怒り", "不安"}
@@ -165,6 +168,150 @@ def _build_fallback_preview_text(question: str, raw_answer: str) -> str:
     return f"今の入力から見えてきたのは、{source}です。"
 
 
+def _append_once(values: List[str], value: str) -> None:
+    text = str(value or "").strip()
+    if text and text not in values:
+        values.append(text)
+
+
+def _merge_unique(*items: Sequence[Any]) -> List[str]:
+    merged: List[str] = []
+    for values in items:
+        for value in values or []:
+            _append_once(merged, str(value or ""))
+    return merged
+
+
+def _has_raw_attack_or_target_signal(text: Any) -> bool:
+    raw = _collapse(text)
+    return any(
+        token in raw
+        for token in (
+            "ムカつく",
+            "むかつく",
+            "腹が立",
+            "消えてほしい",
+            "消えろ",
+            "死ね",
+            "殺",
+            "晒",
+            "許せない",
+            "クソ",
+            "ゴミ",
+        )
+    )
+
+
+def _has_sensitive_or_attack_signal(flags: Sequence[str], actions: Sequence[str]) -> bool:
+    joined = " ".join([*(str(x or "") for x in flags or []), *(str(x or "") for x in actions or [])])
+    return any(
+        token in joined
+        for token in (
+            "pii:",
+            "mask:url",
+            "mask:phone",
+            "mask:email",
+            "mask:address",
+            "mask:handle",
+            "mask:line_id",
+            "abuse:",
+            "privacy:doxxing",
+            "block:severe",
+        )
+    )
+
+
+def _build_abstracted_safe_preview_text(question: str, raw_answer: str) -> str:
+    q = _collapse(question)
+    raw = _collapse(raw_answer)
+    has_anger = any(token in raw for token in ("怒", "腹が立", "ムカ", "嫌", "許せ", "消えて", "死ね", "殺"))
+    has_url = any(token in raw.lower() for token in ("http://", "https://", "www."))
+    has_contact = any(token in raw for token in ("電話", "住所", "連絡先", "LINE", "ライン", "メール", "@"))
+
+    if "仕事で気にしていること" in q:
+        return "仕事では、気持ちが強く揺れたことを気にしています。"
+    if "仕事で大切にしていること" in q:
+        return "仕事では、気持ちを落ち着けて向き合うことを大切にしています。"
+    if "仕事で伸ばしたいこと" in q:
+        return "仕事で伸ばしたいのは、落ち着いて向き合う力です。"
+    if "最近気づいたこと" in q:
+        return "最近気づいたのは、気持ちが強く動く場面があったことです。"
+    if "最近気になること" in q:
+        if has_url:
+            return "最近気になっているのは、外から入ってくる情報で気持ちが動いたことです。"
+        if has_contact or has_anger:
+            return "最近気になっているのは、強い感情が残っていることです。"
+        return "最近気になっているのは、気持ちがはっきり残っていることです。"
+    if "最近の楽しみ" in q:
+        return "最近の楽しみは、気持ちが少し軽くなる時間です。"
+    if "最近夢中なこと" in q:
+        return "最近夢中なのは、気持ちを少し外へ向けられる時間です。"
+    if "大切にしていること" in q:
+        return "大切にしているのは、気持ちを落ち着ける時間です。"
+    if "気持ちを整える方法" in q:
+        return "気持ちを整えるために、少し距離を置いて落ち着くことを大事にしています。"
+    return "今の入力から見えてきたのは、気持ちが強く動いたことです。"
+
+
+def _finalize_public_safe_preview_result(
+    *,
+    result: GeneratedReflectionDisplayResult,
+    question: str,
+    raw_answer: str,
+    candidate_text: str,
+    force_fallback: bool = False,
+) -> GeneratedReflectionDisplayResult:
+    source_safety = format_reflection_text(raw_answer)
+    candidate_safety = format_reflection_text(candidate_text)
+    flags = _merge_unique(result.flags, source_safety.flags, candidate_safety.flags)
+    actions = _merge_unique(result.actions, source_safety.actions, candidate_safety.actions)
+    if _has_raw_attack_or_target_signal(raw_answer):
+        flags = _merge_unique(flags, ["abuse:attack"])
+        actions = _merge_unique(actions, ["mask:abuse"])
+
+    should_abstract = (
+        force_fallback
+        and _has_sensitive_or_attack_signal(flags, actions)
+    ) or str(source_safety.display_state) == STATE_BLOCKED or str(candidate_safety.display_state) == STATE_BLOCKED
+
+    if should_abstract:
+        safe_text = _build_abstracted_safe_preview_text(question, raw_answer)
+        safe_safety = format_reflection_text(safe_text)
+        flags = _merge_unique(flags, safe_safety.flags, ["piece:abstracted_public_safe"])
+        actions = _merge_unique(actions, safe_safety.actions, ["piece:abstracted_public_safe"])
+        return replace(
+            result,
+            answer_display_text=safe_text,
+            answer_display_state=STATE_READY,
+            changed=True,
+            flags=flags,
+            actions=actions,
+            answer_norm_hash=compute_generated_answer_norm_hash(safe_text),
+            rewrite_needed=False,
+        )
+
+    display_text = str(candidate_safety.display_text or candidate_text or "").strip()
+    display_state = str(candidate_safety.display_state or STATE_READY).strip().lower()
+    if not display_text:
+        display_text = _build_abstracted_safe_preview_text(question, raw_answer)
+        display_state = STATE_READY
+        flags = _merge_unique(flags, ["piece:abstracted_public_safe"])
+        actions = _merge_unique(actions, ["piece:abstracted_public_safe"])
+
+    if display_text != str(result.answer_display_text or "") or flags != list(result.flags or []) or actions != list(result.actions or []):
+        return replace(
+            result,
+            answer_display_text=display_text,
+            answer_display_state=STATE_MASKED if display_state == STATE_MASKED else STATE_READY,
+            changed=True,
+            flags=flags,
+            actions=actions,
+            answer_norm_hash=compute_generated_answer_norm_hash(display_text),
+            rewrite_needed=False,
+        )
+    return result
+
+
 def _ensure_preview_display_result(
     *,
     question: str,
@@ -183,7 +330,12 @@ def _ensure_preview_display_result(
     )
 
     if result.answer_display_text and str(result.answer_display_state).lower() == STATE_READY:
-        return result
+        return _finalize_public_safe_preview_result(
+            result=result,
+            question=question,
+            raw_answer=raw_answer,
+            candidate_text=str(result.answer_display_text or ""),
+        )
 
     fallback_text = _build_fallback_preview_text(question, raw_answer)
     flags = list(result.flags or [])
@@ -193,7 +345,7 @@ def _ensure_preview_display_result(
     if "preview:fallback_display" not in actions:
         actions.append("preview:fallback_display")
 
-    return replace(
+    fallback_result = replace(
         result,
         answer_display_text=fallback_text,
         answer_display_state=STATE_READY,
@@ -202,6 +354,13 @@ def _ensure_preview_display_result(
         actions=actions,
         answer_norm_hash=compute_generated_answer_norm_hash(fallback_text),
         rewrite_needed=False,
+    )
+    return _finalize_public_safe_preview_result(
+        result=fallback_result,
+        question=question,
+        raw_answer=raw_answer,
+        candidate_text=fallback_text,
+        force_fallback=True,
     )
 
 
@@ -236,16 +395,30 @@ def generate_emotion_reflection_preview(
         focus_key=focus_key,
         text_candidates=text_candidates,
     )
+    answer_display_text = display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer)
+    piece_policy = build_piece_generation_policy(
+        piece_text=answer_display_text,
+        raw_answer=raw_answer,
+        display_result=display_result,
+        source_texts=text_candidates,
+        emotion_input={
+            "emotions": list(emotion_details or []),
+            "memo": normalized_memo,
+            "memo_action": normalized_memo_action,
+            "category": normalized_categories,
+        },
+    )
 
     return {
         "question": question,
         "focus_key": focus_key,
         "q_key": compute_generated_question_q_key(question),
         "raw_answer": raw_answer,
-        "answer_display_text": display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer),
+        "answer_display_text": answer_display_text,
         "answer_display_state": display_result.answer_display_state,
         "answer_norm_hash": display_result.answer_norm_hash,
         "display_result": display_result,
+        "piece_policy": piece_policy,
         "category": primary_category,
         "text_candidates": text_candidates,
     }

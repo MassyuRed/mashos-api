@@ -82,6 +82,14 @@ except Exception:  # pragma: no cover
         ROLE_LABELS_JA = {}  # type: ignore
 
 
+# New national system: Analysis core validity gate (additive content_json meta).
+try:
+    from analysis_report_validity_gate import attach_report_validity_meta, evaluate_analysis_report_validity
+except Exception:  # pragma: no cover
+    attach_report_validity_meta = None  # type: ignore
+    evaluate_analysis_report_validity = None  # type: ignore
+
+
 def _normalize_report_mode(x: Any) -> str:
     """Normalize report_mode into one of: standard / deep.
 
@@ -2652,6 +2660,26 @@ def _build_myprofile_report_content_json(
         if deep_visual:
             content["selfStructureDeepVisual"] = deep_visual
             content["visual_contracts"] = ["self_structure_deep_visual.v1"]
+
+    if evaluate_analysis_report_validity is not None and attach_report_validity_meta is not None:
+        try:
+            visible_section_count = 0
+            if isinstance(sections, dict):
+                for values in sections.values():
+                    if isinstance(values, list) and any(str(x or "").strip() for x in values):
+                        visible_section_count += 1
+            result = evaluate_analysis_report_validity(
+                domain="self_structure",
+                material_count=max(visible_section_count, 1 if visible_section_count else 0),
+                output_text=sections,
+                output_payload=content,
+                material_fields=["text_primary", "text_secondary", "target_hint", "role_hint", "action_signals"],
+                target_period=f"{period_start or ''}/{period_end or ''}",
+                save_requested=True,
+            )
+            content = attach_report_validity_meta(content, result)
+        except Exception:
+            pass
 
     return content
 

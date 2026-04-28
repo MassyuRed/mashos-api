@@ -12,6 +12,7 @@ from emotion_piece_store import (
     fetch_preview_draft,
     publish_preview_draft,
 )
+from piece_generation_policy import public_piece_contract_from_content_json
 from piece_publish_entitlements import (
     get_reflection_publish_policy_for_user,
     resolve_reflection_publish_limit_for_tier,
@@ -140,13 +141,16 @@ async def publish_emotion_reflection_preview(*, user_id: str, preview_id: str) -
         emotion_entry=persisted.get("inserted") if isinstance(persisted.get("inserted"), dict) else None,
     )
     next_quota = await _call_build_quota_status(user_id)
-    display_bundle = content_json.get("display") if isinstance(content_json.get("display"), dict) else {}
+    published_content_json = published_row.get("content_json") if isinstance(published_row.get("content_json"), dict) else content_json
+    display_bundle = published_content_json.get("display") if isinstance(published_content_json.get("display"), dict) else {}
     reflection_text = str(
         display_bundle.get("answer_display_text")
-        or content_json.get("answer_display_text")
+        or published_content_json.get("answer_display_text")
+        or published_content_json.get("display_answer")
         or published_row.get("answer")
         or ""
     )
+    piece_contract = public_piece_contract_from_content_json(published_content_json, include_safety_flags=True)
     input_feedback = None
     if str(persisted.get("input_feedback_comment") or "").strip():
         input_feedback = {
@@ -161,7 +165,18 @@ async def publish_emotion_reflection_preview(*, user_id: str, preview_id: str) -
         "created_at": str(persisted.get("created_at") or created_at or ""),
         "question": str(published_row.get("question") or draft.get("question") or ""),
         "reflection_text": reflection_text,
+        "piece_text": reflection_text,
+        "visibility_status": str(piece_contract.get("visibility_status") or "published"),
+        "generation_status": str(piece_contract.get("generation_status") or "generated"),
+        "transform_mode": str(piece_contract.get("transform_mode") or "normalized"),
+        "safety_level": str(piece_contract.get("safety_level") or "needs_transform"),
+        "safety_flags": list(piece_contract.get("safety_flags") or []),
         "quota": next_quota,
         "input_feedback": input_feedback,
+        "meta": {
+            "piece_core": piece_contract,
+            "piece_text_hash": str((published_content_json.get("national_core") or {}).get("piece_text_hash") or published_content_json.get("piece_text_hash") or ""),
+            "source_input_scope": "current_input_only",
+        },
         "global_summary_activity_date": persisted.get("global_summary_activity_date"),
     }

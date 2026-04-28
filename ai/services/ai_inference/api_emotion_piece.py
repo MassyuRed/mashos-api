@@ -27,6 +27,7 @@ from emotion_piece_store import (
     publish_preview_draft,
 )
 from home_gateway.command_gateway import execute_home_command
+from piece_generation_policy import public_piece_contract_from_content_json
 from home_gateway.emotion_reflection_publish_service import (
     build_emotion_reflection_quota_status,
 )
@@ -79,7 +80,13 @@ class EmotionPiecePreviewResponse(BaseModel):
     preview_id: str
     question: str
     reflection_text: str
+    piece_text: str = Field(default="")
     answer_display_state: str
+    visibility_status: str = Field(default="preview_ready")
+    generation_status: str = Field(default="generated")
+    transform_mode: str = Field(default="normalized")
+    safety_level: str = Field(default="needs_transform")
+    safety_flags: List[str] = Field(default_factory=list)
     quota: EmotionPieceQuotaResponse
     meta: Dict[str, Any] = Field(default_factory=dict)
 
@@ -92,8 +99,15 @@ class EmotionPiecePublishResponse(BaseModel):
     created_at: str
     question: str
     reflection_text: str
+    piece_text: str = Field(default="")
+    visibility_status: str = Field(default="published")
+    generation_status: str = Field(default="generated")
+    transform_mode: str = Field(default="normalized")
+    safety_level: str = Field(default="needs_transform")
+    safety_flags: List[str] = Field(default_factory=list)
     quota: EmotionPieceQuotaResponse
     input_feedback: Optional[Dict[str, Any]] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
 
 class EmotionPieceCancelResponse(BaseModel):
@@ -158,6 +172,14 @@ def register_emotion_piece_routes(app: FastAPI) -> None:
             memo_action=payload.memo_action,
             categories=normalized["category"],
         )
+        emotion_input = {
+            "emotions": normalized["emotion_details"],
+            "memo": str(payload.memo or ""),
+            "memo_action": str(payload.memo_action or ""),
+            "category": list(normalized["category"] or []),
+            "created_at": str(payload.created_at or "").strip() or None,
+            "notify_friends": True if payload.notify_friends is None else bool(payload.notify_friends),
+        }
         draft = await CreateEmotionPiecePreviewDraft(
             user_id=user_id,
             question=preview["question"],
@@ -165,25 +187,31 @@ def register_emotion_piece_routes(app: FastAPI) -> None:
             raw_answer=preview["raw_answer"],
             category=preview.get("category"),
             display_result=preview["display_result"],
-            emotion_input={
-                "emotions": normalized["emotion_details"],
-                "memo": str(payload.memo or ""),
-                "memo_action": str(payload.memo_action or ""),
-                "category": list(normalized["category"] or []),
-                "created_at": str(payload.created_at or "").strip() or None,
-                "notify_friends": True if payload.notify_friends is None else bool(payload.notify_friends),
-            },
+            emotion_input=emotion_input,
+            piece_policy=preview.get("piece_policy"),
         )
         quota = await BuildEmotionPieceQuotaStatus(user_id)
+        content_json = draft.get("content_json") if isinstance(draft.get("content_json"), dict) else {}
+        piece_contract = public_piece_contract_from_content_json(content_json, include_safety_flags=True)
+        piece_text = str(preview["answer_display_text"] or "")
         return EmotionPiecePreviewResponse(
             preview_id=str(draft.get("id") or ""),
             question=str(preview["question"]),
-            reflection_text=str(preview["answer_display_text"] or ""),
+            reflection_text=piece_text,
+            piece_text=piece_text,
             answer_display_state=str(preview["answer_display_state"] or "ready"),
+            visibility_status=str(piece_contract.get("visibility_status") or "preview_ready"),
+            generation_status=str(piece_contract.get("generation_status") or "generated"),
+            transform_mode=str(piece_contract.get("transform_mode") or "normalized"),
+            safety_level=str(piece_contract.get("safety_level") or "needs_transform"),
+            safety_flags=list(piece_contract.get("safety_flags") or []),
             quota=EmotionPieceQuotaResponse(**quota),
             meta={
                 "q_key": str(preview["q_key"]),
                 "category": preview.get("category"),
+                "piece_core": piece_contract,
+                "piece_text_hash": str((content_json.get("national_core") or {}).get("piece_text_hash") or content_json.get("piece_text_hash") or ""),
+                "source_input_scope": "current_input_only",
             },
         )
 
@@ -200,15 +228,23 @@ def register_emotion_piece_routes(app: FastAPI) -> None:
             source="emotion.piece.publish.route",
         )
         result = execution.result.data
+        piece_text = str(result.get("piece_text") or result.get("reflection_text") or "")
         return EmotionPiecePublishResponse(
             preview_id=str(result.get("preview_id") or body.preview_id),
             reflection_id=str(result.get("reflection_id") or body.preview_id),
             emotion_id=result.get("emotion_id"),
             created_at=str(result.get("created_at") or ""),
             question=str(result.get("question") or ""),
-            reflection_text=str(result.get("reflection_text") or ""),
+            reflection_text=str(result.get("reflection_text") or piece_text),
+            piece_text=piece_text,
+            visibility_status=str(result.get("visibility_status") or "published"),
+            generation_status=str(result.get("generation_status") or "generated"),
+            transform_mode=str(result.get("transform_mode") or "normalized"),
+            safety_level=str(result.get("safety_level") or "needs_transform"),
+            safety_flags=list(result.get("safety_flags") or []),
             quota=EmotionPieceQuotaResponse(**(result.get("quota") if isinstance(result.get("quota"), dict) else {})),
             input_feedback=result.get("input_feedback") if isinstance(result.get("input_feedback"), dict) else None,
+            meta=result.get("meta") if isinstance(result.get("meta"), dict) else {},
         )
 
     @app.post("/emotion/piece/cancel", response_model=EmotionPieceCancelResponse)

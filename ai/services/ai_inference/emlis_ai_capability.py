@@ -38,6 +38,9 @@ _CAPABILITY_BY_TIER: Dict[str, EmlisAICapabilityConfig] = {
         max_reply_lines=3,
         reply_length_mode="short_present_only",
         include_derived_user_model=False,
+        source_scope="current_input_only",
+        cross_core_enabled=False,
+        structure_model_enabled=False,
     ),
     "plus": EmlisAICapabilityConfig(
         tier="plus",
@@ -62,6 +65,9 @@ _CAPABILITY_BY_TIER: Dict[str, EmlisAICapabilityConfig] = {
         max_reply_lines=5,
         reply_length_mode="input_scaled",
         include_derived_user_model=True,
+        source_scope="current_input_with_owned_history",
+        cross_core_enabled=False,
+        structure_model_enabled=False,
     ),
     "premium": EmlisAICapabilityConfig(
         tier="premium",
@@ -86,6 +92,9 @@ _CAPABILITY_BY_TIER: Dict[str, EmlisAICapabilityConfig] = {
         max_reply_lines=6,
         reply_length_mode="input_and_history_scaled",
         include_derived_user_model=True,
+        source_scope="current_input_with_owned_history",
+        cross_core_enabled=False,
+        structure_model_enabled=False,
     ),
 }
 
@@ -113,4 +122,8 @@ def build_emlis_ai_public_plan_meta(raw_tier: Any) -> Dict[str, Any]:
         "model_mode": capability.model_mode,
         "interpretation_mode": capability.interpretation_mode,
         "reply_length_mode": capability.reply_length_mode,
+        "source_scope": capability.source_scope,
+        "cross_core_enabled": capability.cross_core_enabled,
+        "structure_model_enabled": capability.structure_model_enabled,
+        "max_reply_lines": capability.max_reply_lines,
     }

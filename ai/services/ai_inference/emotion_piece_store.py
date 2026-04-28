@@ -27,6 +27,13 @@ from piece_generation_store import (
     _sb_post_json,
 )
 from piece_generated_display import apply_generated_display_to_content_json
+from piece_generation_policy import (
+    VISIBILITY_PREVIEW_READY,
+    VISIBILITY_PUBLISHED,
+    compute_piece_text_hash,
+    piece_policy_from_content_json,
+    with_piece_policy_visibility,
+)
 from piece_publish_entitlements import get_current_month_window_jst
 
 EMOTION_REFLECTION_SOURCE_TYPE = "emotion_generated"
@@ -46,6 +53,7 @@ async def create_preview_draft(
     category: Optional[str],
     display_result: Any,
     emotion_input: Dict[str, Any],
+    piece_policy: Any = None,
 ) -> Dict[str, Any]:
     now_iso = _now_iso_z()
     content_json: Dict[str, Any] = {
@@ -62,6 +70,32 @@ async def create_preview_draft(
         result=display_result,
         display_updated_at=now_iso,
     )
+    answer_display_text = str(content_json.get("answer_display_text") or "").strip()
+    policy = piece_policy
+    if policy is None:
+        from piece_generation_policy import build_piece_generation_policy
+
+        policy = build_piece_generation_policy(
+            piece_text=answer_display_text,
+            raw_answer=raw_answer,
+            display_result=display_result,
+            emotion_input=emotion_input,
+        )
+    policy = with_piece_policy_visibility(
+        policy,
+        visibility_status=VISIBILITY_PREVIEW_READY,
+        piece_text=answer_display_text,
+    )
+    piece_core = policy.as_storage_meta()
+    content_json = {
+        **content_json,
+        "display_question": str(question or "").strip(),
+        "display_answer": answer_display_text,
+        "piece_text_hash": piece_core.get("piece_text_hash"),
+        "national_core": piece_core,
+        "piece_core": piece_core,
+        "previewed_at": now_iso,
+    }
 
     payload = {
         "owner_user_id": str(user_id or "").strip(),
@@ -140,6 +174,36 @@ async def publish_preview_draft(
         raise ValueError("preview draft not found")
 
     content_json = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
+    display_bundle = content_json.get("display") if isinstance(content_json.get("display"), dict) else {}
+    preview_text = str(
+        display_bundle.get("answer_display_text")
+        or content_json.get("answer_display_text")
+        or content_json.get("display_answer")
+        or row.get("answer")
+        or ""
+    ).strip()
+    current_hash = compute_piece_text_hash(preview_text)
+    policy = piece_policy_from_content_json(content_json)
+    stored_hash = str(policy.piece_text_hash or content_json.get("piece_text_hash") or "").strip()
+    if stored_hash and current_hash and stored_hash != current_hash:
+        raise RuntimeError("Emotion Piece preview text hash mismatch")
+
+    published_policy = with_piece_policy_visibility(
+        policy,
+        visibility_status=VISIBILITY_PUBLISHED,
+        piece_text=preview_text,
+    )
+    piece_core = {
+        **published_policy.as_storage_meta(),
+        "published_text_hash": current_hash or stored_hash,
+    }
+    content_json = {
+        **content_json,
+        "display_answer": preview_text,
+        "piece_text_hash": current_hash or stored_hash,
+        "national_core": piece_core,
+        "piece_core": piece_core,
+    }
     if emotion_entry:
         content_json = {
             **content_json,

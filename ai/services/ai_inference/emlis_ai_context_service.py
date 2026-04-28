@@ -3,6 +3,7 @@ from __future__ import annotations
 
 """Context collection for EmlisAI."""
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -194,8 +195,18 @@ async def build_emlis_ai_source_bundle(
     load_derived_model: Optional[bool] = None,
 ) -> SourceBundle:
     now_utc = now_utc or datetime.now(timezone.utc)
-    resolved_name = display_name if str(display_name or "").strip() else await _resolve_display_name_for_user(user_id)
-    resolved_timezone_name = await _resolve_timezone_name_for_user(user_id, fallback=timezone_name)
+
+    # Display name and timezone are independent reads. Collect them in parallel
+    # so the /emotion/submit synchronous reply path is not lengthened by
+    # avoidable serial waits.
+    raw_display_name = str(display_name or "").strip()
+    name_task = None if raw_display_name else asyncio.create_task(_resolve_display_name_for_user(user_id))
+    timezone_task = asyncio.create_task(_resolve_timezone_name_for_user(user_id, fallback=timezone_name))
+    if name_task is not None:
+        resolved_name, resolved_timezone_name = await asyncio.gather(name_task, timezone_task)
+    else:
+        resolved_name = raw_display_name
+        resolved_timezone_name = await timezone_task
 
     greeting = await decide_greeting_for_user(
         user_id=user_id,
@@ -212,52 +223,74 @@ async def build_emlis_ai_source_bundle(
         debug={"tier": capability.tier, "history_mode": capability.history_mode},
     )
 
+    async_tasks: Dict[str, Any] = {}
+
     if capability.include_input_summary:
-        bundle.input_summary = await _get_input_summary_for_user(user_id)
+        async_tasks["input_summary"] = asyncio.create_task(_get_input_summary_for_user(user_id))
 
     if capability.include_myweb_summary:
-        bundle.myweb_home_summary = await _get_myweb_home_summary_for_user(user_id)
+        async_tasks["myweb_home_summary"] = asyncio.create_task(_get_myweb_home_summary_for_user(user_id))
 
     if capability.include_today_question_history:
-        bundle.latest_today_question_answer = await _get_latest_today_question_answer_for_user(user_id)
-        bundle.recent_today_question_answers = await _list_recent_today_question_answers_for_user(user_id, limit=3)
+        async_tasks["latest_today_question_answer"] = asyncio.create_task(_get_latest_today_question_answer_for_user(user_id))
+        async_tasks["recent_today_question_answers"] = asyncio.create_task(_list_recent_today_question_answers_for_user(user_id, limit=3))
 
     if capability.history_mode != "none":
         created_at = str(current_input.get("created_at") or "").strip()
         current_emotion_id = current_input.get("id")
-        bundle.last_input = await get_last_input_for_user(
-            user_id,
-            include_secret=True,
-            exclude_emotion_id=current_emotion_id,
-        )
-        if created_at:
-            bundle.same_day_recent_inputs = await list_same_day_recent_inputs(
+        async_tasks["last_input"] = asyncio.create_task(
+            get_last_input_for_user(
                 user_id,
-                created_at=created_at,
                 include_secret=True,
-                limit=capability.max_same_day_inputs,
                 exclude_emotion_id=current_emotion_id,
             )
-        bundle.similar_inputs = await search_similar_inputs(
-            user_id,
-            memo=str(current_input.get("memo") or "").strip() or None,
-            memo_action=str(current_input.get("memo_action") or "").strip() or None,
-            category=current_input.get("category") if isinstance(current_input.get("category"), list) else [],
-            emotion_details=current_input.get("emotion_details") if isinstance(current_input.get("emotion_details"), list) else [],
-            include_secret=True,
-            window_days=capability.retrieval_window_days,
-            limit=capability.max_similar_inputs,
-            exclude_emotion_id=current_emotion_id,
+        )
+        if created_at:
+            async_tasks["same_day_recent_inputs"] = asyncio.create_task(
+                list_same_day_recent_inputs(
+                    user_id,
+                    created_at=created_at,
+                    include_secret=True,
+                    limit=capability.max_same_day_inputs,
+                    exclude_emotion_id=current_emotion_id,
+                )
+            )
+        async_tasks["similar_inputs"] = asyncio.create_task(
+            search_similar_inputs(
+                user_id,
+                memo=str(current_input.get("memo") or "").strip() or None,
+                memo_action=str(current_input.get("memo_action") or "").strip() or None,
+                category=current_input.get("category") if isinstance(current_input.get("category"), list) else [],
+                emotion_details=current_input.get("emotion_details") if isinstance(current_input.get("emotion_details"), list) else [],
+                include_secret=True,
+                window_days=capability.retrieval_window_days,
+                limit=capability.max_similar_inputs,
+                exclude_emotion_id=current_emotion_id,
+            )
         )
 
     should_load_model = capability.model_read_enabled and capability.include_derived_user_model
     if load_derived_model is not None:
         should_load_model = bool(load_derived_model)
     if should_load_model:
-        bundle.derived_user_model = await load_emlis_ai_user_model_for_user(
-            user_id=user_id,
-            expected_tier=capability.tier,
+        async_tasks["derived_user_model"] = asyncio.create_task(
+            load_emlis_ai_user_model_for_user(
+                user_id=user_id,
+                expected_tier=capability.tier,
+            )
         )
+
+    if async_tasks:
+        source_errors: Dict[str, str] = {}
+        keys = list(async_tasks.keys())
+        results = await asyncio.gather(*async_tasks.values(), return_exceptions=True)
+        for key, result in zip(keys, results):
+            if isinstance(result, Exception):
+                source_errors[key] = type(result).__name__
+                continue
+            setattr(bundle, key, result)
+        if source_errors:
+            bundle.debug["source_errors"] = source_errors
 
     bundle.side_state = {
         "greeting_slot_key": bundle.greeting.slot_key if bundle.greeting else None,

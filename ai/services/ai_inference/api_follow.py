@@ -44,8 +44,6 @@ from api_emotion_submit import (
     _extract_bearer_token,
     _resolve_user_id_from_token,
     _fetch_profile_display_name,
-    _fetch_push_tokens_for_users,
-    _send_fcm_push,
 )
 from astor_emotion_log_feed_store import (
     fetch_latest_ready_emotion_log_feed_summary,
@@ -1177,22 +1175,33 @@ def register_follow_routes(app: FastAPI) -> None:
         request_id = int(row.get("id")) if row.get("id") is not None else None
 
         try:
-            token_map = await _fetch_push_tokens_for_users([requested_user_id])
-            tokens = list(token_map.values())
-            if tokens:
-                requester_name = await _fetch_profile_display_name(requester_user_id)
-                requester_label = (requester_name or "").strip() or "フレンド"
-                if requester_label == "Friend":
-                    requester_label = "フレンド"
+            requester_name = await _fetch_profile_display_name(requester_user_id)
+            requester_label = (requester_name or "").strip() or "フレンド"
+            if requester_label == "Friend":
+                requester_label = "フレンド"
 
-                body_text = f"{requester_label}さんからフレンド通知が届きました"
-                data_payload: Dict[str, str] = {"type": "friend_request"}
-                if request_id is not None:
-                    data_payload["request_id"] = str(request_id)
+            body_text = f"{requester_label}さんからフレンド通知が届きました"
+            data_payload: Dict[str, str] = {"type": "friend_request"}
+            if request_id is not None:
+                data_payload["request_id"] = str(request_id)
 
-                await _send_fcm_push(tokens=tokens, title="Cocolon", body=body_text, data=data_payload)
+            from fcm_push_queue import enqueue_user_push_notification_jobs
+
+            queued = await enqueue_user_push_notification_jobs(
+                recipient_user_ids=[requested_user_id],
+                title="Cocolon",
+                body=body_text,
+                data=data_payload,
+                actor_user_id=requester_user_id,
+                event_type="friend_request",
+                job_key_prefix=f"friend_request:{requester_user_id}:{requested_user_id}:{request_id or ''}",
+                priority=6,
+                chunk_size=1,
+            )
+            if queued <= 0:
+                logger.info("Friend request push not queued: requester=%s requested=%s", requester_user_id, requested_user_id)
         except Exception as exc:
-            logger.warning("Failed to send friend request push: %s", exc)
+            logger.warning("Failed to enqueue friend request push: %s", exc)
 
         await _invalidate_friend_api_caches(requester_user_id, requested_user_id)
         return FriendRequestCreateResponse(
