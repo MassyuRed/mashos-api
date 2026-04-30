@@ -369,6 +369,18 @@ class QnaSavedReflectionItem(BaseModel):
     owner_user_id: str
     owner_display_name: Optional[str] = None
     saved_at: str
+    source_type: Optional[str] = None
+    body: Optional[str] = None
+    created_at: Optional[str] = None
+    views: int = 0
+    resonances: int = 0
+    is_new: bool = False
+    is_resonated: bool = True
+    can_resonate: bool = True
+    owner: Dict[str, Any] = Field(default_factory=dict)
+    question: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    viewer_state: Dict[str, Any] = Field(default_factory=dict)
 
 
 class QnaSavedReflectionsResponse(BaseModel):
@@ -3312,12 +3324,20 @@ async def _fetch_create_list_items(
 async def _build_saved_generated_items(
     *,
     prepared_rows: List[Tuple[str, str, str]],  # (q_instance_id, owner_user_id, saved_at)
+    viewer_user_id: Optional[str] = None,
+    followed_owner_ids: Optional[Set[str]] = None,
 ) -> List[QnaSavedReflectionItem]:
     if not prepared_rows:
         return []
     ids = {iid for iid, _, _ in prepared_rows}
     rows_map = await _fetch_generated_reflections_by_public_ids(ids, require_active=True, require_ready=True)
     profiles_map = await _fetch_profiles_by_ids(list({owner for _, owner, _ in prepared_rows}))
+    metrics_task = asyncio.create_task(_fetch_instance_metrics(set(ids)))
+    reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), set(ids)))
+    metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
+    followed_set = set(followed_owner_ids or set())
+    viewer_id = str(viewer_user_id or "").strip()
+
     items: List[QnaSavedReflectionItem] = []
     for iid, owner_uid, saved_at in prepared_rows:
         row = rows_map.get(iid)
@@ -3325,7 +3345,8 @@ async def _build_saved_generated_items(
             continue
         if _row_source_type(row) != EMOTION_GENERATED_SOURCE_TYPE:
             continue
-        if not get_public_generated_reflection_text(row):
+        body = get_public_generated_reflection_text(row)
+        if not body:
             continue
         title = str((row or {}).get("question") or "").strip()
         if not title:
@@ -3333,14 +3354,58 @@ async def _build_saved_generated_items(
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
+        q_key = _build_generated_q_key(row)
+        metric_row = metrics_map.get(iid) or {}
+        try:
+            views = int(metric_row.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            resonances = int(metric_row.get("resonances") or 0)
+        except Exception:
+            resonances = 0
+        created_at = str(
+            (row or {}).get("published_at")
+            or (row or {}).get("updated_at")
+            or (row or {}).get("created_at")
+            or saved_at
+            or ""
+        ).strip() or None
+        can_resonate = bool(
+            owner_uid
+            and owner_uid != viewer_id
+            and (not followed_set or owner_uid in followed_set)
+        )
         items.append(
             QnaSavedReflectionItem(
                 q_instance_id=iid,
-                q_key=_build_generated_q_key(row),
+                q_key=q_key,
                 title=title,
                 owner_user_id=str(owner_uid),
                 owner_display_name=dn_s,
                 saved_at=saved_at,
+                source_type=EMOTION_GENERATED_SOURCE_TYPE,
+                body=body,
+                created_at=created_at,
+                views=views,
+                resonances=resonances,
+                is_new=(iid not in read_set),
+                is_resonated=True,
+                can_resonate=can_resonate,
+                owner={
+                    "user_id": str(owner_uid),
+                    "display_name": dn_s,
+                    "friend_code": friend_code,
+                },
+                question={"q_key": q_key, "title": title},
+                metrics={"views": views, "resonances": resonances},
+                viewer_state={
+                    "is_new": (iid not in read_set),
+                    "is_resonated": True,
+                    "can_resonate": can_resonate,
+                },
             )
         )
     return items
@@ -3349,6 +3414,8 @@ async def _build_saved_generated_items(
 async def _build_saved_create_items(
     *,
     prepared_rows: List[Tuple[str, str, int, str, str]],  # (q_instance_id, owner_user_id, question_id, q_key, saved_at)
+    viewer_user_id: Optional[str] = None,
+    followed_owner_ids: Optional[Set[str]] = None,
 ) -> List[QnaSavedReflectionItem]:
     if not prepared_rows:
         return []
@@ -3375,7 +3442,8 @@ async def _build_saved_create_items(
     if not visible_rows:
         return []
 
-    public_pairs: Set[Tuple[str, int]] = set()
+    body_by_pair: Dict[Tuple[str, int], str] = {}
+    created_at_by_pair: Dict[Tuple[str, int], Optional[str]] = {}
     for owner_id, qids in qids_by_owner.items():
         try:
             owner_answers = await _fetch_profile_answers(user_id=str(owner_id), question_ids=set(qids))
@@ -3384,23 +3452,54 @@ async def _build_saved_create_items(
             owner_answers = {}
         for qid_val in qids:
             answer_row = owner_answers.get(int(qid_val)) if isinstance(owner_answers, dict) else None
-            if _public_create_body_from_answer_row(answer_row):
-                public_pairs.add((str(owner_id), int(qid_val)))
+            body = _public_create_body_from_answer_row(answer_row)
+            if body:
+                body_by_pair[(str(owner_id), int(qid_val))] = body
+                created_at_by_pair[(str(owner_id), int(qid_val))] = str(
+                    (answer_row or {}).get("updated_at")
+                    or (answer_row or {}).get("created_at")
+                    or ""
+                ).strip() or None
 
     visible_rows = [
         row
         for row in visible_rows
-        if (str(row[1]), int(row[2])) in public_pairs
+        if (str(row[1]), int(row[2])) in body_by_pair
     ]
     if not visible_rows:
         return []
 
+    q_instance_ids: Set[str] = {str(row[0]) for row in visible_rows if str(row[0] or "").strip()}
+    metrics_task = asyncio.create_task(_fetch_instance_metrics(q_instance_ids))
+    reads_task = asyncio.create_task(_fetch_reads(str(viewer_user_id or "").strip(), q_instance_ids))
+    metrics_map, read_set = await asyncio.gather(metrics_task, reads_task)
     profiles_map = await _fetch_profiles_by_ids(list({row[1] for row in visible_rows}))
+    followed_set = set(followed_owner_ids or set())
+    viewer_id = str(viewer_user_id or "").strip()
+
     items: List[QnaSavedReflectionItem] = []
     for iid, owner_uid, qid_val, qk, saved_at, title in visible_rows:
         p = profiles_map.get(str(owner_uid)) or {}
         dn = p.get("display_name") if isinstance(p, dict) else None
         dn_s = dn.strip() if isinstance(dn, str) else None
+        friend_code_raw = p.get("friend_code") if isinstance(p, dict) else None
+        friend_code = friend_code_raw.strip() if isinstance(friend_code_raw, str) else None
+        body = body_by_pair.get((str(owner_uid), int(qid_val))) or ""
+        metric_row = metrics_map.get(iid) or {}
+        try:
+            views = int(metric_row.get("views") or 0)
+        except Exception:
+            views = 0
+        try:
+            resonances = int(metric_row.get("resonances") or 0)
+        except Exception:
+            resonances = 0
+        created_at = created_at_by_pair.get((str(owner_uid), int(qid_val))) or saved_at
+        can_resonate = bool(
+            owner_uid
+            and owner_uid != viewer_id
+            and (not followed_set or owner_uid in followed_set)
+        )
         items.append(
             QnaSavedReflectionItem(
                 q_instance_id=iid,
@@ -3409,6 +3508,26 @@ async def _build_saved_create_items(
                 owner_user_id=str(owner_uid),
                 owner_display_name=dn_s,
                 saved_at=saved_at,
+                source_type="profile_create",
+                body=body,
+                created_at=created_at,
+                views=views,
+                resonances=resonances,
+                is_new=(iid not in read_set),
+                is_resonated=True,
+                can_resonate=can_resonate,
+                owner={
+                    "user_id": str(owner_uid),
+                    "display_name": dn_s,
+                    "friend_code": friend_code,
+                },
+                question={"q_key": qk, "title": title},
+                metrics={"views": views, "resonances": resonances},
+                viewer_state={
+                    "is_new": (iid not in read_set),
+                    "is_resonated": True,
+                    "can_resonate": can_resonate,
+                },
             )
         )
     return items
@@ -3846,9 +3965,9 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
 
         items: List[QnaSavedReflectionItem] = []
         if generated_prepared:
-            items.extend(await _build_saved_generated_items(prepared_rows=generated_prepared))
+            items.extend(await _build_saved_generated_items(prepared_rows=generated_prepared, viewer_user_id=str(viewer_user_id), followed_owner_ids=followed_set))
         if create_prepared:
-            items.extend(await _build_saved_create_items(prepared_rows=create_prepared))
+            items.extend(await _build_saved_create_items(prepared_rows=create_prepared, viewer_user_id=str(viewer_user_id), followed_owner_ids=followed_set))
         items.sort(key=lambda x: (x.saved_at, x.q_instance_id), reverse=(order_key == "newest"))
         visible_items = items[effective_offset : effective_offset + effective_limit]
         return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=len(items), limit=effective_limit, offset=effective_offset, items=visible_items)
