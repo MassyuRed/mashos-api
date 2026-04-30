@@ -83,6 +83,7 @@ REQUIRED_PUBLIC_V1_ROUTE_KEYS = {
     ('GET', '/mymodel/qna/unread'),
     ('GET', '/mymodel/qna/unread-status'),
     ('POST', '/mymodel/qna/view'),
+    ('POST', '/mymodel/qna/resonance'),
     ('POST', '/mymodel/qna/echoes/submit'),
     ('POST', '/mymodel/qna/echoes/delete'),
     ('POST', '/mymodel/qna/discoveries/submit'),
@@ -173,6 +174,26 @@ def test_legacy_myprofile_and_myweb_aliases_are_marked_deprecated_with_replaceme
         ("POST", "/myprofile/monthly/ensure"): "/self-structure/monthly/ensure",
         ("GET", "/myweb/reports/ready"): "/analysis/reports/ready",
         ("POST", "/myweb/reports/ensure"): "/analysis/reports/ensure",
+    }
+    for (method, path), replacement in expected.items():
+        entry = get_contract_entry(method=method, path=path)
+        assert entry is not None, (method, path)
+        assert entry.deprecated is True, (method, path)
+        assert entry.replacement == replacement, (method, path)
+
+
+def test_legacy_mymodel_qna_aliases_are_marked_deprecated_with_replacements():
+    expected = {
+        ("GET", "/mymodel/qna/detail"): "/piece/detail",
+        ("GET", "/mymodel/qna/echoes/history"): "/piece/resonances/history",
+        ("GET", "/mymodel/qna/echoes/reflections"): "/piece/resonances/pieces",
+        ("GET", "/mymodel/qna/list"): "/piece/library",
+        ("GET", "/mymodel/qna/unread"): "/piece/unread",
+        ("GET", "/mymodel/qna/unread-status"): "/piece/unread-status",
+        ("POST", "/mymodel/qna/view"): "/piece/view",
+        ("POST", "/mymodel/qna/resonance"): "/piece/resonance",
+        ("POST", "/mymodel/qna/echoes/submit"): "/piece/resonances/submit",
+        ("POST", "/mymodel/qna/echoes/delete"): "/piece/resonances/delete",
     }
     for (method, path), replacement in expected.items():
         entry = get_contract_entry(method=method, path=path)

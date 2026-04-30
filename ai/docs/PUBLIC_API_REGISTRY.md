@@ -78,13 +78,14 @@ Deprecated rows remain listed until their compatibility window is closed.
 | POST | `/profile-create/answers` | `profile.create.answers.v1` | `false` |  |  |
 | POST | `/mymodel/infer` | `mymodel.infer.v1` | `false` |  |  |
 | GET | `/mymodel/qna/discoveries/reflections` | `mymodel.qna.discoveries.reflections.v1` | `true` |  | Retired compatibility route |
-| GET | `/mymodel/qna/echoes/reflections` | `mymodel.qna.echoes.reflections.v1` | `false` |  |  |
-| GET | `/mymodel/qna/list` | `mymodel.qna.list.v1` | `false` |  |  |
-| GET | `/mymodel/qna/unread` | `mymodel.qna.unread.v1` | `false` |  |  |
-| GET | `/mymodel/qna/unread-status` | `mymodel.qna.unread_status.v1` | `false` |  | MyModel Home reflections unread aggregated across self + followed owners |
-| POST | `/mymodel/qna/view` | `mymodel.qna.view.v1` | `false` |  |  |
-| POST | `/mymodel/qna/echoes/submit` | `mymodel.qna.echoes.submit.v1` | `false` |  |  |
-| POST | `/mymodel/qna/echoes/delete` | `mymodel.qna.echoes.delete.v1` | `false` |  |  |
+| GET | `/mymodel/qna/echoes/reflections` | `mymodel.qna.echoes.reflections.v1` | `true` | /piece/resonances/pieces | Legacy Piece compat route |
+| GET | `/mymodel/qna/list` | `mymodel.qna.list.v1` | `true` | /piece/library | Legacy Piece compat route |
+| GET | `/mymodel/qna/unread` | `mymodel.qna.unread.v1` | `true` | /piece/unread | Legacy Piece compat route |
+| GET | `/mymodel/qna/unread-status` | `mymodel.qna.unread_status.v1` | `true` | /piece/unread-status | MyModel Home reflections unread aggregated across self + followed owners |
+| POST | `/mymodel/qna/view` | `mymodel.qna.view.v1` | `true` | /piece/view | Legacy Piece compat route |
+| POST | `/mymodel/qna/resonance` | `mymodel.qna.resonance.v1` | `true` | /piece/resonance | Legacy Piece compat route |
+| POST | `/mymodel/qna/echoes/submit` | `mymodel.qna.echoes.submit.v1` | `true` | /piece/resonances/submit | Legacy Piece compat route |
+| POST | `/mymodel/qna/echoes/delete` | `mymodel.qna.echoes.delete.v1` | `true` | /piece/resonances/delete | Legacy Piece compat route |
 | POST | `/mymodel/qna/discoveries/submit` | `mymodel.qna.discoveries.submit.v1` | `true` |  | Retired compatibility route |
 | POST | `/mymodel/qna/discoveries/delete` | `mymodel.qna.discoveries.delete.v1` | `true` |  | Retired compatibility route |
 | GET | `/mymodel/recommend/users` | `mymodel.recommend.users.v1` | `true` | /nexus/recommend/users |  |

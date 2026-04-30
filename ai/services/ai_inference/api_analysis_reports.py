@@ -120,7 +120,7 @@ SNAPSHOT_SCOPE_DEFAULT = (os.getenv("SNAPSHOT_SCOPE_DEFAULT") or "global").strip
 # Phase10 lock tuning (env)
 MYWEB_LOCK_TTL_SECONDS = int(os.getenv("GENERATION_LOCK_TTL_SECONDS_MYWEB", "120") or "120")
 MYWEB_LOCK_WAIT_SECONDS = float(os.getenv("GENERATION_LOCK_WAIT_SECONDS_MYWEB", "25") or "25")
-MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "15") or "15")
+MYWEB_READY_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_READY_CACHE_TTL_SECONDS", "60") or "60")
 MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS", "30") or "30")
 
 MYWEB_READY_CANDIDATE_SELECT = (
@@ -130,6 +130,7 @@ MYWEB_READY_CANDIDATE_SELECT = (
     "standard_total_all:content_json->standardReport->metrics->>totalAll"
 )
 MYWEB_READY_FULL_SELECT = "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"
+MYWEB_READY_LATEST_RAW_PAGE_SIZE = max(2, int(os.getenv("MYWEB_READY_LATEST_RAW_PAGE_SIZE", "4") or "4"))
 
 # JST fixed
 JST_OFFSET = timedelta(hours=9)
@@ -407,6 +408,34 @@ async def _fetch_myweb_ready_candidate_chunk(
     return rows
 
 
+async def _fetch_myweb_ready_full_candidate_chunk(
+    user_id: str,
+    report_type: str,
+    *,
+    retention: Dict[str, Any],
+    raw_page_size: int,
+    raw_offset: int,
+) -> List[Dict[str, Any]]:
+    params: List[Tuple[str, str]] = [
+        ("select", MYWEB_READY_FULL_SELECT),
+        ("user_id", f"eq.{user_id}"),
+        ("report_type", f"eq.{report_type}"),
+        ("order", "period_start.desc"),
+        ("limit", str(max(1, raw_page_size))),
+        ("offset", str(max(0, raw_offset))),
+    ]
+    params.extend(_build_myweb_retention_params(retention))
+
+    resp = await _sb_get(
+        f"/rest/v1/{REPORTS_READ_TABLE}",
+        params=params,
+    )
+    if resp.status_code not in (200, 206):
+        logger.error("Supabase latest myweb_reports select failed: %s %s", resp.status_code, (resp.text or "")[:800])
+        raise HTTPException(status_code=502, detail="Supabase query failed")
+    return _pick_rows_from_response(resp)
+
+
 async def _fetch_myweb_full_rows_by_ids(user_id: str, report_ids: List[str]) -> List[Dict[str, Any]]:
     id_filter = _build_myweb_id_in_filter(report_ids)
     if not id_filter:
@@ -440,6 +469,55 @@ async def _build_myweb_ready_payload_projection_first(
     view_ctx = await resolve_report_view_context(user_id, now_utc=now_utc)
     tier_str = str(view_ctx.subscription_tier)
     retention = dict(view_ctx.history_retention or {})
+
+    if include_body and lim == 1 and off == 0:
+        needed = 2
+        raw_page_size = max(2, min(MYWEB_READY_LATEST_RAW_PAGE_SIZE, 10))
+        raw_offset = 0
+        visible_rows: List[Dict[str, Any]] = []
+
+        while len(visible_rows) < needed:
+            rows = await _fetch_myweb_ready_full_candidate_chunk(
+                user_id,
+                report_type,
+                retention=retention,
+                raw_page_size=raw_page_size,
+                raw_offset=raw_offset,
+            )
+            if not rows:
+                break
+
+            raw_offset += len(rows)
+
+            for row in rows:
+                published_row = apply_myweb_report_access_for_viewer(
+                    row,
+                    context=view_ctx,
+                    requested_report_type=report_type,
+                    now_utc=now_utc,
+                )
+                if not published_row:
+                    continue
+                visible_rows.append(published_row)
+                if len(visible_rows) >= needed:
+                    break
+
+            if len(rows) < raw_page_size:
+                break
+
+        page_rows = visible_rows[:1]
+        has_more = len(visible_rows) > 1
+        response = MyWebReadyReportsResponse(
+            user_id=user_id,
+            report_type=str(report_type),
+            viewer_tier=str(tier_str),
+            limit=lim,
+            offset=off,
+            has_more=bool(has_more),
+            next_offset=(1 if has_more else None),
+            items=[_build_myweb_report_record(row, include_body=True) for row in page_rows],
+        )
+        return jsonable_encoder(response)
 
     needed = off + lim + 1
     raw_page_size = max(lim * 4, 30)
