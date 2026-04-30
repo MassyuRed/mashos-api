@@ -21,6 +21,7 @@ from piece_public_read_service import (
     build_nexus_reflections_payload,
     build_qna_public_detail_payload,
     build_qna_public_unread_status_payload,
+    delete_nexus_piece_payload,
 )
 from api_piece_runtime import (
     _fetch_active_user_ids,
@@ -93,6 +94,12 @@ class NexusReflectionDetailResponse(BaseModel):
     is_new: bool = False
     is_resonated: bool = False
     can_resonate: bool = False
+
+
+class NexusPieceDeleteResponse(BaseModel):
+    status: str = Field(default="ok")
+    q_instance_id: str
+    deleted: bool = True
 
 
 class NexusRecommendUser(BaseModel):
@@ -319,6 +326,25 @@ def register_nexus_routes(app: FastAPI) -> None:
             mark_viewed=bool(mark_viewed),
         )
         return NexusReflectionDetailResponse(**payload)
+
+    @app.delete("/nexus/pieces/{q_instance_id}", response_model=NexusPieceDeleteResponse)
+    async def nexus_piece_delete(
+        q_instance_id: str,
+        authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    ) -> NexusPieceDeleteResponse:
+        token = _extract_bearer_token(authorization) if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
+
+        viewer_user_id = await _resolve_user_id_from_token(token)
+        if not viewer_user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        payload = await delete_nexus_piece_payload(
+            viewer_user_id=str(viewer_user_id),
+            q_instance_id=str(q_instance_id or "").strip(),
+        )
+        return NexusPieceDeleteResponse(**payload)
 
     @app.get("/nexus/emotion-ranking", response_model=Any)
     async def nexus_emotion_ranking(

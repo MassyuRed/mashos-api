@@ -145,6 +145,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/nexus/pieces` | `nexus.pieces.list.v1` | `false` |  |  |
 | GET | `/nexus/pieces/unread-status` | `nexus.pieces.unread_status.v1` | `false` |  |  |
 | GET | `/nexus/pieces/{q_instance_id}` | `nexus.pieces.detail.v1` | `false` |  |  |
+| DELETE | `/nexus/pieces/{q_instance_id}` | `nexus.pieces.delete.v1` | `false` |  | Deletes only the viewer-owned Piece and related per-instance read/reaction state |
 | GET | `/nexus/history/resonances` | `nexus.history.resonances.v1` | `false` |  |  |
 | GET | `/nexus/recommend/users` | `nexus.recommend.users.v1` | `false` |  |  |
 | GET | `/nexus/emotion-log` | `nexus.emotion_log.v1` | `false` |  | Nexus Home-side EmotionLog preview proxy |

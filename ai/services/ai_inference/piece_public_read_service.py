@@ -15,12 +15,16 @@ from piece_generated_access import (
     EMOTION_GENERATED_SOURCE_TYPE,
     build_generated_q_key,
     fetch_active_emotion_generated_reflections_for_owner,
+    fetch_emotion_generated_row_by_instance_id,
+    generated_lookup_values,
     generated_public_id,
     generated_row_sort_key,
     is_generated_reflection_instance_id,
     resolve_generated_reflection_access,
 )
 from piece_public_read_store import (
+    delete_generated_piece_row,
+    delete_piece_related_state,
     fetch_followed_owner_ids,
     fetch_instance_metrics,
     fetch_profiles_by_ids,
@@ -399,6 +403,87 @@ async def build_qna_public_list_payload(
             "effective_tier": str(tiers.effective_tier),
             "total_items": len(items),
         },
+    }
+
+
+async def delete_nexus_piece_payload(
+    *,
+    viewer_user_id: str,
+    q_instance_id: str,
+) -> Dict[str, Any]:
+    viewer_id = str(viewer_user_id or "").strip()
+    iid = str(q_instance_id or "").strip()
+    if not viewer_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if not iid:
+        raise HTTPException(status_code=400, detail="q_instance_id is required")
+    if not is_generated_reflection_instance_id(iid):
+        raise HTTPException(status_code=404, detail="Piece not found")
+
+    row = await fetch_emotion_generated_row_by_instance_id(iid)
+    if not row:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+    if not owner_user_id:
+        raise HTTPException(status_code=404, detail="Piece not found")
+    if owner_user_id != viewer_id:
+        raise HTTPException(status_code=403, detail="Only your own Piece can be deleted")
+
+    row_id = str((row or {}).get("id") or "").strip()
+    if not row_id:
+        raise HTTPException(status_code=404, detail="Piece not found")
+
+    canonical_iid = generated_public_id(row) or iid
+    deleted = await delete_generated_piece_row(
+        row_id=row_id,
+        owner_user_id=viewer_id,
+        source_type=EMOTION_GENERATED_SOURCE_TYPE,
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Piece not found")
+
+    cleanup_ids: Set[str] = set(generated_lookup_values(iid))
+    cleanup_ids.update(generated_lookup_values(canonical_iid))
+    public_id = str((row or {}).get("public_id") or "").strip()
+    cleanup_ids.update(generated_lookup_values(public_id))
+    cleanup_ids.update(generated_lookup_values(row_id))
+    cleanup_ids = {value for value in cleanup_ids if str(value or "").strip()}
+    cleanup = await delete_piece_related_state(cleanup_ids)
+
+    requested_at = _now_iso()
+    for metric_key in ("mymodel_views", "mymodel_resonances"):
+        _run_in_background(
+            enqueue_ranking_board_refresh(
+                metric_key=metric_key,
+                user_id=viewer_id,
+                trigger="piece_delete",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        )
+    _run_in_background(
+        enqueue_account_status_refresh(
+            target_user_id=viewer_id,
+            actor_user_id=viewer_id,
+            trigger="piece_delete",
+            requested_at=requested_at,
+            debounce=True,
+        )
+    )
+    _run_in_background(
+        enqueue_global_summary_refresh(
+            trigger="piece_delete",
+            requested_at=requested_at,
+            actor_user_id=viewer_id,
+            debounce=True,
+        )
+    )
+
+    return {
+        "status": "ok",
+        "q_instance_id": canonical_iid,
+        "deleted": True,
+        "cleanup": cleanup,
     }
 
 

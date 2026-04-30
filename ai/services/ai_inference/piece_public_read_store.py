@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import HTTPException
 
 from supabase_client import (
+    sb_delete as _sb_delete_shared,
     sb_get as _sb_get_shared,
     sb_patch as _sb_patch_shared,
     sb_post as _sb_post_shared,
@@ -30,7 +31,14 @@ READS_READ_TABLE = (
     or "piece_reads"
 ).strip() or "piece_reads"
 RESONANCES_TABLE = os.getenv("COCOLON_MYMODEL_QNA_RESONANCES_TABLE", "mymodel_qna_resonances")
+ECHOES_TABLE = os.getenv("COCOLON_MYMODEL_QNA_ECHOES_TABLE", "mymodel_qna_echoes")
+DISCOVERY_LOGS_TABLE = os.getenv(
+    "COCOLON_MYMODEL_QNA_DISCOVERY_LOGS_TABLE", "mymodel_qna_discovery_logs"
+)
 VIEW_LOGS_TABLE = os.getenv("COCOLON_MYMODEL_QNA_VIEW_LOGS_TABLE", "mymodel_qna_view_logs")
+RESONANCE_LOGS_TABLE = os.getenv(
+    "COCOLON_MYMODEL_QNA_RESONANCE_LOGS_TABLE", "mymodel_qna_resonance_logs"
+)
 MYMODEL_REFLECTIONS_TABLE = (
     os.getenv("MYMODEL_REFLECTIONS_TABLE", "mymodel_reflections") or "mymodel_reflections"
 ).strip() or "mymodel_reflections"
@@ -356,10 +364,105 @@ async def inc_metric(*, q_key: str, q_instance_id: Optional[str] = None, field: 
     }
 
 
+async def _delete_by_q_instance_ids(table: str, q_instance_ids: Set[str]) -> bool:
+    table_name = str(table or "").strip()
+    ids = {str(value or "").strip() for value in (q_instance_ids or set()) if str(value or "").strip()}
+    if not table_name or not ids:
+        return True
+
+    params = {
+        "q_instance_id": (
+            f"eq.{next(iter(ids))}" if len(ids) == 1 else quoted_in(ids)
+        )
+    }
+    try:
+        resp = await _sb_delete_shared(
+            f"/rest/v1/{table_name}",
+            params=params,
+            prefer="return=minimal",
+            timeout=8.0,
+        )
+    except Exception as exc:
+        logger.warning("Supabase %s delete failed: %s", table_name, exc)
+        return False
+    if resp.status_code >= 300:
+        logger.warning(
+            "Supabase %s delete failed: %s %s",
+            table_name,
+            resp.status_code,
+            (resp.text or "")[:800],
+        )
+        return False
+    return True
+
+
+async def delete_piece_related_state(q_instance_ids: Set[str]) -> Dict[str, List[str]]:
+    ids = {str(value or "").strip() for value in (q_instance_ids or set()) if str(value or "").strip()}
+    result: Dict[str, List[str]] = {"deleted": [], "failed": []}
+    if not ids:
+        return result
+
+    for table_name in [
+        READS_TABLE,
+        RESONANCES_TABLE,
+        ECHOES_TABLE,
+        DISCOVERY_LOGS_TABLE,
+        VIEW_LOGS_TABLE,
+        RESONANCE_LOGS_TABLE,
+        METRICS_TABLE,
+    ]:
+        ok = await _delete_by_q_instance_ids(table_name, ids)
+        result["deleted" if ok else "failed"].append(str(table_name))
+    return result
+
+
+async def delete_generated_piece_row(
+    *,
+    row_id: str,
+    owner_user_id: str,
+    source_type: str = "emotion_generated",
+) -> bool:
+    rid = str(row_id or "").strip()
+    owner_id = str(owner_user_id or "").strip()
+    source = str(source_type or "emotion_generated").strip() or "emotion_generated"
+    if not rid or not owner_id:
+        return False
+
+    resp = await _sb_delete_shared(
+        f"/rest/v1/{MYMODEL_REFLECTIONS_TABLE}",
+        params={
+            "id": f"eq.{rid}",
+            "owner_user_id": f"eq.{owner_id}",
+            "source_type": f"eq.{source}",
+        },
+        prefer="return=representation",
+        timeout=8.0,
+    )
+    if resp.status_code >= 300:
+        logger.error(
+            "Supabase %s delete failed: %s %s",
+            MYMODEL_REFLECTIONS_TABLE,
+            resp.status_code,
+            (resp.text or "")[:1200],
+        )
+        raise HTTPException(status_code=502, detail="Failed to delete Piece")
+    try:
+        rows = resp.json()
+    except Exception:
+        rows = []
+    return bool(isinstance(rows, list) and rows)
+
+
 __all__ = [
     "METRICS_TABLE",
     "METRICS_READ_TABLE",
+    "READS_TABLE",
     "READS_READ_TABLE",
+    "RESONANCES_TABLE",
+    "ECHOES_TABLE",
+    "DISCOVERY_LOGS_TABLE",
+    "VIEW_LOGS_TABLE",
+    "RESONANCE_LOGS_TABLE",
     "MYMODEL_REFLECTIONS_TABLE",
     "MYMODEL_REFLECTIONS_READ_TABLE",
     "quoted_in",
@@ -375,4 +478,6 @@ __all__ = [
     "upsert_read",
     "insert_view_log",
     "inc_metric",
+    "delete_generated_piece_row",
+    "delete_piece_related_state",
 ]
