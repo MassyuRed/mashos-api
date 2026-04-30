@@ -3729,57 +3729,129 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         if order_key not in ("newest", "oldest"):
             order_key = "newest"
         sb_order = "created_at.desc" if order_key == "newest" else "created_at.asc"
+        effective_limit = int(limit)
+        effective_offset = int(offset)
+        scan_limit = int(min(max((effective_limit + effective_offset) * 5, 50), 2000))
         _, retention = await _resolve_history_retention_for_user(
             viewer_user_id,
             now_utc=datetime.now(timezone.utc),
         )
-        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
-        if not followed_set:
-            return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
-        scan_limit = int(min(max(int(limit) * 5, 50), 2000))
-        params: Dict[str, str] = {
-            "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
-            "viewer_user_id": f"eq.{viewer_user_id}",
-            "order": sb_order,
-            "limit": str(scan_limit),
-            "offset": str(int(offset)),
+
+        def _apply_created_at_retention(params: Dict[str, str]) -> Dict[str, str]:
+            clauses: List[str] = []
+            gte_iso = str(retention.get("gte_iso") or "").strip()
+            lt_iso = str(retention.get("lt_iso") or "").strip()
+            if gte_iso:
+                clauses.append(f"created_at.gte.{gte_iso}")
+            if lt_iso:
+                clauses.append(f"created_at.lt.{lt_iso}")
+            if clauses:
+                params["and"] = f"({','.join(clauses)})"
+            return params
+
+        resonance_rows = await _sb_get_json_local(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            params=_apply_created_at_retention({
+                "select": "q_instance_id,q_key,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "order": sb_order,
+                "limit": str(scan_limit),
+            }),
+        )
+        echo_rows = await _sb_get_json_local(
+            f"/rest/v1/{ECHOES_TABLE}",
+            params=_apply_created_at_retention({
+                "select": "q_instance_id,q_key,question_id,target_user_id,created_at",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "order": sb_order,
+                "limit": str(scan_limit),
+            }),
+        )
+
+        merged_by_iid: Dict[str, Dict[str, Any]] = {}
+        prefer_newer = order_key == "newest"
+        for source_name, rows in (("resonance", resonance_rows), ("echo", echo_rows)):
+            for row in rows or []:
+                iid = str((row or {}).get("q_instance_id") or "").strip()
+                saved_at = str((row or {}).get("created_at") or "").strip()
+                if not iid or not saved_at:
+                    continue
+                normalized_row = dict(row or {})
+                normalized_row["_source"] = source_name
+                previous = merged_by_iid.get(iid)
+                if previous is None:
+                    merged_by_iid[iid] = normalized_row
+                    continue
+                previous_saved_at = str((previous or {}).get("created_at") or "").strip()
+                if (prefer_newer and saved_at > previous_saved_at) or (
+                    not prefer_newer and saved_at < previous_saved_at
+                ):
+                    merged_by_iid[iid] = normalized_row
+
+        ordered_rows = sorted(
+            merged_by_iid.values(),
+            key=lambda row: (
+                str((row or {}).get("created_at") or ""),
+                str((row or {}).get("q_instance_id") or ""),
+            ),
+            reverse=(order_key == "newest"),
+        )
+        if not ordered_rows:
+            return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=effective_limit, offset=effective_offset, items=[])
+
+        generated_ids = {
+            str((row or {}).get("q_instance_id") or "").strip()
+            for row in ordered_rows
+            if _is_generated_reflection_instance_id(str((row or {}).get("q_instance_id") or "").strip())
         }
-        clauses: List[str] = []
-        gte_iso = str(retention.get("gte_iso") or "").strip()
-        lt_iso = str(retention.get("lt_iso") or "").strip()
-        if gte_iso:
-            clauses.append(f"created_at.gte.{gte_iso}")
-        if lt_iso:
-            clauses.append(f"created_at.lt.{lt_iso}")
-        if clauses:
-            params["and"] = f"({','.join(clauses)})"
-        rows = await _sb_get_json_local(f"/rest/v1/{ECHOES_TABLE}", params=params)
-        if not rows:
-            return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=0, limit=int(limit), offset=int(offset), items=[])
-        picked: List[Dict[str, Any]] = []
-        seen_iids: Set[str] = set()
-        for r in rows:
-            iid = str((r or {}).get("q_instance_id") or "").strip()
-            if not iid or iid in seen_iids:
-                continue
-            seen_iids.add(iid)
-            picked.append(r)
-            if len(picked) >= int(limit):
-                break
+        generated_rows_map = await _fetch_generated_reflections_by_public_ids(
+            generated_ids,
+            require_active=True,
+            require_ready=True,
+        )
+        followed_set = await _fetch_followed_owner_ids(viewer_user_id=str(viewer_user_id))
 
         generated_prepared: List[Tuple[str, str, str]] = []
-        for r in picked:
-            iid = str((r or {}).get("q_instance_id") or "").strip()
-            tgt = str((r or {}).get("target_user_id") or "").strip()
-            saved_at = str((r or {}).get("created_at") or "").strip()
-            if not iid or not tgt or not saved_at or tgt not in followed_set:
+        create_prepared: List[Tuple[str, str, int, str, str]] = []
+        for row in ordered_rows:
+            iid = str((row or {}).get("q_instance_id") or "").strip()
+            saved_at = str((row or {}).get("created_at") or "").strip()
+            if not iid or not saved_at:
                 continue
             if _is_generated_reflection_instance_id(iid):
-                generated_prepared.append((iid, tgt, saved_at))
+                generated_row = generated_rows_map.get(iid) or {}
+                owner_uid = str((generated_row or {}).get("owner_user_id") or (row or {}).get("target_user_id") or "").strip()
+                if not owner_uid or owner_uid not in followed_set:
+                    continue
+                generated_prepared.append((iid, owner_uid, saved_at))
+                continue
 
-        items = await _build_saved_generated_items(prepared_rows=generated_prepared)
-        items.sort(key=lambda x: x.saved_at, reverse=(order_key == "newest"))
-        return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=len(items), limit=int(limit), offset=int(offset), items=items)
+            target_user_id = str((row or {}).get("target_user_id") or "").strip()
+            question_id_raw = (row or {}).get("question_id")
+            if not target_user_id or not question_id_raw:
+                try:
+                    parsed_target, parsed_qid = _parse_instance_id(iid)
+                    target_user_id = target_user_id or str(parsed_target)
+                    question_id_raw = question_id_raw or int(parsed_qid)
+                except Exception:
+                    continue
+            if not target_user_id or target_user_id not in followed_set:
+                continue
+            try:
+                question_id = int(question_id_raw)
+            except Exception:
+                continue
+            qk = str((row or {}).get("q_key") or "").strip() or _q_key_for_question_id(question_id)
+            create_prepared.append((iid, target_user_id, question_id, qk, saved_at))
+
+        items: List[QnaSavedReflectionItem] = []
+        if generated_prepared:
+            items.extend(await _build_saved_generated_items(prepared_rows=generated_prepared))
+        if create_prepared:
+            items.extend(await _build_saved_create_items(prepared_rows=create_prepared))
+        items.sort(key=lambda x: (x.saved_at, x.q_instance_id), reverse=(order_key == "newest"))
+        visible_items = items[effective_offset : effective_offset + effective_limit]
+        return QnaSavedReflectionsResponse(status="ok", order=order_key, total_items=len(items), limit=effective_limit, offset=effective_offset, items=visible_items)
 
     @app.post("/piece/resonances/submit", response_model=PieceResonanceSubmitResponse)
     async def qna_echoes_submit(
