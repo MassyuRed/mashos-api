@@ -112,7 +112,12 @@ async def fetch_emotion_generated_row_by_instance_id(q_instance_id: str) -> Opti
     return visible[0]
 
 
-async def fetch_active_emotion_generated_reflections_for_owner(owner_user_id: str, *, limit: int = 200) -> List[Dict[str, Any]]:
+async def fetch_active_emotion_generated_reflections_for_owner(
+    owner_user_id: str,
+    *,
+    limit: int = 200,
+    ascending: bool = False,
+) -> List[Dict[str, Any]]:
     oid = str(owner_user_id or "").strip()
     if not oid:
         return []
@@ -124,12 +129,16 @@ async def fetch_active_emotion_generated_reflections_for_owner(owner_user_id: st
             "source_type": f"eq.{EMOTION_GENERATED_SOURCE_TYPE}",
             "is_active": "eq.true",
             "status": "in.(ready,published)",
-            "order": "published_at.desc,updated_at.desc",
+            "order": (
+                "published_at.asc,updated_at.asc"
+                if ascending
+                else "published_at.desc,updated_at.desc"
+            ),
             "limit": str(max(1, int(limit))),
         },
     )
     visible_rows = [row for row in rows if get_public_generated_reflection_text(row)]
-    return sorted(visible_rows, key=generated_row_sort_key, reverse=True)
+    return sorted(visible_rows, key=generated_row_sort_key, reverse=(not ascending))
 
 
 async def resolve_generated_reflection_access(*, viewer_user_id: str, q_instance_id: str) -> Dict[str, Any]:

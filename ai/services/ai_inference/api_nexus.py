@@ -48,6 +48,8 @@ class NexusMetrics(BaseModel):
 
 class NexusViewerState(BaseModel):
     is_new: bool = False
+    is_resonated: bool = False
+    can_resonate: bool = False
 
 
 class NexusReflectionItem(BaseModel):
@@ -85,10 +87,12 @@ class NexusReflectionDetailResponse(BaseModel):
     body: str
     q_key: str
     q_instance_id: str
+    owner_user_id: Optional[str] = None
     views: int = 0
     resonances: int = 0
     is_new: bool = False
     is_resonated: bool = False
+    can_resonate: bool = False
 
 
 class NexusRecommendUser(BaseModel):

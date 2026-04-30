@@ -200,6 +200,29 @@ async def is_resonated(viewer_user_id: str, q_instance_id: str) -> bool:
     return bool(isinstance(rows, list) and rows)
 
 
+async def fetch_resonated_instances(viewer_user_id: str, q_instance_ids: Set[str]) -> Set[str]:
+    if not viewer_user_id or not q_instance_ids:
+        return set()
+    try:
+        rows = await sb_get_json(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            params={
+                "select": "q_instance_id",
+                "viewer_user_id": f"eq.{viewer_user_id}",
+                "q_instance_id": quoted_in(set(q_instance_ids)),
+                "limit": str(max(1, len(q_instance_ids))),
+            },
+        )
+    except Exception:
+        return set()
+    out: Set[str] = set()
+    for r in rows:
+        qid = str((r or {}).get("q_instance_id") or "").strip()
+        if qid:
+            out.add(qid)
+    return out
+
+
 async def upsert_read(viewer_user_id: str, q_instance_id: str) -> None:
     if not viewer_user_id or not q_instance_id:
         return
@@ -347,6 +370,7 @@ __all__ = [
     "fetch_followed_owner_ids",
     "fetch_instance_metrics",
     "fetch_reads",
+    "fetch_resonated_instances",
     "is_resonated",
     "upsert_read",
     "insert_view_log",

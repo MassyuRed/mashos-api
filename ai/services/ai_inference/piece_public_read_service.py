@@ -25,6 +25,7 @@ from piece_public_read_store import (
     fetch_instance_metrics,
     fetch_profiles_by_ids,
     fetch_reads,
+    fetch_resonated_instances,
     has_myprofile_link,
     inc_metric,
     is_resonated,
@@ -114,7 +115,16 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
     q_instance_ids: Set[str] = {generated_public_id(row) for row in rows if generated_public_id(row)}
     metrics_task = asyncio.create_task(fetch_instance_metrics(q_instance_ids))
     reads_task = asyncio.create_task(fetch_reads(viewer_user_id, q_instance_ids))
-    metrics, read_set = await asyncio.gather(metrics_task, reads_task)
+    resonated_task = asyncio.create_task(fetch_resonated_instances(viewer_user_id, q_instance_ids))
+    followed_owner_ids_task = asyncio.create_task(
+        fetch_followed_owner_ids(viewer_user_id=viewer_user_id, limit=5000)
+    )
+    metrics, read_set, resonated_set, followed_owner_ids = await asyncio.gather(
+        metrics_task,
+        reads_task,
+        resonated_task,
+        followed_owner_ids_task,
+    )
     items: List[Dict[str, Any]] = []
     for row in rows:
         iid = generated_public_id(row)
@@ -146,7 +156,15 @@ async def _build_public_piece_items(*, viewer_user_id: str, rows: List[Dict[str,
                     "views": views,
                     "resonances": resonances,
                 },
-                "viewer_state": {"is_new": iid not in read_set},
+                "viewer_state": {
+                    "is_new": iid not in read_set,
+                    "is_resonated": iid in resonated_set,
+                    "can_resonate": bool(
+                        owner_user_id
+                        and owner_user_id != str(viewer_user_id)
+                        and owner_user_id in followed_owner_ids
+                    ),
+                },
             }
         )
     return items
@@ -213,6 +231,13 @@ async def _build_public_piece_detail_response(
         raise HTTPException(status_code=404, detail="Reflection not found")
     target_user_id = str((row or {}).get("owner_user_id") or "").strip()
     is_self = target_user_id == str(viewer_user_id)
+    followed_owner_ids: Set[str] = set()
+    if target_user_id and not is_self:
+        followed_owner_ids = await fetch_followed_owner_ids(
+            viewer_user_id=str(viewer_user_id),
+            limit=5000,
+        )
+    can_resonate = bool(target_user_id and not is_self and target_user_id in followed_owner_ids)
     resonated_task = asyncio.create_task(is_resonated(viewer_user_id, iid))
 
     views = 0
@@ -271,10 +296,12 @@ async def _build_public_piece_detail_response(
         "body": body,
         "q_key": q_key,
         "q_instance_id": iid,
+        "owner_user_id": target_user_id or None,
         "views": int(views or 0),
         "resonances": int(resonances or 0),
         "is_new": bool(is_new),
         "is_resonated": bool(is_resonated_now),
+        "can_resonate": bool(can_resonate),
     }
 
 
@@ -305,7 +332,14 @@ async def build_nexus_reflections_payload(
     if not target_owner_ids:
         return {"status": "ok", "sort": _normalize_public_sort(sort), "total_items": 0, "has_more": False, "items": []}
     fetch_oldest_first = _normalize_public_sort(sort) == "oldest"
-    owner_tasks = [fetch_active_emotion_generated_reflections_for_owner(owner_id, limit=max(int(limit) * 3, 50)) for owner_id in sorted(target_owner_ids)]
+    owner_tasks = [
+        fetch_active_emotion_generated_reflections_for_owner(
+            owner_id,
+            limit=max(int(limit) * 3, 50),
+            ascending=fetch_oldest_first,
+        )
+        for owner_id in sorted(target_owner_ids)
+    ]
     rows_nested = await asyncio.gather(*owner_tasks)
     merged: Dict[str, Dict[str, Any]] = {}
     for owner_rows in rows_nested:

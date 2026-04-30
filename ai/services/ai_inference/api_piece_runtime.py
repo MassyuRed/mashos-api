@@ -1223,6 +1223,23 @@ async def _insert_resonance_log(
         logger.warning("Supabase %s insert failed: %s", RESONANCE_LOGS_TABLE, exc)
 
 
+async def _ensure_piece_resonance_allowed(*, viewer_user_id: str, target_user_id: str) -> None:
+    """Allow resonance only for followed owners, never for the viewer's own Piece."""
+    viewer = str(viewer_user_id or "").strip()
+    target = str(target_user_id or "").strip()
+    if not viewer or not target:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    if target == viewer:
+        raise HTTPException(status_code=400, detail="Self resonance is not allowed")
+
+    followed_owner_ids = await _fetch_followed_owner_ids(viewer_user_id=viewer, limit=5000)
+    if target not in followed_owner_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Resonance is only available for followed users' Pieces",
+        )
+
+
 async def _inc_metric(
     *, q_key: str, q_instance_id: Optional[str] = None, field: str, delta: int = 1
 ) -> Dict[str, int]:
@@ -3587,11 +3604,18 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         ctx = await _resolve_qna_context_for_reaction(viewer_user_id=viewer_user_id, q_instance_id=req.q_instance_id, q_key=req.q_key)
-        tgt = str(ctx.get("target_user_id") or "")
-        qk = str(ctx.get("q_key") or "")
+        tgt = str(ctx.get("target_user_id") or "").strip()
+        qid = int(ctx.get("question_id") or 0)
+        qk = str(ctx.get("q_key") or "").strip()
         iid = str(req.q_instance_id or "").strip()
 
-        if tgt == viewer_user_id:
+        await _ensure_piece_resonance_allowed(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=tgt,
+        )
+
+        already = await _is_resonated(viewer_user_id, iid)
+        if already:
             metrics = await _fetch_instance_metrics({iid})
             m = metrics.get(iid) or {}
             try:
@@ -3602,20 +3626,90 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
                 res_cnt = int(m.get("resonances") or 0)
             except Exception:
                 res_cnt = 0
-            return QnaResonanceResponse(status="self", q_key=qk, q_instance_id=iid, resonated=False, views=views, resonances=res_cnt)
+            return QnaResonanceResponse(status="already", q_key=qk, q_instance_id=iid, resonated=True, views=views, resonances=res_cnt)
 
-        already = await _is_resonated(viewer_user_id, iid)
-        metrics = await _fetch_instance_metrics({iid})
-        m = metrics.get(iid) or {}
+        payload_res = {
+            "viewer_user_id": str(viewer_user_id),
+            "q_instance_id": iid,
+            "q_key": str(qk),
+            "created_at": _now_iso(),
+        }
+        resp = await _sb_post(
+            f"/rest/v1/{RESONANCES_TABLE}",
+            json=payload_res,
+            prefer="resolution=ignore-duplicates,return=representation",
+        )
+        if resp.status_code >= 300:
+            logger.error("Supabase %s insert failed (resonance): %s %s", RESONANCES_TABLE, resp.status_code, (resp.text or "")[:800])
+            raise HTTPException(status_code=502, detail="Failed to confirm resonance")
         try:
-            views = int(m.get("views") or 0)
+            inserted_rows = resp.json()
         except Exception:
-            views = 0
+            inserted_rows = []
+        if isinstance(inserted_rows, list) and not inserted_rows:
+            metrics = await _fetch_instance_metrics({iid})
+            m = metrics.get(iid) or {}
+            try:
+                views = int(m.get("views") or 0)
+            except Exception:
+                views = 0
+            try:
+                res_cnt = int(m.get("resonances") or 0)
+            except Exception:
+                res_cnt = 0
+            return QnaResonanceResponse(status="already", q_key=qk, q_instance_id=iid, resonated=True, views=views, resonances=res_cnt)
+
+        if qid > 0:
+            await _insert_resonance_log(
+                target_user_id=tgt,
+                viewer_user_id=str(viewer_user_id),
+                question_id=int(qid),
+                q_key=qk,
+                q_instance_id=iid,
+            )
+        counts = await _inc_metric(q_key=qk, q_instance_id=iid, field="resonances", delta=1)
+        views = int(counts.get("views") or 0)
+        res_cnt = int(counts.get("resonances") or 0)
+        requested_at = _now_iso()
         try:
-            res_cnt = int(m.get("resonances") or 0)
-        except Exception:
-            res_cnt = 0
-        return QnaResonanceResponse(status="already" if already else "noop", q_key=qk, q_instance_id=iid, resonated=bool(already), views=views, resonances=res_cnt)
+            await enqueue_global_snapshot_refresh(
+                user_id=viewer_user_id,
+                trigger="qna_resonance",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("snapshot enqueue failed (qna_resonance): %s", exc)
+        try:
+            await enqueue_ranking_board_refresh(
+                metric_key="mymodel_resonances",
+                user_id=viewer_user_id,
+                trigger="qna_resonance",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("ranking enqueue failed (qna_resonance): %s", exc)
+        try:
+            await enqueue_account_status_refresh(
+                target_user_id=tgt,
+                actor_user_id=viewer_user_id,
+                trigger="qna_resonance",
+                requested_at=requested_at,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("account status enqueue failed (qna_resonance): %s", exc)
+        try:
+            await enqueue_global_summary_refresh(
+                trigger="qna_resonance",
+                requested_at=requested_at,
+                actor_user_id=viewer_user_id,
+                debounce=True,
+            )
+        except Exception as exc:
+            logger.warning("global summary enqueue failed (qna_resonance): %s", exc)
+        return QnaResonanceResponse(status="ok", q_key=qk, q_instance_id=iid, resonated=True, views=views, resonances=res_cnt)
 
 
     @app.get("/piece/resonances/pieces", response_model=PieceResonancePiecesResponse)
@@ -3705,6 +3799,10 @@ def register_piece_runtime_routes(app: FastAPI) -> None:
         iid = str(req.q_instance_id or "").strip()
         if tgt == viewer_user_id:
             raise HTTPException(status_code=400, detail="Self echoes is not allowed")
+        await _ensure_piece_resonance_allowed(
+            viewer_user_id=str(viewer_user_id),
+            target_user_id=tgt,
+        )
         strength = str(req.strength or "").strip().lower()
         if strength not in ("small", "medium", "large"):
             raise HTTPException(status_code=400, detail="Invalid strength (small|medium|large)")
