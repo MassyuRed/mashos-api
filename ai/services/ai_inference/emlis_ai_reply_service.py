@@ -75,6 +75,52 @@ def _serialize_evidence_ref(item: EvidenceRef) -> Dict[str, Any]:
     }
 
 
+def _serialize_emotion_display_item(item: Any) -> Dict[str, Any]:
+    return {
+        "type": _clean(getattr(item, "type", "")),
+        "strength": _clean(getattr(item, "strength", "")),
+        "strength_label": _clean(getattr(item, "strength_label", "")),
+        "role": _clean(getattr(item, "role", "secondary")) or "secondary",
+    }
+
+
+def _serialize_user_word_anchor(item: Any) -> Dict[str, Any]:
+    return {
+        "anchor_key": _clean(getattr(item, "anchor_key", "")),
+        "text": _clean(getattr(item, "text", "")),
+        "source_field": _clean(getattr(item, "source_field", "")),
+        "role": _clean(getattr(item, "role", "other")) or "other",
+        "confidence": float(getattr(item, "confidence", 0.0) or 0.0),
+        "evidence": [_serialize_evidence_ref(ev) for ev in list(getattr(item, "evidence", []) or [])],
+    }
+
+
+def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> Dict[str, Any]:
+    length_plan = plan.reply_length_plan
+    if length_plan is None:
+        return {
+            "target_lines": 0,
+            "max_lines": int(capability.max_reply_lines or 0),
+            "tier_ceiling": int(capability.max_reply_lines or 0),
+            "evidence_ceiling": 0,
+            "history_usable": False,
+            "interpretive_frame_usable": False,
+            "reason": "missing_reply_length_plan",
+        }
+    return {
+        "target_lines": int(length_plan.target_lines or length_plan.max_lines or 0),
+        "max_lines": int(length_plan.max_lines or 0),
+        "tier_ceiling": int(length_plan.tier_ceiling or capability.max_reply_lines or 0),
+        "evidence_ceiling": int(length_plan.evidence_ceiling or 0),
+        "input_effort_score": float(length_plan.input_effort_score or 0.0),
+        "memory_richness_score": float(length_plan.memory_richness_score or 0.0),
+        "user_word_anchor_count": int(length_plan.user_word_anchor_count or 0),
+        "history_usable": bool(length_plan.history_usable),
+        "interpretive_frame_usable": bool(length_plan.interpretive_frame_usable),
+        "reason": _clean(length_plan.reason),
+    }
+
+
 def _clone_or_create_working_model(
     *,
     capability: EmlisAICapabilityConfig,
@@ -301,7 +347,7 @@ def _project_working_user_model(
 def _render_comment_text_from_reply_lines(reply_lines: List[ReplyLine], *, greeting_text: str = "") -> str:
     normalized = [str(greeting_text or "").strip()] if str(greeting_text or "").strip() else []
     normalized.extend(str(line.text or "").strip() for line in reply_lines if str(line.text or "").strip())
-    return "".join(normalized).strip()
+    return "\n".join(line for line in normalized if line).strip()
 
 
 def _build_reply_plan_from_decision(decision) -> ReplyPlan:
@@ -353,7 +399,7 @@ def _build_meta(
 ) -> Dict[str, Any]:
     used_sources: List[str] = ["current_input"]
     used_memory_layers: List[str] = ["canonical_history"]
-    if capability.history_mode != "none":
+    if capability.history_mode != "none" and (bundle.last_input or bundle.same_day_recent_inputs or bundle.similar_inputs):
         used_sources.append("history")
     if capability.include_input_summary:
         used_sources.append("input_summary")
@@ -363,16 +409,29 @@ def _build_meta(
         used_sources.append("today_question")
     if bundle.greeting:
         used_sources.append("greeting_state")
-    if bundle.derived_user_model is not None or working_model is not None:
+    if bundle.derived_user_model is not None:
         used_sources.append("derived_user_model")
         used_memory_layers.append("derived_user_model")
     if bundle.side_state:
         used_memory_layers.append("side_state")
 
-    evidence_by_line = {
-        line.key: [_serialize_evidence_ref(item) for item in line.sentence_evidence.evidence]
+    evidence_by_line: Dict[str, Any] = {}
+    for line in plan.reply_lines:
+        if not line.sentence_evidence.evidence:
+            continue
+        evidence_key = line.key
+        if evidence_key in evidence_by_line:
+            evidence_key = line.candidate_key or f"{line.key}:{len(evidence_by_line)}"
+        evidence_by_line[evidence_key] = [_serialize_evidence_ref(item) for item in line.sentence_evidence.evidence]
+
+    selected_emotions = [_serialize_emotion_display_item(item) for item in list(world_model.facts.selected_emotions or [])]
+    dominant_emotion = next((item for item in selected_emotions if item.get("role") == "dominant"), None)
+    secondary_emotions = [item for item in selected_emotions if item.get("role") != "dominant"]
+    user_word_anchors = list(world_model.facts.user_word_anchors or [])
+    used_anchor_keys = {
+        _clean((line.candidate_key or "").replace("word_reflection.", ""))
         for line in plan.reply_lines
-        if line.sentence_evidence.evidence
+        if line.key == "word_reflection"
     }
 
     return {
@@ -386,6 +445,18 @@ def _build_meta(
             "partner_mode": capability.partner_mode,
             "model_mode": capability.model_mode,
             "interpretation_mode": capability.interpretation_mode,
+        },
+        "display": {
+            "selected_emotions": selected_emotions,
+            "dominant_emotion": dominant_emotion,
+            "secondary_emotions": secondary_emotions,
+        },
+        "reply_depth": _reply_depth_meta(plan, capability),
+        "anchor_summary": {
+            "user_word_anchor_count": len(user_word_anchors),
+            "used_user_word_anchor_count": sum(1 for line in plan.reply_lines if line.key == "word_reflection"),
+            "sample_user_word_anchors": [_serialize_user_word_anchor(item) for item in user_word_anchors[:5]],
+            "used_anchor_keys": sorted(v for v in used_anchor_keys if v),
         },
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -454,13 +525,16 @@ async def render_emlis_ai_reply(
         working_model=working_model,
     )
 
-    evidence_by_line = {
-        line.key: list(line.sentence_evidence.evidence)
-        for line in plan.reply_lines
-        if line.sentence_evidence.evidence
-    }
+    evidence_by_line = {}
+    for line in plan.reply_lines:
+        if not line.sentence_evidence.evidence:
+            continue
+        evidence_key = line.key
+        if evidence_key in evidence_by_line:
+            evidence_key = line.candidate_key or f"{line.key}:{len(evidence_by_line)}"
+        evidence_by_line[evidence_key] = list(line.sentence_evidence.evidence)
     used_memory_layers = ["canonical_history"]
-    if working_model is not None:
+    if bundle.derived_user_model is not None:
         used_memory_layers.append("derived_user_model")
     if bundle.side_state:
         used_memory_layers.append("side_state")

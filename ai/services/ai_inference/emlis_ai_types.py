@@ -29,6 +29,9 @@ StyleFamily = Literal[
 ]
 CandidateKind = Literal[
     "receive",
+    "word_reflection",
+    "emotion_response",
+    "selected_emotions",
     "continuity",
     "change",
     "recovery",
@@ -36,6 +39,7 @@ CandidateKind = Literal[
     "interpretation",
     "preference",
     "partner_line",
+    "receiving_close",
 ]
 MemoryLayer = Literal[
     "canonical_history",
@@ -98,6 +102,34 @@ class EvidenceRef:
     ref_id: str
     weight: float = 1.0
     note: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class EmotionDisplayItem:
+    type: str
+    strength: str = ""
+    strength_label: str = ""
+    role: str = "secondary"
+
+
+@dataclass(frozen=True)
+class UserWordAnchor:
+    anchor_key: str
+    text: str
+    source_field: str = "memo"
+    role: str = "other"
+    evidence: List[EvidenceRef] = field(default_factory=list)
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class CurrentInputReading:
+    selected_emotions: List[EmotionDisplayItem] = field(default_factory=list)
+    dominant_emotion: Optional[EmotionDisplayItem] = None
+    secondary_emotions: List[EmotionDisplayItem] = field(default_factory=list)
+    user_word_anchors: List[UserWordAnchor] = field(default_factory=list)
+    response_mode: str = "receive"
+    memo_richness: str = "none"
 
 
 @dataclass
@@ -208,6 +240,11 @@ class WorldModelFacts:
     dominant_emotion: Optional[str] = None
     dominant_strength: Optional[str] = None
     has_memo_input: bool = False
+    selected_emotions: List[EmotionDisplayItem] = field(default_factory=list)
+    secondary_emotions: List[EmotionDisplayItem] = field(default_factory=list)
+    user_word_anchors: List[UserWordAnchor] = field(default_factory=list)
+    response_mode: str = "receive"
+    memo_richness: str = "none"
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0
@@ -281,6 +318,12 @@ class ReplyLengthPlan:
     reason: str
     input_effort_score: float = 0.0
     memory_richness_score: float = 0.0
+    tier_ceiling: int = 0
+    evidence_ceiling: int = 0
+    target_lines: int = 0
+    user_word_anchor_count: int = 0
+    history_usable: bool = False
+    interpretive_frame_usable: bool = False
 
 
 @dataclass

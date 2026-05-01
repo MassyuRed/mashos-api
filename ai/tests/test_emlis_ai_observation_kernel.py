@@ -4,6 +4,7 @@ from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_observation_kernel
 from emlis_ai_types import (
     DerivedUserModel,
+    EmotionDisplayItem,
     EvidenceRef,
     GreetingDecision,
     MeaningMapEntry,
@@ -11,6 +12,7 @@ from emlis_ai_types import (
     ResponsePreferenceCues,
     SourceBundle,
     StyleProfile,
+    UserWordAnchor,
     WorldModel,
     WorldModelFacts,
     WorldModelHypothesis,
@@ -138,5 +140,67 @@ def test_observation_kernel_free_stays_present_only_without_model_lines():
     )
 
     assert decision.reply_length_plan is not None
-    assert decision.reply_length_plan.max_lines <= 3
-    assert [line.key for line in decision.reply_lines] == ["receive"]
+    assert decision.reply_length_plan.max_lines <= 8
+    assert decision.reply_length_plan.history_usable is False
+    assert decision.reply_length_plan.interpretive_frame_usable is False
+    assert decision.reply_lines[0].key == "receive"
+    assert decision.reply_lines[-1].key == "receiving_close"
+    assert not any(line.key in {"interpretation", "partner_line", "continuity", "topic_anchor"} for line in decision.reply_lines)
+
+
+def test_observation_kernel_free_reflects_user_words_and_selected_emotions():
+    capability = resolve_emlis_ai_capability_for_tier("free")
+    current_ref = EvidenceRef(kind="emotion", ref_id="emo-cur")
+    bundle = SourceBundle(
+        user_id="user-1",
+        display_name="Mash",
+        current_input={
+            "id": "emo-cur",
+            "created_at": "2026-04-18T00:00:00Z",
+            "emotions": ["不安", "悲しみ"],
+            "category": ["恋愛"],
+            "memo": "恋人と喧嘩した。連絡の頻度ですれ違った。わかり合えなくてとても悲しかった。",
+            "memo_action": "",
+        },
+        input_effort={"memo_char_count": 48, "emotion_count": 2, "effort_score": 0.62},
+        memory_richness={"history_density_score": 0.0},
+    )
+    world_model = WorldModel(
+        facts=WorldModelFacts(
+            dominant_emotion="不安",
+            dominant_strength="medium",
+            has_memo_input=True,
+            selected_emotions=[
+                EmotionDisplayItem(type="不安", strength="medium", strength_label="中", role="dominant"),
+                EmotionDisplayItem(type="悲しみ", strength="weak", strength_label="弱", role="secondary"),
+            ],
+            secondary_emotions=[
+                EmotionDisplayItem(type="悲しみ", strength="weak", strength_label="弱", role="secondary"),
+            ],
+            current_categories=["恋愛"],
+            current_emotion_labels=["不安", "悲しみ"],
+            user_word_anchors=[
+                UserWordAnchor(anchor_key="a1", text="恋人と喧嘩した", source_field="memo", role="event", evidence=[current_ref]),
+                UserWordAnchor(anchor_key="a2", text="連絡の頻度ですれ違った", source_field="memo", role="mismatch", evidence=[current_ref]),
+                UserWordAnchor(anchor_key="a3", text="わかり合えなくてとても悲しかった", source_field="memo", role="explicit_emotion", evidence=[current_ref]),
+            ],
+            response_mode="comfort",
+            memo_richness="medium",
+        )
+    )
+
+    decision = run_emlis_ai_observation_kernel(
+        kernel_input=ObservationKernelInput(
+            capability=capability,
+            bundle=bundle,
+            world_model=world_model,
+            style_profile=StyleProfile(family="accepting", tone_reason="test"),
+        )
+    )
+
+    text = "\n".join(line.text for line in decision.reply_lines)
+    assert "恋人と喧嘩" in text
+    assert "連絡の頻度" in text
+    assert "わかり合えなくてとても悲しかった" in text
+    assert "悲しみ" in text
+    assert decision.reply_lines[-1].text == "いつでも、あなたの言葉をEmlisは受け取ります。"

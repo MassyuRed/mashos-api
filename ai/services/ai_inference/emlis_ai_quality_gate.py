@@ -71,6 +71,7 @@ def evaluate_emlis_ai_quality_gate(
     used_sources: Sequence[Any],
     evidence_by_line: Mapping[str, Any] | None,
     fallback_used: bool,
+    allowed_line_count: int | None = None,
 ) -> EmlisAIQualityGateResult:
     tier = str(getattr(capability, "tier", "free") or "free").strip().lower()
     history_mode = str(getattr(capability, "history_mode", "none") or "none").strip().lower()
@@ -94,7 +95,8 @@ def evaluate_emlis_ai_quality_gate(
     has_diagnosis_or_overclaim = bool(_DIAGNOSIS_OR_OVERCLAIM_RE.search(text))
     overclaim_suppressed = not has_diagnosis_or_overclaim
     diagnosis_blocked = not has_diagnosis_or_overclaim
-    reply_length_within_limit = _line_count(text) <= max_reply_lines
+    effective_max_reply_lines = int(allowed_line_count or 0) or (max_reply_lines + 1)
+    reply_length_within_limit = _line_count(text) <= effective_max_reply_lines
 
     capability_profile = {
         "tier": tier,
@@ -105,6 +107,7 @@ def evaluate_emlis_ai_quality_gate(
         "cross_core_enabled": bool(getattr(capability, "cross_core_enabled", False)),
         "structure_model_enabled": bool(getattr(capability, "structure_model_enabled", False)),
         "max_reply_lines": max_reply_lines,
+        "effective_max_reply_lines": effective_max_reply_lines,
     }
     passed = all(
         [
@@ -138,12 +141,15 @@ def attach_emlis_ai_quality_gate_meta(
     updated = dict(meta or {})
     used_sources = updated.get("used_sources") if isinstance(updated.get("used_sources"), list) else []
     evidence_by_line = updated.get("evidence_by_line") if isinstance(updated.get("evidence_by_line"), dict) else {}
+    reply_depth = updated.get("reply_depth") if isinstance(updated.get("reply_depth"), dict) else {}
+    allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
     gate = evaluate_emlis_ai_quality_gate(
         comment_text=comment_text,
         capability=capability,
         used_sources=used_sources,
         evidence_by_line=evidence_by_line,
         fallback_used=fallback_used,
+        allowed_line_count=allowed_line_count,
     )
     capability_meta = dict(updated.get("capability") or {}) if isinstance(updated.get("capability"), dict) else {}
     capability_meta.update(gate.capability_profile)

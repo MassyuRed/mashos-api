@@ -397,14 +397,19 @@ def register_nexus_routes(app: FastAPI) -> None:
     async def nexus_history_echoes(
         limit: int = Query(default=20, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
+        order: str = Query(default="newest", description="newest | oldest"),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> Any:
+        order_key = str(order or "newest").strip().lower()
+        if order_key not in ("newest", "oldest"):
+            order_key = "newest"
         return await _call_registered_route_json(
             app,
             path=NEXUS_SOURCE_PATHS["history_echoes"],
             detail="Failed to load Nexus resonance history",
             limit=int(limit),
             offset=int(offset),
+            order=order_key,
             authorization=authorization,
         )
 

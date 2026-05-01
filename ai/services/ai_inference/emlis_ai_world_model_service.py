@@ -11,12 +11,15 @@ from typing import Any, Dict, List, Optional
 
 from emlis_ai_types import (
     EmlisAICapabilityConfig,
+    EmotionDisplayItem,
     EvidenceRef,
     SourceBundle,
+    UserWordAnchor,
     WorldModel,
     WorldModelFacts,
     WorldModelHypothesis,
 )
+from emlis_ai_user_word_anchor_service import extract_user_word_anchors
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -31,6 +34,86 @@ def _emotion_label_from_item(item: Dict[str, Any]) -> Optional[str]:
     return label or None
 
 
+def _strength_score(strength: Any) -> int:
+    return {"weak": 1, "medium": 2, "strong": 3}.get(str(strength or "").strip().lower(), 2)
+
+
+def _strength_label(strength: Any) -> str:
+    return {"weak": "弱", "medium": "中", "strong": "強"}.get(str(strength or "").strip().lower(), "")
+
+
+def _selected_emotion_items(bundle: SourceBundle) -> List[EmotionDisplayItem]:
+    details = _current_emotion_details(bundle)
+    if details:
+        indexed: List[tuple[int, Dict[str, Any]]] = list(enumerate(details))
+        top_index = sorted(indexed, key=lambda pair: (_strength_score(pair[1].get("strength")), -pair[0]), reverse=True)[0][0]
+        out: List[EmotionDisplayItem] = []
+        for idx, item in indexed:
+            label = _emotion_label_from_item(item)
+            if not label:
+                continue
+            strength = str(item.get("strength") or "").strip().lower()
+            out.append(
+                EmotionDisplayItem(
+                    type=label,
+                    strength=strength,
+                    strength_label=_strength_label(strength),
+                    role="dominant" if idx == top_index else "secondary",
+                )
+            )
+        return out
+
+    emotions = bundle.current_input.get("emotions")
+    if not isinstance(emotions, list):
+        return []
+    out = []
+    for idx, value in enumerate(emotions):
+        label = str(value or "").strip()
+        if not label:
+            continue
+        out.append(EmotionDisplayItem(type=label, role="dominant" if idx == 0 else "secondary"))
+    return out
+
+
+def _anchor_limit_for_capability(capability: EmlisAICapabilityConfig) -> int:
+    if capability.tier == "premium":
+        return 10
+    if capability.tier == "plus":
+        return 8
+    return 5
+
+
+def _memo_richness(bundle: SourceBundle) -> str:
+    char_count = len(str(bundle.current_input.get("memo") or "").strip()) + len(str(bundle.current_input.get("memo_action") or "").strip())
+    if char_count <= 0:
+        return "none"
+    if char_count < 50:
+        return "short"
+    if char_count < 140:
+        return "medium"
+    return "long"
+
+
+def _response_mode(*, labels: List[str], categories: List[str], anchors: List[UserWordAnchor], memo_richness: str) -> str:
+    label_set = set(labels)
+    category_text = " ".join(categories)
+    anchor_text = " ".join(anchor.text for anchor in anchors)
+    combined = f"{category_text} {anchor_text}"
+    if "喜び" in label_set:
+        return "celebrate"
+    if "怒り" in label_set:
+        return "protect_boundary"
+    if "平穏" in label_set and memo_richness in {"none", "short"}:
+        return "quiet_receive"
+    if any(v in label_set for v in {"悲しみ", "不安", "恐れ", "焦り"}):
+        if any(word in combined for word in ("恋人", "相手", "家族", "友達", "すれ違", "わかり合", "分かり合")):
+            return "comfort"
+        return "organize" if memo_richness in {"medium", "long"} else "comfort"
+    if any(word in combined for word in ("整理", "考え", "価値観", "仕事", "学習")):
+        return "organize"
+    return "receive"
+
+
 def _extract_dominant_emotion(bundle: SourceBundle) -> tuple[Optional[str], Optional[str]]:
     details = _current_emotion_details(bundle)
     if not details:
@@ -39,11 +122,7 @@ def _extract_dominant_emotion(bundle: SourceBundle) -> tuple[Optional[str], Opti
             return str(emotions[0]).strip() or None, None
         return None, None
 
-    def _score(item: Dict[str, Any]) -> int:
-        strength = str(item.get("strength") or "medium").strip().lower()
-        return {"weak": 1, "medium": 2, "strong": 3}.get(strength, 2)
-
-    top = sorted(details, key=_score, reverse=True)[0]
+    top = sorted(details, key=lambda item: _strength_score(item.get("strength")), reverse=True)[0]
     return (
         _emotion_label_from_item(top),
         str(top.get("strength") or "").strip().lower() or None,
@@ -205,18 +284,41 @@ def build_emlis_ai_world_model(
         if isinstance(item, list) and item and str(item[0]).strip()
     ]
 
+    selected_emotions = _selected_emotion_items(bundle)
+    secondary_emotions = [item for item in selected_emotions if item.role != "dominant"]
+    current_ref = _current_ref(bundle)
+    user_word_anchors = extract_user_word_anchors(
+        current_input=bundle.current_input,
+        max_anchors=_anchor_limit_for_capability(capability),
+        evidence=current_ref,
+    )
+    current_categories = _current_categories(bundle)
+    current_emotion_labels = _emotion_labels(bundle)
+    memo_richness = _memo_richness(bundle)
+    response_mode = _response_mode(
+        labels=current_emotion_labels,
+        categories=current_categories,
+        anchors=user_word_anchors,
+        memo_richness=memo_richness,
+    )
+
     facts = WorldModelFacts(
         dominant_emotion=dominant_emotion,
         dominant_strength=dominant_strength,
         has_memo_input=bool(str(bundle.current_input.get("memo") or "").strip() or str(bundle.current_input.get("memo_action") or "").strip()),
+        selected_emotions=selected_emotions,
+        secondary_emotions=secondary_emotions,
+        user_word_anchors=user_word_anchors,
+        response_mode=response_mode,
+        memo_richness=memo_richness,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
         streak_days=int(input_summary.get("streak_days") or 0),
         last_input_at=str(input_summary.get("last_input_at") or "").strip() or None,
         weekly_top_emotions=weekly_top,
-        current_categories=_current_categories(bundle),
-        current_emotion_labels=_emotion_labels(bundle),
+        current_categories=current_categories,
+        current_emotion_labels=current_emotion_labels,
         latest_today_question_text=_latest_today_question_text(bundle),
         latest_today_question_answer_text=_latest_today_question_answer_text(bundle),
     )
@@ -252,5 +354,8 @@ def build_emlis_ai_world_model(
             "same_day_recent_inputs": len(bundle.same_day_recent_inputs),
             "similar_inputs": len(bundle.similar_inputs),
             "derived_model_loaded": bool(bundle.derived_user_model is not None),
+            "user_word_anchor_count": len(user_word_anchors),
+            "response_mode": response_mode,
+            "memo_richness": memo_richness,
         },
     )

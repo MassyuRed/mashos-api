@@ -12,6 +12,8 @@ from supabase_client import sb_auth_headers, sb_get, sb_patch, sb_post
 
 logger = logging.getLogger("account_lifecycle_api")
 
+DISPLAY_NAME_MAX_LENGTH = 15
+
 
 class AccountProfileMeResponse(BaseModel):
     user_id: str
@@ -26,7 +28,7 @@ class AccountProfileMeResponse(BaseModel):
 
 
 class AccountProfileMePatchBody(BaseModel):
-    display_name: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=DISPLAY_NAME_MAX_LENGTH)
     push_enabled: Optional[bool] = None
     push_platform: Optional[str] = None
     push_token: Optional[str] = None
@@ -69,6 +71,29 @@ def _coerce_display_name(value: Any) -> Optional[str]:
         if s:
             return s
     return None
+
+
+def _ensure_display_name_length(display_name: str) -> str:
+    if len(display_name) > DISPLAY_NAME_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"display_name must be {DISPLAY_NAME_MAX_LENGTH} characters or fewer",
+        )
+    return display_name
+
+
+def _coerce_account_display_name(value: Any) -> Optional[str]:
+    display_name = _coerce_display_name(value)
+    if not display_name:
+        return None
+    return _ensure_display_name_length(display_name)
+
+
+def _coerce_generated_display_name(value: Any) -> Optional[str]:
+    display_name = _coerce_display_name(value)
+    if not display_name:
+        return None
+    return display_name[:DISPLAY_NAME_MAX_LENGTH]
 
 
 def _coerce_optional_text(value: Any) -> Optional[str]:
@@ -189,18 +214,18 @@ async def _resolve_insert_display_name(
     requested_display_name: Optional[str] = None,
     existing_row: Optional[Dict[str, Any]] = None,
 ) -> str:
-    requested = _coerce_display_name(requested_display_name)
+    requested = _coerce_account_display_name(requested_display_name)
     if requested:
         return requested
 
-    current = _coerce_display_name((existing_row or {}).get("display_name"))
+    current = _coerce_generated_display_name((existing_row or {}).get("display_name"))
     if current:
         return current
 
     auth_user = await _fetch_auth_user(authorization)
     meta = auth_user.get("user_metadata") if isinstance(auth_user.get("user_metadata"), dict) else {}
     for key in ("display_name", "displayName", "name", "full_name"):
-        value = _coerce_display_name(meta.get(key))
+        value = _coerce_generated_display_name(meta.get(key))
         if value:
             return value
 
@@ -208,7 +233,7 @@ async def _resolve_insert_display_name(
     if email and "@" in email:
         local = email.split("@", 1)[0].strip()
         if local:
-            return local
+            return local[:DISPLAY_NAME_MAX_LENGTH]
 
     return "ユーザー"
 
@@ -293,11 +318,11 @@ async def _update_or_create_profile_me(
 def register_account_lifecycle_routes(app: FastAPI) -> None:
     @app.get("/account/display-name/availability", response_model=AccountDisplayNameAvailabilityResponse)
     async def get_account_display_name_availability(
-        candidate: str = Query(..., min_length=1, max_length=20),
+        candidate: str = Query(..., min_length=1, max_length=DISPLAY_NAME_MAX_LENGTH),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
     ) -> AccountDisplayNameAvailabilityResponse:
         me = await _require_user_id(authorization)
-        normalized = _coerce_display_name(candidate)
+        normalized = _coerce_account_display_name(candidate)
         if not normalized:
             raise HTTPException(status_code=400, detail="candidate is required")
         available = await _is_display_name_available(normalized, exclude_user_id=me)

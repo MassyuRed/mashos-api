@@ -957,7 +957,7 @@ def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str, s
     if report_type == "daily":
         return (
             "【昨日、見えていたこと】",
-            "【気持ちが動いた流れ】",
+            "【気持ちの変化】",
             "【昨日、気持ちが出やすかった時間】",
             "【あなたへのコメント】",
             "【このレポートについて】",
@@ -965,14 +965,14 @@ def _observation_section_titles(report_type: str) -> Tuple[str, str, str, str, s
     if report_type == "weekly":
         return (
             "【今週、見えていたこと】",
-            "【気持ちが動いた流れ】",
+            "【気持ちの変化】",
             "【今週、気持ちが出やすかった時間】",
             "【あなたへのコメント】",
             "【このレポートについて】",
         )
     return (
         "【今月、見えていたこと】",
-        "【気持ちが動いた流れ】",
+        "【気持ちの変化】",
         "【今月、気持ちが出やすかった時間】",
         "【あなたへのコメント】",
         "【このレポートについて】",
@@ -983,12 +983,139 @@ def _common_observation_note_lines() -> List[str]:
     return list(COMMON_OBSERVATION_NOTE_LINES)
 
 
+def _humanize_emotion_report_text(text: Any) -> str:
+    """Turn internal analysis wording into reader-facing emotion-report wording.
+
+    The analysis engine may still use words like “flow”, “direction”, and “foundation”
+    internally.  The displayed report should describe what the user can understand:
+    what they felt, how it moved, and what remained.
+    """
+    s = str(text or "")
+    if not s:
+        return ""
+
+    replacements = [
+        ("【気持ちが動いた流れ】", "【気持ちの変化】"),
+        ("【言葉と気持ちのつながり】", "【言葉と気持ちのつながり】"),
+        ("【昨日、深いところで動いていた流れ】", "【昨日、気持ちの奥で動いていたこと】"),
+        ("【今週、深いところで動いていた流れ】", "【今週、気持ちの奥で動いていたこと】"),
+        ("【今月、深いところで続いていた流れ】", "【今月、気持ちの奥で続いていたこと】"),
+        ("【切り替わりやすかった流れ】", "【切り替わりやすかった気持ち】"),
+        ("【今月の中で見えていた変化】", "【今月の中で見えていた変化】"),
+        ("【今日の構造サマリー】", "【今日の気持ちのまとめ】"),
+        ("【今週の構造サマリー】", "【今週の気持ちのまとめ】"),
+        ("【今月の構造サマリー】", "【今月の気持ちのまとめ】"),
+        ("【観測ポイント】", "【見返すポイント】"),
+        ("【構造洞察（補足）】", "【気持ちの補足】"),
+        ("構造サマリー", "気持ちのまとめ"),
+        ("構造分析", "分析"),
+        ("構造変化", "気持ちの変化"),
+        ("構造洞察", "気持ちの補足"),
+        ("観測ポイント", "見返すポイント"),
+        ("観測できます", "見返せます"),
+        ("観測できます。", "見返せます。"),
+        ("入力が分析に使われました。", "入力をもとにしています。"),
+        ("気持ちの向き", "気持ちの動き"),
+        ("その日の向き", "その日の気持ち"),
+        ("似た向き", "似た気持ち"),
+        ("近い向きの反応", "近い反応"),
+        ("同じ方向の反応", "近い反応"),
+        ("少し違う角度の反応", "少し違う反応"),
+        ("別の角度からも反応", "別の気持ちとしても反応"),
+        ("反応の角度", "反応の出方"),
+        ("いちばん前に出ていた", "いちばんよく見えていた"),
+        ("前に出ていました", "よく見えていました"),
+        ("前に出ている", "よく見えている"),
+        ("前に出ていた", "よく見えていた"),
+        ("前に出たあと", "出たあと"),
+        ("前に出やすかった", "出やすかった"),
+        ("前に出やすい", "出やすい"),
+        ("前に出る場面", "出ていた場面"),
+        ("前に出る", "出やすくなる"),
+        ("表に出る反応", "表に出た反応"),
+        ("前面に出", "強く見え"),
+        ("強く跳ねたというより", "一瞬だけ強く出たというより"),
+        ("一日の土台に残って", "一日を通して残って"),
+        ("週の土台に残って", "週を通して残って"),
+        ("月の土台に残って", "月を通して残って"),
+        ("週の土台に同じ反応が続いて", "週を通して同じ反応が続いて"),
+        ("気持ちの芯", "気になっているもの"),
+        ("静かなほうへ戻ろうとする向き", "静かなほうへ戻ろうとする動き"),
+        ("整え直そうとする向き", "整え直そうとする動き"),
+        ("整え直す向き", "整え直す動き"),
+        ("気持ちがいくつかの向きで重なって", "いくつかの気持ちが重なって"),
+        ("いくつかの向きで重なって", "いくつかの気持ちが重なって"),
+        ("向きが少しずつ変わって", "気持ちが少しずつ変わって"),
+        ("少しずつ向きが変わる", "少しずつ気持ちが変わる"),
+        ("週ごとに向きが入れ替わって", "週ごとに気持ちが入れ替わって"),
+        ("気持ちの置き場を探し直していた流れ", "気持ちの置き場を探し直していた動き"),
+        ("ひとつの流れとして言い切る", "ひとつにまとめて言う"),
+        ("ひとつに言い切れない流れ", "ひとつに言い切れない気持ち"),
+        ("整え直す流れ", "整え直す動き"),
+        ("戻ろうとする流れ", "戻ろうとする動き"),
+        ("戻る流れ", "戻る動き"),
+        ("に動きやすい流れ", "に気持ちが動きやすいところ"),
+        ("に動く流れ", "に気持ちが動くところ"),
+        ("流れが見えていました", "気持ちの動きが見えていました"),
+        ("流れも見えていました", "動きも見えていました"),
+        ("流れがありました", "動きがありました"),
+        ("流れでした", "動きでした"),
+        ("流れとして読む", "気持ちの動きとして読む"),
+        ("流れとして見", "気持ちの動きとして見"),
+        ("流れの手がかり", "気持ちの手がかり"),
+        ("深いところの流れ", "気持ちの奥の動き"),
+        ("つながりやすかった流れ", "つながりやすかった気持ち"),
+        ("どの流れに向かいやすいか", "どんな気持ちへ向かいやすいか"),
+        ("どの流れに入りやすいか", "どんな気持ちに入りやすいか"),
+        ("流れの重心", "気持ちの中心"),
+        ("その流れ", "その動き"),
+        ("同じ流れ", "同じ動き"),
+        ("似た流れ", "似た気持ち"),
+        ("代表的な流れ", "代表的な気持ちの動き"),
+        ("手応えや前向きさを確かめたい流れ", "手応えや前向きさを確かめたい気持ち"),
+        ("気持ちを急がせず、静かに整理したい流れ", "気持ちを急がせず、静かに整理したい気持ち"),
+        ("先を見通して安心できる位置を確かめたい流れ", "先を見通して安心を確かめたい気持ち"),
+        ("自分の納得できる線を守りたい流れ", "自分の納得できる線を守りたい気持ち"),
+        ("落ち着ける感覚を保ち直したい流れ", "落ち着ける感覚を保ち直したい気持ち"),
+        ("何かを保ち直したい流れ", "何かを保ち直したい気持ち"),
+        ("近い向きが残って", "近い気持ちが残って"),
+        ("近い向きが", "近い気持ちが"),
+        ("同じ方向の反応が", "近い反応が"),
+        ("反応の軸", "気持ちの中心"),
+        ("底にある気持ちの中心", "奥に残っていた気持ち"),
+        ("土台に残って", "続いて"),
+        ("土台に同じ反応が続いて", "同じ反応が続いて"),
+        ("気持ちの奥で動いていた動き", "気持ちの奥で動いていたこと"),
+        ("気持ちの奥で続いていた動き", "気持ちの奥で続いていたこと"),
+        ("納得しやすい動きです", "受け取りやすい状態です"),
+        ("前に出ていた言葉", "よく出ていた言葉"),
+        ("この流れ", "この動き"),
+        ("つながる流れ", "つながる動き"),
+        ("くり返しやすかった流れ", "くり返しやすかった気持ちの動き"),
+        ("流れを言い切るには", "起きていたことをまとめるには"),
+        ("目立つ流れ", "目立つ気持ちの動き"),
+    ]
+    for before, after in replacements:
+        s = s.replace(before, after)
+    return s
+
+
+def _humanize_emotion_report_payload_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _humanize_emotion_report_text(value)
+    if isinstance(value, list):
+        return [_humanize_emotion_report_payload_value(x) for x in value]
+    if isinstance(value, dict):
+        return {k: _humanize_emotion_report_payload_value(v) for k, v in value.items()}
+    return value
+
+
 def _fallback_overview_line(report_type: str) -> str:
     if report_type == "daily":
-        return "昨日は、ひとつの流れとして言い切るほど強い偏りはまだ見えていません。"
+        return "昨日は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
     if report_type == "weekly":
-        return "今週は、ひとつの流れとして言い切るほど強い偏りはまだ見えていません。"
-    return "今月は、ひとつの流れとして言い切るほど強い偏りはまだ見えていません。"
+        return "今週は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
+    return "今月は、ひとつにまとめて言えるほど強い偏りはまだ見えていません。"
 
 
 def _fallback_reader_comment(report_type: str) -> str:
@@ -996,7 +1123,7 @@ def _fallback_reader_comment(report_type: str) -> str:
         return "まとまりきらない感じそのものが、昨日の自然な状態だったのかもしれません。"
     if report_type == "weekly":
         return "日によって違う動きが出ていたこと自体に、今週らしさが表れていたようです。"
-    return "いくつかの流れが重なっていたこと自体が、今月の自然な特徴だったようです。"
+    return "いくつかの気持ちが重なっていたこと自体が、今月の自然な特徴だったようです。"
 
 
 def _fallback_time_comment(report_type: str) -> str:
@@ -1049,7 +1176,7 @@ def _build_time_bucket_comment(
     if report_type == "daily":
         first = f"昨日は{time_label}に気持ちが表へ上がりやすい一日でした。"
     elif report_type == "weekly":
-        first = f"今週は{time_label}に気持ちが表へ上がりやすい流れがありました。"
+        first = f"今週は{time_label}に気持ちが表へ上がりやすい場面がありました。"
     else:
         first = f"今月は{time_label}に反応が集まりやすい傾向が続いていました。"
 
@@ -1059,7 +1186,7 @@ def _build_time_bucket_comment(
         second = f"{context_clause}と読むと自然です。"
 
     if report_type == "monthly":
-        return f"{first}{second}この偏りは、月の中で何度か繰り返されていた流れでした。"
+        return f"{first}{second}この偏りは、月の中で何度か繰り返し見えていました。"
     return f"{first}{second}"
 
 def _normalize_summary_movement_items(summary: Dict[str, Any]) -> List[str]:
@@ -1093,11 +1220,11 @@ EMOTION_NEED_PHRASE = {
 }
 
 EMOTION_FLOW_PHRASE = {
-    "joy": "手応えや前向きさを確かめたい流れ",
-    "sadness": "気持ちを急がせず、静かに整理したい流れ",
-    "anxiety": "先を見通して安心できる位置を確かめたい流れ",
-    "anger": "自分の納得できる線を守りたい流れ",
-    "calm": "落ち着ける感覚を保ち直したい流れ",
+    "joy": "手応えや前向きさを確かめたい気持ち",
+    "sadness": "気持ちを急がせず、静かに整理したい気持ち",
+    "anxiety": "先を見通して安心を確かめたい気持ち",
+    "anger": "自分の納得できる線を守りたい気持ち",
+    "calm": "落ち着ける感覚を保ち直したい気持ち",
 }
 
 TIME_BUCKET_READER_LABELS: Dict[str, str] = {
@@ -1109,7 +1236,7 @@ TIME_BUCKET_READER_LABELS: Dict[str, str] = {
 
 TIME_BUCKET_CONTEXT_CLAUSES: Dict[str, str] = {
     "0-6": "周囲が静かになる中で、内側の反応が表面へ上がりやすかった",
-    "6-12": "一日の始まりに、その日の向きが比較的はっきり表れやすかった",
+    "6-12": "一日の始まりに、その日の気持ちが比較的はっきり表れやすかった",
     "12-18": "日中の動きの中で、反応がまとまって出やすかった",
     "18-24": "一日の終わりにかけて、残っていた気持ちが表面へ上がりやすかった",
 }
@@ -1147,7 +1274,7 @@ def _build_standard_summary_object(
         secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         total_all = _coerce_int(metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         movement_key = str(movement.get("key") or "").strip()
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
         peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         if total_all > 0 and dominant_key:
@@ -1218,7 +1345,7 @@ def _build_standard_summary_object(
         secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         n_events = _coerce_int(weekly_snapshot.get("n_events") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
         alternation_rate = _coerce_float(weekly_snapshot.get("alternation_rate"), 0.0)
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
         peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         if dominant_key:
@@ -1303,7 +1430,7 @@ def _build_standard_summary_object(
         top_items = _pick_top_share_items(share_map, limit=2)
         secondary_label = KEY_TO_JP.get(top_items[1][0], top_items[1][0]) if len(top_items) >= 2 else None
         total_all = _coerce_int(snapshot_metrics.get("totalAll") or snap_summary.get("emotions_public") or snap_summary.get("emotions_total"), 0)
-        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい流れ")
+        flow_phrase = EMOTION_FLOW_PHRASE.get(dominant_key, "何かを保ち直したい気持ち")
         peak_time_label = _time_bucket_reader_label((peak_bucket or {}).get("bucket") or (peak_bucket or {}).get("label")) if peak_bucket else ""
 
         peak_week = None
@@ -1418,7 +1545,7 @@ def _build_standard_summary_object(
             reader_comment = _fallback_reader_comment("monthly")
 
     clean_movement_items = [s for s in movement_items if str(s or "").strip()][:4]
-    return {
+    return _humanize_emotion_report_payload_value({
         "overviewComment": overview_comment.strip() or None,
         "movementItems": clean_movement_items,
         "timeComment": time_comment.strip() or None,
@@ -1431,7 +1558,7 @@ def _build_standard_summary_object(
         },
         "compositionMode": "replace",
         "source": "api_hybrid_summary",
-    }
+    })
 
 def _render_standard_text_from_summary(
     *,
@@ -1492,7 +1619,7 @@ def _render_standard_text_from_summary(
     lines.append(sec_note)
     lines.extend(_common_observation_note_lines())
 
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _render_analysis_standard_text(
     *,
@@ -1511,11 +1638,11 @@ def _render_analysis_standard_text(
     evidence_items = evidence.get("items") if isinstance(evidence.get("items"), list) else []
 
     if report_type == "daily":
-        summary_title = "【今日の構造サマリー】"
+        summary_title = "【今日の気持ちのまとめ】"
     elif report_type == "weekly":
-        summary_title = "【今週の構造サマリー】"
+        summary_title = "【今週の気持ちのまとめ】"
     else:
-        summary_title = "【今月の構造サマリー】"
+        summary_title = "【今月の気持ちのまとめ】"
 
     if not structural_comment:
         if report_type == "weekly":
@@ -1525,19 +1652,19 @@ def _render_analysis_standard_text(
             except Exception:
                 n_events = 0
             if n_events > 0:
-                structural_comment = f"この期間は {n_events} 件の感情入力が構造分析に使われました。数値とグラフから、感情の傾向と推移を観測できます。"
+                structural_comment = f"この期間は {n_events} 件の感情入力をもとにしています。数値とグラフから、気持ちの傾向と推移を見返せます。"
         elif report_type == "monthly":
             mr = payload.get("monthly_report") if isinstance(payload.get("monthly_report"), dict) else {}
             weeks = mr.get("weeks") if isinstance(mr.get("weeks"), list) else []
             if weeks:
-                structural_comment = "この期間は週ごとの構造変化をまとめています。数値とグラフから、感情の傾向と推移を観測できます。"
+                structural_comment = "この期間は週ごとの気持ちの変化をまとめています。数値とグラフから、気持ちの傾向と推移を見返せます。"
         elif report_type == "daily":
             try:
                 n_entries = int(payload.get("entry_count") or 0)
             except Exception:
                 n_entries = 0
             if n_entries > 0:
-                structural_comment = f"この日は {n_entries} 件の感情入力が構造分析に使われました。時間帯ごとの変化を中心に観測できます。"
+                structural_comment = f"この日は {n_entries} 件の感情入力をもとにしています。時間帯ごとの気持ちの変化を見返せます。"
 
     lines: List[str] = []
     lines.append(title)
@@ -1550,11 +1677,11 @@ def _render_analysis_standard_text(
     if structural_comment:
         lines.append(structural_comment)
     else:
-        lines.append("今回の構造サマリーはまだ十分に生成されていません。")
+        lines.append("今回の気持ちのまとめはまだ十分に生成されていません。")
     lines.append("")
 
     if evidence_items:
-        lines.append("【観測ポイント】")
+        lines.append("【見返すポイント】")
         for it in evidence_items[:4]:
             if not isinstance(it, dict):
                 continue
@@ -1570,7 +1697,7 @@ def _render_analysis_standard_text(
 
     lines.append("【このレポートについて】")
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
 def _build_standard_report_payload(
@@ -1612,7 +1739,7 @@ def _build_standard_report_payload(
         summary=summary,
         light_text=light_text,
     )
-    standard_report["contentText"] = str(standard_text or light_text or "")
+    standard_report["contentText"] = _humanize_emotion_report_text(standard_text or light_text or "")
 
     metrics: Dict[str, Any] = {}
     features: Dict[str, Any] = {}
@@ -1783,7 +1910,7 @@ DEEP_THEME_HINT_LABELS: Dict[str, str] = {
     "interpersonal_caution": "人との距離を気にする言葉",
     "fatigue_limit": "限界を感じる言葉",
     "self_doubt": "自分を責めやすい言葉",
-    "generic": "前に出ていた言葉",
+    "generic": "よく出ていた言葉",
 }
 
 
@@ -1791,8 +1918,8 @@ DEEP_THEME_HINT_LABELS: Dict[str, str] = {
 DEEP_THEME_HINT_MEANING_COMMENTS: Dict[str, str] = {
     "self_pressure": "自分を整えたい気持ちが強いほど、内側の緊張も高まりやすい週でした。",
     "interpersonal_caution": "人への配慮が強い場面で、静かな不安が続きやすい週でした。",
-    "fatigue_limit": "しんどさが言葉に出たあと、疲れから静けさへ戻る流れも見えていました。",
-    "self_doubt": "うまくできていない感覚が前に出るほど、焦りや落ち込みにつながりやすい週でした。",
+    "fatigue_limit": "しんどさが言葉に出たあと、疲れから静けさへ戻ろうとする動きも見えていました。",
+    "self_doubt": "うまくできていない感覚が強くなるほど、焦りや落ち込みにつながりやすい週でした。",
     "generic": "この言葉のまとまりが、今週の気持ちの動きとつながって見えていました。",
 }
 
@@ -2308,7 +2435,7 @@ def _daily_deep_v2_reader_comment(
         return "昨日のあなたは、自分を支えるために強い言葉を内側へ向けるほど、気持ちも張りつめやすかったようです。"
     if "interpersonal_caution" in hints:
         if recovery_route:
-            return f"昨日のあなたは、人との距離を丁寧に考えるほど緊張も抱えやすく、そのあとで{recovery_route}へ戻ろうとする流れも見えていました。"
+            return f"昨日のあなたは、人との距離を丁寧に考えるほど緊張も抱えやすく、そのあとで{recovery_route}へ戻ろうとする動きも見えていました。"
         return "昨日のあなたは、人との距離を丁寧に考えるほど、内側では緊張を抱えやすかったようです。"
     if "fatigue_limit" in hints:
         if recovery_route:
@@ -2317,7 +2444,7 @@ def _daily_deep_v2_reader_comment(
     if "self_doubt" in hints:
         if recovery_route:
             return f"昨日のあなたは、うまくできていない感覚に引っぱられながらも、{recovery_route}へ整え直そうとしていたようです。"
-        return "昨日のあなたは、うまくできていない感覚に引っぱられながらも、整え直す流れを探していたようです。"
+        return "昨日のあなたは、うまくできていない感覚に引っぱられながらも、整え直そうとしていたようです。"
     if recovery_route:
         return f"昨日のあなたは、揺れたままで終わるのではなく、{recovery_route}へ戻ろうとする整え直し方も持っていたようです。"
     if overview_route:
@@ -2387,7 +2514,7 @@ def _build_daily_deep_v2_summary(
         theme_items.append(
             {
                 "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
                 "themeLabel": theme_label,
                 "phraseSamples": phrase_samples,
                 "meaningComment": str(
@@ -2411,26 +2538,26 @@ def _build_daily_deep_v2_summary(
     recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip() if recovery_rows else ""
 
     if overview_phrase_text and overview_route:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動きやすい流れが見えていました。"
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動きやすいところが見えていました。"
     elif overview_phrase_text and recovery_route:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出たあとで、{recovery_route}へ戻ろうとする流れも見えていました。"
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出たあとで、{recovery_route}へ戻ろうとする動きも見えていました。"
     elif overview_phrase_text:
-        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が前に出る場面が残っていました。"
+        overview_comment = f"昨日は、{overview_phrase_text}のような言葉が出やすい場面が残っていました。"
     elif overview_route:
-        overview_comment = f"昨日は、{overview_route}に動きやすい流れが見えていました。"
+        overview_comment = f"昨日は、{overview_route}に気持ちが動きやすいところが見えていました。"
     elif recovery_route:
-        overview_comment = f"昨日は、{recovery_route}へ戻る整え直しの流れが見えていました。"
+        overview_comment = f"昨日は、{recovery_route}へ戻ろうとする整え直しの動きが見えていました。"
     else:
-        overview_comment = "昨日は深いところの流れを言い切るには、材料がまだ少なめでした。"
+        overview_comment = "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
 
     movement_items: List[str] = []
     for theme in theme_items[:2]:
         phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
         route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
         if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
         elif route:
-            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
     if recovery_route:
         movement_items.append(f"そのあとで、{recovery_route}へ戻る動きも見えていました。")
     if not movement_items and overview_route:
@@ -2467,7 +2594,7 @@ def _build_daily_deep_v2_summary(
     summary["gentleComment"] = summary["readerComment"]
     evidence_items = [{"text": x} for x in summary["movementItems"][:2]]
     if overview_route:
-        evidence_items.append({"text": f"{overview_route} が昨日の流れの手がかりとして見えていました。"})
+        evidence_items.append({"text": f"{overview_route} が昨日の気持ちの手がかりとして見えていました。"})
     summary["evidence"] = {"items": evidence_items[:3]}
     summary["nextPoints"] = []
     summary["source"] = DEEP_SUMMARY_SOURCE_DAILY_V2
@@ -2491,7 +2618,7 @@ def _render_daily_deep_v2_text(
     lines.append("【昨日、見えていたこと】")
     lines.append(
         str((summary or {}).get("overviewComment") or "").strip()
-        or "昨日は深いところの流れを言い切るには、材料がまだ少なめでした。"
+        or "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
     )
     lines.append("")
 
@@ -2520,12 +2647,12 @@ def _render_daily_deep_v2_text(
             elif meaning:
                 lines.append(f"  {meaning}")
             if linked_routes:
-                lines.append(f"  つながりやすかった流れ: {' / '.join(linked_routes)}")
+                lines.append(f"  つながりやすかった気持ち: {' / '.join(linked_routes)}")
         lines.append("")
 
     movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
     if movement_items:
-        lines.append("【言葉と気持ちがつながった流れ】")
+        lines.append("【言葉と気持ちのつながり】")
         for item in movement_items[:3]:
             lines.append(f"- {item}")
         lines.append("")
@@ -2538,21 +2665,21 @@ def _render_daily_deep_v2_text(
 
     lines.append("【このレポートについて】")
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _weekly_deep_v2_pattern_label(theme_hints: List[str], recovery_route_label: str) -> str:
     hints = set(str(x or "").strip() for x in list(theme_hints or []) if str(x or "").strip())
     if "self_pressure" in hints:
-        return "抱え込みから張りつめる流れ"
+        return "抱え込みから張りつめる動き"
     if "fatigue_limit" in hints:
-        return "疲れから静けさへ戻る流れ"
+        return "疲れから静けさへ戻る動き"
     if "interpersonal_caution" in hints:
-        return "気をつかい続けて張りつめる流れ"
+        return "気をつかい続けて張りつめる動き"
     if "self_doubt" in hints:
-        return "自分を責めて沈みやすい流れ"
+        return "自分を責めて沈みやすい動き"
     if recovery_route_label:
-        return "整え直しが見えていた流れ"
-    return "今週、くり返しやすかった流れ"
+        return "整え直しが見えていた動き"
+    return "今週、くり返しやすかった気持ちの動き"
 
 
 def _weekly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_label: str) -> str:
@@ -2561,8 +2688,8 @@ def _weekly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_labe
     if recovery_route_label:
         return f"{first_route} に動いたあとも、{recovery_route_label} へ戻る道が見えていました。"
     if len(routes) >= 2:
-        return f"{routes[0]} を入り口にして、{routes[1]} へつながる流れが今週の中で重なっていました。"
-    return f"{first_route} を中心に、同じ流れが今週の中で何度か重なっていました。"
+        return f"{routes[0]} を入り口にして、{routes[1]} へつながる動きが今週の中で見えていました。"
+    return f"{first_route} を中心に、近い動きが今週の中で何度か見えていました。"
 
 
 def _weekly_deep_v2_reader_comment(theme_hints: List[str]) -> str:
@@ -2574,7 +2701,7 @@ def _weekly_deep_v2_reader_comment(theme_hints: List[str]) -> str:
     if "fatigue_limit" in hints:
         return "今週のあなたは、しんどさを押し込めるより、限界に気づきながら整え直そうとしていたように見えます。"
     if "self_doubt" in hints:
-        return "今週のあなたは、うまくできていない感覚に引っぱられながらも、整え直す流れを探していたように見えます。"
+        return "今週のあなたは、うまくできていない感覚に引っぱられながらも、整え直そうとしていたように見えます。"
     return "今週のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
 
 
@@ -2620,7 +2747,7 @@ def _build_weekly_deep_v2_summary(
         theme_items.append(
             {
                 "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
                 "themeLabel": theme_label,
                 "phraseSamples": phrase_samples,
                 "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
@@ -2638,26 +2765,26 @@ def _build_weekly_deep_v2_summary(
     if not overview_route:
         overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
     if overview_phrase_text and overview_route:
-        overview_comment = f"今週は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動く流れが何度か重なっていました。"
+        overview_comment = f"今週は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動くところが何度か見えていました。"
     elif overview_phrase_text:
-        overview_comment = f"今週は、{overview_phrase_text}のような言葉が前に出る場面が重なっていました。"
+        overview_comment = f"今週は、{overview_phrase_text}のような言葉が出やすい場面が何度か見えていました。"
     elif overview_route:
-        overview_comment = f"今週は、{overview_route}に動く流れが何度か重なっていました。"
+        overview_comment = f"今週は、{overview_route}に気持ちが動くところが何度か見えていました。"
     else:
-        overview_comment = "今週は深いところの流れを言い切るには、材料がまだ少なめでした。"
+        overview_comment = "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
 
     movement_items: List[str] = []
     for theme in theme_items:
         phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
         route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
         if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
         elif route:
-            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
     if recovery_rows:
         recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
         if recovery_route:
-            movement_items.append(f"{recovery_route}へ戻る流れも見えていました。")
+            movement_items.append(f"{recovery_route}へ戻ろうとする動きも見えていました。")
     deduped_movement: List[str] = []
     seen_movement = set()
     for text in movement_items:
@@ -2740,7 +2867,7 @@ def _render_weekly_deep_v2_text(
     lines.append("")
 
     lines.append("【今週、見えていたこと】")
-    lines.append(str((summary or {}).get("overviewComment") or "今週は深いところの流れを言い切るには、材料がまだ少なめでした。"))
+    lines.append(str((summary or {}).get("overviewComment") or "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"))
     lines.append("")
 
     theme_items = list((summary or {}).get("themeItems") or [])
@@ -2762,7 +2889,7 @@ def _render_weekly_deep_v2_text(
 
     movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
     if movement_items:
-        lines.append("【言葉と気持ちがつながった流れ】")
+        lines.append("【言葉と気持ちのつながり】")
         for item in movement_items[:3]:
             lines.append(f"- {item}")
         lines.append("")
@@ -2791,7 +2918,7 @@ def _render_weekly_deep_v2_text(
 
     lines.append("【このレポートについて】")
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
 
@@ -2800,10 +2927,10 @@ def _monthly_deep_v2_pattern_comment(route_labels: List[str], recovery_route_lab
     routes = [str(x).strip() for x in list(route_labels or []) if str(x).strip()]
     first_route = routes[0] if routes else "この流れ"
     if recovery_route_label:
-        return f"{first_route} が前に出たあとも、{recovery_route_label} へ戻る道が見えていました。"
+        return f"{first_route} が出たあとも、{recovery_route_label} へ戻る道が見えていました。"
     if len(routes) >= 2:
-        return f"{routes[0]} を入り口にして、{routes[1]} へつながる流れが今月の中で重なっていました。"
-    return f"{first_route} を中心に、同じ流れが今月の中で何度か重なっていました。"
+        return f"{routes[0]} を入り口にして、{routes[1]} へつながる動きが今月の中で見えていました。"
+    return f"{first_route} を中心に、近い動きが今月の中で何度か見えていました。"
 
 
 
@@ -2821,13 +2948,13 @@ def _monthly_deep_v2_phase_comment(phase: Dict[str, Any]) -> str:
     time_label = str((list(phase.get("dominantTimeBucketLabels") or [])[:1] or [""])[0] or "").strip()
 
     if lead and route:
-        text = f"{phase_label}は、{lead}が前に出る場面で、{route}に動きやすい流れでした。"
+        text = f"{phase_label}は、{lead}が出やすい場面で、{route}に気持ちが動きやすい時期でした。"
     elif route:
-        text = f"{phase_label}は、{route}が目立つ流れでした。"
+        text = f"{phase_label}は、{route}が目立つ時期でした。"
     elif lead:
-        text = f"{phase_label}は、{lead}が前に出やすい時期でした。"
+        text = f"{phase_label}は、{lead}が出やすい時期でした。"
     else:
-        text = f"{phase_label}は、この時期らしい流れが見えていました。"
+        text = f"{phase_label}は、この時期らしい気持ちの動きが見えていました。"
 
     if recovery:
         if route and recovery != route:
@@ -2852,9 +2979,9 @@ def _monthly_deep_v2_shift_label(shift: Dict[str, Any]) -> str:
     emerging_route = str((list(shift.get("emergingRouteLabels") or [])[:1] or [""])[0] or "").strip()
 
     if direction == "recovery_shift":
-        return "後半は静かに戻る流れ"
+        return "後半は静かに戻る動き"
     if direction == "tension_shift":
-        return "後半は張りつめる流れ"
+        return "後半は張りつめる動き"
     if settling_route and emerging_route:
         return f"{settling_route}から{emerging_route}への変化"
     return "前半と後半で動き方が変化"
@@ -2881,18 +3008,18 @@ def _monthly_deep_v2_shift_comment(shift: Dict[str, Any]) -> str:
     to_recovery = str(shift.get("toRecoveryRouteLabel") or "").strip()
 
     if settling and emerging:
-        text = f"{from_phase}は{settling}が目立っていましたが、{to_phase}は{emerging}が前に出ていました。"
+        text = f"{from_phase}は{settling}が目立っていましたが、{to_phase}は{emerging}がよく見えていました。"
     elif emerging:
         text = f"{to_phase}に入ってから、{emerging}が増えていました。"
     elif settling:
         text = f"{from_phase}で目立っていた{settling}は、{to_phase}では少し静かになっていました。"
     else:
-        text = f"{from_phase}と{to_phase}で、目立つ流れが少し入れ替わっていました。"
+        text = f"{from_phase}と{to_phase}で、目立つ気持ちの動きが少し入れ替わっていました。"
 
     if from_recovery and to_recovery and from_recovery != to_recovery:
         text += f" 整え直し方も、{from_recovery}から{to_recovery}へ少し移っていました。"
     elif to_recovery:
-        text += f" {to_phase}では、{to_recovery}へ戻る流れが見えやすくなっていました。"
+        text += f" {to_phase}では、{to_recovery}へ戻ろうとする動きが見えやすくなっていました。"
 
     return text
 
@@ -2914,7 +3041,7 @@ def _monthly_deep_v2_reader_comment(*, theme_hints: List[str], monthly_shifts: L
     if "fatigue_limit" in hints:
         return "今月のあなたは、しんどさに気づきながら、静かに整え直す方向も探していたように見えます。"
     if "self_doubt" in hints:
-        return "今月のあなたは、自分を責める感覚に引っぱられながらも、整え直す流れを探していたように見えます。"
+        return "今月のあなたは、自分を責める感覚に引っぱられながらも、整え直そうとしていたように見えます。"
     return "今月のあなたは、ただ揺れていたというより、その時々で自分を支えようとする言葉を内側に向けていたように見えます。"
 
 
@@ -2963,7 +3090,7 @@ def _build_monthly_deep_v2_summary(
         theme_items.append(
             {
                 "themeId": theme_id,
-                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が前に出る場面",
+                "themeLead": f"{_quote_phrase_sample(lead_seed) or theme_label}が出やすい場面",
                 "themeLabel": theme_label,
                 "phraseSamples": phrase_samples,
                 "meaningComment": str(theme.get("meaningComment") or theme.get("meaning_comment") or DEEP_THEME_HINT_MEANING_COMMENTS.get(theme_hint, DEEP_THEME_HINT_MEANING_COMMENTS["generic"])).strip(),
@@ -2981,26 +3108,26 @@ def _build_monthly_deep_v2_summary(
     if not overview_route:
         overview_route = str((transition_edges[0] or {}).get("routeLabel") or "").strip() if transition_edges else ""
     if overview_phrase_text and overview_route:
-        overview_comment = f"今月は、{overview_phrase_text}のような言葉が前に出る場面で、{overview_route}に動く流れが何度か重なっていました。"
+        overview_comment = f"今月は、{overview_phrase_text}のような言葉が出やすい場面で、{overview_route}に気持ちが動くところが何度か見えていました。"
     elif overview_phrase_text:
-        overview_comment = f"今月は、{overview_phrase_text}のような言葉が前に出る場面が重なっていました。"
+        overview_comment = f"今月は、{overview_phrase_text}のような言葉が出やすい場面が何度か見えていました。"
     elif overview_route:
-        overview_comment = f"今月は、{overview_route}に動く流れが何度か重なっていました。"
+        overview_comment = f"今月は、{overview_route}に気持ちが動くところが何度か見えていました。"
     else:
-        overview_comment = "今月は深いところの流れを言い切るには、材料がまだ少なめでした。"
+        overview_comment = "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
 
     movement_items: List[str] = []
     for theme in theme_items:
         phrase = str((list(theme.get("phraseSamples") or [])[:1] or [""])[0] or "").strip()
         route = str((list(theme.get("linkedRouteLabels") or [])[:1] or [""])[0] or "").strip()
         if phrase and route:
-            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に動きやすい流れがありました。")
+            movement_items.append(f"{_quote_phrase_sample(phrase)}が出た場面で、{route}に気持ちが動きやすいところがありました。")
         elif route:
-            movement_items.append(f"{route}に動きやすい流れが見えていました。")
+            movement_items.append(f"{route}に気持ちが動きやすいところが見えていました。")
     if recovery_rows:
         recovery_route = str((recovery_rows[0] or {}).get("routeLabel") or "").strip()
         if recovery_route:
-            movement_items.append(f"{recovery_route}へ戻る流れも見えていました。")
+            movement_items.append(f"{recovery_route}へ戻ろうとする動きも見えていました。")
     deduped_movement: List[str] = []
     seen_movement = set()
     for text in movement_items:
@@ -3131,7 +3258,7 @@ def _monthly_deep_v2_phase_section_title(
 ) -> str:
     if len(list(phase_items or [])) >= 2 or list(shift_items or []):
         return "【前半と後半で変わっていたこと】"
-    return "【今月の中で見えていた流れ】"
+    return "【今月の中で見えていた変化】"
 
 
 
@@ -3153,7 +3280,7 @@ def _render_monthly_deep_v2_shift_lines(shift: Dict[str, Any]) -> List[str]:
     comment = str(shift.get("shiftComment") or "").strip()
 
     if not label and not comment:
-        label = "月の前半と後半で、流れの重心が少し切り替わっていました。"
+        label = "月の前半と後半で、気持ちの中心が少し切り替わっていました。"
 
     lines: List[str] = []
     if label:
@@ -3184,7 +3311,7 @@ def _render_monthly_deep_v2_text(
     lines.append("【今月、見えていたこと】")
     lines.append(
         str((summary or {}).get("overviewComment") or "").strip()
-        or "今月は深いところの流れを言い切るには、材料がまだ少なめでした。"
+        or "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。"
     )
     lines.append("")
 
@@ -3205,12 +3332,12 @@ def _render_monthly_deep_v2_text(
             elif meaning:
                 lines.append(f"  {meaning}")
             if linked_routes:
-                lines.append(f"  つながりやすかった流れ: {' / '.join(linked_routes)}")
+                lines.append(f"  つながりやすかった気持ち: {' / '.join(linked_routes)}")
         lines.append("")
 
     movement_items = [str(x).strip() for x in list((summary or {}).get("movementItems") or []) if str(x).strip()]
     if movement_items:
-        lines.append("【言葉と気持ちがつながった流れ】")
+        lines.append("【言葉と気持ちのつながり】")
         for item in movement_items[:3]:
             lines.append(f"- {item}")
         lines.append("")
@@ -3254,7 +3381,7 @@ def _render_monthly_deep_v2_text(
 
     lines.append("【このレポートについて】")
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
 
@@ -3507,7 +3634,7 @@ def _render_structural_text_from_summary(
 
     if report_type == "daily":
         lines.append("【昨日、深いところで動いていた流れ】")
-        lines.append(structural_comment or "昨日は深いところの流れを言い切るには、材料がまだ少なめでした。")
+        lines.append(structural_comment or "昨日は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
         lines.append("")
 
         if recovery_rows:
@@ -3545,11 +3672,11 @@ def _render_structural_text_from_summary(
 
         lines.append("【このレポートについて】")
         lines.extend(_common_observation_note_lines())
-        return "\n".join(lines).strip()
+        return _humanize_emotion_report_text("\n".join(lines).strip())
 
     if report_type == "weekly":
         lines.append("【今週、深いところで動いていた流れ】")
-        lines.append(structural_comment or "今週は深いところの流れを言い切るには、材料がまだ少なめでした。")
+        lines.append(structural_comment or "今週は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
         lines.append("")
 
         if patterns:
@@ -3601,10 +3728,10 @@ def _render_structural_text_from_summary(
 
         lines.append("【このレポートについて】")
         lines.extend(_common_observation_note_lines())
-        return "\n".join(lines).strip()
+        return _humanize_emotion_report_text("\n".join(lines).strip())
 
     lines.append("【今月、深いところで続いていた流れ】")
-    lines.append(structural_comment or "今月は深いところの流れを言い切るには、材料がまだ少なめでした。")
+    lines.append(structural_comment or "今月は気持ちの奥で起きていたことをまとめるには、材料がまだ少なめでした。")
     lines.append("")
 
     if patterns:
@@ -3656,7 +3783,7 @@ def _render_structural_text_from_summary(
 
     lines.append("【このレポートについて】")
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
 
@@ -3809,8 +3936,8 @@ def _build_structural_report_payload(
         "version": contract["version"],
         "displayMode": contract["displayMode"],
         "reportType": str(report_type or ""),
-        "contentText": content_text,
-        "summary": summary,
+        "contentText": _humanize_emotion_report_text(content_text),
+        "summary": _humanize_emotion_report_payload_value(summary),
         "metrics": metrics,
         "features": features,
         "transitionMatrix": transition_matrix,
@@ -4390,7 +4517,7 @@ def _render_weekly_standard_v3_text(
             k2, _v2 = top_pairs[1]
             overview += f"その一方で、「{KEY_TO_JP.get(k2, k2)}」も重なる場面がありました。"
         if switches >= 3:
-            overview += "日によって気持ちの向きが切り替わりやすい流れも見られました。"
+            overview += "日によって気持ちが切り替わりやすい場面も見られました。"
         elif switches == 0:
             overview += "大きな切り替わりは少なく、全体としては近い空気感が続いていました。"
 
@@ -4411,7 +4538,7 @@ def _render_weekly_standard_v3_text(
         "【今週、見えていたこと】",
         overview,
         "",
-        "【気持ちが動いた流れ】",
+        "【気持ちの変化】",
     ])
     if movement_lines:
         for item in movement_lines[:3]:
@@ -4423,7 +4550,7 @@ def _render_weekly_standard_v3_text(
         "【このレポートについて】",
     ])
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _render_monthly_standard_v3_text(
     *,
@@ -4478,14 +4605,14 @@ def _render_monthly_standard_v3_text(
         if dom_count >= 3:
             overview += f"週をまたいで「{dominant}」が繰り返し中心になっていました。"
         elif dom_count == 2:
-            overview += f"「{dominant}」が中心の週が複数あり、似た流れが戻ってきやすい月でした。"
+            overview += f"「{dominant}」が中心の週が複数あり、似た気持ちが戻ってきやすい月でした。"
         else:
             overview += "週ごとに中心感情が変わりやすく、その時々の状況に合わせて空気感が動いていた月でした。"
 
     movement_lines: List[str] = []
     movement_lines.extend(week_summaries[:2])
     if reset_hint:
-        movement_lines.append("後半にかけて、少し整え直すような流れも見えていました。")
+        movement_lines.append("後半にかけて、少し整え直すような動きも見えていました。")
 
     lines: List[str] = [title]
     rng = _range_line_jst(period_start_iso, period_end_iso)
@@ -4496,7 +4623,7 @@ def _render_monthly_standard_v3_text(
         "【今月、見えていたこと】",
         overview,
         "",
-        "【気持ちが動いた流れ】",
+        "【気持ちの変化】",
     ])
     if movement_lines:
         for item in movement_lines[:3]:
@@ -4508,16 +4635,16 @@ def _render_monthly_standard_v3_text(
         "【このレポートについて】",
     ])
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _render_daily_motion_line(movement: Dict[str, Any]) -> str:
     key = str((movement or {}).get("key") or "").strip()
     if key == "swing":
-        return "前日とは少し違う気持ちの向きが出ていました。"
+        return "前日とは少し違う気持ちの動きが出ていました。"
     if key == "up":
         return "前日より反応が表に出やすい一日でした。"
     if key == "down":
-        return "前日より少し静かに落ち着いていく流れでした。"
+        return "前日より少し静かに落ち着いていく動きでした。"
     return "前日と近い空気感のまま推移していました。"
 
 def _render_daily_hint_line(metrics: Dict[str, Any], movement: Dict[str, Any]) -> str:
@@ -4581,7 +4708,7 @@ def _render_daily_standard_v3_text(
         "【昨日、見えていたこと】",
         overview,
         "",
-        "【気持ちが動いた流れ】",
+        "【気持ちの変化】",
     ])
     for item in movement_lines[:2]:
         lines.append(f"・{item}")
@@ -4590,7 +4717,7 @@ def _render_daily_standard_v3_text(
         "【このレポートについて】",
     ])
     lines.extend(_common_observation_note_lines())
-    return "\n".join(lines).strip()
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 def _render_simple_report_text(
     report_type: str,
@@ -4611,17 +4738,20 @@ def _render_simple_report_text(
     except Exception:
         pass
     lines.append("")
-    lines.append("【感情の重み付け合計】")
+    lines.append("【入力から見えている気持ち】")
     totals = metrics.get("totals") or {}
     for k in EMOTION_KEYS:
         lines.append(f"- {KEY_TO_JP.get(k, k)}: {int(totals.get(k, 0))}")
     lines.append("")
-    lines.append(f"中心に出ている傾向: {_dominant_label(metrics)}")
+    lines.append(f"中心に見えている気持ち: {_dominant_label(metrics)}")
     lines.append("")
     if report_type in ("weekly", "monthly") and astor_text:
-        lines.append("【構造洞察（補足）】")
+        lines.append("【気持ちの補足】")
         lines.append(astor_text.strip())
-    return "\n".join(lines).strip()
+    lines.append("")
+    lines.append("【このレポートについて】")
+    lines.extend(_common_observation_note_lines())
+    return _humanize_emotion_report_text("\n".join(lines).strip())
 
 
 async def _generate_and_save(

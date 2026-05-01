@@ -907,7 +907,7 @@ class EmotionSubmitRequest(BaseModel):
 
 
 class EmotionSubmitInputFeedback(BaseModel):
-    comment_text: str = Field(..., description="入力直後に表示する短い受け取りコメント")
+    comment_text: str = Field(..., description="入力直後に表示するEmlisAIの自然理解返答")
     emlis_ai: Optional[Dict[str, Any]] = Field(
         default=None,
         description="EmlisAI additive metadata",
@@ -920,7 +920,7 @@ class EmotionSubmitResponse(BaseModel):
     created_at: str = Field(..., description="保存時刻（ISO8601）")
     input_feedback: Optional[EmotionSubmitInputFeedback] = Field(
         default=None,
-        description="入力直後の1〜2文コメント（保存対象ではない即時フィードバック）",
+        description="入力直後のEmlisAI自然理解返答（保存対象ではない即時フィードバック）",
     )
 
 

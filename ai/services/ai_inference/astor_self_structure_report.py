@@ -11,7 +11,7 @@ ASTOR MyProfile（月次）自己構造分析レポート生成
     観測ベースの文章を組み立てる。
 
 注意
-  - これは診断ではなく、観測に基づく仮説生成。
+  - 入力から見える変化を、観測としてまとめる。
   - 外部（target=external）では secret を除外する。
 """
 
@@ -190,6 +190,20 @@ SELF_INSIGHT_EMOTION_LABELS = {"SelfInsight", "自己理解"}
 
 MYPROFILE_REPORT_SCHEMA_VERSION = "myprofile.report.v5"
 
+SELF_STRUCTURE_OBSERVATION_NOTE_LINES = (
+    "このレポートは、入力から見える変化をまとめた『観測』です。",
+    "診断や断定を目的としたものではありません。",
+)
+
+
+def _append_self_structure_report_note(lines: List[str]) -> None:
+    """Append the common observation note used by both emotion and self reports."""
+    if lines and str(lines[-1] or "").strip():
+        lines.append("")
+    lines.append("【このレポートについて】")
+    lines.extend(SELF_STRUCTURE_OBSERVATION_NOTE_LINES)
+
+
 THINKING_LABELS_JA: Dict[str, str] = {
     str(k): str((v or {}).get("label_ja") or k)
     for k, v in (THINKING_DICT.items() if isinstance(THINKING_DICT, dict) else [])
@@ -283,11 +297,17 @@ def _fetch_emotion_rows(user_id: str, *, start: _dt.datetime, end: _dt.datetime)
 
 EMO_JA = {
     "Joy": "喜び",
+    "joy": "喜び",
     "Sadness": "悲しみ",
+    "sadness": "悲しみ",
     "Anxiety": "不安",
+    "anxiety": "不安",
     "Anger": "怒り",
+    "anger": "怒り",
     "Calm": "落ち着き",
+    "calm": "落ち着き",
     "SelfInsight": "自己理解",
+    "self_insight": "自己理解",
     "自己理解": "自己理解",
 }
 
@@ -784,7 +804,7 @@ def _short_structure_gloss(struct_key: str) -> str:
 
 
 def _guess_domain_hints(struct_keys: List[str]) -> Dict[str, List[str]]:
-    """領域別メモ用の雑な割り当て（断定しない前提の“ヒント”）。"""
+    """領域別メモ用の簡易割り当て。"""
     buckets = {
         "仕事": [],
         "対人": [],
@@ -913,7 +933,7 @@ def _build_prev_diff_summary_lines(
 
     目的:
       - 人が欲しい「更新点」を先に明示する
-      - ただし人格の断定はしない（観測→仮説の範囲）
+      - 入力から見える範囲だけを扱う
 
     phrases:
       - Phase9+ のセクション固定文テンプレ（無い場合は従来互換の固定文で生成）
@@ -963,7 +983,7 @@ def _build_prev_diff_summary_lines(
         elif cur_main:
             lines.append(PF("diff_center_cur_is_core", "・中心テーマ: 今回は『{cur}』が核になっている可能性", cur=cur_main))
         else:
-            lines.append(P("diff_center_unknown", "・中心テーマ: 今月は入力が少ないため、中心テーマはまだ特定できません"))
+            lines.append(P("diff_center_unknown", "・中心テーマ: まだ入力が少ないため、中心テーマはまだ特定できません"))
 
     # 2) 崩れ/安定の要点比較（取れたときだけ）
     if prev_shaky and cur_shaky:
@@ -1038,7 +1058,7 @@ def _build_myprofile_monthly_report_fallback(
     def PF(key: str, default: str, **kwargs: Any) -> str:
         return _safe_format(P(key, default), **kwargs).strip()
 
-    report_title = P("report_title", "【自己構造分析レポート（月次）】")
+    report_title = P("report_title", "【自己分析レポート】")
 
     if not uid:
         return (
@@ -1141,26 +1161,26 @@ def _build_myprofile_monthly_report_fallback(
         else:
             shaky = P(
                 "summary_shaky_default",
-                "・崩れ条件（揺れを強めやすい引き金）: 刺激が重なった場面で、意味づけが固定されやすい可能性",
+                "・揺れやすい場面: いくつかのきっかけが重なると、受け止め方が固定されやすい可能性",
             )
 
         steady = P(
             "summary_steady_default",
-            "・安定に寄せるキー（整える1手）: 揺れた瞬間に「思考内容1文」「行動内容1文」を分けて書くと、迷いがほどけやすい",
+            "・整える1手: 揺れた瞬間に「考えたこと1文」「動いたこと1文」を分けて書くと、迷いがほどけやすい",
         )
 
         one_liner = PF(
             "summary_one_liner",
-            "・ひとこと: いまは『{core_key}』が起点になりやすい状態。判断が硬くなる前に“1行メモ”が効きやすい。",
+            "・ひとこと: いまは『{core_key}』に近い反応が出やすい状態。判断が硬くなる前に“1行メモ”が効きやすい。",
             core_key=top[0].key,
         )
     else:
-        core = P("summary_core_no_data", "・核（いちばん出やすい自己テーマ）: まだ情報がありません")
-        shaky = P("summary_shaky_no_data", "・崩れ条件（揺れを強めやすい引き金）: まだ情報がありません")
-        steady = P("summary_steady_no_data", "・安定に寄せるキー（整える1手）: まずは短い観測メモを増やす")
+        core = P("summary_core_no_data", "・最近よく見えているテーマ: まだ情報がありません")
+        shaky = P("summary_shaky_no_data", "・揺れやすい場面: まだ情報がありません")
+        steady = P("summary_steady_no_data", "・整える1手: まずは短いメモを増やす")
         one_liner = P(
             "summary_one_liner_no_data",
-            "・ひとこと: 今月は入力が少ないため、レポートは簡易版です。短文でOKなので『刺激→解釈→感情→行動』を1セットだけ記録してみてください。",
+            "・ひとこと: まだ入力が少ないため、レポートは簡易版です。短文でOKなので『きっかけ→受け止め方→気持ち→行動』を1セットだけ記録してみてください。",
         )
 
     # 領域メモの割り当て
@@ -1174,18 +1194,17 @@ def _build_myprofile_monthly_report_fallback(
     lines.append(shaky)
     lines.append(steady)
     lines.append(one_liner)
-    lines.append(P("summary_disclaimer", "※診断ではなく、観測に基づく仮説です。"))
     lines.append("")
 
     # 1. 輪郭
-    lines.append(P("sec1_title", "1. 今月の輪郭（仮説・1〜4行）"))
+    lines.append(P("sec1_title", "1. 最近のあなたに見えている役割"))
     if not top:
         lines.extend(
             PL(
                 "sec1_no_data_lines",
                 [
-                    "今月は入力が少ないため、はっきりした傾向はまだ読み取れません。",
-                    "短文で大丈夫なので、感情入力やメモ（刺激・解釈・感情・行動）が増えると、次回以降のレポートが具体的になります。",
+                    "まだ入力が少ないため、はっきりした傾向は読み取りきれていません。",
+                    "短文で大丈夫なので、感情入力やメモ（きっかけ・受け止め方・気持ち・行動）が増えると、次回以降のレポートが具体的になります。",
                 ],
             )
         )
@@ -1195,7 +1214,7 @@ def _build_myprofile_monthly_report_fallback(
             lines.append(
                 PF(
                     "sec1_core_line_with_gloss",
-                    "核として『{core_key}』が出やすく（意味: {gloss}）、判断の起点になっている可能性があります。",
+                    "『{core_key}』に近い反応が出やすく（意味: {gloss}）、判断の起点になっている可能性があります。",
                     core_key=top[0].key,
                     gloss=gloss1,
                 )
@@ -1204,7 +1223,7 @@ def _build_myprofile_monthly_report_fallback(
             lines.append(
                 PF(
                     "sec1_core_line",
-                    "核として『{core_key}』が出やすく、判断の起点になっている可能性があります。",
+                    "『{core_key}』に近い反応が出やすく、判断の起点になっている可能性があります。",
                     core_key=top[0].key,
                 )
             )
@@ -1212,27 +1231,26 @@ def _build_myprofile_monthly_report_fallback(
             lines.append(
                 PF(
                     "sec1_secondary_line",
-                    "さらに『{secondary_key}』が重なると、見立てが揺れた瞬間に構造が濃くなりやすい可能性があります。",
+                    "さらに『{secondary_key}』も重なると、見立てが揺れた瞬間に反応が強く出やすい可能性があります。",
                     secondary_key=top[1].key,
                 )
             )
-        lines.append(P("sec1_note_line", "※これは診断ではなく、最近の入力から読み取れる“仮の自己モデル”です。"))
         if self_insight_quotes:
             q = self_insight_quotes[-1]
-            lines.append(f"今月あなたが言語化できた理解: 「{_excerpt(q, 120)}」")
+            lines.append(f"最近あなたが言語化できた理解: 「{_excerpt(q, 120)}」")
     lines.append("")
 
     # 2. 反応パターン
-    lines.append(P("sec2_title", "2. 主要な反応パターン（刺激→認知→感情→行動）"))
+    lines.append(P("sec2_title", "2. 反応のパターン"))
     if not top:
         lines.extend(
             PL(
                 "sec2_no_data_lines",
                 [
-                    "今月は反応パターンを特定できるほどの情報がありません。",
+                    "反応パターンを特定できるほどの情報は、まだ十分ではありません。",
                     "次の4点を、1回だけでもメモしてみてください（短文でOKです）。",
-                    "・刺激（何が起きたか）",
-                    "・認知（どう解釈したか）",
+                    "・きっかけ（何が起きたか）",
+                    "・受け止め方（どう受け取ったか）",
                     "・感情（何を感じたか）",
                     "・行動（どうしたか）",
                 ],
@@ -1242,21 +1260,21 @@ def _build_myprofile_monthly_report_fallback(
         for i, v in enumerate(top[:2], start=1):
             emo_hint = "、".join([emo_label_ja(x) for x in v.top_emotions]) if v.top_emotions else "感情"
             lines.append(PF("sec2_pattern_title", "- パターン{index}: 『{structure_key}』", index=i, structure_key=v.key))
-            lines.append(P("sec2_pattern_flow", "  流れ: 刺激 → 認知 → 感情 → 行動"))
-            lines.append(PF("sec2_pattern_stimulus", "  刺激: （例）評価/比較/期待のズレ/未確定など、『{structure_key}』を強めやすい出来事", structure_key=v.key))
-            lines.append(PF("sec2_pattern_cognition", "  認知: （仮）『{structure_key}』の判断が入り、意味づけが固定されやすい", structure_key=v.key))
+            lines.append(P("sec2_pattern_flow", "  変化: きっかけ → 受け止め方 → 気持ち → 行動"))
+            lines.append(PF("sec2_pattern_stimulus", "  きっかけ: （例）評価/比較/期待のズレ/未確定など、『{structure_key}』を強めやすい出来事", structure_key=v.key))
+            lines.append(PF("sec2_pattern_cognition", "  受け止め方: 『{structure_key}』に近い判断が入り、意味づけが固定されやすい", structure_key=v.key))
             lines.append(PF("sec2_pattern_emotion", "  感情: {emotion_hint} に寄りやすい", emotion_hint=emo_hint))
-            lines.append(P("sec2_pattern_action", "  行動: （仮）確認/修正へ向かう、または一時停止して距離を取る"))
+            lines.append(P("sec2_pattern_action", "  行動: 確認/修正へ向かう、または一時停止して距離を取る"))
             if v.sample_memos:
-                lines.append(PF("sec2_pattern_memo", "  観測メモ（例）: {memo}", memo=v.sample_memos[0]))
+                lines.append(PF("sec2_pattern_memo", "  メモ（例）: {memo}", memo=v.sample_memos[0]))
     lines.append("")
 
     # 3. 条件
-    lines.append(P("sec3_title", "3. 安定条件（安心が生まれやすい条件） / 崩れ条件（揺れやすい条件）"))
-    lines.append(P("sec3_stable_heading", "安定条件:"))
-    lines.append(P("sec3_stable_line_1", "・判断の前に『刺激/解釈/身体』を1行で切り分けられる"))
-    lines.append(P("sec3_stable_line_3", "・忙しい日は短文でもいいので“観測”だけは継続できる"))
-    lines.append(P("sec3_shaky_heading", "崩れ条件:"))
+    lines.append(P("sec3_title", "3. 安心しやすい場面 / 揺れやすい場面"))
+    lines.append(P("sec3_stable_heading", "安心しやすい場面:"))
+    lines.append(P("sec3_stable_line_1", "・判断の前に『きっかけ/受け止め方/身体』を1行で切り分けられる"))
+    lines.append(P("sec3_stable_line_3", "・忙しい日は短文でもいいのでメモだけは継続できる"))
+    lines.append(P("sec3_shaky_heading", "揺れやすい場面:"))
     if top:
         worst = max(top, key=lambda x: x.avg_intensity)
         lines.append(
@@ -1271,13 +1289,13 @@ def _build_myprofile_monthly_report_fallback(
     lines.append("")
 
     # 4. 思考のクセ
-    lines.append(P("sec4_title", "4. 思考のクセ・判断のクセ（あれば）"))
+    lines.append(P("sec4_title", "4. 受け止め方のクセ（あれば）"))
     if not top:
         lines.extend(
             PL(
                 "sec4_no_data_lines",
                 [
-                    "今月は思考のクセが見えるほどの情報がありません。",
+                    "受け止め方のクセが見えるほどの情報は、まだ十分ではありません。",
                     "気づいたときに「考えたこと（1文）」を残すと、次回以降で傾向が見えやすくなります。",
                 ],
             )
@@ -1298,7 +1316,7 @@ def _build_myprofile_monthly_report_fallback(
                     secondary_key=top[1].key,
                 )
             )
-        lines.append(P("sec4_line_3", "・対策としては、結論を急がず『観測→仮説』の順に戻すのが有効です。"))
+        lines.append(P("sec4_line_3", "・対策としては、結論を急がず、見えていることを1行ずつ書き出すのが有効です。"))
     lines.append("")
 
     # 5. 領域別
@@ -1311,23 +1329,23 @@ def _build_myprofile_monthly_report_fallback(
             lines.append(
                 PF(
                     "sec5_domain_with_hints",
-                    "- {domain}: 『{hints_joined}』が絡む場面で自己モデルが動きやすい可能性",
+                    "- {domain}: 『{hints_joined}』が絡む場面で反応が出やすい可能性",
                     domain=d,
                     hints_joined="』『".join(hints),
                 )
             )
         else:
-            lines.append(PF("sec5_domain_no_hints", "- {domain}: 今月はまだ傾向を判断できません。", domain=d))
+            lines.append(PF("sec5_domain_no_hints", "- {domain}: まだ傾向を判断できるほどの情報がありません。", domain=d))
     lines.append("")
 
-    # 6. 観測ポイント
-    lines.append(P("sec6_title", "6. 次の観測ポイント（3つ。行動に落ちる形で）"))
+    # 6. 次に見るポイント
+    lines.append(P("sec6_title", "6. 次に見てみるポイント（3つ。行動に落ちる形で）"))
     for l in PL(
         "sec6_lines",
         [
-            "・揺れた瞬間に『何が刺激だったか』を1語で書く",
-            "・その刺激を『どう解釈したか（1文）』を書いてから、感情ラベルを選ぶ",
-            "・強い日は『身体（睡眠/空腹/疲労）』も一緒にメモして、構造と身体を分けて観測する",
+            "・揺れた瞬間に『何がきっかけだったか』を1語で書く",
+            "・そのきっかけを『どう受け止めたか（1文）』を書いてから、感情ラベルを選ぶ",
+            "・強い日は『身体（睡眠/空腹/疲労）』も一緒にメモして、反応と身体の状態を分けて見る",
         ],
     ):
         lines.append(str(l))
@@ -1359,7 +1377,7 @@ def _build_myprofile_monthly_report_fallback(
         if not prev_views and not cur_views:
             lines.append(P("diff_no_data", "前回と今回の入力が少ないため、差分はまだまとめられません。"))
         elif not prev_views and cur_views:
-            lines.append(P("diff_prev_missing", "前回は入力が少なく、今月から傾向が見え始めている状態です。"))
+            lines.append(P("diff_prev_missing", "前回は入力が少なく、今回から傾向が見え始めている状態です。"))
         else:
             shown = 0
             for k, dc, di in deltas:
@@ -1371,41 +1389,38 @@ def _build_myprofile_monthly_report_fallback(
                 lines.append(PF("diff_delta_line", "・『{key}』が{sign}（出現回数の差分: {count:+d} / 強度差: {intensity:+.1f}）", key=k, sign=sign, count=dc, intensity=di))
                 shown += 1
             if shown == 0:
-                lines.append(P("diff_no_major", "大きな差分は目立たず、構造は安定して推移しています。"))
+                lines.append(P("diff_no_major", "大きな差分は目立たず、近い出方が続いています。"))
 
     lines.append("")
 
     # Structural appendix (Premium): short, user-facing; no internal names.
     if mode in ("structural", "deep"):
-        lines.append("【Structural追記】")
-        lines.append("※ここからは構造の『定義/干渉/誤認』の観点で、仮説をもう1段だけ深掘りします。")
-        lines.append("※断定ではなく『観測→仮説→次の観測』の循環を作るための追記です。")
+        lines.append("【もう少し細かく見えていること】")
         lines.append("")
         if top_keys:
-            lines.append(f"・核候補: 『{top_keys[0]}』")
-            lines.append("  - チェック: これは“人格”ではなく、“条件が揃うと出る反応”として扱えているか")
-            lines.append("  - 次の観測: 何が揃うと立ち上がる？（睡眠/空腹/期限/評価/未確定 など）")
+            lines.append(f"・いま見えやすい反応: 『{top_keys[0]}』")
+            lines.append("  - 次のメモ: 何が揃うと出やすいか（睡眠/空腹/期限/評価/未確定 など）")
             if len(top_keys) >= 2:
-                lines.append(f"・干渉仮説: 『{top_keys[0]}』が強い日に『{top_keys[1]}』が重なり、判断が硬くなる可能性")
-                lines.append("  - 次の観測: “重なった順番”を1行だけ記録（先にどっちが来た？）")
+                lines.append(f"・重なって見えていること: 『{top_keys[0]}』が強い日に『{top_keys[1]}』も重なり、判断が硬くなる可能性")
+                lines.append("  - 次のメモ: “重なった順番”を1行だけ記録（先にどっちが来た？）")
         else:
-            lines.append("・材料が少ないため、追記は“観測設計”に寄せます。")
-            lines.append("  - 次の観測: 揺れた時に『思考/行動』を1行ずつ残す（最低1回）")
+            lines.append("・材料が少ないため、次に見る手がかりを残します。")
+            lines.append("  - 次のメモ: 揺れた時に『考えたこと/動いたこと』を1行ずつ残す（最低1回）")
 
         lines.append("")
-        lines.append("・誤認チェック（よく起きるズレ）")
-        lines.append("  - 相手/環境の問題を“自分の欠陥”に回収していないか")
+        lines.append("・見直しておきたいズレ")
+        lines.append("  - 相手/環境の問題を“自分だけの問題”として抱え込んでいないか")
         lines.append("  - 未確定を“確定した悪い未来”として扱っていないか")
-        lines.append("  - 1回の失敗を“恒常的な自己定義”にしていないか")
+        lines.append("  - 1回の失敗を“自分はいつもこうだ”にしていないか")
         lines.append("")
 
     # 8. 感情の動きとの接続
     lines.append(P("sec8_title", "8. 感情の動きとの接続（短く）"))
     if top:
-        lines.append(PF("sec8_with_top_line_1", "不安/怒りなどの揺れが目立つとき、背景で『{core_key}』が立っている可能性があります。", core_key=top[0].key))
-        lines.append(P("sec8_with_top_line_2", "気持ちの“天気”と、自己の判断の“クセ”を分けて見るほど、回復が速くなります。"))
+        lines.append(PF("sec8_with_top_line_1", "不安/怒りなどの揺れが目立つとき、背景で『{core_key}』に近い反応が出ている可能性があります。", core_key=top[0].key))
+        lines.append(P("sec8_with_top_line_2", "気持ちの“天気”と、自分の受け止め方のクセを分けて見るほど、回復が速くなります。"))
     else:
-        lines.append(P("sec8_no_data_line", "感情の揺れが見えたら、“刺激→解釈”の観測を増やすと接続が強くなります。"))
+        lines.append(P("sec8_no_data_line", "感情の揺れが見えたら、“きっかけ→受け止め方”のメモを増やすと、つながりが見えやすくなります。"))
 
     mashlogic_applied = False
 
@@ -1428,6 +1443,7 @@ def _build_myprofile_monthly_report_fallback(
         "thought_action_mismatch_count": len(mismatch_events),
     }
 
+    _append_self_structure_report_note(lines)
     return ("\n".join(lines).strip() + "\n", meta)
 
 
@@ -1840,18 +1856,18 @@ def _build_summary_lines_from_basis(
         lines.append(
             PF(
                 "summary_core",
-                "・核（いちばん出やすい自己テーマ）: 『{role}』が出やすい可能性",
+                "・最近よく見えている役割: 『{role}』に近い反応が出やすい可能性",
                 role=core_role.get("label_ja") or core_role.get("key") or "役割",
             )
         )
     else:
-        lines.append(P("summary_core_no_data", "・核（いちばん出やすい自己テーマ）: まだ情報がありません"))
+        lines.append(P("summary_core_no_data", "・最近よく見えているテーマ: まだ情報がありません"))
 
     if core_target and core_role:
         lines.append(
             PF(
                 "summary_shaky_default",
-                "・崩れ条件（揺れを強めやすい引き金）: 主に『{target}』で『{role}』が立ち上がりやすい可能性",
+                "・揺れを強めやすい場面: 主に『{target}』で『{role}』に近い反応が出やすい可能性",
                 target=core_target.get("target_label_ja") or core_target.get("label_ja") or "対象",
                 role=core_role.get("label_ja") or core_role.get("key") or "役割",
             )
@@ -1865,19 +1881,19 @@ def _build_summary_lines_from_basis(
             )
         )
     else:
-        lines.append(P("summary_shaky_no_data", "・崩れ条件（揺れを強めやすい引き金）: まだ情報がありません"))
+        lines.append(P("summary_shaky_no_data", "・揺れやすい場面: まだ情報がありません"))
 
     if core_th or core_act:
         lines.append(
             PF(
                 "summary_steady_default",
-                "・安定に寄せるキー（整える1手）: 『{thinking}』と『{action}』を切り分けて観測する",
+                "・整える1手: 『{thinking}』と『{action}』を切り分けて見る",
                 thinking=(core_th.get("label_ja") or core_th.get("key") or "思考"),
                 action=(core_act.get("label_ja") or core_act.get("key") or "行動"),
             )
         )
     else:
-        lines.append(P("summary_steady_no_data", "・安定に寄せるキー（整える1手）: まずは短い観測メモを増やす"))
+        lines.append(P("summary_steady_no_data", "・整える1手: まずは短いメモを増やす"))
 
     if top_roles:
         role_names = "、".join([str(x.get("label_ja") or x.get("key") or "") for x in top_roles[:2] if str(x.get("label_ja") or x.get("key") or "").strip()])
@@ -1885,14 +1901,14 @@ def _build_summary_lines_from_basis(
             lines.append(
                 PF(
                     "summary_one_liner",
-                    "・ひとこと: いまは{roles}が前面に出やすい状態。対象と反応を分けて見るほど整いやすい。",
+                    "・ひとこと: いまは{roles}に近い反応が見えやすい状態。対象と反応を分けて見るほど整いやすい。",
                     roles=role_names,
                 )
             )
         else:
-            lines.append(P("summary_one_liner_no_data", "・ひとこと: まだ十分な観測がありません。"))
+            lines.append(P("summary_one_liner_no_data", "・ひとこと: まだ十分な材料がありません。"))
     else:
-        lines.append(P("summary_one_liner_no_data", "・ひとこと: まだ十分な観測がありません。"))
+        lines.append(P("summary_one_liner_no_data", "・ひとこと: まだ十分な材料がありません。"))
 
     return lines[:4]
 
@@ -1941,7 +1957,7 @@ def _build_reaction_pattern_lines_from_basis(
             lines.append(f"- パターン{i}: 対象『{row.get('target_label_ja') or row.get('target_key') or '対象'}』への反応が強い可能性")
         return lines[:6]
 
-    return ["今月は主要な反応パターンを特定できるほどの材料がまだ揃っていません。"]
+    return ["主要な反応パターンを特定できるほどの材料は、まだ十分に揃っていません。"]
 
 
 def _build_stability_lines_from_basis(
@@ -1979,7 +1995,7 @@ def _build_thinking_habit_lines_from_basis(
     if thinking:
         top_names = "、".join([str(x.get("label_ja") or x.get("key") or "") for x in thinking[:2] if str(x.get("label_ja") or x.get("key") or "").strip()])
         if top_names:
-            lines.append(f"・思考の軸として {top_names} が出やすい可能性")
+            lines.append(f"・考え方では {top_names} が出やすい可能性")
     if action:
         top_names = "、".join([str(x.get("label_ja") or x.get("key") or "") for x in action[:2] if str(x.get("label_ja") or x.get("key") or "").strip()])
         if top_names:
@@ -2008,9 +2024,9 @@ def _build_domain_note_lines_from_basis(
     for tp, label in mapping:
         vals = by_type.get(tp) or []
         if vals:
-            lines.append(f"- {label}: {'、'.join(vals[:2])} が主な観測対象として出ています。")
+            lines.append(f"- {label}: {'、'.join(vals[:2])} が主に反応しやすい対象として出ています。")
         else:
-            lines.append(f"- {label}: 今月はまだ傾向を判断できません。")
+            lines.append(f"- {label}: まだ傾向を判断できるほどの情報がありません。")
     return lines[:6]
 
 
@@ -2044,7 +2060,7 @@ def _build_diff_lines_from_reports(
     current_keys = [str(x.get("key") or x.get("label_ja") or "").strip() for x in _take_list(current_excerpt.get("template_role_scores"))[:3] if str(x.get("key") or x.get("label_ja") or "").strip()]
     cur_core = ""
     if current_keys:
-        cur_core = f"・核（いちばん出やすい自己テーマ）: {'、'.join([f'『{k}』' for k in current_keys[:2]])}"
+        cur_core = f"・最近よく見えている役割: {'、'.join([f'『{k}』' for k in current_keys[:2]])}"
     current_shaky = ""
     current_steady = ""
     deltas: List[Tuple[str, int, float]] = []
@@ -2052,12 +2068,12 @@ def _build_diff_lines_from_reports(
     prev_json_excerpt = _take_dict((prev_report_json or {}).get("identity_snapshot_excerpt"))
     if prev_json_excerpt:
         prev_keys = [str(x.get("key") or x.get("label_ja") or "").strip() for x in _take_list(prev_json_excerpt.get("template_role_scores"))[:3] if str(x.get("key") or x.get("label_ja") or "").strip()]
-        lines = ["【差分の要約（前回→今回）】"]
+        lines = ["【前回から見えている変化】"]
         if prev_keys and current_keys:
             if prev_keys[0] != current_keys[0]:
-                lines.append(f"・中心テーマ: 『{prev_keys[0]}』→『{current_keys[0]}』へ移動した可能性")
+                lines.append(f"・中心に見えている反応: 『{prev_keys[0]}』→『{current_keys[0]}』へ少し移っている可能性")
             else:
-                lines.append(f"・中心テーマ: 『{current_keys[0]}』が継続している可能性")
+                lines.append(f"・中心に見えている反応: 『{current_keys[0]}』が続いている可能性")
             new_keys = [k for k in current_keys if k not in prev_keys]
             if new_keys:
                 lines.append(f"・新しく目立ち始めた: 『{new_keys[0]}』")
@@ -2320,13 +2336,13 @@ def _build_deep_summary_card_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]
     role_label = str((role_ref or {}).get("role_label_ja") or "").strip()
 
     if target_label and role_label:
-        headline = f"現在は『{target_label}』に触れたときに『{role_label}』が立ち上がりやすい状態です。"
+        headline = f"現在は『{target_label}』に触れたときに『{role_label}』に近い反応が出やすい状態です。"
     elif target_label and description:
         headline = f"現在は『{target_label}』に触れたとき、{description}傾向が出やすい状態です。"
     elif role_label:
-        headline = f"現在は『{role_label}』が前に出やすい状態です。"
+        headline = f"現在は『{role_label}』に近い反応が出やすい状態です。"
     else:
-        headline = "現在の役割スイッチの地図を整理しています。"
+        headline = "最近の反応の出方を整理しています。"
 
     chips: List[str] = []
     target_keys = _unique_keep_order([
@@ -2335,7 +2351,7 @@ def _build_deep_summary_card_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]
         if isinstance(x, dict) and str(x.get("target_key") or "").strip()
     ])
     if len(target_keys) >= 2:
-        chips.append("対象で役割が切り替わりやすい")
+        chips.append("対象ごとに出方の違いあり")
 
     thinking_labels = _unique_keep_order([
         _pattern_label_from_row(x)
@@ -2350,7 +2366,7 @@ def _build_deep_summary_card_from_basis(basis: Dict[str, Any]) -> Dict[str, Any]
     if action_labels:
         chips.append(f"行動は{' / '.join(action_labels[:2])}寄り")
     if _take_list((basis or {}).get("role_gaps")):
-        chips.append("役割ギャップが見られる対象あり")
+        chips.append("出方のズレが見られる対象あり")
 
     return {
         "headline": headline,
@@ -2841,16 +2857,16 @@ def _build_current_structure_summary_from_basis(basis: Dict[str, Any]) -> str:
     secondary = [x for x in role_names if x and x != core_label][:2]
     flow = _role_flow_phrase(core_role)
     if flow:
-        first = f"今のあなたは、{flow}流れが前に出ています。"
+        first = f"最近の入力では、{flow}反応がよく見えています。"
     else:
-        first = f"今のあなたは、『{core_label}』に近い出方が中心になっています。"
+        first = f"最近の入力では、『{core_label}』に近い反応がよく見えています。"
     if secondary:
         if len(secondary) == 1:
-            second = f"その上で『{secondary[0]}』の向きも重なっていて、ひとつの動きだけでは言い切れない状態です。"
+            second = f"その一方で、『{secondary[0]}』に近い出方も一緒に見えています。"
         else:
-            second = f"その上で『{secondary[0]}』『{secondary[1]}』の向きも重なっていて、いくつかの出方が同時に立っています。"
+            second = f"その一方で、『{secondary[0]}』や『{secondary[1]}』に近い出方も一緒に見えています。"
     else:
-        second = f"役割ラベルで見ると、『{core_label}』がいちばん近い位置にあります。"
+        second = f"役割として見ると、『{core_label}』に近い出方がいまは見えやすくなっています。"
     return "\n".join([first, second]).strip()
 
 def _build_role_content_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
@@ -2869,14 +2885,14 @@ def _build_role_content_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
         role_flow = _role_flow_phrase(row) or role_summary
         if idx == 0:
             if role_flow:
-                lines.append(f"・いちばん前に出やすいのは『{role_label}』で、{role_flow}傾向があります。")
+                lines.append(f"・最近の入力では『{role_label}』に近い反応がよく見えています。{role_flow}場面があるようです。")
             else:
-                lines.append(f"・いちばん前に出やすいのは『{role_label}』という向きです。")
+                lines.append(f"・最近の入力では『{role_label}』に近い反応がよく見えています。")
         else:
             if role_flow:
-                lines.append(f"・その横で『{role_label}』も重なり、{role_flow}向きが支えています。")
+                lines.append(f"・そのほかに『{role_label}』に近い出方も見えていて、{role_flow}場面もあります。")
             else:
-                lines.append(f"・その横で『{role_label}』の向きも少し重なっています。")
+                lines.append(f"・そのほかに『{role_label}』に近い出方も少し見えています。")
     return lines
 
 def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
@@ -2884,17 +2900,17 @@ def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
     thinking_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("thinking_patterns"))[:2]])
     if thinking_labels:
         quoted = "、".join([f"『{x}』" for x in thinking_labels])
-        lines.append(f"・考え方では{quoted}が前に出やすく、まず意味や背景を確かめながら受け止めようとする流れがあります。")
+        lines.append(f"・考え方では{quoted}が見えやすく、まず意味や背景を確かめながら受け止めようとする反応があります。")
 
     action_labels = _unique_keep_order([_pattern_label_from_row(x) for x in _take_list((basis or {}).get("action_patterns"))[:2]])
     if action_labels:
         quoted = "、".join([f"『{x}』" for x in action_labels])
-        lines.append(f"・動き方では{quoted}が選ばれやすく、外へ出る反応にもその傾向がにじみやすいようです。")
+        lines.append(f"・動き方では{quoted}が選ばれやすく、外へ出る反応にもその傾向が表れやすいようです。")
 
     target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
     if target_labels:
         quoted = "、".join([f"『{x}』" for x in target_labels])
-        lines.append(f"・とくに{quoted}の場面でこの出方が立ち上がりやすく、置かれている文脈の影響も大きそうです。")
+        lines.append(f"・とくに{quoted}に触れる場面でこの出方が見えやすく、置かれている文脈の影響も大きそうです。")
 
     generated = _take_list((basis or {}).get("generated_roles"))
     if generated:
@@ -2902,7 +2918,7 @@ def _build_role_background_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
         desc = str(row.get("description") or "").strip()
         target = _target_label_from_row(row)
         if desc and target:
-            lines.append(f"・『{target}』に向くときは、{desc}ような関わり方になりやすいようです。")
+            lines.append(f"・『{target}』に触れるときは、{desc}ような関わり方になりやすいようです。")
     return lines
 
 def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
@@ -2916,9 +2932,9 @@ def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
             continue
         used_targets.append(target)
         if role_label:
-            lines.append(f"・『{target}』に触れると、まず『{role_label}』の向きで受け止め、そのあと行動を選びやすい流れがあります。")
+            lines.append(f"・『{target}』に触れる場面では、『{role_label}』に近い関わり方になりやすいようです。")
         else:
-            lines.append(f"・『{target}』に触れると、いったん内側で受け止めてから反応が立ち上がりやすいようです。")
+            lines.append(f"・『{target}』に触れる場面では、いったん内側で受け止めてから動き方を選びやすいようです。")
         if len(lines) >= 2:
             break
 
@@ -2930,16 +2946,16 @@ def _build_reaction_flow_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
                 continue
             used_targets.append(target)
             if desc:
-                lines.append(f"・『{target}』に対しては、{desc}ような流れが立ち上がりやすいようです。")
+                lines.append(f"・『{target}』に対しては、{desc}ような関わり方になりやすいようです。")
             else:
-                lines.append(f"・『{target}』に対して反応が濃く立ち上がりやすいようです。")
+                lines.append(f"・『{target}』に対して反応が濃く出やすいようです。")
             if len(lines) >= 2:
                 break
 
     if not lines:
         target_labels = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
         for target in target_labels[:2]:
-            lines.append(f"・『{target}』がきっかけになると、いまの出方がはっきり表れやすいようです。")
+            lines.append(f"・『{target}』がきっかけになると、いまの反応がはっきり表れやすいようです。")
     return lines
 
 def _build_emotion_connection_lines_from_basis(basis: Dict[str, Any]) -> List[str]:
@@ -2950,15 +2966,15 @@ def _build_emotion_connection_lines_from_basis(basis: Dict[str, Any]) -> List[st
     if top_emotions:
         joined = " / ".join(top_emotions[:2])
         if core_label:
-            lines.append(f"・背景には{joined}の揺れがあり、その気持ちをそのまま外に出すより『{core_label}』の出方に変えて持ちやすいようです。")
+            lines.append(f"・背景には{joined}の気持ちがあり、そのまま外に出すより『{core_label}』に近い反応として表れやすいようです。")
         else:
-            lines.append(f"・背景には{joined}の揺れが重なっているようです。")
+            lines.append(f"・背景には{joined}の気持ちが重なっているようです。")
     movement = str(bridge.get("movement_summary") or "").strip()
     if movement:
-        lines.append(f"・気持ちの流れとしては、{_excerpt(movement, 110)}。")
+        lines.append(f"・気持ちの変化としては、{_excerpt(movement, 110)}。")
     control = str(bridge.get("control_note") or "").strip()
     if control:
-        lines.append(f"・もう少し深いところでは、{_excerpt(control, 110)}。")
+        lines.append(f"・もう少し奥にある反応としては、{_excerpt(control, 110)}。")
     return lines[:3]
 
 def _build_change_lines_v2(
@@ -2975,7 +2991,7 @@ def _build_change_lines_v2(
     cur_core = _role_label_from_row(_take_dict((basis or {}).get("core_role")))
     if prev_core and cur_core:
         if prev_core != cur_core:
-            lines.append(f"・前回は『{prev_core}』寄りでしたが、今回は『{cur_core}』の出方が少し前に出ています。")
+            lines.append(f"・前回は『{prev_core}』寄りでしたが、今回は『{cur_core}』に近い出方が少し見えやすくなっています。")
         else:
             lines.append(f"・前回から引き続き、『{cur_core}』に近い出方が中心です。")
 
@@ -2983,9 +2999,9 @@ def _build_change_lines_v2(
     cur_targets = _unique_keep_order([_target_label_from_row(x) for x in _take_list((basis or {}).get("top_targets"))[:2]])
     if prev_targets and cur_targets:
         if prev_targets[0] != cur_targets[0]:
-            lines.append(f"・反応が立ち上がりやすい対象は、『{prev_targets[0]}』から『{cur_targets[0]}』へ少し移っています。")
+            lines.append(f"・反応しやすい対象は、『{prev_targets[0]}』から『{cur_targets[0]}』へ少し移っています。")
         else:
-            lines.append(f"・反応が立ち上がりやすい対象は、引き続き『{cur_targets[0]}』です。")
+            lines.append(f"・反応しやすい対象は、引き続き『{cur_targets[0]}』です。")
 
     prev_emotions = _unique_keep_order([str(x) for x in _take_list(_take_dict(prev_basis.get("emotion_bridge")).get("top_emotions"))[:2]])
     cur_emotions = _unique_keep_order([emo_label_ja(x) for x in _take_list(_take_dict((basis or {}).get("emotion_bridge")).get("top_emotions"))[:2]])
@@ -3033,13 +3049,9 @@ def build_myprofile_monthly_report(
         v = phrases.get(key)
         return str(v) if isinstance(v, str) and v else default
 
-    report_title = P("report_title", "【自己構造分析レポート】")
+    report_title = P("report_title", "【自己分析レポート】")
     no_data_text = P("report_no_data", "データがありません。")
-    summary_title = P("summary_title_current", "【今回の自己構造】")
-    disclaimer_line = P(
-        "summary_disclaimer_current",
-        "※これは固定的な性格診断ではなく、現在の観測から見える役割傾向です。",
-    )
+    summary_title = P("summary_title_current", "【最近のあなたに見えている役割】")
 
     if not uid:
         return (
@@ -3109,7 +3121,7 @@ def build_myprofile_monthly_report(
     numbered_sections: List[Tuple[str, str, List[str]]] = [
         ("role_content", P("sec_role_title", "役割内容"), role_lines),
         ("role_background", P("sec_background_title", "この役割が表れた背景"), background_lines),
-        ("reaction_flow", P("sec_flow_title", "今の反応の流れ"), flow_lines),
+        ("reaction_flow", P("sec_flow_title", "反応しやすい場面"), flow_lines),
         ("emotion_bridge", P("sec_emotion_title", "感情とのつながり"), emotion_lines),
         ("diff", P("sec_change_title", "前回からの変化"), change_lines),
     ]
@@ -3173,9 +3185,11 @@ def build_myprofile_monthly_report(
     meta["summaryText"] = summary_text.strip() or None
 
     if not has_visible_content:
-        return (f"{report_title}\n\n{no_data_text}\n", meta)
+        lines_no_data: List[str] = [report_title, "", no_data_text]
+        _append_self_structure_report_note(lines_no_data)
+        return ("\n".join(lines_no_data).strip() + "\n", meta)
 
-    lines: List[str] = [report_title, "", summary_title, summary_text.strip(), disclaimer_line]
+    lines: List[str] = [report_title, "", summary_title, summary_text.strip()]
     section_no = 1
     for _, title, content_lines in numbered_sections:
         clean_lines = [str(x) for x in content_lines if str(x or "").strip()]
@@ -3186,6 +3200,7 @@ def build_myprofile_monthly_report(
         lines.extend(clean_lines)
         section_no += 1
 
+    _append_self_structure_report_note(lines)
     return ("\n".join([str(x) for x in lines if x is not None]).strip() + "\n", meta)
 
 # =============================================================================
@@ -3483,7 +3498,7 @@ async def refresh_myprofile_latest_report(
                 "generated_at": generated_at,
                 "period_start": str(distribution_meta.get("period_start") or "").strip() or None,
                 "period_end": str(distribution_meta.get("period_end") or "").strip() or None,
-                "title": "現在の自己構造",
+                "title": "現在の自己分析",
                 "content_text": text,
                 "meta": meta,
                 "has_visible_content": False,
@@ -3513,7 +3528,7 @@ async def refresh_myprofile_latest_report(
             "report_type": "latest",
             "period_start": LATEST_REPORT_PERIOD_START,
             "period_end": LATEST_REPORT_PERIOD_END,
-            "title": "自己構造レポート（最新版）",
+            "title": "自己分析レポート（最新版）",
             "content_text": text,
             "content_json": {
                 **(meta or {}),
@@ -3535,7 +3550,7 @@ async def refresh_myprofile_latest_report(
             "generated_at": generated_at,
             "period_start": str((((meta or {}).get("distribution") or {}).get("period_start") or "")).strip() or None,
             "period_end": str((((meta or {}).get("distribution") or {}).get("period_end") or "")).strip() or None,
-            "title": "現在の自己構造",
+            "title": "現在の自己分析",
             "content_text": text,
             "meta": payload.get("content_json"),
             "has_visible_content": True,
