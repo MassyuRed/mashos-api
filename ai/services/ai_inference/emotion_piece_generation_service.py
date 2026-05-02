@@ -168,6 +168,52 @@ def _build_fallback_preview_text(question: str, raw_answer: str) -> str:
     return f"今の入力から見えてきたのは、{source}です。"
 
 
+
+
+def _build_contextual_preview_text(
+    *,
+    question: str,
+    raw_answer: str,
+    focus_key: Optional[str],
+    text_candidates: Sequence[str],
+) -> str:
+    """Build a deterministic, readable Piece text from light emotion input.
+
+    The preview flow is still rule-based. This helper only enriches cases where the
+    current input has enough context for a natural public Piece.
+    """
+    q = _collapse(question)
+    source = _collapse(" ".join(_unique_texts([raw_answer, *(text_candidates or [])])))
+    key = _collapse(focus_key)
+
+    if not source:
+        return ""
+
+    if key == "values" and all(token in source for token in ("ベッド", "温かい飲み物")):
+        return (
+            "全部が進んだわけではなくても、ひとつ整えられた感覚を大事にする。"
+            "小さな落ち着きが、次の自分を支えてくれると思っています。"
+        )
+
+    if key == "values" and all(token in source for token in ("全部", "ひとつ")) and any(
+        token in source for token in ("落ち着", "ゆっくり", "片づ")
+    ):
+        return (
+            "全部を終わらせられない日でも、ひとつ整えられたことを受け止める。"
+            "小さな行動で気持ちを落ち着かせる時間を大切にしています。"
+        )
+
+    if key == "values" and any(token in source for token in ("落ち着", "ゆっくり", "整え")):
+        return "大切にしているのは、気持ちが少し落ち着く小さな行動を見つけることです。"
+
+    if key == "care" and any(token in source for token in ("片づ", "休", "ゆっくり", "整え")):
+        return "気持ちを整えるために、小さく動いて少し休む時間を大事にしています。"
+
+    if "大切にしていること" in q and any(token in source for token in ("落ち着", "ゆっくり", "片づ")):
+        return "大切にしているのは、小さな行動で自分の気持ちを落ち着かせることです。"
+
+    return ""
+
 def _append_once(values: List[str], value: str) -> None:
     text = str(value or "").strip()
     if text and text not in values:
@@ -395,6 +441,30 @@ def generate_emotion_reflection_preview(
         focus_key=focus_key,
         text_candidates=text_candidates,
     )
+    contextual_preview_text = _build_contextual_preview_text(
+        question=question,
+        raw_answer=raw_answer,
+        focus_key=focus_key,
+        text_candidates=text_candidates,
+    )
+    if contextual_preview_text:
+        contextual_result = replace(
+            display_result,
+            answer_display_text=contextual_preview_text,
+            answer_display_state=STATE_READY,
+            changed=True,
+            flags=_merge_unique(display_result.flags, ["preview:contextual_display"]),
+            actions=_merge_unique(display_result.actions, ["preview:contextual_display"]),
+            answer_norm_hash=compute_generated_answer_norm_hash(contextual_preview_text),
+            rewrite_needed=False,
+        )
+        display_result = _finalize_public_safe_preview_result(
+            result=contextual_result,
+            question=question,
+            raw_answer=raw_answer,
+            candidate_text=contextual_preview_text,
+        )
+
     answer_display_text = display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer)
     piece_policy = build_piece_generation_policy(
         piece_text=answer_display_text,
