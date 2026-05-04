@@ -35,6 +35,8 @@ from pydantic import BaseModel, Field
 from api_emotion_submit import (
     _ensure_supabase_config,
     _extract_bearer_token,
+    _fetch_push_tokens_for_users,
+    _send_fcm_push,
 )
 
 # Phase11: observability (structured logs + optional slack notifications)
@@ -1547,29 +1549,31 @@ async def _send_report_distribution_bundle_push(
     data_payload = dict(payload.get("data") or {})
     uid = str(user_id or "").strip()
 
-    send_status = "queued"
+    send_status = "dry_run" if dry_run else "sent"
+    send_result: Dict[str, Any] = {}
     if dry_run:
-        send_status = "dry_run"
+        pass
     elif uid:
         try:
-            from fcm_push_queue import enqueue_user_push_notification_jobs
-
-            queued = await enqueue_user_push_notification_jobs(
-                recipient_user_ids=[uid],
-                title=str(payload.get("title") or "Cocolon"),
-                body=str(payload.get("body") or "新しいレポートが届きました"),
-                data=data_payload,
-                actor_user_id=uid,
-                event_type="report_distribution",
-                job_key_prefix=f"report_distribution:{uid}:{distribution_key}",
-                priority=6,
-                chunk_size=1,
-            )
-            if queued <= 0:
+            token_map = await _fetch_push_tokens_for_users([uid])
+            token = str((token_map or {}).get(uid) or "").strip()
+            if not token:
                 send_status = "skipped_no_recipient"
+            else:
+                send_result = await _send_fcm_push(
+                    tokens=[token],
+                    title=str(payload.get("title") or "Cocolon"),
+                    body=str(payload.get("body") or "新しいレポートが届きました"),
+                    data=data_payload,
+                )
+                send_status = str((send_result or {}).get("status") or "failed")
+                if send_status != "sent":
+                    raise RuntimeError(
+                        f"report_distribution push send failed: status={send_status} result={send_result}"
+                    )
         except Exception as exc:
             logger.warning(
-                "report_distribution_push enqueue FCM job failed. user=%s distribution_key=%s err=%s",
+                "report_distribution_push FCM send failed. user=%s distribution_key=%s err=%s",
                 uid,
                 distribution_key,
                 exc,
@@ -1582,6 +1586,7 @@ async def _send_report_distribution_bundle_push(
         "send_status": send_status,
         "payload": data_payload,
         "bundle_families": families,
+        "fcm_result": send_result,
     }
 
 
@@ -1808,6 +1813,7 @@ async def run_report_distribution_push_once(
                 "send_status": send_status,
                 "data": dict((send_res or {}).get("payload") or {}),
                 "settings": settings,
+                "fcm_result": dict((send_res or {}).get("fcm_result") or {}),
             }
             if not body.dry_run:
                 await store.mark_bundle_delivered(
@@ -1816,7 +1822,7 @@ async def run_report_distribution_push_once(
                     bundle_families=families,
                     payload=payload_json,
                 )
-            if send_status in ("sent", "queued"):
+            if send_status == "sent":
                 sent += 1
                 sent_users.append(uid)
             else:

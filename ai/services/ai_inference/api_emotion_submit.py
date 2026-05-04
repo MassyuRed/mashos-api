@@ -1328,18 +1328,18 @@ async def _send_fcm_push_v1(
     title: str,
     body: str,
     data: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Dict[str, Any]:
     """FCM HTTP v1 (Direct HTTP + OAuth2) で push を送る（best-effort）。
 
     - service account JSON から OAuth2 access token を作り、HTTP v1 に投げる。
     - 401 が出たらトークンを作り直して 1回だけリトライする。
     """
     if not FCM_PUSH_ENABLED:
-        return
+        return {"status": "disabled", "success": 0, "failure": 0, "provider": "fcm_v1"}
 
     # credentials が設定されていなくても /etc/secrets にあれば送る
     if not (_has_fcm_v1_credentials() or os.path.isfile("/etc/secrets/firebase_service_account.json")):
-        return
+        return {"status": "no_credentials", "success": 0, "failure": 0, "provider": "fcm_v1"}
 
     # 重複除去・空除去
     uniq: List[str] = []
@@ -1354,7 +1354,7 @@ async def _send_fcm_push_v1(
         uniq.append(tt)
 
     if not uniq:
-        return
+        return {"status": "skipped_no_token", "success": 0, "failure": 0, "provider": "fcm_v1"}
 
     # FCM data payload は string:string が必要
     data_str: Dict[str, str] = {}
@@ -1369,11 +1369,11 @@ async def _send_fcm_push_v1(
         access_token, expiry, project_id, client_email = _get_fcm_oauth_access_token()
     except Exception as exc:
         logger.error("FCM v1 OAuth token error [patch_v5]: %s", exc)
-        return
+        return {"status": "oauth_error", "success": 0, "failure": len(uniq), "provider": "fcm_v1", "error": str(exc)[:300]}
 
     if not project_id:
         logger.error("FCM v1 project_id is empty [patch_v5].")
-        return
+        return {"status": "no_project_id", "success": 0, "failure": len(uniq), "provider": "fcm_v1"}
 
     url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
     headers = {
@@ -1449,6 +1449,13 @@ async def _send_fcm_push_v1(
     logger.info("FCM v1 push sent [patch_v5]: success=%s failure=%s", success, failure)
     if failure and errs:
         logger.warning("FCM v1 push failures (sample) [patch_v5 told=%s sa=%s]: %s", project_id, (client_email or ""), errs[:3])
+    return {
+        "status": "sent" if success > 0 else "failed",
+        "success": success,
+        "failure": failure,
+        "provider": "fcm_v1",
+        "errors": errs[:3],
+    }
 
 async def _send_fcm_push_legacy(
     *,
@@ -1456,10 +1463,12 @@ async def _send_fcm_push_legacy(
     title: str,
     body: str,
     data: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Dict[str, Any]:
     """FCM Legacy API で push を送る（best-effort）。"""
-    if not (FCM_PUSH_ENABLED and FCM_SERVER_KEY):
-        return
+    if not FCM_PUSH_ENABLED:
+        return {"status": "disabled", "success": 0, "failure": 0, "provider": "legacy"}
+    if not FCM_SERVER_KEY:
+        return {"status": "no_credentials", "success": 0, "failure": 0, "provider": "legacy"}
 
     # 重複除去・空除去
     uniq: List[str] = []
@@ -1474,7 +1483,7 @@ async def _send_fcm_push_legacy(
         uniq.append(tt)
 
     if not uniq:
-        return
+        return {"status": "skipped_no_token", "success": 0, "failure": 0, "provider": "legacy"}
 
     headers = {
         "Authorization": f"key={FCM_SERVER_KEY}",
@@ -1483,6 +1492,10 @@ async def _send_fcm_push_legacy(
 
     # Legacy API は registration_ids で最大1000件まで送れる（安全側で900に分割）
     batches = _chunk_list(uniq, 900)
+
+    total_success = 0
+    total_failure = 0
+    errors: List[str] = []
 
     async with httpx.AsyncClient(timeout=FCM_TIMEOUT_SEC) as client:
         for batch in batches:
@@ -1496,6 +1509,9 @@ async def _send_fcm_push_legacy(
 
             resp = await client.post(FCM_API_URL, headers=headers, json=payload)
             if resp.status_code != 200:
+                total_failure += len(batch)
+                err = f"status={resp.status_code} body={resp.text[:300]}"
+                errors.append(err)
                 logger.error(
                     "FCM legacy push send failed: status=%s body=%s",
                     resp.status_code,
@@ -1509,8 +1525,10 @@ async def _send_fcm_push_legacy(
                 js = None
 
             if isinstance(js, dict):
-                success = js.get("success")
-                failure = js.get("failure")
+                success = int(js.get("success") or 0)
+                failure = int(js.get("failure") or 0)
+                total_success += success
+                total_failure += failure
                 logger.info("FCM legacy push sent: success=%s failure=%s", success, failure)
 
                 if failure:
@@ -1518,7 +1536,18 @@ async def _send_fcm_push_legacy(
                     if isinstance(results, list):
                         errs = [r.get("error") for r in results if isinstance(r, dict) and r.get("error")]
                         if errs:
+                            errors.extend(str(e) for e in errs[:5])
                             logger.warning("FCM legacy push failures (sample): %s", errs[:5])
+            else:
+                total_success += len(batch)
+
+    return {
+        "status": "sent" if total_success > 0 else "failed",
+        "success": total_success,
+        "failure": total_failure,
+        "provider": "legacy",
+        "errors": errors[:5],
+    }
 
 
 async def _send_fcm_push(
@@ -1527,7 +1556,7 @@ async def _send_fcm_push(
     title: str,
     body: str,
     data: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Dict[str, Any]:
     """FCM Push を送る（best-effort）。
 
     優先順位:
@@ -1535,13 +1564,12 @@ async def _send_fcm_push(
       2) それ以外は Legacy (FCM_SERVER_KEY) があれば送る
     """
     if not _is_fcm_enabled():
-        return
+        return {"status": "disabled", "success": 0, "failure": 0, "provider": "none"}
 
-    if _has_fcm_v1_credentials():
-        await _send_fcm_push_v1(tokens=tokens, title=title, body=body, data=data)
-        return
+    if _has_fcm_v1_credentials() or os.path.isfile("/etc/secrets/firebase_service_account.json"):
+        return await _send_fcm_push_v1(tokens=tokens, title=title, body=body, data=data)
 
-    await _send_fcm_push_legacy(tokens=tokens, title=title, body=body, data=data)
+    return await _send_fcm_push_legacy(tokens=tokens, title=title, body=body, data=data)
 
 async def _push_notify_followers_about_emotion(
     *,

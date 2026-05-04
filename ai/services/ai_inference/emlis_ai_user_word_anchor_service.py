@@ -36,6 +36,42 @@ _EMOTION_WORDS = (
     "寂しい",
     "さみしい",
 )
+_ANXIETY_CONDITION_WORDS = (
+    "不安になる",
+    "不安にな",
+    "怖くなる",
+    "恐くなる",
+)
+_UNCERTAINTY_WORDS = (
+    "かなぁ",
+    "かなあ",
+    "かな",
+    "できるの",
+    "どうなる",
+    "わからない",
+    "分からない",
+    "不確か",
+)
+_WISH_WORDS = (
+    "したい",
+    "なりたい",
+    "ほしい",
+    "欲しい",
+    "叶えたい",
+    "せめて",
+)
+_ACTION_WORDS = (
+    "話した",
+    "会った",
+    "行った",
+    "書いた",
+    "片づけた",
+    "作った",
+    "休んだ",
+    "寝た",
+    "歩いた",
+    "連絡した",
+)
 _RELATION_WORDS = (
     "恋人",
     "彼氏",
@@ -116,7 +152,21 @@ def _split_clauses(text: str) -> List[str]:
     return chunks
 
 
-def _role_for(text: str) -> str:
+def _has_anxiety_condition(text: str) -> bool:
+    if not any(word in text for word in _ANXIETY_CONDITION_WORDS):
+        return False
+    return any(marker in text for marker in ("考えると", "思うと", "見ると", "聞くと", "なる", "将来"))
+
+
+def _role_for(text: str, *, source_field: str = "memo") -> str:
+    if source_field == "memo_action":
+        return "action"
+    if _has_anxiety_condition(text):
+        return "anxiety_condition"
+    if any(word in text for word in _UNCERTAINTY_WORDS):
+        return "uncertainty"
+    if any(word in text for word in _WISH_WORDS):
+        return "wish"
     if any(word in text for word in _EMOTION_WORDS):
         return "explicit_emotion"
     if "喧嘩" in text or "けんか" in text:
@@ -132,10 +182,19 @@ def _role_for(text: str) -> str:
     return "event"
 
 
-def _score_clause(text: str, *, order: int) -> float:
+def _score_clause(text: str, *, order: int, source_field: str = "memo") -> float:
     score = 0.0
+    role = _role_for(text, source_field=source_field)
+    if role == "anxiety_condition":
+        score += 4.6
+    if role == "uncertainty":
+        score += 3.7
+    if role == "wish":
+        score += 3.4
+    if role == "action":
+        score += 2.8
     if any(word in text for word in _EMOTION_WORDS):
-        score += 4.0
+        score += 3.2 if role == "anxiety_condition" else 4.0
     if any(word in text for word in _MISMATCH_WORDS):
         score += 3.2
     if any(word in text for word in _RELATION_WORDS):
@@ -154,10 +213,17 @@ def _score_clause(text: str, *, order: int) -> float:
     return score
 
 
-def _keyword_anchors(text: str) -> Iterable[Tuple[str, str]]:
+def _keyword_anchors(text: str, *, source_field: str = "memo") -> Iterable[Tuple[str, str]]:
     # Extract compact phrases that often represent the user's own explanation,
     # without replacing or generalizing the surrounding sentence.
     patterns = (
+        r"[^。！？!?、,\n\r]{0,24}不安になる",
+        r"[^。！？!?、,\n\r]{0,24}不安になっている",
+        r"[^。！？!?、,\n\r]{1,24}できるのかなぁ",
+        r"[^。！？!?、,\n\r]{1,24}できるのかなあ",
+        r"せめて[^。！？!?、,\n\r]{0,24}したい",
+        r"[^。！？!?、,\n\r]{1,18}同棲[^。！？!?、,\n\r]{0,12}したい",
+        r"[^。！？!?、,\n\r]{1,14}と話した",
         r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の頻度",
         r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の距離感",
         r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の違い",
@@ -176,7 +242,7 @@ def _keyword_anchors(text: str) -> Iterable[Tuple[str, str]]:
             if len(phrase) < 3 or phrase in seen:
                 continue
             seen.add(phrase)
-            yield phrase, _role_for(phrase)
+            yield phrase, _role_for(phrase, source_field=source_field)
 
 
 def extract_user_word_anchors(
@@ -194,29 +260,40 @@ def extract_user_word_anchors(
         raw = str(current_input.get(field) or "")
         if not raw.strip():
             continue
-        for phrase, role in _keyword_anchors(raw):
-            scored.append((_score_clause(phrase, order=order) + 1.2, order, phrase, field, role))
+        for phrase, role in _keyword_anchors(raw, source_field=field):
+            scored.append((_score_clause(phrase, order=order, source_field=field) + 1.2, order, phrase, field, role))
             order += 1
         for clause in _split_clauses(raw):
-            scored.append((_score_clause(clause, order=order), order, clause, field, _role_for(clause)))
+            scored.append((_score_clause(clause, order=order, source_field=field), order, clause, field, _role_for(clause, source_field=field)))
             order += 1
 
     if not scored:
         return []
 
-    # Prefer high-value anchors, but keep the final list in the user's input order
-    # so the generated reply follows the user's own wording flow.
+    # Prefer high-value anchors, but de-duplicate before applying the cap.
+    # Otherwise a keyword and its full clause can consume multiple slots and
+    # push out important adjacent words such as uncertainty or wishes.
     scored.sort(key=lambda item: (-item[0], item[1]))
-    selected = scored[: max(0, int(max_anchors or 0))]
-    selected.sort(key=lambda item: item[1])
-
-    anchors: List[UserWordAnchor] = []
+    selected: List[Tuple[float, int, str, str, str]] = []
     seen_text: set[str] = set()
-    for idx, (score, _order, text, field, role) in enumerate(selected):
-        clean = _clean_text(text)
+    limit = max(0, int(max_anchors or 0))
+    if limit <= 0:
+        return []
+    for item in scored:
+        clean = _clean_text(item[2])
         if not clean or clean in seen_text:
             continue
         seen_text.add(clean)
+        selected.append(item)
+        if len(selected) >= limit:
+            break
+    selected.sort(key=lambda item: item[1])
+
+    anchors: List[UserWordAnchor] = []
+    for idx, (score, _order, text, field, role) in enumerate(selected):
+        clean = _clean_text(text)
+        if not clean:
+            continue
         anchors.append(
             UserWordAnchor(
                 anchor_key=f"current_word:{field}:{idx}",

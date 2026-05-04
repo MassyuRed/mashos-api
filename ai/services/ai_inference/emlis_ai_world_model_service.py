@@ -196,7 +196,7 @@ def _build_same_day_change(bundle: SourceBundle) -> Optional[WorldModelHypothesi
     if current_strength and prev_strength and current_strength != prev_strength:
         return WorldModelHypothesis(
             key="same_day_change",
-            text="同じ感情でも、さっきより強さが少し動いていますね。",
+            text="同じ感情でも、さっきから感じ方が少し動いていますね。",
             evidence=[_current_ref(bundle), EvidenceRef(kind="emotion", ref_id=str(previous.get("id") or "previous"), weight=1.0)],
             confidence=0.66,
         )

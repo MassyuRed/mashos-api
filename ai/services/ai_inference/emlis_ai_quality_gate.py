@@ -24,6 +24,11 @@ _HISTORY_SOURCE_KEYS = {
     "derived_user_model",
 }
 
+_EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
+_UNNATURAL_REPLY_RE = re.compile(
+    r"(になるです|しているです|だったです|したです|ですです|かなぁのあと|というところが残っていた|今回いちばん残っていた言葉|中心としては.*（(?:弱|中|強)）)"
+)
+
 
 @dataclass(frozen=True)
 class EmlisAIQualityGateResult:
@@ -154,7 +159,15 @@ def attach_emlis_ai_quality_gate_meta(
     capability_meta = dict(updated.get("capability") or {}) if isinstance(updated.get("capability"), dict) else {}
     capability_meta.update(gate.capability_profile)
     updated["capability"] = capability_meta
-    updated["quality_gate"] = gate.as_meta()
+
+    reply_text = str(comment_text or "")
+    strength_display_suppressed = not bool(_EMOTION_STRENGTH_DISPLAY_RE.search(reply_text))
+    natural_language_ok = not bool(_UNNATURAL_REPLY_RE.search(reply_text))
+    quality_meta = gate.as_meta()
+    quality_meta["strength_display_suppressed"] = strength_display_suppressed
+    quality_meta["natural_language_ok"] = natural_language_ok
+    quality_meta["passed"] = bool(quality_meta.get("passed") and strength_display_suppressed and natural_language_ok)
+    updated["quality_gate"] = quality_meta
     return updated
 
 

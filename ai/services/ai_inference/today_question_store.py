@@ -123,6 +123,31 @@ def _is_delivery_time_due(now_utc: Optional[datetime], timezone_name: str, deliv
     return _local_minutes_since_midnight(now_utc, timezone_name) >= _delivery_time_minutes(delivery_time_local)
 
 
+def _is_today_question_released_for_settings(now_utc: Optional[datetime], settings: Mapping[str, Any]) -> bool:
+    """Return True only after the user's configured Today Question delivery time.
+
+    The service day still switches at the global service-day boundary, but the
+    question body itself must stay hidden until the user's notification time so
+    users cannot answer it before the push window.
+    """
+    settings_map = settings if isinstance(settings, Mapping) else {}
+    return _is_delivery_time_due(
+        now_utc,
+        _normalize_timezone_name(settings_map.get("timezone_name")),
+        _normalize_delivery_time_local(settings_map.get("delivery_time_local")),
+    )
+
+
+def _hidden_until_delivery_progress(*, total_count: int, progress_row: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Build a non-mutating progress payload while the question is hidden."""
+    row = progress_row if isinstance(progress_row, Mapping) else {}
+    return _progress_public(
+        sequence_no=_safe_int(row.get("current_sequence_no"), 0) or None,
+        total_count=max(_safe_int(total_count, 0), 0),
+        current_presented_local_date=str(row.get("current_presented_local_date") or "").strip() or None,
+    )
+
+
 def _parse_jsonish(value: Any, default: Any) -> Any:
     if value is None:
         return default
@@ -913,9 +938,10 @@ class TodayQuestionStore:
         now_utc: Optional[datetime] = None,
     ) -> TodayQuestionCurrentBundle:
         uid = str(user_id or "").strip()
-        # 生成/表示の切り替えはレポート配布と同じく service-day 基準（既定: Asia/Tokyo の 0:00）に固定する。
-        # ユーザー設定の timezone_name / delivery_time_local は push 通知の時刻判定のみに使う。
-        service_day_key = _service_day_key(now_utc)
+        now = now_utc or _now_utc()
+        # service-day 自体は従来通り固定基準で切り替える。
+        # ただし、質問本文の表示と回答受付はユーザーの通知時刻以降に限定する。
+        service_day_key = _service_day_key(now)
         settings_task = asyncio.create_task(self.get_or_create_user_settings(uid, timezone_name=timezone_name))
         total_count_task = asyncio.create_task(self._fetch_total_sequence_count())
         today_answer_task = asyncio.create_task(self._fetch_answer_row_for_day(uid, service_day_key))
@@ -927,6 +953,15 @@ class TodayQuestionStore:
             today_answer_task,
             progress_task,
         )
+
+        if not _is_today_question_released_for_settings(now, settings):
+            return TodayQuestionCurrentBundle(
+                service_day_key=service_day_key,
+                question=None,
+                answer=None,
+                settings=settings,
+                progress=_hidden_until_delivery_progress(total_count=total_count, progress_row=progress_row),
+            )
 
         if today_answer:
             answer_sequence_no = _safe_int(today_answer.get("sequence_no"), 0) or None
@@ -1002,7 +1037,8 @@ class TodayQuestionStore:
         now_utc: Optional[datetime] = None,
     ) -> TodayQuestionStatusBundle:
         uid = str(user_id or "").strip()
-        service_day_key = _service_day_key(now_utc)
+        now = now_utc or _now_utc()
+        service_day_key = _service_day_key(now)
         settings_task = asyncio.create_task(self.get_or_create_user_settings(uid, timezone_name=timezone_name))
         total_count_task = asyncio.create_task(self._fetch_total_sequence_count())
         today_answer_task = asyncio.create_task(self._fetch_answer_status_row_for_day(uid, service_day_key))
@@ -1014,6 +1050,15 @@ class TodayQuestionStore:
             today_answer_task,
             progress_task,
         )
+
+        if not _is_today_question_released_for_settings(now, settings):
+            return TodayQuestionStatusBundle(
+                service_day_key=service_day_key,
+                question=None,
+                answer=None,
+                settings=settings,
+                progress=_hidden_until_delivery_progress(total_count=total_count, progress_row=progress_row),
+            )
 
         if today_answer:
             answer_sequence_no = _safe_int(today_answer.get("sequence_no"), 0) or None

@@ -3850,7 +3850,10 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
             "event_type": str((payload or {}).get("event_type") or ""),
         }
 
-    await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    send_res = await _send_fcm_push(tokens=tokens, title=title, body=body, data=data_payload)
+    send_status = str((send_res or {}).get("status") or "failed")
+    if send_status != "sent":
+        raise RuntimeError(f"send_fcm_push_v1 failed: status={send_status} result={send_res}")
     return {
         "status": "sent",
         "user_id": str(user_id or "").strip(),
@@ -3859,6 +3862,7 @@ async def _handle_send_fcm_push_v1(*, user_id: str, payload: Dict[str, Any]) -> 
         "event_type": str((payload or {}).get("event_type") or ""),
         "chunk_index": (payload or {}).get("chunk_index"),
         "chunk_count": (payload or {}).get("chunk_count"),
+        "fcm_result": send_res,
     }
 
 

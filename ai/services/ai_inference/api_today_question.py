@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from home_gateway.command_gateway import execute_home_command
 
 from active_users_store import touch_active_user
-from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token
+from api_emotion_submit import _extract_bearer_token, _resolve_user_id_from_token, _send_fcm_push
 from astor_snapshot_enqueue import enqueue_global_snapshot_refresh
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
@@ -226,10 +226,8 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
             if not uid:
                 continue
 
-            from fcm_push_queue import enqueue_user_push_notification_jobs
-
-            queued = await enqueue_user_push_notification_jobs(
-                recipient_user_ids=[uid],
+            send_res = await _send_fcm_push(
+                tokens=[token],
                 title="Cocolon",
                 body=body,
                 data={
@@ -239,19 +237,10 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
                     "question_id": str(row.get("question_id") or ""),
                     "sequence_no": str(row.get("sequence_no") or ""),
                 },
-                actor_user_id=uid,
-                event_type="today_question",
-                job_key_prefix=(
-                    f"today_question:{uid}:"
-                    f"{str(row.get('service_day_key') or '')}:"
-                    f"{str(row.get('question_id') or '')}:"
-                    f"{str(row.get('delivery_time_local') or '')}"
-                ),
-                priority=6,
-                chunk_size=1,
             )
-            if queued <= 0:
-                continue
+            send_status = str((send_res or {}).get("status") or "failed")
+            if send_status != "sent":
+                raise RuntimeError(f"today_question push send failed: status={send_status} result={send_res}")
             sent += 1
             await store.mark_push_delivered(
                 user_id=uid,

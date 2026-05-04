@@ -4,6 +4,7 @@ from __future__ import annotations
 """Top-level orchestration for EmlisAI reply rendering."""
 
 from copy import deepcopy
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +36,49 @@ from emotion_history_search_service import build_open_topic_anchor_candidates, e
 from input_feedback_text_templates import build_input_feedback_comment as render_fallback_input_feedback
 
 _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
+
+
+_EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
+
+
+def _naturalize_reply_line(line: Any) -> str:
+    text = str(line or "").strip()
+    if not text:
+        return ""
+    # 強度は表示文から除外する。内部metaには残して互換性を維持する。
+    text = _EMOTION_STRENGTH_DISPLAY_RE.sub(r"\1", text)
+    text = re.sub(
+        r"中心としては(.+?)を見ていますが、(.+?)もなかったことにせず一緒に受け取ります。?",
+        r"\1だけでなく、\2も一緒にあった入力として受け取ります。",
+        text,
+    )
+    text = re.sub(
+        r"(.+?かなぁ)のあと、(.+?したい)というところが残っていたのですね。?",
+        r"「\1」という不確かさと、「\2」という願いを、同じ流れとして見ています。",
+        text,
+    )
+    replacements = {
+        "というところが、今回いちばん残っていた言葉なのだと思います": "と書いてくれたところも、軽く扱わずに受け取ります",
+        "というところが残っていたのですね": "ことも、今回の流れの中にありました",
+        "という部分も、流さずに見ています": "ことも、今回の流れの中にありました",
+        "中心としては": "",
+        "もなかったことにせず一緒に受け取ります": "も一緒にあった入力として受け取ります",
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    text = text.replace("ですです", "です")
+    text = re.sub(r"になるです([。！？!?]|$)", r"になります\1", text)
+    text = re.sub(r"しているです([。！？!?]|$)", r"しています\1", text)
+    text = re.sub(r"だったです([。！？!?]|$)", r"でした\1", text)
+    text = re.sub(r"したです([。！？!?]|$)", r"しました\1", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _naturalize_reply_text(text: Any) -> str:
+    return "\n".join(
+        line for line in (_naturalize_reply_line(part) for part in str(text or "").splitlines()) if line
+    ).strip()
 
 
 def _now_iso_z() -> str:
@@ -345,8 +389,8 @@ def _project_working_user_model(
 
 
 def _render_comment_text_from_reply_lines(reply_lines: List[ReplyLine], *, greeting_text: str = "") -> str:
-    normalized = [str(greeting_text or "").strip()] if str(greeting_text or "").strip() else []
-    normalized.extend(str(line.text or "").strip() for line in reply_lines if str(line.text or "").strip())
+    normalized = [_naturalize_reply_line(greeting_text)] if str(greeting_text or "").strip() else []
+    normalized.extend(_naturalize_reply_line(line.text) for line in reply_lines if str(line.text or "").strip())
     return "\n".join(line for line in normalized if line).strip()
 
 
@@ -518,6 +562,7 @@ async def render_emlis_ai_reply(
             category=current_input.get("category") if isinstance(current_input.get("category"), list) else [],
             selection_seed=str(current_input.get("selection_seed") or current_input.get("created_at") or ""),
         )
+    comment_text = _naturalize_reply_text(comment_text)
 
     await _persist_working_user_model_best_effort(
         user_id=user_id,

@@ -59,14 +59,9 @@ def _join_labels(labels: List[str]) -> str:
     return "、".join(cleaned[:-1]) + "、そして" + cleaned[-1]
 
 
-def _emotion_label_with_strength(item) -> str:
-    label = str(getattr(item, "type", "") or "").strip()
-    strength_label = str(getattr(item, "strength_label", "") or "").strip()
-    if not label:
-        return ""
-    if label == "自己理解" or not strength_label:
-        return label
-    return f"{label}（{strength_label}）"
+def _emotion_display_label(item) -> str:
+    # 強度は内部判定には使うが、EmlisAIの表示文には出さない。
+    return str(getattr(item, "type", "") or "").strip()
 
 
 def _selected_emotion_text(world_model: WorldModel) -> str:
@@ -74,21 +69,15 @@ def _selected_emotion_text(world_model: WorldModel) -> str:
     if not selected:
         labels = list(world_model.facts.current_emotion_labels or [])
         return _join_labels(labels)
-    return "、".join(v for v in (_emotion_label_with_strength(item) for item in selected) if v)
+    return "、".join(v for v in (_emotion_display_label(item) for item in selected) if v)
 
 
 def _dominant_emotion_text(world_model: WorldModel) -> str:
     selected = list(world_model.facts.selected_emotions or [])
     dominant = next((item for item in selected if getattr(item, "role", "") == "dominant"), None)
     if dominant is not None:
-        return _emotion_label_with_strength(dominant)
-    dominant_label = str(world_model.facts.dominant_emotion or "").strip()
-    if not dominant_label:
-        return ""
-    strength = {"weak": "弱", "medium": "中", "strong": "強"}.get(str(world_model.facts.dominant_strength or "").strip().lower(), "")
-    if dominant_label == "自己理解" or not strength:
-        return dominant_label
-    return f"{dominant_label}（{strength}）"
+        return _emotion_display_label(dominant)
+    return str(world_model.facts.dominant_emotion or "").strip()
 
 
 def _anchor_by_role(anchors: List[UserWordAnchor], roles: set[str]) -> Optional[UserWordAnchor]:
@@ -150,39 +139,97 @@ def _anchor_reply_text(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
     return text
 
 
-def _event_after_text(event_text: str) -> str:
-    if event_text.endswith(("した", "だった", "あった")):
-        return f"{event_text}あと"
-    return f"{event_text}のあと"
+def _quote_anchor_text(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
+    return f"「{_anchor_reply_text(anchor, max_chars=max_chars)}」"
+
+
+def _nominalize_anchor_text(anchor_or_text, *, max_chars: int = 44) -> str:
+    if isinstance(anchor_or_text, UserWordAnchor):
+        text = _anchor_reply_text(anchor_or_text, max_chars=max_chars)
+    else:
+        text = _shorten_anchor_text(str(anchor_or_text or ""), max_chars=max_chars)
+    if not text:
+        return ""
+    if text.endswith("こと"):
+        return text
+    if text.endswith("もの"):
+        return text
+    return f"{text}こと"
+
+
+def _flow_clause(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
+    text = _anchor_reply_text(anchor, max_chars=max_chars)
+    if not text:
+        return ""
+    replacements = (
+        ("不安になる", "不安になって"),
+        ("不安になった", "不安になって"),
+        ("怖くなる", "怖くなって"),
+        ("苦しくなる", "苦しくなって"),
+        ("悲しくなる", "悲しくなって"),
+        ("気になる", "気になって"),
+    )
+    for src, dst in replacements:
+        if text.endswith(src):
+            return text[: -len(src)] + dst
+    if text.endswith("した"):
+        return f"{text}ことで"
+    if text.endswith(("だった", "あった", "いた", "いる")):
+        return f"{text}ことから"
+    return text
 
 
 def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
     if not anchors:
         return None
+    anxiety = _anchor_by_role(anchors, {"anxiety_condition"})
+    uncertainty = _anchor_by_role(anchors, {"uncertainty"})
+    wish = _anchor_by_role(anchors, {"wish", "need"})
     event = _anchor_by_role(anchors, {"event", "relationship"})
-    mismatch = _anchor_by_role(anchors, {"mismatch", "need", "unresolved"})
+    mismatch = _anchor_by_role(anchors, {"mismatch", "unresolved"})
     explicit = _anchor_by_role(anchors, {"explicit_emotion"})
     evidence: List[EvidenceRef] = []
 
-    if event and mismatch and event.text != mismatch.text:
-        event_text = _anchor_reply_text(event, max_chars=32)
-        mismatch_text = _anchor_reply_text(mismatch, max_chars=40)
-        if mismatch_text.endswith(("した", "った", "しまった", "いた")):
-            text = f"{_event_after_text(event_text)}、{mismatch_text}のですね。"
+    if anxiety and (uncertainty or wish):
+        flow = _flow_clause(anxiety, max_chars=36) or _anchor_reply_text(anxiety, max_chars=36)
+        quoted = [
+            _quote_anchor_text(item, max_chars=30)
+            for item in (uncertainty, wish)
+            if item is not None and item.text != anxiety.text
+        ]
+        joined = "や".join(quoted)
+        if joined:
+            text = f"{flow}、{joined}ということまで考えが向いていたのですね。"
         else:
-            text = f"{_event_after_text(event_text)}、{mismatch_text}というところが残っていたのですね。"
+            text = f"{flow}いたことを、まずそのまま受け取りました。"
+        evidence = [*anxiety.evidence]
+        if uncertainty is not None:
+            evidence.extend(uncertainty.evidence)
+        if wish is not None:
+            evidence.extend(wish.evidence)
+    elif event and mismatch and event.text != mismatch.text:
+        event_text = _nominalize_anchor_text(event, max_chars=32)
+        mismatch_text = _nominalize_anchor_text(mismatch, max_chars=40)
+        text = f"{event_text}と、{mismatch_text}が、同じ流れの中にありました。"
         evidence = [*event.evidence, *mismatch.evidence]
+    elif anxiety:
+        flow = _flow_clause(anxiety, max_chars=44)
+        if flow.endswith("て"):
+            text = f"{flow}いたことを、まずそのまま受け取りました。"
+        else:
+            text = f"{_nominalize_anchor_text(anxiety, max_chars=44)}を、まずそのまま受け取りました。"
+        evidence = list(anxiety.evidence)
     elif event:
-        event_text = _anchor_reply_text(event, max_chars=44)
-        text = f"{event_text}という出来事を、まずそのまま受け取りました。"
+        event_text = _nominalize_anchor_text(event, max_chars=44)
+        text = f"{event_text}を、まずそのまま受け取りました。"
         evidence = list(event.evidence)
     elif mismatch:
-        mismatch_text = _anchor_reply_text(mismatch, max_chars=44)
-        text = f"{mismatch_text}というところが、今回の中で大事に見えます。"
+        mismatch_text = _nominalize_anchor_text(mismatch, max_chars=44)
+        text = f"{mismatch_text}を、今回の大事な流れとして見ています。"
         evidence = list(mismatch.evidence)
     elif explicit:
-        explicit_text = _shorten_anchor_text(explicit.text, max_chars=44)
-        text = f"「{explicit_text}」という言葉を、そのまま大事なところとして受け取りました。"
+        explicit_text = _quote_anchor_text(explicit, max_chars=44)
+        text = f"{explicit_text}と書いてくれたことを、そのまま大事に受け取りました。"
         evidence = list(explicit.evidence)
     else:
         first = anchors[0]
@@ -204,10 +251,27 @@ def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[Observat
 
 
 def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
+    uncertainty = _anchor_by_role(anchors, {"uncertainty"})
+    wish = _anchor_by_role(anchors, {"wish", "need"})
+    if uncertainty is not None and wish is not None and uncertainty.text != wish.text:
+        text = f"{_quote_anchor_text(uncertainty, max_chars=34)}という不確かさと、{_quote_anchor_text(wish, max_chars=34)}という願いを、同じ流れとして見ています。"
+        return ObservationCandidate(
+            candidate_key="word_reflection.uncertainty_wish",
+            kind="word_reflection",
+            text=text,
+            evidence=[*uncertainty.evidence, *wish.evidence],
+            confidence=0.91,
+            recency_score=1.0,
+            alignment_score=0.93,
+            overclaim_risk=0.05,
+            source_layers=["canonical_history"],
+            notes={"source": "user_word_anchor", "role": "uncertainty_wish"},
+        )
+
     explicit = _anchor_by_role(anchors, {"explicit_emotion"})
     if explicit is None:
         return None
-    text = f"「{_shorten_anchor_text(explicit.text, max_chars=52)}」というところが、今回いちばん残っていた言葉なのだと思います。"
+    text = f"{_quote_anchor_text(explicit, max_chars=52)}と書いてくれたところも、軽く扱わずに受け取ります。"
     return ObservationCandidate(
         candidate_key="word_reflection.explicit_emotion",
         kind="word_reflection",
@@ -223,16 +287,31 @@ def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor]) -> Optional[
 
 
 def _compose_secondary_anchor(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
-    # Keep this as an extra nuance line only.  The overview / explicit-emotion
-    # lines already use event, mismatch, and explicit emotion anchors, so repeating
-    # those makes the reply feel templated rather than attentive.
-    priority = ["need", "unresolved", "relationship"]
-    overview_roles = {"event", "mismatch", "explicit_emotion"}
-    for role in priority:
+    # 行動内容は、思考内容と無理に因果でつながず、入力された行動として受け取る。
+    action = next((anchor for anchor in anchors if anchor.role == "action" or anchor.source_field == "memo_action"), None)
+    if action is not None:
+        text = f"{_nominalize_anchor_text(action, max_chars=42)}も、今回の行動として一緒に受け取りました。"
+        return ObservationCandidate(
+            candidate_key="word_reflection.action",
+            kind="word_reflection",
+            text=text,
+            evidence=list(action.evidence),
+            confidence=0.86,
+            recency_score=1.0,
+            alignment_score=0.86,
+            overclaim_risk=0.04,
+            source_layers=["canonical_history"],
+            notes={"source": "user_word_anchor", "role": action.role},
+        )
+
+    for role in ("wish", "need", "unresolved", "relationship"):
         for anchor in anchors:
-            if anchor.role != role or anchor.role in overview_roles:
+            if anchor.role != role:
                 continue
-            text = f"{_shorten_anchor_text(anchor.text, max_chars=48)}という部分も、流さずに見ています。"
+            if role in {"wish", "need"}:
+                text = f"{_quote_anchor_text(anchor, max_chars=40)}という願いも、今回の言葉の中にありました。"
+            else:
+                text = f"{_nominalize_anchor_text(anchor, max_chars=42)}も、今回の流れの中にありました。"
             return ObservationCandidate(
                 candidate_key=f"word_reflection.{role}",
                 kind="word_reflection",
@@ -246,7 +325,6 @@ def _compose_secondary_anchor(anchors: List[UserWordAnchor]) -> Optional[Observa
                 notes={"source": "user_word_anchor", "role": role},
             )
     return None
-
 
 def _compose_emotion_response(world_model: WorldModel, anchors: List[UserWordAnchor]) -> ObservationCandidate:
     facts = world_model.facts
@@ -301,11 +379,11 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
         return None
     dominant = next((item for item in selected if getattr(item, "role", "") == "dominant"), selected[0])
     secondary = [item for item in selected if item is not dominant]
-    secondary_text = "、".join(v for v in (_emotion_label_with_strength(item) for item in secondary) if v)
-    dominant_text = _emotion_label_with_strength(dominant)
+    secondary_text = _join_labels([v for v in (_emotion_display_label(item) for item in secondary) if v])
+    dominant_text = _emotion_display_label(dominant)
     if not secondary_text or not dominant_text:
         return None
-    text = f"中心としては{dominant_text}を見ていますが、{secondary_text}もなかったことにせず一緒に受け取ります。"
+    text = f"{dominant_text}だけでなく、{secondary_text}も一緒にあった入力として受け取ります。"
     return ObservationCandidate(
         candidate_key="selected_emotions.all",
         kind="selected_emotions",
