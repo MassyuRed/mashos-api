@@ -69,7 +69,7 @@ async def sb_get_json(path: str, *, params: Dict[str, str]) -> List[Dict[str, An
     resp = await sb_get(path, params=params)
     if resp.status_code >= 300:
         logger.error("Supabase GET failed: %s %s", resp.status_code, (resp.text or "")[:1200])
-        raise HTTPException(status_code=502, detail="Failed to load Piece artifacts")
+        raise HTTPException(status_code=502, detail="ピースの読み込みに失敗しました")
     try:
         data = resp.json()
     except Exception:
@@ -445,7 +445,7 @@ async def delete_generated_piece_row(
             resp.status_code,
             (resp.text or "")[:1200],
         )
-        raise HTTPException(status_code=502, detail="Failed to delete Piece")
+        raise HTTPException(status_code=502, detail="ピースを削除できませんでした")
     try:
         rows = resp.json()
     except Exception:

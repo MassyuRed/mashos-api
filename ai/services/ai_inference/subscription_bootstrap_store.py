@@ -15,13 +15,13 @@ PLAN_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PLAN_CATALOG_TABLE") or "subscript
 ALIASES_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PRODUCT_ALIASES_TABLE") or "subscription_product_aliases").strip() or "subscription_product_aliases"
 IOS_MANAGE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
-PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / Piece作成拡張"
-PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / Piece作成無制限"
+PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / ピース生成拡張"
+PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / ピース生成無制限"
 PREMIUM_CANONICAL_FEATURES = [
     "履歴全般：表示期間無制限",
     "Analysis：感情構造分析レポートがさらに深くなります",
     "Analysis：自己構造分析レポートがさらに深くなります",
-    "Piece：今月の作成回数が無制限です",
+    "ピース：今月の生成回数が無制限です",
 ]
 
 
@@ -197,9 +197,14 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
         .replace("Premium会員", "Premiumプラン")
         .replace("MyModelCreate", "ProfileCreate")
         .replace("ReflectionCreate", "ProfileCreate")
-        .replace("Reflections", "Piece")
-        .replace("Reflection", "Piece")
-        .replace("MyModel", "Piece画面")
+        .replace("Reflections", "ピース")
+        .replace("Reflection", "ピース")
+        .replace("Piece", "ピース")
+        .replace("ピース作成", "ピース生成")
+        .replace("ピースの作成", "ピースの生成")
+        .replace("ピースを作成", "ピースを生成")
+        .replace("作成回数", "生成回数")
+        .replace("MyModel", "ピース画面")
         .replace("MyWeb", "Analysis")
     )
 
@@ -392,13 +397,13 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Plusプラン",
             "price_label": "月額300円",
-            "subtitle": "レポート閲覧 / Piece作成拡張",
+            "subtitle": "レポート閲覧 / ピース生成拡張",
             "features": [
                 "履歴全般：表示期間１年",
                 "Analysis：感情構造分析レポートが深くなります",
                 "Analysis：自己構造分析レポートを閲覧できます",
                 "Analysis：今日の問いを履歴から編集できます",
-                "Piece：今月30回まで作成できます",
+                "ピース：今月30回まで生成できます",
             ],
             "note_lines": [
                 "月額300円で自動更新されます。",
@@ -429,12 +434,12 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Premiumプラン",
             "price_label": "月額980円",
-            "subtitle": "表示期間無制限 / 深いレポート / Piece作成無制限",
+            "subtitle": "表示期間無制限 / 深いレポート / ピース生成無制限",
             "features": [
                 "履歴全般：表示期間無制限",
                 "Analysis：感情構造分析レポートがさらに深くなります",
                 "Analysis：自己構造分析レポートがさらに深くなります",
-                "Piece：今月の作成回数が無制限です",
+                "ピース：今月の生成回数が無制限です",
             ],
             "note_lines": [
                 "月額980円で自動更新されます。",

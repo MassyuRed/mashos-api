@@ -72,7 +72,7 @@ def _quota() -> Dict[str, Any]:
         "remaining_count": 5,
         "is_unlimited": False,
         "can_publish": True,
-        "display_text": "今月のPiece作成回数：Freeの５回",
+        "display_text": "今月のピース生成回数：Freeの５回",
     }
 
 

@@ -418,20 +418,20 @@ async def delete_nexus_piece_payload(
     if not iid:
         raise HTTPException(status_code=400, detail="q_instance_id is required")
     if not is_generated_reflection_instance_id(iid):
-        raise HTTPException(status_code=404, detail="Piece not found")
+        raise HTTPException(status_code=404, detail="ピースが見つかりません")
 
     row = await fetch_emotion_generated_row_by_instance_id(iid)
     if not row:
-        raise HTTPException(status_code=404, detail="Piece not found")
+        raise HTTPException(status_code=404, detail="ピースが見つかりません")
     owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
     if not owner_user_id:
-        raise HTTPException(status_code=404, detail="Piece not found")
+        raise HTTPException(status_code=404, detail="ピースが見つかりません")
     if owner_user_id != viewer_id:
-        raise HTTPException(status_code=403, detail="Only your own Piece can be deleted")
+        raise HTTPException(status_code=403, detail="自分のピースだけ削除できます")
 
     row_id = str((row or {}).get("id") or "").strip()
     if not row_id:
-        raise HTTPException(status_code=404, detail="Piece not found")
+        raise HTTPException(status_code=404, detail="ピースが見つかりません")
 
     canonical_iid = generated_public_id(row) or iid
     deleted = await delete_generated_piece_row(
@@ -440,7 +440,7 @@ async def delete_nexus_piece_payload(
         source_type=EMOTION_GENERATED_SOURCE_TYPE,
     )
     if not deleted:
-        raise HTTPException(status_code=404, detail="Piece not found")
+        raise HTTPException(status_code=404, detail="ピースが見つかりません")
 
     cleanup_ids: Set[str] = set(generated_lookup_values(iid))
     cleanup_ids.update(generated_lookup_values(canonical_iid))

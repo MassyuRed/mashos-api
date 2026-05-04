@@ -1248,7 +1248,7 @@ async def _ensure_piece_resonance_allowed(*, viewer_user_id: str, target_user_id
     if target not in followed_owner_ids:
         raise HTTPException(
             status_code=403,
-            detail="Resonance is only available for followed users' Pieces",
+            detail="フォローしているユーザーのピースにのみ共鳴できます",
         )
 
 

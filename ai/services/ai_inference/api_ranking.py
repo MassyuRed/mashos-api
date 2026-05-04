@@ -839,7 +839,7 @@ def register_ranking_routes(app: FastAPI) -> None:
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
         await _require_user_id(authorization)
-        raise HTTPException(status_code=410, detail="Piece question ranking is no longer available")
+        raise HTTPException(status_code=410, detail="ピースの質問ランキングは利用できません")
     @app.get("/ranking/mymodel_used")
     async def ranking_mymodel_used(
         range: str = Query(default="week"),

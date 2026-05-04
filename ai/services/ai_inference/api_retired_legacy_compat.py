@@ -38,8 +38,8 @@ def register_retired_legacy_compat_routes(app: FastAPI) -> None:
 
     @app.get("/ranking/mymodel_questions")
     async def ranking_piece_questions_retired() -> Any:
-        raise _gone("Piece question ranking is no longer available")
+        raise _gone("ピースの質問ランキングは利用できません")
 
     @app.get("/ranking/mymodel_discoveries")
     async def ranking_piece_discoveries_retired() -> Any:
-        raise _gone("Piece discoveries ranking is no longer available")
+        raise _gone("ピースの発見ランキングは利用できません")
