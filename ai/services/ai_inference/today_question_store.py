@@ -50,6 +50,8 @@ class TodayQuestionCurrentBundle:
     answer: Optional[Dict[str, Any]]
     settings: Dict[str, Any]
     progress: Dict[str, Any]
+    release_status: str = "released"
+    release_time_local: Optional[str] = None
 
 
 @dataclass
@@ -59,6 +61,8 @@ class TodayQuestionStatusBundle:
     answer: Optional[Dict[str, Any]]
     settings: Dict[str, Any]
     progress: Dict[str, Any]
+    release_status: str = "released"
+    release_time_local: Optional[str] = None
 
 
 def _now_utc() -> datetime:
@@ -146,6 +150,15 @@ def _hidden_until_delivery_progress(*, total_count: int, progress_row: Optional[
         total_count=max(_safe_int(total_count, 0), 0),
         current_presented_local_date=str(row.get("current_presented_local_date") or "").strip() or None,
     )
+
+
+def _delivery_time_from_settings(settings: Mapping[str, Any]) -> str:
+    settings_map = settings if isinstance(settings, Mapping) else {}
+    return _normalize_delivery_time_local(settings_map.get("delivery_time_local"))
+
+
+def _hidden_release_time_from_settings(settings: Mapping[str, Any]) -> str:
+    return _delivery_time_from_settings(settings)
 
 
 def _parse_jsonish(value: Any, default: Any) -> Any:
@@ -961,6 +974,8 @@ class TodayQuestionStore:
                 answer=None,
                 settings=settings,
                 progress=_hidden_until_delivery_progress(total_count=total_count, progress_row=progress_row),
+                release_status="locked_until_delivery",
+                release_time_local=_hidden_release_time_from_settings(settings),
             )
 
         if today_answer:
@@ -1058,6 +1073,8 @@ class TodayQuestionStore:
                 answer=None,
                 settings=settings,
                 progress=_hidden_until_delivery_progress(total_count=total_count, progress_row=progress_row),
+                release_status="locked_until_delivery",
+                release_time_local=_hidden_release_time_from_settings(settings),
             )
 
         if today_answer:

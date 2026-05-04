@@ -82,6 +82,10 @@ class TodayQuestionCurrentResponse(BaseModel):
     answer_summary: Optional[TodayQuestionAnswerSummary] = None
     delivery: Dict[str, Any] = Field(default_factory=dict)
     progress: Dict[str, Any] = Field(default_factory=dict)
+    has_current_question: bool = False
+    release_status: str = "released"
+    release_time_local: Optional[str] = None
+    release_message: Optional[str] = None
 
 
 class TodayQuestionStatusQuestion(BaseModel):
@@ -102,6 +106,9 @@ class TodayQuestionStatusResponse(BaseModel):
     has_current_question: bool = False
     should_prompt: bool = False
     is_answered_today: bool = False
+    release_status: str = "released"
+    release_time_local: Optional[str] = None
+    release_message: Optional[str] = None
 
 
 class TodayQuestionAnswerCreateRequest(BaseModel):
@@ -208,6 +215,15 @@ def _require_today_question_cron_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def _today_question_release_message(release_status: str, release_time_local: Optional[str]) -> Optional[str]:
+    if str(release_status or "") != "locked_until_delivery":
+        return None
+    time_label = str(release_time_local or "").strip()
+    if time_label:
+        return f"今日の問いは{time_label}に届きます。"
+    return "今日の問いは通知時刻に届きます。"
+
+
 async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[datetime] = None) -> TodayQuestionPushResponse:
     current_utc = now_utc or datetime.now(timezone.utc)
     candidates = await store.list_due_push_candidates(now_utc=current_utc, limit=limit)
@@ -312,6 +328,9 @@ async def get_today_question_current_payload_for_user(
     async def _build_payload() -> Dict[str, Any]:
         bundle = await store.fetch_current_bundle(uid, timezone_name=timezone_name)
         answer_summary = _answer_summary(bundle.answer)
+        release_status = str(getattr(bundle, "release_status", "released") or "released")
+        release_time_local = getattr(bundle, "release_time_local", None)
+        has_current_question = bool(bundle.question) or release_status == "locked_until_delivery"
         response = TodayQuestionCurrentResponse(
             service_day_key=bundle.service_day_key,
             question=bundle.question,
@@ -319,6 +338,10 @@ async def get_today_question_current_payload_for_user(
             answer_summary=answer_summary,
             delivery=bundle.settings,
             progress=bundle.progress,
+            has_current_question=has_current_question,
+            release_status=release_status,
+            release_time_local=release_time_local,
+            release_message=_today_question_release_message(release_status, release_time_local),
         )
         return jsonable_encoder(response)
 
@@ -339,7 +362,9 @@ async def get_today_question_status_payload_for_user(
     async def _build_payload() -> Dict[str, Any]:
         bundle = await store.fetch_status_bundle(uid, timezone_name=timezone_name)
         is_answered_today = bool(bundle.answer)
-        has_current_question = bool(bundle.question) or is_answered_today
+        release_status = str(getattr(bundle, "release_status", "released") or "released")
+        release_time_local = getattr(bundle, "release_time_local", None)
+        has_current_question = bool(bundle.question) or is_answered_today or release_status == "locked_until_delivery"
         response = TodayQuestionStatusResponse(
             service_day_key=bundle.service_day_key,
             question=bundle.question,
@@ -348,8 +373,11 @@ async def get_today_question_status_payload_for_user(
             delivery=bundle.settings,
             progress=bundle.progress,
             has_current_question=has_current_question,
-            should_prompt=bool(has_current_question and not is_answered_today),
+            should_prompt=bool(bundle.question and not is_answered_today),
             is_answered_today=is_answered_today,
+            release_status=release_status,
+            release_time_local=release_time_local,
+            release_message=_today_question_release_message(release_status, release_time_local),
         )
         return jsonable_encoder(response)
 
