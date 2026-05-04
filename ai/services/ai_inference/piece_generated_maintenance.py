@@ -6,10 +6,9 @@ Backfill / cleanup helpers for Premium generated reflections.
 Goals
 -----
 - persist generated display bundles for existing rows
-- remove inactive archived clones that are exact duplicates of a kept row
-- optionally archive active duplicates when the question + normalized display are identical
-- report unresolved "same question, multiple different answers" groups so the next
-  stable-topic work can target them explicitly
+- retain duplicate-looking generated rows instead of archiving/deleting them
+- retain same-q_key active rows so the user can decide which pieces to post
+- report same-question groups only as diagnostics, without cleanup side effects
 
 This module intentionally stays deterministic and admin-task oriented.
 It does not change the public API contract.
@@ -227,107 +226,66 @@ def plan_generated_reflection_duplicate_cleanup(
     *,
     archive_active_duplicates: bool = True,
 ) -> List[GeneratedCleanupAction]:
+    """Plan duplicate cleanup without suppressing any generated piece.
+
+    The previous maintenance pass deleted inactive exact clones and could archive
+    active duplicates.  That made generation appear to fail when users entered
+    similar content.  The current policy is diagnostic-only: exact duplicates are
+    recognized, but every row is retained.
+    """
+    _ = archive_active_duplicates
     grouped: Dict[Tuple[str, str, str], List[Mapping[str, Any]]] = {}
+    row_hash_by_id: Dict[str, str] = {}
+
     for row in rows or []:
         if str((row or {}).get("source_type") or "").strip() != "generated":
             continue
         owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
         question = str((row or {}).get("question") or "").strip()
         q_key = _row_generated_q_key(row)
-        if not owner_user_id or not q_key or not question:
+        rid = _row_id(dict(row or {}))
+        if not owner_user_id or not q_key or not question or not rid:
             continue
         display_result = resolve_generated_reflection_display(row)
         answer_norm_hash = str(getattr(display_result, "answer_norm_hash", "") or "").strip()
         if not answer_norm_hash:
             continue
-        key = (
-            owner_user_id,
-            q_key,
-            answer_norm_hash,
-        )
-        grouped.setdefault(key, []).append(dict(row or {}))
+        row_hash_by_id[rid] = answer_norm_hash
+        grouped.setdefault((owner_user_id, q_key, answer_norm_hash), []).append(dict(row or {}))
+
+    duplicated_ids = {
+        _row_id(dict(row or {}))
+        for group_rows in grouped.values()
+        if len(group_rows) > 1
+        for row in group_rows
+        if _row_id(dict(row or {}))
+    }
 
     actions: List[GeneratedCleanupAction] = []
-    for (owner_user_id, q_key, answer_norm_hash), group_rows in grouped.items():
-        question = str((group_rows[0] or {}).get("question") or "").strip()
-        if len(group_rows) <= 1:
-            only = group_rows[0]
-            actions.append(
-                GeneratedCleanupAction(
-                    action="keep",
-                    reflection_id=_row_id(only),
-                    reason="unique_group",
-                    owner_user_id=owner_user_id,
-                    q_key=q_key,
-                    question=question,
-                    answer_norm_hash=answer_norm_hash,
-                    is_active=bool(only.get("is_active")),
-                    public_id=_row_public_id(only),
-                )
-            )
+    for row in rows or []:
+        if str((row or {}).get("source_type") or "").strip() != "generated":
             continue
-
-        ordered = sorted(group_rows, key=_sort_desc_key, reverse=True)
-        keeper = ordered[0]
-        keeper_id = _row_id(keeper)
+        rid = _row_id(dict(row or {}))
+        owner_user_id = str((row or {}).get("owner_user_id") or "").strip()
+        question = str((row or {}).get("question") or "").strip()
+        q_key = _row_generated_q_key(row)
+        if not rid or not owner_user_id or not q_key or not question:
+            continue
+        answer_norm_hash = row_hash_by_id.get(rid) or str(getattr(resolve_generated_reflection_display(row), "answer_norm_hash", "") or "").strip()
         actions.append(
             GeneratedCleanupAction(
                 action="keep",
-                reflection_id=keeper_id,
-                reason="duplicate_group_keeper",
+                reflection_id=rid,
+                reason="duplicate_retained_by_user_choice" if rid in duplicated_ids else "unique_group",
                 owner_user_id=owner_user_id,
                 q_key=q_key,
                 question=question,
                 answer_norm_hash=answer_norm_hash,
-                is_active=bool(keeper.get("is_active")),
-                public_id=_row_public_id(keeper),
+                is_active=bool((row or {}).get("is_active")),
+                public_id=_row_public_id(dict(row or {})),
             )
         )
-
-        for row in ordered[1:]:
-            rid = _row_id(row)
-            if not rid:
-                continue
-            if _row_locked(dict(row)):
-                actions.append(
-                    GeneratedCleanupAction(
-                        action="protected",
-                        reflection_id=rid,
-                        reason="duplicate_but_locked",
-                        owner_user_id=owner_user_id,
-                        q_key=q_key,
-                        question=question,
-                        answer_norm_hash=answer_norm_hash,
-                        is_active=bool(row.get("is_active")),
-                        public_id=_row_public_id(row),
-                    )
-                )
-                continue
-            is_active = bool(row.get("is_active"))
-            if is_active and archive_active_duplicates:
-                action = "archive"
-                reason = "archive_exact_active_duplicate"
-            elif is_active:
-                action = "protected"
-                reason = "active_duplicate_left_in_place"
-            else:
-                action = "delete"
-                reason = "delete_inactive_duplicate_clone"
-            actions.append(
-                GeneratedCleanupAction(
-                    action=action,
-                    reflection_id=rid,
-                    reason=reason,
-                    owner_user_id=owner_user_id,
-                    q_key=q_key,
-                    question=question,
-                    answer_norm_hash=answer_norm_hash,
-                    is_active=is_active,
-                    public_id=_row_public_id(row),
-                )
-            )
     return actions
-
 
 
 def summarize_unresolved_question_multi_answer_groups(
@@ -385,6 +343,12 @@ def summarize_unresolved_question_multi_answer_groups(
 def plan_generated_reflection_latest_qkey_cleanup(
     rows: Sequence[Mapping[str, Any]],
 ) -> List[GeneratedCleanupAction]:
+    """Keep every active generated row even when q_key is shared.
+
+    Same question keys can happen naturally when users express similar thoughts.
+    They should remain visible; posting/deletion is a user decision, not a
+    maintenance decision.
+    """
     grouped: Dict[Tuple[str, str], List[Mapping[str, Any]]] = {}
     for row in rows or []:
         if str((row or {}).get("source_type") or "").strip() != "generated":
@@ -403,57 +367,25 @@ def plan_generated_reflection_latest_qkey_cleanup(
 
     actions: List[GeneratedCleanupAction] = []
     for (owner, q_key), items in grouped.items():
-        ordered = sorted(items, key=_sort_desc_key, reverse=True)
-        keeper = ordered[0]
-        keeper_id = _row_id(dict(keeper or {}))
-        keeper_question = str((keeper or {}).get("question") or "").strip()
-        actions.append(
-            GeneratedCleanupAction(
-                action="keep",
-                reflection_id=keeper_id,
-                reason="latest_qkey_keeper",
-                owner_user_id=owner,
-                q_key=q_key,
-                question=keeper_question,
-                answer_norm_hash=str(getattr(resolve_generated_reflection_display(keeper), "answer_norm_hash", "") or "").strip(),
-                is_active=bool((keeper or {}).get("is_active")),
-                public_id=_row_public_id(dict(keeper or {})),
-            )
-        )
-        for row in ordered[1:]:
+        reason = "same_qkey_retained_by_user_choice" if len(items) > 1 else "single_qkey_row"
+        for row in sorted(items, key=_sort_desc_key, reverse=True):
             rid = _row_id(dict(row or {}))
             if not rid:
                 continue
-            if _row_locked(dict(row or {})):
-                actions.append(
-                    GeneratedCleanupAction(
-                        action="protected",
-                        reflection_id=rid,
-                        reason="latest_qkey_but_locked",
-                        owner_user_id=owner,
-                        q_key=q_key,
-                        question=str((row or {}).get("question") or keeper_question).strip(),
-                        answer_norm_hash=str(getattr(resolve_generated_reflection_display(row), "answer_norm_hash", "") or "").strip(),
-                        is_active=bool((row or {}).get("is_active")),
-                        public_id=_row_public_id(dict(row or {})),
-                    )
-                )
-                continue
             actions.append(
                 GeneratedCleanupAction(
-                    action="archive",
+                    action="keep",
                     reflection_id=rid,
-                    reason="archive_noncanonical_latest_qkey",
+                    reason=reason,
                     owner_user_id=owner,
                     q_key=q_key,
-                    question=str((row or {}).get("question") or keeper_question).strip(),
+                    question=str((row or {}).get("question") or "").strip(),
                     answer_norm_hash=str(getattr(resolve_generated_reflection_display(row), "answer_norm_hash", "") or "").strip(),
                     is_active=bool((row or {}).get("is_active")),
                     public_id=_row_public_id(dict(row or {})),
                 )
             )
     return actions
-
 
 
 def _merge_cleanup_actions(*action_groups: Sequence[GeneratedCleanupAction]) -> List[GeneratedCleanupAction]:
@@ -552,38 +484,16 @@ async def apply_generated_cleanup_actions(
     *,
     allow_delete: bool = False,
 ) -> Dict[str, List[str]]:
-    archived_ids: List[str] = []
-    deleted_ids: List[str] = []
-    for action in actions or []:
-        rid = str(action.reflection_id or "").strip()
-        if not rid:
-            continue
-        if action.action == "archive":
-            await _sb_patch_json(
-                f"/rest/v1/{REFLECTIONS_TABLE}",
-                params=[("id", f"eq.{rid}")],
-                json_body={
-                    "status": "archived",
-                    "is_active": False,
-                    "published_at": None,
-                },
-                timeout=10.0,
-                prefer="return=minimal",
-            )
-            archived_ids.append(rid)
-        elif action.action == "delete":
-            if not allow_delete:
-                continue
-            await _sb_delete(
-                f"/rest/v1/{REFLECTIONS_TABLE}",
-                params=[("id", f"eq.{rid}")],
-                timeout=10.0,
-                prefer="return=minimal",
-            )
-            deleted_ids.append(rid)
+    """Apply cleanup actions without deleting/archiving generated duplicates.
+
+    Backfill remains allowed elsewhere, but duplicate/q_key cleanup is now
+    retention-only.  This guard also prevents old saved cleanup plans from
+    archiving rows if they are accidentally replayed.
+    """
+    _ = (actions, allow_delete)
     return {
-        "archived_ids": archived_ids,
-        "deleted_ids": deleted_ids,
+        "archived_ids": [],
+        "deleted_ids": [],
     }
 
 
@@ -657,10 +567,10 @@ async def run_generated_reflection_backfill_cleanup(
         for reason in [x.strip() for x in str(plan.reason or "").split(",") if x.strip()]:
             backfill_reason_counts[reason] = int(backfill_reason_counts.get(reason) or 0) + 1
 
-    canonicalized_group_ids = {
+    retained_same_qkey_group_ids = {
         f"{a.owner_user_id}:{a.q_key}"
         for a in latest_qkey_cleanup_actions
-        if a.action in {"keep", "archive", "protected"}
+        if a.reason == "same_qkey_retained_by_user_choice"
     }
 
     return {
@@ -680,8 +590,9 @@ async def run_generated_reflection_backfill_cleanup(
             "applied_archive_count": len(applied_cleanup.get("archived_ids") or []),
             "applied_delete_count": len(applied_cleanup.get("deleted_ids") or []),
             "counts": cleanup_counts,
-            "canonicalized_qkey_group_count": len(canonicalized_group_ids),
-            "archived_noncanonical_count": len([a for a in cleanup_actions if a.reason == "archive_noncanonical_latest_qkey"]),
+            "canonicalized_qkey_group_count": 0,
+            "retained_same_qkey_group_count": len(retained_same_qkey_group_ids),
+            "archived_noncanonical_count": 0,
             "remaining_multi_active_qkey_count": len(unresolved_groups),
             "sample_actions": [
                 {

@@ -31,8 +31,8 @@ Reflection Engine が返した generation plan を、`public.mymodel_reflections
 - generated reflections のみを扱う
 - stage 保存は `status=draft`, `is_active=false`
 - update は上書きではなく staged row を新規作成する
-- inspection pass 時に新 row を `ready + active` にし、旧 active row を archive する
-- topic 不在は即 `archived + inactive`
+- inspection pass 時に新 row を `ready + active` にする
+- 同一・類似内容や同一 question/q_key を理由に既存 row を archive / skip しない
 - active 上限は generated reflections に対してのみ適用する
 """
 
@@ -513,28 +513,13 @@ async def _maybe_skip_same_as_active(
     proposal_display_result: Any,
     previous_reflection_id: Optional[str],
 ) -> Optional[Dict[str, Any]]:
-    active_rows = await _fetch_active_generated_public_group_rows(
-        user_id=user_id,
-        q_key=q_key,
-        question=question,
-        exclude_id=str(previous_reflection_id or "").strip() or None,
-    )
-    proposal_question = str(question or "").strip()
-    proposal_hash = str(getattr(proposal_display_result, "answer_norm_hash", "") or "").strip()
-    if not proposal_question or not proposal_hash:
-        return None
+    """Do not suppress a proposal just because an active generated row looks the same.
 
-    for active_row in active_rows:
-        active_question = str((active_row or {}).get("question") or "").strip()
-        if active_question != proposal_question:
-            continue
-        active_display_result = resolve_generated_reflection_display(active_row)
-        active_hash = str(getattr(active_display_result, "answer_norm_hash", "") or "").strip()
-        if active_hash and active_hash == proposal_hash:
-            return _skip_same_as_active_marker(
-                active_row=active_row,
-                answer_norm_hash=proposal_hash,
-            )
+    The product policy is to surface every generated candidate and leave the
+    posting decision to the user.  Keep the function as a compatibility seam for
+    older callers, but intentionally never return the legacy skip marker.
+    """
+    _ = (user_id, q_key, question, proposal_display_result, previous_reflection_id)
     return None
 
 
@@ -690,34 +675,16 @@ async def _stage_update(*, user_id: str, proposal: Dict[str, Any]) -> Dict[str, 
 
 
 async def _apply_deactivates(*, user_id: str, deactivates: Sequence[Dict[str, Any]]) -> List[str]:
-    uid = str(user_id or "").strip()
-    out: List[str] = []
-    if not uid:
-        return out
+    """Keep generated rows visible even when a plan reports duplicate/similar deactivates.
 
-    for item in deactivates or []:
-        rid = str((item or {}).get("reflection_id") or "").strip()
-        if not rid:
-            continue
-        rows = await _sb_patch_json(
-            f"/rest/v1/{REFLECTIONS_TABLE}",
-            params=[
-                ("id", f"eq.{rid}"),
-                ("owner_user_id", f"eq.{uid}"),
-                ("source_type", "eq.generated"),
-                ("is_active", "eq.true"),
-            ],
-            json_body={
-                "status": "archived",
-                "is_active": False,
-                "published_at": None,
-            },
-            timeout=8.0,
-            prefer="return=representation",
-        )
-        if rows:
-            out.extend([_row_id(r) for r in rows if _row_id(r)])
-    return out
+    Older generation plans could request that existing generated rows be archived
+    when a new row used the same q_key/topic, or when a near-duplicate was found.
+    That behavior made pieces disappear for reasons the user could not see.
+    Deactivation requests from this path are therefore retained only as input
+    metadata and are not applied.
+    """
+    _ = (user_id, deactivates)
+    return []
 
 
 async def stage_generation_plan(
@@ -861,38 +828,12 @@ async def promote_reflection(
 
     uid = str(row.get("owner_user_id") or "").strip()
     topic_key = str(row.get("topic_key") or "").strip()
-    question = str(row.get("question") or "").strip()
     q_key = _row_q_key(row)
     rid = _row_id(row)
     if not uid or not topic_key or not rid:
         raise ValueError("reflection row missing owner/topic/id")
     if str(row.get("source_type") or "") != "generated":
         raise ValueError("promote_reflection only supports generated reflections")
-
-    previous_rows = await _fetch_active_generated_public_group_rows(
-        user_id=uid,
-        q_key=q_key,
-        question=question,
-        exclude_id=rid,
-    )
-
-    previous_ids: List[str] = []
-    for prev in previous_rows:
-        pid = _row_id(prev)
-        if not pid:
-            continue
-        previous_ids.append(pid)
-        await _sb_patch_json(
-            f"/rest/v1/{REFLECTIONS_TABLE}",
-            params=[("id", f"eq.{pid}")],
-            json_body={
-                "status": "archived",
-                "is_active": False,
-                "published_at": None,
-            },
-            timeout=8.0,
-            prefer="return=minimal",
-        )
 
     promoted_rows = await _sb_patch_json(
         f"/rest/v1/{REFLECTIONS_TABLE}",
@@ -907,37 +848,14 @@ async def promote_reflection(
     )
     promoted = promoted_rows[0] if promoted_rows else row
 
-    post_rows = await _fetch_active_generated_public_group_rows(
-        user_id=uid,
-        q_key=q_key,
-        question=question,
-        exclude_id=None,
-    )
-    ordered_post_rows = sorted(post_rows, key=_generated_public_group_sort_key, reverse=True)
-    post_verify_archived_ids: List[str] = []
-    for extra in ordered_post_rows:
-        eid = _row_id(extra)
-        if not eid or eid == rid:
-            continue
-        await _sb_patch_json(
-            f"/rest/v1/{REFLECTIONS_TABLE}",
-            params=[("id", f"eq.{eid}")],
-            json_body={
-                "status": "archived",
-                "is_active": False,
-                "published_at": None,
-            },
-            timeout=8.0,
-            prefer="return=minimal",
-        )
-        post_verify_archived_ids.append(eid)
-
+    # Do not archive same-question / same-q_key rows here.  Duplicate-looking
+    # pieces are intentionally left visible so the user can decide what to post.
     capacity = await enforce_capacity_policy(user_id=uid, max_active=max_active, eviction_policy=eviction_policy)
 
     return {
         "promoted_id": rid,
-        "previous_archived_ids": previous_ids,
-        "post_verify_archived_ids": post_verify_archived_ids,
+        "previous_archived_ids": [],
+        "post_verify_archived_ids": [],
         "capacity": capacity,
         "row": promoted,
     }

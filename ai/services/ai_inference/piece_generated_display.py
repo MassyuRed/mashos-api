@@ -9,7 +9,7 @@ Goals
 - build a stronger public-facing answer for generated reflections
 - make broken diary fragments look like answers to the question when possible
 - reuse the existing public safety formatter for masking / blocking
-- provide a stable normalized hash for same-as-active duplicate suppression
+- provide a stable normalized hash for diagnostics without suppressing rows
 
 This module is intentionally deterministic and rule-based.
 It does not call any external model.
@@ -31,7 +31,7 @@ from piece_text_formatter import (
     format_reflection_text,
 )
 
-GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v5"
+GENERATED_REFLECTION_DISPLAY_VERSION = "reflection.generated.display.v6"
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _WS_RE = re.compile(r"\s+")
@@ -54,6 +54,7 @@ _BAD_CORE_PATTERNS: Sequence[re.Pattern[str]] = (
 )
 _GENERIC_FALLBACK_RE = re.compile(r"まだうまく言葉にしきれていません")
 _BAD_DESU_ATTACHMENT_RE = re.compile(r"(?:ていて|っていて|といっても|ちゃう|じゃう|してた|している|してる|なきゃいけない)です$")
+_BROKEN_VERB_DESU_RE = re.compile(r"(?:なる|なった|した|している|してる|いた|いる|ある|だった|感じる|感じた|考える|話す|できる|休む|落ち着く|気づいた|分かった)です$")
 _PAST_EVENT_TAIL_RE = re.compile(r"(?:た|だった|してた|していた|ていた|なった)$")
 _EVENT_TIME_MARKERS: Sequence[str] = (
     "今日",
@@ -383,6 +384,7 @@ class GeneratedQuestionSpec:
     require_value_like: bool = False
     require_concern_like: bool = False
     require_notice_like: bool = False
+    require_trigger_like: bool = False
 
 
 
@@ -465,6 +467,7 @@ _METHOD_LIKE_HINTS: Sequence[str] = (
     "休む",
     "整える",
     "整えて",
+    "深呼吸",
     "落ち着",
     "大事にして",
     "大切にして",
@@ -546,6 +549,7 @@ _FAMILY_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "fun_recent": ("楽しい", "楽しみ", "配信", "話", "歌", "写真", "料理", "服"),
     "stress_method": ("休", "整", "落ち着", "話", "食生活", "薬", "寝", "ペース"),
     "stress_time": ("時間", "とき", "時", "夜", "夜中", "寝る前", "ASMR", "音", "LINE", "話"),
+    "anxiety_trigger": ("不安", "心配", "怖", "将来", "考えると", "思うと", "時", "とき"),
     "work_stress_method": ("仕事", "しんど", "休", "整", "落ち着", "ペース"),
 }
 
@@ -604,6 +608,16 @@ def _derive_question_spec(*, question: Any, focus_key: Any) -> GeneratedQuestion
             allowed_head_prefixes=("仕事でしんどい時は、",),
             forbidden_head_prefixes=("心と体を整えるために、", "気持ちを整えるために、", "心が休まるのは、"),
             require_method_like=True,
+        )
+    if "不安になる時" in compact or "不安を感じる時" in compact or "心配になる時" in compact:
+        return GeneratedQuestionSpec(
+            question_family="anxiety_trigger",
+            canonical_prompt=q or "不安になる時は？",
+            head_prefix="",
+            head_suffix="不安になります",
+            allowed_head_prefixes=(),
+            forbidden_head_prefixes=("最近気づいたのは、", "最近気になっているのは、", "気持ちを整えるために、"),
+            require_trigger_like=True,
         )
     if "心がほどける時間" in compact:
         return GeneratedQuestionSpec(
@@ -773,13 +787,29 @@ def _nominalize_phrase(text: str) -> str:
         return s[: -len("しようかな")] + "すること"
     if s.endswith("しよう"):
         return s[: -len("しよう")] + "すること"
+    if s.endswith("不安になる"):
+        return s + "こと"
+    if s.endswith("心配になる"):
+        return s + "こと"
+    if s.endswith("怖くなる"):
+        return s + "こと"
     if s.endswith("楽しい"):
-        return s[: -len("楽しい")] + "時間"
+        base = s[: -len("楽しい")].strip(" 、,")
+        if base.endswith("のが"):
+            base = base[:-2]
+        elif base.endswith(("が", "は")):
+            base = base[:-1]
+        base = base.strip(" 、,")
+        if base:
+            if re.search(r"(する|した|している|してる|できる|話す|聞く|休む|整える|続ける|広げる|なる|感じる|落ち着く)$", base):
+                return base + "こと"
+            return base + "時間"
+        return "楽しい時間"
     if s.endswith("嬉しい"):
         return s[: -len("嬉しい")] + "こと"
-    if s.endswith(("こと", "時間", "関係")):
+    if s.endswith(("こと", "時間", "関係", "場面", "瞬間", "方法")):
         return s
-    if re.search(r"(する|した|している|してる|できる|話す|聞く|休む|整える|続ける|広げる)$", s):
+    if re.search(r"(する|した|している|してる|できる|話す|聞く|休む|整える|続ける|広げる|なる|感じる|落ち着く|気づいた|分かった)$", s):
         return s + "こと"
     return s
 
@@ -793,6 +823,62 @@ def _evidence_entry(text: str, score: int, role: str, *reasons: str) -> Generate
         reasons=tuple(_ordered_unique([r for r in reasons if str(r or "").strip()])),
     )
 
+
+
+def _trim_anxiety_condition_prefix(condition: str) -> str:
+    s = _collapse_ws(condition).strip(" 、,")
+    if not s:
+        return ""
+    if "/" in s or "／" in s:
+        parts = re.split(r"[／/]", s)
+        s = _collapse_ws(parts[-1]).strip(" 、,")
+    s = re.sub(r"^(?:感情|気持ち|こころ|心|仕事|職場|生活|日常|健康|人間関係|家族|友人|趣味|休日|学習|勉強|価値観)+", "", s).strip(" 、,")
+    compact = _compact_text(s)
+    for unit_len in range(3, max(3, len(compact) // 2) + 1):
+        unit = compact[:unit_len]
+        if unit and compact.startswith(unit + unit):
+            compact = unit + compact[unit_len * 2 :]
+            break
+    return _collapse_ws(compact).strip(" 、,")
+
+
+def _extract_anxiety_trigger_condition(text: str) -> str:
+    source = _collapse_ws(text)
+    if not source:
+        return ""
+    # Avoid taking the question itself as evidence; use answer/source fragments after punctuation splits.
+    fragments = [frag for frag in re.split(r"[。！？!?\n]+", source) if _collapse_ws(frag)]
+    patterns: Sequence[re.Pattern[str]] = (
+        re.compile(r"(?P<condition>[^。！？!?]{2,60}?(?:と|時は|時|ときは|とき|場合は|場合))(?P<emotion>不安(?:に)?な(?:る|ります)|不安を感じ(?:る|ます)|心配(?:に)?な(?:る|ります)|怖くな(?:る|ります))"),
+        re.compile(r"(?P<condition>[^。！？!?]{2,60}?(?:考えると|思うと|見ると|聞くと))(?P<emotion>不安|心配|怖)"),
+    )
+    for fragment in fragments:
+        frag = _collapse_ws(fragment).strip(" 、,")
+        if not _contains_any(_compact_text(frag), ("不安", "心配", "怖")):
+            continue
+        for pattern in patterns:
+            match = pattern.search(frag)
+            if not match:
+                continue
+            condition = _collapse_ws(match.group("condition")).strip(" 、,")
+            condition = re.sub(r"^(?:最近|今は|いまは|この頃|ここ最近|ちょっと|少し|でも|ただ)", "", condition).strip(" 、,")
+            condition = _trim_anxiety_condition_prefix(condition)
+            if len(_compact_text(condition)) < 3:
+                continue
+            if not condition.endswith(("と", "時", "時は", "とき", "ときは", "場合", "場合は")):
+                condition += "と"
+            return condition
+    return ""
+
+
+def _match_anxiety_trigger_rule(combined: str) -> Optional[Tuple[str, str, Tuple[str, ...]]]:
+    condition = _extract_anxiety_trigger_condition(combined)
+    if condition:
+        return condition, "", ("anxiety_trigger:condition",)
+    compact = _compact_text(combined)
+    if _contains_any(compact, ("将来", "未来", "先のこと")) and _contains_any(compact, ("不安", "心配")):
+        return "将来のことを考えると", "", ("anxiety_trigger:future",)
+    return None
 
 
 def _match_relationship_rule(combined: str) -> Optional[Tuple[str, str, Tuple[str, ...]]]:
@@ -954,6 +1040,10 @@ def _canonicalize_fragment_for_spec(spec: GeneratedQuestionSpec, fragment: str, 
         return ""
     family = spec.question_family
 
+    if family == "anxiety_trigger":
+        condition = _extract_anxiety_trigger_condition(fragment) or _extract_anxiety_trigger_condition(combined)
+        return condition
+
     if family in {"fun_general", "fun_recent"}:
         if _contains_any(compact, ("歌", "枠", "歌う")):
             return "歌うこと"
@@ -1110,11 +1200,13 @@ def build_generated_answer_plan(
         "fun_recent": lambda c: _match_fun_rule(spec, c),
         "stress_method": lambda c: _match_stress_rule(spec, c),
         "stress_time": lambda c: _match_stress_rule(spec, c),
+        "anxiety_trigger": _match_anxiety_trigger_rule,
         "work_stress_method": lambda c: _match_stress_rule(spec, c),
     }
     rule_matcher = matcher_map.get(spec.question_family)
     if callable(rule_matcher):
-        matched = rule_matcher(compact_combined)
+        matcher_input = " ".join(fragments) if spec.question_family == "anxiety_trigger" else compact_combined
+        matched = rule_matcher(matcher_input)
         if matched is not None:
             core_theme, support_theme, reasons = matched
             evidence = (
@@ -1215,6 +1307,13 @@ def _normalize_core_theme_for_public(spec: GeneratedQuestionSpec, theme: str) ->
         if s.endswith("といっても"):
             return "", ("normalize:block_fragment",)
 
+    if spec.question_family == "anxiety_trigger":
+        condition = _extract_anxiety_trigger_condition(s)
+        if condition:
+            return condition, ("normalize:anxiety_condition",)
+        if s.endswith(("不安になる", "不安になります")):
+            return re.sub(r"不安(?:に)?な(?:る|ります)$", "", s).strip(" 、,") + "と", ("normalize:anxiety_condition",)
+
     return s, tuple(flags)
 
 
@@ -1255,6 +1354,8 @@ def _has_explainable_core_shape(spec: GeneratedQuestionSpec, theme: str) -> bool
     compact = _compact_text(s)
     if not compact:
         return False
+    if spec.question_family == "anxiety_trigger":
+        return _contains_any(compact, ("と", "時", "とき", "場合")) and not _contains_any(compact, ("です", "ます"))
     if spec.question_family == "stress_time":
         return _contains_any(compact, ("時間", "とき", "時", "瞬間", "場面"))
     if spec.question_family in {"stress_method", "work_stress_method"}:
@@ -1382,6 +1483,46 @@ def _render_support_sentence(plan: GeneratedAnswerPlan) -> str:
 
 
 
+def _notice_core_to_sentence(core: str) -> str:
+    s = _collapse_ws(core).rstrip("。！？!? ")
+    if not s:
+        return ""
+    replacements = (
+        ("に気づいたこと", "に気づきました"),
+        ("に気づいた", "に気づきました"),
+        ("と気づいたこと", "と気づきました"),
+        ("と気づいた", "と気づきました"),
+        ("が分かったこと", "が分かりました"),
+        ("が分かった", "が分かりました"),
+        ("と分かったこと", "と分かりました"),
+        ("と分かった", "と分かりました"),
+        ("見えてきたこと", "見えてきました"),
+        ("見えてきた", "見えてきました"),
+    )
+    for src, dst in replacements:
+        if s.endswith(src):
+            return s[: -len(src)] + dst
+    return ""
+
+
+def _method_core_to_sentence(core: str) -> str:
+    s = _collapse_ws(core).rstrip("。！？!? ")
+    if not s:
+        return ""
+    patterns = (
+        (re.compile(r"(?P<method>.+?すると)(?:気持ちが)?落ち着くこと$"), "{method}気持ちが落ち着きます"),
+        (re.compile(r"(?P<method>.+?と)(?:気持ちが)?落ち着くこと$"), "{method}気持ちが落ち着きます"),
+        (re.compile(r"(?P<method>.+?で)(?:気持ちが)?落ち着くこと$"), "{method}気持ちが落ち着きます"),
+    )
+    for pattern, template in patterns:
+        match = pattern.match(s)
+        if match:
+            method = _collapse_ws(match.group("method"))
+            if len(_compact_text(method)) >= 2:
+                return template.format(method=method)
+    return ""
+
+
 def realize_generated_answer_text(plan: GeneratedAnswerPlan) -> Tuple[str, List[str]]:
     actions: List[str] = [f"plan:{plan.spec.question_family}"]
     if not plan.answerable or not str(plan.core_theme or "").strip():
@@ -1389,8 +1530,21 @@ def realize_generated_answer_text(plan: GeneratedAnswerPlan) -> Tuple[str, List[
         return "", actions
 
     core = _collapse_ws(plan.normalized_core_theme or plan.core_theme)
-    head = _ensure_sentence(f"{plan.spec.head_prefix}{core}{plan.spec.head_suffix}")
-    support = _render_support_sentence(plan)
+    suppress_support = False
+    if plan.spec.question_family == "anxiety_trigger":
+        head = _ensure_sentence(f"{core}{plan.spec.head_suffix}")
+        suppress_support = True
+    elif plan.spec.question_family == "notice_general":
+        notice_sentence = _notice_core_to_sentence(core)
+        head = _ensure_sentence(notice_sentence) if notice_sentence else _ensure_sentence(f"{plan.spec.head_prefix}{core}{plan.spec.head_suffix}")
+        suppress_support = bool(notice_sentence)
+    elif plan.spec.question_family in {"stress_method", "work_stress_method"}:
+        method_sentence = _method_core_to_sentence(core)
+        head = _ensure_sentence(method_sentence) if method_sentence else _ensure_sentence(f"{plan.spec.head_prefix}{core}{plan.spec.head_suffix}")
+        suppress_support = bool(method_sentence)
+    else:
+        head = _ensure_sentence(f"{plan.spec.head_prefix}{core}{plan.spec.head_suffix}")
+    support = "" if suppress_support else _render_support_sentence(plan)
     rewritten = " ".join([segment for segment in (head, support) if segment]).strip()
     if rewritten:
         _append_once(actions, "rewrite:plan_realize")
@@ -1438,7 +1592,7 @@ def _collect_quality_flags(text: str) -> List[str]:
         _append_once(flags, "quality:fallback_generic")
     if re.search(r"(?:だ|です)です$", compact):
         _append_once(flags, "quality:broken_answer")
-    if _BAD_DESU_ATTACHMENT_RE.search(compact):
+    if _BAD_DESU_ATTACHMENT_RE.search(compact) or _BROKEN_VERB_DESU_RE.search(compact):
         _append_once(flags, "quality:broken_answer")
     if re.search(r"(?:今まで|今の|さっきまで)?私(?:は|が)?です$", compact):
         _append_once(flags, "quality:broken_answer")
@@ -1459,7 +1613,15 @@ def _collect_question_family_flags(spec: GeneratedQuestionSpec, text: str) -> Li
     if not s:
         _append_once(flags, "quality:empty")
         return flags
-    if spec.allowed_head_prefixes and not any(s.startswith(prefix) for prefix in spec.allowed_head_prefixes):
+    direct_sentence_ok = False
+    if spec.question_family == "notice_general" and _contains_any(compact, ("気づきました", "分かりました", "わかりました", "見えてきました")):
+        direct_sentence_ok = True
+    if spec.question_family in {"stress_method", "work_stress_method"} and _contains_any(compact, _METHOD_LIKE_HINTS) and _contains_any(compact, ("落ち着きます", "安心できます", "整います")):
+        direct_sentence_ok = True
+    if spec.question_family == "anxiety_trigger" and _contains_any(compact, ("不安になります", "心配になります", "怖くなります")):
+        direct_sentence_ok = True
+
+    if spec.allowed_head_prefixes and not direct_sentence_ok and not any(s.startswith(prefix) for prefix in spec.allowed_head_prefixes):
         _append_once(flags, "quality:question_head_mismatch")
     if spec.forbidden_head_prefixes and any(s.startswith(prefix) for prefix in spec.forbidden_head_prefixes):
         _append_once(flags, "quality:question_head_mismatch")
@@ -1472,6 +1634,8 @@ def _collect_question_family_flags(spec: GeneratedQuestionSpec, text: str) -> Li
     if spec.require_time_like and not _contains_any(compact, _TIME_LIKE_HINTS):
         _append_once(flags, "quality:question_shape_mismatch")
     if spec.require_value_like and not _contains_any(compact, _VALUE_LIKE_HINTS):
+        _append_once(flags, "quality:question_shape_mismatch")
+    if spec.require_trigger_like and not (_contains_any(compact, ("不安", "心配", "怖")) and _contains_any(compact, ("と", "時", "とき", "場合"))):
         _append_once(flags, "quality:question_shape_mismatch")
     return flags
 

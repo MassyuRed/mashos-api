@@ -424,12 +424,15 @@ def _select_focus_key(category: str, texts: Sequence[str]) -> str:
     text = " ".join([_clean_text(category)] + [_clean_text(t) for t in texts if _clean_text(t)])
 
     rules = [
-        (re.compile(r"頑張|努力|挑戦|成長|学び|勉強|上達|試す|工夫"), "growth"),
+        (re.compile(r"(?:考えると|思うと|時|とき|場合).{0,16}(?:不安|心配|怖)|(?:不安|心配|怖).{0,8}(?:なる|感じ)"), "anxiety_trigger"),
+        (re.compile(r"(?:深呼吸|散歩|休む|寝る|距離を置く|ゆっくり).{0,18}(?:落ち着|安心|整)|(?:落ち着|安心|整).{0,18}(?:深呼吸|散歩|休む|寝る|距離を置く|ゆっくり)"), "care"),
+        (re.compile(r"気づ|分か|わか|見えてきた|見えてきて"), "notice"),
+        (re.compile(r"頑張|努力|挑戦|成長|学び|勉強|上達|試す|工夫|伸ばしたい|できるよう|書けるよう|話せるよう|なりたい"), "growth"),
         (re.compile(r"落ち着|安心|癒|リラックス|整う|休む|ほっと"), "relief"),
         (re.compile(r"大切|価値|信念|大事|守りたい"), "values"),
         (re.compile(r"不安|迷い|悩み|ストレス|しんど"), "stress"),
-        (re.compile(r"人|家族|友人|恋愛|関係|相手|誰か"), "relationship"),
         (re.compile(r"楽しい|楽しく|楽しかった|楽しみ|楽しめ|好き|わくわく|夢中|おもしろ|面白"), "fun"),
+        (re.compile(r"人|家族|友人|友達|恋愛|関係|相手|誰か|会話|話す"), "relationship"),
     ]
     for pat, key in rules:
         if pat.search(text):
@@ -481,6 +484,10 @@ def _normalize_phrase_ending(phrase: str) -> str:
         ("話して", "話す"),
         ("考えて", "考える"),
         ("感じて", "感じる"),
+        ("不安になって", "不安になる"),
+        ("不安になった", "不安になる"),
+        ("心配になって", "心配になる"),
+        ("心配になった", "心配になる"),
         ("休んで", "休む"),
         ("作って", "作る"),
         ("歩いて", "歩く"),
@@ -538,9 +545,67 @@ def _nominalize_phrase(phrase: str) -> str:
         return ""
     if p.endswith("こと"):
         return p
-    if re.search(r"(する|行く|見る|作る|読む|聞く|聴く|話す|考える|感じる|休む|過ごす|学ぶ|整える|頑張る)$", p):
+    if p.endswith("楽しい"):
+        base = p[: -len("楽しい")].strip(" 、,")
+        if base.endswith("のが"):
+            base = base[:-2]
+        elif base.endswith(("が", "は")):
+            base = base[:-1]
+        base = base.strip(" 、,")
+        return f"{base}こと" if base else "楽しい時間"
+    if re.search(r"(する|行く|見る|作る|読む|聞く|聴く|話す|考える|感じる|休む|過ごす|学ぶ|整える|頑張る|なる|落ち着く)$", p):
         return f"{p}こと"
     return p
+
+
+def _trim_anxiety_condition_prefix(condition: str) -> str:
+    s = _clean_text(condition).strip(" 、,")
+    if not s:
+        return ""
+    if "/" in s or "／" in s:
+        s = _clean_text(re.split(r"[／/]", s)[-1]).strip(" 、,")
+    s = re.sub(r"^(?:感情|気持ち|こころ|心|仕事|職場|生活|日常|健康|人間関係|家族|友人|趣味|休日|学習|勉強|価値観)+", "", s).strip(" 、,")
+    compact = re.sub(r"\s+", "", s)
+    for unit_len in range(3, max(3, len(compact) // 2) + 1):
+        unit = compact[:unit_len]
+        if unit and compact.startswith(unit + unit):
+            compact = unit + compact[unit_len * 2 :]
+            break
+    return _clean_text(compact).strip(" 、,")
+
+
+def _extract_anxiety_trigger_condition_for_answer(text: str) -> str:
+    source = _clean_text(text)
+    if not source or not re.search(r"不安|心配|怖", source):
+        return ""
+    patterns = (
+        re.compile(r"(?P<condition>[^。！？!?]{2,60}?(?:と|時は|時|ときは|とき|場合は|場合))(?P<emotion>不安(?:に)?な(?:る|ります)|不安を感じ(?:る|ます)|心配(?:に)?な(?:る|ります)|怖くな(?:る|ります))"),
+        re.compile(r"(?P<condition>[^。！？!?]{2,60}?(?:考えると|思うと|見ると|聞くと))(?P<emotion>不安|心配|怖)"),
+    )
+    for fragment in [x for x in re.split(r"[。！？!?\n]+", source) if _clean_text(x)]:
+        frag = _clean_text(fragment)
+        for pattern in patterns:
+            match = pattern.search(frag)
+            if not match:
+                continue
+            condition = _clean_text(match.group("condition"))
+            condition = re.sub(r"^(?:最近|今は|いまは|この頃|ここ最近|ちょっと|少し|でも|ただ)", "", condition).strip(" 、,")
+            condition = _trim_anxiety_condition_prefix(condition)
+            if len(re.sub(r"\s+", "", condition)) < 3:
+                continue
+            if not condition.endswith(("と", "時", "時は", "とき", "ときは", "場合", "場合は")):
+                condition += "と"
+            return condition
+    return ""
+
+
+def _fallback_anxiety_trigger_answer(signals: Sequence[ReflectionSignal]) -> str:
+    for signal in signals or []:
+        for text in (signal.text_primary, signal.text_secondary, signal.embedding_text):
+            condition = _extract_anxiety_trigger_condition_for_answer(text)
+            if condition:
+                return f"{condition}不安になります。"
+    return ""
 
 
 def _build_topic_summary_text(category: str, signals: Sequence[ReflectionSignal]) -> str:
@@ -567,6 +632,7 @@ def _fallback_question(category: str, focus_key: str) -> str:
             mapping = {
                 "fun": "休日の楽しい過ごし方は？",
                 "relief": "休日に心が休まる時間は？",
+                "anxiety_trigger": "不安になる時は？",
                 "values": "休日に大切にしていることは？",
                 "generic": "休日の過ごし方は？",
             }
@@ -576,6 +642,7 @@ def _fallback_question(category: str, focus_key: str) -> str:
             mapping = {
                 "fun": "最近夢中なことは？",
                 "relief": "心がほどける時間は？",
+                "anxiety_trigger": "不安になる時は？",
                 "generic": "最近気になることは？",
             }
             return mapping.get(focus_key, "最近夢中なことは？")
@@ -585,6 +652,7 @@ def _fallback_question(category: str, focus_key: str) -> str:
                 "growth": "仕事で伸ばしたいことは？",
                 "values": "仕事で大切にしていることは？",
                 "stress": "仕事でしんどい時の整え方は？",
+                "anxiety_trigger": "不安になる時は？",
                 "generic": "仕事で気にしていることは？",
             }
             return mapping.get(focus_key, "仕事で大切にしていることは？")
@@ -601,11 +669,17 @@ def _fallback_question(category: str, focus_key: str) -> str:
         if re.search(r"感情|気持ち", cat):
             mapping = {
                 "stress": "気持ちが揺れる時は？",
-                "relief": "気持ちが落ち着く時間は？",
-                "fun": "気持ちが明るくなる瞬間は？",
-                "generic": "気持ちが動く瞬間は？",
+                "anxiety_trigger": "不安になる時は？",
+                "care": "気持ちを整える方法は？",
+                "relief": "心が休まる時間は？",
+                "fun": "最近の楽しみは？",
+                "notice": "最近気づいたことは？",
+                "growth": "伸ばしたいことは？",
+                "values": "大切にしていることは？",
+                "relationship": "人との関わりで大切なことは？",
+                "generic": "最近気づいたことは？",
             }
-            return mapping.get(focus_key, "気持ちが動く瞬間は？")
+            return mapping.get(focus_key, "最近気づいたことは？")
 
         if re.search(r"価値観|人生", cat):
             return "大切にしていることは？"
@@ -614,16 +688,25 @@ def _fallback_question(category: str, focus_key: str) -> str:
     generic = {
         "fun": "最近の楽しみは？",
         "relief": "心が休まる時間は？",
+        "care": "気持ちを整える方法は？",
+        "notice": "最近気づいたことは？",
         "growth": "伸ばしたいことは？",
         "values": "大切にしていることは？",
         "stress": "気持ちを整える方法は？",
+        "anxiety_trigger": "不安になる時は？",
         "relationship": "人との関わりで大切なことは？",
         "generic": "最近気づいたことは？",
     }
     return generic.get(focus_key, "最近気づいたことは？")
 
 
-def _fallback_answer(category: str, signals: Sequence[ReflectionSignal]) -> str:
+def _fallback_answer(category: str, signals: Sequence[ReflectionSignal], *, question: str = "") -> str:
+    q = _clean_text(question)
+    if re.search(r"不安になる時|不安を感じる時|心配になる時", q):
+        anxiety_answer = _fallback_anxiety_trigger_answer(signals)
+        if anxiety_answer:
+            return anxiety_answer
+
     phrases: List[str] = []
     for s in signals[:MAX_SIGNALS_PER_TOPIC]:
         for text in (s.text_primary, s.text_secondary):
@@ -962,7 +1045,7 @@ class ReflectionGenerator:
         return q if q.endswith("？") else (q + "？")
 
     def generate_answer(self, *, category: str, question: str, signals: Sequence[ReflectionSignal]) -> str:
-        return _fallback_answer(category, signals)
+        return _fallback_answer(category, signals, question=question)
 
 
 # ---------- orchestrator ----------
@@ -1000,23 +1083,17 @@ class ReflectionEngine:
         new_clusters = self._detector.cluster_new_topics(unmatched_signals)
 
         existing_map = {t.reflection_id: t for t in existing_topics}
-        represented_existing_ids: Set[str] = set()
-        kept_existing_ids: Set[str] = set()
-        superseded_existing_ids: Set[str] = set()
-        grouped_candidates: Dict[str, List[Dict[str, Any]]] = {}
+        candidate_entries: List[Dict[str, Any]] = []
 
         def _cluster_latest_signal_at(cluster: TopicCluster) -> str:
             timestamps = [str(getattr(signal, "timestamp", "") or "") for signal in (cluster.signals or []) if str(getattr(signal, "timestamp", "") or "")]
             return max(timestamps) if timestamps else ""
 
-        def _merge_signals(entries: Sequence[Dict[str, Any]]) -> List[ReflectionSignal]:
+        def _select_candidate_signals(signals: Sequence[ReflectionSignal]) -> List[ReflectionSignal]:
             merged: List[ReflectionSignal] = []
             seen_keys = set()
-            raw_signals: List[ReflectionSignal] = []
-            for entry in entries or []:
-                raw_signals.extend(list(entry.get("signals") or []))
             for signal in sorted(
-                raw_signals,
+                list(signals or []),
                 key=lambda x: (
                     _parse_signal_timestamp(getattr(x, "timestamp", "") or "") or datetime.min,
                     str(getattr(x, "timestamp", "") or ""),
@@ -1032,13 +1109,6 @@ class ReflectionEngine:
                 merged.append(signal)
             return _select_latest_state_signals(merged)
 
-        def _candidate_sort_key(entry: Dict[str, Any]) -> Tuple[int, str, int, str]:
-            has_existing = 1 if str(entry.get("reflection_id") or "").strip() else 0
-            latest_signal_at = str(entry.get("latest_signal_at") or "")
-            signal_count = int(entry.get("signal_count") or 0)
-            topic_key = str(entry.get("topic_key") or "")
-            return (has_existing, latest_signal_at, signal_count, topic_key)
-
         def _register_cluster_candidate(cluster: TopicCluster, *, existing_topic: Optional[ExistingReflectionTopic] = None) -> None:
             question = ""
             topic_key = ""
@@ -1047,8 +1117,6 @@ class ReflectionEngine:
                 reflection_id = str(existing_topic.reflection_id or "").strip()
                 topic_key = str(existing_topic.topic_key or "").strip()
                 question = str(existing_topic.question or "").strip()
-                if reflection_id:
-                    represented_existing_ids.add(reflection_id)
             if not question:
                 question = self._generator.generate_question(
                     category=cluster.category,
@@ -1057,7 +1125,7 @@ class ReflectionEngine:
                     signals=cluster.signals,
                 )
             q_key = compute_generated_question_q_key(question)
-            grouped_candidates.setdefault(q_key, []).append(
+            candidate_entries.append(
                 {
                     "q_key": q_key,
                     "question": question,
@@ -1079,25 +1147,40 @@ class ReflectionEngine:
             _register_cluster_candidate(cluster, existing_topic=topic)
 
         for cluster in new_clusters:
-            _register_cluster_candidate(cluster, existing_topic=None)
+            cluster_signals = list(cluster.signals or [])
+            if len(cluster_signals) <= 1:
+                _register_cluster_candidate(cluster, existing_topic=None)
+                continue
+
+            # Do not merge same/similar user inputs into one generated piece.
+            # Each source signal gets its own candidate so duplicates still surface.
+            for signal in cluster_signals:
+                single_vectors = [signal.embedding or _embed_text_local(signal.embedding_text)]
+                single_weights = [max(0.1, float(signal.source_weight))]
+                single_category = str(signal.category or cluster.category or "").strip()
+                single_cluster = TopicCluster(
+                    topic_key=None,
+                    category=single_category,
+                    signals=[signal],
+                    centroid=_weighted_centroid(single_vectors, single_weights),
+                    matched_reflection_id=None,
+                    topic_summary_text=_build_topic_summary_text(single_category, [signal]),
+                    focus_key=signal.focus_key or cluster.focus_key or "generic",
+                )
+                _register_cluster_candidate(single_cluster, existing_topic=None)
 
         creates: List[Dict[str, Any]] = []
         updates: List[Dict[str, Any]] = []
 
-        for q_key, entries in grouped_candidates.items():
-            if not entries:
-                continue
-            ordered_entries = sorted(entries, key=_candidate_sort_key, reverse=True)
-            canonical = ordered_entries[0]
-            for entry in ordered_entries:
-                if str(entry.get("reflection_id") or "").strip():
-                    canonical = entry
-                    break
-
-            question = str(canonical.get("question") or "").strip()
-            category = str(canonical.get("category") or "").strip()
-            focus_key = str(canonical.get("focus_key") or "").strip() or "generic"
-            combined_signals = _merge_signals(ordered_entries)
+        # Do not collapse candidates solely because they share the same question/q_key.
+        # The user decides whether a generated Piece should be posted; generation must
+        # surface every candidate instead of silently suppressing near-duplicates.
+        for entry_index, candidate in enumerate(candidate_entries):
+            question = str(candidate.get("question") or "").strip()
+            category = str(candidate.get("category") or "").strip()
+            focus_key = str(candidate.get("focus_key") or "").strip() or "generic"
+            q_key = str(candidate.get("q_key") or "").strip() or compute_generated_question_q_key(question)
+            combined_signals = _select_candidate_signals(candidate.get("signals") or [])
             vectors = [s.embedding or _embed_text_local(s.embedding_text) for s in combined_signals]
             weights = [max(0.1, float(s.source_weight)) for s in combined_signals]
             centroid = _weighted_centroid(vectors, weights) if vectors else []
@@ -1125,23 +1208,27 @@ class ReflectionEngine:
                 "topic_embedding": [round(float(x), 6) for x in centroid],
             }
 
-            canonical_reflection_id = str(canonical.get("reflection_id") or "").strip()
-            canonical_topic_key = str(canonical.get("topic_key") or "").strip()
-            if canonical_reflection_id:
-                kept_existing_ids.add(canonical_reflection_id)
+            candidate_reflection_id = str(candidate.get("reflection_id") or "").strip()
+            candidate_topic_key = str(candidate.get("topic_key") or "").strip()
+            if candidate_reflection_id:
                 updates.append(
                     {
-                        "reflection_id": canonical_reflection_id,
-                        "topic_key": canonical_topic_key,
+                        "reflection_id": candidate_reflection_id,
+                        "topic_key": candidate_topic_key,
                         **payload,
                     }
                 )
             else:
+                source_identity = "|".join(
+                    f"{str(getattr(signal, 'source_type', '') or '')}:{str(getattr(signal, 'source_id', '') or '')}"
+                    for signal in combined_signals
+                    if str(getattr(signal, "source_type", "") or "") or str(getattr(signal, "source_id", "") or "")
+                )
                 topic_key = _make_topic_key(
                     user_id=uid,
                     category=category,
                     focus_key=focus_key,
-                    topic_summary_text=topic_summary_text or question,
+                    topic_summary_text="|".join([topic_summary_text or question, source_identity or str(entry_index)]),
                 )
                 creates.append(
                     {
@@ -1150,44 +1237,10 @@ class ReflectionEngine:
                     }
                 )
 
-            for entry in ordered_entries:
-                rid = str(entry.get("reflection_id") or "").strip()
-                if rid and rid != canonical_reflection_id:
-                    superseded_existing_ids.add(rid)
-
+        # Generation no longer archives or hides existing rows just because a newer
+        # candidate has the same/similar question. Capacity limits remain handled by
+        # the capacity policy after publish.
         deactivates: List[Dict[str, Any]] = []
-        deactivated_ids: Set[str] = set()
-
-        for rid in sorted(superseded_existing_ids):
-            if not rid or rid in deactivated_ids:
-                continue
-            topic = existing_map.get(rid)
-            deactivated_ids.add(rid)
-            deactivates.append(
-                {
-                    "reflection_id": rid,
-                    "topic_key": str((topic.topic_key if topic else "") or "").strip(),
-                    "reason": "superseded_by_latest_q_key",
-                    "source_snapshot_id": sid,
-                    "source_hash": sh,
-                }
-            )
-
-        for topic in existing_topics:
-            if topic.reflection_id in kept_existing_ids or topic.reflection_id in deactivated_ids:
-                continue
-            if topic.reflection_id in represented_existing_ids:
-                continue
-            deactivated_ids.add(topic.reflection_id)
-            deactivates.append(
-                {
-                    "reflection_id": topic.reflection_id,
-                    "topic_key": topic.topic_key,
-                    "reason": "topic_missing_from_snapshot",
-                    "source_snapshot_id": sid,
-                    "source_hash": sh,
-                }
-            )
 
         creates.sort(key=lambda x: (str(x.get("q_key") or ""), str(x.get("question") or ""), str(x.get("topic_key") or "")))
         updates.sort(key=lambda x: (str(x.get("q_key") or ""), str(x.get("question") or ""), str(x.get("reflection_id") or "")))
@@ -1204,8 +1257,8 @@ class ReflectionEngine:
                 "input_items": len(signals),
                 "attached_topic_count": len(attached_clusters),
                 "new_topic_count": len(new_clusters),
-                "grouped_question_count": len(grouped_candidates),
-                "collapsed_same_question_count": sum(max(0, len(entries) - 1) for entries in grouped_candidates.values()),
+                "grouped_question_count": len(candidate_entries),
+                "collapsed_same_question_count": 0,
                 "create_count": len(creates),
                 "update_count": len(updates),
                 "deactivate_count": len(deactivates),

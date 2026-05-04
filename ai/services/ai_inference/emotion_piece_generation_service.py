@@ -13,6 +13,7 @@ Scope
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from piece_generated_display import (
@@ -30,6 +31,61 @@ SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 _NEGATIVE_EMOTIONS = {"悲しみ", "怒り", "不安"}
 _POSITIVE_EMOTIONS = {"喜び", "平穏"}
 _STRENGTH_WEIGHT = {"weak": 1, "medium": 2, "strong": 3}
+
+
+def _compact(text: Any) -> str:
+    return "".join(str(text or "").split())
+
+
+def _contains_any(text: str, tokens: Sequence[str]) -> bool:
+    return any(token and token in text for token in (tokens or ()))
+
+
+_ANXIETY_TRIGGER_RE = re.compile(
+    r"(?:[^。！？!?]{1,60}(?:と|時は|時|ときは|とき|場合は|場合)(?:不安(?:に)?な(?:る|ります)|不安を感じ(?:る|ます)|心配(?:に)?な(?:る|ります)|怖くな(?:る|ります)))"
+)
+
+
+def _looks_like_anxiety_trigger(text: Any) -> bool:
+    compact = _compact(text)
+    if not compact:
+        return False
+    if _ANXIETY_TRIGGER_RE.search(compact):
+        return True
+    return _contains_any(compact, ("考えると不安", "思うと不安", "将来のことを考えると", "先のことを考えると"))
+
+
+def _looks_like_care_method(text: Any) -> bool:
+    compact = _compact(text)
+    if not compact:
+        return False
+    has_method = _contains_any(compact, ("深呼吸", "休む", "寝る", "話す", "散歩", "整える", "距離を置く", "ゆっくり"))
+    has_calm = _contains_any(compact, ("落ち着く", "落ち着き", "安心", "整う", "楽になる"))
+    return bool(has_method and has_calm)
+
+
+def _looks_like_joy(text: Any) -> bool:
+    return _contains_any(_compact(text), ("楽しい", "楽しみ", "嬉しい", "好き", "わくわく", "夢中"))
+
+
+def _looks_like_notice(text: Any) -> bool:
+    return _contains_any(_compact(text), ("気づ", "分か", "わか", "見えて", "感じた"))
+
+
+def _looks_like_growth(text: Any) -> bool:
+    return _contains_any(
+        _compact(text),
+        ("伸ばしたい", "上手くなりたい", "うまくなりたい", "できるようになりたい", "できるように", "書けるよう", "話せるよう", "なりたい", "挑戦", "練習"),
+    )
+
+
+def _looks_like_relationship(text: Any) -> bool:
+    compact = _compact(text)
+    return _contains_any(compact, ("友達", "友人", "家族", "恋人", "人と", "会話", "話す", "やり取り", "関係"))
+
+
+def _looks_like_values(text: Any) -> bool:
+    return _contains_any(_compact(text), ("大切", "大事", "守りたい", "価値"))
 
 
 def _collapse(text: Any) -> str:
@@ -85,6 +141,15 @@ def _pick_question(
     category_set = set(_unique_texts(categories or []))
     compact_source = " ".join(_unique_texts([memo, memo_action, *list(category_set)]))
 
+    # First classify the input shape itself. This prevents a condition such as
+    # "将来のことを考えると不安になる" from being forced into a generic
+    # "recent concern" template.
+    if _looks_like_anxiety_trigger(compact_source):
+        return "不安になる時は？", "anxiety_trigger"
+
+    if _looks_like_care_method(compact_source):
+        return "気持ちを整える方法は？", "care"
+
     if "仕事" in category_set:
         if dominant_type in _NEGATIVE_EMOTIONS:
             return "仕事で気にしていることは？", "work"
@@ -92,10 +157,22 @@ def _pick_question(
             return "仕事で大切にしていることは？", "work"
         return "仕事で伸ばしたいことは？", "work"
 
-    if dominant_type == SELF_INSIGHT_EMOTION_TYPE:
+    if _looks_like_notice(compact_source) or dominant_type == SELF_INSIGHT_EMOTION_TYPE:
         if memo or memo_action:
             return "最近気づいたことは？", "notice"
         return "大切にしていることは？", "values"
+
+    if _looks_like_growth(compact_source):
+        return "伸ばしたいことは？", "growth"
+
+    if _looks_like_values(compact_source):
+        return "大切にしていることは？", "values"
+
+    if _looks_like_relationship(compact_source) and not _looks_like_joy(compact_source):
+        return "人との関わりで大切なことは？", "relationship"
+
+    if _looks_like_joy(compact_source):
+        return "最近の楽しみは？", "joy"
 
     if dominant_type in _NEGATIVE_EMOTIONS:
         if "健康" in category_set or "生活" in category_set:
@@ -106,9 +183,6 @@ def _pick_question(
         if "趣味" in category_set or "恋愛" in category_set or "人間関係" in category_set:
             return "最近の楽しみは？", "joy"
         return "大切にしていることは？", "values"
-
-    if any(key in compact_source for key in ("気づ", "分か", "見えて")):
-        return "最近気づいたことは？", "notice"
 
     return "最近気になることは？", "concern"
 
@@ -142,30 +216,97 @@ def _build_raw_answer(
     return _collapse(text)
 
 
+def _nominalize_source_for_template(text: str) -> str:
+    source = _collapse(text).rstrip("。！？!?")
+    if not source:
+        return ""
+    replacements = (
+        ("してみたい", "してみること"),
+        ("やってみたい", "やってみること"),
+        ("したい", "すること"),
+        ("なりたい", "なること"),
+        ("続けたい", "続けること"),
+    )
+    for src, dst in replacements:
+        if source.endswith(src):
+            return source[: -len(src)] + dst
+    if source.endswith(("こと", "時間", "場面", "瞬間", "方法", "関係")):
+        return source
+    if source.endswith("楽しい"):
+        base = source[: -len("楽しい")].strip(" 、,")
+        if base.endswith("のが"):
+            base = base[:-2]
+        elif base.endswith(("が", "は")):
+            base = base[:-1]
+        base = base.strip(" 、,")
+        if base:
+            if re.search(r"(する|した|している|してる|できる|話す|聞く|休む|整える|続ける|広げる|なる|感じる|落ち着く)$", base):
+                return base + "こと"
+            return base + "時間"
+        return "楽しい時間"
+    if source.endswith("嬉しい"):
+        return source + "こと"
+    if re.search(r"(する|した|している|してる|できる|話す|聞く|休む|整える|続ける|広げる|なる|感じる|落ち着く|気づいた|分かった)$", source):
+        return source + "こと"
+    return source
+
+
+def _polish_answer_sentence(text: str) -> str:
+    s = _collapse(text).rstrip("。！？!?")
+    if not s:
+        return ""
+    replacements = (
+        ("不安になる", "不安になります"),
+        ("心配になる", "心配になります"),
+        ("怖くなる", "怖くなります"),
+        ("落ち着く", "気持ちが落ち着きます"),
+        ("安心する", "安心できます"),
+        ("気づいた", "気づきました"),
+        ("分かった", "分かりました"),
+    )
+    for src, dst in replacements:
+        if s.endswith(src):
+            return s[: -len(src)] + dst + "。"
+    s = re.sub(r"(?:になる)です$", "になります", s)
+    s = re.sub(r"(?:した)です$", "しました", s)
+    s = re.sub(r"(?:している|してる)です$", "しています", s)
+    s = re.sub(r"(?:だった)です$", "でした", s)
+    if s.endswith(("です", "ます")):
+        return s + "。"
+    return s + "。"
+
+
 def _build_fallback_preview_text(question: str, raw_answer: str) -> str:
     source = _collapse(raw_answer)
     if not source:
         source = "今の入力から生まれた気づき"
 
+    nominal_source = _nominalize_source_for_template(source)
+    sentence_source = _polish_answer_sentence(source)
+
+    if "不安になる時" in question or "不安を感じる時" in question:
+        return sentence_source
     if "仕事で気にしていること" in question:
-        return f"仕事では、{source}を気にしています。"
+        return f"仕事では、{nominal_source}を気にしています。"
     if "仕事で大切にしていること" in question:
-        return f"仕事では、{source}を大切にしています。"
+        return f"仕事では、{nominal_source}を大切にしています。"
     if "仕事で伸ばしたいこと" in question:
-        return f"仕事で伸ばしたいのは、{source}です。"
+        return f"仕事で伸ばしたいのは、{nominal_source}です。"
     if "最近気づいたこと" in question:
-        return f"最近気づいたのは、{source}です。"
+        return f"最近気づいたのは、{nominal_source}です。"
     if "最近気になること" in question:
-        return f"最近気になっているのは、{source}です。"
+        return f"最近気になっているのは、{nominal_source}です。"
     if "最近の楽しみ" in question:
-        return f"最近の楽しみは、{source}です。"
+        return f"最近の楽しみは、{nominal_source}です。"
     if "最近夢中なこと" in question:
-        return f"最近夢中なのは、{source}です。"
+        return f"最近夢中なのは、{nominal_source}です。"
     if "大切にしていること" in question:
-        return f"大切にしているのは、{source}です。"
+        return f"大切にしているのは、{nominal_source}です。"
+    if "人との関わりで大切なこと" in question:
+        return f"人との関わりでは、{nominal_source}を大切にしたいです。"
     if "気持ちを整える方法" in question:
-        return f"気持ちを整えるために、{source}を大事にしています。"
-    return f"今の入力から見えてきたのは、{source}です。"
+        return f"気持ちを整えるために、{nominal_source}を大事にしています。"
+    return f"今の入力から見えてきたのは、{nominal_source}です。"
 
 
 
