@@ -28,6 +28,10 @@ from emlis_ai_input_meaning_block_service import (
     build_major_meaning_retention_plan,
     build_whole_input_meaning_arc,
 )
+from emlis_ai_response_composition_service import (
+    build_response_composition_plan,
+    build_reply_narrative_arc,
+)
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -324,6 +328,15 @@ def build_emlis_ai_world_model(
         coverage_plan=meaning_coverage_plan,
         whole_input_meaning_arc=whole_input_meaning_arc,
     )
+    response_composition_plan = build_response_composition_plan(
+        input_level=meaning_coverage_plan.input_level,
+        clear_long_input=bool(meaning_coverage_plan.clear_long_input),
+        meaning_blocks=meaning_blocks,
+    )
+    reply_narrative_arc = build_reply_narrative_arc(
+        composition_plan=response_composition_plan,
+        meaning_blocks=meaning_blocks,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     memo_richness = _memo_richness(bundle)
@@ -357,6 +370,8 @@ def build_emlis_ai_world_model(
         meaning_coverage_plan=meaning_coverage_plan,
         whole_input_meaning_arc=whole_input_meaning_arc,
         major_meaning_retention_plan=major_meaning_retention_plan,
+        response_composition_plan=response_composition_plan,
+        reply_narrative_arc=reply_narrative_arc,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
@@ -411,6 +426,8 @@ def build_emlis_ai_world_model(
             "meaning_coverage_selected_block_keys": list(meaning_coverage_plan.selected_block_keys),
             "whole_input_meaning_arc_key": str(getattr(whole_input_meaning_arc, "arc_key", "") or ""),
             "major_meaning_must_keep_block_keys": list(getattr(major_meaning_retention_plan, "must_keep_block_keys", []) or []),
+            "response_composition_key": str(getattr(response_composition_plan, "composition_key", "") or ""),
+            "reply_narrative_arc_key": str(getattr(reply_narrative_arc, "arc_key", "") or ""),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
         },

@@ -229,6 +229,60 @@ class EmlisWholeInputReplyPlan:
     reason: str = ""
 
 
+
+
+@dataclass(frozen=True)
+class ResponseCompositionPlan:
+    """Reply-level composition contract for long clear current inputs.
+
+    Meaning blocks decide what to keep.  This plan decides how those meanings are
+    ordered for a human reader: opening thesis first, then background, limit,
+    realization, new direction, and companion presence.
+    """
+
+    composition_key: str
+    input_level: str
+    clear_long_input: bool
+    narrative_pattern: str
+    opening_role: str
+    ordered_line_roles: List[str] = field(default_factory=list)
+    required_line_roles: List[str] = field(default_factory=list)
+    optional_line_roles: List[str] = field(default_factory=list)
+    transition_policy: str = "guarded"
+    require_opening_thesis: bool = True
+    require_presence_line: bool = True
+    allow_paragraph_breaks: bool = True
+    max_lines: int = 9
+    min_lines: int = 4
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class ReplyNarrativeArc:
+    """A reading order for EmlisAI's response to the current input."""
+
+    arc_key: str
+    title: str
+    opening_thesis: str
+    ordered_roles: List[str] = field(default_factory=list)
+    role_to_block_keys: Dict[str, List[str]] = field(default_factory=dict)
+    transition_groups: Dict[str, str] = field(default_factory=dict)
+    grounding_required: bool = True
+    clarity: float = 0.0
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CompositionLinePlan:
+    line_role: str
+    candidate_key: str
+    required: bool = False
+    block_keys: List[str] = field(default_factory=list)
+    allowed_opening_connectors: List[str] = field(default_factory=list)
+    forbidden_when_first_content_line: bool = False
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class ReplyEndingPlan:
     line_index: int
@@ -425,6 +479,8 @@ class WorldModelFacts:
     meaning_coverage_plan: Optional[MeaningCoveragePlan] = None
     whole_input_meaning_arc: Optional[WholeInputMeaningArc] = None
     major_meaning_retention_plan: Optional[MajorMeaningRetentionPlan] = None
+    response_composition_plan: Optional[ResponseCompositionPlan] = None
+    reply_narrative_arc: Optional[ReplyNarrativeArc] = None
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0

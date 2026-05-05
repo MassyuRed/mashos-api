@@ -124,31 +124,38 @@ def _looks_like_paced_progress(text: Any) -> bool:
     return any(token in compact for token in ("頑張れる日は", "しんどい日は", "立ち止ま", "整えながら", "無理に削"))
 
 
+_CONTRIBUTION_TERMS = ("役に立", "助け", "支え", "誰か", "人のため", "まわり")
+_HAPPINESS_TERMS = ("幸せ", "笑", "喜")
+_SELF_WISH_TERMS = ("自分", "私も", "幸せになりたい", "願", "好き", "楽し", "出会", "大切にしたい")
+_FEAR_TERMS = ("怖", "裏切", "期待", "傷", "不安", "諦め")
+_WISH_TERMS = ("願", "幸せになりたい", "好き", "楽し", "出会", "大切")
+_UNREACHABLE_TERMS = ("届", "遠", "叶わ", "かなわ", "届きにく", "難しい願")
+_PRESENT_EFFORT_TERMS = ("今", "できる", "頑張", "大切", "近づ", "続け")
+
+
 def _looks_like_self_and_others_happiness(text: Any) -> bool:
     compact = _compact(text)
-    return "役に立" in compact and "幸せ" in compact and any(
-        token in compact for token in ("私も幸せ", "自分も幸せ", "好きなこと", "パートナー", "幸せになりたい")
+    return (
+        _contains_any(compact, _CONTRIBUTION_TERMS)
+        and _contains_any(compact, _HAPPINESS_TERMS)
+        and _contains_any(compact, _SELF_WISH_TERMS)
     )
 
 
 def _looks_like_wish_despite_betrayal_fear(text: Any) -> bool:
     compact = _compact(text)
-    return any(token in compact for token in ("裏切られたくない", "期待")) and any(
-        token in compact for token in ("幸せになりたい", "諦めたくない", "願い")
-    )
+    return _contains_any(compact, _FEAR_TERMS) and _contains_any(compact, _WISH_TERMS)
 
 
 def _looks_like_unreachable_wish_present_effort(text: Any) -> bool:
     compact = _compact(text)
-    return any(token in compact for token in ("手の届", "願い")) and any(
-        token in compact for token in ("今頑張れる", "大切にしたい", "願いに届")
-    )
+    return _contains_any(compact, _UNREACHABLE_TERMS) and _contains_any(compact, _PRESENT_EFFORT_TERMS)
 
 
 def _piece_broken_phrase_present(text: Any) -> bool:
     return bool(re.search(
-        r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
-        r"|中途半端だ気持ち|中途半端だから気持ち|好きになれないけど気持ち",
+        # Generic guard for broken nominalization after a predicate or connector.
+        r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)",
         str(text or ""),
     ))
 
@@ -166,6 +173,49 @@ def _input_level_for_piece(text: Any) -> str:
     return "very_long"
 
 
+def _piece_answer_from_semantic_flags(*, source: str, focus_key: str) -> str:
+    compact = _compact(source)
+    parts: List[str] = []
+
+    has_contribution = _contains_any(compact, _CONTRIBUTION_TERMS)
+    has_other_happiness = has_contribution and _contains_any(compact, _HAPPINESS_TERMS)
+    has_fear = _contains_any(compact, _FEAR_TERMS)
+    has_self_wish = _contains_any(compact, _SELF_WISH_TERMS)
+    has_concrete_wish = _contains_any(compact, ("好き", "楽し", "出会", "暮ら", "関係", "幸せになりたい"))
+    has_present_effort = _contains_any(compact, _PRESENT_EFFORT_TERMS)
+    has_balanced = _looks_like_balanced_progress(source)
+    has_paced = _looks_like_paced_progress(source)
+    has_limit = _looks_like_limit_awareness(source)
+
+    if has_other_happiness:
+        parts.append("誰かの役に立つことや、まわりの人が幸せでいてくれることは、自分にとって大切な幸せです。")
+    elif has_contribution:
+        parts.append("誰かのためにできることを、自分にとって大切なこととして見ています。")
+
+    if has_fear and has_self_wish:
+        parts.append("期待して傷つくのが怖くて諦めようとする気持ちがあっても、自分自身の願いまで消したいわけではありません。")
+    elif has_fear:
+        parts.append("期待することへの怖さや、傷つきたくない気持ちもあります。")
+
+    if has_self_wish or has_concrete_wish:
+        parts.append("それでも、自分自身の幸せや、好きなことを楽しむ願いも大切にしたいです。")
+
+    if has_balanced:
+        parts.append("無理にどちらかを選ばず、頑張りたい気持ちもしんどい気持ちも抱えたまま進みたいです。")
+    if has_paced:
+        parts.append("頑張れる日は少し進んで、しんどい日は立ち止まりながら整えていきたいです。")
+    if has_limit:
+        parts.append("今の自分は弱いのではなく、自分の限界や状態に気づけているのだと思います。")
+
+    if has_present_effort:
+        parts.append("その願いや気づきに近づくために、今できることを大切にしたいです。")
+
+    if not parts:
+        parts.append("今の入力から見えてきた気づきを、自分の言葉として大切にしたいです。")
+    # Keep Piece readable while preserving key meaning.
+    return _collapse("".join(parts[:4]))
+
+
 def _build_piece_core_question_answer_plan(
     *,
     emotion_details: Sequence[Dict[str, Any]],
@@ -177,121 +227,86 @@ def _build_piece_core_question_answer_plan(
     compact = _compact(source)
     if not compact:
         return None
+
     level = _input_level_for_piece(source)
     clear_long_input = level in {"long", "very_long"} and (
-        sum(1 for token in ("それでも", "でも同時に", "だからこそ", "どっちも", "頑張れる日は", "しんどい日は", "今の自分") if token in compact) >= 2
+        sum(1 for token in ("それでも", "でも", "だから", "どちら", "両方", "今", "自分") if token in compact) >= 2
         or _looks_like_balanced_progress(source)
+        or _looks_like_self_and_others_happiness(source)
     )
 
-    if _looks_like_self_and_others_happiness(source) and _looks_like_wish_despite_betrayal_fear(source):
+    plans: List[PieceCoreQuestionAnswerPlan] = []
+
+    def make_plan(focus_key: str, question: str, block_keys: List[str], reason: str) -> PieceCoreQuestionAnswerPlan:
+        answer = _piece_answer_from_semantic_flags(source=source, focus_key=focus_key)
         return PieceCoreQuestionAnswerPlan(
-            focus_key="self_and_others_happiness",
-            question="誰かの幸せを願いながら、自分自身はどんな幸せを諦めたくない？",
-            answer=(
-                "誰かの役に立てて、その人たちが幸せに笑ってくれることは、自分にとって大きな幸せです。"
-                "でも、自分自身も好きなことを納得いくまで楽しみ、素敵なパートナーと出会って幸せになりたい。"
-                "期待して裏切られるのは怖いけれど、その願いに届くために、今頑張れることを大切にしたいです。"
-            ),
-            selected_block_keys=["other_contribution", "own_happiness_wish", "betrayal_fear", "concrete_life_wishes", "present_effort_toward_wish"],
-            coverage_roles=["other_contribution", "own_happiness_wish", "betrayal_fear", "concrete_life_wishes", "present_effort_toward_wish"],
+            focus_key=focus_key,
+            question=question,
+            answer=answer,
+            selected_block_keys=block_keys,
+            coverage_roles=block_keys,
             input_level=level,
-            clear_long_input=True if level in {"long", "very_long"} else clear_long_input,
-            must_keep_block_keys=["other_contribution", "own_happiness_wish", "betrayal_fear", "concrete_life_wishes", "present_effort_toward_wish"],
-            communicative_summary="誰かの幸せを願う気持ちと、自分自身の幸せを諦めたくない願いを両方伝える。",
-            expected_reader_understanding="他者の幸せだけでなく、自分自身の具体的な幸せにも向かいたい考え。",
-            answer_sentence_count=3,
+            clear_long_input=clear_long_input or level in {"long", "very_long"},
+            must_keep_block_keys=block_keys,
+            communicative_summary="入力全体の核を、他者にも伝わる自己理解文として整える。",
+            expected_reader_understanding="感情だけでなく、願い・怖さ・今できることの関係が伝わること。",
+            answer_sentence_count=max(1, answer.count("。")),
             category_generic_suppressed=True,
-            reason="self_and_others_happiness_with_betrayal_fear_detected",
+            reason=reason,
         )
 
-    if _looks_like_wish_despite_betrayal_fear(source) and _looks_like_unreachable_wish_present_effort(source):
-        return PieceCoreQuestionAnswerPlan(
-            focus_key="wish_despite_betrayal_fear",
-            question="期待して傷つくのが怖くても、どんな願いに届きたい？",
-            answer=(
-                "期待して裏切られたくないから、諦めている自分もいます。"
-                "それでも、自分も幸せになりたい気持ちは諦めたくありません。"
-                "好きなことをもっと楽しみ、素敵なパートナーと出会って幸せになる願いに届くために、今頑張れることを大切にしたいです。"
-            ),
-            selected_block_keys=["betrayal_fear", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
-            coverage_roles=["betrayal_fear", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
-            input_level=level,
-            clear_long_input=True if level in {"long", "very_long"} else clear_long_input,
-            must_keep_block_keys=["betrayal_fear", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
-            communicative_summary="期待して傷つく怖さがあっても、自分の幸せへの願いを残す。",
-            expected_reader_understanding="怖さと願いが両方ある中で、今できることを大切にしたい考え。",
-            answer_sentence_count=3,
-            category_generic_suppressed=True,
-            reason="wish_despite_betrayal_fear_detected",
-        )
+    if _looks_like_self_and_others_happiness(source):
+        plans.append(make_plan(
+            "self_and_others_happiness",
+            "誰かのためにある気持ちと、自分自身の願いをどう大切にしたい？",
+            ["other_contribution", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
+            "generic_self_and_others_happiness_detected",
+        ))
+
+    if _looks_like_wish_despite_betrayal_fear(source):
+        plans.append(make_plan(
+            "wish_despite_fear",
+            "怖さがあっても、どんな願いを大切にしたい？",
+            ["betrayal_fear", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
+            "generic_wish_despite_fear_detected",
+        ))
 
     if _looks_like_unreachable_wish_present_effort(source):
-        return PieceCoreQuestionAnswerPlan(
-            focus_key="unreachable_wish_present_effort",
-            question="手の届かない願いに近づくために、今何を大切にしたい？",
-            answer=(
-                "好きなことをもっとして、納得いくまで楽しみ、素敵なパートナーと出会って幸せになりたいです。"
-                "今は手の届かない願いに見えても、その願いに届くように、今頑張れることを大切にしたいです。"
-            ),
-            selected_block_keys=["concrete_life_wishes", "unreachable_wish", "present_effort_toward_wish"],
-            coverage_roles=["concrete_life_wishes", "unreachable_wish", "present_effort_toward_wish"],
-            input_level=level,
-            clear_long_input=True if level in {"long", "very_long"} else clear_long_input,
-            must_keep_block_keys=["concrete_life_wishes", "present_effort_toward_wish"],
-            communicative_summary="手の届かない願いへ向けて今できることを大切にする。",
-            expected_reader_understanding="具体的な願いと今の行動をつなげる考え。",
-            answer_sentence_count=2,
-            category_generic_suppressed=True,
-            reason="unreachable_wish_present_effort_detected",
-        )
-
-    if _looks_like_balanced_progress(source) and _looks_like_paced_progress(source):
-        return PieceCoreQuestionAnswerPlan(
-            focus_key="balanced_progress",
-            question="頑張りたい気持ちとしんどさが両方ある時、どう進みたい？",
-            answer=(
-                "無理にどちらかを選ばず、頑張れる日は少し進んで、"
-                "しんどい日は立ち止まりながら整えて進みたい。"
-                "今の自分は弱いのではなく、限界に気づけている状態だと思う。"
-            ),
-            selected_block_keys=["dual_holding", "paced_progress", "self_understanding"],
-            coverage_roles=["dual_holding", "paced_progress", "self_understanding"],
-            input_level=level,
-            clear_long_input=clear_long_input,
-            reason="balanced_progress_and_paced_progress_detected",
-        )
+        plans.append(make_plan(
+            "unreachable_wish_present_effort",
+            "遠く見える願いに近づくために、今何を大切にしたい？",
+            ["unreachable_wish", "present_effort_toward_wish"],
+            "generic_unreachable_wish_present_effort_detected",
+        ))
 
     if _looks_like_balanced_progress(source):
-        return PieceCoreQuestionAnswerPlan(
-            focus_key="balanced_progress",
-            question="頑張りたい気持ちとしんどさを、どう抱えて進みたい？",
-            answer=(
-                "頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てずに抱えたまま進みたい。"
-                "無理に削らず、整えながら進んでいきたい。"
-            ),
-            selected_block_keys=["dual_holding", "paced_progress"],
-            coverage_roles=["dual_holding", "paced_progress"],
-            input_level=level,
-            clear_long_input=clear_long_input,
-            reason="balanced_progress_detected",
-        )
+        plans.append(make_plan(
+            "balanced_progress",
+            "頑張りたい気持ちとしんどさを、どう抱えて進みたい？",
+            ["dual_holding", "paced_progress", "self_understanding"],
+            "generic_balanced_progress_detected",
+        ))
 
     if _looks_like_limit_awareness(source):
-        return PieceCoreQuestionAnswerPlan(
-            focus_key="limit_awareness",
-            question="今の自分の状態をどう捉えている？",
-            answer=(
-                "今の自分は弱いのではなく、体と心の限界に気づけている状態だと思う。"
-                "ここまで頑張ってきた時間も、無理してきた積み重ねもあるから、整えながら進みたい。"
-            ),
-            selected_block_keys=["state_awareness", "effort_history", "self_understanding", "paced_progress"],
-            coverage_roles=["state_awareness", "effort_history", "self_understanding", "paced_progress"],
-            input_level=level,
-            clear_long_input=clear_long_input,
-            reason="limit_awareness_detected",
-        )
+        plans.append(make_plan(
+            "limit_awareness",
+            "今の自分の状態をどう捉えている？",
+            ["state_awareness", "effort_history", "self_understanding", "paced_progress"],
+            "generic_limit_awareness_detected",
+        ))
 
-    return None
+    if not plans:
+        return None
+
+    priority = {
+        "self_and_others_happiness": 5,
+        "wish_despite_fear": 4,
+        "unreachable_wish_present_effort": 3,
+        "balanced_progress": 3,
+        "limit_awareness": 2,
+    }
+    plans.sort(key=lambda plan: priority.get(plan.focus_key, 0), reverse=True)
+    return plans[0]
 
 
 def _collapse(text: Any) -> str:
@@ -651,8 +666,8 @@ def _build_abstracted_safe_preview_text(question: str, raw_answer: str) -> str:
     has_url = any(token in raw.lower() for token in ("http://", "https://", "www."))
     has_contact = any(token in raw for token in ("電話", "住所", "連絡先", "LINE", "ライン", "メール", "@"))
 
-    if "誰かの幸せ" in q or "期待して傷つく" in q or "手の届かない願い" in q:
-        return "誰かの幸せを願う気持ちも、自分自身の幸せを諦めたくない気持ちも大切にしたいです。今は遠い願いに見えても、届くために今できることを大切にしたいです。"
+    if ("願い" in q and any(token in q for token in ("怖", "自分", "大切", "近づ"))):
+        return "怖さや迷いがあっても、自分自身の願いを大切にしたいです。その願いに近づくために、今できることを大切にしたいです。"
     if "頑張りたい気持ちとしんどさ" in q:
         return "頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てず、整えながら進みたいです。"
     if "今の自分の状態" in q:

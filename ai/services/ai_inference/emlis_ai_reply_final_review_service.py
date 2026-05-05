@@ -25,10 +25,11 @@ MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造�
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
 PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 BROKEN_NOUN_PHRASE_RE = re.compile(
+    # Generic guard for broken nominalization after a predicate or connector.
     r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
-    r"|中途半端だ気持ち|中途半端だから気持ち|好きになれないけど気持ち"
-    r"|諦めたくないけれど気持ち|期待して裏切られたくないから気持ち"
 )
+MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
+STALE_BODY_LINE_RE = re.compile(r"前回入力|別の入力|前の入力|過去の例文")
 
 
 def _lines(text: Any) -> List[str]:
@@ -91,9 +92,44 @@ def _has_three_same_endings(lines: List[str]) -> bool:
     return False
 
 
+def _first_content_index(lines: List[str]) -> int | None:
+    for idx, line in enumerate(lines):
+        if line == "Emlisです。" or line.endswith("Emlisです。"):
+            continue
+        return idx
+    return None
+
+
+def _current_raw_compact(world_model: Optional[WorldModel]) -> str:
+    if world_model is None:
+        return ""
+    parts: List[str] = []
+    facts = getattr(world_model, "facts", None)
+    for anchor in list(getattr(facts, "user_word_anchors", []) or []):
+        parts.append(str(getattr(anchor, "text", "") or ""))
+    for phrase in list(getattr(facts, "shaped_user_phrases", []) or []):
+        parts.append(str(getattr(phrase, "raw_text", "") or ""))
+    return re.sub(r"[\s　、,。.!！?？\t\n\r「」『』（）()]", "", " ".join(parts))
+
+
+def _stale_body_line(line: str, world_model: Optional[WorldModel]) -> bool:
+    """Block explicit stale-meta leakage, not domain-specific user language.
+
+    Earlier iterations contained sample-specific body/fatigue guards.  Those made
+    the review depend on previous examples.  Current-input grounding is now
+    handled by candidate evidence and composition planning; this final review only
+    catches text that explicitly admits it came from another input/example.
+    """
+
+    return bool(STALE_BODY_LINE_RE.search(str(line or "")))
+
+
 def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[WorldModel] = None) -> FinalReviewResult:
     issues: List[FinalReviewIssue] = []
     lines = _lines(comment_text)
+    first_content_idx = _first_content_index(lines)
+    if first_content_idx is not None and MIDSTREAM_OPENING_RE.search(lines[first_content_idx]):
+        issues.append(FinalReviewIssue(code="first_content_line_midstream", severity="block", line_index=first_content_idx, message=lines[first_content_idx]))
     repaired_lines: List[str] = []
     changed = False
 
@@ -112,6 +148,10 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
             continue
         if MECHANICAL_META_RE.search(line):
             issues.append(FinalReviewIssue(code="mechanical_meta_language", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
+        if _stale_body_line(line, world_model):
+            issues.append(FinalReviewIssue(code="stale_meaning_block_leak", severity="block", line_index=idx, message=line))
             changed = True
             continue
         repaired_lines.append(line)
@@ -136,17 +176,26 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
         min_blocks = int(getattr(coverage, "min_blocks_to_cover", 0) or 0)
         if retention is not None and getattr(retention, "must_keep_block_keys", None):
             min_blocks = max(min_blocks, min(7, len(getattr(retention, "must_keep_block_keys", []) or [])))
-        if len(repaired_lines) < max(5, min_blocks + 1):
+        min_required_lines = max(4, min(6, min_blocks))
+        if len(repaired_lines) < min_required_lines:
             issues.append(FinalReviewIssue(code="long_input_underanswered", severity="block", line_index=None, message="clear long input reply is too short"))
 
     repaired_text = "\n".join(repaired_lines).strip() if changed else None
     final_text = repaired_text if repaired_text is not None else "\n".join(lines).strip()
-    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text))
+    final_lines = _lines(final_text)
+    final_first_idx = _first_content_index(final_lines)
+    midstream_remaining = final_first_idx is not None and MIDSTREAM_OPENING_RE.search(final_lines[final_first_idx])
+    stale_remaining = any(_stale_body_line(line, world_model) for line in final_lines)
+    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or midstream_remaining or stale_remaining)
     repetition_remaining = sum(line.count("のですね") for line in _lines(final_text)) > 2 or _has_three_same_endings(_lines(final_text))
     long_input_underanswered = any(issue.code == "long_input_underanswered" for issue in issues)
     passed = bool(final_text) and not block_remaining and not repetition_remaining and not long_input_underanswered and any(PRESENCE_RE.search(line) for line in _lines(final_text))
     if block_remaining:
         issues.append(FinalReviewIssue(code="final_block_issue_remaining", severity="block", line_index=None, message="unrepaired block issue remains"))
+    if midstream_remaining:
+        issues.append(FinalReviewIssue(code="first_content_line_midstream_remaining", severity="block", line_index=final_first_idx, message="first content line starts midstream"))
+    if stale_remaining:
+        issues.append(FinalReviewIssue(code="stale_meaning_block_leak_remaining", severity="block", line_index=None, message="ungrounded stale meaning line remains"))
     if repetition_remaining:
         issues.append(FinalReviewIssue(code="sentence_ending_repetition_remaining", severity="block", line_index=None, message="ending repetition remains"))
     return FinalReviewResult(

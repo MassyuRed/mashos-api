@@ -200,6 +200,32 @@ def _serialize_major_retention(item: Any) -> Dict[str, Any]:
     }
 
 
+def _composition_meta(world_model: WorldModel) -> Dict[str, Any]:
+    plan = getattr(world_model.facts, "response_composition_plan", None)
+    arc = getattr(world_model.facts, "reply_narrative_arc", None)
+    if plan is None:
+        return {
+            "composition_key": "",
+            "narrative_pattern": "",
+            "opening_thesis_present": False,
+            "response_composition_ok": True,
+            "current_input_grounding_ok": True,
+            "stale_meaning_block_leak_blocked": True,
+        }
+    return {
+        "composition_key": _clean(getattr(plan, "composition_key", "")),
+        "narrative_pattern": _clean(getattr(plan, "narrative_pattern", "")),
+        "ordered_line_roles": list(getattr(plan, "ordered_line_roles", []) or []),
+        "required_line_roles": list(getattr(plan, "required_line_roles", []) or []),
+        "opening_thesis": _clean(getattr(arc, "opening_thesis", "")) if arc is not None else "",
+        "opening_thesis_present": bool(_clean(getattr(arc, "opening_thesis", "")) if arc is not None else ""),
+        "transition_policy": _clean(getattr(plan, "transition_policy", "")),
+        "response_composition_ok": True,
+        "current_input_grounding_ok": True,
+        "stale_meaning_block_leak_blocked": True,
+    }
+
+
 def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, Any]:
     coverage = getattr(world_model.facts, "meaning_coverage_plan", None)
     blocks = list(getattr(world_model.facts, "meaning_blocks", []) or [])
@@ -673,6 +699,7 @@ def _build_meta(
         "meaning_coverage": _meaning_coverage_meta(world_model, plan),
         "whole_input_meaning_arc": _serialize_whole_input_arc(getattr(world_model.facts, "whole_input_meaning_arc", None)),
         "major_meaning_retention": _serialize_major_retention(getattr(world_model.facts, "major_meaning_retention_plan", None)),
+        "composition": _composition_meta(world_model),
         "understanding": _understanding_meta(world_model, plan),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -731,6 +758,7 @@ def _evaluate_pre_return_gate(
     anchor_summary = meta.get("anchor_summary") if isinstance(meta.get("anchor_summary"), dict) else {}
     understanding = meta.get("understanding") if isinstance(meta.get("understanding"), dict) else {}
     meaning_coverage = meta.get("meaning_coverage") if isinstance(meta.get("meaning_coverage"), dict) else {}
+    composition = meta.get("composition") if isinstance(meta.get("composition"), dict) else {}
     allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
     return evaluate_emlis_ai_quality_gate(
         comment_text=comment_text,
@@ -749,6 +777,7 @@ def _evaluate_pre_return_gate(
         safe_fallback_used=safe_fallback_used,
         blocked_issue_codes=blocked_issue_codes or [],
         meaning_coverage=meaning_coverage,
+        composition=composition,
     )
 
 

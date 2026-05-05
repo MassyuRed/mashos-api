@@ -140,13 +140,10 @@ def build_understanding_frame(
         roles=("boundary_violation",),
         raw=raw_all,
         patterns=(
-            r"パーソナルスペースに触れてしまった",
-            r"パーソナルスペースに入ってしまった",
-            r"[^。！？!?、,\n\r]{0,16}パーソナルスペース[^。！？!?、,\n\r]{0,18}",
-            r"距離感[^。！？!?、,\n\r]{0,18}",
+            r"[^。！？!?、,\n\r]{0,16}(?:距離感|境界|踏み込|越えて|触れてしま|入ってしま)[^。！？!?、,\n\r]{0,18}",
         ),
         role="boundary_violation",
-        source_field="memo_action" if "パーソナルスペース" in raw_action else "memo",
+        source_field="memo_action" if raw_action.strip() else "memo",
         evidence=evidence,
         key="boundary",
     )
@@ -155,7 +152,6 @@ def build_understanding_frame(
         roles=("self_awareness",),
         raw=raw_memo,
         patterns=(
-            r"(?:きっと)?怒ると知っていながら",
             r"[^。！？!?、,\n\r]{0,14}知っていながら",
             r"[^。！？!?、,\n\r]{0,14}分かっていながら",
             r"[^。！？!?、,\n\r]{0,14}わかっていながら",
@@ -170,10 +166,9 @@ def build_understanding_frame(
         roles=("justification",),
         raw=raw_memo,
         patterns=(
-            r"女の子との絡みがあったからという理由を掲げて",
-            r"女の子との絡みがあったから",
             r"[^。！？!?、,\n\r]{1,24}という理由を掲げて",
             r"[^。！？!?、,\n\r]{1,24}理由にして",
+            r"[^。！？!?、,\n\r]{1,24}理由にしている",
         ),
         role="justification",
         source_field="memo",

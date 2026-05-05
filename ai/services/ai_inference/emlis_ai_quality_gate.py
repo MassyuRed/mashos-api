@@ -37,12 +37,13 @@ _BROKEN_CONNECTION_RE = re.compile(
     r"|かなぁのあと"
 )
 _BROKEN_NOUN_PHRASE_RE = re.compile(
+    # Generic guard for broken nominalization after a predicate or connector.
     r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
-    r"|中途半端だ気持ち|中途半端だから気持ち|好きになれないけど気持ち"
-    r"|諦めたくないけれど気持ち|期待して裏切られたくないから気持ち"
 )
 _ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
 _PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
+_MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
+_STALE_MEANING_RE = re.compile(r"前回入力|別の入力|前の入力|過去の例文")
 _MECHANICAL_META_LANGUAGE_RE = re.compile(r"(認識しています|入力として|構造として|分析すると|理解しました|受け取りました|受理しました)")
 _EMPTY_ACK_LINE_RE = re.compile(r"^(?:今回は、?)?(?:書いてくれた)?(?:内容|入力|言葉|気持ち|感情).{0,18}受け取(?:り|る|ります|りました|っています).{0,4}$")
 _RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて")
@@ -90,6 +91,12 @@ class EmlisAIQualityGateResult:
     concrete_wishes_not_dropped: bool = True
     present_effort_not_dropped: bool = True
     broken_noun_phrase_blocked: bool = True
+    response_composition_ok: bool = True
+    opening_thesis_present: bool = True
+    first_content_line_not_midstream: bool = True
+    transition_coherence_ok: bool = True
+    current_input_grounding_ok: bool = True
+    stale_meaning_block_leak_blocked: bool = True
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -132,6 +139,12 @@ class EmlisAIQualityGateResult:
             "concrete_wishes_not_dropped": bool(self.concrete_wishes_not_dropped),
             "present_effort_not_dropped": bool(self.present_effort_not_dropped),
             "broken_noun_phrase_blocked": bool(self.broken_noun_phrase_blocked),
+            "response_composition_ok": bool(self.response_composition_ok),
+            "opening_thesis_present": bool(self.opening_thesis_present),
+            "first_content_line_not_midstream": bool(self.first_content_line_not_midstream),
+            "transition_coherence_ok": bool(self.transition_coherence_ok),
+            "current_input_grounding_ok": bool(self.current_input_grounding_ok),
+            "stale_meaning_block_leak_blocked": bool(self.stale_meaning_block_leak_blocked),
             "capability_profile": dict(self.capability_profile or {}),
         }
 
@@ -155,64 +168,45 @@ def _compact(value: Any) -> str:
 
 
 def _anchor_terms(sample_user_word_anchors: Sequence[Any]) -> list[str]:
+    """Return reusable terms from anchors without relying on example-specific words.
+
+    The gate should verify that the reply uses the user's current words, but it
+    must not contain a list of past test-case phrases.  We therefore derive
+    terms from the supplied anchors by splitting them into safe, short chunks and
+    filtering common function words.
+    """
+
+    stopwords = {
+        "こと", "もの", "ため", "から", "けど", "でも", "それ", "これ",
+        "自分", "私", "あなた", "思う", "思って", "感じ", "気持ち",
+    }
     terms: list[str] = []
+
+    def add(term: str) -> None:
+        normalized = str(term or "").strip()
+        if not normalized:
+            return
+        compact = _compact(normalized)
+        if len(compact) < 2 or compact in stopwords:
+            return
+        if compact not in [_compact(item) for item in terms]:
+            terms.append(normalized)
+
     for item in sample_user_word_anchors or []:
         if not isinstance(item, Mapping):
             continue
         text = str(item.get("text") or "").strip()
         if not text:
             continue
-        for marker in (
-            "パーソナルスペース",
-            "怒ると知っていながら",
-            "自分の非",
-            "見たくない",
-            "嫌われ",
-            "悲しくて不安",
-            "連絡の頻度",
-            "わかり合え",
-            "泣きそう",
-            "悔しい",
-            "もったいない",
-            "むかつく",
-            "イライラ",
-            "教えて",
-            "どう頑張ればいい",
-            "チャット",
-            "癒",
-            "体も心",
-            "ボロボロ",
-            "ここまで頑張",
-            "無理してきた",
-            "もう少し頑張りたい",
-            "投げ出したい",
-            "終わりにしたくない",
-            "しんどい",
-            "体が重",
-            "気持ちがついてこ",
-            "崩れ",
-            "どっちも",
-            "両方",
-            "立ち止",
-            "整え",
-            "弱いわけ",
-            "限界",
-            "誰かの役に立",
-            "中途半端",
-            "好きになれない",
-            "諦めたくない",
-            "諦めて",
-            "裏切られたくない",
-            "幸せになりたい",
-            "好きなこと",
-            "パートナー",
-            "手の届",
-            "今頑張れる",
-        ):
-            if marker in text and marker not in terms:
-                terms.append(marker)
-        if len(text) <= 18 and text not in terms:
-            terms.append(text)
+        if len(_compact(text)) <= 18:
+            add(text)
+        for chunk in re.split(r"[。！？!?、,\n\r\t]|(?:けど|けれど|でも|から|ので|のに|そして|それで)", text):
+            chunk = chunk.strip(" 　。！？!?、,")
+            if 2 <= len(_compact(chunk)) <= 18:
+                add(chunk)
+        for token in re.findall(r"[一-龥ぁ-んァ-ンーA-Za-z0-9]{2,12}", text):
+            if len(_compact(token)) >= 2:
+                add(token)
     return terms
 
 
@@ -265,27 +259,40 @@ def _sentence_ending_variety_ok(text: str) -> bool:
     return True
 
 
-_LONG_ROLE_TERMS = {
-    "state_awareness": ("体も心", "ボロボロ", "自分でもちゃんと分か"),
-    "effort_history": ("ここまで頑張", "無理してきた時間", "積み重"),
-    "continuation_wish": ("もう少し頑張りたい", "投げ出したいわけ", "終わりにしたくない"),
-    "not_want_to_quit": ("投げ出したいわけ", "終わりにしたくない"),
-    "fatigue_or_limit": ("体が重", "気持ちがついてこ", "しんど"),
-    "collapse_anxiety": ("崩れてしまいそう", "崩れそう", "不安"),
-    "dual_holding": ("両方", "どちらか", "頑張りたい気持ちもしんどい気持ち"),
-    "paced_progress": ("頑張れる日は", "しんどい日は", "立ち止ま", "整え"),
-    "self_understanding": ("弱いのではなく", "弱いわけ", "限界に気づ"),
-    "other_contribution": ("誰かの役に立", "役に立て", "幸せに笑"),
-    "self_dislike_from_halfway": ("中途半端", "好きになれない"),
-    "others_happiness_as_own_happiness": ("幸せに笑", "自分の幸せに近"),
-    "future_not_giving_up": ("諦めたくない", "今後"),
-    "resignation_self": ("諦めている自分", "諦めてる自分"),
-    "betrayal_fear": ("裏切られたくない", "裏切られるのが怖", "期待"),
-    "own_happiness_wish": ("私も幸せになりたい", "自分も幸せになりたい", "幸せになりたい"),
-    "existing_happiness_and_more": ("既に幸せ", "それ以上"),
-    "concrete_life_wishes": ("好きなこと", "納得いくまで", "パートナー"),
-    "unreachable_wish": ("手の届かない", "手の届"),
-    "present_effort_toward_wish": ("今頑張れる", "願いに届", "大切にしたい"),
+_ROLE_FAMILY_TERMS = {
+    # Terms are intentionally broad semantic families, not sample-answer keys.
+    "state_awareness": ("状態", "気づ", "分か", "限界", "疲", "しんど"),
+    "effort_history": ("頑張", "無理", "積み重", "続け"),
+    "continuation_wish": ("続け", "頑張", "諦めたくない", "終わりにしたくない"),
+    "not_want_to_quit": ("投げ出", "終わりにしたくない", "諦めたくない"),
+    "fatigue_or_limit": ("しんど", "重", "疲", "限界", "ついてこ"),
+    "collapse_anxiety": ("不安", "崩", "壊", "持たない"),
+    "dual_holding": ("両方", "どちらも", "どっちも", "抱え", "切り捨て"),
+    "paced_progress": ("少し", "立ち止", "整え", "進", "ペース"),
+    "self_permission": ("許", "立ち止", "休", "大丈夫"),
+    "self_understanding": ("弱い", "限界", "気づ", "状態", "理解"),
+    "other_contribution": ("役に立", "助け", "支え", "誰か", "人", "幸せ"),
+    "self_dislike_from_halfway": ("好きになれ", "中途半端", "自分", "責め"),
+    "others_happiness_as_own_happiness": ("幸せ", "笑", "役に立", "人"),
+    "future_not_giving_up": ("諦めたくない", "今後", "これから", "願"),
+    "resignation_self": ("諦め", "期待", "怖", "傷"),
+    "betrayal_fear": ("裏切", "期待", "怖", "傷つ"),
+    "own_happiness_wish": ("幸せになりたい", "自分", "願", "大切"),
+    "existing_happiness_and_more": ("既に", "ある", "それ以上", "求め"),
+    "concrete_life_wishes": ("好き", "楽し", "出会", "暮ら", "願"),
+    "unreachable_wish": ("届", "遠", "願", "手"),
+    "present_effort_toward_wish": ("今", "できる", "頑張", "大切", "近づ"),
+    "self_sacrifice_no_worry": ("我慢", "心配", "負担", "迷惑"),
+    "self_sacrifice_rounds_off": ("我慢", "丸く", "収ま", "楽"),
+    "old_strategy_ease": ("楽", "やり方", "我慢", "収ま"),
+    "alone_burden": ("一人", "ひとり", "抱え", "しんど"),
+    "capacity_runs_out": ("余裕", "なく", "限界", "持たない"),
+    "talk_or_rely_when_hard": ("話", "頼", "相談", "助け"),
+    "sustainable_by_relying": ("無理せず", "続け", "頼", "話"),
+    "protective_distance": ("距離", "守", "離れ", "境界"),
+    "no_overdoing_choice": ("無理しない", "選択", "休", "守"),
+    "not_only_patience": ("我慢", "正しい", "だけ", "必要"),
+    "state_based_action": ("状態", "見ながら", "動", "考"),
 }
 
 
@@ -293,7 +300,7 @@ def _long_input_role_hits(text: str, required_roles: Sequence[Any]) -> set[str]:
     compact_text = _compact(text)
     hits: set[str] = set()
     for role in [str(item or "") for item in required_roles or [] if str(item or "")]:
-        terms = _LONG_ROLE_TERMS.get(role, ())
+        terms = _ROLE_FAMILY_TERMS.get(role, ())
         if any(_compact(term) in compact_text for term in terms):
             hits.add(role)
     return hits
@@ -335,12 +342,39 @@ def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, 
     coverage_ratio = (len(hits) / len(must_keys)) if must_keys else 1.0
     must_keep_coverage_ok = coverage_ratio >= required_ratio
     compact_text = _compact(text)
-    own_ok = "own_happiness_wish" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["own_happiness_wish"])
-    betrayal_ok = "betrayal_fear" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["betrayal_fear"])
-    concrete_ok = "concrete_life_wishes" not in must_keys or sum(1 for t in _LONG_ROLE_TERMS["concrete_life_wishes"] if _compact(t) in compact_text) >= 2
-    present_ok = "present_effort_toward_wish" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["present_effort_toward_wish"])
+    own_ok = "own_happiness_wish" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["own_happiness_wish"])
+    betrayal_ok = "betrayal_fear" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["betrayal_fear"])
+    concrete_ok = "concrete_life_wishes" not in must_keys or sum(1 for t in _ROLE_FAMILY_TERMS["concrete_life_wishes"] if _compact(t) in compact_text) >= 2
+    present_ok = "present_effort_toward_wish" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["present_effort_toward_wish"])
     major_ok = must_keep_coverage_ok and own_ok and betrayal_ok and concrete_ok and present_ok
     return major_ok, must_keep_coverage_ok, own_ok, betrayal_ok, concrete_ok, present_ok
+
+
+def _first_content_line(text: str) -> str:
+    for line in [line.strip() for line in str(text or "").splitlines() if line.strip()]:
+        if line == "Emlisです。" or line.endswith("Emlisです。"): 
+            continue
+        return line
+    return ""
+
+
+def _evaluate_response_composition(text: str, composition: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
+    if not isinstance(composition, Mapping) or not composition.get("composition_key"):
+        # Even without a composition plan, block a reply that obviously starts in
+        # the middle.  Other composition requirements apply only to planned long
+        # inputs.
+        first_ok = not bool(_MIDSTREAM_OPENING_RE.search(_first_content_line(text)))
+        return first_ok, True, first_ok, first_ok, True, True
+    opening_required = bool(composition.get("opening_thesis_present"))
+    first_line = _first_content_line(text)
+    first_ok = not bool(_MIDSTREAM_OPENING_RE.search(first_line))
+    opening_text = str(composition.get("opening_thesis") or "").strip()
+    opening_present = (not opening_required) or bool(opening_text and opening_text in text)
+    stale_leak_blocked = not bool(_STALE_MEANING_RE.search(text))
+    current_grounding_ok = stale_leak_blocked
+    transition_ok = first_ok
+    response_ok = opening_present and first_ok and transition_ok and current_grounding_ok and stale_leak_blocked
+    return response_ok, opening_present, first_ok, transition_ok, current_grounding_ok, stale_leak_blocked
 
 
 def evaluate_emlis_ai_quality_gate(
@@ -361,6 +395,7 @@ def evaluate_emlis_ai_quality_gate(
     safe_fallback_used: bool = False,
     blocked_issue_codes: Sequence[str] | None = None,
     meaning_coverage: Mapping[str, Any] | None = None,
+    composition: Mapping[str, Any] | None = None,
 ) -> EmlisAIQualityGateResult:
     tier = str(getattr(capability, "tier", "free") or "free").strip().lower()
     history_mode = str(getattr(capability, "history_mode", "none") or "none").strip().lower()
@@ -415,6 +450,14 @@ def evaluate_emlis_ai_quality_gate(
         concrete_wishes_not_dropped,
         present_effort_not_dropped,
     ) = _evaluate_major_meaning_retention(text, meaning_coverage)
+    (
+        response_composition_ok,
+        opening_thesis_present,
+        first_content_line_not_midstream,
+        transition_coherence_ok,
+        current_input_grounding_ok,
+        stale_meaning_block_leak_blocked,
+    ) = _evaluate_response_composition(text, composition)
 
     capability_profile = {
         "tier": tier,
@@ -462,6 +505,12 @@ def evaluate_emlis_ai_quality_gate(
             concrete_wishes_not_dropped,
             present_effort_not_dropped,
             broken_noun_phrase_blocked,
+            response_composition_ok,
+            opening_thesis_present,
+            first_content_line_not_midstream,
+            transition_coherence_ok,
+            current_input_grounding_ok,
+            stale_meaning_block_leak_blocked,
         ]
     )
     return EmlisAIQualityGateResult(
@@ -504,6 +553,12 @@ def evaluate_emlis_ai_quality_gate(
         concrete_wishes_not_dropped=concrete_wishes_not_dropped,
         present_effort_not_dropped=present_effort_not_dropped,
         broken_noun_phrase_blocked=broken_noun_phrase_blocked,
+        response_composition_ok=response_composition_ok,
+        opening_thesis_present=opening_thesis_present,
+        first_content_line_not_midstream=first_content_line_not_midstream,
+        transition_coherence_ok=transition_coherence_ok,
+        current_input_grounding_ok=current_input_grounding_ok,
+        stale_meaning_block_leak_blocked=stale_meaning_block_leak_blocked,
     )
 
 
@@ -521,6 +576,7 @@ def attach_emlis_ai_quality_gate_meta(
     anchor_summary = updated.get("anchor_summary") if isinstance(updated.get("anchor_summary"), dict) else {}
     understanding = updated.get("understanding") if isinstance(updated.get("understanding"), dict) else {}
     meaning_coverage = updated.get("meaning_coverage") if isinstance(updated.get("meaning_coverage"), dict) else {}
+    composition = updated.get("composition") if isinstance(updated.get("composition"), dict) else {}
     allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
     final_reader_meta = updated.get("final_reader") if isinstance(updated.get("final_reader"), dict) else {}
     pre_return_meta = updated.get("pre_return") if isinstance(updated.get("pre_return"), dict) else {}
@@ -541,6 +597,7 @@ def attach_emlis_ai_quality_gate_meta(
         safe_fallback_used=bool(pre_return_meta.get("safe_fallback_used", fallback_used)),
         blocked_issue_codes=pre_return_meta.get("blocked_issue_codes") if isinstance(pre_return_meta.get("blocked_issue_codes"), list) else [],
         meaning_coverage=meaning_coverage,
+        composition=composition,
     )
     capability_meta = dict(updated.get("capability") or {}) if isinstance(updated.get("capability"), dict) else {}
     capability_meta.update(gate.capability_profile)

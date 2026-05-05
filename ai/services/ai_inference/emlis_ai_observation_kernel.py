@@ -23,6 +23,8 @@ from emlis_ai_types import (
     ObservationDecision,
     ReplyLengthPlan,
     ReplyLine,
+    ResponseCompositionPlan,
+    ReplyNarrativeArc,
     SentenceEvidence,
     ShapedUserPhrase,
     SourceBundle,
@@ -34,6 +36,24 @@ from emlis_ai_types import (
 from emlis_ai_phrase_shaping_service import safe_phrases, shape_user_phrase
 from emlis_ai_input_meaning_block_service import selected_meaning_blocks_for_reply
 
+
+
+_ROLE_PRIORITY = {
+    role: index
+    for index, role in enumerate((
+        "state_awareness", "effort_history", "continuation_wish", "not_want_to_quit",
+        "fatigue_or_limit", "collapse_anxiety", "dual_holding", "paced_progress",
+        "self_permission", "self_understanding", "self_sacrifice_no_worry",
+        "self_sacrifice_rounds_off", "old_strategy_ease", "alone_burden",
+        "capacity_runs_out", "talk_or_rely_when_hard", "sustainable_by_relying",
+        "protective_distance", "no_overdoing_choice", "not_only_patience",
+        "state_based_action", "other_contribution", "self_dislike_from_halfway",
+        "others_happiness_as_own_happiness", "future_not_giving_up", "resignation_self",
+        "betrayal_fear", "own_happiness_wish", "existing_happiness_and_more",
+        "concrete_life_wishes", "unreachable_wish", "present_effort_toward_wish",
+        "missing_guidance", "anger_or_frustration", "relief_source",
+    ))
+}
 
 @dataclass
 class ObservationKernelInput:
@@ -140,6 +160,20 @@ def _major_retention_plan(world_model: Optional[WorldModel]):
     return getattr(world_model.facts, "major_meaning_retention_plan", None)
 
 
+def _composition_plan(world_model: Optional[WorldModel]) -> Optional[ResponseCompositionPlan]:
+    if world_model is None:
+        return None
+    plan = getattr(world_model.facts, "response_composition_plan", None)
+    return plan if plan is not None else None
+
+
+def _reply_narrative_arc(world_model: Optional[WorldModel]) -> Optional[ReplyNarrativeArc]:
+    if world_model is None:
+        return None
+    arc = getattr(world_model.facts, "reply_narrative_arc", None)
+    return arc if arc is not None else None
+
+
 def _clear_long_input(world_model: Optional[WorldModel]) -> bool:
     plan = _meaning_plan(world_model)
     return bool(plan is not None and plan.clear_long_input)
@@ -178,18 +212,11 @@ def _anchor_raw(anchor: Optional[UserWordAnchor], *, max_chars: int = 58) -> str
 
 
 def _normalize_action_text(text: str) -> str:
-    clean = _shorten_anchor_text(text, max_chars=52)
-    if "パーソナルスペースに入ってしまった" in clean:
-        return "人のパーソナルスペースに入ってしまった" if clean.startswith("人の") else "パーソナルスペースに入ってしまった"
-    if "パーソナルスペースに触れてしまった" in clean:
-        return "パーソナルスペースに触れてしまった"
-    return clean
+    return _shorten_anchor_text(text, max_chars=52)
 
 
 def _normalize_awareness_text(text: str) -> str:
     clean = _shorten_anchor_text(text, max_chars=44)
-    if "怒ると知っていながら" in clean:
-        return "怒ると知っていながら"
     for marker in ("知っていながら", "分かっていながら", "わかっていながら"):
         if marker in clean:
             return clean[: clean.index(marker) + len(marker)].lstrip("きっと") or marker
@@ -198,8 +225,6 @@ def _normalize_awareness_text(text: str) -> str:
 
 def _normalize_justification_text(text: str) -> str:
     clean = _shorten_anchor_text(text, max_chars=56)
-    if "女の子との絡みがあったから" in clean:
-        return "女の子との絡みがあったから"
     for marker in ("という理由", "理由を掲げ", "理由にして"):
         if marker in clean:
             before = clean.split(marker, 1)[0].strip(" 、,")
@@ -245,45 +270,36 @@ def _emotion_phrase(world_model: WorldModel) -> str:
 
 def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_profile: StyleProfile) -> str:
     current = world_model.facts
-    frame = _frame(world_model)
     name = _safe_name(bundle.display_name)
     dominant = _dominant_emotion_text(world_model)
     selected_text = _selected_emotion_text(world_model)
 
     base = ""
-    meaning_blocks = _meaning_blocks(world_model)
     meaning_plan = _meaning_plan(world_model)
     if meaning_plan is not None and meaning_plan.clear_long_input:
-        other = _block_by_role(meaning_blocks, {"other_contribution"})
-        others_happy = _block_by_role(meaning_blocks, {"others_happiness_as_own_happiness"})
-        if other is not None:
-            if others_happy is not None:
-                base = "あなたは、誰かの役に立てて、その人たちが幸せに笑ってくれるなら、それが自分の幸せに近いと感じているのですね。"
-            else:
-                base = "あなたは、誰かの役に立てることを、自分にとって大事な幸せとして見ていたのですね。"
-        state = _block_by_role(meaning_blocks, {"state_awareness"})
-        if not base and state is not None:
-            base = "体も心もボロボロになってきていることを、自分でもちゃんと分かっているのですね。"
+        narrative_arc = _reply_narrative_arc(world_model)
+        if narrative_arc is not None and getattr(narrative_arc, "opening_thesis", ""):
+            base = str(narrative_arc.opening_thesis).strip()
+        if not base:
+            blocks = _meaning_blocks(world_model)
+            if blocks:
+                first_summary = str(getattr(blocks[0], "summary", "") or getattr(blocks[0], "title", "") or "").strip("。")
+                if first_summary:
+                    base = f"あなたは、{first_summary}ことを、少しでも言葉にしたかったのですね。"
 
-    phrases = _phrases(world_model)
-    sadness = _phrase_by_role(phrases, {"sadness_surface"})
-    frustration = _phrase_by_role(phrases, {"work_frustration"})
-    if sadness is not None and frustration is not None:
-        base = "泣きそうになるくらい嫌になる時があるのに、そのまま折れるのは悔しいし、もったいないとも感じていたのですね。"
-    elif sadness is not None:
-        base = f"あなたは、{_phrase_text(sadness)}ことを、少しでも言葉にしたかったのですね。"
-
-    if not base and frame is not None and float(getattr(frame, "confidence", 0.0) or 0.0) >= 0.45:
-        action_anchor = frame.action or frame.boundary_violation
-        awareness_anchor = frame.self_awareness
-        action_text = _normalize_action_text(_anchor_raw(action_anchor))
-        awareness_text = _normalize_awareness_text(_anchor_raw(awareness_anchor))
-        if action_text and awareness_text:
-            base = f"あなたは、{action_text}ことだけでなく、{awareness_text}触れてしまった自覚も見ていたのですね。"
-        elif action_text:
-            base = f"あなたは、{action_text}ことをそのまま流さずに見ていたのですね。"
-        elif awareness_text:
-            base = f"あなたは、{awareness_text}いたからこそ、余計に心が揺れていたのですね。"
+    if not base:
+        frame = _frame(world_model)
+        if frame is not None and float(getattr(frame, "confidence", 0.0) or 0.0) >= 0.45:
+            action_anchor = frame.action or frame.boundary_violation
+            awareness_anchor = frame.self_awareness
+            action_text = _normalize_action_text(_anchor_raw(action_anchor))
+            awareness_text = _normalize_awareness_text(_anchor_raw(awareness_anchor))
+            if action_text and awareness_text:
+                base = f"あなたは、{action_text}ことだけでなく、{awareness_text}触れてしまった自覚も見ていたのですね。"
+            elif action_text:
+                base = f"あなたは、{action_text}ことをそのまま流さずに見ていたのですね。"
+            elif awareness_text:
+                base = f"あなたは、{awareness_text}いたからこそ、余計に心が揺れていたのですね。"
 
     if not base:
         if not current.has_memo_input:
@@ -370,233 +386,118 @@ def _flow_clause(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
     return text
 
 
+def _summary_text(block: Optional[InputMeaningBlock]) -> str:
+    if block is None:
+        return ""
+    return str(getattr(block, "summary", "") or getattr(block, "title", "") or "").strip("。")
+
+
+def _line_from_summary(summary: str, *, role: str = "") -> str:
+    clean = str(summary or "").strip("。")
+    if not clean:
+        return ""
+    if role in {"presence"}:
+        return clean if clean.endswith("。") else f"{clean}。"
+    if clean.endswith(("いる", "ある", "感じている", "思っている", "見ている", "気づいている", "しようとしている")):
+        return f"{clean}のだと思います。"
+    if clean.endswith(("たい", "必要", "大切")):
+        return f"{clean}気持ちがありました。"
+    return f"{clean}。"
+
+
+def _line_from_blocks(blocks: List[InputMeaningBlock], *, line_role: str) -> str:
+    summaries = [_summary_text(block) for block in blocks if _summary_text(block)]
+    if not summaries:
+        return ""
+    if line_role == "presence":
+        nouns = []
+        for block in blocks[:3]:
+            title = str(getattr(block, "title", "") or getattr(block, "summary", "") or "").strip("。")
+            if title:
+                nouns.append(title)
+        if nouns:
+            joined = "、".join(nouns[:3])
+            return f"ここでは、{joined}を、どれかひとつに削らず大切に扱います。"
+        return "ここでは、置いてくれた言葉を急いで小さくまとめず、大切に扱います。"
+    if len(summaries) == 1:
+        return _line_from_summary(summaries[0], role=line_role)
+    if line_role in {"old_strategy", "value_or_wish", "state_and_effort", "meaning_background"}:
+        return f"そこには、{summaries[0]}ことと、{summaries[1]}ことがありました。"
+    if line_role in {"limit_of_strategy", "fear_or_resignation", "fatigue_or_anxiety", "meaning_conflict_or_need"}:
+        return f"ただ、{summaries[0]}こともあり、{summaries[1]}ことも近くにありました。"
+    if line_role in {"need_or_realization", "new_direction", "present_effort", "paced_progress", "meaning_direction"}:
+        if line_role == "new_direction" and len(summaries) >= 4:
+            return f"その中で、{summaries[0]}ことや、{summaries[1]}こと、{summaries[2]}こと、自分の状態を見ながら動くことも大切にしようとしているのだと思います。"
+        if line_role == "new_direction" and len(summaries) >= 3:
+            return f"その中で、{summaries[0]}ことや、{summaries[1]}こと、{summaries[2]}ことも大切にしようとしているのだと思います。"
+        return f"その中で、{summaries[0]}ことや、{summaries[1]}ことも大切にしようとしているのだと思います。"
+    return f"{summaries[0]}ことと、{summaries[1]}ことが同じ流れの中にありました。"
+
+
+def _compose_response_composition_candidates(world_model: WorldModel, current_ref: EvidenceRef) -> List[ObservationCandidate]:
+    """Generate ordered reply lines from the generic response-composition layer."""
+    composition = _composition_plan(world_model)
+    narrative = _reply_narrative_arc(world_model)
+    if composition is None or narrative is None:
+        return []
+    blocks = _meaning_blocks(world_model)
+    by_key = {block.block_key: block for block in blocks}
+    by_role = {block.role: block for block in blocks}
+    candidates: List[ObservationCandidate] = []
+    for line_role in list(getattr(narrative, "ordered_roles", []) or []):
+        if line_role == "presence":
+            continue
+        keys = list((getattr(narrative, "role_to_block_keys", {}) or {}).get(line_role, []) or [])
+        line_blocks = [by_key[key] for key in keys if key in by_key]
+        # Some generic line roles map to role names rather than keys.
+        if not line_blocks and line_role in by_role:
+            line_blocks = [by_role[line_role]]
+        text = _line_from_blocks(line_blocks, line_role=line_role)
+        if not text:
+            continue
+        candidates.append(ObservationCandidate(
+            candidate_key=f"word_reflection.meaning.composition.{line_role}",
+            kind="word_reflection",
+            text=text,
+            evidence=_block_evidence(*line_blocks, fallback=current_ref),
+            confidence=0.94,
+            recency_score=1.0,
+            alignment_score=0.94,
+            overclaim_risk=0.05,
+            source_layers=["canonical_history"],
+            notes={"source": "response_composition", "line_role": line_role, "composition_key": composition.composition_key},
+        ))
+    return candidates
+
 def _compose_long_input_meaning_candidates(world_model: WorldModel, current_ref: EvidenceRef) -> List[ObservationCandidate]:
     plan = _meaning_plan(world_model)
     blocks = _meaning_blocks(world_model)
     if plan is None or not plan.clear_long_input or not blocks:
         return []
 
+    composition_candidates = _compose_response_composition_candidates(world_model, current_ref)
+    if composition_candidates:
+        return composition_candidates
+
     selected_blocks = selected_meaning_blocks_for_reply(blocks, plan)
-    # For clear long input, compose from all detected high-clarity meaning blocks.
-    # The coverage plan still records selected keys, but generation must not drop
-    # important adjacent blocks such as effort_history merely because the hard
-    # selected list reached its cap.
-    by_role = {block.role: block for block in blocks}
     candidates: List[ObservationCandidate] = []
-
-    self_dislike = by_role.get("self_dislike_from_halfway")
-    if self_dislike is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.self_dislike_from_halfway",
-                kind="word_reflection",
-                text="でも同時に、頑張ることも楽しむことも中途半端に感じて、自分のことを好きになれない気持ちもありました。",
-                evidence=_block_evidence(self_dislike, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "self_dislike_from_halfway", "line_role": "self_dislike"},
-            )
-        )
-
-    future = by_role.get("future_not_giving_up")
-    resignation = by_role.get("resignation_self")
-    betrayal = by_role.get("betrayal_fear")
-    if future is not None or resignation is not None or betrayal is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.future_resignation_betrayal",
-                kind="word_reflection",
-                text="自分のことも今後のこともまだ諦めたくないのに、期待してまた裏切られたくないから、諦めている自分もいるのだと思います。",
-                evidence=_block_evidence(future, resignation, betrayal, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.04,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "future_not_giving_up", "line_role": "not_giving_up_and_resignation"},
-            )
-        )
-
-    own_happiness = by_role.get("own_happiness_wish")
-    if own_happiness is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.own_happiness_wish",
-                kind="word_reflection",
-                text="それでも「私も幸せになりたい」という気持ちは残っていて、そこは本当は諦めたくない場所なのですね。",
-                evidence=_block_evidence(own_happiness, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "own_happiness_wish", "line_role": "own_happiness_wish"},
-            )
-        )
-
-    existing_more = by_role.get("existing_happiness_and_more")
-    if existing_more is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.existing_happiness_and_more",
-                kind="word_reflection",
-                text="もう既に幸せなことはあると分かっていても、それ以上を求めている自分にも気づいています。",
-                evidence=_block_evidence(existing_more, fallback=current_ref),
-                confidence=0.96,
-                recency_score=1.0,
-                alignment_score=0.96,
-                overclaim_risk=0.04,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "existing_happiness_and_more", "line_role": "existing_happiness_and_more"},
-            )
-        )
-
-    concrete_wishes = by_role.get("concrete_life_wishes")
-    if concrete_wishes is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.concrete_life_wishes",
-                kind="word_reflection",
-                text="好きなことをもっとして、納得いくまで楽しんで、素敵なパートナーと出会って幸せになりたいという願いも、ちゃんとここにあります。",
-                evidence=_block_evidence(concrete_wishes, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "concrete_life_wishes", "line_role": "concrete_wishes"},
-            )
-        )
-
-    present_effort = by_role.get("present_effort_toward_wish")
-    unreachable = by_role.get("unreachable_wish")
-    if present_effort is not None or unreachable is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.present_effort_toward_wish",
-                kind="word_reflection",
-                text="その願いが今は手の届かないところに見えても、そこへ届くために、今頑張れることを大切にしたいのですね。",
-                evidence=_block_evidence(unreachable, present_effort, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "whole_input_meaning_block", "meaning_block_key": "present_effort_toward_wish", "line_role": "present_effort"},
-            )
-        )
-
-    effort = by_role.get("effort_history")
-    state = by_role.get("state_awareness")
-    if effort is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.effort_history",
-                kind="word_reflection",
-                text="ここまで頑張ってきた時間や、無理してきた時間が積み重なってきたからこそ、今の限界が見えてきているのだと思います。",
-                evidence=_block_evidence(state, effort, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "effort_history", "line_role": "state_and_effort"},
-            )
-        )
-
-    continuation = by_role.get("continuation_wish")
-    quit_block = by_role.get("not_want_to_quit")
-    if continuation is not None or quit_block is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.continuation_wish",
-                kind="word_reflection",
-                text="それでも、もう少し頑張りたい気持ちはまだ残っていて、投げ出したいわけでも、ここで終わりにしたいわけでもないのですね。",
-                evidence=_block_evidence(continuation, quit_block, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "continuation_wish", "line_role": "continuation_wish"},
-            )
-        )
-
-    fatigue = by_role.get("fatigue_or_limit")
-    collapse = by_role.get("collapse_anxiety")
-    if fatigue is not None or collapse is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.fatigue_and_anxiety",
-                kind="word_reflection",
-                text="ただ同時に、体が重かったり、気持ちがついてこなかったり、このまま無理を続けたら崩れてしまいそうな不安もちゃんとあります。",
-                evidence=_block_evidence(fatigue, collapse, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "collapse_anxiety", "line_role": "fatigue_and_anxiety"},
-            )
-        )
-
-    dual = by_role.get("dual_holding")
-    if dual is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.dual_holding",
-                kind="word_reflection",
-                text="だから今のあなたは、「頑張る」か「休む」かを無理にどちらかへ決めたいのではなく、頑張りたい気持ちもしんどい気持ちも、両方抱えたまま進みたいのだと思います。",
-                evidence=_block_evidence(dual, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "dual_holding", "line_role": "dual_holding"},
-            )
-        )
-
-    paced = by_role.get("paced_progress")
-    permission = by_role.get("self_permission")
-    if paced is not None or permission is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.paced_progress",
-                kind="word_reflection",
-                text="頑張れる日は少しだけ前に進んで、しんどい日は立ち止まってもいいと、自分に許しながら進もうとしているのですね。",
-                evidence=_block_evidence(paced, permission, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "paced_progress", "line_role": "paced_progress"},
-            )
-        )
-
-    self_understanding = by_role.get("self_understanding")
-    if self_understanding is not None:
-        candidates.append(
-            ObservationCandidate(
-                candidate_key="word_reflection.meaning.self_understanding",
-                kind="word_reflection",
-                text="今のあなたは弱いのではなく、自分の限界に気づけている状態です。",
-                evidence=_block_evidence(self_understanding, fallback=current_ref),
-                confidence=1.00,
-                recency_score=1.0,
-                alignment_score=1.0,
-                overclaim_risk=0.03,
-                source_layers=["canonical_history"],
-                notes={"source": "meaning_block", "meaning_block_key": "self_understanding", "line_role": "self_understanding"},
-            )
-        )
-
+    for block in selected_blocks:
+        text = _line_from_blocks([block], line_role=str(getattr(block, "role", "") or "meaning"))
+        if not text:
+            continue
+        candidates.append(ObservationCandidate(
+            candidate_key=f"word_reflection.meaning.{block.block_key}",
+            kind="word_reflection",
+            text=text,
+            evidence=_block_evidence(block, fallback=current_ref),
+            confidence=0.92,
+            recency_score=1.0,
+            alignment_score=0.92,
+            overclaim_risk=0.05,
+            source_layers=["canonical_history"],
+            notes={"source": "generic_meaning_block", "meaning_block_key": block.block_key, "line_role": block.role},
+        ))
     return candidates
-
 
 def _compose_anchor_overview(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
     phrases = _phrases(world_model)
@@ -723,24 +624,22 @@ def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor], world_model:
     fatigue = _phrase_by_role(phrases, {"fatigue_accumulation"})
     anger = _phrase_by_role(phrases, {"anger_surface"})
     if mentor is not None or fatigue is not None or anger is not None:
-        if mentor is not None and (fatigue is not None or anger is not None):
-            text = "好きな先輩以外の時はミスしても知らないと思いたくなるくらい、最近はかなりイライラが溜まっていたのだと思います。"
-        elif fatigue is not None:
-            text = "最近はかなりイライラが溜まっていて、心の余裕も削られていたのだと思います。"
-        else:
-            text = "むかつく気持ちが出るくらい、納得できないしんどさが近くにありました。"
+        parts = []
         evidence = []
         for item in (mentor, fatigue, anger):
             if item is not None:
+                parts.append(_phrase_text(item, attr="nominal") or _phrase_text(item))
                 evidence.extend(item.evidence)
+        joined = "、".join(part for part in parts if part)
+        text = f"そこには、{joined}も近くにありました。" if joined else "その気持ちは、軽く片づけられない場所にありました。"
         return ObservationCandidate(
             candidate_key="word_reflection.fatigue_or_pressure",
             kind="word_reflection",
             text=text,
             evidence=evidence,
-            confidence=0.96,
+            confidence=0.88,
             recency_score=1.0,
-            alignment_score=0.96,
+            alignment_score=0.88,
             overclaim_risk=0.06,
             source_layers=["canonical_history"],
             notes={"source": "shaped_user_phrase", "role": "fatigue_or_pressure"},
@@ -966,13 +865,19 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
 
 def _compose_receiving_close(bundle: SourceBundle, world_model: Optional[WorldModel] = None) -> ObservationCandidate:
     if _clear_long_input(world_model):
-        roles = {str(getattr(block, "role", "") or "") for block in _meaning_blocks(world_model)}
-        if {"other_contribution", "own_happiness_wish", "present_effort_toward_wish"} & roles:
-            text = "ここでは、誰かの幸せを願う気持ちも、自分の幸せを諦めたくない気持ちも、どちらも小さく扱いません。"
+        blocks = _meaning_blocks(world_model)
+        if blocks:
+            high = sorted(blocks, key=lambda item: (-float(getattr(item, "priority", 0.0) or 0.0), _ROLE_PRIORITY.get(getattr(item, "role", ""), 99)))[:3]
+            labels = [str(getattr(item, "title", "") or getattr(item, "summary", "") or "").strip("。") for item in high]
+            labels = [label for label in labels if label]
+            if labels:
+                text = f"ここでは、{ '、'.join(labels) }を、どれかひとつに削らず大切に扱います。"
+            else:
+                text = "ここでは、置いてくれた言葉を急いで小さくまとめず、大切に扱います。"
         else:
-            text = "ここでは、頑張りたい気持ちも、しんどさも、崩れそうな不安も、どれかひとつに削らずに大切にします。"
+            text = "ここでは、置いてくれた言葉を急いで小さくまとめず、大切に扱います。"
     elif _has_work_companion_material(world_model):
-        text = "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
+        text = "ここでは、その悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
     else:
         selected_text = _selected_emotion_text(world_model) if world_model is not None else ""
         if "怒り" in selected_text and "悲しみ" in selected_text:
@@ -991,7 +896,6 @@ def _compose_receiving_close(bundle: SourceBundle, world_model: Optional[WorldMo
         source_layers=["canonical_history"],
         notes={"source": "receiving_close", "presence_line": True},
     )
-
 
 def _trigger_matches_current(bundle: SourceBundle, trigger: str) -> bool:
     raw_trigger = str(trigger or "").strip()
@@ -1392,8 +1296,13 @@ def arbitrate_candidates(
         meaning_candidates = [item for item in word_candidates if str(item.candidate_key or "").startswith("word_reflection.meaning.")]
         non_meaning_candidates = [item for item in word_candidates if item not in meaning_candidates]
         meaning_order = {
-            "word_reflection.meaning.self_dislike_from_halfway": 1,
-            "word_reflection.meaning.future_resignation_betrayal": 2,
+            "word_reflection.meaning.composition.old_strategy": 1,
+            "word_reflection.meaning.composition.limit_of_strategy": 2,
+            "word_reflection.meaning.composition.need_to_rely": 3,
+            "word_reflection.meaning.composition.boundary_and_rest_choice": 4,
+            "word_reflection.meaning.composition.new_self_guidance": 5,
+            "word_reflection.meaning.self_dislike_from_halfway": 10,
+            "word_reflection.meaning.future_resignation_betrayal": 11,
             "word_reflection.meaning.own_happiness_wish": 3,
             "word_reflection.meaning.existing_happiness_and_more": 4,
             "word_reflection.meaning.concrete_life_wishes": 5,

@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Phrase shaping for EmlisAI natural companion replies.
+"""Generic phrase shaping for EmlisAI natural replies.
 
-``UserWordAnchor.text`` is the user's raw surface text.  It may contain an
-unfinished connector, rough colloquial wording, or a clause that only works in
-its original paragraph.  This service keeps the source-bound meaning but shapes
-it into a fragment that can safely be inserted into EmlisAI's own sentence.
+This module does not memorise sample inputs.  It shapes raw user clauses into
+safe sentence fragments using reusable grammar / role rules.
 """
 
 import re
@@ -15,7 +13,59 @@ from typing import Any, Iterable, List, Mapping, Sequence
 from emlis_ai_types import EvidenceRef, ShapedUserPhrase, UserWordAnchor
 
 _SPACE_RE = re.compile(r"\s+")
-_UNFINISHED_CONNECTOR_RE = re.compile(r"(けどそれだと|けどさ|けど|けれど|でも|から|ので|のに|だって)$")
+_UNFINISHED_CONNECTOR_RE = re.compile(r"(けどそれだと|けどさ|けど|けれど|でも|から|ので|のに|だって|だから|それだと)$")
+_SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
+_SOFT_SPLIT_RE = re.compile(r"(?<=[、,])|(?<=けど)|(?<=けれど)|(?<=でも)|(?<=のに)|(?<=から)|(?<=ので)")
+
+
+_ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("self_sacrifice_no_worry", ("我慢", "心配", "負担", "迷惑")),
+    ("self_sacrifice_rounds_off", ("我慢", "収ま", "丸く", "波風")),
+    ("alone_burden", ("一人", "ひとり", "抱え", "背負")),
+    ("talk_or_rely_when_hard", ("話", "頼", "相談", "助け")),
+    ("protective_distance", ("距離", "離れ", "守る", "境界")),
+    ("no_overdoing_choice", ("無理しない", "休む", "選択")),
+    ("other_contribution", ("役に立", "助け", "支え", "誰かのため", "人のため")),
+    ("self_dislike_from_halfway", ("好きになれない", "中途半端", "自己嫌悪", "自分が嫌")),
+    ("future_not_giving_up", ("諦めたくない", "諦めない", "終わりにしたくない")),
+    ("resignation_self", ("諦めて", "諦めよう", "期待しない")),
+    ("betrayal_fear", ("裏切", "期待", "傷つきたく", "怖")),
+    ("own_happiness_wish", ("幸せになりたい", "自分も幸せ", "私も幸せ", "自分自身の幸せ")),
+    ("concrete_life_wishes", ("好きなこと", "楽しみたい", "たのしみたい", "大切な人", "恋人", "出会", "暮らし")),
+    ("unreachable_wish", ("届かない", "遠い", "願い", "夢", "届きにく")),
+    ("present_effort_toward_wish", ("今", "できること", "頑張れること", "大切", "届く")),
+    ("state_awareness", ("疲れ", "しんど", "限界", "ボロボロ", "分か", "気づ")),
+    ("effort_history", ("頑張ってき", "がんばってき", "無理してき", "積み重")),
+    ("continuation_wish", ("頑張りたい", "がんばりたい", "続けたい", "まだ")),
+    ("fatigue_or_limit", ("しんど", "疲れ", "重い", "ついてこない", "余裕がない")),
+    ("collapse_anxiety", ("崩れ", "壊れ", "無理したら", "不安")),
+    ("dual_holding", ("どっちも", "どちらも", "両方", "抱えたまま")),
+    ("paced_progress", ("立ち止", "整え", "少しずつ", "休む", "ペース")),
+    ("self_understanding", ("弱いわけ", "限界に気づ", "状態なんだ")),
+    ("missing_guidance", ("教えて", "頑張り方", "どう頑張", "分から")),
+    ("anger_surface", ("むかつ", "イライラ", "怒", "腹立")),
+    ("relief_source", ("癒", "落ち着", "安心", "チャット", "話して")),
+    ("boundary_violation", ("境界", "距離感", "踏み込", "入ってしま", "触れてしま", "越えて")),
+    ("self_awareness", ("知っていながら", "分かっていながら", "わかっていながら")),
+    ("self_fault_awareness", ("自分の非", "自分が悪", "自分のせい", "責任")),
+    ("self_avoidance", ("見たくない", "向き合いたくない", "認めたくない", "目をそら")),
+    ("fear_of_rejection", ("嫌われ", "見捨て", "否定され", "離れていきそう")),
+)
+
+
+_ROLE_NOMINAL_SUFFIX = {
+    "anger_surface": "気持ち",
+    "missing_guidance": "しんどさ",
+    "effort_confusion": "気持ち",
+    "relief_source": "こと",
+    "chat_relief": "こと",
+    "betrayal_fear": "怖さ",
+    "fear_of_rejection": "怖さ",
+    "own_happiness_wish": "願い",
+    "concrete_life_wishes": "願い",
+    "present_effort_toward_wish": "気持ち",
+    "unreachable_wish": "願い",
+}
 
 
 def _clean(value: Any) -> str:
@@ -45,199 +95,58 @@ def _soften_colloquial(text: str) -> str:
         ("知らねえよ", "知らない"),
         ("教えてくんない", "教えてもらえない"),
         ("教えてくれない", "教えてもらえない"),
-        ("教えてくんないんだもん", "教えてもらえない"),
         ("めっちゃ", "かなり"),
-        ("チャット系でお話してる", "チャットで話している"),
         ("お話してる", "話している"),
         ("話してる", "話している"),
         ("癒される", "癒しになっている"),
-        ("手の届かい所", "手の届かないところ"),
-        ("手の届かい", "手の届かない"),
         ("1番", "一番"),
     )
     for src, dst in replacements:
         out = out.replace(src, dst)
     out = out.replace("時ある", "時がある")
-    out = out.replace("どう頑張ればいいのって思う", "どう頑張ればいいのか分からない気持ち")
-    out = out.replace("頑張ることも楽しむことも中途半端だから", "頑張ることも楽しむことも中途半端に思えて")
-    out = out.replace("自分のことは好きになれないけど", "自分のことを好きになれない気持ちがありながら")
-    out = out.replace("諦めたくないけれど", "諦めたくない気持ちがありながら")
-    out = out.replace("期待して裏切られたくないから", "期待して裏切られるのが怖くて")
-    out = out.replace("それ以上に求めてるんだよねきっと", "それ以上を求めている自分にも気づいていて")
+    out = re.sub(r"どう([^。！？!?]{0,16})?頑張ればいい[^。！？!?]*", "どう頑張ればいいのか分からない気持ち", out)
+    out = re.sub(r"([^。！？!?]{0,26}中途半端)(?:だから|なので|で)", r"\1に感じて", out)
+    out = re.sub(r"好きになれない(?:けど|けれど)", "好きになれない気持ちがありながら", out)
+    out = re.sub(r"諦めたくない(?:けど|けれど)", "諦めたくない気持ちがありながら", out)
+    out = re.sub(r"期待[^。！？!?]{0,16}裏切られたくない(?:から|ので)?", "期待して裏切られるのが怖くて", out)
+    out = re.sub(r"それ以上(?:に|を)?求めて(?:る|いる)[^。！？!?]*", "それ以上を求めている", out)
     return _clean(out)
 
 
 def _role_from_text(text: str, fallback: str) -> str:
     compact = _compact(text)
-    if "泣きそうになるくらい嫌になる" in compact:
-        return "sadness_surface"
-    if "悔しい" in compact or "もったいない" in compact:
-        return "work_frustration"
-    if "むかつく" in compact or "イライラ" in compact or "知らない" in compact or "知らね" in compact:
-        return "anger_surface"
-    if "好きな先輩" in compact:
-        return "mentor_attachment"
-    if "教えてもらえない" in compact or "教えてくんない" in compact or "教えてくれない" in compact:
-        return "missing_guidance"
-    if "どう頑張ればいい" in compact:
-        return "effort_confusion"
-    if "癒し" in compact or "癒され" in compact or "チャット" in compact:
-        return "chat_relief"
-    if "疲れ" in compact or "最近かなりイライラ" in compact:
-        return "fatigue_accumulation"
-    if "役に立" in compact:
-        return "other_contribution"
-    if "中途半端" in compact or "好きになれない" in compact:
-        return "self_dislike_from_halfway"
-    if "諦めたくない" in compact:
-        return "future_not_giving_up"
-    if "諦めて" in compact:
-        return "resignation_self"
-    if "裏切られたくない" in compact or "裏切られるのが怖" in compact:
-        return "betrayal_fear"
-    if "幸せになりたい" in compact:
-        return "own_happiness_wish"
-    if "好きなこと" in compact or "パートナー" in compact or "十分に楽し" in compact or "十分にたのし" in compact:
-        return "concrete_life_wishes"
-    if "手の届" in compact:
-        return "unreachable_wish"
-    if "今頑張れる" in compact or "願いに届" in compact:
-        return "present_effort_toward_wish"
+    for role, keywords in _ROLE_KEYWORDS:
+        if any(keyword in compact for keyword in keywords):
+            return role
     return fallback or "other"
 
 
-def _known_phrase(raw: str, role: str) -> tuple[str, str, str, str] | None:
-    compact = _compact(raw)
-    if "泣きそうになるくらい嫌になる時" in compact:
-        phrase = "泣きそうになるくらい嫌になる時がある"
-        return phrase, phrase, "泣きそうになるくらい嫌になる時がある状態", "sadness_surface"
-    if "悔しい" in compact and "もったいない" in compact:
-        phrase = "悔しいし、もったいないとも感じている"
-        return phrase, phrase, "悔しさともったいなさ", "work_frustration"
-    if "むかつく" in compact:
-        phrase = "むかつく気持ちもある"
-        return phrase, phrase, "むかつく気持ち", "anger_surface"
-    if "好きな先輩以外" in compact and "ミス" in compact:
-        phrase = "好きな先輩以外の時は、ミスしても知らないと思いたくなる"
-        return phrase, phrase, "好きな先輩以外の時はミスしても知らないと思いたくなる気持ち", "mentor_attachment"
-    if "教えてくんない" in compact or "教えてくれない" in compact or "教えてもらえない" in compact:
-        phrase = "教えてもらえないしんどさ"
-        return phrase, "教えてもらえないことがしんどい", phrase, "missing_guidance"
-    if "どう頑張ればいい" in compact:
-        phrase = "どう頑張ればいいのか分からない気持ち"
-        return phrase, phrase, phrase, "effort_confusion"
-    if "最近" in compact and "イライラ" in compact:
-        phrase = "最近かなりイライラが溜まっている"
-        return phrase, phrase, "最近かなりイライラが溜まっている状態", "fatigue_accumulation"
-    if "チャット" in compact and ("癒" in compact or "話" in compact):
-        phrase = "チャットで話す時間が癒しになっている"
-        return phrase, phrase, "チャットで話す時間が癒しになっていること", "chat_relief"
-
-    if "誰かの役に立" in compact or "人たちの役に立" in compact:
-        phrase = "誰かの役に立てるならそれでいいと思う"
-        return phrase, phrase, "誰かの役に立ちたい気持ち", "other_contribution"
-    if "中途半端" in compact and "好きになれない" in compact:
-        phrase = "頑張ることも楽しむことも中途半端に感じて、自分を好きになれない"
-        return phrase, phrase, "頑張ることも楽しむことも中途半端に感じること", "self_dislike_from_halfway"
-    if "頑張ることも楽しむことも中途半端" in compact:
-        phrase = "頑張ることも楽しむことも中途半端に思えて"
-        return phrase, phrase, "頑張ることも楽しむことも中途半端に感じること", "self_dislike_from_halfway"
-    if "自分のことは好きになれない" in compact or "自分のことを好きになれない" in compact:
-        phrase = "自分のことを好きになれない気持ちがある"
-        return phrase, phrase, "自分を好きになれない気持ち", "self_dislike_from_halfway"
-    if "幸せに笑って" in compact and "役に立" in compact:
-        phrase = "他の人が幸せに笑っていて、その人たちの役に立てることが幸せに近い"
-        return phrase, phrase, "他者の幸せが自分の幸せに近いこと", "others_happiness_as_own_happiness"
-    if "諦めたくない" in compact:
-        phrase = "自分のことも今後のことも諦めたくない気持ちがある"
-        return phrase, phrase, "諦めたくない気持ち", "future_not_giving_up"
-    if "諦めてる自分" in compact or "諦めている自分" in compact:
-        phrase = "諦めている自分もいる"
-        return phrase, phrase, "諦めている自分", "resignation_self"
-    if "裏切られたくない" in compact:
-        phrase = "期待して裏切られるのが怖い"
-        return phrase, phrase, "期待して裏切られたくない怖さ", "betrayal_fear"
-    if "私も幸せになりたい" in compact or "自分も幸せになりたい" in compact or "幸せになりたいって思う自分" in compact:
-        phrase = "私も幸せになりたい気持ちがある"
-        return phrase, phrase, "自分も幸せになりたい願い", "own_happiness_wish"
-    if "既に幸せ" in compact or "それ以上を求め" in compact or "それ以上に求め" in compact:
-        phrase = "既に幸せなことはあると分かっていても、それ以上を求めている"
-        return phrase, phrase, "既にある幸せ以上を求める気持ち", "existing_happiness_and_more"
-    if "好きなこと" in compact or "十分にたのしみたい" in compact or "十分に楽しみたい" in compact or "パートナー" in compact:
-        phrase = "好きなことをもっとして、納得いくまで楽しみ、素敵なパートナーと幸せになりたい"
-        return phrase, phrase, "好きなことを楽しみ、パートナーと幸せになりたい願い", "concrete_life_wishes"
-    if "手の届" in compact:
-        phrase = "手の届かないところにある願い"
-        return phrase, phrase, "手の届かない願い", "unreachable_wish"
-    if "今頑張れる" in compact or "願いに届くように" in compact:
-        phrase = "願いに届くために、今頑張れることを大切にしたい"
-        return phrase, phrase, "願いに届くために今頑張れることを大切にしたい気持ち", "present_effort_toward_wish"
-
-    # Existing self-awareness / boundary cases.
-    if "パーソナルスペースに入ってしまった" in compact:
-        phrase = "人のパーソナルスペースに入ってしまった" if "人のパーソナルスペース" in compact else "パーソナルスペースに入ってしまった"
-        return phrase, phrase, f"{phrase}行動", "boundary_violation"
-    if "パーソナルスペースに触れてしまった" in compact:
-        phrase = "パーソナルスペースに触れてしまった"
-        return phrase, phrase, f"{phrase}行動", "boundary_violation"
-    if "怒ると知っていながら" in compact:
-        phrase = "怒ると知っていながら"
-        return phrase, phrase, "怒ると知っていながら触れてしまった自覚", "self_awareness"
-    if "女の子との絡みがあったから" in compact:
-        phrase = "女の子との絡みがあったから"
-        return phrase, phrase, "女の子との絡みがあったからという理由", "justification"
-    if "自分の非を見たくない" in compact:
-        phrase = "自分の非を見たくない"
-        return phrase, phrase, "自分の非を見たくない気持ち", "self_avoidance"
-    if "自分の非" in compact:
-        phrase = "自分の非"
-        return phrase, phrase, "自分の非への自覚", "self_fault_awareness"
-    if "嫌われ" in compact:
-        phrase = "嫌われてしまいそう" if "嫌われてしまいそう" in compact else "嫌われそう"
-        return phrase, phrase, "嫌われてしまいそうな怖さ", "fear_of_rejection"
-    if "悲しくて不安" in compact:
-        phrase = "悲しくて不安"
-        return phrase, phrase, "悲しみと不安が重なっている状態", "explicit_emotion"
-    return None
-
-
 def _generic_nominal(phrase: str, role: str) -> str:
-    if not phrase:
+    clean = _clean(phrase)
+    if not clean:
         return ""
-    if role in {"anger_surface", "work_frustration"}:
-        if phrase.endswith("気持ち"):
-            return phrase
-        if phrase.endswith(("だ", "だから", "けど", "けれど", "から")):
-            return re.sub(r"(だ|だから|けど|けれど|から)$", "", phrase).strip(" 、,") + "気持ち"
-        return f"{phrase}気持ち"
-    if role in {"self_dislike_from_halfway"}:
-        return "頑張ることも楽しむことも中途半端に感じること" if "中途半端" in phrase else "自分を好きになれない気持ち"
-    if role in {"betrayal_fear"}:
-        return "期待して裏切られたくない怖さ"
-    if role in {"own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"}:
-        return phrase if phrase.endswith(("願い", "気持ち")) else f"{phrase}願い"
-    if role in {"missing_guidance", "effort_confusion", "chat_relief"}:
-        return phrase
-    if phrase.endswith(("こと", "状態", "気持ち", "しんどさ", "怖さ", "願い")):
-        return phrase
-    return f"{phrase}こと"
+    if clean.endswith(("こと", "状態", "気持ち", "しんどさ", "怖さ", "願い", "自覚")):
+        return clean
+    # Avoid broken noun phrases after predicate/connective endings.
+    clean = re.sub(r"(だ|だから|けど|けれど|から|なので)$", "", clean).strip(" 、,")
+    suffix = _ROLE_NOMINAL_SUFFIX.get(role)
+    if suffix:
+        return f"{clean}{suffix}"
+    if role in {"state_awareness", "fatigue_or_limit", "collapse_anxiety", "dual_holding", "paced_progress", "self_understanding"}:
+        return f"{clean}状態"
+    return f"{clean}こと"
 
 
 def shape_user_phrase(anchor: UserWordAnchor) -> ShapedUserPhrase:
     raw = _clean(getattr(anchor, "text", ""))
     role = str(getattr(anchor, "role", "other") or "other")
     reasons: list[str] = []
-    known = _known_phrase(raw, role)
-    if known is not None:
-        phrase, fragment, nominal, shaped_role = known
-        role = shaped_role
-    else:
-        stripped, strip_reasons = _strip_unfinished_connectors(raw)
-        reasons.extend(strip_reasons)
-        phrase = _soften_colloquial(stripped)
-        role = _role_from_text(phrase, role)
-        fragment = phrase
-        nominal = _generic_nominal(phrase, role)
+    stripped, strip_reasons = _strip_unfinished_connectors(raw)
+    reasons.extend(strip_reasons)
+    phrase = _soften_colloquial(stripped)
+    role = _role_from_text(phrase, role)
+    fragment = phrase
+    nominal = _generic_nominal(phrase, role)
 
     unsafe = []
     if not phrase:
@@ -274,41 +183,31 @@ def _synthesized_anchor(text: str, *, role: str, source_field: str, index: int, 
     )
 
 
+def _split_clauses(text: str) -> Iterable[str]:
+    for sentence in _SPLIT_RE.split(str(text or "")):
+        sentence = _clean(sentence)
+        if not sentence:
+            continue
+        pieces = _SOFT_SPLIT_RE.split(sentence) if len(sentence) > 36 else [sentence]
+        for piece in pieces:
+            piece = _clean(piece)
+            if len(piece) >= 3:
+                yield piece[:90].rstrip("、,")
+
+
 def _synthesized_anchors_from_current_input(current_input: Mapping[str, Any]) -> Iterable[UserWordAnchor]:
-    raw_memo = str(current_input.get("memo") or "")
-    raw_action = str(current_input.get("memo_action") or "")
     evidence = EvidenceRef(kind="emotion", ref_id=str(current_input.get("id") or current_input.get("created_at") or "current"), weight=1.0, note="phrase_shaping:synthesized")
-    patterns = (
-        (r"たまに泣きそうになるくらい嫌になる時あるけどそれだと", "sadness_surface"),
-        (r"悔しいしもったいない気がする", "work_frustration"),
-        (r"むかつくけどさ", "anger_surface"),
-        (r"好きな先輩以外の時はミスしても知らねーよって\s*気持ちでいる", "mentor_attachment"),
-        (r"教えてくんないんだもん", "missing_guidance"),
-        (r"どう頑張ればいいのって思う", "effort_confusion"),
-        (r"最近めっちゃイライラする", "fatigue_accumulation"),
-        (r"チャット系でお話してると\s*癒される", "chat_relief"),
-        (r"誰かの役に立てればそれでいい", "other_contribution"),
-        (r"私は私自身頑張ることも楽しむことも中途半端だから", "self_dislike_from_halfway"),
-        (r"自分のことは好きになれないけど", "self_dislike_from_halfway"),
-        (r"他の人たちが幸せに笑ってくれてて\s*その人たちの役に立てるなら1番それが幸せかな", "others_happiness_as_own_happiness"),
-        (r"自分のこと\s*今後のこと\s*まだ諦めたくないけれど", "future_not_giving_up"),
-        (r"諦めてる自分もいる", "resignation_self"),
-        (r"もう期待して裏切られたくないから", "betrayal_fear"),
-        (r"私も幸せになりたいって思う自分もいる", "own_happiness_wish"),
-        (r"もう既に幸せなことはあるって事\s*それ以上に求めてるんだよねきっと", "existing_happiness_and_more"),
-        (r"好きなことをもっとしたい\s*納得いくまで十分にたのしみたい\s*素敵なパートナーと出会って幸せになりたい", "concrete_life_wishes"),
-        (r"手の届かい所にある願い", "unreachable_wish"),
-        (r"その願いに届くように、?今頑張れることを大切にしたい", "present_effort_toward_wish"),
-    )
-    for idx, (pattern, role) in enumerate(patterns):
-        match = re.search(pattern, raw_memo, flags=re.MULTILINE)
-        if match:
-            yield _synthesized_anchor(match.group(0), role=role, source_field="memo", index=idx, evidence=evidence)
-    if raw_action.strip():
-        # Action anchors are already extracted well in most cases; synthesize only
-        # when no paragraph-level extractor caught the action wording.
-        if "パーソナルスペース" in raw_action:
-            yield _synthesized_anchor(raw_action.strip(), role="boundary_violation", source_field="memo_action", index=100, evidence=evidence)
+    idx = 0
+    for source_field in ("memo", "memo_action"):
+        raw = str(current_input.get(source_field) or "")
+        if not raw.strip():
+            continue
+        for clause in _split_clauses(raw):
+            role = _role_from_text(clause, "action" if source_field == "memo_action" else "other")
+            if role == "other" and source_field != "memo_action":
+                continue
+            yield _synthesized_anchor(clause, role=role, source_field=source_field, index=idx, evidence=evidence)
+            idx += 1
 
 
 def shape_user_phrases(*, anchors: Sequence[UserWordAnchor], current_input: Mapping[str, Any]) -> List[ShapedUserPhrase]:

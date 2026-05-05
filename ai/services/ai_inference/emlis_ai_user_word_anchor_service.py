@@ -81,7 +81,7 @@ _RELATION_WORDS = (
     "恋人",
     "彼氏",
     "彼女",
-    "パートナー",
+    "大切な人",
     "相手",
     "友達",
     "家族",
@@ -167,10 +167,10 @@ _REJECTION_FEAR_WORDS = (
     "愛されない",
 )
 _BOUNDARY_WORDS = (
-    "パーソナルスペース",
     "距離感",
     "境界",
     "踏み込",
+    "越えて",
     "触れてしまった",
     "入ってしまった",
 )
@@ -236,8 +236,6 @@ def _role_for(text: str, *, source_field: str = "memo") -> str:
     # wording can be shaped before being inserted into reply sentences.
     if any(word in compact_text for word in _SADNESS_SURFACE_WORDS):
         return "sadness_surface"
-    if "好きな先輩" in compact_text:
-        return "mentor_attachment"
     if any(word in compact_text for word in _GUIDANCE_LACK_WORDS):
         return "missing_guidance"
     if any(word in compact_text for word in _EFFORT_CONFUSION_WORDS):
@@ -338,80 +336,49 @@ def _score_clause(text: str, *, order: int, source_field: str = "memo") -> float
 def _normalize_keyword_phrase(phrase: str) -> str:
     clean = _clean_text(phrase)
     compact = clean.replace(" ", "")
-    if "怒ると知っていながら" in compact:
-        return "怒ると知っていながら"
-    if "パーソナルスペースに入ってしまった" in compact:
-        return "人のパーソナルスペースに入ってしまった" if "人のパーソナルスペース" in compact else "パーソナルスペースに入ってしまった"
-    if "パーソナルスペースに触れてしまった" in compact:
-        return "パーソナルスペースに触れてしまった"
-    if "女の子との絡みがあったから" in compact:
-        return "女の子との絡みがあったからという理由を掲げて" if "理由" in compact else "女の子との絡みがあったから"
-    if "嫌われてしまいそう" in compact:
-        return "嫌われてしまいそう"
-    if "嫌われそう" in compact:
-        return "嫌われそう"
-    if "自分の非を見たくない" in compact:
-        return "自分の非を見たくない"
-    if "自分の非" in compact:
-        return "自分の非"
-    if "悲しくて不安な気持ち" in compact:
-        return "悲しくて不安な気持ち"
-    if "悲しくて不安" in compact:
-        return "悲しくて不安"
+    # Keep only grammar-level normalization here.  Example-specific phrase
+    # rewriting belongs to tests, not runtime extraction.
+    if "理由" in compact and any(word in compact for word in ("から", "せい", "ため")):
+        return clean
+    for marker in ("知っていながら", "分かっていながら", "わかっていながら"):
+        if marker in compact:
+            return clean
     return clean
 
 def _keyword_anchors(text: str, *, source_field: str = "memo") -> Iterable[Tuple[str, str]]:
-    # Extract compact phrases that often represent the user's own explanation,
-    # without replacing or generalizing the surrounding sentence.
-    patterns = (
-        r"たまに泣きそうになるくらい嫌になる時あるけどそれだと",
-        r"泣きそうになるくらい嫌になる時[^。！？!?\n\r]{0,18}",
-        r"悔しいしもったいない気がする",
-        r"むかつくけどさ",
-        r"好きな先輩以外の時はミスしても知らねーよって\s*気持ちでいる",
-        r"教えてくんないんだもん",
-        r"どう頑張ればいいのって思う",
-        r"最近めっちゃイライラする",
-        r"チャット系でお話してると\s*癒される",
-        r"怒ると知っていながら",
-        r"パーソナルスペースに触れてしまった",
-        r"人のパーソナルスペースに入ってしまった",
-        r"パーソナルスペースに入ってしまった",
-        r"女の子との絡みがあったからという理由を掲げて",
-        r"女の子との絡みがあったから",
-        r"自分の非を見たくない",
-        r"自分の非",
-        r"嫌われてしまいそう",
-        r"嫌われそう",
-        r"悲しくて不安な気持ち",
-        r"悲しくて不安",
-        r"[^。！？!?、,\n\r]{0,20}怒ると知っていながら[^。！？!?、,\n\r]{0,20}",
-        r"[^。！？!?、,\n\r]{0,24}パーソナルスペース[^。！？!?、,\n\r]{0,24}",
-        r"[^。！？!?、,\n\r]{0,22}女の子との絡み[^。！？!?、,\n\r]{0,22}",
-        r"[^。！？!?、,\n\r]{0,18}理由を掲げ[^。！？!?、,\n\r]{0,18}",
-        r"[^。！？!?、,\n\r]{0,18}自分の非[^。！？!?、,\n\r]{0,18}",
-        r"[^。！？!?、,\n\r]{0,20}見たくない[^。！？!?、,\n\r]{0,20}",
-        r"[^。！？!?、,\n\r]{0,20}嫌われ[^。！？!?、,\n\r]{0,20}",
-        r"[^。！？!?、,\n\r]{0,24}悲しくて不安[^。！？!?、,\n\r]{0,12}",
-        r"[^。！？!?、,\n\r]{0,24}不安になる",
-        r"[^。！？!?、,\n\r]{0,24}不安になっている",
-        r"[^。！？!?、,\n\r]{1,24}できるのかなぁ",
-        r"[^。！？!?、,\n\r]{1,24}できるのかなあ",
-        r"せめて[^。！？!?、,\n\r]{0,24}したい",
-        r"[^。！？!?、,\n\r]{1,18}同棲[^。！？!?、,\n\r]{0,12}したい",
-        r"[^。！？!?、,\n\r]{1,14}と話した",
-        r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の頻度",
-        r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の距離感",
-        r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の違い",
-        r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}の不一致",
-        r"[ぁ-んァ-ヶ一-龠A-Za-z0-9]{1,14}と喧嘩した",
-        r"わかり合えなくて[^。！？!?、,\n\r]{0,18}",
-        r"分かり合えなくて[^。！？!?、,\n\r]{0,18}",
-        r"すれ違ってしまった",
-        r"すれ違った",
+    """Extract keyword-neighbour clauses with reusable semantic patterns.
+
+    The patterns are intentionally generic keyword windows, not sample-specific
+    full sentences.  Exact examples belong to tests, not runtime extraction.
+    """
+    keyword_groups = (
+        _SELF_AWARENESS_WORDS,
+        _JUSTIFICATION_WORDS,
+        _SELF_AVOIDANCE_WORDS,
+        _SELF_FAULT_WORDS,
+        _REJECTION_FEAR_WORDS,
+        _BOUNDARY_WORDS,
+        _GUIDANCE_LACK_WORDS,
+        _EFFORT_CONFUSION_WORDS,
+        _ANGER_SURFACE_WORDS,
+        _RELIEF_WORDS,
+        _SADNESS_SURFACE_WORDS,
+        _WORK_FRUSTRATION_WORDS,
+        _WISH_WORDS,
+        _NEED_WORDS,
+        _MISMATCH_WORDS,
+        _UNRESOLVED_WORDS,
     )
+    keywords: list[str] = []
+    for group in keyword_groups:
+        for keyword in group:
+            if keyword and keyword not in keywords:
+                keywords.append(keyword)
     seen: set[str] = set()
-    for pattern in patterns:
+    for keyword in keywords:
+        # Capture the user's surrounding clause while keeping it short enough to
+        # shape safely later.
+        pattern = rf"[^。！？!?、,\n\r]{{0,24}}{re.escape(keyword)}[^。！？!?、,\n\r]{{0,24}}"
         for match in re.finditer(pattern, text):
             phrase = _clean_text(match.group(0))
             phrase = re.sub(r"^(自分は|私は|僕は|俺は|相手は)", "", phrase)

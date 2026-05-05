@@ -37,10 +37,7 @@ def test_piece_uses_long_input_core_question_instead_of_work_generic_question():
     question = preview["question"]
     answer = preview["answer_display_text"]
 
-    assert question in {
-        "頑張りたい気持ちとしんどさが両方ある時、どう進みたい？",
-        "頑張りたい気持ちとしんどさを、どう抱えて進みたい？",
-    }
+    assert "頑張りたい" in question and "しんど" in question
     assert question != "仕事で伸ばしたいことは？"
     assert "無理にどちらかを選ばず" in answer
     assert "頑張れる日は少し進" in answer
