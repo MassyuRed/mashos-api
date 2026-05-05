@@ -123,11 +123,59 @@ class UserWordAnchor:
 
 
 @dataclass(frozen=True)
+class ShapedUserPhrase:
+    anchor_key: str
+    raw_text: str
+    phrase: str
+    sentence_fragment: str
+    nominal: str
+    role: str
+    source_field: str
+    usability: str = "safe"
+    unsafe_reasons: List[str] = field(default_factory=list)
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ReplyEndingPlan:
+    line_index: int
+    line_role: str
+    preferred_ending_group: str
+    avoid_endings: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class FinalReviewIssue:
+    code: str
+    severity: str
+    line_index: Optional[int] = None
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class FinalReviewResult:
+    passed: bool
+    issues: List[FinalReviewIssue] = field(default_factory=list)
+    repaired_text: Optional[str] = None
+    review_version: str = "emlis.final_reader.v1"
+
+
+@dataclass(frozen=True)
+class ReplyRepairResult:
+    text: str
+    repair_attempted: bool = False
+    repair_passed: bool = False
+    safe_fallback_used: bool = False
+    issue_codes: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class CurrentInputReading:
     selected_emotions: List[EmotionDisplayItem] = field(default_factory=list)
     dominant_emotion: Optional[EmotionDisplayItem] = None
     secondary_emotions: List[EmotionDisplayItem] = field(default_factory=list)
     user_word_anchors: List[UserWordAnchor] = field(default_factory=list)
+    shaped_user_phrases: List[ShapedUserPhrase] = field(default_factory=list)
     response_mode: str = "receive"
     memo_richness: str = "none"
 
@@ -150,6 +198,15 @@ class UnderstandingFrame:
     explicit_emotion: Optional[UserWordAnchor] = None
     need_or_wish: Optional[UserWordAnchor] = None
     unresolved: Optional[UserWordAnchor] = None
+    work_frustration: Optional[UserWordAnchor] = None
+    mentor_attachment: Optional[UserWordAnchor] = None
+    missing_guidance: Optional[UserWordAnchor] = None
+    effort_confusion: Optional[UserWordAnchor] = None
+    anger_surface: Optional[UserWordAnchor] = None
+    sadness_surface: Optional[UserWordAnchor] = None
+    relief_source: Optional[UserWordAnchor] = None
+    chat_relief: Optional[UserWordAnchor] = None
+    fatigue_accumulation: Optional[UserWordAnchor] = None
     relation_patterns: List[str] = field(default_factory=list)
     confidence: float = 0.0
     evidence: List[EvidenceRef] = field(default_factory=list)
@@ -266,6 +323,7 @@ class WorldModelFacts:
     selected_emotions: List[EmotionDisplayItem] = field(default_factory=list)
     secondary_emotions: List[EmotionDisplayItem] = field(default_factory=list)
     user_word_anchors: List[UserWordAnchor] = field(default_factory=list)
+    shaped_user_phrases: List[ShapedUserPhrase] = field(default_factory=list)
     response_mode: str = "receive"
     memo_richness: str = "none"
     understanding_frame: Optional[UnderstandingFrame] = None

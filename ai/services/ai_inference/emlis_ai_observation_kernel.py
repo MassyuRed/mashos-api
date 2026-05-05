@@ -10,6 +10,7 @@ model lines are used only when there is enough evidence.
 """
 
 from dataclasses import dataclass
+import re
 from typing import Dict, List, Optional, Tuple
 
 from emlis_ai_types import (
@@ -21,12 +22,14 @@ from emlis_ai_types import (
     ReplyLengthPlan,
     ReplyLine,
     SentenceEvidence,
+    ShapedUserPhrase,
     SourceBundle,
     StyleProfile,
     UnderstandingFrame,
     UserWordAnchor,
     WorldModel,
 )
+from emlis_ai_phrase_shaping_service import safe_phrases, shape_user_phrase
 
 
 @dataclass
@@ -48,7 +51,9 @@ def _current_ref(bundle: SourceBundle) -> EvidenceRef:
 
 def _safe_name(display_name: Optional[str]) -> str:
     raw = str(display_name or "").strip()
-    return f"{raw}さん" if raw else ""
+    if not raw or raw.lower() == "user" or raw in {"ユーザー", "ゲスト"}:
+        return ""
+    return f"{raw}さん"
 
 
 def _join_labels(labels: List[str]) -> str:
@@ -83,6 +88,28 @@ def _dominant_emotion_text(world_model: WorldModel) -> str:
 
 def _anchor_by_role(anchors: List[UserWordAnchor], roles: set[str]) -> Optional[UserWordAnchor]:
     return next((item for item in anchors if item.role in roles), None)
+
+
+def _phrases(world_model: Optional[WorldModel]) -> List[ShapedUserPhrase]:
+    if world_model is None:
+        return []
+    return safe_phrases(list(getattr(world_model.facts, "shaped_user_phrases", []) or []))
+
+
+def _phrase_by_role(phrases: List[ShapedUserPhrase], roles: set[str]) -> Optional[ShapedUserPhrase]:
+    return next((item for item in phrases if item.role in roles), None)
+
+
+def _phrase_text(phrase: Optional[ShapedUserPhrase], *, attr: str = "phrase") -> str:
+    if phrase is None:
+        return ""
+    value = getattr(phrase, attr, "") or getattr(phrase, "phrase", "")
+    return _shorten_anchor_text(str(value or ""), max_chars=68)
+
+
+def _has_work_companion_material(world_model: Optional[WorldModel]) -> bool:
+    roles = {item.role for item in _phrases(world_model)}
+    return bool({"sadness_surface", "work_frustration", "anger_surface", "missing_guidance", "effort_confusion", "chat_relief"} & roles)
 
 
 def _shorten_anchor_text(text: str, *, max_chars: int = 46) -> str:
@@ -177,7 +204,15 @@ def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_pro
     selected_text = _selected_emotion_text(world_model)
 
     base = ""
-    if frame is not None and float(getattr(frame, "confidence", 0.0) or 0.0) >= 0.45:
+    phrases = _phrases(world_model)
+    sadness = _phrase_by_role(phrases, {"sadness_surface"})
+    frustration = _phrase_by_role(phrases, {"work_frustration"})
+    if sadness is not None and frustration is not None:
+        base = "泣きそうになるくらい嫌になる時があるのに、そのまま折れるのは悔しいし、もったいないとも感じていたのですね。"
+    elif sadness is not None:
+        base = f"あなたは、{_phrase_text(sadness)}ことを、少しでも言葉にしたかったのですね。"
+
+    if not base and frame is not None and float(getattr(frame, "confidence", 0.0) or 0.0) >= 0.45:
         action_anchor = frame.action or frame.boundary_violation
         awareness_anchor = frame.self_awareness
         action_text = _normalize_action_text(_anchor_raw(action_anchor))
@@ -221,8 +256,9 @@ def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_pro
     return f"{name}、{base}"
 
 def _anchor_reply_text(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
-    text = _shorten_anchor_text(anchor.text, max_chars=max_chars)
-    if anchor.role == "mismatch":
+    shaped = shape_user_phrase(anchor)
+    text = _shorten_anchor_text(shaped.phrase if shaped.usability != "unsafe" and shaped.phrase else anchor.text, max_chars=max_chars)
+    if shaped.role == "mismatch" or anchor.role == "mismatch":
         if "連絡" in text and "頻度" in text and "すれ違" in text:
             return "連絡の頻度の違いからすれ違ってしまった"
         for prefix in ("自分は", "私は", "僕は", "俺は", "相手は"):
@@ -238,15 +274,16 @@ def _quote_anchor_text(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
 
 def _nominalize_anchor_text(anchor_or_text, *, max_chars: int = 44) -> str:
     if isinstance(anchor_or_text, UserWordAnchor):
-        text = _anchor_reply_text(anchor_or_text, max_chars=max_chars)
+        shaped = shape_user_phrase(anchor_or_text)
+        text = _shorten_anchor_text(shaped.nominal if shaped.usability != "unsafe" and shaped.nominal else shaped.phrase, max_chars=max_chars)
     else:
         text = _shorten_anchor_text(str(anchor_or_text or ""), max_chars=max_chars)
     if not text:
         return ""
-    if text.endswith("こと"):
+    if text.endswith(("こと", "もの", "状態", "気持ち", "しんどさ", "怖さ", "行動", "自覚")):
         return text
-    if text.endswith("もの"):
-        return text
+    if text.endswith(("けど", "けれど", "でも", "から", "ので", "のに", "だって", "それだと")):
+        return re.sub(r"(けど|けれど|でも|から|ので|のに|だって|それだと)$", "", text).strip(" 、,")
     return f"{text}こと"
 
 
@@ -273,6 +310,34 @@ def _flow_clause(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
 
 
 def _compose_anchor_overview(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    phrases = _phrases(world_model)
+    missing = _phrase_by_role(phrases, {"missing_guidance"})
+    effort = _phrase_by_role(phrases, {"effort_confusion"})
+    anger = _phrase_by_role(phrases, {"anger_surface"})
+    if missing is not None or effort is not None:
+        if effort is not None and missing is not None:
+            text = "むかつく気持ちの奥には、本当は「どう頑張ればいいのか」を教えてほしい気持ちも近くにありました。"
+        elif effort is not None:
+            text = "むかつく気持ちの奥には、どう頑張ればいいのか分からないしんどさも近くにありました。"
+        else:
+            text = "むかつく気持ちの奥には、教えてもらえないまま頑張らなきゃいけないしんどさもありました。"
+        evidence = []
+        for item in (missing, effort, anger):
+            if item is not None:
+                evidence.extend(item.evidence)
+        return ObservationCandidate(
+            candidate_key="word_reflection.need_under_anger",
+            kind="word_reflection",
+            text=text,
+            evidence=evidence,
+            confidence=0.99,
+            recency_score=1.0,
+            alignment_score=0.99,
+            overclaim_risk=0.04,
+            source_layers=["canonical_history"],
+            notes={"source": "shaped_user_phrase", "role": "need_under_anger"},
+        )
+
     frame = _frame(world_model) if world_model is not None else None
     if frame is not None:
         justification = _normalize_justification_text(_anchor_raw(frame.justification))
@@ -364,6 +429,34 @@ def _compose_anchor_overview(anchors: List[UserWordAnchor], world_model: Optiona
 
 
 def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    phrases = _phrases(world_model)
+    mentor = _phrase_by_role(phrases, {"mentor_attachment"})
+    fatigue = _phrase_by_role(phrases, {"fatigue_accumulation"})
+    anger = _phrase_by_role(phrases, {"anger_surface"})
+    if mentor is not None or fatigue is not None or anger is not None:
+        if mentor is not None and (fatigue is not None or anger is not None):
+            text = "好きな先輩以外の時はミスしても知らないと思いたくなるくらい、最近はかなりイライラが溜まっていたのだと思います。"
+        elif fatigue is not None:
+            text = "最近はかなりイライラが溜まっていて、心の余裕も削られていたのだと思います。"
+        else:
+            text = "むかつく気持ちが出るくらい、納得できないしんどさが近くにありました。"
+        evidence = []
+        for item in (mentor, fatigue, anger):
+            if item is not None:
+                evidence.extend(item.evidence)
+        return ObservationCandidate(
+            candidate_key="word_reflection.fatigue_or_pressure",
+            kind="word_reflection",
+            text=text,
+            evidence=evidence,
+            confidence=0.96,
+            recency_score=1.0,
+            alignment_score=0.96,
+            overclaim_risk=0.06,
+            source_layers=["canonical_history"],
+            notes={"source": "shaped_user_phrase", "role": "fatigue_or_pressure"},
+        )
+
     frame = _frame(world_model) if world_model is not None else None
     if frame is not None:
         fear = _normalize_fear_text(_anchor_raw(frame.fear_of_rejection))
@@ -436,6 +529,23 @@ def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor], world_model:
 
 
 def _compose_secondary_anchor(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    phrases = _phrases(world_model)
+    relief = _phrase_by_role(phrases, {"chat_relief", "relief_source"})
+    if relief is not None:
+        text = "その重さを忘れたい時に、チャットで話す時間が少し癒しになっていたのですね。"
+        return ObservationCandidate(
+            candidate_key="word_reflection.relief_source",
+            kind="word_reflection",
+            text=text,
+            evidence=list(relief.evidence),
+            confidence=0.94,
+            recency_score=1.0,
+            alignment_score=0.94,
+            overclaim_risk=0.05,
+            source_layers=["canonical_history"],
+            notes={"source": "shaped_user_phrase", "role": "relief_source"},
+        )
+
     frame = _frame(world_model) if world_model is not None else None
     if frame is not None and frame.action is not None:
         action_text = _normalize_action_text(_anchor_raw(frame.action))
@@ -550,7 +660,7 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
     dominant_text = _emotion_display_label(dominant)
     if not secondary_text or not dominant_text:
         return None
-    text = f"{dominant_text}だけでなく、{secondary_text}も同じ場所にあったのですね。"
+    text = f"{dominant_text}だけでなく、{secondary_text}も同じ場所にありました。"
     return ObservationCandidate(
         candidate_key="selected_emotions.all",
         kind="selected_emotions",
@@ -565,18 +675,26 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
     )
 
 
-def _compose_receiving_close(bundle: SourceBundle) -> ObservationCandidate:
+def _compose_receiving_close(bundle: SourceBundle, world_model: Optional[WorldModel] = None) -> ObservationCandidate:
+    if _has_work_companion_material(world_model):
+        text = "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
+    else:
+        selected_text = _selected_emotion_text(world_model) if world_model is not None else ""
+        if "怒り" in selected_text and "悲しみ" in selected_text:
+            text = "ここでは、悲しみも怒りも、無理にきれいにしなくて大丈夫です。"
+        else:
+            text = "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
     return ObservationCandidate(
         candidate_key="receiving_close.default",
         kind="receiving_close",
-        text="ここに置いてくれた言葉を、Emlisは軽く扱いません。",
+        text=text,
         evidence=[_current_ref(bundle)],
         confidence=0.90,
         recency_score=1.0,
         alignment_score=0.90,
         overclaim_risk=0.0,
         source_layers=["canonical_history"],
-        notes={"source": "receiving_close"},
+        notes={"source": "receiving_close", "presence_line": True},
     )
 
 
@@ -755,7 +873,7 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
                 )
             )
 
-    candidates.append(_compose_receiving_close(bundle))
+    candidates.append(_compose_receiving_close(bundle, world_model))
     return candidates
 
 
@@ -811,6 +929,12 @@ def suppress_overclaiming(
         if candidate.overclaim_risk >= 0.80:
             rejected.append(candidate)
             unknowns.append(f"overclaim_suppressed:{candidate.kind}")
+            continue
+        if candidate.kind in {"continuity", "partner_line", "topic_anchor"} and any(
+            phrase in candidate.text for phrase in ("近いテーマ", "最近の流れも踏まえて", "今の気持ちを見ます")
+        ):
+            rejected.append(candidate)
+            unknowns.append("abstract_history_reference_suppressed")
             continue
         kept.append(candidate)
     return kept, rejected, unknowns

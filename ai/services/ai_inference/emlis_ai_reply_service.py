@@ -10,8 +10,10 @@ from typing import Any, Dict, List, Optional
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
-from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta
+from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
 from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_observation_kernel
+from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
+from emlis_ai_safe_reply_fallback_service import build_safe_understanding_fallback
 from emlis_ai_style_profile_service import build_style_profile
 from emlis_ai_types import (
     DerivedModelHypothesis,
@@ -138,6 +140,20 @@ def _serialize_user_word_anchor(item: Any) -> Dict[str, Any]:
         "role": _clean(getattr(item, "role", "other")) or "other",
         "confidence": float(getattr(item, "confidence", 0.0) or 0.0),
         "evidence": [_serialize_evidence_ref(ev) for ev in list(getattr(item, "evidence", []) or [])],
+    }
+
+
+def _serialize_shaped_user_phrase(item: Any) -> Dict[str, Any]:
+    return {
+        "anchor_key": _clean(getattr(item, "anchor_key", "")),
+        "raw_text": _clean(getattr(item, "raw_text", "")),
+        "phrase": _clean(getattr(item, "phrase", "")),
+        "sentence_fragment": _clean(getattr(item, "sentence_fragment", "")),
+        "nominal": _clean(getattr(item, "nominal", "")),
+        "role": _clean(getattr(item, "role", "other")) or "other",
+        "source_field": _clean(getattr(item, "source_field", "")),
+        "usability": _clean(getattr(item, "usability", "safe")) or "safe",
+        "unsafe_reasons": [str(v) for v in list(getattr(item, "unsafe_reasons", []) or []) if str(v)],
     }
 
 
@@ -452,6 +468,15 @@ def _understanding_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, A
         "explicit_emotion",
         "need_or_wish",
         "unresolved",
+        "work_frustration",
+        "mentor_attachment",
+        "missing_guidance",
+        "effort_confusion",
+        "anger_surface",
+        "sadness_surface",
+        "relief_source",
+        "chat_relief",
+        "fatigue_accumulation",
     )
     roles_used: List[str] = []
     if frame is not None:
@@ -514,6 +539,7 @@ def _build_meta(
     dominant_emotion = next((item for item in selected_emotions if item.get("role") == "dominant"), None)
     secondary_emotions = [item for item in selected_emotions if item.get("role") != "dominant"]
     user_word_anchors = list(world_model.facts.user_word_anchors or [])
+    shaped_user_phrases = list(getattr(world_model.facts, "shaped_user_phrases", []) or [])
     used_anchor_keys = {
         _clean((line.candidate_key or "").replace("word_reflection.", ""))
         for line in plan.reply_lines
@@ -544,6 +570,14 @@ def _build_meta(
             "sample_user_word_anchors": [_serialize_user_word_anchor(item) for item in user_word_anchors[:8]],
             "used_anchor_keys": sorted(v for v in used_anchor_keys if v),
         },
+        "phrase_shaping": {
+            "version": "emlis.phrase_shaping.v1",
+            "raw_anchor_count": len(user_word_anchors),
+            "safe_phrase_count": sum(1 for item in shaped_user_phrases if _clean(getattr(item, "usability", "safe")) in {"safe", "needs_context"}),
+            "unsafe_phrase_count": sum(1 for item in shaped_user_phrases if _clean(getattr(item, "usability", "safe")) == "unsafe"),
+            "sample_shaped_phrases": [_serialize_shaped_user_phrase(item) for item in shaped_user_phrases[:8]],
+            "unsafe_reasons": sorted({reason for item in shaped_user_phrases for reason in list(getattr(item, "unsafe_reasons", []) or []) if str(reason)}),
+        },
         "understanding": _understanding_meta(world_model, plan),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -559,6 +593,66 @@ def _build_meta(
             "conflict_count": len(world_model.conflicts),
         },
     }
+
+
+def _final_review_meta(review: Any, *, repair_applied: bool) -> Dict[str, Any]:
+    return {
+        "version": _clean(getattr(review, "review_version", "emlis.final_reader.v1")) or "emlis.final_reader.v1",
+        "passed": bool(getattr(review, "passed", False)),
+        "repair_applied": bool(repair_applied),
+        "issues": [
+            {
+                "code": _clean(getattr(issue, "code", "")),
+                "severity": _clean(getattr(issue, "severity", "")),
+                "line_index": getattr(issue, "line_index", None),
+                "message": _clean(getattr(issue, "message", ""))[:160],
+            }
+            for issue in list(getattr(review, "issues", []) or [])
+        ],
+    }
+
+
+def _issue_codes_from_review(review: Any) -> List[str]:
+    return [
+        _clean(getattr(issue, "code", ""))
+        for issue in list(getattr(review, "issues", []) or [])
+        if _clean(getattr(issue, "code", ""))
+    ]
+
+
+def _evaluate_pre_return_gate(
+    *,
+    comment_text: str,
+    capability: EmlisAICapabilityConfig,
+    meta: Dict[str, Any],
+    fallback_used: bool,
+    final_reader_passed: bool,
+    repair_attempted: bool = False,
+    repair_passed: bool = False,
+    safe_fallback_used: bool = False,
+    blocked_issue_codes: Optional[List[str]] = None,
+):
+    reply_depth = meta.get("reply_depth") if isinstance(meta.get("reply_depth"), dict) else {}
+    anchor_summary = meta.get("anchor_summary") if isinstance(meta.get("anchor_summary"), dict) else {}
+    understanding = meta.get("understanding") if isinstance(meta.get("understanding"), dict) else {}
+    allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
+    return evaluate_emlis_ai_quality_gate(
+        comment_text=comment_text,
+        capability=capability,
+        used_sources=meta.get("used_sources") if isinstance(meta.get("used_sources"), list) else [],
+        evidence_by_line=meta.get("evidence_by_line") if isinstance(meta.get("evidence_by_line"), dict) else {},
+        fallback_used=fallback_used,
+        allowed_line_count=allowed_line_count,
+        sample_user_word_anchors=anchor_summary.get("sample_user_word_anchors") if isinstance(anchor_summary.get("sample_user_word_anchors"), list) else [],
+        user_word_anchor_count=int(anchor_summary.get("user_word_anchor_count") or 0),
+        understanding_patterns=understanding.get("patterns") if isinstance(understanding.get("patterns"), list) else [],
+        final_reader_passed=final_reader_passed,
+        pre_return_blocking_enabled=True,
+        repair_attempted=repair_attempted,
+        repair_passed=repair_passed,
+        safe_fallback_used=safe_fallback_used,
+        blocked_issue_codes=blocked_issue_codes or [],
+    )
 
 
 async def render_emlis_ai_reply(
@@ -591,9 +685,10 @@ async def render_emlis_ai_reply(
     )
     plan = _build_reply_plan_from_decision(decision)
 
+    greeting_text = bundle.greeting.greeting_text if bundle.greeting else ""
     comment_text = _render_comment_text_from_reply_lines(
         plan.reply_lines,
-        greeting_text=bundle.greeting.greeting_text if bundle.greeting else "",
+        greeting_text=greeting_text,
     )
     fallback_used = False
     if not comment_text:
@@ -606,6 +701,13 @@ async def render_emlis_ai_reply(
             selection_seed=str(current_input.get("selection_seed") or current_input.get("created_at") or ""),
         )
     comment_text = _naturalize_reply_text(comment_text)
+
+    final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
+    final_review_repair_applied = False
+    if final_review.repaired_text:
+        comment_text = _naturalize_reply_text(final_review.repaired_text)
+        final_review_repair_applied = True
+        final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
 
     await _persist_working_user_model_best_effort(
         user_id=user_id,
@@ -635,6 +737,80 @@ async def render_emlis_ai_reply(
         fallback_used=fallback_used,
         working_model=working_model,
     )
+    meta["final_reader"] = _final_review_meta(final_review, repair_applied=final_review_repair_applied)
+
+    initial_issue_codes = _issue_codes_from_review(final_review)
+    preflight_gate = _evaluate_pre_return_gate(
+        comment_text=comment_text,
+        capability=capability,
+        meta=meta,
+        fallback_used=fallback_used,
+        final_reader_passed=bool(final_review.passed),
+        repair_attempted=final_review_repair_applied,
+        repair_passed=bool(final_review.passed),
+        safe_fallback_used=False,
+        blocked_issue_codes=initial_issue_codes,
+    )
+    pre_return_meta = {
+        "pre_return_blocking_enabled": True,
+        "preflight_passed": bool(preflight_gate.passed),
+        "repair_attempted": bool(final_review_repair_applied),
+        "repair_passed": bool(final_review.passed),
+        "safe_fallback_used": False,
+        "blocked_issue_codes": initial_issue_codes,
+    }
+
+    if not preflight_gate.passed:
+        fallback_used = True
+        failed_meta = preflight_gate.as_meta()
+        gate_issue_codes = [
+            key for key, value in failed_meta.items()
+            if value is False and key not in {"passed", "preflight_passed", "repair_attempted", "repair_passed", "safe_fallback_used"}
+        ]
+        fallback_text = build_safe_understanding_fallback(
+            current_input=current_input,
+            world_model=world_model,
+            greeting_text=greeting_text,
+        )
+        comment_text = _naturalize_reply_text(fallback_text)
+        final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
+        final_review_repair_applied = False
+        if final_review.repaired_text:
+            comment_text = _naturalize_reply_text(final_review.repaired_text)
+            final_review_repair_applied = True
+            final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
+
+        meta = _build_meta(
+            capability=capability,
+            bundle=bundle,
+            world_model=world_model,
+            plan=plan,
+            fallback_used=fallback_used,
+            working_model=working_model,
+        )
+        meta["final_reader"] = _final_review_meta(final_review, repair_applied=final_review_repair_applied)
+        fallback_issue_codes = sorted(set([*initial_issue_codes, *gate_issue_codes, *_issue_codes_from_review(final_review)]))
+        fallback_gate = _evaluate_pre_return_gate(
+            comment_text=comment_text,
+            capability=capability,
+            meta=meta,
+            fallback_used=fallback_used,
+            final_reader_passed=bool(final_review.passed),
+            repair_attempted=True,
+            repair_passed=bool(final_review.passed),
+            safe_fallback_used=True,
+            blocked_issue_codes=fallback_issue_codes,
+        )
+        pre_return_meta = {
+            "pre_return_blocking_enabled": True,
+            "preflight_passed": bool(preflight_gate.passed),
+            "repair_attempted": True,
+            "repair_passed": bool(fallback_gate.passed),
+            "safe_fallback_used": True,
+            "blocked_issue_codes": fallback_issue_codes,
+        }
+
+    meta["pre_return"] = pre_return_meta
     meta = attach_emlis_ai_quality_gate_meta(
         meta,
         comment_text=comment_text,

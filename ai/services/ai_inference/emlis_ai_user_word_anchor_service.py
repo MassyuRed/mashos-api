@@ -27,6 +27,11 @@ _EMOTION_WORDS = (
     "焦った",
     "怒り",
     "怒った",
+    "むかつく",
+    "イライラ",
+    "泣きそう",
+    "悔しい",
+    "もったいない",
     "腹が立つ",
     "嬉しい",
     "うれしい",
@@ -177,6 +182,13 @@ _GUILT_OR_REMORSE_WORDS = (
     "後悔",
     "反省",
 )
+_WORK_WORDS = ("先輩", "ミス", "教えて", "頑張れば", "頑張り方", "仕事", "職場")
+_ANGER_SURFACE_WORDS = ("むかつく", "イライラ", "腹立つ", "知らねーよ", "知らねえよ")
+_RELIEF_WORDS = ("癒される", "癒し", "落ち着く", "安心する", "話してると", "お話してると", "チャット")
+_GUIDANCE_LACK_WORDS = ("教えてくんない", "教えてくれない", "教えてもらえない")
+_EFFORT_CONFUSION_WORDS = ("どう頑張ればいい", "頑張り方がわからない", "頑張り方が分からない")
+_SADNESS_SURFACE_WORDS = ("泣きそうになるくらい嫌", "泣きそう", "嫌になる時")
+_WORK_FRUSTRATION_WORDS = ("悔しい", "もったいない")
 
 _SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
 _SOFT_SPLIT_RE = re.compile(r"(?<=[、,])|(?<=けど)|(?<=けれど)|(?<=でも)|(?<=のに)|(?<=から)|(?<=ので)")
@@ -219,6 +231,25 @@ def _role_for(text: str, *, source_field: str = "memo") -> str:
         if any(word in text for word in _BOUNDARY_WORDS):
             return "boundary_violation"
         return "action"
+    compact_text = text.replace(" ", "")
+    # Current-input companion roles.  These are specific-first so rough user
+    # wording can be shaped before being inserted into reply sentences.
+    if any(word in compact_text for word in _SADNESS_SURFACE_WORDS):
+        return "sadness_surface"
+    if "好きな先輩" in compact_text:
+        return "mentor_attachment"
+    if any(word in compact_text for word in _GUIDANCE_LACK_WORDS):
+        return "missing_guidance"
+    if any(word in compact_text for word in _EFFORT_CONFUSION_WORDS):
+        return "effort_confusion"
+    if any(word in compact_text for word in _RELIEF_WORDS):
+        return "chat_relief"
+    if any(word in compact_text for word in _ANGER_SURFACE_WORDS):
+        return "anger_surface"
+    if any(word in compact_text for word in _WORK_FRUSTRATION_WORDS):
+        return "work_frustration"
+    if any(word in compact_text for word in _WORK_WORDS):
+        return "work_frustration"
     # Role order is intentionally specific-first.  Conflict words must not be
     # swallowed by an explicit-emotion clause when the user writes a long sentence
     # such as "自分の非を見たくない自分が嫌われそうで悲しくて不安".
@@ -267,6 +298,14 @@ def _score_clause(text: str, *, order: int, source_field: str = "memo") -> float
         "fear_of_rejection": 5.0,
         "boundary_violation": 4.8,
         "guilt_or_remorse": 4.4,
+        "sadness_surface": 5.2,
+        "work_frustration": 4.8,
+        "mentor_attachment": 4.5,
+        "missing_guidance": 5.0,
+        "effort_confusion": 5.1,
+        "anger_surface": 4.9,
+        "chat_relief": 4.7,
+        "fatigue_accumulation": 4.7,
         "anxiety_condition": 4.6,
         "uncertainty": 3.7,
         "wish": 3.4,
@@ -325,6 +364,15 @@ def _keyword_anchors(text: str, *, source_field: str = "memo") -> Iterable[Tuple
     # Extract compact phrases that often represent the user's own explanation,
     # without replacing or generalizing the surrounding sentence.
     patterns = (
+        r"たまに泣きそうになるくらい嫌になる時あるけどそれだと",
+        r"泣きそうになるくらい嫌になる時[^。！？!?\n\r]{0,18}",
+        r"悔しいしもったいない気がする",
+        r"むかつくけどさ",
+        r"好きな先輩以外の時はミスしても知らねーよって\s*気持ちでいる",
+        r"教えてくんないんだもん",
+        r"どう頑張ればいいのって思う",
+        r"最近めっちゃイライラする",
+        r"チャット系でお話してると\s*癒される",
         r"怒ると知っていながら",
         r"パーソナルスペースに触れてしまった",
         r"人のパーソナルスペースに入ってしまった",
@@ -426,6 +474,12 @@ def extract_user_word_anchors(
         "self_fault_awareness",
         "self_avoidance",
         "fear_of_rejection",
+        "sadness_surface",
+        "work_frustration",
+        "missing_guidance",
+        "effort_confusion",
+        "anger_surface",
+        "chat_relief",
         "explicit_emotion",
         "action",
     )

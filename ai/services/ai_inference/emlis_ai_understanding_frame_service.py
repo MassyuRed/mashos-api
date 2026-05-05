@@ -248,6 +248,15 @@ def build_understanding_frame(
     need_or_wish = _first_anchor(anchors, ("wish", "need"))
     unresolved = _first_anchor(anchors, ("unresolved", "mismatch"))
     relationship_or_other = _first_anchor(anchors, ("relationship",))
+    work_frustration = _first_anchor(anchors, ("work_frustration",))
+    mentor_attachment = _first_anchor(anchors, ("mentor_attachment",))
+    missing_guidance = _first_anchor(anchors, ("missing_guidance",))
+    effort_confusion = _first_anchor(anchors, ("effort_confusion",))
+    anger_surface = _first_anchor(anchors, ("anger_surface",))
+    sadness_surface = _first_anchor(anchors, ("sadness_surface",))
+    relief_source = _first_anchor(anchors, ("relief_source", "chat_relief"))
+    chat_relief = _first_anchor(anchors, ("chat_relief",))
+    fatigue_accumulation = _first_anchor(anchors, ("fatigue_accumulation",))
 
     patterns: List[str] = []
     if (action or boundary_violation) and self_awareness:
@@ -260,6 +269,14 @@ def build_understanding_frame(
         patterns.append("emotion_from_conflict")
     if action and raw_memo.strip():
         patterns.append("action_thought_split")
+    if (sadness_surface or work_frustration) and anger_surface:
+        patterns.append("sadness_anger_conflict")
+    if missing_guidance and effort_confusion:
+        patterns.append("guidance_and_effort_confusion")
+    if mentor_attachment and anger_surface:
+        patterns.append("mentor_attachment_and_work_anger")
+    if chat_relief:
+        patterns.append("relief_source_present")
     if not patterns and selected_emotions:
         patterns.append("simple_emotion")
 
@@ -278,6 +295,15 @@ def build_understanding_frame(
         explicit_emotion,
         need_or_wish,
         unresolved,
+        work_frustration,
+        mentor_attachment,
+        missing_guidance,
+        effort_confusion,
+        anger_surface,
+        sadness_surface,
+        relief_source,
+        chat_relief,
+        fatigue_accumulation,
     ]
     present_count = sum(1 for item in frame_anchors if item is not None)
     if present_count <= 0 and not selected_emotions:
@@ -304,6 +330,15 @@ def build_understanding_frame(
         explicit_emotion=explicit_emotion,
         need_or_wish=need_or_wish,
         unresolved=unresolved,
+        work_frustration=work_frustration,
+        mentor_attachment=mentor_attachment,
+        missing_guidance=missing_guidance,
+        effort_confusion=effort_confusion,
+        anger_surface=anger_surface,
+        sadness_surface=sadness_surface,
+        relief_source=relief_source,
+        chat_relief=chat_relief,
+        fatigue_accumulation=fatigue_accumulation,
         relation_patterns=patterns,
         confidence=confidence,
         evidence=_unique_evidence(frame_anchors) or [evidence],

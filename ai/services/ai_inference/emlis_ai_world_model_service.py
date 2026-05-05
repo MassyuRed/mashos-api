@@ -20,6 +20,7 @@ from emlis_ai_types import (
     WorldModelHypothesis,
 )
 from emlis_ai_user_word_anchor_service import extract_user_word_anchors
+from emlis_ai_phrase_shaping_service import shape_user_phrases
 from emlis_ai_understanding_frame_service import build_understanding_frame
 
 
@@ -295,6 +296,10 @@ def build_emlis_ai_world_model(
         max_anchors=_anchor_limit_for_capability(capability),
         evidence=current_ref,
     )
+    shaped_user_phrases = shape_user_phrases(
+        anchors=user_word_anchors,
+        current_input=bundle.current_input,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     memo_richness = _memo_richness(bundle)
@@ -319,6 +324,7 @@ def build_emlis_ai_world_model(
         selected_emotions=selected_emotions,
         secondary_emotions=secondary_emotions,
         user_word_anchors=user_word_anchors,
+        shaped_user_phrases=shaped_user_phrases,
         response_mode=response_mode,
         memo_richness=memo_richness,
         understanding_frame=understanding_frame,
@@ -367,6 +373,8 @@ def build_emlis_ai_world_model(
             "similar_inputs": len(bundle.similar_inputs),
             "derived_model_loaded": bool(bundle.derived_user_model is not None),
             "user_word_anchor_count": len(user_word_anchors),
+            "shaped_user_phrase_count": len(shaped_user_phrases),
+            "unsafe_phrase_count": sum(1 for item in shaped_user_phrases if getattr(item, "usability", "safe") == "unsafe"),
             "understanding_patterns": understanding_patterns,
             "understanding_frame_confidence": float(getattr(understanding_frame, "confidence", 0.0) or 0.0),
             "response_mode": response_mode,
