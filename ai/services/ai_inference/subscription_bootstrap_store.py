@@ -15,23 +15,29 @@ PLAN_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PLAN_CATALOG_TABLE") or "subscript
 ALIASES_TABLE = (os.getenv("COCOLON_SUBSCRIPTION_PRODUCT_ALIASES_TABLE") or "subscription_product_aliases").strip() or "subscription_product_aliases"
 IOS_MANAGE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
 _VERSION_SPLIT_RE = re.compile(r"[^0-9A-Za-z]+")
-PLUS_CANONICAL_SUBTITLE = "レポート閲覧 / ピース生成拡張"
-PREMIUM_CANONICAL_SUBTITLE = "表示期間無制限 / 深いレポート / ピース生成無制限"
+PLUS_CANONICAL_SUBTITLE = None
+PREMIUM_CANONICAL_SUBTITLE = None
+PLUS_CANONICAL_FEATURES = [
+    "履歴全般：表示期間1年分。",
+    "ホーム：Emilisからのコメントが入力履歴を踏まえた応答になります。",
+    "分析：感情分析レポートが深くなります。",
+    "分析：自己分析レポートが閲覧可能になります。",
+    "ピース：生成回数が月30回になります。",
+]
 PREMIUM_CANONICAL_FEATURES = [
-    "履歴全般：表示期間無制限",
-    "Analysis：感情構造分析レポートがさらに深くなります",
-    "Analysis：自己構造分析レポートがさらに深くなります",
-    "ピース：今月の生成回数が無制限です",
+    "履歴全般：表示期間無制限。",
+    "ホーム：Emlisからのコメントがあなた専用にカスタマイズされた応答になります。",
+    "分析：感情分析レポートがさらに深くなります。",
+    "分析：自己分析レポートがさらに深くなります。",
+    "ピース：生成回数が無制限になります。",
 ]
 
 
 PLUS_EMLIS_AI_MARKETING_LINES = [
-    "EmlisAI：最近の流れを見ながら返してくれます",
-    "EmlisAI：入力履歴を踏まえた返答になります",
+    "ホーム：Emilisからのコメントが入力履歴を踏まえた応答になります。",
 ]
 PREMIUM_EMLIS_AI_MARKETING_LINES = [
-    "EmlisAI：あなたの流れに合わせて返し方まで変わります",
-    "EmlisAI：長い時間の変化や回復も踏まえて寄り添います",
+    "ホーム：Emlisからのコメントがあなた専用にカスタマイズされた応答になります。",
 ]
 
 
@@ -397,18 +403,9 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Plusプラン",
             "price_label": "月額300円",
-            "subtitle": "レポート閲覧 / ピース生成拡張",
-            "features": [
-                "履歴全般：表示期間１年",
-                "Analysis：感情構造分析レポートが深くなります",
-                "Analysis：自己構造分析レポートを閲覧できます",
-                "Analysis：今日の問いを履歴から編集できます",
-                "ピース：今月30回まで生成できます",
-            ],
-            "note_lines": [
-                "月額300円で自動更新されます。",
-                "解約はいつでも行えます。",
-            ],
+            "subtitle": PLUS_CANONICAL_SUBTITLE,
+            "features": list(PLUS_CANONICAL_FEATURES),
+            "note_lines": [],
             "cta_label": "このプランを選ぶ",
             "recommended": True,
             "purchase_product_id": {
@@ -434,17 +431,9 @@ def _default_plan_catalog() -> Dict[str, Dict[str, Any]]:
             "launch_stage": "live",
             "title": "Premiumプラン",
             "price_label": "月額980円",
-            "subtitle": "表示期間無制限 / 深いレポート / ピース生成無制限",
-            "features": [
-                "履歴全般：表示期間無制限",
-                "Analysis：感情構造分析レポートがさらに深くなります",
-                "Analysis：自己構造分析レポートがさらに深くなります",
-                "ピース：今月の生成回数が無制限です",
-            ],
-            "note_lines": [
-                "月額980円で自動更新されます。",
-                "解約はいつでもストアのサブスクリプション管理から行えます。",
-            ],
+            "subtitle": PREMIUM_CANONICAL_SUBTITLE,
+            "features": list(PREMIUM_CANONICAL_FEATURES),
+            "note_lines": [],
             "cta_label": "このプランを選ぶ",
             "recommended": False,
             "purchase_product_id": {
@@ -473,24 +462,19 @@ def _normalize_plan_catalog_item(plan_code: str, plan: Optional[Mapping[str, Any
 
     if plan_code == "plus":
         out["title"] = _replace_legacy_subscription_text(src.get("title")) or "Plusプラン"
-        out["subtitle"] = (
-            _replace_legacy_subscription_text(src.get("subtitle")) or PLUS_CANONICAL_SUBTITLE
-        )
-        out["features"] = []
-        for item in _string_list(src.get("features"), src.get("features") or []):
-            text = _replace_legacy_subscription_text(item) or _clean(item)
-            if text and not _should_hide_obsolete_profile_create_feature(text):
-                out["features"].append(text)
+        out["subtitle"] = PLUS_CANONICAL_SUBTITLE
+        out["features"] = list(PLUS_CANONICAL_FEATURES)
     elif plan_code == "premium":
         out["title"] = "Premiumプラン"
         out["subtitle"] = PREMIUM_CANONICAL_SUBTITLE
         out["features"] = list(PREMIUM_CANONICAL_FEATURES)
 
     out["note_lines"] = []
-    for item in _string_list(src.get("note_lines"), src.get("note_lines") or []):
-        text = _replace_legacy_subscription_text(item) or _clean(item)
-        if text:
-            out["note_lines"].append(text)
+    if plan_code not in {"plus", "premium"}:
+        for item in _string_list(src.get("note_lines"), src.get("note_lines") or []):
+            text = _replace_legacy_subscription_text(item) or _clean(item)
+            if text:
+                out["note_lines"].append(text)
     out["cta_label"] = _replace_legacy_subscription_text(src.get("cta_label")) or _string_or_none(
         src.get("cta_label")
     )
