@@ -8,7 +8,7 @@ without introducing circular imports.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 HistoryMode = Literal["none", "extended", "full"]
 ContinuityMode = Literal["off", "basic", "advanced"]
@@ -183,6 +183,51 @@ class EmlisDepthReplyPlan:
     allow_paragraph_breaks: bool = False
     require_presence_line: bool = True
     reason: str = ""
+
+@dataclass(frozen=True)
+class WholeInputMeaningArc:
+    """Ordered meaning flow for a clear long current input.
+
+    Meaning blocks capture individual units.  The arc keeps the user's own flow
+    so EmlisAI and Piece do not collapse a detailed entry into one generic topic.
+    """
+
+    arc_key: str
+    title: str
+    summary: str
+    ordered_block_keys: List[str] = field(default_factory=list)
+    tension_pairs: List[Tuple[str, str]] = field(default_factory=list)
+    core_wish_keys: List[str] = field(default_factory=list)
+    fear_keys: List[str] = field(default_factory=list)
+    present_action_keys: List[str] = field(default_factory=list)
+    clarity: float = 0.0
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MajorMeaningRetentionPlan:
+    """Coverage contract for meanings that must not be dropped from long input."""
+
+    clear_long_input: bool
+    total_block_count: int
+    must_keep_block_keys: List[str] = field(default_factory=list)
+    should_keep_block_keys: List[str] = field(default_factory=list)
+    optional_block_keys: List[str] = field(default_factory=list)
+    forbidden_overcompression_targets: List[str] = field(default_factory=list)
+    min_must_keep_coverage_ratio: float = 0.0
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class EmlisWholeInputReplyPlan:
+    input_level: str
+    clear_long_input: bool
+    target_lines: int
+    must_keep_block_keys: List[str] = field(default_factory=list)
+    covered_block_keys: List[str] = field(default_factory=list)
+    require_presence_line: bool = True
+    reason: str = ""
+
 
 @dataclass(frozen=True)
 class ReplyEndingPlan:
@@ -378,6 +423,8 @@ class WorldModelFacts:
     understanding_patterns: List[str] = field(default_factory=list)
     meaning_blocks: List[InputMeaningBlock] = field(default_factory=list)
     meaning_coverage_plan: Optional[MeaningCoveragePlan] = None
+    whole_input_meaning_arc: Optional[WholeInputMeaningArc] = None
+    major_meaning_retention_plan: Optional[MajorMeaningRetentionPlan] = None
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0
@@ -461,6 +508,9 @@ class ReplyLengthPlan:
     selected_meaning_block_count: int = 0
     meaning_coverage_ratio: float = 0.0
     clear_long_input: bool = False
+    major_must_keep_count: int = 0
+    major_must_keep_covered_count: int = 0
+    major_must_keep_coverage_ratio: float = 0.0
 
 
 @dataclass

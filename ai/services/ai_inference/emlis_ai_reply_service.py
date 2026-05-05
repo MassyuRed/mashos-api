@@ -170,9 +170,41 @@ def _serialize_meaning_block(item: Any) -> Dict[str, Any]:
     }
 
 
+def _serialize_whole_input_arc(item: Any) -> Dict[str, Any]:
+    if item is None:
+        return {}
+    return {
+        "arc_key": _clean(getattr(item, "arc_key", "")),
+        "title": _clean(getattr(item, "title", "")),
+        "summary": _clean(getattr(item, "summary", "")),
+        "ordered_block_keys": list(getattr(item, "ordered_block_keys", []) or []),
+        "core_wish_keys": list(getattr(item, "core_wish_keys", []) or []),
+        "fear_keys": list(getattr(item, "fear_keys", []) or []),
+        "present_action_keys": list(getattr(item, "present_action_keys", []) or []),
+        "clarity": float(getattr(item, "clarity", 0.0) or 0.0),
+    }
+
+
+def _serialize_major_retention(item: Any) -> Dict[str, Any]:
+    if item is None:
+        return {}
+    return {
+        "clear_long_input": bool(getattr(item, "clear_long_input", False)),
+        "total_block_count": int(getattr(item, "total_block_count", 0) or 0),
+        "must_keep_block_keys": list(getattr(item, "must_keep_block_keys", []) or []),
+        "should_keep_block_keys": list(getattr(item, "should_keep_block_keys", []) or []),
+        "optional_block_keys": list(getattr(item, "optional_block_keys", []) or []),
+        "forbidden_overcompression_targets": list(getattr(item, "forbidden_overcompression_targets", []) or []),
+        "min_must_keep_coverage_ratio": float(getattr(item, "min_must_keep_coverage_ratio", 0.0) or 0.0),
+        "reason": _clean(getattr(item, "reason", "")),
+    }
+
+
 def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, Any]:
     coverage = getattr(world_model.facts, "meaning_coverage_plan", None)
     blocks = list(getattr(world_model.facts, "meaning_blocks", []) or [])
+    arc = getattr(world_model.facts, "whole_input_meaning_arc", None)
+    retention = getattr(world_model.facts, "major_meaning_retention_plan", None)
     length_plan = plan.reply_length_plan
     if coverage is None:
         return {
@@ -184,7 +216,9 @@ def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str
             "required_roles": [],
             "min_blocks_to_cover": 0,
             "coverage_ratio_target": 0.0,
-            "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:8]],
+            "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:12]],
+            "whole_input_meaning_arc": _serialize_whole_input_arc(arc),
+            **_serialize_major_retention(retention),
         }
     selected_keys = list(getattr(coverage, "selected_block_keys", []) or [])
     if length_plan is not None and int(getattr(length_plan, "selected_meaning_block_count", 0) or 0) > 0:
@@ -202,7 +236,9 @@ def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str
         "max_blocks_to_cover": int(getattr(coverage, "max_blocks_to_cover", 0) or 0),
         "coverage_ratio_target": float(getattr(coverage, "coverage_ratio_target", 0.0) or 0.0),
         "reason": _clean(getattr(coverage, "reason", "")),
-        "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:8]],
+        "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:12]],
+        "whole_input_meaning_arc": _serialize_whole_input_arc(arc),
+        **_serialize_major_retention(retention),
     }
 
 
@@ -232,6 +268,9 @@ def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> D
         "selected_meaning_block_count": int(getattr(length_plan, "selected_meaning_block_count", 0) or 0),
         "meaning_coverage_ratio": float(getattr(length_plan, "meaning_coverage_ratio", 0.0) or 0.0),
         "clear_long_input": bool(getattr(length_plan, "clear_long_input", False)),
+        "major_must_keep_count": int(getattr(length_plan, "major_must_keep_count", 0) or 0),
+        "major_must_keep_covered_count": int(getattr(length_plan, "major_must_keep_covered_count", 0) or 0),
+        "major_must_keep_coverage_ratio": float(getattr(length_plan, "major_must_keep_coverage_ratio", 0.0) or 0.0),
         "reason": _clean(length_plan.reason),
     }
 
@@ -632,6 +671,8 @@ def _build_meta(
             "unsafe_reasons": sorted({reason for item in shaped_user_phrases for reason in list(getattr(item, "unsafe_reasons", []) or []) if str(reason)}),
         },
         "meaning_coverage": _meaning_coverage_meta(world_model, plan),
+        "whole_input_meaning_arc": _serialize_whole_input_arc(getattr(world_model.facts, "whole_input_meaning_arc", None)),
+        "major_meaning_retention": _serialize_major_retention(getattr(world_model.facts, "major_meaning_retention_plan", None)),
         "understanding": _understanding_meta(world_model, plan),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,

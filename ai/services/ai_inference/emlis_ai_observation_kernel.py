@@ -128,6 +128,18 @@ def _meaning_blocks(world_model: Optional[WorldModel]) -> List[InputMeaningBlock
     return list(getattr(world_model.facts, "meaning_blocks", []) or [])
 
 
+def _whole_input_arc(world_model: Optional[WorldModel]):
+    if world_model is None:
+        return None
+    return getattr(world_model.facts, "whole_input_meaning_arc", None)
+
+
+def _major_retention_plan(world_model: Optional[WorldModel]):
+    if world_model is None:
+        return None
+    return getattr(world_model.facts, "major_meaning_retention_plan", None)
+
+
 def _clear_long_input(world_model: Optional[WorldModel]) -> bool:
     plan = _meaning_plan(world_model)
     return bool(plan is not None and plan.clear_long_input)
@@ -242,8 +254,15 @@ def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_pro
     meaning_blocks = _meaning_blocks(world_model)
     meaning_plan = _meaning_plan(world_model)
     if meaning_plan is not None and meaning_plan.clear_long_input:
+        other = _block_by_role(meaning_blocks, {"other_contribution"})
+        others_happy = _block_by_role(meaning_blocks, {"others_happiness_as_own_happiness"})
+        if other is not None:
+            if others_happy is not None:
+                base = "あなたは、誰かの役に立てて、その人たちが幸せに笑ってくれるなら、それが自分の幸せに近いと感じているのですね。"
+            else:
+                base = "あなたは、誰かの役に立てることを、自分にとって大事な幸せとして見ていたのですね。"
         state = _block_by_role(meaning_blocks, {"state_awareness"})
-        if state is not None:
+        if not base and state is not None:
             base = "体も心もボロボロになってきていることを、自分でもちゃんと分かっているのですね。"
 
     phrases = _phrases(world_model)
@@ -364,6 +383,111 @@ def _compose_long_input_meaning_candidates(world_model: WorldModel, current_ref:
     # selected list reached its cap.
     by_role = {block.role: block for block in blocks}
     candidates: List[ObservationCandidate] = []
+
+    self_dislike = by_role.get("self_dislike_from_halfway")
+    if self_dislike is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.self_dislike_from_halfway",
+                kind="word_reflection",
+                text="でも同時に、頑張ることも楽しむことも中途半端に感じて、自分のことを好きになれない気持ちもありました。",
+                evidence=_block_evidence(self_dislike, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "self_dislike_from_halfway", "line_role": "self_dislike"},
+            )
+        )
+
+    future = by_role.get("future_not_giving_up")
+    resignation = by_role.get("resignation_self")
+    betrayal = by_role.get("betrayal_fear")
+    if future is not None or resignation is not None or betrayal is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.future_resignation_betrayal",
+                kind="word_reflection",
+                text="自分のことも今後のこともまだ諦めたくないのに、期待してまた裏切られたくないから、諦めている自分もいるのだと思います。",
+                evidence=_block_evidence(future, resignation, betrayal, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.04,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "future_not_giving_up", "line_role": "not_giving_up_and_resignation"},
+            )
+        )
+
+    own_happiness = by_role.get("own_happiness_wish")
+    if own_happiness is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.own_happiness_wish",
+                kind="word_reflection",
+                text="それでも「私も幸せになりたい」という気持ちは残っていて、そこは本当は諦めたくない場所なのですね。",
+                evidence=_block_evidence(own_happiness, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "own_happiness_wish", "line_role": "own_happiness_wish"},
+            )
+        )
+
+    existing_more = by_role.get("existing_happiness_and_more")
+    if existing_more is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.existing_happiness_and_more",
+                kind="word_reflection",
+                text="もう既に幸せなことはあると分かっていても、それ以上を求めている自分にも気づいています。",
+                evidence=_block_evidence(existing_more, fallback=current_ref),
+                confidence=0.96,
+                recency_score=1.0,
+                alignment_score=0.96,
+                overclaim_risk=0.04,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "existing_happiness_and_more", "line_role": "existing_happiness_and_more"},
+            )
+        )
+
+    concrete_wishes = by_role.get("concrete_life_wishes")
+    if concrete_wishes is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.concrete_life_wishes",
+                kind="word_reflection",
+                text="好きなことをもっとして、納得いくまで楽しんで、素敵なパートナーと出会って幸せになりたいという願いも、ちゃんとここにあります。",
+                evidence=_block_evidence(concrete_wishes, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "concrete_life_wishes", "line_role": "concrete_wishes"},
+            )
+        )
+
+    present_effort = by_role.get("present_effort_toward_wish")
+    unreachable = by_role.get("unreachable_wish")
+    if present_effort is not None or unreachable is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.present_effort_toward_wish",
+                kind="word_reflection",
+                text="その願いが今は手の届かないところに見えても、そこへ届くために、今頑張れることを大切にしたいのですね。",
+                evidence=_block_evidence(unreachable, present_effort, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "whole_input_meaning_block", "meaning_block_key": "present_effort_toward_wish", "line_role": "present_effort"},
+            )
+        )
 
     effort = by_role.get("effort_history")
     state = by_role.get("state_awareness")
@@ -842,7 +966,11 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
 
 def _compose_receiving_close(bundle: SourceBundle, world_model: Optional[WorldModel] = None) -> ObservationCandidate:
     if _clear_long_input(world_model):
-        text = "ここでは、頑張りたい気持ちも、しんどさも、崩れそうな不安も、どれかひとつに削らずに大切にします。"
+        roles = {str(getattr(block, "role", "") or "") for block in _meaning_blocks(world_model)}
+        if {"other_contribution", "own_happiness_wish", "present_effort_toward_wish"} & roles:
+            text = "ここでは、誰かの幸せを願う気持ちも、自分の幸せを諦めたくない気持ちも、どちらも小さく扱いません。"
+        else:
+            text = "ここでは、頑張りたい気持ちも、しんどさも、崩れそうな不安も、どれかひとつに削らずに大切にします。"
     elif _has_work_companion_material(world_model):
         text = "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
     else:
@@ -1125,17 +1253,19 @@ def decide_reply_length_plan(
     meaning_block_count = len(_meaning_blocks(world_model))
     selected_meaning_block_count = len(getattr(meaning_plan, "selected_block_keys", []) or []) if meaning_plan is not None else 0
     clear_long_input = bool(meaning_plan is not None and meaning_plan.clear_long_input)
+    retention_plan = _major_retention_plan(world_model)
+    major_must_keep_count = len(getattr(retention_plan, "must_keep_block_keys", []) or []) if retention_plan is not None else 0
     history_usable = bool(capability.history_mode != "none" and (bundle.same_day_recent_inputs or bundle.similar_inputs or memory_richness_score >= 0.28))
     interpretive_usable = _interpretive_frame_usable(capability=capability, working_model=working_model, bundle=bundle)
 
     tier_ceiling = max(2, int(capability.max_reply_lines or 3))
     if clear_long_input:
         if capability.tier == "premium":
-            tier_ceiling = max(tier_ceiling, 13)
+            tier_ceiling = max(tier_ceiling, 14)
         elif capability.tier == "plus":
-            tier_ceiling = max(tier_ceiling, 11)
+            tier_ceiling = max(tier_ceiling, 12)
         else:
-            tier_ceiling = max(tier_ceiling, 9)
+            tier_ceiling = max(tier_ceiling, 10)
     target = 2  # receive + close
     if emotion_count > 1:
         target += 1
@@ -1150,7 +1280,7 @@ def decide_reply_length_plan(
     if anchor_count >= 3:
         target += 1
     if clear_long_input:
-        target = max(target, 2 + min(max(selected_meaning_block_count, meaning_block_count), 7))
+        target = max(target, 2 + min(max(selected_meaning_block_count, meaning_block_count, major_must_keep_count), 8))
     if history_usable:
         target += 1
     if interpretive_usable:
@@ -1165,7 +1295,7 @@ def decide_reply_length_plan(
     if anchor_count:
         evidence_ceiling += min(3, anchor_count)
     if clear_long_input:
-        evidence_ceiling = max(evidence_ceiling, 2 + min(max(selected_meaning_block_count, meaning_block_count), 7))
+        evidence_ceiling = max(evidence_ceiling, 2 + min(max(selected_meaning_block_count, meaning_block_count, major_must_keep_count), 8))
     if emotion_count > 1:
         evidence_ceiling += 1
     if world_model.facts.response_mode:
@@ -1193,6 +1323,9 @@ def decide_reply_length_plan(
         selected_meaning_block_count=selected_meaning_block_count,
         meaning_coverage_ratio=(float(selected_meaning_block_count) / float(meaning_block_count)) if meaning_block_count else 0.0,
         clear_long_input=clear_long_input,
+        major_must_keep_count=major_must_keep_count,
+        major_must_keep_covered_count=0,
+        major_must_keep_coverage_ratio=0.0,
     )
 
 
@@ -1259,12 +1392,18 @@ def arbitrate_candidates(
         meaning_candidates = [item for item in word_candidates if str(item.candidate_key or "").startswith("word_reflection.meaning.")]
         non_meaning_candidates = [item for item in word_candidates if item not in meaning_candidates]
         meaning_order = {
-            "word_reflection.meaning.effort_history": 1,
-            "word_reflection.meaning.continuation_wish": 2,
-            "word_reflection.meaning.fatigue_and_anxiety": 3,
-            "word_reflection.meaning.dual_holding": 4,
-            "word_reflection.meaning.paced_progress": 5,
-            "word_reflection.meaning.self_understanding": 6,
+            "word_reflection.meaning.self_dislike_from_halfway": 1,
+            "word_reflection.meaning.future_resignation_betrayal": 2,
+            "word_reflection.meaning.own_happiness_wish": 3,
+            "word_reflection.meaning.existing_happiness_and_more": 4,
+            "word_reflection.meaning.concrete_life_wishes": 5,
+            "word_reflection.meaning.present_effort_toward_wish": 6,
+            "word_reflection.meaning.effort_history": 10,
+            "word_reflection.meaning.continuation_wish": 11,
+            "word_reflection.meaning.fatigue_and_anxiety": 12,
+            "word_reflection.meaning.dual_holding": 13,
+            "word_reflection.meaning.paced_progress": 14,
+            "word_reflection.meaning.self_understanding": 15,
         }
         meaning_candidates.sort(key=lambda item: meaning_order.get(str(item.candidate_key or ""), 99))
         for item in meaning_candidates:
@@ -1328,6 +1467,7 @@ def arbitrate_candidates(
             "clear_long_input": bool(reply_length_plan.clear_long_input),
             "meaning_block_count": int(reply_length_plan.meaning_block_count or 0),
             "selected_meaning_block_count": int(reply_length_plan.selected_meaning_block_count or 0),
+            "major_must_keep_count": int(getattr(reply_length_plan, "major_must_keep_count", 0) or 0),
         },
     )
 

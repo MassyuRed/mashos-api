@@ -23,7 +23,12 @@ BROKEN_CONNECTION_RE = re.compile(
 )
 MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造として|分析すると|理解しました|受け取りました)")
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
-PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
+PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
+BROKEN_NOUN_PHRASE_RE = re.compile(
+    r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
+    r"|中途半端だ気持ち|中途半端だから気持ち|好きになれないけど気持ち"
+    r"|諦めたくないけれど気持ち|期待して裏切られたくないから気持ち"
+)
 
 
 def _lines(text: Any) -> List[str]:
@@ -33,6 +38,8 @@ def _lines(text: Any) -> List[str]:
 def _presence_line(world_model: Optional[WorldModel]) -> str:
     selected = " ".join(str(getattr(item, "type", "") or "") for item in list(getattr(getattr(world_model, "facts", None), "selected_emotions", []) or [])) if world_model is not None else ""
     roles = {str(getattr(item, "role", "") or "") for item in list(getattr(getattr(world_model, "facts", None), "shaped_user_phrases", []) or [])} if world_model is not None else set()
+    if {"other_contribution", "own_happiness_wish", "present_effort_toward_wish"} & roles:
+        return "ここでは、誰かの幸せを願う気持ちも、自分の幸せを諦めたくない気持ちも、どちらも小さく扱いません。"
     if {"work_frustration", "anger_surface", "chat_relief"} & roles:
         return "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
     if "怒り" in selected and "悲しみ" in selected:
@@ -95,6 +102,10 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
             issues.append(FinalReviewIssue(code="raw_anchor_broken_connection", severity="block", line_index=idx, message=line))
             changed = True
             continue
+        if BROKEN_NOUN_PHRASE_RE.search(line):
+            issues.append(FinalReviewIssue(code="broken_noun_phrase", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
         if ABSTRACT_HISTORY_RE.search(line):
             issues.append(FinalReviewIssue(code="abstract_history_reference", severity="repair", line_index=idx, message=line))
             changed = True
@@ -120,14 +131,17 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
         changed = True
 
     coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
+    retention = getattr(getattr(world_model, "facts", None), "major_meaning_retention_plan", None) if world_model is not None else None
     if coverage is not None and bool(getattr(coverage, "clear_long_input", False)):
         min_blocks = int(getattr(coverage, "min_blocks_to_cover", 0) or 0)
+        if retention is not None and getattr(retention, "must_keep_block_keys", None):
+            min_blocks = max(min_blocks, min(7, len(getattr(retention, "must_keep_block_keys", []) or [])))
         if len(repaired_lines) < max(5, min_blocks + 1):
             issues.append(FinalReviewIssue(code="long_input_underanswered", severity="block", line_index=None, message="clear long input reply is too short"))
 
     repaired_text = "\n".join(repaired_lines).strip() if changed else None
     final_text = repaired_text if repaired_text is not None else "\n".join(lines).strip()
-    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or MECHANICAL_META_RE.search(final_text))
+    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text))
     repetition_remaining = sum(line.count("のですね") for line in _lines(final_text)) > 2 or _has_three_same_endings(_lines(final_text))
     long_input_underanswered = any(issue.code == "long_input_underanswered" for issue in issues)
     passed = bool(final_text) and not block_remaining and not repetition_remaining and not long_input_underanswered and any(PRESENCE_RE.search(line) for line in _lines(final_text))
@@ -143,4 +157,4 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     )
 
 
-__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "review_emlis_ai_reply_text"]
+__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "review_emlis_ai_reply_text"]

@@ -41,6 +41,8 @@ def _greeting_line(greeting_text: Any) -> str:
 
 
 def _presence_line(phrases: Sequence[ShapedUserPhrase], labels: Sequence[str]) -> str:
+    if _has_role(phrases, "other_contribution", "own_happiness_wish", "present_effort_toward_wish", "concrete_life_wishes"):
+        return "ここでは、誰かの幸せを願う気持ちも、自分の幸せを諦めたくない気持ちも、どちらも小さく扱いません。"
     if _has_role(phrases, "work_frustration", "anger_surface", "chat_relief", "missing_guidance", "effort_confusion"):
         return "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
     if "怒り" in labels and "悲しみ" in labels:
@@ -65,6 +67,21 @@ def build_safe_understanding_fallback(
     coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
     if coverage is not None and bool(getattr(coverage, "clear_long_input", False)) and meaning_blocks:
         roles = {str(getattr(block, "role", "") or "") for block in meaning_blocks}
+        if "other_contribution" in roles:
+            lines.append("誰かの役に立てて、その人たちが幸せに笑ってくれるなら、それが自分の幸せに近いと感じているのですね。")
+        if "self_dislike_from_halfway" in roles:
+            lines.append("頑張ることも楽しむことも中途半端に感じて、自分のことを好きになれない気持ちもありました。")
+        if "future_not_giving_up" in roles or "resignation_self" in roles or "betrayal_fear" in roles:
+            lines.append("自分のことも今後のこともまだ諦めたくないのに、期待してまた裏切られたくないから、諦めている自分もいるのだと思います。")
+        if "own_happiness_wish" in roles:
+            lines.append("それでも、自分も幸せになりたい気持ちは残っていて、そこは本当は諦めたくない場所なのですね。")
+        if "concrete_life_wishes" in roles:
+            lines.append("好きなことをもっとして、納得いくまで楽しんで、素敵なパートナーと出会って幸せになりたい願いも、ちゃんとここにあります。")
+        if "present_effort_toward_wish" in roles or "unreachable_wish" in roles:
+            lines.append("その願いが今は手の届かないところに見えても、そこへ届くために、今頑張れることを大切にしたいのですね。")
+        if "other_contribution" in roles or "own_happiness_wish" in roles:
+            lines.append("ここでは、誰かの幸せを願う気持ちも、自分の幸せを諦めたくない気持ちも、どちらも小さく扱いません。")
+            return "\n".join(line for line in lines if line).strip()
         if "state_awareness" in roles:
             lines.append("体も心もボロボロになってきていることを、自分でもちゃんと分かっているのですね。")
         if "effort_history" in roles:

@@ -36,8 +36,13 @@ _BROKEN_CONNECTION_RE = re.compile(
     r"|今回いちばん残っていた言葉"
     r"|かなぁのあと"
 )
+_BROKEN_NOUN_PHRASE_RE = re.compile(
+    r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
+    r"|中途半端だ気持ち|中途半端だから気持ち|好きになれないけど気持ち"
+    r"|諦めたくないけれど気持ち|期待して裏切られたくないから気持ち"
+)
 _ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
-_PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします)")
+_PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 _MECHANICAL_META_LANGUAGE_RE = re.compile(r"(認識しています|入力として|構造として|分析すると|理解しました|受け取りました|受理しました)")
 _EMPTY_ACK_LINE_RE = re.compile(r"^(?:今回は、?)?(?:書いてくれた)?(?:内容|入力|言葉|気持ち|感情).{0,18}受け取(?:り|る|ります|りました|っています).{0,4}$")
 _RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて")
@@ -78,6 +83,13 @@ class EmlisAIQualityGateResult:
     required_role_coverage_ok: bool = True
     clear_long_input_not_underanswered: bool = True
     piece_like_summary_blocked: bool = True
+    major_meaning_retention_ok: bool = True
+    must_keep_coverage_ok: bool = True
+    own_happiness_wish_not_dropped: bool = True
+    betrayal_fear_not_dropped: bool = True
+    concrete_wishes_not_dropped: bool = True
+    present_effort_not_dropped: bool = True
+    broken_noun_phrase_blocked: bool = True
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -113,6 +125,13 @@ class EmlisAIQualityGateResult:
             "required_role_coverage_ok": bool(self.required_role_coverage_ok),
             "clear_long_input_not_underanswered": bool(self.clear_long_input_not_underanswered),
             "piece_like_summary_blocked": bool(self.piece_like_summary_blocked),
+            "major_meaning_retention_ok": bool(self.major_meaning_retention_ok),
+            "must_keep_coverage_ok": bool(self.must_keep_coverage_ok),
+            "own_happiness_wish_not_dropped": bool(self.own_happiness_wish_not_dropped),
+            "betrayal_fear_not_dropped": bool(self.betrayal_fear_not_dropped),
+            "concrete_wishes_not_dropped": bool(self.concrete_wishes_not_dropped),
+            "present_effort_not_dropped": bool(self.present_effort_not_dropped),
+            "broken_noun_phrase_blocked": bool(self.broken_noun_phrase_blocked),
             "capability_profile": dict(self.capability_profile or {}),
         }
 
@@ -178,6 +197,17 @@ def _anchor_terms(sample_user_word_anchors: Sequence[Any]) -> list[str]:
             "整え",
             "弱いわけ",
             "限界",
+            "誰かの役に立",
+            "中途半端",
+            "好きになれない",
+            "諦めたくない",
+            "諦めて",
+            "裏切られたくない",
+            "幸せになりたい",
+            "好きなこと",
+            "パートナー",
+            "手の届",
+            "今頑張れる",
         ):
             if marker in text and marker not in terms:
                 terms.append(marker)
@@ -245,6 +275,17 @@ _LONG_ROLE_TERMS = {
     "dual_holding": ("両方", "どちらか", "頑張りたい気持ちもしんどい気持ち"),
     "paced_progress": ("頑張れる日は", "しんどい日は", "立ち止ま", "整え"),
     "self_understanding": ("弱いのではなく", "弱いわけ", "限界に気づ"),
+    "other_contribution": ("誰かの役に立", "役に立て", "幸せに笑"),
+    "self_dislike_from_halfway": ("中途半端", "好きになれない"),
+    "others_happiness_as_own_happiness": ("幸せに笑", "自分の幸せに近"),
+    "future_not_giving_up": ("諦めたくない", "今後"),
+    "resignation_self": ("諦めている自分", "諦めてる自分"),
+    "betrayal_fear": ("裏切られたくない", "裏切られるのが怖", "期待"),
+    "own_happiness_wish": ("私も幸せになりたい", "自分も幸せになりたい", "幸せになりたい"),
+    "existing_happiness_and_more": ("既に幸せ", "それ以上"),
+    "concrete_life_wishes": ("好きなこと", "納得いくまで", "パートナー"),
+    "unreachable_wish": ("手の届かない", "手の届"),
+    "present_effort_toward_wish": ("今頑張れる", "願いに届", "大切にしたい"),
 }
 
 
@@ -281,6 +322,25 @@ def _evaluate_meaning_coverage(text: str, meaning_coverage: Mapping[str, Any] | 
         clear_long_input_not_underanswered,
         piece_like_summary_blocked,
     )
+
+
+def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
+    if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
+        return True, True, True, True, True, True
+    must_keys = meaning_coverage.get("must_keep_block_keys") if isinstance(meaning_coverage.get("must_keep_block_keys"), list) else []
+    if not must_keys:
+        return True, True, True, True, True, True
+    hits = _long_input_role_hits(text, must_keys)
+    required_ratio = float(meaning_coverage.get("min_must_keep_coverage_ratio") or 0.80)
+    coverage_ratio = (len(hits) / len(must_keys)) if must_keys else 1.0
+    must_keep_coverage_ok = coverage_ratio >= required_ratio
+    compact_text = _compact(text)
+    own_ok = "own_happiness_wish" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["own_happiness_wish"])
+    betrayal_ok = "betrayal_fear" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["betrayal_fear"])
+    concrete_ok = "concrete_life_wishes" not in must_keys or sum(1 for t in _LONG_ROLE_TERMS["concrete_life_wishes"] if _compact(t) in compact_text) >= 2
+    present_ok = "present_effort_toward_wish" not in must_keys or any(_compact(t) in compact_text for t in _LONG_ROLE_TERMS["present_effort_toward_wish"])
+    major_ok = must_keep_coverage_ok and own_ok and betrayal_ok and concrete_ok and present_ok
+    return major_ok, must_keep_coverage_ok, own_ok, betrayal_ok, concrete_ok, present_ok
 
 
 def evaluate_emlis_ai_quality_gate(
@@ -332,6 +392,7 @@ def evaluate_emlis_ai_quality_gate(
     mechanical_meta_language_ok = not bool(_MECHANICAL_META_LANGUAGE_RE.search(text))
     raw_echo_only_blocked = _raw_echo_only_blocked(text)
     broken_connection_blocked = not bool(_BROKEN_CONNECTION_RE.search(text))
+    broken_noun_phrase_blocked = not bool(_BROKEN_NOUN_PHRASE_RE.search(text))
     sentence_ending_variety_ok = _sentence_ending_variety_ok(text)
     presence_line_present = bool(_PRESENCE_RE.search(text))
     abstract_history_reference_blocked = not bool(_ABSTRACT_HISTORY_RE.search(text))
@@ -346,6 +407,14 @@ def evaluate_emlis_ai_quality_gate(
         clear_long_input_not_underanswered,
         piece_like_summary_blocked,
     ) = _evaluate_meaning_coverage(text, meaning_coverage)
+    (
+        major_meaning_retention_ok,
+        must_keep_coverage_ok,
+        own_happiness_wish_not_dropped,
+        betrayal_fear_not_dropped,
+        concrete_wishes_not_dropped,
+        present_effort_not_dropped,
+    ) = _evaluate_major_meaning_retention(text, meaning_coverage)
 
     capability_profile = {
         "tier": tier,
@@ -386,6 +455,13 @@ def evaluate_emlis_ai_quality_gate(
             required_role_coverage_ok,
             clear_long_input_not_underanswered,
             piece_like_summary_blocked,
+            major_meaning_retention_ok,
+            must_keep_coverage_ok,
+            own_happiness_wish_not_dropped,
+            betrayal_fear_not_dropped,
+            concrete_wishes_not_dropped,
+            present_effort_not_dropped,
+            broken_noun_phrase_blocked,
         ]
     )
     return EmlisAIQualityGateResult(
@@ -421,6 +497,13 @@ def evaluate_emlis_ai_quality_gate(
         required_role_coverage_ok=required_role_coverage_ok,
         clear_long_input_not_underanswered=clear_long_input_not_underanswered,
         piece_like_summary_blocked=piece_like_summary_blocked,
+        major_meaning_retention_ok=major_meaning_retention_ok,
+        must_keep_coverage_ok=must_keep_coverage_ok,
+        own_happiness_wish_not_dropped=own_happiness_wish_not_dropped,
+        betrayal_fear_not_dropped=betrayal_fear_not_dropped,
+        concrete_wishes_not_dropped=concrete_wishes_not_dropped,
+        present_effort_not_dropped=present_effort_not_dropped,
+        broken_noun_phrase_blocked=broken_noun_phrase_blocked,
     )
 
 
@@ -465,7 +548,7 @@ def attach_emlis_ai_quality_gate_meta(
 
     reply_text = str(comment_text or "")
     strength_display_suppressed = not bool(_EMOTION_STRENGTH_DISPLAY_RE.search(reply_text))
-    natural_language_ok = not bool(_UNNATURAL_REPLY_RE.search(reply_text) or _BROKEN_CONNECTION_RE.search(reply_text))
+    natural_language_ok = not bool(_UNNATURAL_REPLY_RE.search(reply_text) or _BROKEN_CONNECTION_RE.search(reply_text) or _BROKEN_NOUN_PHRASE_RE.search(reply_text))
     quality_meta = gate.as_meta()
     quality_meta["strength_display_suppressed"] = strength_display_suppressed
     quality_meta["natural_language_ok"] = natural_language_ok

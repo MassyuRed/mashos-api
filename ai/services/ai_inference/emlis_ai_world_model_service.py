@@ -22,7 +22,12 @@ from emlis_ai_types import (
 from emlis_ai_user_word_anchor_service import extract_user_word_anchors
 from emlis_ai_phrase_shaping_service import shape_user_phrases
 from emlis_ai_understanding_frame_service import build_understanding_frame
-from emlis_ai_input_meaning_block_service import build_input_meaning_blocks, build_meaning_coverage_plan
+from emlis_ai_input_meaning_block_service import (
+    build_input_meaning_blocks,
+    build_meaning_coverage_plan,
+    build_major_meaning_retention_plan,
+    build_whole_input_meaning_arc,
+)
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -310,6 +315,15 @@ def build_emlis_ai_world_model(
         current_input=bundle.current_input,
         meaning_blocks=meaning_blocks,
     )
+    whole_input_meaning_arc = build_whole_input_meaning_arc(
+        meaning_blocks=meaning_blocks,
+        evidence=current_ref,
+    )
+    major_meaning_retention_plan = build_major_meaning_retention_plan(
+        meaning_blocks=meaning_blocks,
+        coverage_plan=meaning_coverage_plan,
+        whole_input_meaning_arc=whole_input_meaning_arc,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     memo_richness = _memo_richness(bundle)
@@ -341,6 +355,8 @@ def build_emlis_ai_world_model(
         understanding_patterns=understanding_patterns,
         meaning_blocks=meaning_blocks,
         meaning_coverage_plan=meaning_coverage_plan,
+        whole_input_meaning_arc=whole_input_meaning_arc,
+        major_meaning_retention_plan=major_meaning_retention_plan,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
@@ -393,6 +409,8 @@ def build_emlis_ai_world_model(
             "meaning_coverage_input_level": meaning_coverage_plan.input_level,
             "meaning_coverage_clear_long_input": bool(meaning_coverage_plan.clear_long_input),
             "meaning_coverage_selected_block_keys": list(meaning_coverage_plan.selected_block_keys),
+            "whole_input_meaning_arc_key": str(getattr(whole_input_meaning_arc, "arc_key", "") or ""),
+            "major_meaning_must_keep_block_keys": list(getattr(major_meaning_retention_plan, "must_keep_block_keys", []) or []),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
         },

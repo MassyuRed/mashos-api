@@ -4,18 +4,26 @@ from __future__ import annotations
 """Meaning-block extraction for clear long EmlisAI / Piece inputs.
 
 User-word anchors are small fragments.  When a user writes a clear long entry,
-this service groups the current input into meaning blocks so the reply and the
-Piece preview do not collapse the whole entry into one generic focus.
+this service groups the current input into meaning blocks and an ordered meaning
+arc so EmlisAI and Piece do not collapse the whole entry into one generic focus.
 """
 
 import re
-from typing import Any, Iterable, List, Mapping, Sequence
+from typing import Any, List, Mapping, Sequence
 
-from emlis_ai_types import EvidenceRef, InputMeaningBlock, MeaningCoveragePlan, ShapedUserPhrase
+from emlis_ai_types import (
+    EvidenceRef,
+    InputMeaningBlock,
+    MajorMeaningRetentionPlan,
+    MeaningCoveragePlan,
+    ShapedUserPhrase,
+    WholeInputMeaningArc,
+)
 
 _SPACE_RE = re.compile(r"\s+")
 
 _REQUIRED_ROLE_ORDER = (
+    # Existing long self-understanding flow.
     "state_awareness",
     "effort_history",
     "continuation_wish",
@@ -26,6 +34,53 @@ _REQUIRED_ROLE_ORDER = (
     "paced_progress",
     "self_permission",
     "self_understanding",
+    # Whole-input self/other happiness flow.
+    "other_contribution",
+    "self_dislike_from_halfway",
+    "others_happiness_as_own_happiness",
+    "future_not_giving_up",
+    "resignation_self",
+    "betrayal_fear",
+    "own_happiness_wish",
+    "existing_happiness_and_more",
+    "concrete_life_wishes",
+    "unreachable_wish",
+    "present_effort_toward_wish",
+    # Shorter companion/material roles.
+    "missing_guidance",
+    "anger_or_frustration",
+    "relief_source",
+)
+
+_WHOLE_ARC_ORDER = (
+    "other_contribution",
+    "self_dislike_from_halfway",
+    "others_happiness_as_own_happiness",
+    "future_not_giving_up",
+    "resignation_self",
+    "betrayal_fear",
+    "own_happiness_wish",
+    "existing_happiness_and_more",
+    "concrete_life_wishes",
+    "unreachable_wish",
+    "present_effort_toward_wish",
+)
+
+_MUST_KEEP_SELF_AND_OTHERS = (
+    "other_contribution",
+    "self_dislike_from_halfway",
+    "future_not_giving_up",
+    "betrayal_fear",
+    "own_happiness_wish",
+    "concrete_life_wishes",
+    "present_effort_toward_wish",
+)
+
+_SHOULD_KEEP_SELF_AND_OTHERS = (
+    "others_happiness_as_own_happiness",
+    "resignation_self",
+    "existing_happiness_and_more",
+    "unreachable_wish",
 )
 
 
@@ -49,8 +104,6 @@ def _current_text(current_input: Mapping[str, Any]) -> str:
 
 
 def _paragraph_count(text: str) -> int:
-    # Blank lines are meaningful in the Cocolon input.  If there are no blank
-    # lines, still treat punctuation/newline separated chunks as light hints.
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", text) if p.strip()]
     if len(paragraphs) >= 2:
         return len(paragraphs)
@@ -70,7 +123,11 @@ def _input_level(char_count: int) -> str:
 
 
 def _connector_count(compact_text: str) -> int:
-    connectors = ("それでも", "でも同時に", "だからこそ", "どっちも", "両方", "今の自分", "頑張れる日は", "しんどい日は")
+    connectors = (
+        "それでも", "でも同時に", "だからこそ", "どっちも", "両方", "今の自分",
+        "頑張れる日は", "しんどい日は", "けれど", "そう思う中でも", "それ以上",
+        "でもその願い", "もう既に幸せ",
+    )
     return sum(1 for token in connectors if token in compact_text)
 
 
@@ -81,7 +138,7 @@ def _has(compact_text: str, *tokens: str) -> bool:
 def _matching_phrases(phrases: Sequence[ShapedUserPhrase], *tokens: str) -> List[ShapedUserPhrase]:
     out: List[ShapedUserPhrase] = []
     for phrase in phrases or []:
-        combined = _compact(" ".join([getattr(phrase, "raw_text", ""), getattr(phrase, "phrase", ""), getattr(phrase, "summary", "")]))
+        combined = _compact(" ".join([getattr(phrase, "raw_text", ""), getattr(phrase, "phrase", "")]))
         if any(token in combined for token in tokens if token):
             out.append(phrase)
     return out
@@ -119,11 +176,7 @@ def build_input_meaning_blocks(
     shaped_user_phrases: Sequence[ShapedUserPhrase] = (),
     evidence: EvidenceRef,
 ) -> List[InputMeaningBlock]:
-    """Extract source-bound meaning blocks from the current input.
-
-    The rules intentionally stay conservative.  A block is created only when the
-    user's own words clearly contain the corresponding meaning.
-    """
+    """Extract source-bound meaning blocks from the current input."""
 
     text = _current_text(current_input)
     compact = _compact(text)
@@ -133,6 +186,7 @@ def build_input_meaning_blocks(
     blocks: List[InputMeaningBlock] = []
     add = blocks.append
 
+    # Existing long self-understanding / balanced-progress flow.
     if _has(compact, "体も心もボロボロ", "心も体もボロボロ", "ボロボロになってきてる", "ボロボロになってきている"):
         add(_block(
             block_key="state_awareness",
@@ -246,6 +300,128 @@ def build_input_meaning_blocks(
             phrases=_matching_phrases(shaped_user_phrases, "弱いわけ", "限界に気づ"),
         ))
 
+    # Whole-input self / others happiness flow.
+    if _has(compact, "誰かの役に立", "人たちの役に立"):
+        add(_block(
+            block_key="other_contribution",
+            role="other_contribution",
+            title="誰かの役に立ちたい気持ち",
+            summary="誰かの役に立てるならそれでいいと思っている",
+            evidence=evidence,
+            priority=0.96,
+            phrases=_matching_phrases(shaped_user_phrases, "役に立"),
+        ))
+
+    if _has(compact, "中途半端", "好きになれない") and _has(compact, "自分のことは好きになれない", "好きになれないけど", "中途半端だから"):
+        add(_block(
+            block_key="self_dislike_from_halfway",
+            role="self_dislike_from_halfway",
+            title="中途半端に感じて自分を好きになれない",
+            summary="頑張ることも楽しむことも中途半端に感じて、自分のことを好きになれない",
+            evidence=evidence,
+            priority=0.95,
+            phrases=_matching_phrases(shaped_user_phrases, "中途半端", "好きになれない"),
+        ))
+
+    if _has(compact, "幸せに笑って", "一番それが幸せ", "1番それが幸せ") and _has(compact, "役に立"):
+        add(_block(
+            block_key="others_happiness_as_own_happiness",
+            role="others_happiness_as_own_happiness",
+            title="他者の幸せが自分の幸せに近い",
+            summary="他の人が幸せに笑っていて、その人たちの役に立てることが一番幸せに近い",
+            evidence=evidence,
+            priority=0.90,
+            phrases=_matching_phrases(shaped_user_phrases, "幸せに笑", "一番それが幸せ", "1番それが幸せ"),
+        ))
+
+    if _has(compact, "諦めたくない", "諦めたくないけれど", "まだ諦めたくない"):
+        add(_block(
+            block_key="future_not_giving_up",
+            role="future_not_giving_up",
+            title="自分のことも今後も諦めたくない",
+            summary="自分のことも今後のことも、まだ諦めたくない気持ちがある",
+            evidence=evidence,
+            priority=0.97,
+            phrases=_matching_phrases(shaped_user_phrases, "諦めたくない"),
+        ))
+
+    if _has(compact, "諦めてる自分", "諦めている自分"):
+        add(_block(
+            block_key="resignation_self",
+            role="resignation_self",
+            title="諦めている自分もいる",
+            summary="期待して傷つきたくないから、諦めている自分もいる",
+            evidence=evidence,
+            priority=0.91,
+            phrases=_matching_phrases(shaped_user_phrases, "諦めてる自分", "諦めている自分"),
+        ))
+
+    if _has(compact, "裏切られたくない", "期待して裏切"):
+        add(_block(
+            block_key="betrayal_fear",
+            role="betrayal_fear",
+            title="期待して裏切られたくない怖さ",
+            summary="期待してまた裏切られるのが怖い",
+            evidence=evidence,
+            priority=0.98,
+            phrases=_matching_phrases(shaped_user_phrases, "裏切られたくない", "期待"),
+        ))
+
+    if _has(compact, "私も幸せになりたい", "自分も幸せになりたい", "幸せになりたいって思う自分"):
+        add(_block(
+            block_key="own_happiness_wish",
+            role="own_happiness_wish",
+            title="自分も幸せになりたい願い",
+            summary="それでも自分も幸せになりたい気持ちが残っている",
+            evidence=evidence,
+            priority=1.0,
+            phrases=_matching_phrases(shaped_user_phrases, "幸せになりたい"),
+        ))
+
+    if _has(compact, "既に幸せ", "すでに幸せ", "それ以上に求め"):
+        add(_block(
+            block_key="existing_happiness_and_more",
+            role="existing_happiness_and_more",
+            title="既にある幸せ以上の願い",
+            summary="もう既に幸せなことはあると分かっていても、それ以上を求めている",
+            evidence=evidence,
+            priority=0.88,
+            phrases=_matching_phrases(shaped_user_phrases, "既に幸せ", "それ以上"),
+        ))
+
+    if _has(compact, "好きなことをもっとしたい", "十分にたのしみたい", "十分に楽しみたい", "パートナーと出会って幸せになりたい"):
+        add(_block(
+            block_key="concrete_life_wishes",
+            role="concrete_life_wishes",
+            title="好きなこととパートナーへの具体的な願い",
+            summary="好きなことをもっとして、納得いくまで楽しみ、素敵なパートナーと出会って幸せになりたい",
+            evidence=evidence,
+            priority=1.0,
+            phrases=_matching_phrases(shaped_user_phrases, "好きなこと", "たのしみたい", "楽しみたい", "パートナー"),
+        ))
+
+    if _has(compact, "手の届か", "手の届かい", "手の届かない"):
+        add(_block(
+            block_key="unreachable_wish",
+            role="unreachable_wish",
+            title="手の届かない願い",
+            summary="その願いが今は手の届かないところにあるように感じている",
+            evidence=evidence,
+            priority=0.90,
+            phrases=_matching_phrases(shaped_user_phrases, "手の届"),
+        ))
+
+    if _has(compact, "今頑張れること", "今がんばれること", "願いに届くように", "大切にしたい"):
+        add(_block(
+            block_key="present_effort_toward_wish",
+            role="present_effort_toward_wish",
+            title="願いに届くための今",
+            summary="その願いに届くように、今頑張れることを大切にしたい",
+            evidence=evidence,
+            priority=1.0,
+            phrases=_matching_phrases(shaped_user_phrases, "今頑張れる", "願いに届", "大切にしたい"),
+        ))
+
     # Existing shorter work/frustration material can also be grouped when present.
     if _has(compact, "どう頑張ればいい", "教えてくんない", "教えてもらえない") and not any(b.role == "missing_guidance" for b in blocks):
         add(_block(
@@ -284,13 +460,18 @@ def build_meaning_coverage_plan(
     elif level == "medium":
         min_blocks, max_blocks, ratio = 2, 3, 0.45
     elif level == "long":
-        min_blocks, max_blocks, ratio = 3, 5, 0.60
+        min_blocks, max_blocks, ratio = 3, 6, 0.60
     else:
-        min_blocks, max_blocks, ratio = 5, 7, 0.65
+        min_blocks, max_blocks, ratio = 5, 9, 0.70
 
+    roles = {block.role for block in meaning_blocks or []}
+    whole_self_other_flow = bool({"own_happiness_wish", "betrayal_fear", "concrete_life_wishes", "present_effort_toward_wish"} & roles)
     if clear_long_input and block_count >= 6:
         min_blocks = max(min_blocks, 5)
-        max_blocks = max(max_blocks, min(7, block_count))
+        max_blocks = max(max_blocks, min(9 if whole_self_other_flow else 7, block_count))
+    if clear_long_input and whole_self_other_flow:
+        min_blocks = max(min_blocks, min(7, block_count))
+        ratio = max(ratio, 0.75)
 
     required_roles = [role for role in _REQUIRED_ROLE_ORDER if any(block.role == role for block in meaning_blocks)]
     priority_blocks = sorted(
@@ -308,7 +489,7 @@ def build_meaning_coverage_plan(
         min_blocks_to_cover=min(min_blocks, block_count) if block_count else 0,
         max_blocks_to_cover=min(max_blocks, block_count) if block_count else 0,
         coverage_ratio_target=ratio,
-        reason=f"chars={char_count};paragraphs={p_count};connectors={c_count};blocks={block_count}",
+        reason=f"chars={char_count};paragraphs={p_count};connectors={c_count};blocks={block_count};whole_self_other_flow={whole_self_other_flow}",
     )
 
 
@@ -325,8 +506,73 @@ def selected_meaning_blocks_for_reply(
     return out or list(blocks)
 
 
+def build_whole_input_meaning_arc(*, meaning_blocks: Sequence[InputMeaningBlock], evidence: EvidenceRef) -> WholeInputMeaningArc | None:
+    keys = {block.block_key for block in meaning_blocks or []}
+    has_self_other_arc = {"other_contribution", "own_happiness_wish", "present_effort_toward_wish"} <= keys and (
+        "betrayal_fear" in keys or "future_not_giving_up" in keys or "concrete_life_wishes" in keys
+    )
+    if not has_self_other_arc:
+        return None
+    ordered = [key for key in _WHOLE_ARC_ORDER if key in keys]
+    return WholeInputMeaningArc(
+        arc_key="self_and_others_happiness_toward_unreachable_wish",
+        title="誰かの幸せと自分自身の幸せの両方を諦めたくない流れ",
+        summary=(
+            "誰かの役に立つことを幸せに感じながらも、自分自身も好きなことを楽しみ、"
+            "パートナーと幸せになりたい願いを諦めたくない。"
+            "期待して裏切られる怖さがある中で、その願いへ届くために今できることを大切にしたい。"
+        ),
+        ordered_block_keys=ordered,
+        tension_pairs=[
+            ("other_contribution", "own_happiness_wish"),
+            ("future_not_giving_up", "resignation_self"),
+            ("betrayal_fear", "present_effort_toward_wish"),
+        ],
+        core_wish_keys=[key for key in ("own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish") if key in keys],
+        fear_keys=[key for key in ("betrayal_fear", "resignation_self") if key in keys],
+        present_action_keys=[key for key in ("present_effort_toward_wish",) if key in keys],
+        clarity=0.95,
+        evidence=[evidence],
+    )
+
+
+def build_major_meaning_retention_plan(
+    *,
+    meaning_blocks: Sequence[InputMeaningBlock],
+    coverage_plan: MeaningCoveragePlan,
+    whole_input_meaning_arc: WholeInputMeaningArc | None,
+) -> MajorMeaningRetentionPlan:
+    keys = {block.block_key for block in meaning_blocks or []}
+    if whole_input_meaning_arc is None:
+        return MajorMeaningRetentionPlan(
+            clear_long_input=bool(coverage_plan.clear_long_input),
+            total_block_count=len(meaning_blocks or []),
+            must_keep_block_keys=[],
+            should_keep_block_keys=[],
+            optional_block_keys=[block.block_key for block in meaning_blocks or []],
+            min_must_keep_coverage_ratio=0.0,
+            reason="no_whole_input_arc",
+        )
+
+    must = [key for key in _MUST_KEEP_SELF_AND_OTHERS if key in keys]
+    should = [key for key in _SHOULD_KEEP_SELF_AND_OTHERS if key in keys]
+    optional = [key for key in (getattr(whole_input_meaning_arc, "ordered_block_keys", []) or []) if key not in set(must) | set(should)]
+    return MajorMeaningRetentionPlan(
+        clear_long_input=bool(coverage_plan.clear_long_input),
+        total_block_count=len(meaning_blocks or []),
+        must_keep_block_keys=must,
+        should_keep_block_keys=should,
+        optional_block_keys=optional,
+        forbidden_overcompression_targets=["人間関係", "伸ばしたいこと", "誰かの役に立ちたいだけ", "自分を好きになれないだけ"],
+        min_must_keep_coverage_ratio=0.80,
+        reason="self_and_others_happiness_arc",
+    )
+
+
 __all__ = [
     "build_input_meaning_blocks",
     "build_meaning_coverage_plan",
+    "build_whole_input_meaning_arc",
+    "build_major_meaning_retention_plan",
     "selected_meaning_blocks_for_reply",
 ]
