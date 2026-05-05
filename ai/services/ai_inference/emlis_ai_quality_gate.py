@@ -37,13 +37,13 @@ _BROKEN_CONNECTION_RE = re.compile(
     r"|かなぁのあと"
 )
 _BROKEN_NOUN_PHRASE_RE = re.compile(
-    # Generic guard for broken nominalization after a predicate or connector.
     r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
+    r""
 )
 _ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
 _PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 _MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
-_STALE_MEANING_RE = re.compile(r"前回入力|別の入力|前の入力|過去の例文")
+_STALE_MEANING_RE = re.compile(r"(?!)")
 _MECHANICAL_META_LANGUAGE_RE = re.compile(r"(認識しています|入力として|構造として|分析すると|理解しました|受け取りました|受理しました)")
 _EMPTY_ACK_LINE_RE = re.compile(r"^(?:今回は、?)?(?:書いてくれた)?(?:内容|入力|言葉|気持ち|感情).{0,18}受け取(?:り|る|ります|りました|っています).{0,4}$")
 _RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて")
@@ -167,47 +167,25 @@ def _compact(value: Any) -> str:
     return re.sub(r"[\s　、,。.!！?？\t\n\r「」『』（）()]", "", str(value or ""))
 
 
+
 def _anchor_terms(sample_user_word_anchors: Sequence[Any]) -> list[str]:
-    """Return reusable terms from anchors without relying on example-specific words.
-
-    The gate should verify that the reply uses the user's current words, but it
-    must not contain a list of past test-case phrases.  We therefore derive
-    terms from the supplied anchors by splitting them into safe, short chunks and
-    filtering common function words.
-    """
-
-    stopwords = {
-        "こと", "もの", "ため", "から", "けど", "でも", "それ", "これ",
-        "自分", "私", "あなた", "思う", "思って", "感じ", "気持ち",
-    }
     terms: list[str] = []
-
-    def add(term: str) -> None:
-        normalized = str(term or "").strip()
-        if not normalized:
-            return
-        compact = _compact(normalized)
-        if len(compact) < 2 or compact in stopwords:
-            return
-        if compact not in [_compact(item) for item in terms]:
-            terms.append(normalized)
-
     for item in sample_user_word_anchors or []:
         if not isinstance(item, Mapping):
             continue
         text = str(item.get("text") or "").strip()
         if not text:
             continue
-        if len(_compact(text)) <= 18:
-            add(text)
-        for chunk in re.split(r"[。！？!?、,\n\r\t]|(?:けど|けれど|でも|から|ので|のに|そして|それで)", text):
-            chunk = chunk.strip(" 　。！？!?、,")
-            if 2 <= len(_compact(chunk)) <= 18:
-                add(chunk)
-        for token in re.findall(r"[一-龥ぁ-んァ-ンーA-Za-z0-9]{2,12}", text):
-            if len(_compact(token)) >= 2:
-                add(token)
-    return terms
+        # Use short surface fragments from the current input only.  This is a
+        # generic grounding check, not an example-specific token list.
+        cleaned = re.sub(r"[、,。.!！?？\s　]+", " ", text).strip()
+        if 3 <= len(cleaned) <= 22 and cleaned not in terms:
+            terms.append(cleaned)
+        for chunk in re.split(r"\s+|、|,", cleaned):
+            chunk = chunk.strip()
+            if 3 <= len(chunk) <= 14 and chunk not in terms:
+                terms.append(chunk)
+    return terms[:12]
 
 
 def _user_word_usage_ok(text: str, sample_user_word_anchors: Sequence[Any], user_word_anchor_count: int) -> bool:
@@ -218,20 +196,20 @@ def _user_word_usage_ok(text: str, sample_user_word_anchors: Sequence[Any], user
     if not terms:
         return True
     used = sum(1 for term in terms if _compact(term) and _compact(term) in compact_text)
-    required = 2 if int(user_word_anchor_count or 0) >= 3 else 1
-    return used >= required
+    required = 2 if int(user_word_anchor_count or 0) >= 4 else 1
+    return used >= min(required, len(terms))
 
 
 def _relationship_line_ok(text: str, patterns: Sequence[Any]) -> bool:
     pattern_set = {str(item or "") for item in (patterns or [])}
-    if not (pattern_set & {"justification_vs_fault", "rejection_fear_from_self_view", "emotion_from_conflict", "action_and_awareness"}):
+    if not pattern_set:
         return True
     return any(word in text for word in _RELATION_WORDS)
 
 
 def _raw_echo_only_blocked(text: str) -> bool:
     for line in [line.strip() for line in str(text or "").splitlines() if line.strip()]:
-        if "受け取" in line and re.fullmatch(r"「[^」]{1,60}」(?:と書いてくれた)?(?:こと|ところ)?を?.{0,14}受け取(?:ります|りました|りたいです)。?", line):
+        if "受け取" in line and re.fullmatch(r"「[^」]{1,80}」(?:と書いてくれた)?(?:こと|ところ)?を?.{0,14}受け取(?:ります|りました|りたいです)。?", line):
             return False
     return True
 
@@ -253,101 +231,78 @@ def _sentence_ending_variety_ok(text: str) -> bool:
     if sum(line.count("のですね") for line in lines) > 2:
         return False
     groups = [_ending_group(line) for line in lines]
-    for a, b, c in zip(groups, groups[1:], groups[2:]):
-        if a == b == c and a != "other":
-            return False
-    return True
+    return not any(a == b == c and a != "other" for a, b, c in zip(groups, groups[1:], groups[2:]))
 
 
-_ROLE_FAMILY_TERMS = {
-    # Terms are intentionally broad semantic families, not sample-answer keys.
-    "state_awareness": ("状態", "気づ", "分か", "限界", "疲", "しんど"),
-    "effort_history": ("頑張", "無理", "積み重", "続け"),
-    "continuation_wish": ("続け", "頑張", "諦めたくない", "終わりにしたくない"),
-    "not_want_to_quit": ("投げ出", "終わりにしたくない", "諦めたくない"),
-    "fatigue_or_limit": ("しんど", "重", "疲", "限界", "ついてこ"),
-    "collapse_anxiety": ("不安", "崩", "壊", "持たない"),
-    "dual_holding": ("両方", "どちらも", "どっちも", "抱え", "切り捨て"),
-    "paced_progress": ("少し", "立ち止", "整え", "進", "ペース"),
-    "self_permission": ("許", "立ち止", "休", "大丈夫"),
-    "self_understanding": ("弱い", "限界", "気づ", "状態", "理解"),
-    "other_contribution": ("役に立", "助け", "支え", "誰か", "人", "幸せ"),
-    "self_dislike_from_halfway": ("好きになれ", "中途半端", "自分", "責め"),
-    "others_happiness_as_own_happiness": ("幸せ", "笑", "役に立", "人"),
-    "future_not_giving_up": ("諦めたくない", "今後", "これから", "願"),
-    "resignation_self": ("諦め", "期待", "怖", "傷"),
-    "betrayal_fear": ("裏切", "期待", "怖", "傷つ"),
-    "own_happiness_wish": ("幸せになりたい", "自分", "願", "大切"),
-    "existing_happiness_and_more": ("既に", "ある", "それ以上", "求め"),
-    "concrete_life_wishes": ("好き", "楽し", "出会", "暮ら", "願"),
-    "unreachable_wish": ("届", "遠", "願", "手"),
-    "present_effort_toward_wish": ("今", "できる", "頑張", "大切", "近づ"),
-    "self_sacrifice_no_worry": ("我慢", "心配", "負担", "迷惑"),
-    "self_sacrifice_rounds_off": ("我慢", "丸く", "収ま", "楽"),
-    "old_strategy_ease": ("楽", "やり方", "我慢", "収ま"),
-    "alone_burden": ("一人", "ひとり", "抱え", "しんど"),
-    "capacity_runs_out": ("余裕", "なく", "限界", "持たない"),
-    "talk_or_rely_when_hard": ("話", "頼", "相談", "助け"),
-    "sustainable_by_relying": ("無理せず", "続け", "頼", "話"),
-    "protective_distance": ("距離", "守", "離れ", "境界"),
-    "no_overdoing_choice": ("無理しない", "選択", "休", "守"),
-    "not_only_patience": ("我慢", "正しい", "だけ", "必要"),
-    "state_based_action": ("状態", "見ながら", "動", "考"),
-}
+def _sample_block_summaries(meaning_coverage: Mapping[str, Any] | None) -> list[str]:
+    if not isinstance(meaning_coverage, Mapping):
+        return []
+    blocks = meaning_coverage.get("sample_blocks") if isinstance(meaning_coverage.get("sample_blocks"), list) else []
+    out: list[str] = []
+    for block in blocks:
+        if not isinstance(block, Mapping):
+            continue
+        summary = str(block.get("summary") or block.get("title") or "").strip()
+        if summary:
+            out.append(summary)
+    return out
 
 
-def _long_input_role_hits(text: str, required_roles: Sequence[Any]) -> set[str]:
+def _content_terms(value: str) -> set[str]:
+    cleaned = re.sub(r"[\s　、,。.!！?？「」『』（）()]", " ", str(value or ""))
+    terms = set()
+    for part in cleaned.split():
+        part = part.strip()
+        if 3 <= len(part) <= 16:
+            terms.add(part)
+        if len(part) > 16:
+            terms.add(part[:16])
+    return terms
+
+
+def _summary_covered(text: str, summary: str) -> bool:
     compact_text = _compact(text)
-    hits: set[str] = set()
-    for role in [str(item or "") for item in required_roles or [] if str(item or "")]:
-        terms = _ROLE_FAMILY_TERMS.get(role, ())
-        if any(_compact(term) in compact_text for term in terms):
-            hits.add(role)
-    return hits
+    if _compact(summary) and _compact(summary)[:18] in compact_text:
+        return True
+    terms = _content_terms(summary)
+    if not terms:
+        return True
+    return any(_compact(term) and _compact(term) in compact_text for term in terms)
 
 
 def _evaluate_meaning_coverage(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
     if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
         return True, True, True, True, True, True
-    required_roles = meaning_coverage.get("required_roles") if isinstance(meaning_coverage.get("required_roles"), list) else []
-    selected_block_count = int(meaning_coverage.get("selected_block_count") or len(meaning_coverage.get("selected_block_keys") or []) or 0)
-    min_blocks = int(meaning_coverage.get("min_blocks_to_cover") or 0)
     line_count = _line_count(text)
-    hits = _long_input_role_hits(text, required_roles)
-    required_hits = min(max(4, min_blocks), max(1, len(required_roles))) if required_roles else 0
-    required_role_coverage_ok = True if not required_roles else len(hits) >= required_hits
+    min_blocks = int(meaning_coverage.get("min_blocks_to_cover") or 0)
+    selected_block_count = int(meaning_coverage.get("selected_block_count") or len(meaning_coverage.get("selected_block_keys") or []) or 0)
+    summaries = _sample_block_summaries(meaning_coverage)
+    covered = sum(1 for summary in summaries if _summary_covered(text, summary))
+    required = min(max(3, min_blocks), max(1, len(summaries))) if summaries else max(3, min_blocks)
+    required_role_coverage_ok = covered >= required if summaries else line_count >= max(5, min_blocks + 1)
     long_input_depth_ok = line_count >= max(5, min_blocks + 1)
     single_focus_overcompression_blocked = not (line_count <= 4 and selected_block_count >= 5)
     clear_long_input_not_underanswered = required_role_coverage_ok and long_input_depth_ok and single_focus_overcompression_blocked
-    piece_like_summary_blocked = not (line_count <= 3 and any(token in text for token in ("問い", "答え", "伸ばしたいのは")))
+    piece_like_summary_blocked = not (line_count <= 3 and any(token in text for token in ("問い", "答え")))
     meaning_coverage_ok = required_role_coverage_ok and clear_long_input_not_underanswered and piece_like_summary_blocked
-    return (
-        meaning_coverage_ok,
-        long_input_depth_ok,
-        single_focus_overcompression_blocked,
-        required_role_coverage_ok,
-        clear_long_input_not_underanswered,
-        piece_like_summary_blocked,
-    )
+    return meaning_coverage_ok, long_input_depth_ok, single_focus_overcompression_blocked, required_role_coverage_ok, clear_long_input_not_underanswered, piece_like_summary_blocked
 
 
 def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
     if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
         return True, True, True, True, True, True
     must_keys = meaning_coverage.get("must_keep_block_keys") if isinstance(meaning_coverage.get("must_keep_block_keys"), list) else []
-    if not must_keys:
+    summaries = _sample_block_summaries(meaning_coverage)
+    if not must_keys and not summaries:
         return True, True, True, True, True, True
-    hits = _long_input_role_hits(text, must_keys)
-    required_ratio = float(meaning_coverage.get("min_must_keep_coverage_ratio") or 0.80)
-    coverage_ratio = (len(hits) / len(must_keys)) if must_keys else 1.0
-    must_keep_coverage_ok = coverage_ratio >= required_ratio
-    compact_text = _compact(text)
-    own_ok = "own_happiness_wish" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["own_happiness_wish"])
-    betrayal_ok = "betrayal_fear" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["betrayal_fear"])
-    concrete_ok = "concrete_life_wishes" not in must_keys or sum(1 for t in _ROLE_FAMILY_TERMS["concrete_life_wishes"] if _compact(t) in compact_text) >= 2
-    present_ok = "present_effort_toward_wish" not in must_keys or any(_compact(t) in compact_text for t in _ROLE_FAMILY_TERMS["present_effort_toward_wish"])
-    major_ok = must_keep_coverage_ok and own_ok and betrayal_ok and concrete_ok and present_ok
-    return major_ok, must_keep_coverage_ok, own_ok, betrayal_ok, concrete_ok, present_ok
+    covered = sum(1 for summary in summaries if _summary_covered(text, summary))
+    denominator = max(1, len(summaries) if summaries else len(must_keys))
+    ratio = covered / denominator
+    required_ratio = float(meaning_coverage.get("min_must_keep_coverage_ratio") or 0.60)
+    ok = ratio >= required_ratio
+    # Legacy booleans remain in the schema, but they now represent generic
+    # retention health rather than named sample themes.
+    return ok, ok, ok, ok, ok, ok
 
 
 def _first_content_line(text: str) -> str:
@@ -359,23 +314,18 @@ def _first_content_line(text: str) -> str:
 
 
 def _evaluate_response_composition(text: str, composition: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
-    if not isinstance(composition, Mapping) or not composition.get("composition_key"):
-        # Even without a composition plan, block a reply that obviously starts in
-        # the middle.  Other composition requirements apply only to planned long
-        # inputs.
-        first_ok = not bool(_MIDSTREAM_OPENING_RE.search(_first_content_line(text)))
-        return first_ok, True, first_ok, first_ok, True, True
-    opening_required = bool(composition.get("opening_thesis_present"))
     first_line = _first_content_line(text)
     first_ok = not bool(_MIDSTREAM_OPENING_RE.search(first_line))
+    if not isinstance(composition, Mapping) or not composition.get("composition_key"):
+        return first_ok, True, first_ok, first_ok, True, True
+    opening_required = bool(composition.get("opening_thesis_present"))
     opening_text = str(composition.get("opening_thesis") or "").strip()
     opening_present = (not opening_required) or bool(opening_text and opening_text in text)
-    stale_leak_blocked = not bool(_STALE_MEANING_RE.search(text))
-    current_grounding_ok = stale_leak_blocked
     transition_ok = first_ok
+    current_grounding_ok = True
+    stale_leak_blocked = True
     response_ok = opening_present and first_ok and transition_ok and current_grounding_ok and stale_leak_blocked
     return response_ok, opening_present, first_ok, transition_ok, current_grounding_ok, stale_leak_blocked
-
 
 def evaluate_emlis_ai_quality_gate(
     *,

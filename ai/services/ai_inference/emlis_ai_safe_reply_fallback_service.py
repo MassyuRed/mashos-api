@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Safe understanding fallback for EmlisAI.
+"""Generic safe understanding fallback for EmlisAI.
 
-Fallback generation is generic and category-based.  It uses current-input meaning
-blocks / shaped phrases; it never returns a sample-specific fixed answer.
+Fallback is used after a generated reply fails review.  It must never return a
+memorized answer for a sample input.  It builds a small but grounded reply from
+current-input meaning blocks or safe shaped phrases.
 """
 
 from typing import Any, List, Optional, Sequence
@@ -17,9 +18,8 @@ def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _has_role(phrases: Sequence[ShapedUserPhrase], *roles: str) -> bool:
-    role_set = set(roles)
-    return any(item.role in role_set for item in phrases)
+def _greeting_line(greeting_text: Any) -> str:
+    return _clean(greeting_text) or "Emlisです。"
 
 
 def _selected_labels(world_model: Optional[WorldModel]) -> List[str]:
@@ -32,31 +32,66 @@ def _selected_labels(world_model: Optional[WorldModel]) -> List[str]:
     return [str(item or "").strip() for item in list(getattr(world_model.facts, "current_emotion_labels", []) or []) if str(item or "").strip()]
 
 
-def _greeting_line(greeting_text: Any) -> str:
-    text = _clean(greeting_text)
-    return text or "Emlisです。"
+def _meaning_blocks(world_model: Optional[WorldModel]) -> List[InputMeaningBlock]:
+    if world_model is None:
+        return []
+    return list(getattr(world_model.facts, "meaning_blocks", []) or [])
 
 
-def _block_summary(block: InputMeaningBlock) -> str:
-    return str(getattr(block, "summary", "") or getattr(block, "title", "") or "").strip("。")
+def _coverage_plan(world_model: Optional[WorldModel]):
+    return getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
 
 
-def _line_from_block(block: InputMeaningBlock) -> str:
-    summary = _block_summary(block)
+def _presence_line(blocks: Sequence[InputMeaningBlock], phrases: Sequence[ShapedUserPhrase], labels: Sequence[str]) -> str:
+    roles = {str(getattr(item, "role", "") or "") for item in list(blocks or []) + list(phrases or [])}
+    if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
+        return "ここでは、抑えてきた気持ちも、自分を守ろうとしている気持ちも、どちらも大切に扱います。"
+    if {"wish_or_hope", "fear_or_disappointment", "effort_direction"} & roles:
+        return "ここでは、願いも怖さも、今できることを大切にしたい気持ちも、小さく扱いません。"
+    if {"anger_or_frustration", "sadness_or_pain", "relief_source"} & roles:
+        return "ここでは、しんどさも、怒りも、少し楽になりたい気持ちも、雑に扱いません。"
+    if "怒り" in labels and "悲しみ" in labels:
+        return "ここでは、悲しみも怒りも、無理にきれいにしなくて大丈夫です。"
+    return "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
+
+
+
+def _as_topic(text: str) -> str:
+    clean = _clean(text).rstrip("。")
+    if not clean:
+        return ""
+    if clean.endswith(("こと", "気持ち", "願い", "状態", "感覚", "不安", "怖さ", "思い")):
+        return clean
+    return f"{clean}こと"
+
+def _line_from_block(block: InputMeaningBlock, *, index: int) -> str:
+    summary = _clean(getattr(block, "summary", ""))
+    role = str(getattr(block, "role", "") or "")
     if not summary:
         return ""
-    if summary.endswith(("いる", "ある", "見ている", "気づいている", "感じている", "思っている", "しようとしている")):
-        return f"{summary}のだと思います。"
-    return f"{summary}。"
+    summary = summary.rstrip("。")
+    if index == 0:
+        return f"あなたは、{_as_topic(summary)}を、今ここに置こうとしているのですね。"
+    if role in {"fear_or_disappointment", "limit_or_exhaustion", "sadness_or_pain", "anger_or_frustration"}:
+        return f"そこには、{summary}感覚もありました。"
+    if role in {"support_need", "self_protection", "effort_direction", "wish_or_hope"}:
+        return f"同時に、{_as_topic(summary)}も大切な場所として見えています。"
+    if role in {"self_suppression", "burden_avoidance", "self_view"}:
+        return f"その背景には、{summary}流れもありました。"
+    return f"そこには、{_as_topic(summary)}も含まれていました。"
 
 
-def _presence_from_blocks(blocks: Sequence[InputMeaningBlock], phrases: Sequence[ShapedUserPhrase], labels: Sequence[str]) -> str:
-    high = [str(getattr(block, "title", "") or "").strip("。") for block in blocks[:3] if str(getattr(block, "title", "") or "").strip()]
-    if high:
-        return f"ここでは、{ '、'.join(high) }を、急いで小さくまとめず大切に扱います。"
-    if _has_role(phrases, "anger_surface") and ("怒り" in labels or "悲しみ" in labels):
-        return "ここでは、怒りも悲しみも、無理にきれいに整えなくて大丈夫です。"
-    return "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
+def _line_from_phrase(phrase: ShapedUserPhrase, *, index: int) -> str:
+    fragment = _clean(getattr(phrase, "sentence_fragment", "") or getattr(phrase, "phrase", ""))
+    role = str(getattr(phrase, "role", "") or "")
+    if not fragment:
+        return ""
+    fragment = fragment.rstrip("。")
+    if index == 0:
+        return f"あなたは、{_as_topic(fragment)}を言葉にしようとしていたのですね。"
+    if role in {"fear_or_disappointment", "sadness_or_pain", "anger_or_frustration"}:
+        return f"そこには、{fragment}感覚も近くにありました。"
+    return f"そこには、{_as_topic(fragment)}も一緒にありました。"
 
 
 def build_safe_understanding_fallback(
@@ -65,37 +100,41 @@ def build_safe_understanding_fallback(
     world_model: Optional[WorldModel],
     greeting_text: Any = "",
 ) -> str:
+    lines: List[str] = [_greeting_line(greeting_text)]
+    blocks = _meaning_blocks(world_model)
+    coverage = _coverage_plan(world_model)
     phrases = safe_phrases(list(getattr(getattr(world_model, "facts", None), "shaped_user_phrases", []) or [])) if world_model is not None else []
     if not phrases:
         anchors = list(getattr(getattr(world_model, "facts", None), "user_word_anchors", []) or []) if world_model is not None else []
         phrases = safe_phrases(shape_user_phrases(anchors=anchors, current_input=current_input))
     labels = _selected_labels(world_model)
-    lines: List[str] = [_greeting_line(greeting_text)]
 
-    meaning_blocks = list(getattr(getattr(world_model, "facts", None), "meaning_blocks", []) or []) if world_model is not None else []
-    coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
-    if coverage is not None and bool(getattr(coverage, "clear_long_input", False)) and meaning_blocks:
-        ordered = sorted(meaning_blocks, key=lambda item: (-float(getattr(item, "priority", 0.0) or 0.0), str(getattr(item, "role", ""))))
-        for block in ordered[: max(4, min(7, len(ordered)))]:
-            line = _line_from_block(block)
-            if line and line not in lines:
+    if blocks:
+        clear_long = bool(getattr(coverage, "clear_long_input", False)) if coverage is not None else False
+        limit = 6 if clear_long else 3
+        ordered = sorted(blocks, key=lambda block: (-float(getattr(block, "priority", 0.0) or 0.0), str(getattr(block, "block_key", "") or "")))[:limit]
+        for idx, block in enumerate(ordered):
+            line = _line_from_block(block, index=idx)
+            if line:
                 lines.append(line)
-        lines.append(_presence_from_blocks(ordered, phrases, labels))
+        lines.append(_presence_line(ordered, phrases, labels))
         return "\n".join(line for line in lines if line).strip()
 
     if phrases:
-        first = phrases[0].sentence_fragment or phrases[0].phrase
-        lines.append(f"あなたは、{first}ことを、少しでも言葉にしたかったのですね。")
-        if len(phrases) >= 2:
-            second = phrases[1].nominal or phrases[1].phrase
-            lines.append(f"そこには、{second}も近くにありました。")
-    elif labels:
+        for idx, phrase in enumerate(phrases[:3]):
+            line = _line_from_phrase(phrase, index=idx)
+            if line:
+                lines.append(line)
+        lines.append(_presence_line([], phrases, labels))
+        return "\n".join(line for line in lines if line).strip()
+
+    if labels:
         joined = "と".join(labels[:2]) if len(labels) <= 2 else "、".join(labels[:-1]) + "、そして" + labels[-1]
         lines.append(f"今日は、{joined}が近くにあったのですね。")
         lines.append("まだ全部をきれいに言葉にしきれなくても、そのまま置いて大丈夫です。")
     else:
         lines.append("今日は、言葉にしきれない気持ちを少し置いておきたかったのですね。")
-    lines.append(_presence_from_blocks([], phrases, labels))
+    lines.append(_presence_line([], phrases, labels))
     return "\n".join(line for line in lines if line).strip()
 
 

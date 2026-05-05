@@ -1,204 +1,48 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Current-input word anchor extraction for EmlisAI.
+"""Generic current-input anchor extraction for EmlisAI.
 
-The extractor is intentionally deterministic and source-bound.  It does not try
-resource-heavy semantic inference; it only keeps the important words and clauses
-that the user actually wrote, so the immediate reply can feel read and received
-without inventing context.
+The extractor intentionally avoids sample-specific exact phrases.  It keeps
+source-bound clauses and assigns broad semantic roles so later stages can build
+an answer from the current input rather than from memorized examples.
 """
 
 import re
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from emlis_ai_types import EvidenceRef, UserWordAnchor
 
-_EMOTION_WORDS = (
-    "悲しい",
-    "悲しかった",
-    "つらい",
-    "辛い",
-    "苦しい",
-    "不安",
-    "怖い",
-    "恐い",
-    "焦り",
-    "焦った",
-    "怒り",
-    "怒った",
-    "むかつく",
-    "イライラ",
-    "泣きそう",
-    "悔しい",
-    "もったいない",
-    "腹が立つ",
-    "嬉しい",
-    "うれしい",
-    "喜び",
-    "安心",
-    "平穏",
-    "寂しい",
-    "さみしい",
-)
-_ANXIETY_CONDITION_WORDS = (
-    "不安になる",
-    "不安にな",
-    "怖くなる",
-    "恐くなる",
-)
-_UNCERTAINTY_WORDS = (
-    "かなぁ",
-    "かなあ",
-    "かな",
-    "できるの",
-    "どうなる",
-    "わからない",
-    "分からない",
-    "不確か",
-)
-_WISH_WORDS = (
-    "したい",
-    "なりたい",
-    "ほしい",
-    "欲しい",
-    "叶えたい",
-    "せめて",
-)
-_ACTION_WORDS = (
-    "話した",
-    "会った",
-    "行った",
-    "書いた",
-    "片づけた",
-    "作った",
-    "休んだ",
-    "寝た",
-    "歩いた",
-    "連絡した",
-)
-_RELATION_WORDS = (
-    "恋人",
-    "彼氏",
-    "彼女",
-    "大切な人",
-    "相手",
-    "友達",
-    "家族",
-    "親",
-    "職場",
-    "上司",
-    "同僚",
-    "自分",
-)
-_MISMATCH_WORDS = (
-    "すれ違",
-    "合わない",
-    "不一致",
-    "違い",
-    "噛み合わ",
-    "わかり合え",
-    "分かり合え",
-    "伝わら",
-    "届かな",
-    "ズレ",
-    "距離感",
-    "頻度",
-)
-_NEED_WORDS = (
-    "したい",
-    "してほしい",
-    "ほしかった",
-    "大事",
-    "大切",
-    "向き合",
-    "わかって",
-    "分かって",
-    "安心したい",
-)
-_UNRESOLVED_WORDS = (
-    "わからない",
-    "分からない",
-    "決められない",
-    "迷って",
-    "残って",
-    "引っかか",
-    "モヤモヤ",
-    "もやもや",
-)
-
-_SELF_AWARENESS_WORDS = (
-    "知っていながら",
-    "分かっていながら",
-    "わかっていながら",
-    "知っていた",
-    "わかっていた",
-    "分かっていた",
-    "気づいていた",
-)
-_SELF_FAULT_WORDS = (
-    "自分の非",
-    "自分が悪",
-    "自分のせい",
-    "悪かった",
-    "責任",
-    "非を",
-)
-_SELF_AVOIDANCE_WORDS = (
-    "見たくない",
-    "向き合いたくない",
-    "認めたくない",
-    "目をそら",
-    "逃げたい",
-)
-_JUSTIFICATION_WORDS = (
-    "理由を掲げ",
-    "理由にして",
-    "言い訳",
-    "正当化",
-    "だからという理由",
-    "という理由",
-)
-_REJECTION_FEAR_WORDS = (
-    "嫌われ",
-    "見捨てられ",
-    "否定され",
-    "離れていきそう",
-    "愛されない",
-)
-_BOUNDARY_WORDS = (
-    "距離感",
-    "境界",
-    "踏み込",
-    "越えて",
-    "触れてしまった",
-    "入ってしまった",
-)
-_GUILT_OR_REMORSE_WORDS = (
-    "してしまった",
-    "触れてしまった",
-    "入ってしまった",
-    "申し訳",
-    "後悔",
-    "反省",
-)
-_WORK_WORDS = ("先輩", "ミス", "教えて", "頑張れば", "頑張り方", "仕事", "職場")
-_ANGER_SURFACE_WORDS = ("むかつく", "イライラ", "腹立つ", "知らねーよ", "知らねえよ")
-_RELIEF_WORDS = ("癒される", "癒し", "落ち着く", "安心する", "話してると", "お話してると", "チャット")
-_GUIDANCE_LACK_WORDS = ("教えてくんない", "教えてくれない", "教えてもらえない")
-_EFFORT_CONFUSION_WORDS = ("どう頑張ればいい", "頑張り方がわからない", "頑張り方が分からない")
-_SADNESS_SURFACE_WORDS = ("泣きそうになるくらい嫌", "泣きそう", "嫌になる時")
-_WORK_FRUSTRATION_WORDS = ("悔しい", "もったいない")
-
 _SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
-_SOFT_SPLIT_RE = re.compile(r"(?<=[、,])|(?<=けど)|(?<=けれど)|(?<=でも)|(?<=のに)|(?<=から)|(?<=ので)")
+_SOFT_SPLIT_RE = re.compile(r"(?<=、)|(?<=,)|(?<=けど)|(?<=けれど)|(?<=でも)|(?<=のに)|(?<=から)|(?<=ので)")
 _SPACE_RE = re.compile(r"\s+")
-_GENERIC_NOISE_RE = re.compile(r"^(です|ます|でした|だった|ので|から|けど|でも|そして|それで|あと)$")
+_GENERIC_NOISE_RE = re.compile(r"^(です|ます|でした|だった|ので|から|けど|でも|そして|それで|あと|ただ)$")
+
+_ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...], float], ...] = (
+    ("self_awareness", ("気づ", "分かって", "わかって", "知って", "自覚"), 4.9),
+    ("self_view", ("自分", "好きになれ", "弱", "限界", "中途", "責任", "非"), 4.7),
+    ("fear_or_disappointment", ("怖", "恐", "不安", "裏切", "嫌われ", "見捨", "否定", "傷つ"), 4.8),
+    ("self_suppression", ("我慢", "抑え", "飲み込", "耐え", "抱え込"), 4.7),
+    ("burden_avoidance", ("心配", "負担", "迷惑", "丸く", "収ま"), 4.3),
+    ("support_need", ("頼", "相談", "話", "助け", "支え"), 4.4),
+    ("self_protection", ("守", "距離", "境界", "離れ", "無理しない"), 4.4),
+    ("wish", ("したい", "なりたい", "ほしい", "欲しい", "願", "叶"), 4.5),
+    ("effort_direction", ("頑張", "進", "続け", "整え", "大切", "諦め"), 4.2),
+    ("sadness_or_pain", ("悲", "つら", "辛", "泣", "しんど", "苦し"), 4.1),
+    ("anger_or_frustration", ("怒", "むかつ", "イライラ", "悔", "腹立"), 4.0),
+    ("relief_source", ("癒", "安心", "落ち着", "楽になる"), 3.8),
+    ("relationship_context", ("相手", "恋人", "友達", "家族", "職場", "上司", "同僚", "他者", "周り"), 3.5),
+    ("mismatch_or_boundary", ("すれ違", "合わな", "違い", "境界", "距離感", "踏み込"), 3.7),
+)
 
 
 def _clean_text(value: Any) -> str:
     text = _SPACE_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip()
     return text.strip(" 、,。.!！?？\t")
+
+
+def _compact(value: Any) -> str:
+    return re.sub(r"[\s　、,。.!！?？\t\n\r「」『』（）()]", "", str(value or ""))
 
 
 def _split_clauses(text: str) -> List[str]:
@@ -212,181 +56,38 @@ def _split_clauses(text: str) -> List[str]:
             piece = _clean_text(piece)
             if not piece or _GENERIC_NOISE_RE.match(piece):
                 continue
-            if len(piece) > 70:
-                # Keep surface wording but avoid turning a whole paragraph into one anchor.
-                piece = piece[:70].rstrip("、,")
+            if len(piece) > 76:
+                piece = piece[:76].rstrip("、,")
             if len(piece) >= 3:
                 chunks.append(piece)
     return chunks
 
 
-def _has_anxiety_condition(text: str) -> bool:
-    if not any(word in text for word in _ANXIETY_CONDITION_WORDS):
-        return False
-    return any(marker in text for marker in ("考えると", "思うと", "見ると", "聞くと", "なる", "将来"))
-
-
 def _role_for(text: str, *, source_field: str = "memo") -> str:
     if source_field == "memo_action":
-        if any(word in text for word in _BOUNDARY_WORDS):
-            return "boundary_violation"
         return "action"
-    compact_text = text.replace(" ", "")
-    # Current-input companion roles.  These are specific-first so rough user
-    # wording can be shaped before being inserted into reply sentences.
-    if any(word in compact_text for word in _SADNESS_SURFACE_WORDS):
-        return "sadness_surface"
-    if any(word in compact_text for word in _GUIDANCE_LACK_WORDS):
-        return "missing_guidance"
-    if any(word in compact_text for word in _EFFORT_CONFUSION_WORDS):
-        return "effort_confusion"
-    if any(word in compact_text for word in _RELIEF_WORDS):
-        return "chat_relief"
-    if any(word in compact_text for word in _ANGER_SURFACE_WORDS):
-        return "anger_surface"
-    if any(word in compact_text for word in _WORK_FRUSTRATION_WORDS):
-        return "work_frustration"
-    if any(word in compact_text for word in _WORK_WORDS):
-        return "work_frustration"
-    # Role order is intentionally specific-first.  Conflict words must not be
-    # swallowed by an explicit-emotion clause when the user writes a long sentence
-    # such as "自分の非を見たくない自分が嫌われそうで悲しくて不安".
-    if any(word in text for word in _SELF_AWARENESS_WORDS):
-        return "self_awareness"
-    if any(word in text for word in _JUSTIFICATION_WORDS):
-        return "justification"
-    if any(word in text for word in _SELF_AVOIDANCE_WORDS):
-        return "self_avoidance"
-    if any(word in text for word in _SELF_FAULT_WORDS):
-        return "self_fault_awareness"
-    if any(word in text for word in _REJECTION_FEAR_WORDS):
-        return "fear_of_rejection"
-    if any(word in text for word in _BOUNDARY_WORDS):
-        return "boundary_violation"
-    if any(word in text for word in _GUILT_OR_REMORSE_WORDS):
-        return "guilt_or_remorse"
-    if _has_anxiety_condition(text):
-        return "anxiety_condition"
-    if any(word in text for word in _UNCERTAINTY_WORDS):
-        return "uncertainty"
-    if any(word in text for word in _WISH_WORDS):
-        return "wish"
-    if any(word in text for word in _EMOTION_WORDS):
-        return "explicit_emotion"
-    if "喧嘩" in text or "けんか" in text:
-        return "event"
-    if any(word in text for word in _MISMATCH_WORDS):
-        return "mismatch"
-    if any(word in text for word in _NEED_WORDS):
-        return "need"
-    if any(word in text for word in _UNRESOLVED_WORDS):
-        return "unresolved"
-    if any(word in text for word in _RELATION_WORDS):
-        return "relationship"
-    return "event"
+    compact = _compact(text)
+    for role, keywords, _weight in _ROLE_KEYWORDS:
+        if any(keyword in compact for keyword in keywords):
+            return role
+    return "current_expression"
+
 
 def _score_clause(text: str, *, order: int, source_field: str = "memo") -> float:
-    score = 0.0
+    compact = _compact(text)
     role = _role_for(text, source_field=source_field)
-    role_bonus = {
-        "self_awareness": 5.0,
-        "self_fault_awareness": 5.0,
-        "self_avoidance": 5.1,
-        "justification": 4.9,
-        "fear_of_rejection": 5.0,
-        "boundary_violation": 4.8,
-        "guilt_or_remorse": 4.4,
-        "sadness_surface": 5.2,
-        "work_frustration": 4.8,
-        "mentor_attachment": 4.5,
-        "missing_guidance": 5.0,
-        "effort_confusion": 5.1,
-        "anger_surface": 4.9,
-        "chat_relief": 4.7,
-        "fatigue_accumulation": 4.7,
-        "anxiety_condition": 4.6,
-        "uncertainty": 3.7,
-        "wish": 3.4,
-        "action": 2.8,
-    }.get(role, 0.0)
-    score += role_bonus
-    if any(word in text for word in _EMOTION_WORDS):
-        score += 3.2 if role in {"anxiety_condition", "fear_of_rejection", "self_avoidance"} else 4.0
-    if any(word in text for word in _MISMATCH_WORDS):
-        score += 3.2
-    if any(word in text for word in _RELATION_WORDS):
-        score += 2.2
-    if "喧嘩" in text or "けんか" in text:
-        score += 3.0
-    if any(word in text for word in _NEED_WORDS):
-        score += 1.8
-    if any(word in text for word in _UNRESOLVED_WORDS):
-        score += 1.8
-    if any(word in text for word in _BOUNDARY_WORDS):
-        score += 2.0
-    if 6 <= len(text) <= 48:
+    score = 1.0
+    for candidate_role, keywords, weight in _ROLE_KEYWORDS:
+        if role == candidate_role:
+            score += weight
+        if any(keyword in compact for keyword in keywords):
+            score += min(2.0, weight / 3.0)
+    if 6 <= len(text) <= 54:
         score += 1.0
-    elif len(text) <= 70:
-        score += 0.6
-    score += max(0.0, 0.5 - (order * 0.03))
+    elif len(text) <= 86:
+        score += 0.4
+    score += max(0.0, 0.45 - order * 0.02)
     return score
-
-
-
-def _normalize_keyword_phrase(phrase: str) -> str:
-    clean = _clean_text(phrase)
-    compact = clean.replace(" ", "")
-    # Keep only grammar-level normalization here.  Example-specific phrase
-    # rewriting belongs to tests, not runtime extraction.
-    if "理由" in compact and any(word in compact for word in ("から", "せい", "ため")):
-        return clean
-    for marker in ("知っていながら", "分かっていながら", "わかっていながら"):
-        if marker in compact:
-            return clean
-    return clean
-
-def _keyword_anchors(text: str, *, source_field: str = "memo") -> Iterable[Tuple[str, str]]:
-    """Extract keyword-neighbour clauses with reusable semantic patterns.
-
-    The patterns are intentionally generic keyword windows, not sample-specific
-    full sentences.  Exact examples belong to tests, not runtime extraction.
-    """
-    keyword_groups = (
-        _SELF_AWARENESS_WORDS,
-        _JUSTIFICATION_WORDS,
-        _SELF_AVOIDANCE_WORDS,
-        _SELF_FAULT_WORDS,
-        _REJECTION_FEAR_WORDS,
-        _BOUNDARY_WORDS,
-        _GUIDANCE_LACK_WORDS,
-        _EFFORT_CONFUSION_WORDS,
-        _ANGER_SURFACE_WORDS,
-        _RELIEF_WORDS,
-        _SADNESS_SURFACE_WORDS,
-        _WORK_FRUSTRATION_WORDS,
-        _WISH_WORDS,
-        _NEED_WORDS,
-        _MISMATCH_WORDS,
-        _UNRESOLVED_WORDS,
-    )
-    keywords: list[str] = []
-    for group in keyword_groups:
-        for keyword in group:
-            if keyword and keyword not in keywords:
-                keywords.append(keyword)
-    seen: set[str] = set()
-    for keyword in keywords:
-        # Capture the user's surrounding clause while keeping it short enough to
-        # shape safely later.
-        pattern = rf"[^。！？!?、,\n\r]{{0,24}}{re.escape(keyword)}[^。！？!?、,\n\r]{{0,24}}"
-        for match in re.finditer(pattern, text):
-            phrase = _clean_text(match.group(0))
-            phrase = re.sub(r"^(自分は|私は|僕は|俺は|相手は)", "", phrase)
-            phrase = _normalize_keyword_phrase(phrase)
-            if len(phrase) < 3 or phrase in seen:
-                continue
-            seen.add(phrase)
-            yield phrase, _role_for(phrase, source_field=source_field)
 
 
 def extract_user_word_anchors(
@@ -395,69 +96,47 @@ def extract_user_word_anchors(
     max_anchors: int,
     evidence: EvidenceRef,
 ) -> List[UserWordAnchor]:
-    """Return high-value current-input words/clauses in priority order."""
+    """Return high-value current-input clauses in source order after scoring."""
 
     scored: List[Tuple[float, int, str, str, str]] = []
-    source_fields = ("memo", "memo_action")
     order = 0
-    for field in source_fields:
+    for field in ("memo", "memo_action"):
         raw = str(current_input.get(field) or "")
         if not raw.strip():
             continue
-        for phrase, role in _keyword_anchors(raw, source_field=field):
-            scored.append((_score_clause(phrase, order=order, source_field=field) + 1.2, order, phrase, field, role))
-            order += 1
         for clause in _split_clauses(raw):
-            scored.append((_score_clause(clause, order=order, source_field=field), order, clause, field, _role_for(clause, source_field=field)))
+            role = _role_for(clause, source_field=field)
+            scored.append((_score_clause(clause, order=order, source_field=field), order, clause, field, role))
             order += 1
-
     if not scored:
         return []
 
-    # Prefer high-value anchors, but de-duplicate before applying the cap.
-    # Important conflict roles are reserved first so a long clause or repeated
-    # boundary wording cannot push out words such as 「嫌われてしまいそう」.
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    selected: List[Tuple[float, int, str, str, str]] = []
-    seen_text: set[str] = set()
-    seen_roles: set[str] = set()
     limit = max(0, int(max_anchors or 0))
     if limit <= 0:
         return []
 
+    # Reserve role diversity first, then fill by score. This is generic; it does
+    # not reserve any example sentence or fixed answer path.
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    selected: List[Tuple[float, int, str, str, str]] = []
+    seen_compact: set[str] = set()
+
     def _append(item: Tuple[float, int, str, str, str]) -> bool:
         clean = _clean_text(item[2])
-        if not clean or clean in seen_text:
+        key = _compact(clean)
+        if not clean or key in seen_compact:
             return False
-        seen_text.add(clean)
-        seen_roles.add(item[4])
-        selected.append(item)
+        seen_compact.add(key)
+        selected.append((item[0], item[1], clean, item[3], item[4]))
         return True
 
-    required_roles = (
-        "self_awareness",
-        "boundary_violation",
-        "justification",
-        "self_fault_awareness",
-        "self_avoidance",
-        "fear_of_rejection",
-        "sadness_surface",
-        "work_frustration",
-        "missing_guidance",
-        "effort_confusion",
-        "anger_surface",
-        "chat_relief",
-        "explicit_emotion",
-        "action",
-    )
-    for role in required_roles:
+    for role, _keywords, _weight in _ROLE_KEYWORDS:
         if len(selected) >= limit:
             break
-        role_candidates = [item for item in scored if item[4] == role]
-        if not role_candidates:
-            continue
-        role_candidates.sort(key=lambda item: (len(_clean_text(item[2])) > 42, len(_clean_text(item[2])), -item[0], item[1]))
-        _append(role_candidates[0])
+        role_items = [item for item in scored if item[4] == role]
+        if role_items:
+            role_items.sort(key=lambda item: (len(_clean_text(item[2])) > 58, -item[0], item[1]))
+            _append(role_items[0])
 
     role_counts: Dict[str, int] = {}
     for item in selected:
@@ -465,26 +144,22 @@ def extract_user_word_anchors(
     for item in scored:
         if len(selected) >= limit:
             break
-        role = item[4]
-        if role_counts.get(role, 0) >= 2:
+        if role_counts.get(item[4], 0) >= 2:
             continue
         if _append(item):
-            role_counts[role] = role_counts.get(role, 0) + 1
-    selected.sort(key=lambda item: item[1])
+            role_counts[item[4]] = role_counts.get(item[4], 0) + 1
 
+    selected.sort(key=lambda item: item[1])
     anchors: List[UserWordAnchor] = []
     for idx, (score, _order, text, field, role) in enumerate(selected):
-        clean = _clean_text(text)
-        if not clean:
-            continue
         anchors.append(
             UserWordAnchor(
                 anchor_key=f"current_word:{field}:{idx}",
-                text=clean,
+                text=text,
                 source_field=field,
                 role=role,
                 evidence=[EvidenceRef(kind=evidence.kind, ref_id=evidence.ref_id, weight=evidence.weight, note=f"user_word_anchor:{field}")],
-                confidence=max(0.45, min(1.0, score / 7.0)),
+                confidence=max(0.45, min(1.0, score / 8.0)),
             )
         )
     return anchors

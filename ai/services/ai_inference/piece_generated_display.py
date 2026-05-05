@@ -931,7 +931,7 @@ def _match_value_rule(spec: GeneratedQuestionSpec, combined: str) -> Optional[Tu
 def _match_growth_rule(spec: GeneratedQuestionSpec, combined: str) -> Optional[Tuple[str, str, Tuple[str, ...]]]:
     if spec.question_family == "work_growth":
         if _contains_any(combined, ("今週", "来週", "頑張れた", "頑張れる")):
-            return "仕事の波があっても安定して頑張れるようになること", "", ("work_growth:stability",)
+            return "仕事で状態を見ながら安定して向き合えるようになること", "", ("work_growth:stability",)
         if _contains_any(combined, ("体調", "休めない", "休んだ方", "出勤", "週4", "働く")):
             return "体調を見ながら安定して働けるようになること", "", ("work_growth:health",)
         if _contains_any(combined, ("ミス", "効率", "容量良く")):
@@ -1080,7 +1080,7 @@ def _canonicalize_fragment_for_spec(spec: GeneratedQuestionSpec, fragment: str, 
 
     if family == "work_growth":
         if _contains_any(compact, ("頑張れた", "今週", "来週")):
-            return "仕事の波があっても安定して頑張れるようになること"
+            return "仕事で状態を見ながら安定して向き合えるようになること"
         if _contains_any(compact, ("体調", "休めない", "休んだ方", "出勤", "働く")):
             return "体調を見ながら安定して働けるようになること"
 

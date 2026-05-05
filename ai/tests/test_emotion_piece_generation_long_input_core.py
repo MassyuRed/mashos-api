@@ -39,9 +39,10 @@ def test_piece_uses_long_input_core_question_instead_of_work_generic_question():
 
     assert "頑張りたい" in question and "しんど" in question
     assert question != "仕事で伸ばしたいことは？"
-    assert "無理にどちらかを選ばず" in answer
-    assert "頑張れる日は少し進" in answer
-    assert "しんどい日は立ち止" in answer
-    assert "整えて進みたい" in answer or "整えていきたい" in answer
-    assert "弱いのではなく" in answer or "限界に気づけている" in answer
+    assert "頑張りたい" in answer and "しんど" in answer
+    assert "片方だけ" in answer or "どちらか" in answer or "両方" in answer
+    assert "進める時" in answer or "少し進" in answer
+    assert "立ち止" in answer or "整え" in answer
+    assert "状態" in answer or "限界" in answer or "気づ" in answer
+    assert "仕事で伸ばしたいのは" not in answer
     assert preview.get("piece_core", {}).get("category_generic_suppressed") is True

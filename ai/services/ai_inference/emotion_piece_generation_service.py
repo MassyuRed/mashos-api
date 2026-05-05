@@ -126,9 +126,9 @@ def _looks_like_paced_progress(text: Any) -> bool:
 
 _CONTRIBUTION_TERMS = ("役に立", "助け", "支え", "誰か", "人のため", "まわり")
 _HAPPINESS_TERMS = ("幸せ", "笑", "喜")
-_SELF_WISH_TERMS = ("自分", "私も", "幸せになりたい", "願", "好き", "楽し", "出会", "大切にしたい")
+_SELF_WISH_TERMS = ("私も", "自分自身", "幸せになりたい", "願", "好き", "楽し", "出会", "大切にしたい")
 _FEAR_TERMS = ("怖", "裏切", "期待", "傷", "不安", "諦め")
-_WISH_TERMS = ("願", "幸せになりたい", "好き", "楽し", "出会", "大切")
+_WISH_TERMS = ("願", "幸せになりたい", "好き", "楽し", "出会", "諦めたくない", "大切にしたい")
 _UNREACHABLE_TERMS = ("届", "遠", "叶わ", "かなわ", "届きにく", "難しい願")
 _PRESENT_EFFORT_TERMS = ("今", "できる", "頑張", "大切", "近づ", "続け")
 
@@ -152,12 +152,63 @@ def _looks_like_unreachable_wish_present_effort(text: Any) -> bool:
     return _contains_any(compact, _UNREACHABLE_TERMS) and _contains_any(compact, _PRESENT_EFFORT_TERMS)
 
 
+_CORE_FOCUS_KEYS = {
+    "self_and_others_happiness",
+    "wish_despite_betrayal_fear",
+    "wish_despite_fear",
+    "unreachable_wish_present_effort",
+    "balanced_progress",
+    "limit_awareness",
+}
+
+
 def _piece_broken_phrase_present(text: Any) -> bool:
+    raw = str(text or "")
     return bool(re.search(
-        # Generic guard for broken nominalization after a predicate or connector.
-        r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)",
-        str(text or ""),
+        # Generic guard for broken nominalization after a predicate or connector,
+        # and for template endings such as "〜をです".
+        r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
+        r"|[をがはにへで]です(?:。|$)"
+        r"|ですです|ますます|ことをです",
+        raw,
     ))
+
+
+def _looks_like_category_generic_display(text: Any) -> bool:
+    raw = _collapse(text)
+    if not raw:
+        return True
+    generic_patterns = (
+        r"^最近気になっているのは、[^。]{1,40}です。?$",
+        r"^最近気づいたのは、[^。]{1,40}です。?$",
+        r"^伸ばしたいのは、[^。]{1,40}です。?$",
+        r"^少しずつ伸ばしたいのは、[^。]{1,40}です。?$",
+        r"^仕事で伸ばしたいのは、[^。]{1,40}です。?$",
+        r"^大切にしているのは、[^。]{1,40}です。?$",
+    )
+    return any(re.search(pattern, raw) for pattern in generic_patterns)
+
+
+def _piece_core_display_ok(text: Any, core_plan: Optional[PieceCoreQuestionAnswerPlan]) -> bool:
+    raw = _collapse(text)
+    if not raw or _piece_broken_phrase_present(raw):
+        return False
+    if core_plan is None:
+        return True
+    if _looks_like_category_generic_display(raw):
+        return False
+    focus_key = str(core_plan.focus_key or "")
+    if focus_key == "self_and_others_happiness":
+        return _contains_any(raw, ("誰か", "人", "まわり")) and _contains_any(raw, ("自分", "願", "幸せ", "大切"))
+    if focus_key in {"wish_despite_betrayal_fear", "wish_despite_fear"}:
+        return _contains_any(raw, ("怖", "傷", "期待", "不安", "諦め")) and _contains_any(raw, ("願", "幸せ", "大切", "今"))
+    if focus_key == "unreachable_wish_present_effort":
+        return _contains_any(raw, ("願", "近づ", "届", "遠")) and _contains_any(raw, ("今", "できる", "大切"))
+    if focus_key == "balanced_progress":
+        return _contains_any(raw, ("頑張", "進みたい", "整え")) and _contains_any(raw, ("しんど", "状態", "立ち止"))
+    if focus_key == "limit_awareness":
+        return _contains_any(raw, ("限界", "状態", "気づ"))
+    return True
 
 
 def _input_level_for_piece(text: Any) -> str:
@@ -182,7 +233,10 @@ def _piece_answer_from_semantic_flags(*, source: str, focus_key: str) -> str:
     has_fear = _contains_any(compact, _FEAR_TERMS)
     has_self_wish = _contains_any(compact, _SELF_WISH_TERMS)
     has_concrete_wish = _contains_any(compact, ("好き", "楽し", "出会", "暮ら", "関係", "幸せになりたい"))
-    has_present_effort = _contains_any(compact, _PRESENT_EFFORT_TERMS)
+    has_present_effort = (
+        _contains_any(compact, ("今できる", "今頑張", "今やれる", "大切にしたい", "近づくため", "続けたい"))
+        or ("今" in compact and _contains_any(compact, ("できる", "頑張", "大切", "近づ", "続け")))
+    )
     has_balanced = _looks_like_balanced_progress(source)
     has_paced = _looks_like_paced_progress(source)
     has_limit = _looks_like_limit_awareness(source)
@@ -192,23 +246,33 @@ def _piece_answer_from_semantic_flags(*, source: str, focus_key: str) -> str:
     elif has_contribution:
         parts.append("誰かのためにできることを、自分にとって大切なこととして見ています。")
 
+    has_betrayal_or_expectation_fear = _contains_any(compact, ("期待", "裏切", "傷"))
     if has_fear and has_self_wish:
-        parts.append("期待して傷つくのが怖くて諦めようとする気持ちがあっても、自分自身の願いまで消したいわけではありません。")
+        if has_betrayal_or_expectation_fear:
+            parts.append("期待して傷つくのが怖くて諦めようとする気持ちがあっても、自分自身の願いまで消したいわけではありません。")
+        else:
+            parts.append("不安や怖さがあっても、自分自身の願いまで消したいわけではありません。")
     elif has_fear:
-        parts.append("期待することへの怖さや、傷つきたくない気持ちもあります。")
+        if has_betrayal_or_expectation_fear:
+            parts.append("期待することへの怖さや、傷つきたくない気持ちもあります。")
+        else:
+            parts.append("不安や怖さもあります。")
 
     if has_self_wish or has_concrete_wish:
         parts.append("それでも、自分自身の幸せや、好きなことを楽しむ願いも大切にしたいです。")
 
     if has_balanced:
-        parts.append("無理にどちらかを選ばず、頑張りたい気持ちもしんどい気持ちも抱えたまま進みたいです。")
+        parts.append("頑張りたい気持ちとしんどさを片方だけに決めつけず、今の状態に合わせて進みたいです。")
     if has_paced:
-        parts.append("頑張れる日は少し進んで、しんどい日は立ち止まりながら整えていきたいです。")
+        parts.append("進める時は少し進み、難しい時は立ち止まって整えたいです。")
     if has_limit:
-        parts.append("今の自分は弱いのではなく、自分の限界や状態に気づけているのだと思います。")
+        parts.append("限界や弱さというより、自分の状態に気づいていることとして扱いたいです。")
 
     if has_present_effort:
-        parts.append("その願いや気づきに近づくために、今できることを大切にしたいです。")
+        if has_self_wish or has_concrete_wish or has_fear:
+            parts.append("その願いに近づくために、今できることを大切にしたいです。")
+        else:
+            parts.append("今できることを、自分のペースで大切にしたいです。")
 
     if not parts:
         parts.append("今の入力から見えてきた気づきを、自分の言葉として大切にしたいです。")
@@ -265,7 +329,7 @@ def _build_piece_core_question_answer_plan(
 
     if _looks_like_wish_despite_betrayal_fear(source):
         plans.append(make_plan(
-            "wish_despite_fear",
+            "wish_despite_betrayal_fear",
             "怖さがあっても、どんな願いを大切にしたい？",
             ["betrayal_fear", "own_happiness_wish", "concrete_life_wishes", "present_effort_toward_wish"],
             "generic_wish_despite_fear_detected",
@@ -299,10 +363,10 @@ def _build_piece_core_question_answer_plan(
         return None
 
     priority = {
+        "balanced_progress": 6,
         "self_and_others_happiness": 5,
-        "wish_despite_fear": 4,
+        "wish_despite_betrayal_fear": 4,
         "unreachable_wish_present_effort": 3,
-        "balanced_progress": 3,
         "limit_awareness": 2,
     }
     plans.sort(key=lambda plan: priority.get(plan.focus_key, 0), reverse=True)
@@ -448,6 +512,8 @@ def _build_raw_answer(
 
 def _nominalize_source_for_template(text: str) -> str:
     source = _collapse(text).rstrip("。！？!?")
+    source = re.sub(r"(を|が|は|に|へ|で)$", "", source).strip()
+    source = re.sub(r"(を|が|は|に|へ|で)(こと|時間|場面|瞬間|方法|関係)$", r"\2", source).strip()
     if not source:
         return ""
     replacements = (
@@ -539,8 +605,12 @@ def _build_fallback_preview_text(question: str, raw_answer: str) -> str:
     if "人との関わりで大切なこと" in question:
         return f"人との関わりでは、{nominal_source}を大切にしたいです。"
     if "気持ちを整える方法" in question:
-        return f"気持ちを整えるために、{nominal_source}を大事にしています。"
-    return f"今の入力から見えてきたのは、{nominal_source}です。"
+        candidate = f"気持ちを整えるために、{nominal_source}を大事にしています。"
+    else:
+        candidate = f"今の入力から見えてきたのは、{nominal_source}です。"
+    if _piece_broken_phrase_present(candidate):
+        return sentence_source or "今の入力から見えてきた気づきを大切にしたいです。"
+    return candidate
 
 
 
@@ -564,38 +634,17 @@ def _build_contextual_preview_text(
     if not source:
         return ""
 
-    if key in {"self_and_others_happiness", "wish_despite_betrayal_fear", "unreachable_wish_present_effort"}:
+    if key in {
+        "self_and_others_happiness",
+        "wish_despite_betrayal_fear",
+        "wish_despite_fear",
+        "unreachable_wish_present_effort",
+        "balanced_progress",
+        "limit_awareness",
+    }:
         return _collapse(raw_answer)
 
-    if key == "balanced_progress":
-        if "無理にどちらかを選ばず" in raw_answer and "限界に気づけている" in raw_answer:
-            return _collapse(raw_answer)
-        return (
-            "無理にどちらかを選ばず、頑張れる日は少し進んで、"
-            "しんどい日は立ち止まりながら整えて進みたい。"
-            "今の自分は弱いのではなく、限界に気づけている状態だと思う。"
-        )
-
-    if key == "limit_awareness":
-        if "弱いのではなく" in raw_answer:
-            return _collapse(raw_answer)
-        return "今の自分は弱いのではなく、体と心の限界に気づけている状態だと思う。整えながら進みたい。"
-
-    if key == "values" and all(token in source for token in ("ベッド", "温かい飲み物")):
-        return (
-            "全部が進んだわけではなくても、ひとつ整えられた感覚を大事にする。"
-            "小さな落ち着きが、次の自分を支えてくれると思っています。"
-        )
-
-    if key == "values" and all(token in source for token in ("全部", "ひとつ")) and any(
-        token in source for token in ("落ち着", "ゆっくり", "片づ")
-    ):
-        return (
-            "全部を終わらせられない日でも、ひとつ整えられたことを受け止める。"
-            "小さな行動で気持ちを落ち着かせる時間を大切にしています。"
-        )
-
-    if key == "values" and any(token in source for token in ("落ち着", "ゆっくり", "整え")):
+    if key == "values" and any(token in source for token in ("落ち着", "ゆっくり", "整え", "休")):
         return "大切にしているのは、気持ちが少し落ち着く小さな行動を見つけることです。"
 
     if key == "care" and any(token in source for token in ("片づ", "休", "ゆっくり", "整え")):
@@ -671,7 +720,7 @@ def _build_abstracted_safe_preview_text(question: str, raw_answer: str) -> str:
     if "頑張りたい気持ちとしんどさ" in q:
         return "頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てず、整えながら進みたいです。"
     if "今の自分の状態" in q:
-        return "今の自分は弱いのではなく、限界に気づけている状態だと思っています。"
+        return "今の自分を、弱さではなく状態への気づきとして扱いたいです。"
     if "仕事で気にしていること" in q:
         return "仕事では、気持ちが強く揺れたことを気にしています。"
     if "仕事で大切にしていること" in q:
@@ -741,6 +790,19 @@ def _finalize_public_safe_preview_result(
         display_state = STATE_READY
         flags = _merge_unique(flags, ["piece:abstracted_public_safe"])
         actions = _merge_unique(actions, ["piece:abstracted_public_safe"])
+
+    if _piece_broken_phrase_present(display_text):
+        repaired_text = _build_fallback_preview_text(question, raw_answer)
+        if repaired_text and not _piece_broken_phrase_present(repaired_text):
+            display_text = repaired_text
+            display_state = STATE_READY
+            flags = _merge_unique(flags, ["piece:grammar_repaired"])
+            actions = _merge_unique(actions, ["piece:grammar_repaired"])
+        else:
+            display_text = _build_abstracted_safe_preview_text(question, raw_answer)
+            display_state = STATE_READY
+            flags = _merge_unique(flags, ["piece:abstracted_public_safe", "piece:grammar_repaired"])
+            actions = _merge_unique(actions, ["piece:abstracted_public_safe", "piece:grammar_repaired"])
 
     if display_text != str(result.answer_display_text or "") or flags != list(result.flags or []) or actions != list(result.actions or []):
         return replace(
@@ -873,6 +935,25 @@ def generate_emotion_reflection_preview(
             candidate_text=contextual_preview_text,
         )
 
+    if core_plan is not None and not _piece_core_display_ok(display_result.answer_display_text, core_plan):
+        preserved_text = _collapse(core_plan.answer or raw_answer)
+        preserved_result = replace(
+            display_result,
+            answer_display_text=preserved_text,
+            answer_display_state=STATE_READY,
+            changed=True,
+            flags=_merge_unique(display_result.flags, ["preview:core_display_preserved"]),
+            actions=_merge_unique(display_result.actions, ["preview:core_display_preserved"]),
+            answer_norm_hash=compute_generated_answer_norm_hash(preserved_text),
+            rewrite_needed=False,
+        )
+        display_result = _finalize_public_safe_preview_result(
+            result=preserved_result,
+            question=question,
+            raw_answer=raw_answer,
+            candidate_text=preserved_text,
+        )
+
     answer_display_text = display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer)
     piece_policy = build_piece_generation_policy(
         piece_text=answer_display_text,
@@ -904,12 +985,14 @@ def generate_emotion_reflection_preview(
             "clear_long_input": bool(core_plan.clear_long_input),
             "selected_block_keys": list(core_plan.selected_block_keys),
             "coverage_roles": list(core_plan.coverage_roles),
-            "category_generic_suppressed": bool(core_plan is not None and (getattr(core_plan, "category_generic_suppressed", False) or core_plan.focus_key in {"balanced_progress", "limit_awareness", "paced_self_care", "self_and_others_happiness", "wish_despite_betrayal_fear", "unreachable_wish_present_effort"})),
+            "category_generic_suppressed": bool(core_plan is not None and (getattr(core_plan, "category_generic_suppressed", False) or core_plan.focus_key in _CORE_FOCUS_KEYS)),
             "must_keep_block_keys": list(getattr(core_plan, "must_keep_block_keys", []) or []),
             "communicative_summary": str(getattr(core_plan, "communicative_summary", "") or ""),
             "expected_reader_understanding": str(getattr(core_plan, "expected_reader_understanding", "") or ""),
             "answer_sentence_count": int(getattr(core_plan, "answer_sentence_count", 0) or 0),
-            "communicative_core_ok": not _piece_broken_phrase_present(answer_display_text),
+            "communicative_core_ok": _piece_core_display_ok(answer_display_text, core_plan),
+            "answer_not_category_generic": not _looks_like_category_generic_display(answer_display_text),
+            "answer_broken_phrase_blocked": not _piece_broken_phrase_present(answer_display_text),
             "reason": core_plan.reason,
         } if core_plan is not None else None,
     }

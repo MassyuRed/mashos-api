@@ -47,3 +47,35 @@ def test_piece_communicates_self_and_others_happiness_core_instead_of_generic_re
     assert "中途半端だ気持ち" not in answer
     assert core.get("category_generic_suppressed") is True
     assert core.get("communicative_core_ok") is True
+
+
+def test_piece_preserves_core_answer_when_display_layer_would_make_generic_sentence():
+    preview = generate_emotion_reflection_preview(
+        emotion_details=[{"type": "自己理解", "strength": "medium"}],
+        memo="誰かのためにできることを大切にしたい。期待して傷つくのは怖いけど、自分の願いも消したくない。今できることを少しずつ続けたい。",
+        memo_action="",
+        categories=["人間関係"],
+    )
+
+    answer = preview["answer_display_text"]
+    core = preview.get("piece_core") or {}
+
+    assert preview["focus_key"] == "wish_despite_betrayal_fear"
+    assert "最近気になっているのは、人間関係です" not in answer
+    assert "できることをです" not in answer
+    assert "怖" in answer or "傷" in answer or "期待" in answer
+    assert "願" in answer or "大切" in answer
+    assert core.get("communicative_core_ok") is True
+
+
+def test_piece_repairs_broken_particle_nominalization_in_generic_display():
+    preview = generate_emotion_reflection_preview(
+        emotion_details=[{"type": "自己理解", "strength": "medium"}],
+        memo="誰かのためにできることを",
+        memo_action="",
+        categories=[],
+    )
+
+    answer = preview["answer_display_text"]
+    assert "できることをです" not in answer
+    assert answer == "最近気づいたのは、誰かのためにできることです。"

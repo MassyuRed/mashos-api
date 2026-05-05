@@ -1,342 +1,112 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Understanding-frame construction for EmlisAI.
+"""Generic understanding-frame builder for EmlisAI.
 
-This layer does not infer hidden causes.  It only connects words that are
-present in the current input so the observation kernel can reply like a human
-conversation instead of repeating an acknowledgement such as "受け取りました".
+The frame groups current-input anchors into broad relation patterns.  It must
+not synthesize anchors from sample-specific phrases; it only reuses extracted
+anchors and assigns them to reusable slots.
 """
 
-import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Iterable, List, Optional, Sequence
 
 from emlis_ai_types import EmotionDisplayItem, EvidenceRef, UnderstandingFrame, UserWordAnchor
 
-_SPACE_RE = re.compile(r"\s+")
-
 
 def _clean(value: Any) -> str:
-    return _SPACE_RE.sub(" ", str(value or "").replace("\u3000", " ")).strip(" 、,。.!！?？\t\n\r")
-
-
-def _compact(value: Any) -> str:
-    return re.sub(r"[\s　、,。.!！?？\t\n\r]", "", str(value or ""))
+    return str(value or "").strip()
 
 
 def _first_anchor(anchors: Sequence[UserWordAnchor], roles: Iterable[str]) -> Optional[UserWordAnchor]:
     role_set = set(roles)
-    return next((item for item in anchors if item.role in role_set), None)
+    return next((anchor for anchor in anchors if getattr(anchor, "role", "") in role_set), None)
 
 
-def _make_anchor(*, text: str, role: str, source_field: str, evidence: EvidenceRef, key: str) -> Optional[UserWordAnchor]:
-    clean = _clean(text)
-    if not clean:
-        return None
-    return UserWordAnchor(
-        anchor_key=f"understanding_raw:{source_field}:{key}",
-        text=clean,
-        source_field=source_field,
-        role=role,
-        evidence=[EvidenceRef(kind=evidence.kind, ref_id=evidence.ref_id, weight=evidence.weight, note=f"understanding_frame:{source_field}:{role}")],
-        confidence=0.78,
-    )
-
-
-def _regex_anchor(
-    *,
-    raw: str,
-    patterns: Sequence[str],
-    role: str,
-    source_field: str,
-    evidence: EvidenceRef,
-    key: str,
-) -> Optional[UserWordAnchor]:
-    for pattern in patterns:
-        match = re.search(pattern, raw)
-        if match:
-            return _make_anchor(text=match.group(0), role=role, source_field=source_field, evidence=evidence, key=key)
-    return None
-
-
-def _ensure_role(
-    *,
-    anchors: Sequence[UserWordAnchor],
-    roles: Sequence[str],
-    raw: str,
-    patterns: Sequence[str],
-    role: str,
-    source_field: str,
-    evidence: EvidenceRef,
-    key: str,
-) -> Optional[UserWordAnchor]:
-    existing = _first_anchor(anchors, roles)
-    if existing is not None:
-        return existing
-    return _regex_anchor(raw=raw, patterns=patterns, role=role, source_field=source_field, evidence=evidence, key=key)
-
-
-def _unique_evidence(anchors: Sequence[Optional[UserWordAnchor]]) -> List[EvidenceRef]:
-    seen: set[tuple[str, str, str]] = set()
-    out: List[EvidenceRef] = []
+def _unique_evidence(anchors: Sequence[Optional[UserWordAnchor]], fallback: EvidenceRef) -> List[EvidenceRef]:
+    refs: List[EvidenceRef] = []
+    seen: set[tuple[str, str]] = set()
     for anchor in anchors:
-        if anchor is None:
-            continue
-        for item in anchor.evidence:
-            key = (item.kind, item.ref_id, str(item.note or ""))
+        for ref in list(getattr(anchor, "evidence", []) or []):
+            key = (str(getattr(ref, "kind", "") or ""), str(getattr(ref, "ref_id", "") or ""))
             if key in seen:
                 continue
             seen.add(key)
-            out.append(item)
-    return out
+            refs.append(ref)
+    if not refs:
+        refs.append(fallback)
+    return refs
 
 
 def _selected_emotion_text(selected_emotions: Sequence[EmotionDisplayItem]) -> str:
-    labels = [_clean(getattr(item, "type", "")) for item in selected_emotions if _clean(getattr(item, "type", ""))]
-    if not labels:
-        return ""
-    if len(labels) == 1:
-        return labels[0]
-    return "、".join(labels[:-1]) + "、そして" + labels[-1]
+    labels = [str(getattr(item, "type", "") or "").strip() for item in selected_emotions or [] if str(getattr(item, "type", "") or "").strip()]
+    return "、".join(labels)
 
 
 def build_understanding_frame(
     *,
     anchors: List[UserWordAnchor],
     selected_emotions: List[EmotionDisplayItem],
-    current_input: Dict[str, Any],
+    current_input: dict[str, Any],
     evidence: EvidenceRef,
-) -> Optional[UnderstandingFrame]:
-    """Build a source-bound relationship frame for the immediate reply."""
-
-    raw_memo = str(current_input.get("memo") or "")
-    raw_action = str(current_input.get("memo_action") or "")
-    raw_all = f"{raw_memo}\n{raw_action}"
-    if not raw_all.strip() and not selected_emotions:
-        return None
-
-    event = _ensure_role(
-        anchors=anchors,
-        roles=("event",),
-        raw=raw_memo,
-        patterns=(r"[^。！？!?\n\r]{1,24}(?:喧嘩|けんか)した",),
-        role="event",
-        source_field="memo",
-        evidence=evidence,
-        key="event",
-    )
-    action = _ensure_role(
-        anchors=anchors,
-        roles=("action",),
-        raw=raw_action,
-        patterns=(r"[^。！？!?\n\r]{1,48}",),
-        role="action",
-        source_field="memo_action",
-        evidence=evidence,
-        key="action",
-    )
-    boundary_violation = _ensure_role(
-        anchors=anchors,
-        roles=("boundary_violation",),
-        raw=raw_all,
-        patterns=(
-            r"[^。！？!?、,\n\r]{0,16}(?:距離感|境界|踏み込|越えて|触れてしま|入ってしま)[^。！？!?、,\n\r]{0,18}",
-        ),
-        role="boundary_violation",
-        source_field="memo_action" if raw_action.strip() else "memo",
-        evidence=evidence,
-        key="boundary",
-    )
-    self_awareness = _ensure_role(
-        anchors=anchors,
-        roles=("self_awareness",),
-        raw=raw_memo,
-        patterns=(
-            r"[^。！？!?、,\n\r]{0,14}知っていながら",
-            r"[^。！？!?、,\n\r]{0,14}分かっていながら",
-            r"[^。！？!?、,\n\r]{0,14}わかっていながら",
-        ),
-        role="self_awareness",
-        source_field="memo",
-        evidence=evidence,
-        key="self_awareness",
-    )
-    justification = _ensure_role(
-        anchors=anchors,
-        roles=("justification",),
-        raw=raw_memo,
-        patterns=(
-            r"[^。！？!?、,\n\r]{1,24}という理由を掲げて",
-            r"[^。！？!?、,\n\r]{1,24}理由にして",
-            r"[^。！？!?、,\n\r]{1,24}理由にしている",
-        ),
-        role="justification",
-        source_field="memo",
-        evidence=evidence,
-        key="justification",
-    )
-    self_fault_awareness = _ensure_role(
-        anchors=anchors,
-        roles=("self_fault_awareness",),
-        raw=raw_memo,
-        patterns=(r"自分の非", r"自分が悪[^。！？!?、,\n\r]{0,12}", r"自分のせい"),
-        role="self_fault_awareness",
-        source_field="memo",
-        evidence=evidence,
-        key="self_fault",
-    )
-    self_avoidance = _ensure_role(
-        anchors=anchors,
-        roles=("self_avoidance",),
-        raw=raw_memo,
-        patterns=(r"自分の非を見たくない", r"見たくない", r"向き合いたくない", r"認めたくない"),
-        role="self_avoidance",
-        source_field="memo",
-        evidence=evidence,
-        key="self_avoidance",
-    )
-    fear_of_rejection = _ensure_role(
-        anchors=anchors,
-        roles=("fear_of_rejection",),
-        raw=raw_memo,
-        patterns=(r"嫌われてしまいそう", r"嫌われそう", r"否定され[^。！？!?、,\n\r]{0,12}", r"見捨てられ[^。！？!?、,\n\r]{0,12}"),
-        role="fear_of_rejection",
-        source_field="memo",
-        evidence=evidence,
-        key="fear_rejection",
-    )
-    self_dislike = _ensure_role(
-        anchors=anchors,
-        roles=("self_dislike",),
-        raw=raw_memo,
-        patterns=(r"自分が嫌[^。！？!?、,\n\r]{0,18}", r"そんな自分[^。！？!?、,\n\r]{0,18}"),
-        role="self_dislike",
-        source_field="memo",
-        evidence=evidence,
-        key="self_dislike",
-    )
-    guilt_or_remorse = _ensure_role(
-        anchors=anchors,
-        roles=("guilt_or_remorse",),
-        raw=raw_all,
-        patterns=(r"[^。！？!?、,\n\r]{0,18}してしまった", r"申し訳[^。！？!?、,\n\r]{0,18}", r"後悔[^。！？!?、,\n\r]{0,18}"),
-        role="guilt_or_remorse",
-        source_field="memo_action" if raw_action else "memo",
-        evidence=evidence,
-        key="guilt",
-    )
-    explicit_emotion = _ensure_role(
-        anchors=anchors,
-        roles=("explicit_emotion",),
-        raw=raw_memo,
-        patterns=(
-            r"悲しくて不安な気持ち",
-            r"悲しくて不安",
-            r"悲し[^。！？!?、,\n\r]{0,10}不安[^。！？!?、,\n\r]{0,10}",
-            r"不安[^。！？!?、,\n\r]{0,10}悲し[^。！？!?、,\n\r]{0,10}",
-        ),
-        role="explicit_emotion",
-        source_field="memo",
-        evidence=evidence,
-        key="explicit_emotion",
-    )
-    need_or_wish = _first_anchor(anchors, ("wish", "need"))
-    unresolved = _first_anchor(anchors, ("unresolved", "mismatch"))
-    relationship_or_other = _first_anchor(anchors, ("relationship",))
-    work_frustration = _first_anchor(anchors, ("work_frustration",))
-    mentor_attachment = _first_anchor(anchors, ("mentor_attachment",))
-    missing_guidance = _first_anchor(anchors, ("missing_guidance",))
-    effort_confusion = _first_anchor(anchors, ("effort_confusion",))
-    anger_surface = _first_anchor(anchors, ("anger_surface",))
-    sadness_surface = _first_anchor(anchors, ("sadness_surface",))
-    relief_source = _first_anchor(anchors, ("relief_source", "chat_relief"))
-    chat_relief = _first_anchor(anchors, ("chat_relief",))
-    fatigue_accumulation = _first_anchor(anchors, ("fatigue_accumulation",))
-
-    patterns: List[str] = []
-    if (action or boundary_violation) and self_awareness:
-        patterns.append("action_and_awareness")
-    if justification and (self_fault_awareness or self_avoidance):
-        patterns.append("justification_vs_fault")
-    if fear_of_rejection and (self_fault_awareness or self_avoidance or self_dislike):
-        patterns.append("rejection_fear_from_self_view")
-    if explicit_emotion and patterns:
-        patterns.append("emotion_from_conflict")
-    if action and raw_memo.strip():
-        patterns.append("action_thought_split")
-    if (sadness_surface or work_frustration) and anger_surface:
-        patterns.append("sadness_anger_conflict")
-    if missing_guidance and effort_confusion:
-        patterns.append("guidance_and_effort_confusion")
-    if mentor_attachment and anger_surface:
-        patterns.append("mentor_attachment_and_work_anger")
-    if chat_relief:
-        patterns.append("relief_source_present")
-    if not patterns and selected_emotions:
-        patterns.append("simple_emotion")
-
-    frame_anchors = [
-        event,
-        action,
-        relationship_or_other,
-        boundary_violation,
-        self_awareness,
-        self_fault_awareness,
-        self_avoidance,
-        justification,
-        fear_of_rejection,
-        self_dislike,
-        guilt_or_remorse,
-        explicit_emotion,
-        need_or_wish,
-        unresolved,
-        work_frustration,
-        mentor_attachment,
-        missing_guidance,
-        effort_confusion,
-        anger_surface,
-        sadness_surface,
-        relief_source,
-        chat_relief,
-        fatigue_accumulation,
-    ]
-    present_count = sum(1 for item in frame_anchors if item is not None)
-    if present_count <= 0 and not selected_emotions:
-        return None
-
-    confidence = min(1.0, 0.24 + present_count * 0.07 + len(patterns) * 0.08)
-    if "emotion_from_conflict" in patterns:
-        confidence = max(confidence, 0.78)
-    elif "simple_emotion" in patterns:
-        confidence = max(confidence, 0.38)
-
+) -> UnderstandingFrame:
+    anchors = list(anchors or [])
+    action = _first_anchor(anchors, {"action"})
+    event = _first_anchor(anchors, {"event", "current_expression"})
+    relationship = _first_anchor(anchors, {"relationship_context", "relationship", "mismatch_or_boundary"})
+    boundary = _first_anchor(anchors, {"mismatch_or_boundary", "self_protection"})
+    awareness = _first_anchor(anchors, {"self_awareness", "self_view"})
+    self_fault = _first_anchor(anchors, {"self_view"})
+    avoidance = _first_anchor(anchors, {"self_suppression", "burden_avoidance"})
+    justification = _first_anchor(anchors, {"burden_avoidance"})
+    rejection = _first_anchor(anchors, {"fear_or_disappointment"})
+    dislike = _first_anchor(anchors, {"self_view"})
+    explicit = _first_anchor(anchors, {"sadness_or_pain", "anger_or_frustration", "fear_or_disappointment"})
+    need = _first_anchor(anchors, {"wish", "support_need", "effort_direction"})
+    unresolved = _first_anchor(anchors, {"dual_feeling", "current_expression"})
+    work_frustration = _first_anchor(anchors, {"anger_or_frustration"})
+    missing_guidance = _first_anchor(anchors, {"support_need"})
+    effort_confusion = _first_anchor(anchors, {"effort_direction"})
+    relief_source = _first_anchor(anchors, {"relief_source"})
+    relation_patterns: List[str] = []
+    roles = {str(getattr(anchor, "role", "") or "") for anchor in anchors}
+    if {"self_suppression", "support_need"} & roles:
+        relation_patterns.append("suppression_and_support_need")
+    if "wish" in roles and "fear_or_disappointment" in roles:
+        relation_patterns.append("wish_and_fear")
+    if "self_protection" in roles and "self_suppression" in roles:
+        relation_patterns.append("self_protection_after_suppression")
+    if "effort_direction" in roles and "sadness_or_pain" in roles:
+        relation_patterns.append("effort_with_pain")
+    if _selected_emotion_text(selected_emotions):
+        relation_patterns.append("selected_emotions_present")
+    selected_anchors = [action, event, relationship, boundary, awareness, self_fault, avoidance, justification, rejection, dislike, explicit, need, unresolved, work_frustration, missing_guidance, effort_confusion, relief_source]
     return UnderstandingFrame(
         event=event,
         action=action,
-        relationship_or_other=relationship_or_other,
-        boundary_violation=boundary_violation,
-        self_awareness=self_awareness,
-        self_fault_awareness=self_fault_awareness,
-        self_avoidance=self_avoidance,
+        relationship_or_other=relationship,
+        boundary_violation=boundary,
+        self_awareness=awareness,
+        self_fault_awareness=self_fault,
+        self_avoidance=avoidance,
         justification=justification,
-        fear_of_rejection=fear_of_rejection,
-        self_dislike=self_dislike,
-        guilt_or_remorse=guilt_or_remorse,
-        explicit_emotion=explicit_emotion,
-        need_or_wish=need_or_wish,
+        fear_of_rejection=rejection,
+        self_dislike=dislike,
+        guilt_or_remorse=_first_anchor(anchors, {"self_view", "action"}),
+        explicit_emotion=explicit,
+        need_or_wish=need,
         unresolved=unresolved,
         work_frustration=work_frustration,
-        mentor_attachment=mentor_attachment,
+        mentor_attachment=relationship,
         missing_guidance=missing_guidance,
         effort_confusion=effort_confusion,
-        anger_surface=anger_surface,
-        sadness_surface=sadness_surface,
+        anger_surface=_first_anchor(anchors, {"anger_or_frustration"}),
+        sadness_surface=_first_anchor(anchors, {"sadness_or_pain"}),
         relief_source=relief_source,
-        chat_relief=chat_relief,
-        fatigue_accumulation=fatigue_accumulation,
-        relation_patterns=patterns,
-        confidence=confidence,
-        evidence=_unique_evidence(frame_anchors) or [evidence],
+        chat_relief=relief_source,
+        fatigue_accumulation=_first_anchor(anchors, {"limit_or_exhaustion", "sadness_or_pain"}),
+        relation_patterns=relation_patterns,
+        confidence=0.72 if anchors else 0.0,
+        evidence=_unique_evidence(selected_anchors, evidence),
     )
 
 
