@@ -23,6 +23,7 @@ from emlis_ai_types import (
     SentenceEvidence,
     SourceBundle,
     StyleProfile,
+    UnderstandingFrame,
     UserWordAnchor,
     WorldModel,
 )
@@ -91,41 +92,133 @@ def _shorten_anchor_text(text: str, *, max_chars: int = 46) -> str:
     return clean[:max_chars].rstrip("、,") + "…"
 
 
+def _frame(world_model: WorldModel) -> Optional[UnderstandingFrame]:
+    frame = getattr(world_model.facts, "understanding_frame", None)
+    return frame if frame is not None else None
+
+
+def _anchor_raw(anchor: Optional[UserWordAnchor], *, max_chars: int = 58) -> str:
+    if anchor is None:
+        return ""
+    return _shorten_anchor_text(anchor.text, max_chars=max_chars)
+
+
+def _normalize_action_text(text: str) -> str:
+    clean = _shorten_anchor_text(text, max_chars=52)
+    if "パーソナルスペースに入ってしまった" in clean:
+        return "人のパーソナルスペースに入ってしまった" if clean.startswith("人の") else "パーソナルスペースに入ってしまった"
+    if "パーソナルスペースに触れてしまった" in clean:
+        return "パーソナルスペースに触れてしまった"
+    return clean
+
+
+def _normalize_awareness_text(text: str) -> str:
+    clean = _shorten_anchor_text(text, max_chars=44)
+    if "怒ると知っていながら" in clean:
+        return "怒ると知っていながら"
+    for marker in ("知っていながら", "分かっていながら", "わかっていながら"):
+        if marker in clean:
+            return clean[: clean.index(marker) + len(marker)].lstrip("きっと") or marker
+    return clean
+
+
+def _normalize_justification_text(text: str) -> str:
+    clean = _shorten_anchor_text(text, max_chars=56)
+    if "女の子との絡みがあったから" in clean:
+        return "女の子との絡みがあったから"
+    for marker in ("という理由", "理由を掲げ", "理由にして"):
+        if marker in clean:
+            before = clean.split(marker, 1)[0].strip(" 、,")
+            return before or clean
+    return clean
+
+
+def _normalize_avoidance_text(text: str, fault_text: str = "") -> str:
+    clean = _shorten_anchor_text(text, max_chars=50)
+    if "自分の非" in clean and "見たくない" in clean:
+        return "自分の非を見たくない"
+    if "見たくない" in clean and fault_text:
+        return f"{fault_text}を見たくない"
+    if "見たくない" in clean:
+        return "見たくない"
+    return clean
+
+
+def _normalize_fear_text(text: str) -> str:
+    clean = _shorten_anchor_text(text, max_chars=42)
+    if "嫌われてしまいそう" in clean:
+        return "嫌われてしまいそう"
+    if "嫌われそう" in clean:
+        return "嫌われそう"
+    return clean
+
+
+def _emotion_phrase(world_model: WorldModel) -> str:
+    labels = list(world_model.facts.current_emotion_labels or [])
+    if not labels:
+        selected = list(world_model.facts.selected_emotions or [])
+        labels = [str(getattr(item, "type", "") or "").strip() for item in selected if str(getattr(item, "type", "") or "").strip()]
+    labels = [v for v in labels if v]
+    if not labels:
+        dominant = _dominant_emotion_text(world_model)
+        return dominant
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]}と{labels[1]}"
+    return "、".join(labels[:-1]) + "、そして" + labels[-1]
+
+
 def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_profile: StyleProfile) -> str:
     current = world_model.facts
+    frame = _frame(world_model)
     name = _safe_name(bundle.display_name)
     dominant = _dominant_emotion_text(world_model)
     selected_text = _selected_emotion_text(world_model)
 
-    if not current.has_memo_input:
-        if dominant:
-            base = f"今回は、{dominant}が近くにあった入力として受け取りました。"
-        elif selected_text:
-            base = f"今回は、{selected_text}が近くにあった入力として受け取りました。"
+    base = ""
+    if frame is not None and float(getattr(frame, "confidence", 0.0) or 0.0) >= 0.45:
+        action_anchor = frame.action or frame.boundary_violation
+        awareness_anchor = frame.self_awareness
+        action_text = _normalize_action_text(_anchor_raw(action_anchor))
+        awareness_text = _normalize_awareness_text(_anchor_raw(awareness_anchor))
+        if action_text and awareness_text:
+            base = f"あなたは、{action_text}ことだけでなく、{awareness_text}触れてしまった自覚も見ていたのですね。"
+        elif action_text:
+            base = f"あなたは、{action_text}ことをそのまま流さずに見ていたのですね。"
+        elif awareness_text:
+            base = f"あなたは、{awareness_text}いたからこそ、余計に心が揺れていたのですね。"
+
+    if not base:
+        if not current.has_memo_input:
+            if dominant:
+                base = f"今日は、{dominant}が近くにあったのですね。"
+            elif selected_text:
+                base = f"今日は、{selected_text}が近くにあったのですね。"
+            else:
+                base = "今日は、言葉にしきれない気持ちを少し置いておきたかったのですね。"
+        elif current.memo_richness in {"medium", "long"}:
+            if dominant:
+                base = f"あなたは、{dominant}の近くにあるものを、少しでも言葉にしたかったのですね。"
+            else:
+                base = "あなたは、今の状態を少しでも言葉にしたかったのですね。"
+        elif dominant:
+            if style_profile.family in {"analytical", "structured"}:
+                base = f"あなたは、{dominant}が前に出ている状態を少し整理したかったのですね。"
+            else:
+                base = f"あなたは、{dominant}が近くにあることを置いておきたかったのですね。"
         else:
-            base = "今回は、いまの気持ちをそのまま置いてくれた入力として受け取りました。"
-    elif current.memo_richness in {"medium", "long"}:
-        if dominant:
-            base = f"今回は、{dominant}を中心に、書いてくれた言葉そのものを見ながら受け取ります。"
-        else:
-            base = "今回は、書いてくれた言葉そのものを見ながら受け取ります。"
-    elif dominant:
-        if style_profile.family in {"analytical", "structured"}:
-            base = f"今回は、{dominant}が前に出ていて、その感じを少し整理したかったのですね。"
-        else:
-            base = f"今回は、{dominant}が近くにあって、その気持ちを置いておきたかったのですね。"
-    else:
-        base = "今回は、いまの気持ちをそのまま置いておきたかったのですね。"
+            base = "あなたは、いまの気持ちをそのまま置いておきたかったのですね。"
 
     use_name = bool(name) and not (bundle.greeting and bundle.greeting.first_in_slot)
     if not use_name:
         return base
+    if base.startswith("あなたは、"):
+        return f"{name}、{base}"
     if "。" in base:
         first, rest = base.split("。", 1)
         return f"{name}、{first}。{rest}".strip()
     return f"{name}、{base}"
-
-
 
 def _anchor_reply_text(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
     text = _shorten_anchor_text(anchor.text, max_chars=max_chars)
@@ -179,7 +272,27 @@ def _flow_clause(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
     return text
 
 
-def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
+def _compose_anchor_overview(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    frame = _frame(world_model) if world_model is not None else None
+    if frame is not None:
+        justification = _normalize_justification_text(_anchor_raw(frame.justification))
+        fault = _anchor_raw(frame.self_fault_awareness, max_chars=24) or "自分の非"
+        avoidance = _normalize_avoidance_text(_anchor_raw(frame.self_avoidance), fault_text=fault)
+        if justification and avoidance and "justification_vs_fault" in set(frame.relation_patterns or []):
+            text = f"「{justification}」と理由を置きたくなる一方で、{avoidance}自分にも気づいていて、そこが苦しかったのだと思います。"
+            return ObservationCandidate(
+                candidate_key="word_reflection.conflict_language",
+                kind="word_reflection",
+                text=text,
+                evidence=list(frame.evidence),
+                confidence=0.98,
+                recency_score=1.0,
+                alignment_score=0.99,
+                overclaim_risk=0.05,
+                source_layers=["canonical_history"],
+                notes={"source": "understanding_frame", "role": "conflict_language", "patterns": list(frame.relation_patterns or [])},
+            )
+
     if not anchors:
         return None
     anxiety = _anchor_by_role(anchors, {"anxiety_condition"})
@@ -201,7 +314,7 @@ def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[Observat
         if joined:
             text = f"{flow}、{joined}ということまで考えが向いていたのですね。"
         else:
-            text = f"{flow}いたことを、まずそのまま受け取りました。"
+            text = f"{flow}いたことが、今の気持ちを強く揺らしていたのですね。"
         evidence = [*anxiety.evidence]
         if uncertainty is not None:
             evidence.extend(uncertainty.evidence)
@@ -215,25 +328,25 @@ def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[Observat
     elif anxiety:
         flow = _flow_clause(anxiety, max_chars=44)
         if flow.endswith("て"):
-            text = f"{flow}いたことを、まずそのまま受け取りました。"
+            text = f"{flow}いたことが、今の気持ちを強く揺らしていたのですね。"
         else:
-            text = f"{_nominalize_anchor_text(anxiety, max_chars=44)}を、まずそのまま受け取りました。"
+            text = f"{_nominalize_anchor_text(anxiety, max_chars=44)}が、今の気持ちを強く揺らしていたのですね。"
         evidence = list(anxiety.evidence)
     elif event:
         event_text = _nominalize_anchor_text(event, max_chars=44)
-        text = f"{event_text}を、まずそのまま受け取りました。"
+        text = f"{event_text}が、今回大きく残っていたのですね。"
         evidence = list(event.evidence)
     elif mismatch:
         mismatch_text = _nominalize_anchor_text(mismatch, max_chars=44)
-        text = f"{mismatch_text}を、今回の大事な流れとして見ています。"
+        text = f"{mismatch_text}が、今回の大事な流れになっていたのですね。"
         evidence = list(mismatch.evidence)
     elif explicit:
         explicit_text = _quote_anchor_text(explicit, max_chars=44)
-        text = f"{explicit_text}と書いてくれたことを、そのまま大事に受け取りました。"
+        text = f"{explicit_text}と書いてくれたところに、今の気持ちが集まっていたのですね。"
         evidence = list(explicit.evidence)
     else:
         first = anchors[0]
-        text = f"「{_shorten_anchor_text(first.text)}」という言葉を、今回の入力の核として受け取りました。"
+        text = f"「{_shorten_anchor_text(first.text)}」という言葉が、今回の気持ちの核に近かったのですね。"
         evidence = list(first.evidence)
 
     return ObservationCandidate(
@@ -241,16 +354,52 @@ def _compose_anchor_overview(anchors: List[UserWordAnchor]) -> Optional[Observat
         kind="word_reflection",
         text=text,
         evidence=evidence,
-        confidence=0.94,
+        confidence=0.90,
         recency_score=1.0,
-        alignment_score=0.95,
-        overclaim_risk=0.02,
+        alignment_score=0.92,
+        overclaim_risk=0.04,
         source_layers=["canonical_history"],
         notes={"source": "user_word_anchor", "role": "overview"},
     )
 
 
-def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
+def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    frame = _frame(world_model) if world_model is not None else None
+    if frame is not None:
+        fear = _normalize_fear_text(_anchor_raw(frame.fear_of_rejection))
+        feelings = _emotion_phrase(world_model) if world_model is not None else ""
+        explicit_text = _anchor_raw(frame.explicit_emotion)
+        if fear and feelings:
+            if "嫌われ" in fear and (frame.self_avoidance or frame.self_fault_awareness or frame.self_dislike):
+                text = f"その自分ごと{fear}で、{feelings}が重なっていたのですね。"
+            else:
+                text = f"{fear}感じが、{feelings}につながっていたのですね。"
+            return ObservationCandidate(
+                candidate_key="word_reflection.feeling_language",
+                kind="word_reflection",
+                text=text,
+                evidence=list(frame.evidence),
+                confidence=0.97,
+                recency_score=1.0,
+                alignment_score=0.98,
+                overclaim_risk=0.06,
+                source_layers=["canonical_history"],
+                notes={"source": "understanding_frame", "role": "feeling_language", "patterns": list(frame.relation_patterns or [])},
+            )
+        if explicit_text:
+            return ObservationCandidate(
+                candidate_key="word_reflection.explicit_emotion",
+                kind="word_reflection",
+                text=f"{explicit_text}ところに、今の気持ちが集まっていたのですね。",
+                evidence=list(frame.evidence),
+                confidence=0.88,
+                recency_score=1.0,
+                alignment_score=0.90,
+                overclaim_risk=0.06,
+                source_layers=["canonical_history"],
+                notes={"source": "understanding_frame", "role": "explicit_emotion"},
+            )
+
     uncertainty = _anchor_by_role(anchors, {"uncertainty"})
     wish = _anchor_by_role(anchors, {"wish", "need"})
     if uncertainty is not None and wish is not None and uncertainty.text != wish.text:
@@ -271,35 +420,52 @@ def _compose_explicit_emotion_anchor(anchors: List[UserWordAnchor]) -> Optional[
     explicit = _anchor_by_role(anchors, {"explicit_emotion"})
     if explicit is None:
         return None
-    text = f"{_quote_anchor_text(explicit, max_chars=52)}と書いてくれたところも、軽く扱わずに受け取ります。"
+    text = f"{_quote_anchor_text(explicit, max_chars=52)}と書いてくれたところに、今の気持ちが集まっていたのですね。"
     return ObservationCandidate(
         candidate_key="word_reflection.explicit_emotion",
         kind="word_reflection",
         text=text,
         evidence=list(explicit.evidence),
-        confidence=0.92,
+        confidence=0.88,
         recency_score=1.0,
-        alignment_score=0.94,
+        alignment_score=0.90,
         overclaim_risk=0.05,
         source_layers=["canonical_history"],
         notes={"source": "user_word_anchor", "role": explicit.role},
     )
 
 
-def _compose_secondary_anchor(anchors: List[UserWordAnchor]) -> Optional[ObservationCandidate]:
-    # 行動内容は、思考内容と無理に因果でつながず、入力された行動として受け取る。
+def _compose_secondary_anchor(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
+    frame = _frame(world_model) if world_model is not None else None
+    if frame is not None and frame.action is not None:
+        action_text = _normalize_action_text(_anchor_raw(frame.action))
+        if action_text:
+            text = f"{action_text}行動も、今回の気持ちと切り離さずに見ます。"
+            return ObservationCandidate(
+                candidate_key="word_reflection.action_connection",
+                kind="word_reflection",
+                text=text,
+                evidence=list(frame.action.evidence),
+                confidence=0.90,
+                recency_score=1.0,
+                alignment_score=0.92,
+                overclaim_risk=0.05,
+                source_layers=["canonical_history"],
+                notes={"source": "understanding_frame", "role": "action_connection"},
+            )
+
     action = next((anchor for anchor in anchors if anchor.role == "action" or anchor.source_field == "memo_action"), None)
     if action is not None:
-        text = f"{_nominalize_anchor_text(action, max_chars=42)}も、今回の行動として一緒に受け取りました。"
+        text = f"{_nominalize_anchor_text(action, max_chars=42)}も、今回の行動として残っていたのですね。"
         return ObservationCandidate(
             candidate_key="word_reflection.action",
             kind="word_reflection",
             text=text,
             evidence=list(action.evidence),
-            confidence=0.86,
+            confidence=0.82,
             recency_score=1.0,
-            alignment_score=0.86,
-            overclaim_risk=0.04,
+            alignment_score=0.84,
+            overclaim_risk=0.05,
             source_layers=["canonical_history"],
             notes={"source": "user_word_anchor", "role": action.role},
         )
@@ -326,6 +492,7 @@ def _compose_secondary_anchor(anchors: List[UserWordAnchor]) -> Optional[Observa
             )
     return None
 
+
 def _compose_emotion_response(world_model: WorldModel, anchors: List[UserWordAnchor]) -> ObservationCandidate:
     facts = world_model.facts
     labels = set(facts.current_emotion_labels or [])
@@ -337,36 +504,36 @@ def _compose_emotion_response(world_model: WorldModel, anchors: List[UserWordAnc
         evidence.extend(anchor.evidence)
 
     if response_mode == "celebrate":
-        text = "その喜びは、小さく流さずに、一緒に大事なものとして受け取りたいです。"
+        text = "その喜びは、小さく流さず、大事にしていいものだったのだと思います。"
     elif response_mode == "protect_boundary":
-        text = "怒りの近くにある、雑に扱われたくなかった部分も、決めつけずに受け取ります。"
+        text = "怒りの近くには、雑に扱われたくなかった部分もあったのですね。"
     elif response_mode == "quiet_receive":
-        text = "この落ち着きは、無理に深く掘らず、そのまま静かに受け取ります。"
+        text = "この落ち着きは、無理に深く掘らず、静かに置いておけるものだったのですね。"
     elif response_mode == "comfort":
         if "悲しみ" in labels and "不安" in labels:
-            text = "そのしんどさを、急いで答えにせず、まず言葉として受け取りたいです。"
+            text = "そのしんどさは、答えを急ぐよりも、まず分かってほしい場所にあったのだと思います。"
         elif "悲しみ" in labels:
-            text = "その悲しさを、ただの出来事として片づけずに受け取りたいです。"
+            text = "その悲しさは、ただの出来事として片づけられないものだったのですね。"
         elif "不安" in labels:
-            text = "その不安を、急いで答えにせず、まず言葉として受け取ります。"
+            text = "その不安は、急いで答えを出すよりも、まず言葉にしたいものだったのですね。"
         else:
-            text = "その気持ちを、軽く扱わずに受け取りたいです。"
+            text = "その気持ちは、軽く片づけられない場所にあったのですね。"
     elif response_mode == "organize":
-        text = "書いてくれた内容は、今の気持ちを少し見える形にしたかった入力として受け取りました。"
+        text = "書いてくれた内容は、今の気持ちを少し見える形にしたかった言葉なのだと思います。"
     else:
         if selected_text and selected_text != dominant_text:
-            text = f"{selected_text}が重なっていたことも、分けずに受け取ります。"
+            text = f"{selected_text}が重なっていたことも、分けずに見ておきたいところです。"
         else:
-            text = "書いてくれた範囲を越えずに、今の入力として受け取ります。"
+            text = "書いてくれた範囲を越えずに、今の気持ちを見ます。"
 
     return ObservationCandidate(
         candidate_key=f"emotion_response.{response_mode}",
         kind="emotion_response",
         text=text,
         evidence=evidence or [],
-        confidence=0.84,
+        confidence=0.80,
         recency_score=1.0,
-        alignment_score=0.84,
+        alignment_score=0.82,
         overclaim_risk=0.10,
         source_layers=["canonical_history"],
         notes={"response_mode": response_mode},
@@ -383,16 +550,16 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
     dominant_text = _emotion_display_label(dominant)
     if not secondary_text or not dominant_text:
         return None
-    text = f"{dominant_text}だけでなく、{secondary_text}も一緒にあった入力として受け取ります。"
+    text = f"{dominant_text}だけでなく、{secondary_text}も同じ場所にあったのですね。"
     return ObservationCandidate(
         candidate_key="selected_emotions.all",
         kind="selected_emotions",
         text=text,
         evidence=[current_ref],
-        confidence=0.90,
+        confidence=0.86,
         recency_score=1.0,
-        alignment_score=0.90,
-        overclaim_risk=0.02,
+        alignment_score=0.88,
+        overclaim_risk=0.03,
         source_layers=["canonical_history"],
         notes={"selected_emotion_count": len(selected)},
     )
@@ -402,7 +569,7 @@ def _compose_receiving_close(bundle: SourceBundle) -> ObservationCandidate:
     return ObservationCandidate(
         candidate_key="receiving_close.default",
         kind="receiving_close",
-        text="いつでも、あなたの言葉をEmlisは受け取ります。",
+        text="ここに置いてくれた言葉を、Emlisは軽く扱いません。",
         evidence=[_current_ref(bundle)],
         confidence=0.90,
         recency_score=1.0,
@@ -474,9 +641,9 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
     )
 
     for candidate in (
-        _compose_anchor_overview(anchors),
-        _compose_explicit_emotion_anchor(anchors),
-        _compose_secondary_anchor(anchors),
+        _compose_anchor_overview(anchors, world_model),
+        _compose_explicit_emotion_anchor(anchors, world_model),
+        _compose_secondary_anchor(anchors, world_model),
         _compose_selected_emotions(world_model, current_ref),
     ):
         if candidate is not None:
@@ -562,16 +729,16 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
         partner_text = ""
         if capability.partner_mode == "on_advanced" and allow_precision:
             if partner.wants_precise_observation:
-                partner_text = "Emlisは、この流れを覚えたまま、今の受け取り方に合う形で返していきます。"
+                partner_text = "Emlisは、この流れを覚えたまま、今の気持ちに合う形で返していきます。"
             elif partner.wants_non_judgmental_receive:
-                partner_text = "Emlisは、急がず、決めつけずに、この流れを受け取っていきます。"
+                partner_text = "Emlisは、急がず、決めつけずに、この流れを見ていきます。"
             elif partner.wants_continuity:
                 partner_text = "Emlisは、前からの線も見ながら、今の気持ちに合う返し方をしていきます。"
         elif capability.partner_mode == "on_basic" and (bundle.same_day_recent_inputs or bundle.similar_inputs):
             if pref.prefers_continuity_reference:
-                partner_text = "最近の流れも踏まえて、今の入力を受け取ります。"
+                partner_text = "最近の流れも踏まえて、今の気持ちを見ます。"
             else:
-                partner_text = "今の気持ちと最近の流れをつないで受け取ります。"
+                partner_text = "今の気持ちと最近の流れをつないで見ます。"
         if partner_text:
             candidates.append(
                 ObservationCandidate(

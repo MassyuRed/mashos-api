@@ -132,6 +132,29 @@ class CurrentInputReading:
     memo_richness: str = "none"
 
 
+
+
+@dataclass(frozen=True)
+class UnderstandingFrame:
+    event: Optional[UserWordAnchor] = None
+    action: Optional[UserWordAnchor] = None
+    relationship_or_other: Optional[UserWordAnchor] = None
+    boundary_violation: Optional[UserWordAnchor] = None
+    self_awareness: Optional[UserWordAnchor] = None
+    self_fault_awareness: Optional[UserWordAnchor] = None
+    self_avoidance: Optional[UserWordAnchor] = None
+    justification: Optional[UserWordAnchor] = None
+    fear_of_rejection: Optional[UserWordAnchor] = None
+    self_dislike: Optional[UserWordAnchor] = None
+    guilt_or_remorse: Optional[UserWordAnchor] = None
+    explicit_emotion: Optional[UserWordAnchor] = None
+    need_or_wish: Optional[UserWordAnchor] = None
+    unresolved: Optional[UserWordAnchor] = None
+    relation_patterns: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
+
 @dataclass
 class SourceCursor:
     last_emotion_id: Optional[str] = None
@@ -245,6 +268,8 @@ class WorldModelFacts:
     user_word_anchors: List[UserWordAnchor] = field(default_factory=list)
     response_mode: str = "receive"
     memo_richness: str = "none"
+    understanding_frame: Optional[UnderstandingFrame] = None
+    understanding_patterns: List[str] = field(default_factory=list)
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0

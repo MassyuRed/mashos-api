@@ -20,6 +20,7 @@ from emlis_ai_types import (
     WorldModelHypothesis,
 )
 from emlis_ai_user_word_anchor_service import extract_user_word_anchors
+from emlis_ai_understanding_frame_service import build_understanding_frame
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -76,11 +77,13 @@ def _selected_emotion_items(bundle: SourceBundle) -> List[EmotionDisplayItem]:
 
 
 def _anchor_limit_for_capability(capability: EmlisAICapabilityConfig) -> int:
+    # Complex self-awareness inputs need enough current-input anchors even on Free;
+    # plan difference is in history/model scope, not in whether the current input is understood.
     if capability.tier == "premium":
-        return 10
+        return 12
     if capability.tier == "plus":
-        return 8
-    return 5
+        return 10
+    return 8
 
 
 def _memo_richness(bundle: SourceBundle) -> str:
@@ -301,6 +304,13 @@ def build_emlis_ai_world_model(
         anchors=user_word_anchors,
         memo_richness=memo_richness,
     )
+    understanding_frame = build_understanding_frame(
+        anchors=user_word_anchors,
+        selected_emotions=selected_emotions,
+        current_input=bundle.current_input,
+        evidence=current_ref,
+    )
+    understanding_patterns = list(getattr(understanding_frame, "relation_patterns", []) or [])
 
     facts = WorldModelFacts(
         dominant_emotion=dominant_emotion,
@@ -311,6 +321,8 @@ def build_emlis_ai_world_model(
         user_word_anchors=user_word_anchors,
         response_mode=response_mode,
         memo_richness=memo_richness,
+        understanding_frame=understanding_frame,
+        understanding_patterns=understanding_patterns,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
@@ -355,6 +367,8 @@ def build_emlis_ai_world_model(
             "similar_inputs": len(bundle.similar_inputs),
             "derived_model_loaded": bool(bundle.derived_user_model is not None),
             "user_word_anchor_count": len(user_word_anchors),
+            "understanding_patterns": understanding_patterns,
+            "understanding_frame_confidence": float(getattr(understanding_frame, "confidence", 0.0) or 0.0),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
         },

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_observation_kernel
+from emlis_ai_style_profile_service import build_style_profile
+from emlis_ai_world_model_service import build_emlis_ai_world_model
 from emlis_ai_types import (
     DerivedUserModel,
     EmotionDisplayItem,
@@ -203,4 +205,58 @@ def test_observation_kernel_free_reflects_user_words_and_selected_emotions():
     assert "連絡の頻度" in text
     assert "わかり合えなくてとても悲しかった" in text
     assert "悲しみ" in text
-    assert decision.reply_lines[-1].text == "いつでも、あなたの言葉をEmlisは受け取ります。"
+    assert decision.reply_lines[-1].text == "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
+
+
+def test_observation_kernel_verbalizes_self_awareness_conflict_without_receive_loop():
+    capability = resolve_emlis_ai_capability_for_tier("free")
+    bundle = SourceBundle(
+        user_id="user-1",
+        display_name="User",
+        current_input={
+            "id": "emo-cur",
+            "created_at": "2026-05-05T00:00:00Z",
+            "emotions": ["悲しみ", "不安"],
+            "emotion_details": [
+                {"type": "悲しみ", "strength": "medium"},
+                {"type": "不安", "strength": "medium"},
+            ],
+            "category": ["人間関係"],
+            "memo": "きっと怒ると知っていながらパーソナルスペースに触れてしまった。女の子との絡みがあったからという理由を掲げて自分の非を見たくない自分が嫌われてしまいそうで悲しくて不安な気持ち。",
+            "memo_action": "人のパーソナルスペースに入ってしまった。",
+        },
+        input_effort={
+            "memo_char_count": 93,
+            "memo_action_char_count": 20,
+            "emotion_count": 2,
+            "category_count": 1,
+            "effort_score": 0.9,
+        },
+        memory_richness={"history_density_score": 0.0},
+    )
+    world_model = build_emlis_ai_world_model(capability=capability, bundle=bundle)
+    style_profile = build_style_profile(capability=capability, bundle=bundle, world_model=world_model)
+
+    decision = run_emlis_ai_observation_kernel(
+        kernel_input=ObservationKernelInput(
+            capability=capability,
+            bundle=bundle,
+            world_model=world_model,
+            style_profile=style_profile,
+        )
+    )
+
+    text = "\n".join(line.text for line in decision.reply_lines)
+    assert "パーソナルスペース" in text
+    assert "怒ると知っていながら" in text
+    assert "自分の非" in text
+    assert "見たくない" in text
+    assert "嫌われ" in text
+    assert "悲しみ" in text and "不安" in text
+    assert "あなたは" in text
+    assert "一方で" in text
+    assert text.count("受け取") <= 1
+    assert "入力として受け取ります" not in text
+    assert "理解しました" not in text
+    assert world_model.facts.understanding_patterns
+    assert "justification_vs_fault" in world_model.facts.understanding_patterns

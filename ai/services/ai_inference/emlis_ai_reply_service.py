@@ -49,7 +49,7 @@ def _naturalize_reply_line(line: Any) -> str:
     text = _EMOTION_STRENGTH_DISPLAY_RE.sub(r"\1", text)
     text = re.sub(
         r"中心としては(.+?)を見ていますが、(.+?)もなかったことにせず一緒に受け取ります。?",
-        r"\1だけでなく、\2も一緒にあった入力として受け取ります。",
+        r"\1だけでなく、\2も同じ場所にあったのですね。",
         text,
     )
     text = re.sub(
@@ -58,11 +58,13 @@ def _naturalize_reply_line(line: Any) -> str:
         text,
     )
     replacements = {
-        "というところが、今回いちばん残っていた言葉なのだと思います": "と書いてくれたところも、軽く扱わずに受け取ります",
+        "というところが、今回いちばん残っていた言葉なのだと思います": "と書いてくれたところに、今の気持ちが集まっていたのですね",
         "というところが残っていたのですね": "ことも、今回の流れの中にありました",
         "という部分も、流さずに見ています": "ことも、今回の流れの中にありました",
         "中心としては": "",
-        "もなかったことにせず一緒に受け取ります": "も一緒にあった入力として受け取ります",
+        "もなかったことにせず一緒に受け取ります": "も同じ場所にあったのですね",
+        "入力として受け取ります": "今の気持ちとして見ます",
+        "受け取りました": "見ています",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
@@ -432,6 +434,46 @@ async def _persist_working_user_model_best_effort(
         return None
 
 
+def _understanding_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, Any]:
+    frame = getattr(world_model.facts, "understanding_frame", None)
+    patterns = list(getattr(world_model.facts, "understanding_patterns", []) or [])
+    role_fields = (
+        "event",
+        "action",
+        "relationship_or_other",
+        "boundary_violation",
+        "self_awareness",
+        "self_fault_awareness",
+        "self_avoidance",
+        "justification",
+        "fear_of_rejection",
+        "self_dislike",
+        "guilt_or_remorse",
+        "explicit_emotion",
+        "need_or_wish",
+        "unresolved",
+    )
+    roles_used: List[str] = []
+    if frame is not None:
+        for field_name in role_fields:
+            anchor = getattr(frame, field_name, None)
+            role = _clean(getattr(anchor, "role", "")) if anchor is not None else ""
+            if role and role not in roles_used:
+                roles_used.append(role)
+    understanding_line_count = sum(
+        1
+        for line in list(plan.reply_lines or [])
+        if line.key == "receive" or str(line.candidate_key or "").startswith("word_reflection.") or line.key == "selected_emotions"
+    )
+    return {
+        "frame_version": "understanding_frame.v1",
+        "patterns": patterns,
+        "anchor_roles_used": roles_used,
+        "understanding_line_count": understanding_line_count,
+        "confidence": float(getattr(frame, "confidence", 0.0) or 0.0),
+    }
+
+
 def _build_meta(
     *,
     capability: EmlisAICapabilityConfig,
@@ -499,9 +541,10 @@ def _build_meta(
         "anchor_summary": {
             "user_word_anchor_count": len(user_word_anchors),
             "used_user_word_anchor_count": sum(1 for line in plan.reply_lines if line.key == "word_reflection"),
-            "sample_user_word_anchors": [_serialize_user_word_anchor(item) for item in user_word_anchors[:5]],
+            "sample_user_word_anchors": [_serialize_user_word_anchor(item) for item in user_word_anchors[:8]],
             "used_anchor_keys": sorted(v for v in used_anchor_keys if v),
         },
+        "understanding": _understanding_meta(world_model, plan),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
         "reply_length_mode": plan.reply_length_plan.mode if plan.reply_length_plan else capability.reply_length_mode,

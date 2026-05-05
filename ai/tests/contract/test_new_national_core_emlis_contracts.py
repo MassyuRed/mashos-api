@@ -50,7 +50,9 @@ def test_emlis_ai_quality_gate_passes_current_input_only_reply():
 
     meta = result.as_meta()
     assert result.passed is True
-    assert meta["schema_version"] == "emlis.quality.v1"
+    assert meta["schema_version"] == "emlis.quality.v2"
+    assert meta["understanding_language_ok"] is True
+    assert meta["receive_repetition_ok"] is True
     assert meta["diagnosis_blocked"] is True
     assert meta["overclaim_suppressed"] is True
 
@@ -69,4 +71,30 @@ def test_emlis_ai_quality_gate_detects_diagnosis_like_overclaim():
 
     assert result.overclaim_suppressed is False
     assert result.diagnosis_blocked is False
+    assert result.passed is False
+
+
+def test_emlis_ai_quality_gate_blocks_empty_receive_repetition():
+    from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
+    from emlis_ai_quality_gate import evaluate_emlis_ai_quality_gate
+
+    result = evaluate_emlis_ai_quality_gate(
+        comment_text="悲しみと不安を受け取りました。\n書いてくれた内容を受け取りました。\nいつでも受け取ります。",
+        capability=resolve_emlis_ai_capability_for_tier("free"),
+        used_sources=["current_input"],
+        evidence_by_line={"receive": [{"kind": "emotion", "ref_id": "current"}]},
+        fallback_used=False,
+        sample_user_word_anchors=[
+            {"text": "パーソナルスペースに触れてしまった", "role": "boundary_violation"},
+            {"text": "自分の非を見たくない", "role": "self_avoidance"},
+            {"text": "嫌われてしまいそう", "role": "fear_of_rejection"},
+        ],
+        user_word_anchor_count=3,
+        understanding_patterns=["justification_vs_fault"],
+    )
+
+    assert result.receive_repetition_ok is False
+    assert result.user_word_usage_ok is False
+    assert result.relationship_line_ok is False
+    assert result.mechanical_meta_language_ok is False
     assert result.passed is False
