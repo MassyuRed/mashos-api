@@ -61,6 +61,27 @@ def build_safe_understanding_fallback(
     labels = _selected_labels(world_model)
     lines: List[str] = [_greeting_line(greeting_text)]
 
+    meaning_blocks = list(getattr(getattr(world_model, "facts", None), "meaning_blocks", []) or []) if world_model is not None else []
+    coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
+    if coverage is not None and bool(getattr(coverage, "clear_long_input", False)) and meaning_blocks:
+        roles = {str(getattr(block, "role", "") or "") for block in meaning_blocks}
+        if "state_awareness" in roles:
+            lines.append("体も心もボロボロになってきていることを、自分でもちゃんと分かっているのですね。")
+        if "effort_history" in roles:
+            lines.append("ここまで頑張ってきた時間や、無理してきた時間が積み重なってきたからこそ、今の限界が見えてきているのだと思います。")
+        if "continuation_wish" in roles or "not_want_to_quit" in roles:
+            lines.append("それでも、もう少し頑張りたい気持ちは残っていて、投げ出したいわけでも、ここで終わりにしたいわけでもないのですね。")
+        if "fatigue_or_limit" in roles or "collapse_anxiety" in roles:
+            lines.append("ただ同時に、体が重かったり、気持ちがついてこなかったり、このまま無理を続けたら崩れてしまいそうな不安もちゃんとあります。")
+        if "dual_holding" in roles:
+            lines.append("頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てず、両方抱えたまま進みたいのだと思います。")
+        if "paced_progress" in roles or "self_permission" in roles:
+            lines.append("頑張れる日は少し前に進んで、しんどい日は立ち止まりながら、無理に削らず整えて進もうとしているのですね。")
+        if "self_understanding" in roles:
+            lines.append("今のあなたは弱いのではなく、自分の限界に気づけている状態です。")
+        lines.append("ここでは、頑張りたい気持ちも、しんどさも、崩れそうな不安も、どれかひとつに削らずに大切にします。")
+        return "\n".join(line for line in lines if line).strip()
+
     if _has_role(phrases, "sadness_surface") and _has_role(phrases, "work_frustration"):
         lines.append("泣きそうになるくらい嫌になる時があるのに、そのまま折れるのは悔しいし、もったいないとも感じていたのですね。")
         if _has_role(phrases, "missing_guidance", "effort_confusion"):

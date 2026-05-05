@@ -23,7 +23,7 @@ BROKEN_CONNECTION_RE = re.compile(
 )
 MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造として|分析すると|理解しました|受け取りました)")
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
-PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします)")
+PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 
 
 def _lines(text: Any) -> List[str]:
@@ -119,11 +119,18 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
         repaired_lines.append(_presence_line(world_model))
         changed = True
 
+    coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
+    if coverage is not None and bool(getattr(coverage, "clear_long_input", False)):
+        min_blocks = int(getattr(coverage, "min_blocks_to_cover", 0) or 0)
+        if len(repaired_lines) < max(5, min_blocks + 1):
+            issues.append(FinalReviewIssue(code="long_input_underanswered", severity="block", line_index=None, message="clear long input reply is too short"))
+
     repaired_text = "\n".join(repaired_lines).strip() if changed else None
     final_text = repaired_text if repaired_text is not None else "\n".join(lines).strip()
     block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or MECHANICAL_META_RE.search(final_text))
     repetition_remaining = sum(line.count("のですね") for line in _lines(final_text)) > 2 or _has_three_same_endings(_lines(final_text))
-    passed = bool(final_text) and not block_remaining and not repetition_remaining and any(PRESENCE_RE.search(line) for line in _lines(final_text))
+    long_input_underanswered = any(issue.code == "long_input_underanswered" for issue in issues)
+    passed = bool(final_text) and not block_remaining and not repetition_remaining and not long_input_underanswered and any(PRESENCE_RE.search(line) for line in _lines(final_text))
     if block_remaining:
         issues.append(FinalReviewIssue(code="final_block_issue_remaining", severity="block", line_index=None, message="unrepaired block issue remains"))
     if repetition_remaining:

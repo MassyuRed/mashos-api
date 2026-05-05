@@ -72,6 +72,12 @@ class EmlisAIQualityGateResult:
     repair_passed: bool = False
     safe_fallback_used: bool = False
     blocked_issue_codes: Sequence[str] = field(default_factory=tuple)
+    meaning_coverage_ok: bool = True
+    long_input_depth_ok: bool = True
+    single_focus_overcompression_blocked: bool = True
+    required_role_coverage_ok: bool = True
+    clear_long_input_not_underanswered: bool = True
+    piece_like_summary_blocked: bool = True
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -101,6 +107,12 @@ class EmlisAIQualityGateResult:
             "repair_passed": bool(self.repair_passed),
             "safe_fallback_used": bool(self.safe_fallback_used),
             "blocked_issue_codes": list(self.blocked_issue_codes or []),
+            "meaning_coverage_ok": bool(self.meaning_coverage_ok),
+            "long_input_depth_ok": bool(self.long_input_depth_ok),
+            "single_focus_overcompression_blocked": bool(self.single_focus_overcompression_blocked),
+            "required_role_coverage_ok": bool(self.required_role_coverage_ok),
+            "clear_long_input_not_underanswered": bool(self.clear_long_input_not_underanswered),
+            "piece_like_summary_blocked": bool(self.piece_like_summary_blocked),
             "capability_profile": dict(self.capability_profile or {}),
         }
 
@@ -149,6 +161,23 @@ def _anchor_terms(sample_user_word_anchors: Sequence[Any]) -> list[str]:
             "どう頑張ればいい",
             "チャット",
             "癒",
+            "体も心",
+            "ボロボロ",
+            "ここまで頑張",
+            "無理してきた",
+            "もう少し頑張りたい",
+            "投げ出したい",
+            "終わりにしたくない",
+            "しんどい",
+            "体が重",
+            "気持ちがついてこ",
+            "崩れ",
+            "どっちも",
+            "両方",
+            "立ち止",
+            "整え",
+            "弱いわけ",
+            "限界",
         ):
             if marker in text and marker not in terms:
                 terms.append(marker)
@@ -206,6 +235,54 @@ def _sentence_ending_variety_ok(text: str) -> bool:
     return True
 
 
+_LONG_ROLE_TERMS = {
+    "state_awareness": ("体も心", "ボロボロ", "自分でもちゃんと分か"),
+    "effort_history": ("ここまで頑張", "無理してきた時間", "積み重"),
+    "continuation_wish": ("もう少し頑張りたい", "投げ出したいわけ", "終わりにしたくない"),
+    "not_want_to_quit": ("投げ出したいわけ", "終わりにしたくない"),
+    "fatigue_or_limit": ("体が重", "気持ちがついてこ", "しんど"),
+    "collapse_anxiety": ("崩れてしまいそう", "崩れそう", "不安"),
+    "dual_holding": ("両方", "どちらか", "頑張りたい気持ちもしんどい気持ち"),
+    "paced_progress": ("頑張れる日は", "しんどい日は", "立ち止ま", "整え"),
+    "self_understanding": ("弱いのではなく", "弱いわけ", "限界に気づ"),
+}
+
+
+def _long_input_role_hits(text: str, required_roles: Sequence[Any]) -> set[str]:
+    compact_text = _compact(text)
+    hits: set[str] = set()
+    for role in [str(item or "") for item in required_roles or [] if str(item or "")]:
+        terms = _LONG_ROLE_TERMS.get(role, ())
+        if any(_compact(term) in compact_text for term in terms):
+            hits.add(role)
+    return hits
+
+
+def _evaluate_meaning_coverage(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
+    if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
+        return True, True, True, True, True, True
+    required_roles = meaning_coverage.get("required_roles") if isinstance(meaning_coverage.get("required_roles"), list) else []
+    selected_block_count = int(meaning_coverage.get("selected_block_count") or len(meaning_coverage.get("selected_block_keys") or []) or 0)
+    min_blocks = int(meaning_coverage.get("min_blocks_to_cover") or 0)
+    line_count = _line_count(text)
+    hits = _long_input_role_hits(text, required_roles)
+    required_hits = min(max(4, min_blocks), max(1, len(required_roles))) if required_roles else 0
+    required_role_coverage_ok = True if not required_roles else len(hits) >= required_hits
+    long_input_depth_ok = line_count >= max(5, min_blocks + 1)
+    single_focus_overcompression_blocked = not (line_count <= 4 and selected_block_count >= 5)
+    clear_long_input_not_underanswered = required_role_coverage_ok and long_input_depth_ok and single_focus_overcompression_blocked
+    piece_like_summary_blocked = not (line_count <= 3 and any(token in text for token in ("問い", "答え", "伸ばしたいのは")))
+    meaning_coverage_ok = required_role_coverage_ok and clear_long_input_not_underanswered and piece_like_summary_blocked
+    return (
+        meaning_coverage_ok,
+        long_input_depth_ok,
+        single_focus_overcompression_blocked,
+        required_role_coverage_ok,
+        clear_long_input_not_underanswered,
+        piece_like_summary_blocked,
+    )
+
+
 def evaluate_emlis_ai_quality_gate(
     *,
     comment_text: Any,
@@ -223,6 +300,7 @@ def evaluate_emlis_ai_quality_gate(
     repair_passed: bool = False,
     safe_fallback_used: bool = False,
     blocked_issue_codes: Sequence[str] | None = None,
+    meaning_coverage: Mapping[str, Any] | None = None,
 ) -> EmlisAIQualityGateResult:
     tier = str(getattr(capability, "tier", "free") or "free").strip().lower()
     history_mode = str(getattr(capability, "history_mode", "none") or "none").strip().lower()
@@ -260,6 +338,14 @@ def evaluate_emlis_ai_quality_gate(
     user_word_usage_ok = _user_word_usage_ok(text, sample_user_word_anchors or [], int(user_word_anchor_count or 0))
     relationship_line_ok = _relationship_line_ok(text, understanding_patterns or [])
     understanding_language_ok = any(word in text for word in _UNDERSTANDING_WORDS) and not text.strip().endswith("理解しました。")
+    (
+        meaning_coverage_ok,
+        long_input_depth_ok,
+        single_focus_overcompression_blocked,
+        required_role_coverage_ok,
+        clear_long_input_not_underanswered,
+        piece_like_summary_blocked,
+    ) = _evaluate_meaning_coverage(text, meaning_coverage)
 
     capability_profile = {
         "tier": tier,
@@ -294,6 +380,12 @@ def evaluate_emlis_ai_quality_gate(
             presence_required_ok,
             abstract_history_reference_blocked,
             final_reader_required_ok,
+            meaning_coverage_ok,
+            long_input_depth_ok,
+            single_focus_overcompression_blocked,
+            required_role_coverage_ok,
+            clear_long_input_not_underanswered,
+            piece_like_summary_blocked,
         ]
     )
     return EmlisAIQualityGateResult(
@@ -323,6 +415,12 @@ def evaluate_emlis_ai_quality_gate(
         repair_passed=bool(repair_passed),
         safe_fallback_used=bool(safe_fallback_used),
         blocked_issue_codes=tuple(str(code or "") for code in (blocked_issue_codes or []) if str(code or "")),
+        meaning_coverage_ok=meaning_coverage_ok,
+        long_input_depth_ok=long_input_depth_ok,
+        single_focus_overcompression_blocked=single_focus_overcompression_blocked,
+        required_role_coverage_ok=required_role_coverage_ok,
+        clear_long_input_not_underanswered=clear_long_input_not_underanswered,
+        piece_like_summary_blocked=piece_like_summary_blocked,
     )
 
 
@@ -339,6 +437,7 @@ def attach_emlis_ai_quality_gate_meta(
     reply_depth = updated.get("reply_depth") if isinstance(updated.get("reply_depth"), dict) else {}
     anchor_summary = updated.get("anchor_summary") if isinstance(updated.get("anchor_summary"), dict) else {}
     understanding = updated.get("understanding") if isinstance(updated.get("understanding"), dict) else {}
+    meaning_coverage = updated.get("meaning_coverage") if isinstance(updated.get("meaning_coverage"), dict) else {}
     allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
     final_reader_meta = updated.get("final_reader") if isinstance(updated.get("final_reader"), dict) else {}
     pre_return_meta = updated.get("pre_return") if isinstance(updated.get("pre_return"), dict) else {}
@@ -358,6 +457,7 @@ def attach_emlis_ai_quality_gate_meta(
         repair_passed=bool(pre_return_meta.get("repair_passed", False)),
         safe_fallback_used=bool(pre_return_meta.get("safe_fallback_used", fallback_used)),
         blocked_issue_codes=pre_return_meta.get("blocked_issue_codes") if isinstance(pre_return_meta.get("blocked_issue_codes"), list) else [],
+        meaning_coverage=meaning_coverage,
     )
     capability_meta = dict(updated.get("capability") or {}) if isinstance(updated.get("capability"), dict) else {}
     capability_meta.update(gate.capability_profile)

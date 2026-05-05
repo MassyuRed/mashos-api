@@ -156,6 +156,8 @@ async def decide_greeting_for_user(
     first_in_slot = prev_key != slot_key
 
     name = str(display_name or "").strip()
+    if name.lower() == "user" or name in {"ユーザー", "ゲスト"}:
+        name = ""
     if first_in_slot:
         if name:
             greeting_text = f"{name}さん、{greeting_phrase_for_slot(slot_name)}。Emlisです。"

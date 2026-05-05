@@ -12,7 +12,7 @@ Scope
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -31,6 +31,18 @@ SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 _NEGATIVE_EMOTIONS = {"悲しみ", "怒り", "不安"}
 _POSITIVE_EMOTIONS = {"喜び", "平穏"}
 _STRENGTH_WEIGHT = {"weak": 1, "medium": 2, "strong": 3}
+
+
+@dataclass(frozen=True)
+class PieceCoreQuestionAnswerPlan:
+    focus_key: str
+    question: str
+    answer: str
+    selected_block_keys: List[str]
+    coverage_roles: List[str]
+    input_level: str = "short"
+    clear_long_input: bool = False
+    reason: str = ""
 
 
 def _compact(text: Any) -> str:
@@ -88,6 +100,104 @@ def _looks_like_values(text: Any) -> bool:
     return _contains_any(_compact(text), ("大切", "大事", "守りたい", "価値"))
 
 
+def _looks_like_balanced_progress(text: Any) -> bool:
+    compact = _compact(text)
+    return all(token in compact for token in ("頑張りたい", "しんどい")) and any(
+        token in compact for token in ("どっちも", "両方", "抱えたまま", "どちらか")
+    )
+
+
+def _looks_like_limit_awareness(text: Any) -> bool:
+    compact = _compact(text)
+    return any(token in compact for token in ("限界", "崩れ", "ボロボロ")) and any(
+        token in compact for token in ("弱いわけじゃ", "弱いわけでは", "気づけて", "分かって", "分かってる")
+    )
+
+
+def _looks_like_paced_progress(text: Any) -> bool:
+    compact = _compact(text)
+    return any(token in compact for token in ("頑張れる日は", "しんどい日は", "立ち止ま", "整えながら", "無理に削"))
+
+
+def _input_level_for_piece(text: Any) -> str:
+    count = len(_collapse(text))
+    if count <= 0:
+        return "none"
+    if count < 120:
+        return "short"
+    if count < 240:
+        return "medium"
+    if count < 420:
+        return "long"
+    return "very_long"
+
+
+def _build_piece_core_question_answer_plan(
+    *,
+    emotion_details: Sequence[Dict[str, Any]],
+    categories: Sequence[str],
+    memo: str,
+    memo_action: str,
+) -> Optional[PieceCoreQuestionAnswerPlan]:
+    source = " ".join(_unique_texts([memo, memo_action, *list(categories or [])]))
+    compact = _compact(source)
+    if not compact:
+        return None
+    level = _input_level_for_piece(source)
+    clear_long_input = level in {"long", "very_long"} and (
+        sum(1 for token in ("それでも", "でも同時に", "だからこそ", "どっちも", "頑張れる日は", "しんどい日は", "今の自分") if token in compact) >= 2
+        or _looks_like_balanced_progress(source)
+    )
+
+    if _looks_like_balanced_progress(source) and _looks_like_paced_progress(source):
+        return PieceCoreQuestionAnswerPlan(
+            focus_key="balanced_progress",
+            question="頑張りたい気持ちとしんどさが両方ある時、どう進みたい？",
+            answer=(
+                "無理にどちらかを選ばず、頑張れる日は少し進んで、"
+                "しんどい日は立ち止まりながら整えて進みたい。"
+                "今の自分は弱いのではなく、限界に気づけている状態だと思う。"
+            ),
+            selected_block_keys=["dual_holding", "paced_progress", "self_understanding"],
+            coverage_roles=["dual_holding", "paced_progress", "self_understanding"],
+            input_level=level,
+            clear_long_input=clear_long_input,
+            reason="balanced_progress_and_paced_progress_detected",
+        )
+
+    if _looks_like_balanced_progress(source):
+        return PieceCoreQuestionAnswerPlan(
+            focus_key="balanced_progress",
+            question="頑張りたい気持ちとしんどさを、どう抱えて進みたい？",
+            answer=(
+                "頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てずに抱えたまま進みたい。"
+                "無理に削らず、整えながら進んでいきたい。"
+            ),
+            selected_block_keys=["dual_holding", "paced_progress"],
+            coverage_roles=["dual_holding", "paced_progress"],
+            input_level=level,
+            clear_long_input=clear_long_input,
+            reason="balanced_progress_detected",
+        )
+
+    if _looks_like_limit_awareness(source):
+        return PieceCoreQuestionAnswerPlan(
+            focus_key="limit_awareness",
+            question="今の自分の状態をどう捉えている？",
+            answer=(
+                "今の自分は弱いのではなく、体と心の限界に気づけている状態だと思う。"
+                "ここまで頑張ってきた時間も、無理してきた積み重ねもあるから、整えながら進みたい。"
+            ),
+            selected_block_keys=["state_awareness", "effort_history", "self_understanding", "paced_progress"],
+            coverage_roles=["state_awareness", "effort_history", "self_understanding", "paced_progress"],
+            input_level=level,
+            clear_long_input=clear_long_input,
+            reason="limit_awareness_detected",
+        )
+
+    return None
+
+
 def _collapse(text: Any) -> str:
     return " ".join(str(text or "").replace("\r", " ").replace("\n", " ").split()).strip()
 
@@ -140,6 +250,15 @@ def _pick_question(
     dominant_type = _collapse((dominant or {}).get("type"))
     category_set = set(_unique_texts(categories or []))
     compact_source = " ".join(_unique_texts([memo, memo_action, *list(category_set)]))
+
+    core_plan = _build_piece_core_question_answer_plan(
+        emotion_details=emotion_details,
+        categories=categories,
+        memo=memo,
+        memo_action=memo_action,
+    )
+    if core_plan is not None:
+        return core_plan.question, core_plan.focus_key
 
     # First classify the input shape itself. This prevents a condition such as
     # "将来のことを考えると不安になる" from being forced into a generic
@@ -284,6 +403,10 @@ def _build_fallback_preview_text(question: str, raw_answer: str) -> str:
     nominal_source = _nominalize_source_for_template(source)
     sentence_source = _polish_answer_sentence(source)
 
+    if "頑張りたい気持ちとしんどさ" in question:
+        return sentence_source
+    if "今の自分の状態" in question:
+        return sentence_source
     if "不安になる時" in question or "不安を感じる時" in question:
         return sentence_source
     if "仕事で気にしていること" in question:
@@ -329,6 +452,20 @@ def _build_contextual_preview_text(
 
     if not source:
         return ""
+
+    if key == "balanced_progress":
+        if "無理にどちらかを選ばず" in raw_answer and "限界に気づけている" in raw_answer:
+            return _collapse(raw_answer)
+        return (
+            "無理にどちらかを選ばず、頑張れる日は少し進んで、"
+            "しんどい日は立ち止まりながら整えて進みたい。"
+            "今の自分は弱いのではなく、限界に気づけている状態だと思う。"
+        )
+
+    if key == "limit_awareness":
+        if "弱いのではなく" in raw_answer:
+            return _collapse(raw_answer)
+        return "今の自分は弱いのではなく、体と心の限界に気づけている状態だと思う。整えながら進みたい。"
 
     if key == "values" and all(token in source for token in ("ベッド", "温かい飲み物")):
         return (
@@ -415,6 +552,10 @@ def _build_abstracted_safe_preview_text(question: str, raw_answer: str) -> str:
     has_url = any(token in raw.lower() for token in ("http://", "https://", "www."))
     has_contact = any(token in raw for token in ("電話", "住所", "連絡先", "LINE", "ライン", "メール", "@"))
 
+    if "頑張りたい気持ちとしんどさ" in q:
+        return "頑張りたい気持ちもしんどい気持ちも、どちらかに切り捨てず、整えながら進みたいです。"
+    if "今の自分の状態" in q:
+        return "今の自分は弱いのではなく、限界に気づけている状態だと思っています。"
     if "仕事で気にしていること" in q:
         return "仕事では、気持ちが強く揺れたことを気にしています。"
     if "仕事で大切にしていること" in q:
@@ -561,18 +702,28 @@ def generate_emotion_reflection_preview(
     normalized_memo = _collapse(memo)
     normalized_memo_action = _collapse(memo_action)
     normalized_categories = _unique_texts(categories or [])
-    question, focus_key = _pick_question(
+    core_plan = _build_piece_core_question_answer_plan(
         emotion_details=emotion_details,
         categories=normalized_categories,
         memo=normalized_memo,
         memo_action=normalized_memo_action,
     )
-    raw_answer = _build_raw_answer(
-        emotion_details=emotion_details,
-        memo=normalized_memo,
-        memo_action=normalized_memo_action,
-        categories=normalized_categories,
-    )
+    if core_plan is not None:
+        question, focus_key = core_plan.question, core_plan.focus_key
+        raw_answer = core_plan.answer
+    else:
+        question, focus_key = _pick_question(
+            emotion_details=emotion_details,
+            categories=normalized_categories,
+            memo=normalized_memo,
+            memo_action=normalized_memo_action,
+        )
+        raw_answer = _build_raw_answer(
+            emotion_details=emotion_details,
+            memo=normalized_memo,
+            memo_action=normalized_memo_action,
+            categories=normalized_categories,
+        )
     text_candidates = _unique_texts([normalized_memo, normalized_memo_action, *normalized_categories])
     primary_category = normalized_categories[0] if normalized_categories else None
     display_result = _ensure_preview_display_result(
@@ -632,6 +783,14 @@ def generate_emotion_reflection_preview(
         "piece_policy": piece_policy,
         "category": primary_category,
         "text_candidates": text_candidates,
+        "piece_core": {
+            "focus_key": core_plan.focus_key,
+            "clear_long_input": bool(core_plan.clear_long_input),
+            "selected_block_keys": list(core_plan.selected_block_keys),
+            "coverage_roles": list(core_plan.coverage_roles),
+            "category_generic_suppressed": bool(core_plan is not None and core_plan.focus_key in {"balanced_progress", "limit_awareness", "paced_self_care"}),
+            "reason": core_plan.reason,
+        } if core_plan is not None else None,
     }
 
 

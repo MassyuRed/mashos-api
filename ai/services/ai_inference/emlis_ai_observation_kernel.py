@@ -17,6 +17,8 @@ from emlis_ai_types import (
     DerivedUserModel,
     EmlisAICapabilityConfig,
     EvidenceRef,
+    InputMeaningBlock,
+    MeaningCoveragePlan,
     ObservationCandidate,
     ObservationDecision,
     ReplyLengthPlan,
@@ -30,6 +32,7 @@ from emlis_ai_types import (
     WorldModel,
 )
 from emlis_ai_phrase_shaping_service import safe_phrases, shape_user_phrase
+from emlis_ai_input_meaning_block_service import selected_meaning_blocks_for_reply
 
 
 @dataclass
@@ -110,6 +113,38 @@ def _phrase_text(phrase: Optional[ShapedUserPhrase], *, attr: str = "phrase") ->
 def _has_work_companion_material(world_model: Optional[WorldModel]) -> bool:
     roles = {item.role for item in _phrases(world_model)}
     return bool({"sadness_surface", "work_frustration", "anger_surface", "missing_guidance", "effort_confusion", "chat_relief"} & roles)
+
+
+def _meaning_plan(world_model: Optional[WorldModel]) -> Optional[MeaningCoveragePlan]:
+    if world_model is None:
+        return None
+    plan = getattr(world_model.facts, "meaning_coverage_plan", None)
+    return plan if plan is not None else None
+
+
+def _meaning_blocks(world_model: Optional[WorldModel]) -> List[InputMeaningBlock]:
+    if world_model is None:
+        return []
+    return list(getattr(world_model.facts, "meaning_blocks", []) or [])
+
+
+def _clear_long_input(world_model: Optional[WorldModel]) -> bool:
+    plan = _meaning_plan(world_model)
+    return bool(plan is not None and plan.clear_long_input)
+
+
+def _block_by_role(blocks: List[InputMeaningBlock], roles: set[str]) -> Optional[InputMeaningBlock]:
+    return next((item for item in blocks if item.role in roles), None)
+
+
+def _block_evidence(*blocks: Optional[InputMeaningBlock], fallback: Optional[EvidenceRef] = None) -> List[EvidenceRef]:
+    evidence: List[EvidenceRef] = []
+    for block in blocks:
+        if block is not None:
+            evidence.extend(list(getattr(block, "evidence", []) or []))
+    if not evidence and fallback is not None:
+        evidence.append(fallback)
+    return evidence
 
 
 def _shorten_anchor_text(text: str, *, max_chars: int = 46) -> str:
@@ -204,6 +239,13 @@ def _build_receive_text(bundle: SourceBundle, world_model: WorldModel, style_pro
     selected_text = _selected_emotion_text(world_model)
 
     base = ""
+    meaning_blocks = _meaning_blocks(world_model)
+    meaning_plan = _meaning_plan(world_model)
+    if meaning_plan is not None and meaning_plan.clear_long_input:
+        state = _block_by_role(meaning_blocks, {"state_awareness"})
+        if state is not None:
+            base = "体も心もボロボロになってきていることを、自分でもちゃんと分かっているのですね。"
+
     phrases = _phrases(world_model)
     sadness = _phrase_by_role(phrases, {"sadness_surface"})
     frustration = _phrase_by_role(phrases, {"work_frustration"})
@@ -307,6 +349,129 @@ def _flow_clause(anchor: UserWordAnchor, *, max_chars: int = 44) -> str:
     if text.endswith(("だった", "あった", "いた", "いる")):
         return f"{text}ことから"
     return text
+
+
+def _compose_long_input_meaning_candidates(world_model: WorldModel, current_ref: EvidenceRef) -> List[ObservationCandidate]:
+    plan = _meaning_plan(world_model)
+    blocks = _meaning_blocks(world_model)
+    if plan is None or not plan.clear_long_input or not blocks:
+        return []
+
+    selected_blocks = selected_meaning_blocks_for_reply(blocks, plan)
+    # For clear long input, compose from all detected high-clarity meaning blocks.
+    # The coverage plan still records selected keys, but generation must not drop
+    # important adjacent blocks such as effort_history merely because the hard
+    # selected list reached its cap.
+    by_role = {block.role: block for block in blocks}
+    candidates: List[ObservationCandidate] = []
+
+    effort = by_role.get("effort_history")
+    state = by_role.get("state_awareness")
+    if effort is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.effort_history",
+                kind="word_reflection",
+                text="ここまで頑張ってきた時間や、無理してきた時間が積み重なってきたからこそ、今の限界が見えてきているのだと思います。",
+                evidence=_block_evidence(state, effort, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "effort_history", "line_role": "state_and_effort"},
+            )
+        )
+
+    continuation = by_role.get("continuation_wish")
+    quit_block = by_role.get("not_want_to_quit")
+    if continuation is not None or quit_block is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.continuation_wish",
+                kind="word_reflection",
+                text="それでも、もう少し頑張りたい気持ちはまだ残っていて、投げ出したいわけでも、ここで終わりにしたいわけでもないのですね。",
+                evidence=_block_evidence(continuation, quit_block, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "continuation_wish", "line_role": "continuation_wish"},
+            )
+        )
+
+    fatigue = by_role.get("fatigue_or_limit")
+    collapse = by_role.get("collapse_anxiety")
+    if fatigue is not None or collapse is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.fatigue_and_anxiety",
+                kind="word_reflection",
+                text="ただ同時に、体が重かったり、気持ちがついてこなかったり、このまま無理を続けたら崩れてしまいそうな不安もちゃんとあります。",
+                evidence=_block_evidence(fatigue, collapse, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "collapse_anxiety", "line_role": "fatigue_and_anxiety"},
+            )
+        )
+
+    dual = by_role.get("dual_holding")
+    if dual is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.dual_holding",
+                kind="word_reflection",
+                text="だから今のあなたは、「頑張る」か「休む」かを無理にどちらかへ決めたいのではなく、頑張りたい気持ちもしんどい気持ちも、両方抱えたまま進みたいのだと思います。",
+                evidence=_block_evidence(dual, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "dual_holding", "line_role": "dual_holding"},
+            )
+        )
+
+    paced = by_role.get("paced_progress")
+    permission = by_role.get("self_permission")
+    if paced is not None or permission is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.paced_progress",
+                kind="word_reflection",
+                text="頑張れる日は少しだけ前に進んで、しんどい日は立ち止まってもいいと、自分に許しながら進もうとしているのですね。",
+                evidence=_block_evidence(paced, permission, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "paced_progress", "line_role": "paced_progress"},
+            )
+        )
+
+    self_understanding = by_role.get("self_understanding")
+    if self_understanding is not None:
+        candidates.append(
+            ObservationCandidate(
+                candidate_key="word_reflection.meaning.self_understanding",
+                kind="word_reflection",
+                text="今のあなたは弱いのではなく、自分の限界に気づけている状態です。",
+                evidence=_block_evidence(self_understanding, fallback=current_ref),
+                confidence=1.00,
+                recency_score=1.0,
+                alignment_score=1.0,
+                overclaim_risk=0.03,
+                source_layers=["canonical_history"],
+                notes={"source": "meaning_block", "meaning_block_key": "self_understanding", "line_role": "self_understanding"},
+            )
+        )
+
+    return candidates
 
 
 def _compose_anchor_overview(anchors: List[UserWordAnchor], world_model: Optional[WorldModel] = None) -> Optional[ObservationCandidate]:
@@ -676,7 +841,9 @@ def _compose_selected_emotions(world_model: WorldModel, current_ref: EvidenceRef
 
 
 def _compose_receiving_close(bundle: SourceBundle, world_model: Optional[WorldModel] = None) -> ObservationCandidate:
-    if _has_work_companion_material(world_model):
+    if _clear_long_input(world_model):
+        text = "ここでは、頑張りたい気持ちも、しんどさも、崩れそうな不安も、どれかひとつに削らずに大切にします。"
+    elif _has_work_companion_material(world_model):
         text = "ここでは、悔しさも、むかつきも、癒されたい気持ちも、雑に扱いません。"
     else:
         selected_text = _selected_emotion_text(world_model) if world_model is not None else ""
@@ -757,6 +924,8 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
             notes={"source": "current_input"},
         )
     )
+
+    candidates.extend(_compose_long_input_meaning_candidates(world_model, current_ref))
 
     for candidate in (
         _compose_anchor_overview(anchors, world_model),
@@ -952,10 +1121,21 @@ def decide_reply_length_plan(
     memo_char_count = int(bundle.input_effort.get("memo_char_count") or 0) + int(bundle.input_effort.get("memo_action_char_count") or 0)
     emotion_count = len(world_model.facts.selected_emotions or world_model.facts.current_emotion_labels or [])
     anchor_count = len(world_model.facts.user_word_anchors or [])
+    meaning_plan = _meaning_plan(world_model)
+    meaning_block_count = len(_meaning_blocks(world_model))
+    selected_meaning_block_count = len(getattr(meaning_plan, "selected_block_keys", []) or []) if meaning_plan is not None else 0
+    clear_long_input = bool(meaning_plan is not None and meaning_plan.clear_long_input)
     history_usable = bool(capability.history_mode != "none" and (bundle.same_day_recent_inputs or bundle.similar_inputs or memory_richness_score >= 0.28))
     interpretive_usable = _interpretive_frame_usable(capability=capability, working_model=working_model, bundle=bundle)
 
     tier_ceiling = max(2, int(capability.max_reply_lines or 3))
+    if clear_long_input:
+        if capability.tier == "premium":
+            tier_ceiling = max(tier_ceiling, 13)
+        elif capability.tier == "plus":
+            tier_ceiling = max(tier_ceiling, 11)
+        else:
+            tier_ceiling = max(tier_ceiling, 9)
     target = 2  # receive + close
     if emotion_count > 1:
         target += 1
@@ -969,6 +1149,8 @@ def decide_reply_length_plan(
         target += 1
     if anchor_count >= 3:
         target += 1
+    if clear_long_input:
+        target = max(target, 2 + min(max(selected_meaning_block_count, meaning_block_count), 7))
     if history_usable:
         target += 1
     if interpretive_usable:
@@ -982,6 +1164,8 @@ def decide_reply_length_plan(
     evidence_ceiling = 2  # receive + close
     if anchor_count:
         evidence_ceiling += min(3, anchor_count)
+    if clear_long_input:
+        evidence_ceiling = max(evidence_ceiling, 2 + min(max(selected_meaning_block_count, meaning_block_count), 7))
     if emotion_count > 1:
         evidence_ceiling += 1
     if world_model.facts.response_mode:
@@ -1005,6 +1189,10 @@ def decide_reply_length_plan(
         user_word_anchor_count=anchor_count,
         history_usable=history_usable,
         interpretive_frame_usable=interpretive_usable,
+        meaning_block_count=meaning_block_count,
+        selected_meaning_block_count=selected_meaning_block_count,
+        meaning_coverage_ratio=(float(selected_meaning_block_count) / float(meaning_block_count)) if meaning_block_count else 0.0,
+        clear_long_input=clear_long_input,
     )
 
 
@@ -1067,16 +1255,37 @@ def arbitrate_candidates(
     _append_unique(accepted, _pick_best(candidates, kind="receive"))
 
     word_candidates = [item for item in candidates if item.kind == "word_reflection"]
-    word_candidates.sort(key=_candidate_rank, reverse=True)
-    for item in word_candidates[:3]:
-        if len(accepted) >= reply_length_plan.max_lines - 1:
-            break
-        _append_unique(accepted, item)
+    if reply_length_plan.clear_long_input:
+        meaning_candidates = [item for item in word_candidates if str(item.candidate_key or "").startswith("word_reflection.meaning.")]
+        non_meaning_candidates = [item for item in word_candidates if item not in meaning_candidates]
+        meaning_order = {
+            "word_reflection.meaning.effort_history": 1,
+            "word_reflection.meaning.continuation_wish": 2,
+            "word_reflection.meaning.fatigue_and_anxiety": 3,
+            "word_reflection.meaning.dual_holding": 4,
+            "word_reflection.meaning.paced_progress": 5,
+            "word_reflection.meaning.self_understanding": 6,
+        }
+        meaning_candidates.sort(key=lambda item: meaning_order.get(str(item.candidate_key or ""), 99))
+        for item in meaning_candidates:
+            if len(accepted) >= reply_length_plan.max_lines - 1:
+                break
+            _append_unique(accepted, item)
+        # Do not backfill long, clear inputs with generic anchor overview lines.
+        # Those lines can over-compress a detailed input or reintroduce raw-anchor
+        # template fragments. The close line is appended below, so leaving one
+        # unused line is preferable to showing a thin generic summary.
+    else:
+        word_candidates.sort(key=_candidate_rank, reverse=True)
+        for item in word_candidates[:3]:
+            if len(accepted) >= reply_length_plan.max_lines - 1:
+                break
+            _append_unique(accepted, item)
 
-    if len(accepted) < reply_length_plan.max_lines - 1:
+    if not reply_length_plan.clear_long_input and len(accepted) < reply_length_plan.max_lines - 1:
         _append_unique(accepted, _pick_best(candidates, kind="selected_emotions"))
 
-    if len(accepted) < reply_length_plan.max_lines - 1:
+    if not reply_length_plan.clear_long_input and len(accepted) < reply_length_plan.max_lines - 1:
         _append_unique(accepted, _pick_best(candidates, kind="emotion_response"))
 
     if reply_length_plan.history_usable and len(accepted) < reply_length_plan.max_lines - 1:
@@ -1116,6 +1325,9 @@ def arbitrate_candidates(
             "accepted_count": len(accepted),
             "rejected_count": len(rejected_candidates),
             "reply_length_reason": reply_length_plan.reason,
+            "clear_long_input": bool(reply_length_plan.clear_long_input),
+            "meaning_block_count": int(reply_length_plan.meaning_block_count or 0),
+            "selected_meaning_block_count": int(reply_length_plan.selected_meaning_block_count or 0),
         },
     )
 

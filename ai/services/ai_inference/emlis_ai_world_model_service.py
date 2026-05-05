@@ -22,6 +22,7 @@ from emlis_ai_types import (
 from emlis_ai_user_word_anchor_service import extract_user_word_anchors
 from emlis_ai_phrase_shaping_service import shape_user_phrases
 from emlis_ai_understanding_frame_service import build_understanding_frame
+from emlis_ai_input_meaning_block_service import build_input_meaning_blocks, build_meaning_coverage_plan
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -300,6 +301,15 @@ def build_emlis_ai_world_model(
         anchors=user_word_anchors,
         current_input=bundle.current_input,
     )
+    meaning_blocks = build_input_meaning_blocks(
+        current_input=bundle.current_input,
+        shaped_user_phrases=shaped_user_phrases,
+        evidence=current_ref,
+    )
+    meaning_coverage_plan = build_meaning_coverage_plan(
+        current_input=bundle.current_input,
+        meaning_blocks=meaning_blocks,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     memo_richness = _memo_richness(bundle)
@@ -329,6 +339,8 @@ def build_emlis_ai_world_model(
         memo_richness=memo_richness,
         understanding_frame=understanding_frame,
         understanding_patterns=understanding_patterns,
+        meaning_blocks=meaning_blocks,
+        meaning_coverage_plan=meaning_coverage_plan,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
@@ -377,6 +389,10 @@ def build_emlis_ai_world_model(
             "unsafe_phrase_count": sum(1 for item in shaped_user_phrases if getattr(item, "usability", "safe") == "unsafe"),
             "understanding_patterns": understanding_patterns,
             "understanding_frame_confidence": float(getattr(understanding_frame, "confidence", 0.0) or 0.0),
+            "meaning_block_count": len(meaning_blocks),
+            "meaning_coverage_input_level": meaning_coverage_plan.input_level,
+            "meaning_coverage_clear_long_input": bool(meaning_coverage_plan.clear_long_input),
+            "meaning_coverage_selected_block_keys": list(meaning_coverage_plan.selected_block_keys),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
         },

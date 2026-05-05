@@ -136,6 +136,54 @@ class ShapedUserPhrase:
     evidence: List[EvidenceRef] = field(default_factory=list)
 
 
+
+
+@dataclass(frozen=True)
+class InputMeaningBlock:
+    """A source-bound meaning unit extracted from a clear long current input.
+
+    ``UserWordAnchor`` and ``ShapedUserPhrase`` are small fragments. For long
+    inputs, EmlisAI and Piece need a higher-level unit so the final reply does
+    not compress the whole entry into one narrow focus.
+    """
+
+    block_key: str
+    role: str
+    title: str
+    summary: str
+    user_phrases: List[ShapedUserPhrase] = field(default_factory=list)
+    evidence: List[EvidenceRef] = field(default_factory=list)
+    priority: float = 0.0
+    clarity: float = 0.0
+    include_in_emlis_reply: bool = False
+    include_in_piece_core: bool = False
+
+
+@dataclass(frozen=True)
+class MeaningCoveragePlan:
+    input_level: str
+    clear_long_input: bool
+    meaning_block_count: int
+    required_roles: List[str] = field(default_factory=list)
+    selected_block_keys: List[str] = field(default_factory=list)
+    min_blocks_to_cover: int = 0
+    max_blocks_to_cover: int = 0
+    coverage_ratio_target: float = 0.0
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class EmlisDepthReplyPlan:
+    input_level: str
+    clear_long_input: bool
+    target_lines: int
+    min_meaning_blocks: int
+    selected_block_keys: List[str] = field(default_factory=list)
+    line_roles: List[str] = field(default_factory=list)
+    allow_paragraph_breaks: bool = False
+    require_presence_line: bool = True
+    reason: str = ""
+
 @dataclass(frozen=True)
 class ReplyEndingPlan:
     line_index: int
@@ -328,6 +376,8 @@ class WorldModelFacts:
     memo_richness: str = "none"
     understanding_frame: Optional[UnderstandingFrame] = None
     understanding_patterns: List[str] = field(default_factory=list)
+    meaning_blocks: List[InputMeaningBlock] = field(default_factory=list)
+    meaning_coverage_plan: Optional[MeaningCoveragePlan] = None
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0
@@ -407,6 +457,10 @@ class ReplyLengthPlan:
     user_word_anchor_count: int = 0
     history_usable: bool = False
     interpretive_frame_usable: bool = False
+    meaning_block_count: int = 0
+    selected_meaning_block_count: int = 0
+    meaning_coverage_ratio: float = 0.0
+    clear_long_input: bool = False
 
 
 @dataclass

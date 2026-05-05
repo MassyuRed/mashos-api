@@ -157,6 +157,55 @@ def _serialize_shaped_user_phrase(item: Any) -> Dict[str, Any]:
     }
 
 
+def _serialize_meaning_block(item: Any) -> Dict[str, Any]:
+    return {
+        "block_key": _clean(getattr(item, "block_key", "")),
+        "role": _clean(getattr(item, "role", "")),
+        "title": _clean(getattr(item, "title", "")),
+        "summary": _clean(getattr(item, "summary", "")),
+        "priority": float(getattr(item, "priority", 0.0) or 0.0),
+        "clarity": float(getattr(item, "clarity", 0.0) or 0.0),
+        "include_in_emlis_reply": bool(getattr(item, "include_in_emlis_reply", False)),
+        "include_in_piece_core": bool(getattr(item, "include_in_piece_core", False)),
+    }
+
+
+def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, Any]:
+    coverage = getattr(world_model.facts, "meaning_coverage_plan", None)
+    blocks = list(getattr(world_model.facts, "meaning_blocks", []) or [])
+    length_plan = plan.reply_length_plan
+    if coverage is None:
+        return {
+            "input_level": "none",
+            "clear_long_input": False,
+            "meaning_block_count": len(blocks),
+            "selected_block_count": 0,
+            "selected_block_keys": [],
+            "required_roles": [],
+            "min_blocks_to_cover": 0,
+            "coverage_ratio_target": 0.0,
+            "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:8]],
+        }
+    selected_keys = list(getattr(coverage, "selected_block_keys", []) or [])
+    if length_plan is not None and int(getattr(length_plan, "selected_meaning_block_count", 0) or 0) > 0:
+        selected_count = int(getattr(length_plan, "selected_meaning_block_count", 0) or 0)
+    else:
+        selected_count = len(selected_keys)
+    return {
+        "input_level": _clean(getattr(coverage, "input_level", "")),
+        "clear_long_input": bool(getattr(coverage, "clear_long_input", False)),
+        "meaning_block_count": int(getattr(coverage, "meaning_block_count", len(blocks)) or len(blocks)),
+        "selected_block_count": selected_count,
+        "selected_block_keys": selected_keys,
+        "required_roles": list(getattr(coverage, "required_roles", []) or []),
+        "min_blocks_to_cover": int(getattr(coverage, "min_blocks_to_cover", 0) or 0),
+        "max_blocks_to_cover": int(getattr(coverage, "max_blocks_to_cover", 0) or 0),
+        "coverage_ratio_target": float(getattr(coverage, "coverage_ratio_target", 0.0) or 0.0),
+        "reason": _clean(getattr(coverage, "reason", "")),
+        "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:8]],
+    }
+
+
 def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> Dict[str, Any]:
     length_plan = plan.reply_length_plan
     if length_plan is None:
@@ -179,6 +228,10 @@ def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> D
         "user_word_anchor_count": int(length_plan.user_word_anchor_count or 0),
         "history_usable": bool(length_plan.history_usable),
         "interpretive_frame_usable": bool(length_plan.interpretive_frame_usable),
+        "meaning_block_count": int(getattr(length_plan, "meaning_block_count", 0) or 0),
+        "selected_meaning_block_count": int(getattr(length_plan, "selected_meaning_block_count", 0) or 0),
+        "meaning_coverage_ratio": float(getattr(length_plan, "meaning_coverage_ratio", 0.0) or 0.0),
+        "clear_long_input": bool(getattr(length_plan, "clear_long_input", False)),
         "reason": _clean(length_plan.reason),
     }
 
@@ -578,6 +631,7 @@ def _build_meta(
             "sample_shaped_phrases": [_serialize_shaped_user_phrase(item) for item in shaped_user_phrases[:8]],
             "unsafe_reasons": sorted({reason for item in shaped_user_phrases for reason in list(getattr(item, "unsafe_reasons", []) or []) if str(reason)}),
         },
+        "meaning_coverage": _meaning_coverage_meta(world_model, plan),
         "understanding": _understanding_meta(world_model, plan),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -635,6 +689,7 @@ def _evaluate_pre_return_gate(
     reply_depth = meta.get("reply_depth") if isinstance(meta.get("reply_depth"), dict) else {}
     anchor_summary = meta.get("anchor_summary") if isinstance(meta.get("anchor_summary"), dict) else {}
     understanding = meta.get("understanding") if isinstance(meta.get("understanding"), dict) else {}
+    meaning_coverage = meta.get("meaning_coverage") if isinstance(meta.get("meaning_coverage"), dict) else {}
     allowed_line_count = int(reply_depth.get("tier_ceiling") or getattr(capability, "max_reply_lines", 3) or 3) + 1
     return evaluate_emlis_ai_quality_gate(
         comment_text=comment_text,
@@ -652,6 +707,7 @@ def _evaluate_pre_return_gate(
         repair_passed=repair_passed,
         safe_fallback_used=safe_fallback_used,
         blocked_issue_codes=blocked_issue_codes or [],
+        meaning_coverage=meaning_coverage,
     )
 
 
