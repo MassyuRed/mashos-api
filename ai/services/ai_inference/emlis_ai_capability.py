@@ -92,9 +92,9 @@ _CAPABILITY_BY_TIER: Dict[str, EmlisAICapabilityConfig] = {
         max_reply_lines=13,
         reply_length_mode="input_and_history_scaled",
         include_derived_user_model=True,
-        source_scope="current_input_with_owned_history",
-        cross_core_enabled=False,
-        structure_model_enabled=False,
+        source_scope="current_input_with_owned_history_and_cross_core",
+        cross_core_enabled=True,
+        structure_model_enabled=True,
     ),
 }
 

@@ -157,6 +157,78 @@ def _serialize_shaped_user_phrase(item: Any) -> Dict[str, Any]:
     }
 
 
+def _serialize_cross_core_anchor_packet(item: Any) -> Dict[str, Any]:
+    groups = {
+        "value_anchors": list(getattr(item, "value_anchors", []) or []),
+        "state_anchors": list(getattr(item, "state_anchors", []) or []),
+        "individuality_anchors": list(getattr(item, "individuality_anchors", []) or []),
+        "boundary_anchors": list(getattr(item, "boundary_anchors", []) or []),
+        "concept_anchors": list(getattr(item, "concept_anchors", []) or []),
+        "reply_hints": list(getattr(item, "reply_hints", []) or []),
+    }
+    anchor_count = sum(len(values) for values in groups.values())
+    labels: List[str] = []
+    hints: List[str] = []
+    for key, values in groups.items():
+        for anchor in values:
+            if not isinstance(anchor, dict):
+                continue
+            label = _clean(anchor.get("label") or anchor.get("user_definition") or anchor.get("recent_change") or anchor.get("role_pattern"),)
+            if label and label not in labels:
+                labels.append(label[:96])
+            if key == "reply_hints":
+                hint = _clean(anchor.get("hint") or anchor.get("receive_hint") or anchor.get("question_hint"),)
+                if hint and hint not in hints:
+                    hints.append(hint[:120])
+            if len(labels) >= 6 and len(hints) >= 4:
+                break
+        if len(labels) >= 6 and len(hints) >= 4:
+            break
+    return {
+        "schema_version": _clean(getattr(item, "schema_version", "")),
+        "source_kind": _clean(getattr(item, "source_kind", "")),
+        "source_id": _clean(getattr(item, "source_id", "")),
+        "source_updated_at": _clean(getattr(item, "source_updated_at", "")),
+        "anchor_count": anchor_count,
+        "group_counts": {key: len(values) for key, values in groups.items()},
+        "sample_labels": labels[:6],
+        "sample_reply_hints": hints[:4],
+    }
+
+
+def _cross_core_source_key(source_kind: Any) -> str:
+    kind = _clean(source_kind).lower()
+    if kind in {"piece", "emotion_piece", "generated_piece"}:
+        return "piece"
+    if kind in {"emotion_report", "analysis_report", "emotion_analysis"}:
+        return "emotion_report"
+    if kind in {"self_structure_report", "self_report", "myprofile_report"}:
+        return "self_structure_report"
+    return kind or "cross_core_context"
+
+
+def _cross_core_context_meta(world_model: WorldModel) -> Dict[str, Any]:
+    packets = list(getattr(world_model.facts, "cross_core_context", []) or [])
+    source_kinds = sorted({
+        _cross_core_source_key(getattr(packet, "source_kind", ""))
+        for packet in packets
+        if _cross_core_source_key(getattr(packet, "source_kind", ""))
+    })
+    anchor_count = 0
+    for packet in packets:
+        for key in ("value_anchors", "state_anchors", "individuality_anchors", "boundary_anchors", "concept_anchors", "reply_hints"):
+            anchor_count += len(list(getattr(packet, key, []) or []))
+    return {
+        "enabled": bool(packets),
+        "matched_packet_count": len(packets),
+        "source_kinds": source_kinds,
+        "anchor_count": anchor_count,
+        "current_input_filtered": True,
+        "current_input_priority": True,
+        "sample_packets": [_serialize_cross_core_anchor_packet(packet) for packet in packets[:5]],
+    }
+
+
 def _serialize_meaning_block(item: Any) -> Dict[str, Any]:
     return {
         "block_key": _clean(getattr(item, "block_key", "")),
@@ -278,6 +350,7 @@ def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> D
             "evidence_ceiling": 0,
             "history_usable": False,
             "interpretive_frame_usable": False,
+            "cross_core_usable": False,
             "reason": "missing_reply_length_plan",
         }
     return {
@@ -290,6 +363,7 @@ def _reply_depth_meta(plan: ReplyPlan, capability: EmlisAICapabilityConfig) -> D
         "user_word_anchor_count": int(length_plan.user_word_anchor_count or 0),
         "history_usable": bool(length_plan.history_usable),
         "interpretive_frame_usable": bool(length_plan.interpretive_frame_usable),
+        "cross_core_usable": bool(getattr(length_plan, "cross_core_usable", False)),
         "meaning_block_count": int(getattr(length_plan, "meaning_block_count", 0) or 0),
         "selected_meaning_block_count": int(getattr(length_plan, "selected_meaning_block_count", 0) or 0),
         "meaning_coverage_ratio": float(getattr(length_plan, "meaning_coverage_ratio", 0.0) or 0.0),
@@ -643,6 +717,14 @@ def _build_meta(
         used_memory_layers.append("derived_user_model")
     if bundle.side_state:
         used_memory_layers.append("side_state")
+    matched_cross_core_context = list(getattr(world_model.facts, "cross_core_context", []) or [])
+    if capability.cross_core_enabled and matched_cross_core_context:
+        if "cross_core_context" not in used_memory_layers:
+            used_memory_layers.append("cross_core_context")
+        for packet in matched_cross_core_context:
+            source_key = _cross_core_source_key(getattr(packet, "source_kind", ""))
+            if source_key and source_key not in used_sources:
+                used_sources.append(source_key)
 
     evidence_by_line: Dict[str, Any] = {}
     for line in plan.reply_lines:
@@ -675,6 +757,9 @@ def _build_meta(
             "partner_mode": capability.partner_mode,
             "model_mode": capability.model_mode,
             "interpretation_mode": capability.interpretation_mode,
+            "source_scope": capability.source_scope,
+            "cross_core_enabled": bool(capability.cross_core_enabled),
+            "structure_model_enabled": bool(capability.structure_model_enabled),
         },
         "display": {
             "selected_emotions": selected_emotions,
@@ -701,6 +786,7 @@ def _build_meta(
         "major_meaning_retention": _serialize_major_retention(getattr(world_model.facts, "major_meaning_retention_plan", None)),
         "composition": _composition_meta(world_model),
         "understanding": _understanding_meta(world_model, plan),
+        "cross_core_context": _cross_core_context_meta(world_model),
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
         "reply_length_mode": plan.reply_length_plan.mode if plan.reply_length_plan else capability.reply_length_mode,
@@ -854,6 +940,8 @@ async def render_emlis_ai_reply(
         used_memory_layers.append("derived_user_model")
     if bundle.side_state:
         used_memory_layers.append("side_state")
+    if capability.cross_core_enabled and list(getattr(world_model.facts, "cross_core_context", []) or []):
+        used_memory_layers.append("cross_core_context")
 
     meta = _build_meta(
         capability=capability,

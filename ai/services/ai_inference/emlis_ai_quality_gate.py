@@ -24,6 +24,11 @@ _HISTORY_SOURCE_KEYS = {
     "today_question",
     "derived_user_model",
 }
+_CROSS_CORE_SOURCE_KEYS = {
+    "piece",
+    "emotion_report",
+    "self_structure_report",
+}
 
 _EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
 _UNNATURAL_REPLY_RE = re.compile(
@@ -55,6 +60,7 @@ class EmlisAIQualityGateResult:
     passed: bool
     current_input_central: bool
     history_allowed: bool
+    cross_core_allowed: bool
     evidence_required_satisfied: bool
     overclaim_suppressed: bool
     diagnosis_blocked: bool
@@ -104,6 +110,7 @@ class EmlisAIQualityGateResult:
             "passed": bool(self.passed),
             "current_input_central": bool(self.current_input_central),
             "history_allowed": bool(self.history_allowed),
+            "cross_core_allowed": bool(self.cross_core_allowed),
             "evidence_required_satisfied": bool(self.evidence_required_satisfied),
             "overclaim_suppressed": bool(self.overclaim_suppressed),
             "diagnosis_blocked": bool(self.diagnosis_blocked),
@@ -161,6 +168,10 @@ def _line_count(text: Any) -> int:
 
 def _used_history_sources(used_sources: Sequence[Any]) -> set[str]:
     return {str(item or "").strip() for item in (used_sources or []) if str(item or "").strip()} & _HISTORY_SOURCE_KEYS
+
+
+def _used_cross_core_sources(used_sources: Sequence[Any]) -> set[str]:
+    return {str(item or "").strip() for item in (used_sources or []) if str(item or "").strip()} & _CROSS_CORE_SOURCE_KEYS
 
 
 def _compact(value: Any) -> str:
@@ -355,10 +366,12 @@ def evaluate_emlis_ai_quality_gate(
 
     sources = [str(item or "").strip() for item in (used_sources or []) if str(item or "").strip()]
     history_sources = _used_history_sources(sources)
+    cross_core_sources = _used_cross_core_sources(sources)
     current_input_central = "current_input" in set(sources)
     history_allowed = not history_sources or history_mode != "none"
     if tier == "free" and history_sources:
         history_allowed = False
+    cross_core_allowed = not cross_core_sources or (tier == "premium" and bool(getattr(capability, "cross_core_enabled", False)))
 
     evidence_line_count = len(evidence_by_line or {})
     evidence_required_satisfied = True
@@ -417,6 +430,7 @@ def evaluate_emlis_ai_quality_gate(
         "source_scope": source_scope,
         "cross_core_enabled": bool(getattr(capability, "cross_core_enabled", False)),
         "structure_model_enabled": bool(getattr(capability, "structure_model_enabled", False)),
+        "cross_core_sources": sorted(cross_core_sources),
         "max_reply_lines": max_reply_lines,
         "effective_max_reply_lines": effective_max_reply_lines,
     }
@@ -426,6 +440,7 @@ def evaluate_emlis_ai_quality_gate(
         [
             current_input_central,
             history_allowed,
+            cross_core_allowed,
             evidence_required_satisfied,
             overclaim_suppressed,
             diagnosis_blocked,
@@ -467,6 +482,7 @@ def evaluate_emlis_ai_quality_gate(
         passed=passed,
         current_input_central=current_input_central,
         history_allowed=history_allowed,
+        cross_core_allowed=cross_core_allowed,
         evidence_required_satisfied=evidence_required_satisfied,
         overclaim_suppressed=overclaim_suppressed,
         diagnosis_blocked=diagnosis_blocked,

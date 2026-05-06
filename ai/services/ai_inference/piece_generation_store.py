@@ -50,6 +50,10 @@ from piece_generated_display import (
     resolve_generated_reflection_display,
 )
 from piece_generated_identity import compute_generated_question_q_key
+from emlis_context_anchor_service import (
+    attach_emlis_context_anchors,
+    build_piece_emlis_context_anchors,
+)
 from supabase_client import sb_delete, sb_get, sb_post, sb_patch
 
 logger = logging.getLogger("astor_reflection_store")
@@ -588,6 +592,26 @@ async def _upsert_staged_generated_row(
         content_json,
         result=display_result,
         display_updated_at=display_updated_at,
+    )
+    display_bundle = content_json.get("display") if isinstance(content_json.get("display"), dict) else {}
+    display_answer_text = str(
+        display_bundle.get("answer_display_text")
+        or content_json.get("answer_display_text")
+        or content_json.get("display_answer")
+        or answer
+        or ""
+    ).strip()
+    content_json = attach_emlis_context_anchors(
+        content_json,
+        build_piece_emlis_context_anchors(
+            question=question,
+            answer=display_answer_text or answer,
+            category=category,
+            source_id=None,
+            source_kind="piece",
+            focus_key=focus_key or qk,
+            source_refs=source_refs,
+        ),
     )
 
     payload = {

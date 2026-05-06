@@ -89,6 +89,15 @@ except Exception:  # pragma: no cover
     attach_report_validity_meta = None  # type: ignore
     evaluate_analysis_report_validity = None  # type: ignore
 
+try:
+    from emlis_context_anchor_service import (
+        attach_emlis_context_anchors,
+        build_self_structure_report_emlis_context_anchors,
+    )
+except Exception:  # pragma: no cover
+    attach_emlis_context_anchors = None  # type: ignore
+    build_self_structure_report_emlis_context_anchors = None  # type: ignore
+
 
 def _normalize_report_mode(x: Any) -> str:
     """Normalize report_mode into one of: standard / deep.
@@ -2694,6 +2703,19 @@ def _build_myprofile_report_content_json(
                 save_requested=True,
             )
             content = attach_report_validity_meta(content, result)
+        except Exception:
+            pass
+
+    if attach_emlis_context_anchors is not None and build_self_structure_report_emlis_context_anchors is not None:
+        try:
+            content = attach_emlis_context_anchors(
+                content,
+                build_self_structure_report_emlis_context_anchors(
+                    content_json=content,
+                    source_id=None,
+                    report_type=report_type,
+                ),
+            )
         except Exception:
             pass
 

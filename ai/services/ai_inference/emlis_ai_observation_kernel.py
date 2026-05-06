@@ -184,6 +184,80 @@ def _candidate(key: str, kind: str, text: str, evidence: List[EvidenceRef], conf
     )
 
 
+
+def _evidence_from_cross_core(packet: object) -> List[EvidenceRef]:
+    refs: List[EvidenceRef] = []
+    for item in list(getattr(packet, "evidence_refs", []) or []):
+        if not isinstance(item, dict):
+            continue
+        kind = _clean(item.get("kind") or getattr(packet, "source_kind", "cross_core_context")) or "cross_core_context"
+        ref_id = _clean(item.get("ref_id") or getattr(packet, "source_id", "anchor")) or "anchor"
+        if ref_id == "pending" and _clean(getattr(packet, "source_id", "")):
+            ref_id = _clean(getattr(packet, "source_id", ""))
+        refs.append(EvidenceRef(kind=kind, ref_id=ref_id, weight=0.55, note=_clean(item.get("note") or "emlis_context_anchor") or "emlis_context_anchor"))
+    if not refs:
+        refs.append(EvidenceRef(kind=_clean(getattr(packet, "source_kind", "cross_core_context")) or "cross_core_context", ref_id=_clean(getattr(packet, "source_id", "anchor")) or "anchor", weight=0.55, note="emlis_context_anchor"))
+    return refs[:4]
+
+
+def _cross_core_hint_text(world_model: WorldModel) -> str:
+    packets = list(getattr(world_model.facts, "cross_core_context", []) or [])
+    if not packets:
+        return ""
+    kinds = {str(getattr(packet, "source_kind", "") or "") for packet in packets}
+    hint_texts: List[str] = []
+    has_boundary = False
+    has_state = False
+    has_role = False
+    for packet in packets[:4]:
+        has_boundary = has_boundary or bool(getattr(packet, "boundary_anchors", []) or [])
+        has_state = has_state or bool(getattr(packet, "state_anchors", []) or [])
+        has_role = has_role or bool(getattr(packet, "individuality_anchors", []) or [])
+        for item in list(getattr(packet, "reply_hints", []) or []):
+            if not isinstance(item, dict):
+                continue
+            hint = _clean(item.get("hint"))
+            if hint and hint not in hint_texts:
+                hint_texts.append(hint)
+    joined = " ".join(hint_texts)
+    if has_boundary or any(word in joined for word in ("境界", "限界", "責めず")):
+        return "ここでは、無理を責めず、境界線や限界を急がせない見方を大切にします。"
+    if has_state or "emotion_report" in kinds:
+        return "今の気持ちは、決めつけず、直近の流れと一緒にそっと見ます。"
+    if has_role or "self_structure_report" in kinds:
+        return "今の選び方や動き方を、固定せずに丁寧に見ます。"
+    if "piece" in kinds:
+        return "今ここにある言葉選びを、決めつけず大切に扱います。"
+    return "今ここにある気持ちを、過去で決めつけずに受け止めます。"
+
+
+def _cross_core_candidate(world_model: WorldModel) -> Optional[ObservationCandidate]:
+    packets = list(getattr(world_model.facts, "cross_core_context", []) or [])
+    text = _cross_core_hint_text(world_model)
+    if not packets or not text:
+        return None
+    evidence: List[EvidenceRef] = []
+    seen: set[tuple[str, str]] = set()
+    for packet in packets[:3]:
+        for ref in _evidence_from_cross_core(packet):
+            key = (ref.kind, ref.ref_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append(ref)
+    return ObservationCandidate(
+        candidate_key="interpretation.cross_core_context",
+        kind="interpretation",
+        text=text,
+        evidence=evidence,
+        confidence=0.58,
+        recency_score=0.54,
+        alignment_score=0.72,
+        overclaim_risk=0.18,
+        source_layers=["cross_core_context"],
+        notes={"current_input_priority": True, "user_visible_basis_required": True},
+    )
+
 def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> List[ObservationCandidate]:
     bundle = kernel_input.bundle
     world_model = kernel_input.world_model
@@ -219,6 +293,11 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
             if not text:
                 continue
             candidates.append(_candidate(f"continuity.{item.key}", "continuity", text, list(getattr(item, "evidence", []) or [current_ref]), confidence=max(0.45, float(getattr(item, "confidence", 0.0) or 0.0))))
+
+    if kernel_input.capability.cross_core_enabled:
+        cross_core_item = _cross_core_candidate(world_model)
+        if cross_core_item is not None:
+            candidates.append(cross_core_item)
 
     candidates.append(_candidate("receiving_close.default", "receiving_close", _presence_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.92))
     return candidates
@@ -268,10 +347,14 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     if clear_long:
         target = max(target, 2 + min(max(selected_count, len(blocks)), 8))
     history_usable = bool(capability.history_mode != "none" and (bundle.same_day_recent_inputs or bundle.similar_inputs or memory_richness_score >= 0.28))
+    cross_core_usable = bool(capability.cross_core_enabled and getattr(world_model.facts, "cross_core_context", []))
     if history_usable:
         target += 1
+    if cross_core_usable:
+        # One line for the anchor-informed observation plus the normal close.
+        target += 2
     evidence_ceiling = max(2, 2 + min(max(selected_count, len(blocks)), 8)) if clear_long else max(2, 2 + min(3, len(world_model.facts.user_word_anchors or [])))
-    max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (1 if history_usable else 0)))
+    max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (1 if history_usable else 0) + (1 if cross_core_usable else 0)))
     return ReplyLengthPlan(
         mode=capability.reply_length_mode,
         max_lines=max_lines,
@@ -283,7 +366,8 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
         target_lines=target,
         user_word_anchor_count=len(world_model.facts.user_word_anchors or []),
         history_usable=history_usable,
-        interpretive_frame_usable=False,
+        interpretive_frame_usable=cross_core_usable,
+        cross_core_usable=cross_core_usable,
         meaning_block_count=len(blocks),
         selected_meaning_block_count=selected_count,
         meaning_coverage_ratio=(selected_count / len(blocks)) if blocks else 0.0,
@@ -315,6 +399,10 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
         if len(accepted) >= reply_length_plan.max_lines - 1:
             break
         accepted.append(candidate)
+    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1:
+        item = _pick(candidates, "interpretation")
+        if item is not None:
+            accepted.append(item)
     if not reply_length_plan.clear_long_input:
         for kind in ("selected_emotions", "emotion_response"):
             if len(accepted) >= reply_length_plan.max_lines - 1:
@@ -325,6 +413,10 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
     if reply_length_plan.history_usable and len(accepted) < reply_length_plan.max_lines - 1:
         item = _pick(candidates, "continuity")
         if item is not None:
+            accepted.append(item)
+    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1:
+        item = _pick(candidates, "interpretation")
+        if item is not None and all(existing.candidate_key != item.candidate_key for existing in accepted):
             accepted.append(item)
     close = _pick(candidates, "receiving_close")
     if close is not None:
@@ -347,6 +439,7 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
             "clear_long_input": bool(reply_length_plan.clear_long_input),
             "meaning_block_count": int(reply_length_plan.meaning_block_count or 0),
             "selected_meaning_block_count": int(reply_length_plan.selected_meaning_block_count or 0),
+            "cross_core_usable": bool(getattr(reply_length_plan, "cross_core_usable", False)),
         },
     )
 

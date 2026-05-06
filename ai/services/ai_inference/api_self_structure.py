@@ -66,6 +66,12 @@ except Exception:  # pragma: no cover
     evaluate_analysis_report_validity = None  # type: ignore
     infer_self_structure_material_fields_from_items = None  # type: ignore
 
+try:
+    from emlis_context_anchor_service import sanitize_content_json_for_public_read
+except Exception:  # pragma: no cover
+    def sanitize_content_json_for_public_read(raw):  # type: ignore
+        return dict(raw or {}) if isinstance(raw, dict) else {}
+
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
     sb_delete as _sb_delete_shared,
@@ -501,8 +507,8 @@ def _extract_report_content_json(row: Optional[Dict[str, Any]]) -> Dict[str, Any
             if k == "meta":
                 continue
             merged.setdefault(k, v)
-        return merged
-    return cj
+        return sanitize_content_json_for_public_read(merged)
+    return sanitize_content_json_for_public_read(cj)
 
 
 def _extract_saved_report_mode(row: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -1766,7 +1772,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
             text_override: Optional[str] = None,
             title_override: Optional[str] = None,
         ) -> SelfStructureMonthlyEnsureResponse:
-            report_meta = meta_override if isinstance(meta_override, dict) else _extract_report_content_json(row)
+            report_meta = sanitize_content_json_for_public_read(meta_override) if isinstance(meta_override, dict) else _extract_report_content_json(row)
             has_visible = _extract_saved_has_visible_content(row) if has_visible_content is None else bool(has_visible_content)
             skip_reason_final = skip_reason_value if skip_reason_value is not None else _extract_saved_skip_reason(row)
             return SelfStructureMonthlyEnsureResponse(

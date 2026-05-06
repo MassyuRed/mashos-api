@@ -35,6 +35,10 @@ from piece_generation_policy import (
     with_piece_policy_visibility,
 )
 from piece_publish_entitlements import get_current_month_window_jst
+from emlis_context_anchor_service import (
+    attach_emlis_context_anchors,
+    build_piece_emlis_context_anchors,
+)
 
 EMOTION_REFLECTION_SOURCE_TYPE = "emotion_generated"
 EMOTION_REFLECTION_VERSION = "emotion_reflection.v1"
@@ -96,6 +100,18 @@ async def create_preview_draft(
         "piece_core": piece_core,
         "previewed_at": now_iso,
     }
+    content_json = attach_emlis_context_anchors(
+        content_json,
+        build_piece_emlis_context_anchors(
+            question=question,
+            answer=answer_display_text or raw_answer,
+            category=category,
+            source_id=None,
+            source_kind="piece",
+            emotion_input=emotion_input,
+            focus_key=q_key,
+        ),
+    )
 
     payload = {
         "owner_user_id": str(user_id or "").strip(),

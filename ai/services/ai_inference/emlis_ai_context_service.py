@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from emlis_ai_readers import (
+    get_cross_core_context_for_emlis_ai,
     get_input_summary_for_emlis_ai,
     get_myweb_home_summary_for_emlis_ai,
 )
@@ -280,6 +281,14 @@ async def build_emlis_ai_source_bundle(
             )
         )
 
+    if capability.cross_core_enabled:
+        async_tasks["cross_core_context"] = asyncio.create_task(
+            get_cross_core_context_for_emlis_ai(
+                user_id,
+                max_anchor_count=capability.max_anchor_count,
+            )
+        )
+
     if async_tasks:
         source_errors: Dict[str, str] = {}
         keys = list(async_tasks.keys())
@@ -307,11 +316,15 @@ async def build_emlis_ai_source_bundle(
         similar_inputs=bundle.similar_inputs,
         derived_user_model=bundle.derived_user_model,
     )
+    if bundle.cross_core_context:
+        bundle.memory_richness["cross_core_anchor_packet_count"] = len(bundle.cross_core_context)
     bundle.debug.update(
         {
             "derived_model_loaded": bool(bundle.derived_user_model is not None),
             "input_effort_score": float(bundle.input_effort.get("effort_score") or 0.0),
             "history_density_score": float(bundle.memory_richness.get("history_density_score") or 0.0),
+            "cross_core_context_loaded": bool(bundle.cross_core_context),
+            "cross_core_context_count": len(bundle.cross_core_context),
         }
     )
     return bundle

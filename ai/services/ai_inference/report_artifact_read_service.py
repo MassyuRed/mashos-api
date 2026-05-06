@@ -16,6 +16,7 @@ from access_policy.viewer_access_policy import (
     resolve_viewer_tier_str as _resolve_viewer_tier_str_from_policy,
 )
 from supabase_client import sb_get
+from emlis_context_anchor_service import sanitize_content_json_for_public_read
 
 logger = logging.getLogger("report_artifact_read_service")
 
@@ -89,11 +90,11 @@ def _pick_rows(resp) -> List[Dict[str, Any]]:
 
 def _normalize_content_json(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
-        return raw
+        return sanitize_content_json_for_public_read(raw)
     if isinstance(raw, str):
         try:
             data = json.loads(raw)
-            return data if isinstance(data, dict) else {}
+            return sanitize_content_json_for_public_read(data) if isinstance(data, dict) else {}
         except Exception:
             return {}
     return {}

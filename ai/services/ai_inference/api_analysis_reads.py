@@ -18,6 +18,7 @@ from response_microcache import get_or_compute
 from supabase_client import sb_get
 from analysis_summary_reader import get_myweb_home_summary_from_artifacts
 from input_summary_reader import get_input_summary_snapshot
+from emlis_context_anchor_service import sanitize_content_json_for_public_read
 
 try:
     from subscription import SubscriptionTier  # type: ignore
@@ -215,11 +216,11 @@ def _summarize_weekly(rows: List[Dict[str, Any]]) -> MyWebWeeklySummary:
 
 def _normalize_content_json(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
-        return raw
+        return sanitize_content_json_for_public_read(raw)
     if isinstance(raw, str):
         try:
             data = json.loads(raw)
-            return data if isinstance(data, dict) else {}
+            return sanitize_content_json_for_public_read(data) if isinstance(data, dict) else {}
         except Exception:
             return {}
     return {}

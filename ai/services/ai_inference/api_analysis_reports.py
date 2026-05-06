@@ -41,6 +41,11 @@ from access_policy.viewer_access_policy import (
 
 from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
 from supabase_client import sb_get, sb_post
+from emlis_context_anchor_service import (
+    attach_emlis_context_anchors,
+    build_emotion_report_emlis_context_anchors,
+    sanitize_content_json_for_public_read,
+)
 
 from api_emotion_submit import (
     _ensure_supabase_config,
@@ -341,7 +346,7 @@ async def _resolve_viewer_tier_str(user_id: str) -> str:
 
 
 def _build_myweb_report_record(row: Dict[str, Any], *, include_body: bool) -> MyWebReportRecord:
-    content_json = row.get("content_json") if isinstance(row.get("content_json"), dict) else {}
+    content_json = sanitize_content_json_for_public_read(row.get("content_json")) if isinstance(row.get("content_json"), dict) else {}
     return MyWebReportRecord(
         id=str(row.get("id") or ""),
         report_type=str(row.get("report_type") or ""),
@@ -4921,6 +4926,23 @@ async def _generate_and_save(
         material_fields=material_fields,
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
     )
+    try:
+        content_json = attach_emlis_context_anchors(
+            content_json,
+            build_emotion_report_emlis_context_anchors(
+                report=astor_report if isinstance(astor_report, dict) else None,
+                content_json=content_json,
+                source_id=None,
+                report_type=target.report_type,
+                period={
+                    "period_start": target.period_start_iso,
+                    "period_end": target.period_end_iso,
+                    "report_type": target.report_type,
+                },
+            ),
+        )
+    except Exception:
+        pass
 
     payload = {
         "user_id": user_id,
@@ -5222,6 +5244,23 @@ async def _generate_and_save_from_snapshot(
         material_fields=["emotion_details", "timestamp", "memo", "categories"],
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
     )
+    try:
+        content_json = attach_emlis_context_anchors(
+            content_json,
+            build_emotion_report_emlis_context_anchors(
+                report=content_json.get("deepReport") if isinstance(content_json.get("deepReport"), dict) else content_json.get("standardReport") if isinstance(content_json.get("standardReport"), dict) else None,
+                content_json=content_json,
+                source_id=None,
+                report_type=target.report_type,
+                period={
+                    "period_start": target.period_start_iso,
+                    "period_end": target.period_end_iso,
+                    "report_type": target.report_type,
+                },
+            ),
+        )
+    except Exception:
+        pass
 
     payload_upsert = {
         "user_id": uid,

@@ -45,6 +45,7 @@ MemoryLayer = Literal[
     "canonical_history",
     "derived_user_model",
     "side_state",
+    "cross_core_context",
 ]
 ReplyLengthMode = Literal[
     "short_present_only",
@@ -359,6 +360,23 @@ class UnderstandingFrame:
     evidence: List[EvidenceRef] = field(default_factory=list)
 
 
+
+
+@dataclass(frozen=True)
+class EmlisContextAnchorPacket:
+    schema_version: str
+    source_kind: str
+    source_id: Optional[str] = None
+    source_updated_at: Optional[str] = None
+    value_anchors: List[Dict[str, Any]] = field(default_factory=list)
+    state_anchors: List[Dict[str, Any]] = field(default_factory=list)
+    individuality_anchors: List[Dict[str, Any]] = field(default_factory=list)
+    boundary_anchors: List[Dict[str, Any]] = field(default_factory=list)
+    concept_anchors: List[Dict[str, Any]] = field(default_factory=list)
+    reply_hints: List[Dict[str, Any]] = field(default_factory=list)
+    evidence_refs: List[Dict[str, Any]] = field(default_factory=list)
+    safety: Dict[str, Any] = field(default_factory=dict)
+
 @dataclass
 class SourceCursor:
     last_emotion_id: Optional[str] = None
@@ -455,6 +473,7 @@ class SourceBundle:
     myweb_home_summary: Dict[str, Any] = field(default_factory=dict)
     latest_today_question_answer: Dict[str, Any] = field(default_factory=dict)
     recent_today_question_answers: List[Dict[str, Any]] = field(default_factory=list)
+    cross_core_context: List[EmlisContextAnchorPacket] = field(default_factory=list)
     derived_user_model: Optional[DerivedUserModel] = None
     side_state: Dict[str, Any] = field(default_factory=dict)
     input_effort: Dict[str, Any] = field(default_factory=dict)
@@ -489,6 +508,7 @@ class WorldModelFacts:
     weekly_top_emotions: List[str] = field(default_factory=list)
     current_categories: List[str] = field(default_factory=list)
     current_emotion_labels: List[str] = field(default_factory=list)
+    cross_core_context: List[EmlisContextAnchorPacket] = field(default_factory=list)
     latest_today_question_text: Optional[str] = None
     latest_today_question_answer_text: Optional[str] = None
 
@@ -560,6 +580,7 @@ class ReplyLengthPlan:
     user_word_anchor_count: int = 0
     history_usable: bool = False
     interpretive_frame_usable: bool = False
+    cross_core_usable: bool = False
     meaning_block_count: int = 0
     selected_meaning_block_count: int = 0
     meaning_coverage_ratio: float = 0.0

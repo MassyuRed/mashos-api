@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from emlis_ai_types import (
     EmlisAICapabilityConfig,
+    EmlisContextAnchorPacket,
     EmotionDisplayItem,
     EvidenceRef,
     SourceBundle,
@@ -32,6 +33,7 @@ from emlis_ai_response_composition_service import (
     build_response_composition_plan,
     build_reply_narrative_arc,
 )
+from emlis_context_anchor_service import packet_text_for_matching
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -283,6 +285,79 @@ def _collect_conflicts(hypotheses: List[WorldModelHypothesis]) -> List[str]:
     return conflicts
 
 
+
+def _compact_for_match(value: Any) -> str:
+    import re
+    return re.sub(r"[\s　、,。.!！?？\t\n\r『』「」（）()\[\]【】]", "", str(value or ""))
+
+
+def _anchor_match_terms(packet: EmlisContextAnchorPacket) -> List[str]:
+    terms: List[str] = []
+    raw = packet_text_for_matching(
+        {
+            "value_anchors": packet.value_anchors,
+            "state_anchors": packet.state_anchors,
+            "individuality_anchors": packet.individuality_anchors,
+            "boundary_anchors": packet.boundary_anchors,
+            "concept_anchors": packet.concept_anchors,
+            "reply_hints": packet.reply_hints,
+        }
+    )
+    for chunk in raw.replace("/", " ").replace("・", " ").split():
+        clean = _compact_for_match(chunk)
+        if 2 <= len(clean) <= 24 and clean not in terms:
+            terms.append(clean)
+    # Also keep explicit labels / trigger conditions, because Japanese text often
+    # has no whitespace and a split-only pass may miss them.
+    for group in (packet.value_anchors, packet.state_anchors, packet.individuality_anchors, packet.boundary_anchors, packet.concept_anchors):
+        for item in group or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("label", "role_pattern", "choice_pattern", "environment_context", "target_context", "user_definition", "answer_summary"):
+                clean = _compact_for_match(item.get(key))
+                if 2 <= len(clean) <= 28 and clean not in terms:
+                    terms.append(clean)
+            for value in item.get("trigger_conditions") or item.get("sensitive_contexts") or []:
+                clean = _compact_for_match(value)
+                if 2 <= len(clean) <= 18 and clean not in terms:
+                    terms.append(clean)
+    return terms[:24]
+
+
+def _matched_cross_core_context(
+    *,
+    capability: EmlisAICapabilityConfig,
+    bundle: SourceBundle,
+    current_categories: List[str],
+    current_emotion_labels: List[str],
+) -> List[EmlisContextAnchorPacket]:
+    if not capability.cross_core_enabled or not bundle.cross_core_context:
+        return []
+    current_text = _compact_for_match(" ".join([
+        str(bundle.current_input.get("memo") or ""),
+        str(bundle.current_input.get("memo_action") or ""),
+        " ".join(current_categories or []),
+        " ".join(current_emotion_labels or []),
+    ]))
+    if not current_text:
+        return []
+    emotion_set = {_compact_for_match(v) for v in current_emotion_labels if _compact_for_match(v)}
+    category_set = {_compact_for_match(v) for v in current_categories if _compact_for_match(v)}
+    matched: List[EmlisContextAnchorPacket] = []
+    for packet in bundle.cross_core_context:
+        terms = _anchor_match_terms(packet)
+        if not terms:
+            continue
+        term_set = {_compact_for_match(t) for t in terms if _compact_for_match(t)}
+        direct_match = any((term in current_text or current_text in term) for term in term_set if len(term) >= 2)
+        emotion_match = bool(emotion_set and emotion_set & term_set)
+        category_match = bool(category_set and category_set & term_set)
+        if direct_match or emotion_match or category_match:
+            matched.append(packet)
+        if len(matched) >= max(1, int(capability.max_anchor_count or 1)):
+            break
+    return matched
+
 def build_emlis_ai_world_model(
     *,
     capability: EmlisAICapabilityConfig,
@@ -339,6 +414,12 @@ def build_emlis_ai_world_model(
     )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
+    cross_core_context = _matched_cross_core_context(
+        capability=capability,
+        bundle=bundle,
+        current_categories=current_categories,
+        current_emotion_labels=current_emotion_labels,
+    )
     memo_richness = _memo_richness(bundle)
     response_mode = _response_mode(
         labels=current_emotion_labels,
@@ -380,6 +461,7 @@ def build_emlis_ai_world_model(
         weekly_top_emotions=weekly_top,
         current_categories=current_categories,
         current_emotion_labels=current_emotion_labels,
+        cross_core_context=cross_core_context,
         latest_today_question_text=_latest_today_question_text(bundle),
         latest_today_question_answer_text=_latest_today_question_answer_text(bundle),
     )
@@ -403,6 +485,8 @@ def build_emlis_ai_world_model(
     conflicts = _collect_conflicts(hypotheses)
     if bundle.derived_user_model is not None and not bundle.derived_user_model.interpretive_frame.meaning_map:
         unknowns.append("derived_model_meaning_map_sparse")
+    if capability.cross_core_enabled and bundle.cross_core_context and not cross_core_context:
+        unknowns.append("cross_core_context_no_current_input_match")
 
     return WorldModel(
         facts=facts,
@@ -430,5 +514,8 @@ def build_emlis_ai_world_model(
             "reply_narrative_arc_key": str(getattr(reply_narrative_arc, "arc_key", "") or ""),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
+            "cross_core_context_loaded": len(bundle.cross_core_context),
+            "cross_core_context_matched": len(cross_core_context),
+            "cross_core_source_kinds": sorted({str(getattr(item, "source_kind", "") or "") for item in cross_core_context if str(getattr(item, "source_kind", "") or "")}),
         },
     )
