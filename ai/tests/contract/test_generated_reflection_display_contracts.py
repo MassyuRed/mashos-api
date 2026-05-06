@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 def test_generated_reflection_display_rewrites_broken_answer():
@@ -143,32 +143,27 @@ def test_generated_detail_hides_blocked_text(client, monkeypatch):
     assert response.status_code == 404, response.text
 
 
-def test_generated_stage_skips_same_as_active(monkeypatch):
+def test_generated_stage_keeps_candidate_even_when_same_as_active(monkeypatch):
     import astor_reflection_store as store_module
     from generated_reflection_identity import compute_generated_question_q_key
 
-    active_row: Dict[str, Any] = {
-        "id": "active-generated-1",
-        "public_id": "reflection:active-generated-1",
-        "owner_user_id": "owner-generated-dup",
-        "source_type": "generated",
-        "topic_key": "topic-generated-dup",
-        "category": "趣味",
-        "question": "最近夢中なことは？",
-        "answer": "今日は体がだるくてずっと寝てるし、やたら お腹すいて色々食べてるだけだったけど お話練習したくて配信見に行って少しずつ コメントしてお話できたから お話。",
-        "content_json": {
-            "focus_key": "fun",
-            "topic_summary_text": "趣味 / 配信見に行って少しずつコメントして話した / お話",
-        },
-    }
-
     q_key = compute_generated_question_q_key("最近夢中なことは？")
+    posted_payloads = []
 
-    async def fake_fetch_active_generated_public_group_rows(*, user_id: str, q_key: str, question: str, exclude_id: Optional[str] = None):
-        assert q_key == compute_generated_question_q_key(question)
-        return [dict(active_row)]
+    async def fake_find_existing_staged_generated_row(*, user_id: str, q_key: str, topic_key: str, source_hash: str):
+        return None
 
-    monkeypatch.setattr(store_module, "_fetch_active_generated_public_group_rows", fake_fetch_active_generated_public_group_rows)
+    async def fake_post_json(path, *, json_body=None, timeout=None, prefer=None):
+        assert path == f"/rest/v1/{store_module.REFLECTIONS_TABLE}"
+        posted_payloads.append(dict(json_body or {}))
+        return [{"id": "staged-generated-1", **dict(json_body or {})}]
+
+    async def fail_if_active_same_answer_lookup_runs(*args, **kwargs):
+        raise AssertionError("same-as-active lookup should not suppress generated candidates")
+
+    monkeypatch.setattr(store_module, "_find_existing_staged_generated_row", fake_find_existing_staged_generated_row)
+    monkeypatch.setattr(store_module, "_sb_post_json", fake_post_json)
+    monkeypatch.setattr(store_module, "_fetch_active_generated_public_group_rows", fail_if_active_same_answer_lookup_runs)
 
     result = asyncio.run(
         store_module._upsert_staged_generated_row(
@@ -190,8 +185,12 @@ def test_generated_stage_skips_same_as_active(monkeypatch):
         )
     )
 
-    assert result["_stage_action"] == "skip_same_as_active"
-    assert result["id"] == "active-generated-1"
+    assert result["id"] == "staged-generated-1"
+    assert result["status"] == "draft"
+    assert result["is_active"] is False
+    assert result["q_key"] == q_key
+    assert "emlis_context_anchors" in (result.get("content_json") or {})
+    assert posted_payloads
 
 
 def test_generated_reflection_display_blocks_low_quality_values_fragment():

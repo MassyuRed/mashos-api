@@ -147,10 +147,13 @@ def test_generated_maintenance_plans_cleanup_and_reports_remaining_multi_answer_
         [duplicate_active_new, duplicate_active_old, duplicate_archived, different_answer_same_question]
     )
     action_map = {item.reflection_id: item.action for item in actions}
+    reason_map = {item.reflection_id: item.reason for item in actions}
 
     assert action_map["dup-active-new"] == "keep"
-    assert action_map["dup-active-old"] == "archive"
-    assert action_map["dup-archived-1"] == "delete"
+    assert action_map["dup-active-old"] == "keep"
+    assert action_map["dup-archived-1"] == "keep"
+    assert reason_map["dup-active-old"] == "duplicate_retained_by_user_choice"
+    assert reason_map["dup-archived-1"] == "duplicate_retained_by_user_choice"
 
     simulated_rows = maintenance_module.simulate_cleanup_actions(
         [duplicate_active_new, duplicate_active_old, duplicate_archived, different_answer_same_question],
@@ -163,7 +166,7 @@ def test_generated_maintenance_plans_cleanup_and_reports_remaining_multi_answer_
 
 
 
-def test_generated_maintenance_archives_noncanonical_active_same_qkey():
+def test_generated_maintenance_retains_noncanonical_active_same_qkey():
     import generated_reflection_maintenance as maintenance_module
 
     latest_row = {
@@ -198,8 +201,12 @@ def test_generated_maintenance_archives_noncanonical_active_same_qkey():
     actions = maintenance_module.plan_generated_reflection_latest_qkey_cleanup([latest_row, older_row])
     action_map = {item.reflection_id: item.action for item in actions}
 
+    reason_map = {item.reflection_id: item.reason for item in actions}
+
     assert action_map["latest-qkey-row"] == "keep"
-    assert action_map["older-qkey-row"] == "archive"
+    assert action_map["older-qkey-row"] == "keep"
+    assert reason_map["latest-qkey-row"] == "same_qkey_retained_by_user_choice"
+    assert reason_map["older-qkey-row"] == "same_qkey_retained_by_user_choice"
 
 
 def test_generated_cleanup_apply_skips_delete_by_default(monkeypatch):
@@ -256,9 +263,8 @@ def test_generated_cleanup_apply_skips_delete_by_default(monkeypatch):
 
     result = asyncio.run(maintenance_module.apply_generated_cleanup_actions(actions))
 
-    assert result == {"archived_ids": ["archive-me"], "deleted_ids": []}
-    assert len(archived_calls) == 1
-    assert archived_calls[0]["json_body"]["status"] == "archived"
+    assert result == {"archived_ids": [], "deleted_ids": []}
+    assert archived_calls == []
     assert deleted_calls == []
 
 
@@ -324,13 +330,15 @@ def test_generated_maintenance_canonicalize_active_only_skips_duplicate_delete_p
     )
 
     assert summary["cleanup"]["counts"]["delete"] == 0
-    assert summary["cleanup"]["counts"]["archive"] == 1
-    assert summary["cleanup"]["canonicalized_qkey_group_count"] == 1
-    assert summary["cleanup"]["planned_action_count"] == 1
+    assert summary["cleanup"]["counts"]["archive"] == 0
+    assert summary["cleanup"]["counts"]["keep"] == 2
+    assert summary["cleanup"]["retained_same_qkey_group_count"] == 1
+    assert summary["cleanup"]["remaining_multi_active_qkey_count"] == 1
+    assert summary["cleanup"]["planned_action_count"] == 0
 
 
 
-def test_generated_generation_plan_prefers_latest_state_signals_for_same_question():
+def test_generated_generation_plan_surfaces_each_state_signal_for_same_question():
     import astor_reflection_engine as engine_module
 
     premium_reflection_view = {
@@ -365,10 +373,11 @@ def test_generated_generation_plan_prefers_latest_state_signals_for_same_questio
         existing_dynamic_reflections=[],
     )
 
-    assert len(plan["creates"]) == 1
-    answer = str(plan["creates"][0]["answer"] or "")
-    assert "無理をしすぎず休むこと" in answer
-    assert "夜更かし" not in answer
+    assert len(plan["creates"]) == 2
+    answers = [str(item.get("answer") or "") for item in plan["creates"]]
+    assert any("無理をしすぎず休むこと" in answer for answer in answers)
+    assert any("夜更かし" in answer for answer in answers)
+    assert plan["stats"]["create_count"] == 2
 
 
 def test_generated_display_recomputes_stored_bundle_that_now_fails_quality_gate():

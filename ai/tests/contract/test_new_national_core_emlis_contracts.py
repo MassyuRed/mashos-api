@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-def test_emlis_ai_capability_profiles_reserve_cross_core_fields():
+def test_emlis_ai_capability_profiles_enable_cross_core_for_premium_only():
     from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 
     free = resolve_emlis_ai_capability_for_tier("free")
@@ -10,13 +10,13 @@ def test_emlis_ai_capability_profiles_reserve_cross_core_fields():
 
     assert free.source_scope == "current_input_only"
     assert plus.source_scope == "current_input_with_owned_history"
-    assert premium.source_scope == "current_input_with_owned_history"
+    assert premium.source_scope == "current_input_with_owned_history_and_cross_core"
     assert free.cross_core_enabled is False
     assert plus.cross_core_enabled is False
-    assert premium.cross_core_enabled is False
+    assert premium.cross_core_enabled is True
     assert free.structure_model_enabled is False
     assert plus.structure_model_enabled is False
-    assert premium.structure_model_enabled is False
+    assert premium.structure_model_enabled is True
 
 
 def test_emlis_ai_quality_gate_blocks_free_history_usage_in_meta():

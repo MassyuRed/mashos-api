@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 
 def test_myweb_unread_status_ignores_non_publishable_reports(client, monkeypatch):
     import api_report_reads as report_reads_module
 
     async def fake_require_user_id(_authorization):
-        return "user-123"
+        return "user-publish-governance-123"
 
     async def fake_resolve_viewer_tier(_user_id: str) -> str:
         return "free"
@@ -19,6 +21,12 @@ def test_myweb_unread_status_ignores_non_publishable_reports(client, monkeypatch
         def json(self):
             return self._payload
 
+    now = datetime.now(timezone.utc)
+    draft_start = (now - timedelta(days=3)).isoformat().replace("+00:00", "Z")
+    draft_end = (now - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+    ready_start = (now - timedelta(days=2)).isoformat().replace("+00:00", "Z")
+    ready_end = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+
     async def fake_sb_get(path, *, params=None, timeout=8.0):
         if path == "/rest/v1/analysis_reports":
             report_type = params.get("report_type", "").replace("eq.", "")
@@ -26,15 +34,15 @@ def test_myweb_unread_status_ignores_non_publishable_reports(client, monkeypatch
                 {
                     "id": f"{report_type}-draft",
                     "report_type": report_type,
-                    "period_start": "2026-03-01T00:00:00Z",
-                    "period_end": "2026-03-01T23:59:59Z",
+                    "period_start": draft_start,
+                    "period_end": draft_end,
                     "content_json": {"publish": {"status": "DRAFT"}, "metrics": {"totalAll": 3}},
                 },
                 {
                     "id": f"{report_type}-ready",
                     "report_type": report_type,
-                    "period_start": "2026-03-02T00:00:00Z",
-                    "period_end": "2026-03-02T23:59:59Z",
+                    "period_start": ready_start,
+                    "period_end": ready_end,
                     "content_json": {"publish": {"status": "READY"}, "metrics": {"totalAll": 3}},
                 },
             ]
