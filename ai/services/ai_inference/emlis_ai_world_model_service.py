@@ -34,6 +34,10 @@ from emlis_ai_response_composition_service import (
     build_reply_narrative_arc,
 )
 from emlis_context_anchor_service import packet_text_for_matching
+from cocolon_value_observation_service import (
+    build_value_observation_plan,
+    build_value_observation_signals,
+)
 
 
 def _current_emotion_details(bundle: SourceBundle) -> List[Dict[str, Any]]:
@@ -412,6 +416,15 @@ def build_emlis_ai_world_model(
         composition_plan=response_composition_plan,
         meaning_blocks=meaning_blocks,
     )
+    value_observation_signals = build_value_observation_signals(
+        current_input=bundle.current_input,
+        meaning_blocks=meaning_blocks,
+        shaped_user_phrases=shaped_user_phrases,
+    )
+    value_observation_plan = build_value_observation_plan(
+        current_input=bundle.current_input,
+        signals=value_observation_signals,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     cross_core_context = _matched_cross_core_context(
@@ -464,6 +477,8 @@ def build_emlis_ai_world_model(
         cross_core_context=cross_core_context,
         latest_today_question_text=_latest_today_question_text(bundle),
         latest_today_question_answer_text=_latest_today_question_answer_text(bundle),
+        value_observation_signals=value_observation_signals,
+        value_observation_plan=value_observation_plan,
     )
 
     hypotheses: List[WorldModelHypothesis] = []
@@ -514,6 +529,8 @@ def build_emlis_ai_world_model(
             "reply_narrative_arc_key": str(getattr(reply_narrative_arc, "arc_key", "") or ""),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
+            "value_observation_signal_keys": [str(getattr(item, "signal_key", "") or "") for item in value_observation_signals],
+            "value_observation_signal_count": len(value_observation_signals),
             "cross_core_context_loaded": len(bundle.cross_core_context),
             "cross_core_context_matched": len(cross_core_context),
             "cross_core_source_kinds": sorted({str(getattr(item, "source_kind", "") or "") for item in cross_core_context if str(getattr(item, "source_kind", "") or "")}),

@@ -511,6 +511,8 @@ class WorldModelFacts:
     cross_core_context: List[EmlisContextAnchorPacket] = field(default_factory=list)
     latest_today_question_text: Optional[str] = None
     latest_today_question_answer_text: Optional[str] = None
+    value_observation_signals: List[Any] = field(default_factory=list)
+    value_observation_plan: Optional[Any] = None
 
 
 @dataclass

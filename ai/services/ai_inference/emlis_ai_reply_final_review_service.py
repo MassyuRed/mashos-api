@@ -22,6 +22,7 @@ BROKEN_CONNECTION_RE = re.compile(
     r"|になるです|だったです|したです|ですです"
 )
 MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造として|分析すると|理解しました|受け取りました)")
+INTERNAL_OBSERVATION_LANGUAGE_RE = re.compile(r"(コンフォートゾーン|スペック|精神の問題|皮算用|要求と期待が膨れ上が|本質は|あなたの本質)")
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
 PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 BROKEN_NOUN_PHRASE_RE = re.compile(r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)")
@@ -137,6 +138,10 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
             issues.append(FinalReviewIssue(code="mechanical_meta_language", severity="block", line_index=idx, message=line))
             changed = True
             continue
+        if INTERNAL_OBSERVATION_LANGUAGE_RE.search(line):
+            issues.append(FinalReviewIssue(code="internal_observation_language", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
         repaired_lines.append(line)
 
     original_ne_count = sum(line.count("のですね") for line in repaired_lines)
@@ -158,7 +163,7 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     final_lines = _lines(final_text)
     final_first_idx = _first_content_index(final_lines)
     midstream_remaining = final_first_idx is not None and MIDSTREAM_OPENING_RE.search(final_lines[final_first_idx])
-    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or midstream_remaining)
+    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or midstream_remaining)
     repetition_remaining = sum(line.count("のですね") for line in final_lines) > 2 or _has_three_same_endings(final_lines)
     underanswered = _long_input_underanswered(final_lines, world_model)
     passed = bool(final_text) and not block_remaining and not repetition_remaining and not underanswered and any(PRESENCE_RE.search(line) for line in final_lines)
@@ -169,4 +174,4 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     return FinalReviewResult(passed=passed, issues=issues, repaired_text=repaired_text, review_version="emlis.final_reader.v1")
 
 
-__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "review_emlis_ai_reply_text"]
+__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "INTERNAL_OBSERVATION_LANGUAGE_RE", "review_emlis_ai_reply_text"]

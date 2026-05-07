@@ -69,6 +69,12 @@ def build_understanding_frame(
     relief_source = _first_anchor(anchors, {"relief_source"})
     relation_patterns: List[str] = []
     roles = {str(getattr(anchor, "role", "") or "") for anchor in anchors}
+    memo_text = " ".join([
+        _clean(current_input.get("memo")),
+        _clean(current_input.get("memo_action")),
+    ])
+    if "理由" in memo_text and "非" in memo_text:
+        relation_patterns.append("justification_vs_fault")
     if {"self_suppression", "support_need"} & roles:
         relation_patterns.append("suppression_and_support_need")
     if "wish" in roles and "fear_or_disappointment" in roles:

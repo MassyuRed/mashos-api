@@ -14,6 +14,8 @@ import hashlib
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
+from cocolon_value_observation_service import build_value_observation_plan, build_value_observation_signals
+
 PIECE_CORE_SCHEMA_VERSION = "piece.core.v1"
 PIECE_SOURCE_INPUT_SCOPE_CURRENT_ONLY = "current_input_only"
 
@@ -58,6 +60,12 @@ class PieceGenerationPolicyResult:
     safety_flags: List[str]
     piece_text_hash: str
     source_input_scope: str = PIECE_SOURCE_INPUT_SCOPE_CURRENT_ONLY
+    meaning_preserved: bool = True
+    overcompression_risk: bool = False
+    overcompression_blocked: bool = True
+    value_observation_signal_keys: Optional[List[str]] = None
+    answer_preservation_policy: str = "source_scaled"
+    minimum_detail_level: str = "source_scaled"
     schema_version: str = PIECE_CORE_SCHEMA_VERSION
 
     def as_storage_meta(self) -> Dict[str, Any]:
@@ -72,6 +80,12 @@ class PieceGenerationPolicyResult:
             "piece_text_hash": str(self.piece_text_hash),
             "source_input_scope": str(self.source_input_scope),
             "preview_text_hash": str(self.piece_text_hash),
+            "meaning_preserved": bool(self.meaning_preserved),
+            "overcompression_risk": bool(self.overcompression_risk),
+            "overcompression_blocked": bool(self.overcompression_blocked),
+            "value_observation_signal_keys": list(self.value_observation_signal_keys or []),
+            "answer_preservation_policy": str(self.answer_preservation_policy),
+            "minimum_detail_level": str(self.minimum_detail_level),
         }
 
     def as_public_contract(self, *, include_safety_flags: bool = False) -> Dict[str, Any]:
@@ -305,6 +319,42 @@ def _resolve_safety_level(*, safety_flags: Sequence[str], display_state: str, tr
     return SAFETY_SAFE
 
 
+def _value_observation_policy(current_input: Mapping[str, Any] | None, piece_text: Any) -> Dict[str, Any]:
+    signals = build_value_observation_signals(current_input=current_input if isinstance(current_input, Mapping) else {})
+    plan = build_value_observation_plan(current_input=current_input if isinstance(current_input, Mapping) else {}, signals=signals)
+    signal_keys = [str(getattr(signal, "signal_key", "") or "") for signal in signals if str(getattr(signal, "signal_key", "") or "")]
+    if not signals:
+        return {
+            "signal_keys": [],
+            "meaning_preserved": True,
+            "overcompression_risk": False,
+            "overcompression_blocked": True,
+            "answer_preservation_policy": "source_scaled",
+            "minimum_detail_level": "source_scaled",
+        }
+    compact_piece = _compact(piece_text)
+    required_terms: List[str] = []
+    for signal in signals:
+        for term in list(getattr(signal, "must_keep_terms", []) or []) + list(getattr(signal, "evidence_terms", []) or []):
+            clean = _compact(term)
+            if len(clean) >= 2 and clean not in required_terms:
+                required_terms.append(clean)
+    matched = sum(1 for term in required_terms if term in compact_piece)
+    # A Piece may safely paraphrase, so do not require all terms.  Require enough
+    # grounded terms to prove that the core was not collapsed into a category label.
+    threshold = min(3, max(1, len(required_terms) // 3)) if required_terms else 1
+    meaning_preserved = matched >= threshold or any(str(getattr(signal, "signal_key", "") or "") in compact_piece for signal in signals)
+    overcompression_risk = bool(getattr(plan, "overcompression_risk", False)) and len(compact_piece) < 42 and len(_compact(" ".join(_source_texts_from_emotion_input(current_input)))) >= 80
+    return {
+        "signal_keys": signal_keys,
+        "meaning_preserved": bool(meaning_preserved),
+        "overcompression_risk": bool(overcompression_risk),
+        "overcompression_blocked": bool(meaning_preserved and not overcompression_risk),
+        "answer_preservation_policy": "preserve_user_claims",
+        "minimum_detail_level": "source_scaled",
+    }
+
+
 def build_piece_generation_policy(
     *,
     piece_text: Any,
@@ -340,6 +390,11 @@ def build_piece_generation_policy(
         display_state=state,
         transform_mode=transform_mode,
     )
+    value_policy = _value_observation_policy(emotion_input, text)
+    if value_policy.get("overcompression_risk"):
+        _append_once(safety_flags, "overcompression_risk")
+    if not value_policy.get("meaning_preserved", True):
+        _append_once(safety_flags, "meaning_not_preserved")
     return PieceGenerationPolicyResult(
         visibility_status=str(visibility_status or VISIBILITY_PREVIEW_READY),
         generation_status=generation_status,
@@ -347,6 +402,12 @@ def build_piece_generation_policy(
         safety_level=safety_level,
         safety_flags=safety_flags,
         piece_text_hash=compute_piece_text_hash(text),
+        meaning_preserved=bool(value_policy.get("meaning_preserved", True)),
+        overcompression_risk=bool(value_policy.get("overcompression_risk", False)),
+        overcompression_blocked=bool(value_policy.get("overcompression_blocked", True)),
+        value_observation_signal_keys=list(value_policy.get("signal_keys", []) or []),
+        answer_preservation_policy=str(value_policy.get("answer_preservation_policy") or "source_scaled"),
+        minimum_detail_level=str(value_policy.get("minimum_detail_level") or "source_scaled"),
     )
 
 
@@ -363,6 +424,12 @@ def piece_policy_from_content_json(content_json: Mapping[str, Any] | None) -> Pi
         safety_flags=[str(x).strip() for x in (core.get("safety_flags") or []) if str(x).strip()],
         piece_text_hash=str(core.get("piece_text_hash") or core.get("preview_text_hash") or ""),
         source_input_scope=str(core.get("source_input_scope") or PIECE_SOURCE_INPUT_SCOPE_CURRENT_ONLY),
+        meaning_preserved=bool(core.get("meaning_preserved", True)),
+        overcompression_risk=bool(core.get("overcompression_risk", False)),
+        overcompression_blocked=bool(core.get("overcompression_blocked", True)),
+        value_observation_signal_keys=[str(x).strip() for x in (core.get("value_observation_signal_keys") or []) if str(x).strip()],
+        answer_preservation_policy=str(core.get("answer_preservation_policy") or "source_scaled"),
+        minimum_detail_level=str(core.get("minimum_detail_level") or "source_scaled"),
         schema_version=str(core.get("schema_version") or PIECE_CORE_SCHEMA_VERSION),
     )
 
@@ -382,6 +449,12 @@ def with_piece_policy_visibility(
         safety_flags=list(policy.safety_flags),
         piece_text_hash=text_hash or policy.piece_text_hash,
         source_input_scope=policy.source_input_scope,
+        meaning_preserved=policy.meaning_preserved,
+        overcompression_risk=policy.overcompression_risk,
+        overcompression_blocked=policy.overcompression_blocked,
+        value_observation_signal_keys=list(policy.value_observation_signal_keys or []),
+        answer_preservation_policy=policy.answer_preservation_policy,
+        minimum_detail_level=policy.minimum_detail_level,
         schema_version=policy.schema_version,
     )
 

@@ -66,6 +66,9 @@ _SELF_STRUCTURE_MATERIAL_FIELDS = {
     "memo_action",
     "question_text",
     "text_primary",
+    "value_observation_signals",
+    "value_observation_signal_keys",
+    "value_observation_plan",
 }
 
 _EMOTION_ALLOWED_MATERIAL_FIELDS = {
@@ -83,7 +86,16 @@ _EMOTION_ALLOWED_MATERIAL_FIELDS = {
     "categories",
 }
 
-_EMOTION_FORBIDDEN_MATERIAL_FIELDS = {"memo_action", "action_text", "action_signals", "role_hint", "target_hint"}
+_EMOTION_FORBIDDEN_MATERIAL_FIELDS = {
+    "memo_action",
+    "action_text",
+    "action_signals",
+    "role_hint",
+    "target_hint",
+    "value_observation_signals",
+    "value_observation_signal_keys",
+    "value_observation_plan",
+}
 
 
 def _safe_str(value: Any) -> str:
@@ -133,6 +145,28 @@ def _contains_any(text: str, terms: Iterable[str]) -> bool:
     return any(str(term).lower() in lowered for term in terms if str(term or "").strip())
 
 
+def _extract_value_observation_signal_keys(payload: Any) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return []
+    raw_signals = payload.get("value_observation_signals") or payload.get("valueObservationSignals")
+    raw_keys = payload.get("value_observation_signal_keys") or payload.get("valueObservationSignalKeys")
+    out: list[str] = []
+    for item in list(raw_keys or []):
+        s = _safe_str(item)
+        if s and s not in out:
+            out.append(s)
+    if isinstance(raw_signals, Sequence) and not isinstance(raw_signals, (str, bytes, bytearray)):
+        for item in raw_signals:
+            if isinstance(item, Mapping):
+                key = item.get("signal_key") or item.get("key")
+            else:
+                key = getattr(item, "signal_key", None)
+            s = _safe_str(key)
+            if s and s not in out:
+                out.append(s)
+    return out
+
+
 @dataclass(frozen=True)
 class AnalysisReportValidityResult:
     domain: str
@@ -145,6 +179,8 @@ class AnalysisReportValidityResult:
     save_allowed: bool
     blocked_reasons: list[str] = field(default_factory=list)
     material_fields: list[str] = field(default_factory=list)
+    value_observation_signal_keys: list[str] = field(default_factory=list)
+    value_observation_domain_ok: bool = True
     target_period: Optional[str] = None
     schema_version: str = ANALYSIS_REPORT_VALIDITY_SCHEMA_VERSION
 
@@ -162,6 +198,8 @@ class AnalysisReportValidityResult:
             "save_allowed": self.save_allowed,
             "blocked_reasons": list(self.blocked_reasons),
             "material_fields": list(self.material_fields),
+            "value_observation_signal_keys": list(self.value_observation_signal_keys),
+            "value_observation_domain_ok": bool(self.value_observation_domain_ok),
         }
 
 
@@ -190,6 +228,9 @@ def evaluate_analysis_report_validity(
 
     required_count = 1 if min_material_count is None else max(0, int(min_material_count or 0))
     fields = _normalize_field_names(material_fields)
+    value_observation_signal_keys = _extract_value_observation_signal_keys(output_payload)
+    if value_observation_signal_keys:
+        fields.add("value_observation_signals")
     reasons: list[str] = []
 
     material_sufficient = count >= required_count
@@ -197,10 +238,12 @@ def evaluate_analysis_report_validity(
         reasons.append("material_insufficient")
 
     domain_separated = True
+    value_observation_domain_ok = True
     if normalized_domain == ANALYSIS_DOMAIN_EMOTION:
         forbidden = sorted(fields.intersection(_EMOTION_FORBIDDEN_MATERIAL_FIELDS))
         if forbidden:
             domain_separated = False
+            value_observation_domain_ok = "value_observation_signals" not in forbidden
             reasons.append("emotion_domain_contains_self_structure_material")
     elif normalized_domain == ANALYSIS_DOMAIN_SELF_STRUCTURE:
         if fields and not fields.intersection(_SELF_STRUCTURE_MATERIAL_FIELDS):
@@ -238,6 +281,8 @@ def evaluate_analysis_report_validity(
         save_allowed=save_allowed,
         blocked_reasons=reasons,
         material_fields=sorted(fields),
+        value_observation_signal_keys=value_observation_signal_keys,
+        value_observation_domain_ok=value_observation_domain_ok,
         target_period=_safe_str(target_period) or None,
     )
 
@@ -278,6 +323,9 @@ def infer_self_structure_material_fields_from_items(items: Optional[Sequence[Any
                 "action_signals",
                 "emotion_signals",
                 "question_text",
+                "value_observation_signals",
+                "value_observation_signal_keys",
+                "value_observation_plan",
             )
             raw = {key: getattr(item, key, None) for key in keys}
         for key, value in raw.items():

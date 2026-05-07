@@ -42,6 +42,17 @@ def _coverage_plan(world_model: Optional[WorldModel]):
     return getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
 
 
+def _value_observation_lines(world_model: Optional[WorldModel], *, limit: int = 1) -> List[str]:
+    if world_model is None:
+        return []
+    out: List[str] = []
+    for signal in list(getattr(world_model.facts, "value_observation_signals", []) or [])[: max(0, int(limit))]:
+        text = _clean(getattr(signal, "emlis_text", "") or getattr(signal, "value_conversion", ""))
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
 def _presence_line(blocks: Sequence[InputMeaningBlock], phrases: Sequence[ShapedUserPhrase], labels: Sequence[str]) -> str:
     roles = {str(getattr(item, "role", "") or "") for item in list(blocks or []) + list(phrases or [])}
     if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
@@ -108,6 +119,7 @@ def build_safe_understanding_fallback(
         anchors = list(getattr(getattr(world_model, "facts", None), "user_word_anchors", []) or []) if world_model is not None else []
         phrases = safe_phrases(shape_user_phrases(anchors=anchors, current_input=current_input))
     labels = _selected_labels(world_model)
+    value_lines = _value_observation_lines(world_model)
 
     if blocks:
         clear_long = bool(getattr(coverage, "clear_long_input", False)) if coverage is not None else False
@@ -117,6 +129,9 @@ def build_safe_understanding_fallback(
             line = _line_from_block(block, index=idx)
             if line:
                 lines.append(line)
+        for line in value_lines:
+            if line and line not in lines:
+                lines.append(line)
         lines.append(_presence_line(ordered, phrases, labels))
         return "\n".join(line for line in lines if line).strip()
 
@@ -125,15 +140,22 @@ def build_safe_understanding_fallback(
             line = _line_from_phrase(phrase, index=idx)
             if line:
                 lines.append(line)
+        for line in value_lines:
+            if line and line not in lines:
+                lines.append(line)
         lines.append(_presence_line([], phrases, labels))
         return "\n".join(line for line in lines if line).strip()
 
     if labels:
         joined = "と".join(labels[:2]) if len(labels) <= 2 else "、".join(labels[:-1]) + "、そして" + labels[-1]
         lines.append(f"今日は、{joined}が近くにあったのですね。")
-        lines.append("まだ全部をきれいに言葉にしきれなくても、そのまま置いて大丈夫です。")
+        if value_lines:
+            lines.extend(value_lines)
+        else:
+            lines.append("まだ全部をきれいに言葉にしきれなくても、そのまま置いて大丈夫です。")
     else:
         lines.append("今日は、言葉にしきれない気持ちを少し置いておきたかったのですね。")
+        lines.extend(value_lines)
     lines.append(_presence_line([], phrases, labels))
     return "\n".join(line for line in lines if line).strip()
 

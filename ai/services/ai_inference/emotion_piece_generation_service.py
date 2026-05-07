@@ -26,6 +26,10 @@ from piece_generated_display import (
 from piece_text_formatter import STATE_BLOCKED, format_reflection_text
 from piece_generated_identity import compute_generated_question_q_key
 from piece_generation_policy import build_piece_generation_policy
+from cocolon_value_observation_service import (
+    build_value_observation_plan,
+    build_value_observation_signals,
+)
 
 SELF_INSIGHT_EMOTION_TYPE = "自己理解"
 _NEGATIVE_EMOTIONS = {"悲しみ", "怒り", "不安"}
@@ -47,6 +51,11 @@ class PieceCoreQuestionAnswerPlan:
     expected_reader_understanding: str = ""
     answer_sentence_count: int = 0
     category_generic_suppressed: bool = False
+    must_keep_signal_keys: Optional[List[str]] = None
+    source_claims: Optional[List[str]] = None
+    answer_preservation_policy: str = "source_scaled"
+    overcompression_risk: bool = False
+    minimum_detail_level: str = "source_scaled"
     reason: str = ""
 
 
@@ -159,6 +168,11 @@ _CORE_FOCUS_KEYS = {
     "unreachable_wish_present_effort",
     "balanced_progress",
     "limit_awareness",
+    "stagnation_position_gap",
+    "outer_inner_role_gap",
+    "relationship_cost_asymmetry",
+    "inner_activity_fatigue_gap",
+    "ideal_capacity_switch_gap",
 }
 
 
@@ -169,7 +183,7 @@ def _piece_broken_phrase_present(text: Any) -> bool:
         # and for template endings such as "〜をです".
         r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)"
         r"|[をがはにへで]です(?:。|$)"
-        r"|ですです|ますます|ことをです",
+        r"|ですです|ますです|ますます|ことをです",
         raw,
     ))
 
@@ -208,6 +222,16 @@ def _piece_core_display_ok(text: Any, core_plan: Optional[PieceCoreQuestionAnswe
         return _contains_any(raw, ("頑張", "進みたい", "整え")) and _contains_any(raw, ("しんど", "状態", "立ち止"))
     if focus_key == "limit_awareness":
         return _contains_any(raw, ("限界", "状態", "気づ"))
+    if focus_key == "stagnation_position_gap":
+        return _contains_any(raw, ("進", "変わり", "このまま", "ギャップ", "留ま"))
+    if focus_key == "outer_inner_role_gap":
+        return _contains_any(raw, ("明る", "嬉", "怖", "見え", "保"))
+    if focus_key == "relationship_cost_asymmetry":
+        return _contains_any(raw, ("自分だけ", "言葉", "尊重", "負担", "疲"))
+    if focus_key == "inner_activity_fatigue_gap":
+        return _contains_any(raw, ("何もして", "疲", "頭", "内側", "考え"))
+    if focus_key == "ideal_capacity_switch_gap":
+        return _contains_any(raw, ("整理", "計画", "量", "目についた", "手をつけ"))
     return True
 
 
@@ -280,6 +304,53 @@ def _piece_answer_from_semantic_flags(*, source: str, focus_key: str) -> str:
     return _collapse("".join(parts[:4]))
 
 
+def _build_value_observation_piece_plan(
+    *,
+    emotion_details: Sequence[Dict[str, Any]],
+    categories: Sequence[str],
+    memo: str,
+    memo_action: str,
+    input_level: str,
+) -> Optional[PieceCoreQuestionAnswerPlan]:
+    current_input = {
+        "emotion_details": list(emotion_details or []),
+        "category": list(categories or []),
+        "memo": memo,
+        "memo_action": memo_action,
+    }
+    signals = build_value_observation_signals(current_input=current_input)
+    if not signals:
+        return None
+    plan = build_value_observation_plan(current_input=current_input, signals=signals)
+    signal = signals[0]
+    answer = _collapse(getattr(signal, "piece_answer", "") or getattr(signal, "value_conversion", ""))
+    question = _collapse(getattr(signal, "piece_question", ""))
+    if not question or not answer:
+        return None
+    signal_key = str(getattr(signal, "signal_key", "") or "value_observation")
+    evidence_terms = [str(v) for v in list(getattr(signal, "evidence_terms", []) or []) if str(v)]
+    return PieceCoreQuestionAnswerPlan(
+        focus_key=signal_key,
+        question=question,
+        answer=answer,
+        selected_block_keys=[signal_key],
+        coverage_roles=[str(getattr(signal, "observation_axis", "") or signal_key)],
+        input_level=input_level,
+        clear_long_input=input_level in {"long", "very_long"},
+        must_keep_block_keys=[signal_key],
+        communicative_summary="価値観測信号から、ユーザーが言いたいことを他者に伝わる一問一答へ整える。",
+        expected_reader_understanding=str(getattr(signal, "value_conversion", "") or "入力の表面感情だけでなく、言いたい核が伝わること。"),
+        answer_sentence_count=max(1, answer.count("。")),
+        category_generic_suppressed=True,
+        must_keep_signal_keys=list(getattr(plan, "must_keep_signal_keys", []) or [signal_key]),
+        source_claims=evidence_terms,
+        answer_preservation_policy="preserve_user_claims",
+        overcompression_risk=bool(getattr(plan, "overcompression_risk", False)),
+        minimum_detail_level="source_scaled",
+        reason=f"value_observation_signal:{signal_key}",
+    )
+
+
 def _build_piece_core_question_answer_plan(
     *,
     emotion_details: Sequence[Dict[str, Any]],
@@ -300,6 +371,15 @@ def _build_piece_core_question_answer_plan(
     )
 
     plans: List[PieceCoreQuestionAnswerPlan] = []
+    value_observation_plan = _build_value_observation_piece_plan(
+        emotion_details=emotion_details,
+        categories=categories,
+        memo=memo,
+        memo_action=memo_action,
+        input_level=level,
+    )
+    if value_observation_plan is not None:
+        plans.append(value_observation_plan)
 
     def make_plan(focus_key: str, question: str, block_keys: List[str], reason: str) -> PieceCoreQuestionAnswerPlan:
         answer = _piece_answer_from_semantic_flags(source=source, focus_key=focus_key)
@@ -316,6 +396,11 @@ def _build_piece_core_question_answer_plan(
             expected_reader_understanding="感情だけでなく、願い・怖さ・今できることの関係が伝わること。",
             answer_sentence_count=max(1, answer.count("。")),
             category_generic_suppressed=True,
+            must_keep_signal_keys=[],
+            source_claims=[],
+            answer_preservation_policy="preserve_user_claims",
+            overcompression_risk=clear_long_input or level in {"long", "very_long"},
+            minimum_detail_level="source_scaled",
             reason=reason,
         )
 
@@ -363,11 +448,16 @@ def _build_piece_core_question_answer_plan(
         return None
 
     priority = {
-        "balanced_progress": 6,
-        "self_and_others_happiness": 5,
-        "wish_despite_betrayal_fear": 4,
-        "unreachable_wish_present_effort": 3,
-        "limit_awareness": 2,
+        "balanced_progress": 26,
+        "self_and_others_happiness": 25,
+        "wish_despite_betrayal_fear": 24,
+        "unreachable_wish_present_effort": 23,
+        "limit_awareness": 22,
+        "ideal_capacity_switch_gap": 12,
+        "relationship_cost_asymmetry": 11,
+        "outer_inner_role_gap": 10,
+        "stagnation_position_gap": 9,
+        "inner_activity_fatigue_gap": 8,
     }
     plans.sort(key=lambda plan: priority.get(plan.focus_key, 0), reverse=True)
     return plans[0]
@@ -993,6 +1083,11 @@ def generate_emotion_reflection_preview(
             "communicative_core_ok": _piece_core_display_ok(answer_display_text, core_plan),
             "answer_not_category_generic": not _looks_like_category_generic_display(answer_display_text),
             "answer_broken_phrase_blocked": not _piece_broken_phrase_present(answer_display_text),
+            "must_keep_signal_keys": list(getattr(core_plan, "must_keep_signal_keys", []) or []),
+            "source_claims": list(getattr(core_plan, "source_claims", []) or []),
+            "answer_preservation_policy": str(getattr(core_plan, "answer_preservation_policy", "source_scaled") or "source_scaled"),
+            "overcompression_risk": bool(getattr(core_plan, "overcompression_risk", False)),
+            "minimum_detail_level": str(getattr(core_plan, "minimum_detail_level", "source_scaled") or "source_scaled"),
             "reason": core_plan.reason,
         } if core_plan is not None else None,
     }

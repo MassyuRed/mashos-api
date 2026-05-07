@@ -28,7 +28,7 @@ from emlis_ai_types import (
     WorldModel,
 )
 from emlis_ai_input_meaning_block_service import selected_meaning_blocks_for_reply
-from emlis_ai_phrase_shaping_service import safe_phrases
+from emlis_ai_phrase_shaping_service import safe_phrases, shape_user_phrases
 
 
 @dataclass
@@ -130,15 +130,16 @@ def _block_line(block: InputMeaningBlock, *, index: int) -> str:
     role = str(getattr(block, "role", "") or "")
     if not summary:
         return ""
+    prefix = "一方で、" if index == 1 else ""
     if role in {"self_suppression", "burden_avoidance", "self_view", "relationship_or_others"}:
-        return f"その背景には、{summary}流れもありました。"
+        return f"{prefix}その背景には、{summary}流れもありました。"
     if role in {"limit_or_exhaustion", "fear_or_disappointment", "sadness_or_pain", "anger_or_frustration"}:
-        return f"そこには、{summary}感覚もありました。"
+        return f"{prefix}そこには、{summary}感覚もありました。"
     if role in {"support_need", "self_protection", "effort_direction", "wish_or_hope", "relief_source"}:
-        return f"同時に、{_as_topic(summary)}も大切な場所として見えています。"
+        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
     if role == "dual_feeling":
-        return f"その中で、{_as_topic(summary)}が重なっていました。"
-    return f"そこには、{_as_topic(summary)}も含まれていました。"
+        return f"{prefix}その中で、{_as_topic(summary)}が重なっていました。"
+    return f"{prefix}そこには、{_as_topic(summary)}も含まれていました。"
 
 
 def _phrase_line(phrase: ShapedUserPhrase, *, index: int) -> str:
@@ -157,6 +158,11 @@ def _phrase_line(phrase: ShapedUserPhrase, *, index: int) -> str:
 
 def _presence_text(world_model: WorldModel, blocks: List[InputMeaningBlock], phrases: List[ShapedUserPhrase]) -> str:
     roles = {str(getattr(item, "role", "") or "") for item in list(blocks or []) + list(phrases or [])}
+    if not blocks:
+        labels = _selected_emotion_text(world_model)
+        if "怒り" in labels and "悲しみ" in labels:
+            return "ここでは、悲しみも怒りも、無理にきれいにしなくて大丈夫です。"
+        return "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
     if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
         return "ここでは、抑えてきた気持ちも、自分を守ろうとしている気持ちも、どちらも大切に扱います。"
     if {"wish_or_hope", "fear_or_disappointment", "effort_direction", "wish"} & roles:
@@ -258,6 +264,113 @@ def _cross_core_candidate(world_model: WorldModel) -> Optional[ObservationCandid
         notes={"current_input_priority": True, "user_visible_basis_required": True},
     )
 
+
+def _derived_interpretation_candidate(working_model: Optional[DerivedUserModel], bundle: SourceBundle, fallback_ref: EvidenceRef) -> Optional[ObservationCandidate]:
+    if working_model is None:
+        return None
+    frame = getattr(working_model, "interpretive_frame", None)
+    meaning_map = list(getattr(frame, "meaning_map", []) or []) if frame is not None else []
+    if not meaning_map:
+        return None
+    current_text = " ".join([
+        _clean(bundle.current_input.get("memo")),
+        _clean(bundle.current_input.get("memo_action")),
+        " ".join(str(item or "") for item in list(bundle.current_input.get("category") or [])),
+    ])
+    selected = None
+    for item in meaning_map:
+        trigger = _clean(getattr(item, "trigger", ""))
+        if trigger and trigger in current_text:
+            selected = item
+            break
+    selected = selected or meaning_map[0]
+    trigger = _clean(getattr(selected, "trigger", ""))
+    likely = _clean(getattr(selected, "likely_meaning", ""))
+    if not trigger and not likely:
+        return None
+    if trigger and likely:
+        line = f"以前から見ると、{trigger}の話題は、{likely}として重くなりやすい場所として見えています。"
+    elif likely:
+        line = f"以前から見ると、{likely}が重くなりやすい場所として見えています。"
+    else:
+        line = f"以前から見ると、{trigger}の話題が少し重くなりやすい場所として見えています。"
+    evidence = list(getattr(selected, "evidence", []) or []) or [fallback_ref]
+    return ObservationCandidate(
+        candidate_key="interpretation.derived_user_model",
+        kind="interpretation",
+        text=line,
+        evidence=evidence,
+        confidence=max(0.50, min(0.86, float(getattr(selected, "confidence", 0.0) or 0.0))),
+        recency_score=0.60,
+        alignment_score=0.78,
+        overclaim_risk=0.20,
+        source_layers=["derived_user_model"],
+        notes={"user_visible_basis_required": True, "no_personality_claim": True},
+    )
+
+
+def _partner_line_candidate(working_model: Optional[DerivedUserModel], fallback_ref: EvidenceRef) -> Optional[ObservationCandidate]:
+    if working_model is None:
+        return None
+    frame = getattr(working_model, "interpretive_frame", None)
+    partner = getattr(frame, "partner_expectation", None) if frame is not None else None
+    if partner is None:
+        return None
+    wants_receive = bool(getattr(partner, "wants_non_judgmental_receive", False))
+    wants_precise = bool(getattr(partner, "wants_precise_observation", False))
+    wants_continuity = bool(getattr(partner, "wants_continuity", False))
+    if not (wants_receive or wants_precise or wants_continuity):
+        return None
+    if wants_precise:
+        line = "ここでは、ただ励ますよりも、今の言葉を正確に見て受け止めることを大切にします。"
+    elif wants_receive:
+        line = "ここでは、判断を急がず、今出ている気持ちをそのまま受け止めることを大切にします。"
+    else:
+        line = "ここでは、今だけを切り離さず、これまでの流れも急がずに見ます。"
+    evidence = list(getattr(partner, "evidence", []) or []) or [fallback_ref]
+    return ObservationCandidate(
+        candidate_key="partner_line.derived_user_model",
+        kind="partner_line",
+        text=line,
+        evidence=evidence,
+        confidence=0.72,
+        recency_score=0.60,
+        alignment_score=0.82,
+        overclaim_risk=0.12,
+        source_layers=["derived_user_model"],
+        notes={"partner_mode": True, "no_personality_claim": True},
+    )
+
+
+def _value_observation_candidates(world_model: WorldModel, current_ref: EvidenceRef) -> List[ObservationCandidate]:
+    candidates: List[ObservationCandidate] = []
+    for signal in list(getattr(world_model.facts, "value_observation_signals", []) or [])[:2]:
+        key = _clean(getattr(signal, "signal_key", ""))
+        text = _clean(getattr(signal, "emlis_text", "") or getattr(signal, "value_conversion", ""))
+        if not key or not text:
+            continue
+        candidates.append(
+            ObservationCandidate(
+                candidate_key=f"value_observation.{key}",
+                kind="word_reflection",
+                text=text,
+                evidence=[current_ref],
+                confidence=max(0.60, min(0.92, float(getattr(signal, "confidence", 0.0) or 0.0))),
+                recency_score=1.0,
+                alignment_score=0.90,
+                overclaim_risk=0.14 if bool(getattr(signal, "softening_required", False)) else 0.08,
+                source_layers=["canonical_history"],
+                notes={
+                    "genericized": True,
+                    "value_observation_signal": True,
+                    "signal_key": key,
+                    "no_diagnosis": bool(getattr(signal, "no_diagnosis", True)),
+                    "no_personality_claim": bool(getattr(signal, "no_personality_claim", True)),
+                },
+            )
+        )
+    return candidates
+
 def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> List[ObservationCandidate]:
     bundle = kernel_input.bundle
     world_model = kernel_input.world_model
@@ -266,9 +379,12 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
     plan = _meaning_plan(world_model)
     selected_blocks = selected_meaning_blocks_for_reply(meaning_blocks=all_blocks, coverage_plan=plan)
     phrases = _safe_phrases(world_model)
+    if not phrases:
+        phrases = safe_phrases(shape_user_phrases(anchors=list(getattr(world_model.facts, "user_word_anchors", []) or []), current_input=bundle.current_input))
     candidates: List[ObservationCandidate] = []
 
     candidates.append(_candidate("receive.current", "receive", _opening_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.98))
+    candidates.extend(_value_observation_candidates(world_model, current_ref))
 
     if selected_blocks:
         for idx, block in enumerate(selected_blocks[:8]):
@@ -293,6 +409,15 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
             if not text:
                 continue
             candidates.append(_candidate(f"continuity.{item.key}", "continuity", text, list(getattr(item, "evidence", []) or [current_ref]), confidence=max(0.45, float(getattr(item, "confidence", 0.0) or 0.0))))
+
+    if kernel_input.capability.interpretation_mode != "current_only" and kernel_input.working_model is not None:
+        derived_item = _derived_interpretation_candidate(kernel_input.working_model, bundle, current_ref)
+        if derived_item is not None:
+            candidates.append(derived_item)
+        if kernel_input.capability.partner_mode != "off":
+            partner_item = _partner_line_candidate(kernel_input.working_model, current_ref)
+            if partner_item is not None:
+                candidates.append(partner_item)
 
     if kernel_input.capability.cross_core_enabled:
         cross_core_item = _cross_core_candidate(world_model)
@@ -342,19 +467,28 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     target = 2
     if memo_char_count:
         target += 1
+    if len(getattr(world_model.facts, "current_emotion_labels", []) or []) > 1:
+        target += 2
     if memo_char_count >= 120:
         target += 1
     if clear_long:
         target = max(target, 2 + min(max(selected_count, len(blocks)), 8))
     history_usable = bool(capability.history_mode != "none" and (bundle.same_day_recent_inputs or bundle.similar_inputs or memory_richness_score >= 0.28))
+    derived_model_usable = bool(capability.interpretation_mode != "current_only" and working_model is not None and capability.include_derived_user_model)
     cross_core_usable = bool(capability.cross_core_enabled and getattr(world_model.facts, "cross_core_context", []))
+    interpretive_frame_usable = bool(derived_model_usable or cross_core_usable)
+    value_observation_count = len(getattr(world_model.facts, "value_observation_signals", []) or [])
     if history_usable:
         target += 1
-    if cross_core_usable:
-        # One line for the anchor-informed observation plus the normal close.
+    if value_observation_count:
+        target += 1
+    if interpretive_frame_usable:
+        # One line for interpretive frame plus the normal close; partner line can use the extra line when available.
         target += 2
     evidence_ceiling = max(2, 2 + min(max(selected_count, len(blocks)), 8)) if clear_long else max(2, 2 + min(3, len(world_model.facts.user_word_anchors or [])))
-    max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (1 if history_usable else 0) + (1 if cross_core_usable else 0)))
+    if value_observation_count:
+        evidence_ceiling += 1
+    max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (2 if history_usable else 0) + (2 if interpretive_frame_usable else 0)))
     return ReplyLengthPlan(
         mode=capability.reply_length_mode,
         max_lines=max_lines,
@@ -366,7 +500,7 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
         target_lines=target,
         user_word_anchor_count=len(world_model.facts.user_word_anchors or []),
         history_usable=history_usable,
-        interpretive_frame_usable=cross_core_usable,
+        interpretive_frame_usable=interpretive_frame_usable,
         cross_core_usable=cross_core_usable,
         meaning_block_count=len(blocks),
         selected_meaning_block_count=selected_count,
@@ -395,12 +529,20 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
     receive = _pick(candidates, "receive")
     if receive is not None:
         accepted.append(receive)
+    has_selected_line = bool((not reply_length_plan.clear_long_input) and any(c.kind in {"selected_emotions", "emotion_response"} for c in candidates))
+    selected_reserve = 1 if has_selected_line else 0
     for candidate in [c for c in candidates if c.kind == "word_reflection"]:
-        if len(accepted) >= reply_length_plan.max_lines - 1:
+        if candidate.candidate_key == "word_reflection.phrase.00" and receive is not None and candidate.text.startswith("あなたは、"):
+            continue
+        if len(accepted) >= reply_length_plan.max_lines - 1 - selected_reserve:
             break
         accepted.append(candidate)
-    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1:
+    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1 - selected_reserve:
         item = _pick(candidates, "interpretation")
+        if item is not None:
+            accepted.append(item)
+    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1 - selected_reserve:
+        item = _pick(candidates, "partner_line")
         if item is not None:
             accepted.append(item)
     if not reply_length_plan.clear_long_input:
@@ -416,6 +558,10 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
             accepted.append(item)
     if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1:
         item = _pick(candidates, "interpretation")
+        if item is not None and all(existing.candidate_key != item.candidate_key for existing in accepted):
+            accepted.append(item)
+    if reply_length_plan.interpretive_frame_usable and len(accepted) < reply_length_plan.max_lines - 1:
+        item = _pick(candidates, "partner_line")
         if item is not None and all(existing.candidate_key != item.candidate_key for existing in accepted):
             accepted.append(item)
     close = _pick(candidates, "receiving_close")

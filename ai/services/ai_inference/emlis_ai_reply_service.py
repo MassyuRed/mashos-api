@@ -272,6 +272,49 @@ def _serialize_major_retention(item: Any) -> Dict[str, Any]:
     }
 
 
+def _serialize_value_observation_signal(item: Any) -> Dict[str, Any]:
+    as_meta = getattr(item, "as_meta", None)
+    if callable(as_meta):
+        try:
+            payload = as_meta()
+            if isinstance(payload, dict):
+                return dict(payload)
+        except Exception:
+            pass
+    return {
+        "signal_key": _clean(getattr(item, "signal_key", "")),
+        "title": _clean(getattr(item, "title", "")),
+        "observation_axis": _clean(getattr(item, "observation_axis", "")),
+        "evidence_terms": list(getattr(item, "evidence_terms", []) or []),
+        "target_cores": list(getattr(item, "target_cores", []) or []),
+        "confidence": float(getattr(item, "confidence", 0.0) or 0.0),
+        "no_diagnosis": bool(getattr(item, "no_diagnosis", True)),
+        "no_personality_claim": bool(getattr(item, "no_personality_claim", True)),
+    }
+
+
+def _value_observation_meta(world_model: WorldModel) -> Dict[str, Any]:
+    signals = list(getattr(world_model.facts, "value_observation_signals", []) or [])
+    plan = getattr(world_model.facts, "value_observation_plan", None)
+    as_meta = getattr(plan, "as_meta", None)
+    if callable(as_meta):
+        plan_payload = as_meta()
+    else:
+        plan_payload = {
+            "input_level": "none",
+            "signal_count": len(signals),
+            "primary_signal_keys": [str(getattr(item, "signal_key", "") or "") for item in signals[:1]],
+            "must_keep_signal_keys": [str(getattr(item, "signal_key", "") or "") for item in signals],
+            "optional_signal_keys": [],
+            "overcompression_risk": bool(signals),
+            "grounding_terms": [],
+        }
+    return {
+        "plan": dict(plan_payload or {}),
+        "signals": [_serialize_value_observation_signal(item) for item in signals],
+    }
+
+
 def _composition_meta(world_model: WorldModel) -> Dict[str, Any]:
     plan = getattr(world_model.facts, "response_composition_plan", None)
     arc = getattr(world_model.facts, "reply_narrative_arc", None)
@@ -784,6 +827,7 @@ def _build_meta(
         "meaning_coverage": _meaning_coverage_meta(world_model, plan),
         "whole_input_meaning_arc": _serialize_whole_input_arc(getattr(world_model.facts, "whole_input_meaning_arc", None)),
         "major_meaning_retention": _serialize_major_retention(getattr(world_model.facts, "major_meaning_retention_plan", None)),
+        "value_observation": _value_observation_meta(world_model),
         "composition": _composition_meta(world_model),
         "understanding": _understanding_meta(world_model, plan),
         "cross_core_context": _cross_core_context_meta(world_model),
