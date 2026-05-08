@@ -28,6 +28,7 @@ NOTIFICATION_LOG_TABLE = "store_notification_log"
 
 ENTITLEMENT_STATUS_NONE = "none"
 ACTIVE_ENTITLEMENT_STATUSES = {"active", "grace_period"}
+RENEWABLE_ACCESS_STATUSES = ACTIVE_ENTITLEMENT_STATUSES | {"cancelled"}
 ENTITLEMENT_STATUS_PRIORITY = {
     "active": 0,
     "grace_period": 1,
@@ -76,6 +77,7 @@ class CanonicalSubscriptionState:
     auto_renew: bool = False
     store: Optional[str] = None
     product_id: Optional[str] = None
+    store_ref: Optional[str] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -224,19 +226,41 @@ def plan_code_from_android_purchase(
     return plan_code_from_product_id("android", product_id)
 
 
-def entitlement_confers_access(row: Optional[Dict[str, Any]]) -> bool:
+def _now_ts() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+
+def entitlement_expires_in_future(row: Optional[Dict[str, Any]], *, now_ts: Optional[float] = None) -> bool:
+    if not row:
+        return False
+    expires_at = parse_iso_ts(row.get("expires_at"))
+    if expires_at <= 0:
+        return False
+    return expires_at > (now_ts if now_ts is not None else _now_ts())
+
+
+
+def entitlement_confers_access(row: Optional[Dict[str, Any]], *, now_ts: Optional[float] = None) -> bool:
     if not row:
         return False
 
     status = normalize_entitlement_status(row.get("status"))
-    if status in ACTIVE_ENTITLEMENT_STATUSES:
-        return True
-
-    if status == "cancelled":
-        expires_at = parse_iso_ts(row.get("expires_at"))
-        return expires_at > datetime.now(timezone.utc).timestamp()
+    if status in RENEWABLE_ACCESS_STATUSES:
+        return entitlement_expires_in_future(row, now_ts=now_ts)
 
     return False
+
+
+
+def effective_entitlement_status(row: Optional[Dict[str, Any]], *, now_ts: Optional[float] = None) -> str:
+    if not row:
+        return ENTITLEMENT_STATUS_NONE
+
+    status = normalize_entitlement_status(row.get("status"))
+    if status in RENEWABLE_ACCESS_STATUSES and not entitlement_expires_in_future(row, now_ts=now_ts):
+        return "expired"
+    return status
 
 
 
@@ -245,8 +269,19 @@ def verified_purchase_confers_access(v: VerifiedPurchase) -> bool:
 
 
 
-def _entitlement_priority(row: Dict[str, Any]) -> tuple[int, float, float, float]:
+def _plan_priority(row: Dict[str, Any]) -> int:
+    plan = normalize_plan_code(row.get("plan_code"))
+    if plan == SubscriptionTier.PREMIUM.value:
+        return 0
+    if plan == SubscriptionTier.PLUS.value:
+        return 1
+    return 2
+
+
+
+def _entitlement_priority(row: Dict[str, Any]) -> tuple[int, int, int, float, float, float]:
     status = normalize_entitlement_status(row.get("status"))
+    access_priority = 0 if entitlement_confers_access(row) else 1
     priority = ENTITLEMENT_STATUS_PRIORITY.get(status, 999)
     expires_ts = parse_iso_ts(row.get("expires_at"))
     updated_ts = parse_iso_ts(row.get("updated_at")) or parse_iso_ts(row.get("created_at"))
@@ -254,7 +289,7 @@ def _entitlement_priority(row: Dict[str, Any]) -> tuple[int, float, float, float
         numeric_id = float(row.get("id") or 0)
     except Exception:
         numeric_id = 0.0
-    return (priority, -expires_ts, -updated_ts, -numeric_id)
+    return (access_priority, _plan_priority(row), priority, -expires_ts, -updated_ts, -numeric_id)
 
 
 
@@ -415,12 +450,12 @@ async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
     profile_tier = await get_subscription_tier_for_user(user_id)
 
     best_entitlement: Optional[Dict[str, Any]] = None
+    entitlements_loaded = False
     try:
         ent_rows = await fetch_user_entitlement_rows(user_id)
-        best_entitlement = sorted(
-            [row for row in ent_rows if isinstance(row, dict)],
-            key=_entitlement_priority,
-        )[0] if ent_rows else None
+        entitlements_loaded = True
+        entitlement_rows = [row for row in ent_rows if isinstance(row, dict)]
+        best_entitlement = sorted(entitlement_rows, key=_entitlement_priority)[0] if entitlement_rows else None
     except Exception as exc:
         logger.warning(
             "Failed to fetch entitlement rows, falling back to profiles.subscription_tier: %s",
@@ -429,21 +464,31 @@ async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
         best_entitlement = None
 
     if best_entitlement:
-        entitlement_status = normalize_entitlement_status(best_entitlement.get("status"))
+        entitlement_status = effective_entitlement_status(best_entitlement)
         plan_code = normalize_plan_code(best_entitlement.get("plan_code"))
         tier = plan_code_to_tier(plan_code) if entitlement_confers_access(best_entitlement) else SubscriptionTier.FREE
         expires_at = iso_or_none(best_entitlement.get("expires_at"))
         auto_renew = bool(best_entitlement.get("auto_renew"))
         store = clean_optional_str(best_entitlement.get("store"))
         product_id = clean_optional_str(best_entitlement.get("product_id"))
+        store_ref = clean_optional_str(best_entitlement.get("store_ref"))
     else:
-        tier = profile_tier
-        plan_code = profile_tier.value if profile_tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) else None
-        entitlement_status = "legacy_profile_tier" if plan_code else ENTITLEMENT_STATUS_NONE
+        allow_legacy_profile_tier = str(
+            os.getenv("COCOLON_SUBSCRIPTION_ALLOW_LEGACY_PROFILE_TIER", "") or ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if allow_legacy_profile_tier or not entitlements_loaded:
+            tier = profile_tier
+            plan_code = profile_tier.value if profile_tier in (SubscriptionTier.PLUS, SubscriptionTier.PREMIUM) else None
+            entitlement_status = "legacy_profile_tier" if plan_code else ENTITLEMENT_STATUS_NONE
+        else:
+            tier = SubscriptionTier.FREE
+            plan_code = None
+            entitlement_status = ENTITLEMENT_STATUS_NONE
         expires_at = None
         auto_renew = False
         store = None
         product_id = None
+        store_ref = None
 
     modes = [m.value for m in allowed_myprofile_modes_for_tier(tier)]
 
@@ -457,6 +502,7 @@ async def build_subscription_state(user_id: str) -> CanonicalSubscriptionState:
         auto_renew=auto_renew,
         store=store,
         product_id=product_id,
+        store_ref=store_ref,
     )
 
 
@@ -564,6 +610,17 @@ async def project_profile_tier(user_id: str) -> CanonicalSubscriptionState:
     snapshot = await build_subscription_state(user_id)
     projected_tier = normalize_subscription_tier(snapshot.subscription_tier, default=SubscriptionTier.FREE)
     await set_subscription_tier_for_user(user_id, projected_tier)
+    try:
+        from active_users_store import touch_active_user  # local import avoids an import-time cycle
+
+        await touch_active_user(
+            user_id,
+            activity="subscription/projection",
+            subscription_tier=projected_tier.value,
+            force=True,
+        )
+    except Exception:
+        pass
     return await build_subscription_state(user_id)
 
 

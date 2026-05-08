@@ -24,6 +24,7 @@ from subscription_projection import (
     find_entitlement_by_store_ref,
     find_purchase_claim,
     normalize_plan_code,
+    parse_iso_ts,
     persist_verified_purchase,
     plan_code_from_android_purchase,
     plan_code_from_product_id,
@@ -287,6 +288,78 @@ def _response_from_snapshot(snapshot: CanonicalSubscriptionState, *, updated: bo
     )
 
 
+def _snapshot_needs_store_refresh(snapshot: CanonicalSubscriptionState) -> bool:
+    store = _normalize_platform(snapshot.store)
+    store_ref = clean_optional_str(getattr(snapshot, "store_ref", None))
+    if not store or not store_ref:
+        return False
+
+    expires_ts = parse_iso_ts(snapshot.expires_at)
+    if expires_ts <= 0:
+        return True
+    return expires_ts <= datetime.now(timezone.utc).timestamp()
+
+
+async def _refresh_expired_subscription_from_store(
+    user_id: str,
+    snapshot: CanonicalSubscriptionState,
+) -> CanonicalSubscriptionState:
+    if not _snapshot_needs_store_refresh(snapshot):
+        return snapshot
+
+    store = _normalize_platform(snapshot.store)
+    store_ref = clean_optional_str(getattr(snapshot, "store_ref", None))
+    if not store or not store_ref:
+        return snapshot
+
+    verified_purchase: Optional[VerifiedPurchase] = None
+    try:
+        if store == "android":
+            if not is_android_verification_configured():
+                return snapshot
+            try:
+                verified_purchase = await verify_android_subscription(
+                    purchase_token=store_ref,
+                    product_id=clean_optional_str(snapshot.product_id),
+                )
+            except AndroidVerificationInactive as exc:
+                verified_purchase = exc.verified_purchase
+        elif store == "ios":
+            if not is_ios_verification_configured():
+                return snapshot
+            try:
+                verified_purchase = await verify_ios_subscription(
+                    transaction_id=store_ref,
+                    product_id=clean_optional_str(snapshot.product_id),
+                )
+            except IOSVerificationInactive as exc:
+                verified_purchase = exc.verified_purchase
+    except Exception as exc:
+        logger.warning("Subscription store refresh failed before profile projection: %s", exc)
+        return snapshot
+
+    if verified_purchase is None:
+        return snapshot
+
+    try:
+        return await persist_verified_purchase(user_id=user_id, verified_purchase=verified_purchase)
+    except PurchaseOwnershipConflictError as exc:
+        logger.warning("Subscription store refresh found an ownership conflict: %s", exc)
+    except Exception as exc:
+        logger.warning("Subscription store refresh persist failed: %s", exc)
+    return snapshot
+
+
+async def _project_subscription_state_for_read(user_id: str) -> CanonicalSubscriptionState:
+    snapshot = await build_subscription_state(user_id)
+    snapshot = await _refresh_expired_subscription_from_store(user_id, snapshot)
+    try:
+        return await project_profile_tier(user_id)
+    except Exception as exc:
+        logger.warning("Subscription read projection failed: %s", exc)
+        return await build_subscription_state(user_id)
+
+
 async def _verify_purchase_or_raise(req: SubscriptionUpdateRequest, *, store: str) -> VerifiedPurchase:
     if store == "android":
         if not clean_optional_str(req.purchase_token):
@@ -385,7 +458,7 @@ def register_subscription_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=401, detail="Authorization header with Bearer token is required")
 
         user_id = await _resolve_user_id_from_token(access_token)
-        snapshot = await build_subscription_state(user_id)
+        snapshot = await _project_subscription_state_for_read(user_id)
         return SubscriptionMeResponse(**_snapshot_wire_dict(snapshot))
 
     @app.post("/subscription/update", response_model=SubscriptionUpdateResponse)
