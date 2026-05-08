@@ -141,14 +141,23 @@ EMOTION_NOTIFICATION_SETTINGS_READ_TABLE = (
 #
 # Legacy fallback (may be unavailable on new Firebase projects):
 #   - FCM_SERVER_KEY=AAAA... (Legacy server key)
-FCM_PUSH_ENABLED = os.getenv("FCM_PUSH_ENABLED", "true").lower() in ("1", "true", "yes")
+def _env_truthy_early(name: str, default: str = "true") -> bool:
+    value = os.getenv(name, default)
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+FCM_PUSH_ENABLED = _env_truthy_early("FCM_PUSH_ENABLED", "true")
 # Dedicated FCM queue:
 # - true: enqueue send_fcm_push_v1 into astor_jobs and let notification workers send it.
 # - false: keep direct best-effort send behavior.
-# Fallback stays off by default so API/background paths do not suddenly take external FCM latency
-# during high-load operation. Turn on only for small/local environments without a worker.
-FCM_PUSH_QUEUE_ENABLED = os.getenv("FCM_PUSH_QUEUE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-FCM_PUSH_QUEUE_FALLBACK_DIRECT = os.getenv("FCM_PUSH_QUEUE_FALLBACK_DIRECT", "false").lower() in ("1", "true", "yes", "on")
+# Default follows COCOLON_HIGH_LOAD_MODE so local/API-only runs keep the
+# pre-queue direct-send behavior unless queue mode is explicitly enabled.
+_COCOLON_HIGH_LOAD_MODE_FOR_PUSH = _env_truthy_early("COCOLON_HIGH_LOAD_MODE", "false")
+FCM_PUSH_QUEUE_ENABLED = _env_truthy_early(
+    "FCM_PUSH_QUEUE_ENABLED",
+    "true" if _COCOLON_HIGH_LOAD_MODE_FOR_PUSH else "false",
+)
+FCM_PUSH_QUEUE_FALLBACK_DIRECT = _env_truthy_early("FCM_PUSH_QUEUE_FALLBACK_DIRECT", "false")
 
 # v1 (Admin SDK) credentials
 FCM_SERVICE_ACCOUNT_FILE = (os.getenv("FCM_SERVICE_ACCOUNT_FILE") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
@@ -1585,7 +1594,10 @@ async def _push_notify_followers_about_emotion(
     `send_fcm_push_v1` job として astor_jobs に積む。
     notification worker が push_token 解決と FCM送信を担当する。
     """
-    if not _is_fcm_enabled():
+    # FCM_PUSH_ENABLED is the feature switch. In queue mode, the API service
+    # should not require Firebase credentials because the notification worker
+    # owns token resolution and the external FCM call.
+    if not FCM_PUSH_ENABLED:
         return
 
     viewer_ids = [
@@ -1634,6 +1646,9 @@ async def _push_notify_followers_about_emotion(
                 return
 
     # Small/local fallback only.  This path resolves tokens and sends FCM in-place.
+    if not _is_fcm_enabled():
+        return
+
     token_map = await _fetch_push_tokens_for_users(viewer_ids)
     owner_token_map = await _fetch_push_tokens_for_users([owner_user_id]) if owner_user_id else {}
     owner_tokens = {
