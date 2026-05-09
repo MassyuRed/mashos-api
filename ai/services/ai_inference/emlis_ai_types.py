@@ -647,3 +647,154 @@ class ReplyEnvelope:
     evidence_by_line: Dict[str, List[EvidenceRef]] = field(default_factory=dict)
     used_memory_layers: List[MemoryLayer] = field(default_factory=list)
     fallback_used: bool = False
+
+
+# ---------------------------------------------------------------------------
+# EmlisAI multi-perspective observation architecture (2026-05-09)
+# ---------------------------------------------------------------------------
+
+ObservationRiskLevel = Literal["low", "medium", "high"]
+ObservationStatus = Literal["passed", "rejected", "unavailable", "safety_blocked"]
+
+
+@dataclass(frozen=True)
+class EvidenceSpan:
+    """Source span kept before interpretation.
+
+    This is a grounding object, not a sentence fragment for direct display.
+    """
+
+    span_id: str
+    raw_text: str
+    start_index: int = 0
+    end_index: int = 0
+    detected_type: str = "event"
+    confidence: float = 1.0
+    source_field: str = "memo"
+
+
+@dataclass(frozen=True)
+class ObservationClaim:
+    claim_id: str
+    claim_type: str
+    subject: str
+    object: Optional[str] = None
+    evidence_span_ids: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    risk_level: ObservationRiskLevel = "low"
+
+
+@dataclass(frozen=True)
+class RelationEdge:
+    edge_id: str
+    from_claim_id: str
+    to_claim_id: str
+    relation_type: str
+    evidence_span_ids: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class PerspectiveReport:
+    observer_id: str
+    viewpoint: str
+    claims: List[ObservationClaim] = field(default_factory=list)
+    relations: List[RelationEdge] = field(default_factory=list)
+    evidence_span_ids: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    uncertainty: List[str] = field(default_factory=list)
+    do_not_say: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PerspectiveBoard:
+    reports: List[PerspectiveReport] = field(default_factory=list)
+    evidence_spans: List[EvidenceSpan] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class GraphClaim:
+    claim_id: str
+    claim_type: str
+    text: str
+    evidence_span_ids: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class AddresseeNotes:
+    display_name_call: str = ""
+    sentence_target: int = 5
+    voice_distance: str = "close"
+    needs_gentle_pacing: bool = True
+    avoid_report_like: bool = True
+
+
+@dataclass(frozen=True)
+class ObservationGraph:
+    primary_state: GraphClaim
+    core_tensions: List[RelationEdge] = field(default_factory=list)
+    pressure_sources: List[GraphClaim] = field(default_factory=list)
+    limit_signals: List[GraphClaim] = field(default_factory=list)
+    self_awareness: List[GraphClaim] = field(default_factory=list)
+    value_or_strength_signals: List[GraphClaim] = field(default_factory=list)
+    addressee_notes: AddresseeNotes = field(default_factory=AddresseeNotes)
+    safety_boundaries: List[str] = field(default_factory=list)
+    forbidden_claims: List[str] = field(default_factory=list)
+    missing_information: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ListenerReaderReport:
+    understandable: bool
+    addressee_clear: bool
+    speaker_integrity_ok: bool
+    conversational: bool
+    report_like: bool
+    summary_of_output: str = ""
+    unclear_sentences: List[str] = field(default_factory=list)
+    rejection_reasons: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class GroundingSentenceClaim:
+    sentence_index: int
+    sentence: str
+    evidence_span_ids: List[str] = field(default_factory=list)
+    relation_supported: bool = False
+    unsupported_reason: str = ""
+
+
+@dataclass(frozen=True)
+class GroundingReport:
+    passed: bool
+    sentence_claims: List[GroundingSentenceClaim] = field(default_factory=list)
+    rejection_reasons: List[str] = field(default_factory=list)
+    coverage_ratio: float = 0.0
+    confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class TemplateEchoReport:
+    passed: bool
+    max_old_template_similarity: float = 0.0
+    max_previous_output_similarity: float = 0.0
+    raw_echo_ratio: float = 0.0
+    repeated_sentence_pattern_score: float = 0.0
+    matched_banned_patterns: List[str] = field(default_factory=list)
+    rejection_reasons: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SafetyBoundaryReport:
+    requires_block: bool = False
+    reasons: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DisplayDecision:
+    observation_status: ObservationStatus
+    comment_text: str = ""
+    rejection_reasons: List[str] = field(default_factory=list)
+    trace_id: str = ""

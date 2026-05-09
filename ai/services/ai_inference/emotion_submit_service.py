@@ -29,7 +29,6 @@ from fastapi import HTTPException
 from api_emotion_submit import (
     ALLOW_LEGACY_USER_ID,
     EmotionItem,
-    _build_input_feedback_comment,
     _extract_bearer_token,
     _global_summary_activity_date_from_created_at,
     _insert_emotion_row,
@@ -48,8 +47,8 @@ def _emlis_ai_reply_timeout_seconds() -> float:
     """Return the synchronous EmlisAI reply budget for /emotion/submit.
 
     Emotion saving must not be held hostage by optional context reads.
-    If the reply path exceeds this budget, the existing deterministic fallback
-    comment is returned while the saved input itself remains successful.
+    If the reply path exceeds this budget, Emlisの観測 is fail-closed and the
+    saved input itself remains successful.
     """
     try:
         raw = float(os.getenv("EMLIS_AI_REPLY_TIMEOUT_SECONDS", "3.0") or "3.0")
@@ -201,35 +200,23 @@ async def persist_emotion_submission(
         input_feedback_comment = str(reply.comment_text or "").strip()
         input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
     except Exception:
-        input_feedback_comment = _build_input_feedback_comment(
-            emotion_details=normalized["emotion_details"],
-            memo=memo,
-            memo_action=memo_action,
-            category=normalized["category"],
-            selection_seed=input_feedback_seed,
-        )
+        # Fail-closed: do not fall back to a fixed Emlis observation sentence.
+        # The saved emotion remains successful, but Emlisの観測 is not shown.
+        input_feedback_comment = ""
         input_feedback_meta = {
-            "version": "emlis_ai_v2",
-            "kernel_version": "observation_kernel.v2",
+            "version": "emlis_ai_v3",
+            "kernel_version": "multi_perspective_observation.v1",
             "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
-            "capability": {
-                "history_mode": "none",
-                "continuity_mode": "off",
-                "style_mode": "base",
-                "partner_mode": "off",
-                "model_mode": "off",
-                "interpretation_mode": "current_only",
+            "observation_status": "unavailable",
+            "rejection_reasons": ["emlis_ai_timeout_or_error"],
+            "multi_perspective": {
+                "fail_closed": True,
+                "legacy_input_feedback_template_used": False,
+                "legacy_safe_fallback_used": False,
             },
             "used_sources": ["current_input"],
             "used_memory_layers": ["canonical_history"],
-            "reply_length_mode": "short_present_only",
-            "evidence_count": 0,
-            "evidence_by_line": {},
-            "rejected_candidate_count": 0,
-            "fallback_used": True,
-            "fallback_reason": "emlis_ai_timeout_or_error",
-            "model_revision": None,
-            "world_model_debug": {},
+            "fallback_used": False,
         }
 
     return {

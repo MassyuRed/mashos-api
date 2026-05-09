@@ -81,7 +81,6 @@ from supabase_client import (
 )
 from supabase_auth_token_cache import resolve_user_id_verified_cached
 from response_microcache import invalidate_prefix
-from input_feedback_text_templates import build_input_feedback_comment as _build_input_feedback_comment_from_templates
 
 logger = logging.getLogger("emotion_submit")
 
@@ -475,13 +474,9 @@ def _build_input_feedback_comment(
     category: Optional[Sequence[str]] = None,
     selection_seed: Optional[str] = None,
 ) -> str:
-    return _build_input_feedback_comment_from_templates(
-        emotion_details=emotion_details,
-        memo=memo,
-        memo_action=memo_action,
-        category=category,
-        selection_seed=selection_seed,
-    )
+    # Legacy fallback hook kept for import compatibility only.
+    # New EmlisAI is fail-closed and does not return fixed observation text.
+    return ""
 
 
 async def _insert_emotion_row(

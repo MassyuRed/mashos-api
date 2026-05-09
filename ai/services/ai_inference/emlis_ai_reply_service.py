@@ -4,16 +4,16 @@ from __future__ import annotations
 """Top-level orchestration for EmlisAI reply rendering."""
 
 from copy import deepcopy
+from dataclasses import asdict, is_dataclass
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
 from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
-from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_observation_kernel
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
-from emlis_ai_safe_reply_fallback_service import build_safe_understanding_fallback
 from emlis_ai_style_profile_service import build_style_profile
 from emlis_ai_user_address_service import build_emlis_observation_greeting, display_name_call
 from emlis_ai_types import (
@@ -35,8 +35,17 @@ from emlis_ai_user_model_store import (
     save_emlis_ai_user_model_for_user,
 )
 from emlis_ai_world_model_service import build_emlis_ai_world_model
+
+from emlis_ai_evidence_ledger_service import build_evidence_ledger
+from emlis_ai_perspective_observers import run_perspective_observers
+from emlis_ai_perspective_board import build_perspective_board
+from emlis_ai_observation_integrator_service import integrate_perspective_board
+from emlis_ai_conversation_composer_service import compose_emlis_conversation
+from emlis_ai_listener_reader_judge import judge_listener_readability
+from emlis_ai_grounding_judge import judge_grounding
+from emlis_ai_template_echo_guard import guard_template_echo
+from emlis_ai_display_gate import decide_emlis_observation_display
 from emotion_history_search_service import build_open_topic_anchor_candidates, extract_repeated_categories
-from input_feedback_text_templates import build_input_feedback_comment as render_fallback_input_feedback
 
 _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
 
@@ -955,6 +964,95 @@ def _evaluate_pre_return_gate(
     )
 
 
+
+def _jsonable(value: Any) -> Any:
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _multi_perspective_meta(
+    *,
+    trace_id: str,
+    capability: EmlisAICapabilityConfig,
+    bundle: SourceBundle,
+    evidence_spans: List[Any],
+    reports: List[Any],
+    board: Any,
+    graph: Any,
+    reader_report: Any,
+    grounding_report: Any,
+    template_echo_report: Any,
+    display_decision: Any,
+) -> Dict[str, Any]:
+    used_sources: List[str] = ["current_input"]
+    if bundle.greeting:
+        used_sources.append("greeting_state")
+    if capability.include_input_summary:
+        used_sources.append("input_summary")
+    if capability.history_mode != "none" and (bundle.last_input or bundle.same_day_recent_inputs or bundle.similar_inputs):
+        used_sources.append("history")
+    used_memory_layers: List[str] = ["canonical_history"]
+    if bundle.derived_user_model is not None:
+        used_memory_layers.append("derived_user_model")
+    if bundle.side_state:
+        used_memory_layers.append("side_state")
+    return {
+        "version": "emlis_ai_v3",
+        "kernel_version": "multi_perspective_observation.v1",
+        "tier": capability.tier,
+        "observation_status": display_decision.observation_status,
+        "observation_trace_id": trace_id,
+        "rejection_reasons": list(display_decision.rejection_reasons),
+        "display": {
+            "display_name_call": display_name_call(bundle.display_name),
+            "visible_name": "Emlisの観測",
+        },
+        "capability": {
+            "history_mode": capability.history_mode,
+            "continuity_mode": capability.continuity_mode,
+            "style_mode": capability.style_mode,
+            "partner_mode": capability.partner_mode,
+            "model_mode": capability.model_mode,
+            "interpretation_mode": capability.interpretation_mode,
+            "source_scope": capability.source_scope,
+            "cross_core_enabled": bool(capability.cross_core_enabled),
+            "structure_model_enabled": bool(capability.structure_model_enabled),
+        },
+        "multi_perspective": {
+            "architecture_version": "emlis.multi_perspective.v1",
+            "fail_closed": True,
+            "legacy_observation_kernel_used": False,
+            "legacy_safe_fallback_used": False,
+            "legacy_input_feedback_template_used": False,
+            "evidence_span_count": len(evidence_spans),
+            "observer_count": len(reports),
+            "observer_ids": [str(getattr(report, "observer_id", "")) for report in reports],
+            "evidence_spans": _jsonable(evidence_spans[:12]),
+            "perspective_reports": _jsonable(reports),
+            "observation_graph": _jsonable(graph),
+            "reader_report": _jsonable(reader_report),
+            "grounding_report": _jsonable(grounding_report),
+            "template_echo_report": _jsonable(template_echo_report),
+        },
+        "used_sources": used_sources,
+        "used_memory_layers": used_memory_layers,
+        "reply_length_mode": capability.reply_length_mode,
+        "evidence_count": len(evidence_spans),
+        "evidence_by_line": {},
+        "rejected_candidate_count": 0,
+        "fallback_used": False,
+        "world_model_debug": {
+            "board_report_count": len(getattr(board, "reports", []) or []),
+            "missing_information": list(getattr(graph, "missing_information", []) or []),
+        },
+    }
+
+
 async def render_emlis_ai_reply(
     *,
     user_id: str,
@@ -963,6 +1061,15 @@ async def render_emlis_ai_reply(
     display_name: Optional[str] = None,
     timezone_name: Optional[str] = None,
 ) -> ReplyEnvelope:
+    """Render an immediate Emlis observation using the multi-perspective pipeline.
+
+    This path deliberately does not call the legacy observation kernel, legacy
+    safe fallback, or input_feedback_text_templates. If the generated text does
+    not pass the reader/grounding/template gates, it returns an empty
+    ``comment_text`` with ``observation_status`` set to rejected/safety_blocked.
+    """
+
+    trace_id = f"emlisobs-{uuid4().hex[:16]}"
     capability = resolve_emlis_ai_capability_for_tier(subscription_tier)
     bundle = await build_emlis_ai_source_bundle(
         user_id=user_id,
@@ -971,161 +1078,63 @@ async def render_emlis_ai_reply(
         display_name=display_name,
         timezone_name=timezone_name,
     )
-    world_model = build_emlis_ai_world_model(capability=capability, bundle=bundle)
-    style_profile = build_style_profile(capability=capability, bundle=bundle, world_model=world_model)
-    working_model = _project_working_user_model(capability=capability, bundle=bundle, world_model=world_model)
-    decision = run_emlis_ai_observation_kernel(
-        kernel_input=ObservationKernelInput(
-            capability=capability,
-            bundle=bundle,
-            world_model=world_model,
-            style_profile=style_profile,
-            working_model=working_model,
-        )
-    )
-    plan = _build_reply_plan_from_decision(decision)
+
+    evidence_spans = build_evidence_ledger(current_input)
+    reports = run_perspective_observers(evidence_spans)
+    board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
+    graph = integrate_perspective_board(board=board, display_name=bundle.display_name or display_name)
+
+    safety_requires_block = bool(getattr(graph, "safety_boundaries", []) or [])
+    safety_report = None
+    if safety_requires_block:
+        from emlis_ai_types import SafetyBoundaryReport
+
+        safety_report = SafetyBoundaryReport(requires_block=True, reasons=["safety_boundary"])
 
     raw_greeting_text = bundle.greeting.greeting_text if bundle.greeting else ""
-    greeting_text = build_emlis_observation_greeting(display_name=bundle.display_name or display_name, greeting_text=raw_greeting_text)
-    comment_text = _render_comment_text_from_reply_lines(
-        plan.reply_lines,
-        greeting_text=greeting_text,
-    )
-    fallback_used = False
-    if not comment_text:
-        fallback_used = True
-        comment_text = render_fallback_input_feedback(
-            emotion_details=current_input.get("emotion_details") if isinstance(current_input.get("emotion_details"), list) else [],
-            memo=current_input.get("memo"),
-            memo_action=current_input.get("memo_action"),
-            category=current_input.get("category") if isinstance(current_input.get("category"), list) else [],
-            selection_seed=str(current_input.get("selection_seed") or current_input.get("created_at") or ""),
+    comment_text = ""
+    if not safety_requires_block:
+        comment_text = compose_emlis_conversation(
+            graph=graph,
+            evidence_spans=evidence_spans,
+            display_name=bundle.display_name or display_name,
+            greeting_text=raw_greeting_text,
         )
-    comment_text = _naturalize_reply_text(comment_text)
+        comment_text = _naturalize_reply_text(comment_text)
 
-    final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
-    final_review_repair_applied = False
-    if final_review.repaired_text:
-        comment_text = _naturalize_reply_text(final_review.repaired_text)
-        final_review_repair_applied = True
-        final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
-
-    await _persist_working_user_model_best_effort(
-        user_id=user_id,
-        capability=capability,
-        working_model=working_model,
+    reader_report = judge_listener_readability(comment_text)
+    grounding_report = judge_grounding(comment_text=comment_text, graph=graph, evidence_spans=evidence_spans)
+    template_echo_report = guard_template_echo(comment_text=comment_text, evidence_spans=evidence_spans)
+    display_decision = decide_emlis_observation_display(
+        comment_text=comment_text,
+        reader_report=reader_report,
+        grounding_report=grounding_report,
+        template_echo_report=template_echo_report,
+        safety_report=safety_report,
+        trace_id=trace_id,
     )
 
-    evidence_by_line = {}
-    for line in plan.reply_lines:
-        if not line.sentence_evidence.evidence:
-            continue
-        evidence_key = line.key
-        if evidence_key in evidence_by_line:
-            evidence_key = line.candidate_key or f"{line.key}:{len(evidence_by_line)}"
-        evidence_by_line[evidence_key] = list(line.sentence_evidence.evidence)
-    used_memory_layers = ["canonical_history"]
-    if bundle.derived_user_model is not None:
-        used_memory_layers.append("derived_user_model")
-    if bundle.side_state:
-        used_memory_layers.append("side_state")
-    if capability.cross_core_enabled and list(getattr(world_model.facts, "cross_core_context", []) or []):
-        used_memory_layers.append("cross_core_context")
-
-    meta = _build_meta(
+    # No fixed fallback. The display gate is fail-closed.
+    final_text = str(display_decision.comment_text or "").strip()
+    meta = _multi_perspective_meta(
+        trace_id=trace_id,
         capability=capability,
         bundle=bundle,
-        world_model=world_model,
-        plan=plan,
-        fallback_used=fallback_used,
-        working_model=working_model,
-    )
-    meta["final_reader"] = _final_review_meta(final_review, repair_applied=final_review_repair_applied)
-
-    initial_issue_codes = _issue_codes_from_review(final_review)
-    preflight_gate = _evaluate_pre_return_gate(
-        comment_text=comment_text,
-        capability=capability,
-        meta=meta,
-        fallback_used=fallback_used,
-        final_reader_passed=bool(final_review.passed),
-        repair_attempted=final_review_repair_applied,
-        repair_passed=bool(final_review.passed),
-        safe_fallback_used=False,
-        blocked_issue_codes=initial_issue_codes,
-    )
-    pre_return_meta = {
-        "pre_return_blocking_enabled": True,
-        "preflight_passed": bool(preflight_gate.passed),
-        "repair_attempted": bool(final_review_repair_applied),
-        "repair_passed": bool(final_review.passed),
-        "safe_fallback_used": False,
-        "blocked_issue_codes": initial_issue_codes,
-    }
-
-    if not preflight_gate.passed:
-        fallback_used = True
-        failed_meta = preflight_gate.as_meta()
-        gate_issue_codes = [
-            key for key, value in failed_meta.items()
-            if value is False and key not in {"passed", "preflight_passed", "repair_attempted", "repair_passed", "safe_fallback_used"}
-        ]
-        fallback_text = build_safe_understanding_fallback(
-            current_input=current_input,
-            world_model=world_model,
-            greeting_text=greeting_text,
-        )
-        comment_text = _naturalize_reply_text(fallback_text)
-        final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
-        final_review_repair_applied = False
-        if final_review.repaired_text:
-            comment_text = _naturalize_reply_text(final_review.repaired_text)
-            final_review_repair_applied = True
-            final_review = review_emlis_ai_reply_text(comment_text=comment_text, world_model=world_model)
-
-        meta = _build_meta(
-            capability=capability,
-            bundle=bundle,
-            world_model=world_model,
-            plan=plan,
-            fallback_used=fallback_used,
-            working_model=working_model,
-        )
-        meta["final_reader"] = _final_review_meta(final_review, repair_applied=final_review_repair_applied)
-        fallback_issue_codes = sorted(set([*initial_issue_codes, *gate_issue_codes, *_issue_codes_from_review(final_review)]))
-        fallback_gate = _evaluate_pre_return_gate(
-            comment_text=comment_text,
-            capability=capability,
-            meta=meta,
-            fallback_used=fallback_used,
-            final_reader_passed=bool(final_review.passed),
-            repair_attempted=True,
-            repair_passed=bool(final_review.passed),
-            safe_fallback_used=True,
-            blocked_issue_codes=fallback_issue_codes,
-        )
-        pre_return_meta = {
-            "pre_return_blocking_enabled": True,
-            "preflight_passed": bool(preflight_gate.passed),
-            "repair_attempted": True,
-            "repair_passed": bool(fallback_gate.passed),
-            "safe_fallback_used": True,
-            "blocked_issue_codes": fallback_issue_codes,
-        }
-
-    meta["pre_return"] = pre_return_meta
-    meta = attach_emlis_ai_quality_gate_meta(
-        meta,
-        comment_text=comment_text,
-        capability=capability,
-        fallback_used=fallback_used,
+        evidence_spans=evidence_spans,
+        reports=reports,
+        board=board,
+        graph=graph,
+        reader_report=reader_report,
+        grounding_report=grounding_report,
+        template_echo_report=template_echo_report,
+        display_decision=display_decision,
     )
 
     return ReplyEnvelope(
-        comment_text=comment_text,
+        comment_text=final_text,
         meta=meta,
-        used_evidence=plan.used_evidence,
-        evidence_by_line=evidence_by_line,
-        used_memory_layers=used_memory_layers,
-        fallback_used=fallback_used,
+        used_evidence=[],
+        evidence_by_line={},
+        used_memory_layers=meta.get("used_memory_layers") if isinstance(meta.get("used_memory_layers"), list) else ["canonical_history"],
+        fallback_used=False,
     )
