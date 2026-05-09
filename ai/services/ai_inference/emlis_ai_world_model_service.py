@@ -33,6 +33,7 @@ from emlis_ai_response_composition_service import (
     build_response_composition_plan,
     build_reply_narrative_arc,
 )
+from emlis_ai_observation_frame_service import build_emlis_observation_frame
 from emlis_context_anchor_service import packet_text_for_matching
 from cocolon_value_observation_service import (
     build_value_observation_plan,
@@ -425,6 +426,11 @@ def build_emlis_ai_world_model(
         current_input=bundle.current_input,
         signals=value_observation_signals,
     )
+    emlis_observation_frame = build_emlis_observation_frame(
+        meaning_blocks=meaning_blocks,
+        whole_input_meaning_arc=whole_input_meaning_arc,
+        evidence=current_ref,
+    )
     current_categories = _current_categories(bundle)
     current_emotion_labels = _emotion_labels(bundle)
     cross_core_context = _matched_cross_core_context(
@@ -466,6 +472,7 @@ def build_emlis_ai_world_model(
         major_meaning_retention_plan=major_meaning_retention_plan,
         response_composition_plan=response_composition_plan,
         reply_narrative_arc=reply_narrative_arc,
+        emlis_observation_frame=emlis_observation_frame,
         same_day_input_count=len(bundle.same_day_recent_inputs) + 1,
         week_input_count=int(input_summary.get("week_count") or 0),
         month_input_count=int(input_summary.get("month_count") or 0),
@@ -527,6 +534,8 @@ def build_emlis_ai_world_model(
             "major_meaning_must_keep_block_keys": list(getattr(major_meaning_retention_plan, "must_keep_block_keys", []) or []),
             "response_composition_key": str(getattr(response_composition_plan, "composition_key", "") or ""),
             "reply_narrative_arc_key": str(getattr(reply_narrative_arc, "arc_key", "") or ""),
+            "emlis_observation_frame_present": bool(emlis_observation_frame is not None),
+            "emlis_observation_required_roles": list(getattr(emlis_observation_frame, "required_line_roles", []) or []),
             "response_mode": response_mode,
             "memo_richness": memo_richness,
             "value_observation_signal_keys": [str(getattr(item, "signal_key", "") or "") for item in value_observation_signals],

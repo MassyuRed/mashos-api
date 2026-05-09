@@ -15,6 +15,7 @@ from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_obs
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
 from emlis_ai_safe_reply_fallback_service import build_safe_understanding_fallback
 from emlis_ai_style_profile_service import build_style_profile
+from emlis_ai_user_address_service import build_emlis_observation_greeting, display_name_call
 from emlis_ai_types import (
     DerivedModelHypothesis,
     DerivedUserModel,
@@ -272,6 +273,30 @@ def _serialize_major_retention(item: Any) -> Dict[str, Any]:
     }
 
 
+
+def _serialize_observation_frame(item: Any) -> Dict[str, Any]:
+    if item is None:
+        return {"present": False}
+    return {
+        "present": True,
+        "primary_state": _clean(getattr(item, "primary_state", "")),
+        "tension_pairs": [
+            {
+                "left": _clean(getattr(pair, "left", "")),
+                "right": _clean(getattr(pair, "right", "")),
+                "relation": _clean(getattr(pair, "relation", "")),
+            }
+            for pair in list(getattr(item, "tension_pairs", []) or [])
+        ],
+        "pressure_sources": [_clean(v) for v in list(getattr(item, "pressure_sources", []) or []) if _clean(v)],
+        "escape_or_limit_signal": _clean(getattr(item, "escape_or_limit_signal", "")),
+        "self_awareness_signal": _clean(getattr(item, "self_awareness_signal", "")),
+        "strength_signal": _clean(getattr(item, "strength_signal", "")),
+        "companion_close": _clean(getattr(item, "companion_close", "")),
+        "evidence_terms": [_clean(v) for v in list(getattr(item, "evidence_terms", []) or []) if _clean(v)],
+        "required_line_roles": [_clean(v) for v in list(getattr(item, "required_line_roles", []) or []) if _clean(v)],
+    }
+
 def _serialize_value_observation_signal(item: Any) -> Dict[str, Any]:
     as_meta = getattr(item, "as_meta", None)
     if callable(as_meta):
@@ -318,14 +343,22 @@ def _value_observation_meta(world_model: WorldModel) -> Dict[str, Any]:
 def _composition_meta(world_model: WorldModel) -> Dict[str, Any]:
     plan = getattr(world_model.facts, "response_composition_plan", None)
     arc = getattr(world_model.facts, "reply_narrative_arc", None)
+    frame = getattr(world_model.facts, "emlis_observation_frame", None)
+    frame_payload = _serialize_observation_frame(frame)
+    observation_fields = {
+        "observation_frame_present": bool(frame_payload.get("present")),
+        "observation_primary_state": _clean(frame_payload.get("primary_state")),
+        "observation_required_line_roles": list(frame_payload.get("required_line_roles") or []),
+    }
     if plan is None:
         return {
-            "composition_key": "",
-            "narrative_pattern": "",
-            "opening_thesis_present": False,
+            "composition_key": "observation_frame.v1" if frame_payload.get("present") else "",
+            "narrative_pattern": "emlis_observation_frame" if frame_payload.get("present") else "",
+            "opening_thesis_present": bool(frame_payload.get("primary_state")),
             "response_composition_ok": True,
             "current_input_grounding_ok": True,
             "stale_meaning_block_leak_blocked": True,
+            **observation_fields,
         }
     return {
         "composition_key": _clean(getattr(plan, "composition_key", "")),
@@ -333,16 +366,23 @@ def _composition_meta(world_model: WorldModel) -> Dict[str, Any]:
         "ordered_line_roles": list(getattr(plan, "ordered_line_roles", []) or []),
         "required_line_roles": list(getattr(plan, "required_line_roles", []) or []),
         "opening_thesis": _clean(getattr(arc, "opening_thesis", "")) if arc is not None else "",
-        "opening_thesis_present": bool(_clean(getattr(arc, "opening_thesis", "")) if arc is not None else ""),
+        "opening_thesis_present": bool(_clean(getattr(arc, "opening_thesis", "")) if arc is not None else "") or bool(frame_payload.get("primary_state")),
         "transition_policy": _clean(getattr(plan, "transition_policy", "")),
         "response_composition_ok": True,
         "current_input_grounding_ok": True,
         "stale_meaning_block_leak_blocked": True,
+        **observation_fields,
     }
-
 
 def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str, Any]:
     coverage = getattr(world_model.facts, "meaning_coverage_plan", None)
+    frame = getattr(world_model.facts, "emlis_observation_frame", None)
+    frame_payload = _serialize_observation_frame(frame)
+    observation_meta = {
+        "observation_frame_present": bool(frame_payload.get("present")),
+        "observation_required_line_roles": list(frame_payload.get("required_line_roles") or []),
+        "observation_evidence_terms": list(frame_payload.get("evidence_terms") or []),
+    }
     blocks = list(getattr(world_model.facts, "meaning_blocks", []) or [])
     arc = getattr(world_model.facts, "whole_input_meaning_arc", None)
     retention = getattr(world_model.facts, "major_meaning_retention_plan", None)
@@ -359,6 +399,7 @@ def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str
             "coverage_ratio_target": 0.0,
             "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:12]],
             "whole_input_meaning_arc": _serialize_whole_input_arc(arc),
+            **observation_meta,
             **_serialize_major_retention(retention),
         }
     selected_keys = list(getattr(coverage, "selected_block_keys", []) or [])
@@ -379,6 +420,7 @@ def _meaning_coverage_meta(world_model: WorldModel, plan: ReplyPlan) -> Dict[str
         "reason": _clean(getattr(coverage, "reason", "")),
         "sample_blocks": [_serialize_meaning_block(item) for item in blocks[:12]],
         "whole_input_meaning_arc": _serialize_whole_input_arc(arc),
+        **observation_meta,
         **_serialize_major_retention(retention),
     }
 
@@ -805,6 +847,7 @@ def _build_meta(
             "structure_model_enabled": bool(capability.structure_model_enabled),
         },
         "display": {
+            "display_name_call": display_name_call(bundle.display_name),
             "selected_emotions": selected_emotions,
             "dominant_emotion": dominant_emotion,
             "secondary_emotions": secondary_emotions,
@@ -828,6 +871,7 @@ def _build_meta(
         "whole_input_meaning_arc": _serialize_whole_input_arc(getattr(world_model.facts, "whole_input_meaning_arc", None)),
         "major_meaning_retention": _serialize_major_retention(getattr(world_model.facts, "major_meaning_retention_plan", None)),
         "value_observation": _value_observation_meta(world_model),
+        "emlis_observation_frame": _serialize_observation_frame(getattr(world_model.facts, "emlis_observation_frame", None)),
         "composition": _composition_meta(world_model),
         "understanding": _understanding_meta(world_model, plan),
         "cross_core_context": _cross_core_context_meta(world_model),
@@ -941,7 +985,8 @@ async def render_emlis_ai_reply(
     )
     plan = _build_reply_plan_from_decision(decision)
 
-    greeting_text = bundle.greeting.greeting_text if bundle.greeting else ""
+    raw_greeting_text = bundle.greeting.greeting_text if bundle.greeting else ""
+    greeting_text = build_emlis_observation_greeting(display_name=bundle.display_name or display_name, greeting_text=raw_greeting_text)
     comment_text = _render_comment_text_from_reply_lines(
         plan.reply_lines,
         greeting_text=greeting_text,

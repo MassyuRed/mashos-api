@@ -25,6 +25,13 @@ _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
 
 _ROLE_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {"role": "relief_or_benefit_in_constraint", "title": "制約の中にもある安心や良さ", "keywords": ("家にいて", "家にいる", "家のこと", "お家のこと", "リラックス", "自分のことを優先", "優先して", "整え", "嬉しい", "うれしい"), "priority": 0.989},
+    {"role": "reality_gap_or_inconvenience", "title": "現実に戻った時の不便さ", "keywords": ("現実", "向き合", "気が抜け", "ダメージ", "不便", "ふっと", "ふって"), "priority": 0.987},
+    {"role": "restriction_pressure", "title": "気をつけ続ける圧迫感", "keywords": ("気をつけなきゃ", "気をつけないと", "気をつけ", "気を付け", "全部無視", "無視して", "制約", "注意し"), "priority": 0.983},
+    {"role": "normal_life_wish", "title": "普通に生活したい願い", "keywords": ("普通に生活", "普通に", "生活したい", "全部無視して普通", "自由に生活"), "priority": 0.981},
+    {"role": "worsening_awareness", "title": "悪化することへの理解", "keywords": ("悪化", "分かってる", "わかってる", "分かっている", "わかっている", "そんなの分か", "そんなのわか"), "priority": 0.979},
+    {"role": "escape_or_limit", "title": "逃げたい限界感", "keywords": ("逃げ出したく", "逃げ出したい", "逃げたい", "投げ出したい", "全部投げ", "限界"), "priority": 0.978},
+    {"role": "balanced_self_awareness", "title": "良さと苦しさの両方を見ていること", "keywords": ("嬉しいんだけど", "うれしいんだけど", "嬉しいけど", "うれしいけど", "両方"), "priority": 0.845},
     {"role": "other_contribution", "title": "誰かの役に立つこと", "keywords": ("誰かの役に立", "役に立て", "人たちが幸せ", "幸せに笑", "その人たちの役"), "priority": 0.995},
     {"role": "self_dislike_from_halfway", "title": "自分を中途半端だと見てしまうこと", "keywords": ("中途半端", "好きになれない", "自分のことは好き"), "priority": 0.992},
     {"role": "future_not_giving_up", "title": "今後をまだ諦めたくないこと", "keywords": ("まだ諦めたくない", "諦めたくない", "今後のこと"), "priority": 0.99},
@@ -59,6 +66,13 @@ _ROLE_DEFINITIONS: tuple[dict[str, Any], ...] = (
 )
 
 _REQUIRED_LONG_ROLES = (
+    "relief_or_benefit_in_constraint",
+    "reality_gap_or_inconvenience",
+    "restriction_pressure",
+    "normal_life_wish",
+    "worsening_awareness",
+    "escape_or_limit",
+    "balanced_self_awareness",
     "other_contribution",
     "self_dislike_from_halfway",
     "future_not_giving_up",
@@ -209,6 +223,13 @@ def _block(*, role: str, title: str, summary: str, phrases: Sequence[ShapedUserP
             "dual_feeling",
             "relationship_or_others",
             "relief_source",
+            "relief_or_benefit_in_constraint",
+            "reality_gap_or_inconvenience",
+            "restriction_pressure",
+            "normal_life_wish",
+            "worsening_awareness",
+            "escape_or_limit",
+            "balanced_self_awareness",
         },
     )
 
@@ -345,6 +366,12 @@ def build_whole_input_meaning_arc(*, meaning_blocks: Sequence[InputMeaningBlock]
     title = "現在入力の意味の流れ"
     summary = " / ".join(summary_parts) if summary_parts else "現在入力に含まれる複数の気持ちや考え"
     tension_pairs: list[tuple[str, str]] = []
+    if "relief_or_benefit_in_constraint" in roles and "reality_gap_or_inconvenience" in roles:
+        tension_pairs.append(("relief_or_benefit_in_constraint", "reality_gap_or_inconvenience"))
+    if "normal_life_wish" in roles and "worsening_awareness" in roles:
+        tension_pairs.append(("normal_life_wish", "worsening_awareness"))
+    if "restriction_pressure" in roles and "escape_or_limit" in roles:
+        tension_pairs.append(("restriction_pressure", "escape_or_limit"))
     if ("wish_or_hope" in roles or "continuation_wish" in roles) and ("fear_or_disappointment" in roles or "collapse_anxiety" in roles):
         tension_pairs.append(("continuation_wish" if "continuation_wish" in roles else "wish_or_hope", "collapse_anxiety" if "collapse_anxiety" in roles else "fear_or_disappointment"))
     if "self_suppression" in roles and "self_protection" in roles:

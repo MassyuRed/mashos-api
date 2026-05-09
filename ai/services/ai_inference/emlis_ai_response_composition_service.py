@@ -61,17 +61,17 @@ def _opening_thesis(blocks: Sequence[InputMeaningBlock]) -> str:
     selected = [block for block in blocks if str(block.summary or "").strip()][:3]
     roles = _role_set(blocks)
     if "other_contribution" in roles and "own_happiness_wish" in roles:
-        return "あなたは、誰かの役に立ちたい気持ちと、自分自身も幸せになりたい願いを、同じ場所で言葉にしているのですね。"
+        return "誰かの役に立ちたい気持ちと、自分自身も幸せになりたい願いが、同じ場所で言葉になっているように見ています。"
     if not selected:
-        return "あなたは、今の気持ちや考えを少しずつ言葉にしようとしているのですね。"
+        return "今の気持ちや考えを、少しずつ言葉にしようとしている状態として見ています。"
     first = selected[0].summary.rstrip("。")
     if len(selected) == 1:
-        return f"あなたは、{first}ことを、今ここに置こうとしているのですね。"
+        return f"{first}ことが、今ここに置かれている状態として見ています。"
     second = selected[1].summary.rstrip("。")
     if len(selected) == 2:
-        return f"あなたは、{first}ことだけでなく、{second}ことも一緒に言葉にしているのですね。"
+        return f"{first}ことだけでなく、{second}ことも一緒に出ているように見ています。"
     third = selected[2].summary.rstrip("。")
-    return f"あなたは、{first}ことを入口にしながら、{second}ことや、{third}ことまで含めて言葉にしているのですね。"
+    return f"{first}ことを入口にしながら、{second}ことや、{third}ことまで含まれているように見ています。"
 
 
 def _role_set(blocks: Sequence[InputMeaningBlock]) -> set[str]:
@@ -96,7 +96,7 @@ def _self_sacrifice_opening_thesis(blocks: Sequence[InputMeaningBlock]) -> str:
         limit_text = f"{limit_text}、一人で抱え込むしんどさ"
     if "我慢" not in old_text:
         old_text = f"我慢してきたことや、{old_text}"
-    return f"あなたは、{old_text}ことと、{limit_text}ことを同じ流れとして言葉にしているのですね。"
+    return f"{old_text}ことと、{limit_text}ことが同じ流れとして言葉になっているように見ています。"
 
 
 def build_response_composition_plan(*, input_level: str, clear_long_input: bool, meaning_blocks: Sequence[InputMeaningBlock]) -> ResponseCompositionPlan | None:

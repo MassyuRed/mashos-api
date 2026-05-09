@@ -53,6 +53,34 @@ def _value_observation_lines(world_model: Optional[WorldModel], *, limit: int = 
     return out
 
 
+
+def _observation_frame_lines(world_model: Optional[WorldModel]) -> List[str]:
+    frame = getattr(getattr(world_model, "facts", None), "emlis_observation_frame", None) if world_model is not None else None
+    if frame is None:
+        return []
+    lines: List[str] = []
+    primary = _clean(getattr(frame, "primary_state", ""))
+    if primary:
+        lines.append(primary)
+    pairs = list(getattr(frame, "tension_pairs", []) or [])
+    pressure_sources = [_clean(item).rstrip("。") for item in list(getattr(frame, "pressure_sources", []) or []) if _clean(item)]
+    if pairs:
+        pair = pairs[-1]
+        left = _clean(getattr(pair, "left", ""))
+        right = _clean(getattr(pair, "right", ""))
+        pressure = pressure_sources[0] if pressure_sources else ""
+        if left and right and pressure:
+            lines.append(f"{pressure}で、{left}と、{right}の間で、かなり圧迫されているように見えます。")
+        elif left and right:
+            lines.append(f"{left}と、{right}が同じ場所で重なっているように見えます。")
+    elif pressure_sources:
+        lines.append(f"{pressure_sources[0]}が、今の負担を大きくしているのだと思います。")
+    for attr in ("self_awareness_signal", "escape_or_limit_signal", "strength_signal", "companion_close"):
+        text = _clean(getattr(frame, attr, ""))
+        if text and text not in lines:
+            lines.append(text)
+    return lines[:6]
+
 def _presence_line(blocks: Sequence[InputMeaningBlock], phrases: Sequence[ShapedUserPhrase], labels: Sequence[str]) -> str:
     roles = {str(getattr(item, "role", "") or "") for item in list(blocks or []) + list(phrases or [])}
     if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
@@ -82,11 +110,11 @@ def _line_from_block(block: InputMeaningBlock, *, index: int) -> str:
         return ""
     summary = summary.rstrip("。")
     if index == 0:
-        return f"あなたは、{_as_topic(summary)}を、今ここに置こうとしているのですね。"
+        return f"{_as_topic(summary)}が、今ここに置かれている状態として見ています。"
     if role in {"fear_or_disappointment", "limit_or_exhaustion", "sadness_or_pain", "anger_or_frustration"}:
         return f"そこには、{summary}感覚もありました。"
     if role in {"support_need", "self_protection", "effort_direction", "wish_or_hope"}:
-        return f"同時に、{_as_topic(summary)}も大切な場所として見えています。"
+        return f"同時に、{_as_topic(summary)}も、今の状態を形づくる大切な要素として見ています。"
     if role in {"self_suppression", "burden_avoidance", "self_view"}:
         return f"その背景には、{summary}流れもありました。"
     return f"そこには、{_as_topic(summary)}も含まれていました。"
@@ -99,7 +127,7 @@ def _line_from_phrase(phrase: ShapedUserPhrase, *, index: int) -> str:
         return ""
     fragment = fragment.rstrip("。")
     if index == 0:
-        return f"あなたは、{_as_topic(fragment)}を言葉にしようとしていたのですね。"
+        return f"{_as_topic(fragment)}を、少しずつ言葉にしようとしている状態として見ています。"
     if role in {"fear_or_disappointment", "sadness_or_pain", "anger_or_frustration"}:
         return f"そこには、{fragment}感覚も近くにありました。"
     return f"そこには、{_as_topic(fragment)}も一緒にありました。"
@@ -120,6 +148,10 @@ def build_safe_understanding_fallback(
         phrases = safe_phrases(shape_user_phrases(anchors=anchors, current_input=current_input))
     labels = _selected_labels(world_model)
     value_lines = _value_observation_lines(world_model)
+    frame_lines = _observation_frame_lines(world_model)
+    if frame_lines:
+        lines.extend(frame_lines)
+        return "\n".join(line for line in lines if line).strip()
 
     if blocks:
         clear_long = bool(getattr(coverage, "clear_long_input", False)) if coverage is not None else False

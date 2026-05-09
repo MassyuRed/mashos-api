@@ -19,14 +19,14 @@ PLUS_CANONICAL_SUBTITLE = None
 PREMIUM_CANONICAL_SUBTITLE = None
 PLUS_CANONICAL_FEATURES = [
     "履歴全般：表示期間1年分。",
-    "ホーム：Emilisからのコメントが入力履歴を踏まえた応答になります。",
+    "ホーム：Emlisの観測が入力履歴を踏まえた内容になります。",
     "分析：感情分析レポートが深くなります。",
     "分析：自己分析レポートが閲覧可能になります。",
     "ピース：生成回数が月30回になります。",
 ]
 PREMIUM_CANONICAL_FEATURES = [
     "履歴全般：表示期間無制限。",
-    "ホーム：Emlisからのコメントがあなた専用にカスタマイズされた応答になります。",
+    "ホーム：Emlisの観測がユーザーごとに合わせた内容になります。",
     "分析：感情分析レポートがさらに深くなります。",
     "分析：自己分析レポートがさらに深くなります。",
     "ピース：生成回数が無制限になります。",
@@ -34,10 +34,10 @@ PREMIUM_CANONICAL_FEATURES = [
 
 
 PLUS_EMLIS_AI_MARKETING_LINES = [
-    "ホーム：Emilisからのコメントが入力履歴を踏まえた応答になります。",
+    "ホーム：Emlisの観測が入力履歴を踏まえた内容になります。",
 ]
 PREMIUM_EMLIS_AI_MARKETING_LINES = [
-    "ホーム：Emlisからのコメントがあなた専用にカスタマイズされた応答になります。",
+    "ホーム：Emlisの観測がユーザーごとに合わせた内容になります。",
 ]
 
 

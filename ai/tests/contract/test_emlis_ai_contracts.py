@@ -112,7 +112,7 @@ def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monke
                         "reply_length_mode": "input_scaled",
                         "marketing_lines": [
                             "EmlisAI：最近の流れを見ながら返してくれます",
-                            "EmlisAI：入力履歴を踏まえた返答になります",
+                            "EmlisAI：入力履歴を踏まえた観測になります",
                         ],
                     },
                 },

@@ -22,10 +22,12 @@ BROKEN_CONNECTION_RE = re.compile(
     r"|になるです|だったです|したです|ですです"
 )
 MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造として|分析すると|理解しました|受け取りました)")
+BROKEN_GENERIC_PHRASE_RE = re.compile(r"(大切な場所として見えています|生活したいことも大切な場所)")
 INTERNAL_OBSERVATION_LANGUAGE_RE = re.compile(r"(コンフォートゾーン|スペック|精神の問題|皮算用|要求と期待が膨れ上が|本質は|あなたの本質)")
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
 STALE_MEANING_BLOCK_RE = re.compile(r"(前回入力|前回の入力|以前の入力|別の入力|過去の入力|前の入力)")
-PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
+PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います|一緒に見ていきます|一緒に向き合います|苦しさと、その中に残っている強さ)")
+SECOND_PERSON_PRONOUN_RE = re.compile(r"(あなたは|あなたの|あなたが|あなたに)")
 BROKEN_NOUN_PHRASE_RE = re.compile(r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)")
 MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
 
@@ -125,6 +127,13 @@ def _role_terms(role: str) -> tuple[str, ...]:
         "concrete_life_wishes": ("好きなこと", "パートナー", "たのしみたい", "楽しみたい"),
         "unreachable_wish": ("手の届かない",),
         "present_effort_toward_wish": ("今頑張れること", "今できること"),
+        "relief_or_benefit_in_constraint": ("リラックス", "自分のことを優先", "家のこと", "嬉しい", "良さ"),
+        "reality_gap_or_inconvenience": ("現実", "不便", "ダメージ", "気が抜け"),
+        "restriction_pressure": ("気をつけ", "圧迫", "無視"),
+        "normal_life_wish": ("普通に生活", "生活したい"),
+        "worsening_awareness": ("悪化", "分かって", "わかって"),
+        "escape_or_limit": ("逃げ出したく", "逃げたい", "弱さではなく"),
+        "balanced_self_awareness": ("両方", "同時", "良さ", "苦しさ"),
     }.get(str(role or ""), ())
 
 
@@ -138,9 +147,26 @@ def _block_covered(text: str, block: object) -> bool:
     return any(term and term in text for term in terms)
 
 
+
+def _observation_frame_sufficient(lines: List[str], world_model: Optional[WorldModel]) -> bool:
+    frame = getattr(getattr(world_model, "facts", None), "emlis_observation_frame", None) if world_model is not None else None
+    if frame is None:
+        return False
+    content_lines = [line for line in lines if line and not line.endswith("Emlisです。") and line != "Emlisです。"]
+    if len(content_lines) < 4:
+        return False
+    text = "\n".join(content_lines)
+    has_state = bool(str(getattr(frame, "primary_state", "") or "") and ("状態" in text or "見ています" in text))
+    has_relation = bool(list(getattr(frame, "tension_pairs", []) or [])) and any(word in text for word in ("間で", "同時", "重なって", "両方"))
+    has_strength = bool(str(getattr(frame, "strength_signal", "") or "")) and ("強さ" in text or "向き合" in text)
+    has_close = bool(PRESENCE_RE.search(text))
+    return bool(has_state and has_close and (has_relation or has_strength))
+
 def _long_input_underanswered(lines: List[str], world_model: Optional[WorldModel]) -> bool:
     coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
     blocks = list(getattr(getattr(world_model, "facts", None), "meaning_blocks", []) or []) if world_model is not None else []
+    if _observation_frame_sufficient(lines, world_model):
+        return False
     if coverage is None or not bool(getattr(coverage, "clear_long_input", False)):
         return False
     min_blocks = int(getattr(coverage, "min_blocks_to_cover", 0) or 0)
@@ -164,6 +190,14 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     repaired_lines: List[str] = []
     changed = False
     for idx, line in enumerate(lines):
+        if SECOND_PERSON_PRONOUN_RE.search(line):
+            issues.append(FinalReviewIssue(code="second_person_pronoun", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
+        if BROKEN_GENERIC_PHRASE_RE.search(line):
+            issues.append(FinalReviewIssue(code="broken_generic_phrase", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
         if BROKEN_CONNECTION_RE.search(line):
             issues.append(FinalReviewIssue(code="raw_anchor_broken_connection", severity="block", line_index=idx, message=line))
             changed = True
@@ -211,7 +245,7 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     final_first_idx = _first_content_index(final_lines)
     midstream_remaining = final_first_idx is not None and MIDSTREAM_OPENING_RE.search(final_lines[final_first_idx])
     stale_remaining = bool(STALE_MEANING_BLOCK_RE.search(final_text))
-    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or stale_remaining or midstream_remaining)
+    block_remaining = bool(SECOND_PERSON_PRONOUN_RE.search(final_text) or BROKEN_GENERIC_PHRASE_RE.search(final_text) or BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or stale_remaining or midstream_remaining)
     repetition_remaining = sum(line.count("のですね") for line in final_lines) > 2 or _has_three_same_endings(final_lines)
     underanswered = _long_input_underanswered(final_lines, world_model)
     passed = bool(final_text) and not block_remaining and not repetition_remaining and not underanswered and any(PRESENCE_RE.search(line) for line in final_lines)
@@ -224,4 +258,4 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     return FinalReviewResult(passed=passed, issues=issues, repaired_text=repaired_text, review_version="emlis.final_reader.v1")
 
 
-__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "INTERNAL_OBSERVATION_LANGUAGE_RE", "STALE_MEANING_BLOCK_RE", "review_emlis_ai_reply_text"]
+__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "INTERNAL_OBSERVATION_LANGUAGE_RE", "STALE_MEANING_BLOCK_RE", "SECOND_PERSON_PRONOUN_RE", "review_emlis_ai_reply_text"]

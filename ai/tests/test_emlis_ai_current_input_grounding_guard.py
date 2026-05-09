@@ -18,7 +18,7 @@ def test_explicit_previous_input_leak_is_blocked():
     review = review_emlis_ai_reply_text(
         comment_text=(
             "Emlisです。\n"
-            "あなたは、しんどい時に頼ることも必要だと気づいているのですね。\n"
+            "しんどい時に頼ることも必要だと気づいている状態として見ています。\n"
             "前回入力の内容を踏まえて、別の入力の気持ちもここにあります。\n"
             "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
         ),
@@ -26,6 +26,7 @@ def test_explicit_previous_input_leak_is_blocked():
     )
     codes = {issue.code for issue in review.issues}
     assert "stale_meaning_block_leak" in codes or "stale_meaning_block_leak_remaining" in codes
+    assert "second_person_pronoun" not in codes
     assert review.repaired_text is not None
     assert "前回入力" not in review.repaired_text
     assert "別の入力" not in review.repaired_text

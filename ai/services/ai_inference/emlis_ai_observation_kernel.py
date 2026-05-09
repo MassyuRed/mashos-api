@@ -124,11 +124,11 @@ def _opening_text(world_model: WorldModel, blocks: List[InputMeaningBlock], phra
         first = _clean(blocks[0].summary).rstrip("。")
         if len(blocks) >= 2:
             second = _clean(blocks[1].summary).rstrip("。")
-            return f"あなたは、{_as_topic(first)}だけでなく、{_as_topic(second)}も一緒に言葉にしているのですね。"
-        return f"あなたは、{_as_topic(first)}を、今ここに置こうとしているのですね。"
+            return f"{_as_topic(first)}だけでなく、{_as_topic(second)}も一緒に出ている状態として見ています。"
+        return f"{_as_topic(first)}が、今ここに置かれている状態として見ています。"
     if phrases:
         first = _clean(phrases[0].sentence_fragment or phrases[0].phrase).rstrip("。")
-        return f"あなたは、{_as_topic(first)}を言葉にしようとしていたのですね。"
+        return f"{_as_topic(first)}を、少しずつ言葉にしようとしている状態として見ています。"
     labels = _selected_emotion_text(world_model)
     if labels:
         return f"今日は、{labels}が近くにあったのですね。"
@@ -210,9 +210,9 @@ def _block_line(block: InputMeaningBlock, *, index: int) -> str:
             return f"{prefix}無理しない選択をすることも、自分を守るために必要なこととして見えています。"
         if "距離" in summary:
             return f"{prefix}自分を守るために距離を取ることも、大切な選択として見えています。"
-        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
+        return f"{prefix}同時に、{_as_topic(summary)}も、今の状態を形づくる大切な要素として見ています。"
     if role in {"effort_direction", "wish_or_hope"}:
-        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
+        return f"{prefix}同時に、{_as_topic(summary)}も、今の状態を形づくる大切な要素として見ています。"
     if role in {"self_view", "relationship_or_others"}:
         return f"{prefix}その背景には、{summary}流れもありました。"
     return f"{prefix}そこには、{_as_topic(summary)}も含まれていました。"
@@ -223,7 +223,7 @@ def _phrase_line(phrase: ShapedUserPhrase, *, index: int) -> str:
     if not fragment:
         return ""
     if index == 0:
-        return f"あなたは、{_as_topic(fragment)}を、少しでも言葉にしたかったのですね。"
+        return f"{_as_topic(fragment)}を、少しでも言葉にしようとしている状態として見ています。"
     if role in {"fear_or_disappointment", "sadness_or_pain", "anger_or_frustration"}:
         return f"そこには、{fragment}感覚も近くにありました。"
     if role in {"wish", "wish_or_hope", "support_need", "effort_direction"}:
@@ -280,6 +280,59 @@ def _evidence_from_cross_core(packet: object) -> List[EvidenceRef]:
         refs.append(EvidenceRef(kind=_clean(getattr(packet, "source_kind", "cross_core_context")) or "cross_core_context", ref_id=_clean(getattr(packet, "source_id", "anchor")) or "anchor", weight=0.55, note="emlis_context_anchor"))
     return refs[:4]
 
+
+
+def _frame_evidence(frame: object, fallback: EvidenceRef) -> List[EvidenceRef]:
+    refs = list(getattr(frame, "evidence", []) or [])
+    return refs or [fallback]
+
+
+def _trim_sentence(text: str) -> str:
+    return _clean(text).rstrip("。")
+
+
+def _frame_tension_line(frame: object) -> str:
+    pairs = list(getattr(frame, "tension_pairs", []) or [])
+    pressure_sources = [_trim_sentence(str(item or "")) for item in list(getattr(frame, "pressure_sources", []) or []) if _trim_sentence(str(item or ""))]
+    pressure = pressure_sources[0] if pressure_sources else ""
+    if pairs:
+        pair = pairs[-1]
+        left = _trim_sentence(getattr(pair, "left", ""))
+        right = _trim_sentence(getattr(pair, "right", ""))
+        if left and right and pressure:
+            return f"{pressure}こともあり、{left}と、{right}の間で、かなり圧迫されているように見えます。"
+        if left and right:
+            return f"{left}と、{right}が同じ場所で重なっているように見えます。"
+    if pressure:
+        return f"{pressure}が、今の負担を大きくしているのだと思います。"
+    return ""
+
+
+def _observation_frame_candidates(world_model: WorldModel, current_ref: EvidenceRef) -> List[ObservationCandidate]:
+    frame = getattr(world_model.facts, "emlis_observation_frame", None)
+    if frame is None:
+        return []
+    evidence = _frame_evidence(frame, current_ref)
+    candidates: List[ObservationCandidate] = []
+    primary = _clean(getattr(frame, "primary_state", ""))
+    if primary:
+        candidates.append(_candidate("receive.observation_frame.primary", "receive", primary, evidence, confidence=0.99))
+    tension = _frame_tension_line(frame)
+    if tension:
+        candidates.append(_candidate("word_reflection.observation_frame.tension", "word_reflection", tension, evidence, confidence=0.96))
+    self_awareness = _clean(getattr(frame, "self_awareness_signal", ""))
+    if self_awareness and tension:
+        candidates.append(_candidate("word_reflection.observation_frame.self_awareness", "word_reflection", self_awareness, evidence, confidence=0.91))
+    escape = _clean(getattr(frame, "escape_or_limit_signal", ""))
+    if escape:
+        candidates.append(_candidate("word_reflection.observation_frame.escape", "word_reflection", escape, evidence, confidence=0.95))
+    strength = _clean(getattr(frame, "strength_signal", ""))
+    if strength:
+        candidates.append(_candidate("word_reflection.observation_frame.strength", "word_reflection", strength, evidence, confidence=0.95))
+    close = _clean(getattr(frame, "companion_close", ""))
+    if close:
+        candidates.append(_candidate("receiving_close.observation_frame", "receiving_close", close, evidence, confidence=0.96))
+    return candidates
 
 def _cross_core_hint_text(world_model: WorldModel) -> str:
     packets = list(getattr(world_model.facts, "cross_core_context", []) or [])
@@ -458,24 +511,28 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
         phrases = safe_phrases(shape_user_phrases(anchors=list(getattr(world_model.facts, "user_word_anchors", []) or []), current_input=bundle.current_input))
     candidates: List[ObservationCandidate] = []
 
-    candidates.append(_candidate("receive.current", "receive", _opening_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.98))
-    candidates.extend(_value_observation_candidates(world_model, current_ref))
+    frame_candidates = _observation_frame_candidates(world_model, current_ref)
+    if frame_candidates:
+        candidates.extend(frame_candidates)
+    else:
+        candidates.append(_candidate("receive.current", "receive", _opening_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.98))
+        candidates.extend(_value_observation_candidates(world_model, current_ref))
 
-    if selected_blocks:
+    if not frame_candidates and selected_blocks:
         for idx, block in enumerate(selected_blocks[:16]):
             line = _block_line(block, index=idx)
             if line:
                 candidates.append(_candidate(f"word_reflection.meaning.{idx:02d}", "word_reflection", line, _evidence_from_blocks([block], current_ref), confidence=0.90))
-    else:
+    elif not frame_candidates:
         for idx, phrase in enumerate(phrases[:3]):
             line = _phrase_line(phrase, index=idx)
             if line:
                 candidates.append(_candidate(f"word_reflection.phrase.{idx:02d}", "word_reflection", line, list(getattr(phrase, "evidence", []) or [current_ref]), confidence=0.82))
 
     selected_text = _selected_emotion_text(world_model)
-    if selected_text and "、" in selected_text:
+    if not frame_candidates and selected_text and "、" in selected_text:
         candidates.append(_candidate("selected_emotions.current", "selected_emotions", f"{selected_text}が重なっていたことも、分けずに見ておきたいところです。", [current_ref], confidence=0.82))
-    elif selected_text:
+    elif not frame_candidates and selected_text:
         candidates.append(_candidate("emotion_response.current", "emotion_response", f"その{selected_text}は、軽く片づけられない場所にあったのだと思います。", [current_ref], confidence=0.78))
 
     if kernel_input.capability.history_mode != "none":
@@ -499,7 +556,8 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
         if cross_core_item is not None:
             candidates.append(cross_core_item)
 
-    candidates.append(_candidate("receiving_close.default", "receiving_close", _presence_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.92))
+    if not frame_candidates:
+        candidates.append(_candidate("receiving_close.default", "receiving_close", _presence_text(world_model, selected_blocks, phrases), [current_ref], confidence=0.92))
     return candidates
 
 
@@ -557,6 +615,11 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     cross_core_usable = bool(capability.cross_core_enabled and getattr(world_model.facts, "cross_core_context", []))
     interpretive_frame_usable = bool(derived_model_usable or cross_core_usable)
     value_observation_count = len(getattr(world_model.facts, "value_observation_signals", []) or [])
+    observation_frame = getattr(world_model.facts, "emlis_observation_frame", None)
+    if observation_frame is not None:
+        frame_target = min(6, max(4, len(getattr(observation_frame, "required_line_roles", []) or []) or 4))
+        target = max(target, frame_target)
+        tier_ceiling = max(tier_ceiling, frame_target)
     if history_usable:
         target += 1
     if value_observation_count:
@@ -565,9 +628,13 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
         # One line for interpretive frame plus the normal close; partner line can use the extra line when available.
         target += 2
     evidence_ceiling = max(2, 2 + min(max(selected_count, len(blocks)), 16)) if clear_long else max(2, 2 + min(8, max(selected_count, len(world_model.facts.user_word_anchors or []))))
+    if observation_frame is not None:
+        evidence_ceiling = max(evidence_ceiling, min(6, max(4, len(getattr(observation_frame, "required_line_roles", []) or []) or 4)))
     if value_observation_count:
         evidence_ceiling += 1
     max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (2 if history_usable else 0) + (2 if interpretive_frame_usable else 0)))
+    if observation_frame is not None:
+        max_lines = max(max_lines, min(tier_ceiling, target, 6))
     return ReplyLengthPlan(
         mode=capability.reply_length_mode,
         max_lines=max_lines,
@@ -615,7 +682,7 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
     )
     selected_reserve = 1 if has_selected_line else 0
     for candidate in [c for c in candidates if c.kind == "word_reflection"]:
-        if candidate.candidate_key == "word_reflection.phrase.00" and receive is not None and candidate.text.startswith("あなたは、"):
+        if candidate.candidate_key == "word_reflection.phrase.00" and receive is not None:
             continue
         if len(accepted) >= reply_length_plan.max_lines - 1 - selected_reserve:
             break

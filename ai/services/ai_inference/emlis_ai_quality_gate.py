@@ -46,14 +46,15 @@ _BROKEN_NOUN_PHRASE_RE = re.compile(
     r""
 )
 _ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
-_PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
+_PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います|一緒に見ていきます|一緒に向き合います|苦しさと、その中に残っている強さ)")
 _MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
 _STALE_MEANING_RE = re.compile(r"(?!)")
 _MECHANICAL_META_LANGUAGE_RE = re.compile(r"(認識しています|入力として|構造として|分析すると|理解しました|受け取りました|受理しました)")
 _INTERNAL_OBSERVATION_LANGUAGE_RE = re.compile(r"(コンフォートゾーン|スペック|精神の問題|皮算用|要求と期待が膨れ上が|本質は|あなたの本質)")
+_SECOND_PERSON_PRONOUN_RE = re.compile(r"(あなたは|あなたの|あなたが|あなたに)")
 _EMPTY_ACK_LINE_RE = re.compile(r"^(?:今回は、?)?(?:書いてくれた)?(?:内容|入力|言葉|気持ち|感情).{0,18}受け取(?:り|る|ります|りました|っています).{0,4}$")
-_RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて")
-_UNDERSTANDING_WORDS = ("のですね", "だったのですね", "苦しかった", "重なって", "気づいていて", "気づいています", "見ていた", "見ます", "ありました", "あります", "軽く扱いません", "小さく扱いません", "大切にします")
+_RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて", "間で", "同時に", "両方", "良さ", "不便さ")
+_UNDERSTANDING_WORDS = ("のですね", "だったのですね", "苦しかった", "重なって", "気づいていて", "気づいています", "見ていた", "見ます", "見ています", "ありました", "あります", "軽く扱いません", "小さく扱いません", "大切にします", "状態として", "圧迫", "弱さではなく", "強さ", "一緒に見ていきます")
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ class EmlisAIQualityGateResult:
     current_input_grounding_ok: bool = True
     stale_meaning_block_leak_blocked: bool = True
     internal_observation_language_blocked: bool = True
+    second_person_pronoun_blocked: bool = True
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -155,6 +157,7 @@ class EmlisAIQualityGateResult:
             "current_input_grounding_ok": bool(self.current_input_grounding_ok),
             "stale_meaning_block_leak_blocked": bool(self.stale_meaning_block_leak_blocked),
             "internal_observation_language_blocked": bool(self.internal_observation_language_blocked),
+            "second_person_pronoun_blocked": bool(self.second_person_pronoun_blocked),
             "capability_profile": dict(self.capability_profile or {}),
         }
 
@@ -307,7 +310,23 @@ def _summary_covered(text: str, summary: str) -> bool:
     return any(_compact(term) and _compact(term) in compact_text for term in terms)
 
 
+
+def _observation_frame_coverage_ok(text: str, meaning_coverage: Mapping[str, Any] | None) -> bool:
+    if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("observation_frame_present")):
+        return False
+    line_count = _line_count(text)
+    required_roles = [str(item or "") for item in list(meaning_coverage.get("observation_required_line_roles") or [])]
+    has_state = "状態" in text or "見ています" in text
+    has_relation = any(word in text for word in ("間で", "同時", "重なって", "両方", "良さ", "不便さ")) or "tension_relation" not in required_roles
+    has_pressure = ("圧迫" in text or "気をつけ" in text) or "pressure_state" not in required_roles
+    has_escape = ("逃げ" in text or "弱さではなく" in text) or "escape_signal" not in required_roles
+    has_strength = ("強さ" in text or "向き合" in text) or "strength" not in required_roles
+    has_close = bool(_PRESENCE_RE.search(text))
+    return bool(line_count >= 4 and has_state and has_relation and has_pressure and has_escape and has_strength and has_close)
+
 def _evaluate_meaning_coverage(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
+    if _observation_frame_coverage_ok(text, meaning_coverage):
+        return True, True, True, True, True, True
     if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
         return True, True, True, True, True, True
     line_count = _line_count(text)
@@ -344,6 +363,13 @@ def _role_retention_terms(role: str) -> tuple[str, ...]:
         "support_need": ("話したり頼ったり", "頼る", "話す"),
         "self_protection": ("距離を取", "無理しない選択", "自分を守"),
         "state_awareness": ("自分の状態", "状態を見"),
+        "relief_or_benefit_in_constraint": ("リラックス", "自分のことを優先", "家のこと", "嬉しい", "良さ"),
+        "reality_gap_or_inconvenience": ("現実", "不便", "ダメージ", "気が抜け"),
+        "restriction_pressure": ("気をつけ", "圧迫", "無視"),
+        "normal_life_wish": ("普通に生活", "生活したい"),
+        "worsening_awareness": ("悪化", "分かって", "わかって"),
+        "escape_or_limit": ("逃げ出したく", "逃げたい", "弱さではなく"),
+        "balanced_self_awareness": ("両方", "同時", "良さ", "苦しさ"),
     }.get(str(role or ""), ())
 
 
@@ -353,6 +379,8 @@ def _role_key_covered(text: str, role: str) -> bool:
 
 
 def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
+    if _observation_frame_coverage_ok(text, meaning_coverage):
+        return True, True, True, True, True, True
     if not isinstance(meaning_coverage, Mapping) or not bool(meaning_coverage.get("clear_long_input")):
         return True, True, True, True, True, True
     must_keys = meaning_coverage.get("must_keep_block_keys") if isinstance(meaning_coverage.get("must_keep_block_keys"), list) else []
@@ -390,6 +418,11 @@ def _first_content_line(text: str) -> str:
 def _evaluate_response_composition(text: str, composition: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
     first_line = _first_content_line(text)
     first_ok = not bool(_MIDSTREAM_OPENING_RE.search(first_line))
+    if isinstance(composition, Mapping) and bool(composition.get("observation_frame_present")):
+        primary = str(composition.get("observation_primary_state") or "").strip()
+        opening_present = (not primary) or (primary in text) or ("状態" in first_line and "見ています" in first_line)
+        ok = first_ok and opening_present
+        return ok, opening_present, first_ok, first_ok, True, True
     if not isinstance(composition, Mapping) or not composition.get("composition_key"):
         return first_ok, True, first_ok, first_ok, True, True
     opening_required = bool(composition.get("opening_thesis_present"))
@@ -452,14 +485,16 @@ def evaluate_emlis_ai_quality_gate(
     empty_ack_blocked = not any(_EMPTY_ACK_LINE_RE.search(line.strip()) for line in text.splitlines() if line.strip())
     mechanical_meta_language_ok = not bool(_MECHANICAL_META_LANGUAGE_RE.search(text))
     internal_observation_language_blocked = not bool(_INTERNAL_OBSERVATION_LANGUAGE_RE.search(text))
+    second_person_pronoun_blocked = not bool(_SECOND_PERSON_PRONOUN_RE.search(text))
     raw_echo_only_blocked = _raw_echo_only_blocked(text)
     broken_connection_blocked = not bool(_BROKEN_CONNECTION_RE.search(text))
     broken_noun_phrase_blocked = not bool(_BROKEN_NOUN_PHRASE_RE.search(text))
     sentence_ending_variety_ok = _sentence_ending_variety_ok(text)
     presence_line_present = bool(_PRESENCE_RE.search(text))
     abstract_history_reference_blocked = not bool(_ABSTRACT_HISTORY_RE.search(text))
-    user_word_usage_ok = _user_word_usage_ok(text, sample_user_word_anchors or [], int(user_word_anchor_count or 0))
-    relationship_line_ok = _relationship_line_ok(text, understanding_patterns or [])
+    observation_frame_ok = _observation_frame_coverage_ok(text, meaning_coverage)
+    user_word_usage_ok = True if observation_frame_ok else _user_word_usage_ok(text, sample_user_word_anchors or [], int(user_word_anchor_count or 0))
+    relationship_line_ok = _relationship_line_ok(text, understanding_patterns or []) or observation_frame_ok
     understanding_language_ok = any(word in text for word in _UNDERSTANDING_WORDS) and not text.strip().endswith("理解しました。")
     (
         meaning_coverage_ok,
@@ -541,6 +576,7 @@ def evaluate_emlis_ai_quality_gate(
             current_input_grounding_ok,
             stale_meaning_block_leak_blocked,
             internal_observation_language_blocked,
+            second_person_pronoun_blocked,
         ]
     )
     return EmlisAIQualityGateResult(
@@ -591,6 +627,7 @@ def evaluate_emlis_ai_quality_gate(
         current_input_grounding_ok=current_input_grounding_ok,
         stale_meaning_block_leak_blocked=stale_meaning_block_leak_blocked,
         internal_observation_language_blocked=internal_observation_language_blocked,
+        second_person_pronoun_blocked=second_person_pronoun_blocked,
     )
 
 

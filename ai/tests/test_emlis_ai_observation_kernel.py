@@ -253,8 +253,8 @@ def test_observation_kernel_verbalizes_self_awareness_conflict_without_receive_l
     assert "見たくない" in text
     assert "嫌われ" in text
     assert "悲しみ" in text and "不安" in text
-    assert "あなたは" in text
-    assert "一方で" in text
+    assert "あなたは" not in text
+    assert any(word in text for word in ("だけでなく", "同じ流れ", "状態として", "見ています"))
     assert text.count("受け取") <= 1
     assert "入力として受け取ります" not in text
     assert "理解しました" not in text

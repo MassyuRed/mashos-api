@@ -481,6 +481,28 @@ class SourceBundle:
     debug: Dict[str, Any] = field(default_factory=dict)
 
 
+
+
+@dataclass(frozen=True)
+class ObservationTensionPair:
+    left: str
+    right: str
+    relation: str = "tension"
+
+
+@dataclass(frozen=True)
+class EmlisObservationFrame:
+    primary_state: str = ""
+    tension_pairs: List[ObservationTensionPair] = field(default_factory=list)
+    pressure_sources: List[str] = field(default_factory=list)
+    escape_or_limit_signal: str = ""
+    self_awareness_signal: str = ""
+    strength_signal: str = ""
+    companion_close: str = ""
+    evidence_terms: List[str] = field(default_factory=list)
+    required_line_roles: List[str] = field(default_factory=list)
+    evidence: List[EvidenceRef] = field(default_factory=list)
+
 @dataclass
 class WorldModelFacts:
     dominant_emotion: Optional[str] = None
@@ -500,6 +522,7 @@ class WorldModelFacts:
     major_meaning_retention_plan: Optional[MajorMeaningRetentionPlan] = None
     response_composition_plan: Optional[ResponseCompositionPlan] = None
     reply_narrative_arc: Optional[ReplyNarrativeArc] = None
+    emlis_observation_frame: Optional[EmlisObservationFrame] = None
     same_day_input_count: int = 0
     week_input_count: int = 0
     month_input_count: int = 0
