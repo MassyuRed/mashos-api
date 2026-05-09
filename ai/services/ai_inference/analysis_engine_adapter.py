@@ -441,6 +441,18 @@ def _coerce_self_structure_item(
             setattr(item, "category", category)
         if categories:
             setattr(item, "categories", categories)
+        for extra_key in (
+            "question_origin",
+            "personal_question_id",
+            "question_type",
+            "source_anchor",
+            "source_anchor_text",
+            "source_anchor_id",
+            "source_anchor_field",
+            "optional_free_text",
+        ):
+            if extra_key in raw:
+                setattr(item, extra_key, raw.get(extra_key))
     except Exception:
         pass
 

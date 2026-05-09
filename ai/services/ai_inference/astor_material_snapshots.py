@@ -755,6 +755,11 @@ def _material_meta_rows_from_rows(material_kind: str, rows: List[Dict[str, Any]]
                 str(r.get("answer_mode") or ""),
                 str(r.get("selected_choice_key") or ""),
                 str(r.get("free_text") or ""),
+                str(r.get("question_origin") or ""),
+                str(r.get("personal_question_id") or ""),
+                str(r.get("source_id") or ""),
+                str(r.get("anchor_text") or ""),
+                str(r.get("question_type") or ""),
                 str(r.get("edited_at") or r.get("answered_at") or ""),
             ])
         out.append(row)
@@ -937,11 +942,22 @@ def _today_question_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str,
             analysis_tags = []
 
     answer_mode = str(row.get("answer_mode") or "").strip() or "choice"
+    optional_free_text = str(row.get("free_text") or "").strip() or None
     text_primary = ""
     if answer_mode == "free_text":
-        text_primary = str(row.get("free_text") or "").strip()
+        text_primary = optional_free_text or ""
     if not text_primary:
         text_primary = str(row.get("selected_choice_label_snapshot") or row.get("selected_choice_key") or "").strip()
+
+    source_anchor = row.get("source_anchor_snapshot_json")
+    if isinstance(source_anchor, str) and source_anchor.strip():
+        try:
+            parsed_anchor = json.loads(source_anchor)
+            source_anchor = parsed_anchor if isinstance(parsed_anchor, dict) else None
+        except Exception:
+            source_anchor = None
+    if not isinstance(source_anchor, dict):
+        source_anchor = {}
 
     return {
         "source_type": "today_question",
@@ -957,6 +973,14 @@ def _today_question_row_to_self_structure_item(row: Dict[str, Any]) -> Dict[str,
         "source_weight": 1.05,
         "answer_mode": answer_mode,
         "choice_key": str(row.get("selected_choice_key") or "").strip() or None,
+        "optional_free_text": optional_free_text,
+        "question_origin": str(row.get("question_origin") or "static_role_probe").strip() or "static_role_probe",
+        "personal_question_id": str(row.get("personal_question_id") or "").strip() or None,
+        "source_anchor": source_anchor or None,
+        "source_anchor_text": str(row.get("anchor_text") or source_anchor.get("anchor_text") or "").strip() or None,
+        "source_anchor_id": str(row.get("source_id") or source_anchor.get("source_id") or "").strip() or None,
+        "source_anchor_field": str(row.get("source_field") or source_anchor.get("source_field") or "").strip() or None,
+        "question_type": str(row.get("question_type") or source_anchor.get("question_type") or "").strip() or None,
         "role_hint": str(meta.get("role_hint") or "").strip() or None,
         "target_hint": str(meta.get("target_hint") or "").strip() or None,
         "world_kind_hint": str(meta.get("world_kind_hint") or "").strip() or None,

@@ -7,7 +7,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional
 from zoneinfo import ZoneInfo
 
@@ -15,6 +15,19 @@ from fastapi import HTTPException
 
 from response_microcache import get_or_compute, invalidate_prefix
 from supabase_client import ensure_supabase_config, sb_get, sb_patch, sb_post
+from subscription import SubscriptionTier
+from subscription_store import get_subscription_tier_for_user
+from today_question_personal_candidate_service import (
+    build_best_personal_today_question_candidate,
+    list_recent_emotion_inputs_for_personal_today_question,
+)
+from today_question_personal_question_service import build_personal_question_insert_payload
+from today_question_personal_templates import (
+    QUESTION_ORIGIN_PERSONAL,
+    QUESTION_ORIGIN_STATIC,
+    build_source_hash,
+    source_anchor_hash as build_source_anchor_hash,
+)
 
 logger = logging.getLogger("today_question_store")
 
@@ -27,6 +40,9 @@ TODAY_QUESTION_PROGRESS_TABLE = (os.getenv("TODAY_QUESTION_PROGRESS_TABLE") or "
 TODAY_QUESTION_ANSWERS_TABLE = (os.getenv("TODAY_QUESTION_ANSWERS_TABLE") or "today_question_answers").strip() or "today_question_answers"
 TODAY_QUESTION_REVISIONS_TABLE = (os.getenv("TODAY_QUESTION_REVISIONS_TABLE") or "today_question_answer_revisions").strip() or "today_question_answer_revisions"
 TODAY_QUESTION_PUSH_DELIVERIES_TABLE = (os.getenv("TODAY_QUESTION_PUSH_DELIVERIES_TABLE") or "today_question_push_deliveries").strip() or "today_question_push_deliveries"
+TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE = (os.getenv("TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE") or "today_question_personal_candidates").strip() or "today_question_personal_candidates"
+TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE = (os.getenv("TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE") or "today_question_personal_questions").strip() or "today_question_personal_questions"
+ACTIVE_USERS_TABLE = (os.getenv("COCOLON_ACTIVE_USERS_TABLE") or "active_users").strip() or "active_users"
 TODAY_QUESTION_DEFAULT_TIMEZONE = (os.getenv("TODAY_QUESTION_DEFAULT_TIMEZONE") or "Asia/Tokyo").strip() or "Asia/Tokyo"
 TODAY_QUESTION_SERVICE_DAY_TIMEZONE = (os.getenv("TODAY_QUESTION_SERVICE_DAY_TIMEZONE") or "Asia/Tokyo").strip() or "Asia/Tokyo"
 TODAY_QUESTION_DEFAULT_DELIVERY_TIME = (os.getenv("TODAY_QUESTION_DEFAULT_DELIVERY_TIME") or "18:00").strip() or "18:00"
@@ -39,6 +55,9 @@ TODAY_QUESTION_SETTINGS_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_SETT
 TODAY_QUESTION_PROGRESS_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_PROGRESS_CACHE_TTL_SECONDS", "10") or "10")
 TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_ANSWER_CACHE_TTL_SECONDS", "10") or "10")
 TODAY_QUESTION_HISTORY_SCAN_CACHE_TTL_SECONDS = float(os.getenv("TODAY_QUESTION_HISTORY_SCAN_CACHE_TTL_SECONDS", "20") or "20")
+TODAY_QUESTION_PERSONAL_FOLLOWUP_ENABLED = (os.getenv("TODAY_QUESTION_PERSONAL_FOLLOWUP_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on")
+TODAY_QUESTION_PERSONAL_MIN_SCORE = int(os.getenv("TODAY_QUESTION_PERSONAL_MIN_SCORE", "72") or "72")
+TODAY_QUESTION_PERSONAL_STATIC_FALLBACK_EVERY_N_DAYS = int(os.getenv("TODAY_QUESTION_PERSONAL_STATIC_FALLBACK_EVERY_N_DAYS", "4") or "4")
 
 _HHMM_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
@@ -52,6 +71,10 @@ class TodayQuestionCurrentBundle:
     progress: Dict[str, Any]
     release_status: str = "released"
     release_time_local: Optional[str] = None
+    question_origin: str = QUESTION_ORIGIN_STATIC
+    personal_question_id: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
+    question_type: Optional[str] = None
 
 
 @dataclass
@@ -63,6 +86,10 @@ class TodayQuestionStatusBundle:
     progress: Dict[str, Any]
     release_status: str = "released"
     release_time_local: Optional[str] = None
+    question_origin: str = QUESTION_ORIGIN_STATIC
+    personal_question_id: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
+    question_type: Optional[str] = None
 
 
 def _now_utc() -> datetime:
@@ -295,7 +322,7 @@ def _answer_summary(answer_row: Optional[Mapping[str, Any]]) -> Optional[Dict[st
         return {
             "answer_mode": "choice",
             "label": label or None,
-            "text": None,
+            "text": str(answer_row.get("free_text") or "").strip() or None,
         }
     text = str(answer_row.get("free_text") or "").strip()
     return {
@@ -313,6 +340,76 @@ def _settings_public(row: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _question_origin_from_row(row: Mapping[str, Any]) -> str:
+    origin = str(row.get("question_origin") or "").strip()
+    if origin in (QUESTION_ORIGIN_STATIC, QUESTION_ORIGIN_PERSONAL):
+        return origin
+    return QUESTION_ORIGIN_PERSONAL if str(row.get("personal_question_id") or "").strip() else QUESTION_ORIGIN_STATIC
+
+
+def _source_anchor_public(value: Any) -> Optional[Dict[str, Any]]:
+    raw = _parse_jsonish(value, {})
+    if not isinstance(raw, Mapping):
+        return None
+    anchor_text = str(raw.get("anchor_text") or "").strip()
+    source_id = str(raw.get("source_id") or "").strip()
+    source_field = str(raw.get("source_field") or "").strip()
+    question_type = str(raw.get("question_type") or "").strip()
+    if not anchor_text or not source_id or not source_field:
+        return None
+    return {
+        "source_type": str(raw.get("source_type") or "emotion_input").strip() or "emotion_input",
+        "source_id": source_id,
+        "source_field": source_field,
+        "anchor_text": anchor_text,
+        "anchor_start": raw.get("anchor_start"),
+        "anchor_end": raw.get("anchor_end"),
+        "question_type": question_type or None,
+        "source_hash": str(raw.get("source_hash") or "").strip() or None,
+    }
+
+
+def _source_anchor_public_from_answer_row(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    from_snapshot = _source_anchor_public(row.get("source_anchor_snapshot_json"))
+    if from_snapshot:
+        return from_snapshot
+    anchor_text = str(row.get("anchor_text") or "").strip()
+    source_id = str(row.get("source_id") or "").strip()
+    source_field = str(row.get("source_field") or "").strip()
+    question_type = str(row.get("question_type") or "").strip()
+    if not anchor_text or not source_id or not source_field:
+        return None
+    return {
+        "source_type": str(row.get("source_type") or "emotion_input").strip() or "emotion_input",
+        "source_id": source_id,
+        "source_field": source_field,
+        "anchor_text": anchor_text,
+        "anchor_start": None,
+        "anchor_end": None,
+        "question_type": question_type or None,
+        "source_hash": build_source_hash(
+            source_id=source_id,
+            source_field=source_field,
+            anchor_text=anchor_text,
+            question_type=question_type,
+        ),
+    }
+
+
+def _source_anchor_summary(source_anchor: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(source_anchor, Mapping):
+        return None
+    anchor_text = str(source_anchor.get("anchor_text") or "").strip()
+    if not anchor_text:
+        return None
+    return {
+        "source_type": str(source_anchor.get("source_type") or "emotion_input").strip() or "emotion_input",
+        "source_field": str(source_anchor.get("source_field") or "").strip() or None,
+        "anchor_text": anchor_text,
+        "question_type": str(source_anchor.get("question_type") or "").strip() or None,
+    }
+
+
 def _question_public(question_row: Mapping[str, Any], choice_rows: List[Mapping[str, Any]]) -> Dict[str, Any]:
     choices_sorted = sorted(choice_rows or [], key=lambda x: int(x.get("sort_order") or 0))
     choice_count = int(question_row.get("choice_count") or len(choices_sorted) or 0)
@@ -324,6 +421,34 @@ def _question_public(question_row: Mapping[str, Any], choice_rows: List[Mapping[
         "choice_count": choice_count,
         "choices": [_choice_public(r) for r in choices_sorted],
         "free_text_enabled": bool(question_row.get("free_text_enabled", True)),
+        "optional_free_text_enabled": False,
+        "question_origin": QUESTION_ORIGIN_STATIC,
+    }
+
+
+def _question_public_from_personal_row(question_row: Mapping[str, Any]) -> Dict[str, Any]:
+    raw_choices = _parse_jsonish(question_row.get("choices_snapshot_json"), [])
+    if not isinstance(raw_choices, list):
+        raw_choices = []
+    choices_sorted = sorted(
+        [r for r in raw_choices if isinstance(r, Mapping)],
+        key=lambda x: _safe_int(x.get("sort_order"), 0),
+    )
+    qid = str(question_row.get("id") or "").strip()
+    qtype = str(question_row.get("question_type") or "").strip()
+    return {
+        "question_id": qid,
+        "question_key": f"personal_{qtype}" if qtype else "personal_followup",
+        "version": 1,
+        "text": str(question_row.get("question_text") or "").strip(),
+        "choice_count": len(choices_sorted),
+        "choices": [_choice_public_from_snapshot(r) for r in choices_sorted],
+        "free_text_enabled": True,
+        "optional_free_text_enabled": True,
+        "question_origin": QUESTION_ORIGIN_PERSONAL,
+        "personal_question_id": qid or None,
+        "question_type": qtype or None,
+        "source_anchor": _source_anchor_public(question_row.get("source_anchor_json")),
     }
 
 
@@ -335,14 +460,23 @@ def _question_public_from_answer_row(answer_row: Mapping[str, Any]) -> Dict[str,
         [r for r in raw_choices if isinstance(r, Mapping)],
         key=lambda x: _safe_int(x.get("sort_order"), 0),
     )
+    origin = _question_origin_from_row(answer_row)
+    personal_question_id = str(answer_row.get("personal_question_id") or "").strip() or None
+    question_id = str(answer_row.get("question_id") or "").strip() or personal_question_id or ""
+    source_anchor = _source_anchor_public_from_answer_row(answer_row)
     return {
-        "question_id": str(answer_row.get("question_id") or ""),
+        "question_id": question_id,
         "question_key": str(answer_row.get("question_key") or ""),
         "version": int(answer_row.get("question_version") or 1),
         "text": str(answer_row.get("question_text_snapshot") or "").strip(),
         "choice_count": len(choices_sorted),
         "choices": [_choice_public_from_snapshot(r) for r in choices_sorted],
         "free_text_enabled": True,
+        "optional_free_text_enabled": origin == QUESTION_ORIGIN_PERSONAL,
+        "question_origin": origin,
+        "personal_question_id": personal_question_id,
+        "question_type": str(answer_row.get("question_type") or "").strip() or None,
+        "source_anchor": source_anchor,
     }
 
 
@@ -353,16 +487,46 @@ def _question_status_public(question_row: Mapping[str, Any]) -> Dict[str, Any]:
         "version": int(question_row.get("version") or question_row.get("question_version") or 1),
         "choice_count": int(question_row.get("choice_count") or 0),
         "free_text_enabled": bool(question_row.get("free_text_enabled", True)),
+        "optional_free_text_enabled": False,
+        "question_origin": QUESTION_ORIGIN_STATIC,
+    }
+
+
+def _question_status_public_from_personal_row(question_row: Mapping[str, Any]) -> Dict[str, Any]:
+    raw_choices = _parse_jsonish(question_row.get("choices_snapshot_json"), [])
+    if not isinstance(raw_choices, list):
+        raw_choices = []
+    qid = str(question_row.get("id") or "").strip()
+    qtype = str(question_row.get("question_type") or "").strip()
+    return {
+        "question_id": qid,
+        "question_key": f"personal_{qtype}" if qtype else "personal_followup",
+        "version": 1,
+        "choice_count": len([r for r in raw_choices if isinstance(r, Mapping)]),
+        "free_text_enabled": True,
+        "optional_free_text_enabled": True,
+        "question_origin": QUESTION_ORIGIN_PERSONAL,
+        "personal_question_id": qid or None,
+        "question_type": qtype or None,
+        "source_anchor": _source_anchor_public(question_row.get("source_anchor_json")),
     }
 
 
 def _question_status_public_from_answer_row(answer_row: Mapping[str, Any]) -> Dict[str, Any]:
+    origin = _question_origin_from_row(answer_row)
+    personal_question_id = str(answer_row.get("personal_question_id") or "").strip() or None
+    question_id = str(answer_row.get("question_id") or "").strip() or personal_question_id or ""
     return {
-        "question_id": str(answer_row.get("question_id") or ""),
+        "question_id": question_id,
         "question_key": str(answer_row.get("question_key") or "") or None,
         "version": int(answer_row.get("question_version") or 1),
         "choice_count": int(answer_row.get("choice_count") or 0),
         "free_text_enabled": bool(answer_row.get("free_text_enabled", True)),
+        "optional_free_text_enabled": origin == QUESTION_ORIGIN_PERSONAL,
+        "question_origin": origin,
+        "personal_question_id": personal_question_id,
+        "question_type": str(answer_row.get("question_type") or "").strip() or None,
+        "source_anchor": _source_anchor_public_from_answer_row(answer_row),
     }
 
 
@@ -387,11 +551,14 @@ def _history_item_public(row: Mapping[str, Any]) -> Dict[str, Any]:
     choices_snapshot = _parse_jsonish(row.get("choices_snapshot_json"), [])
     if not isinstance(choices_snapshot, list):
         choices_snapshot = []
+    origin = _question_origin_from_row(row)
+    personal_question_id = str(row.get("personal_question_id") or "").strip() or None
+    source_anchor = _source_anchor_public_from_answer_row(row)
     return {
         "answer_id": str(row.get("id") or ""),
         "service_day_key": str(row.get("service_day_key") or ""),
         "sequence_no": _safe_int(row.get("sequence_no"), 0) or None,
-        "question_id": str(row.get("question_id") or ""),
+        "question_id": str(row.get("question_id") or "").strip() or personal_question_id or "",
         "question_key": str(row.get("question_key") or ""),
         "question_version": int(row.get("question_version") or 1),
         "question_text": str(row.get("question_text_snapshot") or "").strip(),
@@ -404,6 +571,10 @@ def _history_item_public(row: Mapping[str, Any]) -> Dict[str, Any]:
         "answered_at": str(row.get("answered_at") or row.get("created_at") or "") or None,
         "edited_at": str(row.get("edited_at") or "") or None,
         "edit_count": int(row.get("edit_count") or 0),
+        "question_origin": origin,
+        "personal_question_id": personal_question_id,
+        "question_type": str(row.get("question_type") or "").strip() or None,
+        "source_anchor_summary": _source_anchor_summary(source_anchor),
     }
 
 
@@ -704,7 +875,7 @@ class TodayQuestionStore:
             rows = await self._select_rows(
                 TODAY_QUESTION_ANSWERS_TABLE,
                 params={
-                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,question_text_snapshot,choices_snapshot_json,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at",
+                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,question_text_snapshot,choices_snapshot_json,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at,question_origin,personal_question_id,source_type,source_id,source_field,anchor_text,question_type,source_anchor_snapshot_json",
                     "user_id": f"eq.{uid}",
                     "service_day_key": f"eq.{day}",
                     "order": "answered_at.desc,id.desc",
@@ -726,7 +897,7 @@ class TodayQuestionStore:
             rows = await self._select_rows(
                 TODAY_QUESTION_ANSWERS_TABLE,
                 params={
-                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at",
+                    "select": "id,service_day_key,sequence_id,sequence_no,presented_local_date,local_answer_date,question_id,question_key,question_version,answer_mode,selected_choice_id,selected_choice_key,selected_choice_label_snapshot,free_text,answered_at,created_at,question_origin,personal_question_id,source_type,source_id,source_field,anchor_text,question_type,source_anchor_snapshot_json",
                     "user_id": f"eq.{uid}",
                     "service_day_key": f"eq.{day}",
                     "order": "answered_at.desc,id.desc",
@@ -911,6 +1082,271 @@ class TodayQuestionStore:
             ),
         }
 
+    async def _resolve_subscription_tier_value(self, user_id: str) -> str:
+        uid = str(user_id or "").strip()
+        if not uid:
+            return SubscriptionTier.FREE.value
+        try:
+            tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
+            return str(getattr(tier, "value", tier) or SubscriptionTier.FREE.value).strip().lower() or SubscriptionTier.FREE.value
+        except Exception:
+            logger.exception("today_question: subscription tier lookup failed")
+            return SubscriptionTier.FREE.value
+
+    def _is_personal_followup_allowed(self, tier_value: str) -> bool:
+        if not TODAY_QUESTION_PERSONAL_FOLLOWUP_ENABLED:
+            return False
+        return str(tier_value or "").strip().lower() == SubscriptionTier.PREMIUM.value
+
+    def _should_reserve_static_slot(self, *, user_id: str, service_day_key: str) -> bool:
+        every = int(TODAY_QUESTION_PERSONAL_STATIC_FALLBACK_EVERY_N_DAYS or 0)
+        if every <= 0:
+            return False
+        try:
+            ordinal = date.fromisoformat(str(service_day_key or "").strip()).toordinal()
+        except Exception:
+            ordinal = 0
+        seed = sum(ord(ch) for ch in str(user_id or ""))
+        return ((ordinal + seed) % every) == 0
+
+    async def _fetch_personal_question_row_for_day(self, user_id: str, service_day_key: str) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        day = str(service_day_key or "").strip()
+        if not uid or not day:
+            return None
+        rows = await self._select_rows(
+            TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE,
+            params={
+                "select": "*",
+                "user_id": f"eq.{uid}",
+                "presented_local_date": f"eq.{day}",
+                "status": "in.(ready,answered)",
+                "order": "created_at.desc,id.desc",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def _fetch_personal_question_row_by_id(self, user_id: str, personal_question_id: str) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        qid = str(personal_question_id or "").strip()
+        if not uid or not qid:
+            return None
+        rows = await self._select_rows(
+            TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE,
+            params={
+                "select": "*",
+                "id": f"eq.{qid}",
+                "user_id": f"eq.{uid}",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def _fetch_seen_personal_anchor_keys(self, user_id: str) -> set[tuple[str, str, str]]:
+        uid = str(user_id or "").strip()
+        if not uid:
+            return set()
+        seen: set[tuple[str, str, str]] = set()
+        try:
+            rows = await self._select_rows(
+                TODAY_QUESTION_ANSWERS_TABLE,
+                params={
+                    "select": "source_id,anchor_text,question_type",
+                    "user_id": f"eq.{uid}",
+                    "question_origin": f"eq.{QUESTION_ORIGIN_PERSONAL}",
+                    "order": "answered_at.desc,id.desc",
+                    "limit": "80",
+                },
+            )
+            for row in rows:
+                source_id = str(row.get("source_id") or "").strip()
+                anchor_text = str(row.get("anchor_text") or "").strip()
+                question_type = str(row.get("question_type") or "").strip()
+                if source_id and anchor_text and question_type:
+                    seen.add((source_id, anchor_text, question_type))
+        except Exception:
+            logger.exception("today_question: failed to scan personal answer anchors")
+        try:
+            rows = await self._select_rows(
+                TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE,
+                params={
+                    "select": "source_id,anchor_text,question_type",
+                    "user_id": f"eq.{uid}",
+                    "status": "in.(used,rejected)",
+                    "order": "created_at.desc,id.desc",
+                    "limit": "120",
+                },
+            )
+            for row in rows:
+                source_id = str(row.get("source_id") or "").strip()
+                anchor_text = str(row.get("anchor_text") or "").strip()
+                question_type = str(row.get("question_type") or "").strip()
+                if source_id and anchor_text and question_type:
+                    seen.add((source_id, anchor_text, question_type))
+        except Exception:
+            logger.exception("today_question: failed to scan personal candidate anchors")
+        return seen
+
+    async def _insert_personal_candidate(self, user_id: str, candidate: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        if not uid or not isinstance(candidate, Mapping):
+            return None
+        source_id = str(candidate.get("source_id") or "").strip()
+        source_field = str(candidate.get("source_field") or "").strip()
+        anchor_text = str(candidate.get("anchor_text") or "").strip()
+        question_type = str(candidate.get("question_type") or "").strip()
+        if not source_id or not source_field or not anchor_text or not question_type:
+            return None
+        existing = await self._select_rows(
+            TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE,
+            params={
+                "select": "*",
+                "user_id": f"eq.{uid}",
+                "source_type": f"eq.{str(candidate.get('source_type') or 'emotion_input')}",
+                "source_id": f"eq.{source_id}",
+                "source_field": f"eq.{source_field}",
+                "anchor_text": f"eq.{anchor_text}",
+                "question_type": f"eq.{question_type}",
+                "limit": "1",
+            },
+        )
+        if existing:
+            return existing[0]
+        now_iso = _iso_utc()
+        body = {
+            "user_id": uid,
+            "source_type": str(candidate.get("source_type") or "emotion_input").strip() or "emotion_input",
+            "source_id": source_id,
+            "source_field": source_field,
+            "anchor_text": anchor_text,
+            "anchor_start": candidate.get("anchor_start"),
+            "anchor_end": candidate.get("anchor_end"),
+            "question_type": question_type,
+            "score": int(candidate.get("score") or 0),
+            "source_hash": str(candidate.get("source_hash") or "").strip() or None,
+            "status": "ready",
+            "reason_json": candidate.get("reason_json") if isinstance(candidate.get("reason_json"), Mapping) else {},
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        rows = await self._insert_rows(
+            TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE,
+            json_body=body,
+            prefer="return=representation",
+        )
+        return rows[0] if rows else body
+
+    async def _create_personal_question_from_candidate(
+        self,
+        *,
+        user_id: str,
+        service_day_key: str,
+        candidate_row: Mapping[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        cid = str(candidate_row.get("id") or "").strip()
+        if not uid or not cid:
+            return None
+        payload = build_personal_question_insert_payload(
+            user_id=uid,
+            candidate_id=cid,
+            candidate=candidate_row,
+            service_day_key=service_day_key,
+        )
+        if not payload:
+            return None
+        now_iso = _iso_utc()
+        payload["created_at"] = now_iso
+        payload["updated_at"] = now_iso
+        rows = await self._insert_rows(
+            TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE,
+            json_body=payload,
+            prefer="return=representation",
+        )
+        question_row = rows[0] if rows else payload
+        try:
+            await self._patch_rows(
+                TODAY_QUESTION_PERSONAL_CANDIDATES_TABLE,
+                params={"id": f"eq.{cid}", "user_id": f"eq.{uid}"},
+                json_body={"status": "used", "updated_at": now_iso},
+                prefer="return=minimal",
+            )
+        except Exception:
+            logger.exception("today_question: failed to mark personal candidate used")
+        return question_row
+
+    async def _resolve_personal_followup_for_day(
+        self,
+        user_id: str,
+        *,
+        service_day_key: str,
+        tier_value: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        uid = str(user_id or "").strip()
+        day = str(service_day_key or "").strip()
+        if not uid or not day:
+            return None
+        tier = str(tier_value or "").strip().lower() or await self._resolve_subscription_tier_value(uid)
+        if not self._is_personal_followup_allowed(tier):
+            return None
+
+        existing = await self._fetch_personal_question_row_for_day(uid, day)
+        if existing:
+            return existing
+
+        if self._should_reserve_static_slot(user_id=uid, service_day_key=day):
+            return None
+
+        try:
+            rows = await list_recent_emotion_inputs_for_personal_today_question(uid)
+            seen_keys = await self._fetch_seen_personal_anchor_keys(uid)
+            candidate = build_best_personal_today_question_candidate(rows, seen_keys=seen_keys)
+            if not candidate:
+                return None
+            if int(candidate.get("score") or 0) < int(TODAY_QUESTION_PERSONAL_MIN_SCORE or 0):
+                return None
+            candidate_row = await self._insert_personal_candidate(uid, candidate)
+            if not candidate_row:
+                return None
+            return await self._create_personal_question_from_candidate(
+                user_id=uid,
+                service_day_key=day,
+                candidate_row=candidate_row,
+            )
+        except Exception:
+            logger.exception("today_question: personal followup resolution failed")
+            return None
+
+    async def refresh_personal_followup_candidates(self, *, limit: int = 200, now_utc: Optional[datetime] = None) -> Dict[str, Any]:
+        now = now_utc or _now_utc()
+        day = _service_day_key(now)
+        rows = await self._select_rows(
+            ACTIVE_USERS_TABLE,
+            params={
+                "select": "user_id,subscription_tier,last_active_at",
+                "subscription_tier": f"eq.{SubscriptionTier.PREMIUM.value}",
+                "order": "last_active_at.desc",
+                "limit": str(max(1, min(int(limit or 200), 1000))),
+            },
+        )
+        scanned = 0
+        created = 0
+        for row in rows:
+            uid = str(row.get("user_id") or "").strip()
+            if not uid:
+                continue
+            scanned += 1
+            before = await self._fetch_personal_question_row_for_day(uid, day)
+            question_row = await self._resolve_personal_followup_for_day(
+                uid,
+                service_day_key=day,
+                tier_value=SubscriptionTier.PREMIUM.value,
+            )
+            if question_row and not before:
+                created += 1
+        return {"status": "ok", "service_day_key": day, "scanned": scanned, "created": created}
+
     def _resolve_choice_from_input(
         self,
         choice_rows: List[Mapping[str, Any]],
@@ -997,12 +1433,43 @@ class TodayQuestionStore:
                     or service_day_key
                 ),
             )
+            origin = _question_origin_from_row(today_answer)
+            source_anchor = _source_anchor_public_from_answer_row(today_answer)
+            personal_question_id = str(today_answer.get("personal_question_id") or "").strip() or None
             return TodayQuestionCurrentBundle(
                 service_day_key=service_day_key,
                 question=_question_public_from_answer_row(today_answer),
                 answer=today_answer,
                 settings=settings,
                 progress=progress_public,
+                question_origin=origin,
+                personal_question_id=personal_question_id,
+                source_anchor=source_anchor,
+                question_type=str(today_answer.get("question_type") or "").strip() or None,
+            )
+
+        tier_value = await self._resolve_subscription_tier_value(uid)
+        personal_question_row = await self._resolve_personal_followup_for_day(
+            uid,
+            service_day_key=service_day_key,
+            tier_value=tier_value,
+        )
+        if personal_question_row:
+            source_anchor = _source_anchor_public(personal_question_row.get("source_anchor_json"))
+            return TodayQuestionCurrentBundle(
+                service_day_key=service_day_key,
+                question=_question_public_from_personal_row(personal_question_row),
+                answer=None,
+                settings=settings,
+                progress={**_progress_public(
+                    sequence_no=None,
+                    total_count=total_count,
+                    current_presented_local_date=service_day_key,
+                ), "mode": QUESTION_ORIGIN_PERSONAL},
+                question_origin=QUESTION_ORIGIN_PERSONAL,
+                personal_question_id=str(personal_question_row.get("id") or "").strip() or None,
+                source_anchor=source_anchor,
+                question_type=str(personal_question_row.get("question_type") or "").strip() or None,
             )
 
         resolved = await self._resolve_pending_progress(
@@ -1102,12 +1569,43 @@ class TodayQuestionStore:
                 meta_row = await self._fetch_question_meta_row(question_id)
                 if meta_row:
                     question_meta = _question_status_public(meta_row)
+            origin = _question_origin_from_row(today_answer)
+            source_anchor = _source_anchor_public_from_answer_row(today_answer)
+            personal_question_id = str(today_answer.get("personal_question_id") or "").strip() or None
             return TodayQuestionStatusBundle(
                 service_day_key=service_day_key,
                 question=question_meta,
                 answer=today_answer,
                 settings=settings,
                 progress=progress_public,
+                question_origin=origin,
+                personal_question_id=personal_question_id,
+                source_anchor=source_anchor,
+                question_type=str(today_answer.get("question_type") or "").strip() or None,
+            )
+
+        tier_value = await self._resolve_subscription_tier_value(uid)
+        personal_question_row = await self._resolve_personal_followup_for_day(
+            uid,
+            service_day_key=service_day_key,
+            tier_value=tier_value,
+        )
+        if personal_question_row:
+            source_anchor = _source_anchor_public(personal_question_row.get("source_anchor_json"))
+            return TodayQuestionStatusBundle(
+                service_day_key=service_day_key,
+                question=_question_status_public_from_personal_row(personal_question_row),
+                answer=None,
+                settings=settings,
+                progress={**_progress_public(
+                    sequence_no=None,
+                    total_count=total_count,
+                    current_presented_local_date=service_day_key,
+                ), "mode": QUESTION_ORIGIN_PERSONAL},
+                question_origin=QUESTION_ORIGIN_PERSONAL,
+                personal_question_id=str(personal_question_row.get("id") or "").strip() or None,
+                source_anchor=source_anchor,
+                question_type=str(personal_question_row.get("question_type") or "").strip() or None,
             )
 
         resolved = await self._resolve_pending_progress(
@@ -1162,6 +1660,9 @@ class TodayQuestionStore:
         free_text: Optional[str] = None,
         sequence_no: Optional[int] = None,
         timezone_name: Optional[str] = None,
+        question_origin: Optional[str] = None,
+        personal_question_id: Optional[str] = None,
+        source_anchor_hash: Optional[str] = None,
     ) -> Dict[str, Any]:
         uid = str(user_id or "").strip()
         mode = str(answer_mode or "").strip()
@@ -1178,32 +1679,71 @@ class TodayQuestionStore:
         if bundle.answer:
             raise HTTPException(status_code=409, detail="Today question has already been answered")
 
+        current_origin = str(getattr(bundle, "question_origin", None) or (bundle.question or {}).get("question_origin") or QUESTION_ORIGIN_STATIC).strip() or QUESTION_ORIGIN_STATIC
+        expected_origin = str(question_origin or current_origin).strip() or current_origin
+        if expected_origin != current_origin:
+            raise HTTPException(status_code=409, detail="Question has changed. Please reload.")
+
         current_sequence_no = _safe_int((bundle.progress or {}).get("sequence_no"), 0) or None
-        if sequence_no is not None and current_sequence_no and _safe_int(sequence_no, 0) != current_sequence_no:
+        if current_origin != QUESTION_ORIGIN_PERSONAL and sequence_no is not None and current_sequence_no and _safe_int(sequence_no, 0) != current_sequence_no:
             raise HTTPException(status_code=409, detail="Question sequence has changed. Please reload.")
+
+        if current_origin == QUESTION_ORIGIN_PERSONAL:
+            current_personal_question_id = str(getattr(bundle, "personal_question_id", None) or (bundle.question or {}).get("personal_question_id") or "").strip()
+            provided_personal_question_id = str(personal_question_id or "").strip()
+            if provided_personal_question_id and provided_personal_question_id != current_personal_question_id:
+                raise HTTPException(status_code=409, detail="Question has changed. Please reload.")
+            anchor = getattr(bundle, "source_anchor", None)
+            if source_anchor_hash and isinstance(anchor, Mapping):
+                expected_hash = build_source_anchor_hash(anchor)
+                if str(source_anchor_hash or "").strip() != expected_hash:
+                    raise HTTPException(status_code=409, detail="Question source has changed. Please reload.")
 
         existing_today_answer = await self._fetch_answer_row_for_day(uid, bundle.service_day_key)
         if existing_today_answer:
             raise HTTPException(status_code=409, detail="Today question has already been answered")
 
-        if current_sequence_no:
+        if current_origin != QUESTION_ORIGIN_PERSONAL and current_sequence_no:
             existing_sequence_answer = await self._fetch_answer_row_for_sequence(uid, current_sequence_no)
             if existing_sequence_answer:
                 raise HTTPException(status_code=409, detail="This question has already been answered")
 
         question = bundle.question
-        choice_rows = await self._fetch_choice_rows(question["question_id"])
-        choices_snapshot = [_choice_snapshot(r) for r in choice_rows]
+        if current_origin == QUESTION_ORIGIN_PERSONAL:
+            choice_rows = []
+            choices_snapshot = _parse_jsonish(question.get("choices"), []) if isinstance(question, Mapping) else []
+            if not isinstance(choices_snapshot, list):
+                choices_snapshot = []
+            choices_snapshot = [dict(r) for r in choices_snapshot if isinstance(r, Mapping)]
+            personal_row = await self._fetch_personal_question_row_by_id(
+                uid,
+                str(getattr(bundle, "personal_question_id", None) or question.get("personal_question_id") or question.get("question_id") or ""),
+            )
+            if personal_row:
+                raw_personal_choices = _parse_jsonish(personal_row.get("choices_snapshot_json"), [])
+                if isinstance(raw_personal_choices, list):
+                    choices_snapshot = [dict(r) for r in raw_personal_choices if isinstance(r, Mapping)]
+        else:
+            choice_rows = await self._fetch_choice_rows(question["question_id"])
+            choices_snapshot = [_choice_snapshot(r) for r in choice_rows]
 
         free_text_clean = str(free_text or "").strip()
         selected_snapshot: Optional[Dict[str, Any]] = None
         if mode == "choice":
-            selected_snapshot = self._resolve_choice_from_input(
-                choice_rows,
-                selected_choice_id=selected_choice_id,
-                selected_choice_key=selected_choice_key,
-            )
-            free_text_clean = ""
+            if current_origin == QUESTION_ORIGIN_PERSONAL:
+                selected_snapshot = self._resolve_choice_from_snapshot(
+                    choices_snapshot,
+                    selected_choice_id=selected_choice_id,
+                    selected_choice_key=selected_choice_key,
+                )
+            else:
+                selected_snapshot = self._resolve_choice_from_input(
+                    choice_rows,
+                    selected_choice_id=selected_choice_id,
+                    selected_choice_key=selected_choice_key,
+                )
+            if free_text_clean and len(free_text_clean) > 1000:
+                raise HTTPException(status_code=422, detail="free_text is too long")
         else:
             if not free_text_clean:
                 raise HTTPException(status_code=422, detail="free_text is required")
@@ -1211,20 +1751,31 @@ class TodayQuestionStore:
                 raise HTTPException(status_code=422, detail="free_text is too long")
 
         now_iso = _iso_utc()
-        sequence_row = await self._fetch_sequence_row(current_sequence_no or 0) if current_sequence_no else None
+        sequence_row = await self._fetch_sequence_row(current_sequence_no or 0) if (current_origin != QUESTION_ORIGIN_PERSONAL and current_sequence_no) else None
         presented_local_date = str((bundle.progress or {}).get("current_presented_local_date") or bundle.service_day_key or "").strip() or bundle.service_day_key
+        personal_question_id_value = str(getattr(bundle, "personal_question_id", None) or question.get("personal_question_id") or "").strip() or None
+        source_anchor_value = getattr(bundle, "source_anchor", None) if isinstance(getattr(bundle, "source_anchor", None), Mapping) else None
+        question_type_value = str(getattr(bundle, "question_type", None) or question.get("question_type") or "").strip() or None
         row = {
             "user_id": uid,
             "service_day_key": bundle.service_day_key,
             "local_answer_date": bundle.service_day_key,
             "sequence_id": str((sequence_row or {}).get("id") or "").strip() or None,
-            "sequence_no": current_sequence_no,
+            "sequence_no": current_sequence_no if current_origin != QUESTION_ORIGIN_PERSONAL else None,
             "presented_local_date": presented_local_date,
-            "question_id": question["question_id"],
+            "question_id": question["question_id"] if current_origin != QUESTION_ORIGIN_PERSONAL else None,
             "question_key": question.get("question_key"),
             "question_version": int(question.get("version") or 1),
+            "question_origin": current_origin,
+            "personal_question_id": personal_question_id_value if current_origin == QUESTION_ORIGIN_PERSONAL else None,
+            "source_type": (str(source_anchor_value.get("source_type") or "").strip() if source_anchor_value else None),
+            "source_id": (str(source_anchor_value.get("source_id") or "").strip() if source_anchor_value else None),
+            "source_field": (str(source_anchor_value.get("source_field") or "").strip() if source_anchor_value else None),
+            "anchor_text": (str(source_anchor_value.get("anchor_text") or "").strip() if source_anchor_value else None),
+            "question_type": question_type_value,
+            "source_anchor_snapshot_json": dict(source_anchor_value) if source_anchor_value else None,
             "answer_mode": mode,
-            "selected_choice_id": selected_snapshot.get("choice_id") if selected_snapshot else None,
+            "selected_choice_id": (selected_snapshot.get("choice_id") if selected_snapshot and current_origin != QUESTION_ORIGIN_PERSONAL else None),
             "selected_choice_key": selected_snapshot.get("choice_key") if selected_snapshot else None,
             "free_text": free_text_clean or None,
             "answered_at": now_iso,
@@ -1243,7 +1794,7 @@ class TodayQuestionStore:
             prefer="return=representation",
         )
 
-        if current_sequence_no:
+        if current_origin != QUESTION_ORIGIN_PERSONAL and current_sequence_no:
             await self._upsert_user_progress(
                 uid,
                 last_completed_sequence_no=current_sequence_no,
@@ -1251,6 +1802,16 @@ class TodayQuestionStore:
                 current_sequence_no=current_sequence_no,
                 current_presented_local_date=presented_local_date,
             )
+        elif current_origin == QUESTION_ORIGIN_PERSONAL and personal_question_id_value:
+            try:
+                await self._patch_rows(
+                    TODAY_QUESTION_PERSONAL_QUESTIONS_TABLE,
+                    params={"id": f"eq.{personal_question_id_value}", "user_id": f"eq.{uid}"},
+                    json_body={"status": "answered", "answered_at": now_iso, "updated_at": now_iso},
+                    prefer="return=minimal",
+                )
+            except Exception:
+                logger.exception("today_question: failed to mark personal question answered")
 
         await invalidate_today_question_user_runtime_cache(uid)
 
@@ -1332,7 +1893,10 @@ class TodayQuestionStore:
                 selected_choice_id=selected_choice_id,
                 selected_choice_key=selected_choice_key,
             )
-            free_text_clean = ""
+            if free_text is None:
+                free_text_clean = str(current.get("free_text") or "").strip()
+            if free_text_clean and len(free_text_clean) > 1000:
+                raise HTTPException(status_code=422, detail="free_text is too long")
         else:
             if not free_text_clean:
                 raise HTTPException(status_code=422, detail="free_text is required")
@@ -1352,9 +1916,10 @@ class TodayQuestionStore:
         except Exception:
             logger.exception("today_question: failed to save revision")
 
+        origin = _question_origin_from_row(current)
         patch_body = {
             "answer_mode": mode,
-            "selected_choice_id": selected_snapshot.get("choice_id") if selected_snapshot else None,
+            "selected_choice_id": (selected_snapshot.get("choice_id") if selected_snapshot and origin != QUESTION_ORIGIN_PERSONAL else None),
             "selected_choice_key": selected_snapshot.get("choice_key") if selected_snapshot else None,
             "free_text": free_text_clean or None,
             "selected_choice_label_snapshot": selected_snapshot.get("label") if selected_snapshot else None,
@@ -1487,6 +2052,8 @@ class TodayQuestionStore:
                     "question_id": str(bundle.question.get("question_id") or ""),
                     "question_text": str(bundle.question.get("text") or "").strip(),
                     "sequence_no": _safe_int((bundle.progress or {}).get("sequence_no"), 0) or None,
+                    "question_origin": str(getattr(bundle, "question_origin", None) or (bundle.question or {}).get("question_origin") or QUESTION_ORIGIN_STATIC),
+                    "personal_question_id": str(getattr(bundle, "personal_question_id", None) or (bundle.question or {}).get("personal_question_id") or ""),
                 })
                 if len(out) >= limit:
                     return out
@@ -1515,4 +2082,6 @@ __all__ = [
     "_settings_public",
     "_normalize_timezone_name",
     "_normalize_delivery_time_local",
+    "QUESTION_ORIGIN_STATIC",
+    "QUESTION_ORIGIN_PERSONAL",
 ]

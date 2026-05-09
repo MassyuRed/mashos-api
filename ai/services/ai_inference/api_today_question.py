@@ -67,6 +67,11 @@ class TodayQuestionCurrentQuestion(BaseModel):
     choice_count: int = 0
     choices: List[TodayQuestionChoiceOption] = Field(default_factory=list)
     free_text_enabled: bool = True
+    optional_free_text_enabled: bool = False
+    question_origin: str = "static_role_probe"
+    personal_question_id: Optional[str] = None
+    question_type: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
 
 
 class TodayQuestionAnswerSummary(BaseModel):
@@ -86,6 +91,10 @@ class TodayQuestionCurrentResponse(BaseModel):
     release_status: str = "released"
     release_time_local: Optional[str] = None
     release_message: Optional[str] = None
+    question_origin: str = "static_role_probe"
+    personal_question_id: Optional[str] = None
+    question_type: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
 
 
 class TodayQuestionStatusQuestion(BaseModel):
@@ -94,6 +103,11 @@ class TodayQuestionStatusQuestion(BaseModel):
     version: int = 1
     choice_count: int = 0
     free_text_enabled: bool = True
+    optional_free_text_enabled: bool = False
+    question_origin: str = "static_role_probe"
+    personal_question_id: Optional[str] = None
+    question_type: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
 
 
 class TodayQuestionStatusResponse(BaseModel):
@@ -109,6 +123,10 @@ class TodayQuestionStatusResponse(BaseModel):
     release_status: str = "released"
     release_time_local: Optional[str] = None
     release_message: Optional[str] = None
+    question_origin: str = "static_role_probe"
+    personal_question_id: Optional[str] = None
+    question_type: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
 
 
 class TodayQuestionAnswerCreateRequest(BaseModel):
@@ -120,6 +138,9 @@ class TodayQuestionAnswerCreateRequest(BaseModel):
     selected_choice_key: Optional[str] = None
     free_text: Optional[str] = None
     timezone_name: Optional[str] = None
+    question_origin: Optional[str] = None
+    personal_question_id: Optional[str] = None
+    source_anchor_hash: Optional[str] = None
 
 
 class TodayQuestionAnswerWriteResponse(BaseModel):
@@ -148,6 +169,10 @@ class TodayQuestionHistoryItem(BaseModel):
     edited_at: Optional[str] = None
     edit_count: int = 0
     can_edit: bool = False
+    question_origin: str = "static_role_probe"
+    personal_question_id: Optional[str] = None
+    question_type: Optional[str] = None
+    source_anchor_summary: Optional[Dict[str, Any]] = None
 
 
 class TodayQuestionHistoryResponse(BaseModel):
@@ -182,6 +207,13 @@ class TodayQuestionPushResponse(BaseModel):
     status: str = "ok"
     scanned: int = 0
     sent: int = 0
+
+
+class TodayQuestionPersonalRefreshResponse(BaseModel):
+    status: str = "ok"
+    service_day_key: Optional[str] = None
+    scanned: int = 0
+    created: int = 0
 
 
 def _extract_today_question_cron_token(request: Request) -> Optional[str]:
@@ -232,11 +264,10 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
         token = str(row.get("push_token") or "").strip()
         if not token:
             continue
-        question_text = str(row.get("question_text") or "").strip()
+        question_origin = str(row.get("question_origin") or "static_role_probe").strip() or "static_role_probe"
         body = "今日の問いが届きました。Homeを開いて答えてみましょう。"
-        if question_text:
-            snippet = question_text[:48]
-            body = f"今日の問い: {snippet}"
+        if question_origin == "personal_followup":
+            body = "今日の入力を少し深める問いが届きました。Homeを開いて答えてみましょう。"
         try:
             uid = str(row.get("user_id") or "").strip()
             if not uid:
@@ -252,6 +283,8 @@ async def run_today_question_push_once(*, limit: int = 200, now_utc: Optional[da
                     "service_day_key": str(row.get("service_day_key") or ""),
                     "question_id": str(row.get("question_id") or ""),
                     "sequence_no": str(row.get("sequence_no") or ""),
+                    "question_origin": question_origin,
+                    "personal_question_id": str(row.get("personal_question_id") or ""),
                 },
             )
             send_status = str((send_res or {}).get("status") or "failed")
@@ -342,6 +375,10 @@ async def get_today_question_current_payload_for_user(
             release_status=release_status,
             release_time_local=release_time_local,
             release_message=_today_question_release_message(release_status, release_time_local),
+            question_origin=str(getattr(bundle, "question_origin", "static_role_probe") or "static_role_probe"),
+            personal_question_id=getattr(bundle, "personal_question_id", None),
+            question_type=getattr(bundle, "question_type", None),
+            source_anchor=getattr(bundle, "source_anchor", None),
         )
         return jsonable_encoder(response)
 
@@ -378,6 +415,10 @@ async def get_today_question_status_payload_for_user(
             release_status=release_status,
             release_time_local=release_time_local,
             release_message=_today_question_release_message(release_status, release_time_local),
+            question_origin=str(getattr(bundle, "question_origin", "static_role_probe") or "static_role_probe"),
+            personal_question_id=getattr(bundle, "personal_question_id", None),
+            question_type=getattr(bundle, "question_type", None),
+            source_anchor=getattr(bundle, "source_anchor", None),
         )
         return jsonable_encoder(response)
 
@@ -420,6 +461,9 @@ def register_today_question_routes(app: FastAPI) -> None:
                 "selected_choice_key": body.selected_choice_key,
                 "free_text": body.free_text,
                 "timezone_name": body.timezone_name,
+                "question_origin": body.question_origin,
+                "personal_question_id": body.personal_question_id,
+                "source_anchor_hash": body.source_anchor_hash,
             },
             user_id=uid,
             requested_at=datetime.now(timezone.utc).isoformat(),
@@ -518,3 +562,12 @@ def register_today_question_routes(app: FastAPI) -> None:
     ) -> TodayQuestionPushResponse:
         _require_today_question_cron_auth(request)
         return await run_today_question_push_once(limit=limit)
+
+    @app.post("/cron/today-question/personal-refresh", response_model=TodayQuestionPersonalRefreshResponse)
+    async def today_question_personal_refresh_cron(
+        request: Request,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> TodayQuestionPersonalRefreshResponse:
+        _require_today_question_cron_auth(request)
+        result = await store.refresh_personal_followup_candidates(limit=limit)
+        return TodayQuestionPersonalRefreshResponse(**result)

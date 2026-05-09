@@ -488,6 +488,16 @@ async def execute_account_delete(user_id: str) -> AccountDeleteExecutionResult:
             [("/rest/v1/today_question_answers", {"user_id": f"eq.{uid}"})],
         )
         await _delete_group(
+            "today_question_personal_questions",
+            result,
+            [("/rest/v1/today_question_personal_questions", {"user_id": f"eq.{uid}"})],
+        )
+        await _delete_group(
+            "today_question_personal_candidates",
+            result,
+            [("/rest/v1/today_question_personal_candidates", {"user_id": f"eq.{uid}"})],
+        )
+        await _delete_group(
             "mymodel_create_answers",
             result,
             [("/rest/v1/mymodel_create_answers", {"user_id": f"eq.{uid}"})],

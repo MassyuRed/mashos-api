@@ -33,6 +33,9 @@ async def create_today_question_answer(
     free_text: Optional[str] = None,
     sequence_no: Optional[int] = None,
     timezone_name: Optional[str] = None,
+    question_origin: Optional[str] = None,
+    personal_question_id: Optional[str] = None,
+    source_anchor_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     row = await store.create_answer(
         str(user_id or "").strip(),
@@ -44,6 +47,9 @@ async def create_today_question_answer(
         selected_choice_key=selected_choice_key,
         free_text=free_text,
         timezone_name=timezone_name,
+        question_origin=question_origin,
+        personal_question_id=personal_question_id,
+        source_anchor_hash=source_anchor_hash,
     )
     enqueued = await _enqueue_self_structure_refresh(str(user_id or "").strip(), trigger="today_question_answer")
     return {

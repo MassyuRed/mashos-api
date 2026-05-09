@@ -75,6 +75,9 @@ async def _execute_home_command_impl(command: HomeCommand) -> Dict[str, Any]:
             selected_choice_key=payload.get("selected_choice_key"),
             free_text=payload.get("free_text"),
             timezone_name=payload.get("timezone_name"),
+            question_origin=payload.get("question_origin"),
+            personal_question_id=payload.get("personal_question_id"),
+            source_anchor_hash=payload.get("source_anchor_hash"),
         )
 
     if command.name == "notice.read":
