@@ -53,7 +53,7 @@ _MECHANICAL_META_LANGUAGE_RE = re.compile(r"(認識しています|入力とし�
 _INTERNAL_OBSERVATION_LANGUAGE_RE = re.compile(r"(コンフォートゾーン|スペック|精神の問題|皮算用|要求と期待が膨れ上が|本質は|あなたの本質)")
 _EMPTY_ACK_LINE_RE = re.compile(r"^(?:今回は、?)?(?:書いてくれた)?(?:内容|入力|言葉|気持ち|感情).{0,18}受け取(?:り|る|ります|りました|っています).{0,4}$")
 _RELATION_WORDS = ("一方で", "だけでなく", "からこそ", "重なって", "つながって", "その自分ごと", "切り離さず", "気づいていて")
-_UNDERSTANDING_WORDS = ("のですね", "だったのですね", "苦しかった", "重なって", "気づいていて", "見ていた", "見ます", "軽く扱いません", "大切にします")
+_UNDERSTANDING_WORDS = ("のですね", "だったのですね", "苦しかった", "重なって", "気づいていて", "気づいています", "見ていた", "見ます", "ありました", "あります", "軽く扱いません", "小さく扱いません", "大切にします")
 
 
 @dataclass(frozen=True)
@@ -163,10 +163,17 @@ def _line_count(text: Any) -> int:
     value = str(text or "").strip()
     if not value:
         return 0
-    explicit_lines = [line for line in value.splitlines() if line.strip()]
+    explicit_lines = [
+        line
+        for line in value.splitlines()
+        if line.strip() and line.strip() != "Emlisです。" and not line.strip().endswith("Emlisです。")
+    ]
     if len(explicit_lines) > 1:
         return len(explicit_lines)
-    return max(1, len([chunk for chunk in re.split(r"[。！？!?]+", value) if chunk.strip()]))
+    body = "\n".join(explicit_lines) if explicit_lines else ""
+    if not body:
+        return 0
+    return max(1, len([chunk for chunk in re.split(r"[。！？!?]+", body) if chunk.strip()]))
 
 
 def _used_history_sources(used_sources: Sequence[Any]) -> set[str]:
@@ -262,6 +269,22 @@ def _sample_block_summaries(meaning_coverage: Mapping[str, Any] | None) -> list[
     return out
 
 
+def _sample_blocks(meaning_coverage: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    if not isinstance(meaning_coverage, Mapping):
+        return []
+    blocks = meaning_coverage.get("sample_blocks") if isinstance(meaning_coverage.get("sample_blocks"), list) else []
+    return [block for block in blocks if isinstance(block, Mapping)]
+
+
+def _sample_block_covered(text: str, block: Mapping[str, Any]) -> bool:
+    summary = str(block.get("summary") or block.get("title") or "").strip()
+    if _summary_covered(text, summary):
+        return True
+    role = str(block.get("role") or "").strip()
+    terms = _role_retention_terms(role)
+    return bool(terms and any(term in text for term in terms))
+
+
 def _content_terms(value: str) -> set[str]:
     cleaned = re.sub(r"[\s　、,。.!！?？「」『』（）()]", " ", str(value or ""))
     terms = set()
@@ -290,16 +313,43 @@ def _evaluate_meaning_coverage(text: str, meaning_coverage: Mapping[str, Any] | 
     line_count = _line_count(text)
     min_blocks = int(meaning_coverage.get("min_blocks_to_cover") or 0)
     selected_block_count = int(meaning_coverage.get("selected_block_count") or len(meaning_coverage.get("selected_block_keys") or []) or 0)
+    blocks = _sample_blocks(meaning_coverage)
     summaries = _sample_block_summaries(meaning_coverage)
-    covered = sum(1 for summary in summaries if _summary_covered(text, summary))
-    required = min(max(3, min_blocks), max(1, len(summaries))) if summaries else max(3, min_blocks)
-    required_role_coverage_ok = covered >= required if summaries else line_count >= max(5, min_blocks + 1)
+    covered = sum(1 for block in blocks if _sample_block_covered(text, block)) if blocks else sum(1 for summary in summaries if _summary_covered(text, summary))
+    item_count = len(blocks) if blocks else len(summaries)
+    required = min(max(3, min_blocks), max(1, item_count)) if item_count else max(3, min_blocks)
+    required_role_coverage_ok = covered >= required if item_count else line_count >= max(5, min_blocks + 1)
     long_input_depth_ok = line_count >= max(5, min_blocks + 1)
     single_focus_overcompression_blocked = not (line_count <= 4 and selected_block_count >= 5)
     clear_long_input_not_underanswered = required_role_coverage_ok and long_input_depth_ok and single_focus_overcompression_blocked
     piece_like_summary_blocked = not (line_count <= 3 and any(token in text for token in ("問い", "答え")))
     meaning_coverage_ok = required_role_coverage_ok and clear_long_input_not_underanswered and piece_like_summary_blocked
     return meaning_coverage_ok, long_input_depth_ok, single_focus_overcompression_blocked, required_role_coverage_ok, clear_long_input_not_underanswered, piece_like_summary_blocked
+
+
+def _role_retention_terms(role: str) -> tuple[str, ...]:
+    return {
+        "other_contribution": ("誰かの役に立",),
+        "self_dislike_from_halfway": ("中途半端", "好きになれない"),
+        "future_not_giving_up": ("諦めたくない",),
+        "betrayal_fear": ("諦めている自分", "裏切られたくない", "裏切られるのが怖"),
+        "own_happiness_wish": ("幸せになりたい",),
+        "concrete_life_wishes": ("好きなこと", "パートナー", "楽しみたい", "たのしみたい"),
+        "unreachable_wish": ("手の届かない",),
+        "present_effort_toward_wish": ("今頑張れること", "今できること"),
+        "burden_avoidance": ("心配", "負担", "我慢", "丸く収"),
+        "self_suppression": ("我慢", "正しい"),
+        "limit_or_exhaustion": ("一人で抱え込", "余裕がなく", "しんど"),
+        "fatigue_or_limit": ("しんど", "疲", "余裕"),
+        "support_need": ("話したり頼ったり", "頼る", "話す"),
+        "self_protection": ("距離を取", "無理しない選択", "自分を守"),
+        "state_awareness": ("自分の状態", "状態を見"),
+    }.get(str(role or ""), ())
+
+
+def _role_key_covered(text: str, role: str) -> bool:
+    terms = _role_retention_terms(role)
+    return bool(terms and any(term in text for term in terms))
 
 
 def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, Any] | None) -> tuple[bool, bool, bool, bool, bool, bool]:
@@ -309,8 +359,18 @@ def _evaluate_major_meaning_retention(text: str, meaning_coverage: Mapping[str, 
     summaries = _sample_block_summaries(meaning_coverage)
     if not must_keys and not summaries:
         return True, True, True, True, True, True
-    covered = sum(1 for summary in summaries if _summary_covered(text, summary))
-    denominator = max(1, len(summaries) if summaries else len(must_keys))
+
+    role_keys = [str(key or "") for key in must_keys if _role_retention_terms(str(key or ""))]
+    if role_keys:
+        covered_roles = sum(1 for role in role_keys if _role_key_covered(text, role))
+        ratio = covered_roles / max(1, len(role_keys))
+        required_ratio = float(meaning_coverage.get("min_must_keep_coverage_ratio") or 0.60)
+        ok = ratio >= required_ratio
+        return ok, ok, ok, ok, ok, ok
+
+    blocks = _sample_blocks(meaning_coverage)
+    covered = sum(1 for block in blocks if _sample_block_covered(text, block)) if blocks else sum(1 for summary in summaries if _summary_covered(text, summary))
+    denominator = max(1, len(blocks) if blocks else len(summaries) if summaries else len(must_keys))
     ratio = covered / denominator
     required_ratio = float(meaning_coverage.get("min_must_keep_coverage_ratio") or 0.60)
     ok = ratio >= required_ratio

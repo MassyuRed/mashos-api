@@ -15,11 +15,11 @@ from emlis_ai_types import CompositionLinePlan, EvidenceRef, InputMeaningBlock, 
 _MIDSTREAM_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
 
 _ROLE_PHASES: tuple[tuple[str, set[str]], ...] = (
-    ("opening_thesis", {"self_suppression", "wish_or_hope", "limit_or_exhaustion", "self_view", "fear_or_disappointment", "dual_feeling"}),
-    ("background", {"burden_avoidance", "relationship_or_others", "self_view", "self_suppression"}),
-    ("limit_or_tension", {"limit_or_exhaustion", "fear_or_disappointment", "anger_or_frustration", "sadness_or_pain", "dual_feeling"}),
-    ("realization_or_need", {"support_need", "self_protection", "relief_source"}),
-    ("new_direction", {"effort_direction", "wish_or_hope", "self_protection"}),
+    ("opening_thesis", {"state_awareness", "effort_history", "continuation_wish", "self_suppression", "wish_or_hope", "limit_or_exhaustion", "fatigue_or_limit", "self_view", "fear_or_disappointment", "collapse_anxiety", "dual_feeling", "dual_holding"}),
+    ("background", {"state_awareness", "effort_history", "burden_avoidance", "relationship_or_others", "self_view", "self_suppression"}),
+    ("limit_or_tension", {"fatigue_or_limit", "collapse_anxiety", "not_want_to_quit", "limit_or_exhaustion", "fear_or_disappointment", "anger_or_frustration", "sadness_or_pain", "dual_feeling", "dual_holding"}),
+    ("realization_or_need", {"support_need", "self_protection", "relief_source", "self_understanding"}),
+    ("new_direction", {"continuation_wish", "paced_progress", "effort_direction", "wish_or_hope", "self_protection"}),
     ("presence", set()),
 )
 
@@ -59,6 +59,9 @@ def _phase_blocks(blocks: Sequence[InputMeaningBlock], roles: set[str], used: se
 
 def _opening_thesis(blocks: Sequence[InputMeaningBlock]) -> str:
     selected = [block for block in blocks if str(block.summary or "").strip()][:3]
+    roles = _role_set(blocks)
+    if "other_contribution" in roles and "own_happiness_wish" in roles:
+        return "あなたは、誰かの役に立ちたい気持ちと、自分自身も幸せになりたい願いを、同じ場所で言葉にしているのですね。"
     if not selected:
         return "あなたは、今の気持ちや考えを少しずつ言葉にしようとしているのですね。"
     first = selected[0].summary.rstrip("。")
@@ -69,6 +72,31 @@ def _opening_thesis(blocks: Sequence[InputMeaningBlock]) -> str:
         return f"あなたは、{first}ことだけでなく、{second}ことも一緒に言葉にしているのですね。"
     third = selected[2].summary.rstrip("。")
     return f"あなたは、{first}ことを入口にしながら、{second}ことや、{third}ことまで含めて言葉にしているのですね。"
+
+
+def _role_set(blocks: Sequence[InputMeaningBlock]) -> set[str]:
+    return {str(getattr(block, "role", "") or "") for block in blocks or []}
+
+
+def _is_self_sacrifice_boundary_flow(blocks: Sequence[InputMeaningBlock]) -> bool:
+    roles = _role_set(blocks)
+    has_old_strategy = bool({"self_suppression", "burden_avoidance"} & roles)
+    has_limit = bool({"limit_or_exhaustion", "fatigue_or_limit"} & roles)
+    has_next_care = bool({"support_need", "self_protection", "state_awareness"} & roles)
+    return has_old_strategy and has_limit and has_next_care
+
+
+def _self_sacrifice_opening_thesis(blocks: Sequence[InputMeaningBlock]) -> str:
+    roles = _blocks_by_role(blocks)
+    old = roles.get("burden_avoidance", []) or roles.get("self_suppression", [])
+    limit = roles.get("limit_or_exhaustion", []) or roles.get("fatigue_or_limit", [])
+    old_text = str(getattr(old[0], "summary", "") or "我慢して丸く収めようとしてきたこと").rstrip("。")
+    limit_text = str(getattr(limit[0], "summary", "") or "一人で抱え込むしんどさ").rstrip("。")
+    if "抱え" not in limit_text:
+        limit_text = f"{limit_text}、一人で抱え込むしんどさ"
+    if "我慢" not in old_text:
+        old_text = f"我慢してきたことや、{old_text}"
+    return f"あなたは、{old_text}ことと、{limit_text}ことを同じ流れとして言葉にしているのですね。"
 
 
 def build_response_composition_plan(*, input_level: str, clear_long_input: bool, meaning_blocks: Sequence[InputMeaningBlock]) -> ResponseCompositionPlan | None:
@@ -87,6 +115,24 @@ def build_response_composition_plan(*, input_level: str, clear_long_input: bool,
             max_lines=3,
             min_lines=2,
             reason="short_or_sparse_current_input",
+        )
+    if _is_self_sacrifice_boundary_flow(blocks):
+        return ResponseCompositionPlan(
+            composition_key="self_sacrifice_boundary_care.v1",
+            input_level=input_level,
+            clear_long_input=bool(clear_long_input),
+            narrative_pattern="old_strategy_limit_realization_new_boundary",
+            opening_role="opening_thesis",
+            ordered_line_roles=["greeting", "opening_thesis", "old_strategy", "limit_or_tension", "realization_or_need", "new_boundary", "state_awareness", "presence"],
+            required_line_roles=["opening_thesis", "old_strategy", "limit_or_tension", "realization_or_need", "new_boundary", "presence"],
+            optional_line_roles=["state_awareness"],
+            transition_policy="guarded",
+            require_opening_thesis=True,
+            require_presence_line=True,
+            allow_paragraph_breaks=bool(clear_long_input),
+            max_lines=9 if clear_long_input else 6,
+            min_lines=6 if clear_long_input else 4,
+            reason="generic_self_sacrifice_boundary_flow",
         )
     used: set[str] = set()
     ordered = ["greeting", "opening_thesis"]
@@ -122,6 +168,29 @@ def build_reply_narrative_arc(*, composition_plan: ResponseCompositionPlan | Non
     if composition_plan is None:
         return None
     blocks = list(meaning_blocks or [])
+    if getattr(composition_plan, "narrative_pattern", "") == "old_strategy_limit_realization_new_boundary":
+        by_role = _blocks_by_role(blocks)
+        role_to_keys: Dict[str, List[str]] = {
+            "opening_thesis": [block.block_key for block in blocks[:2]],
+            "old_strategy": [block.block_key for block in (by_role.get("burden_avoidance", []) + by_role.get("self_suppression", []))[:3]],
+            "limit_or_tension": [block.block_key for block in (by_role.get("limit_or_exhaustion", []) + by_role.get("fatigue_or_limit", []))[:2]],
+            "realization_or_need": [block.block_key for block in by_role.get("support_need", [])[:2]],
+            "new_boundary": [block.block_key for block in by_role.get("self_protection", [])[:2]],
+            "state_awareness": [block.block_key for block in by_role.get("state_awareness", [])[:1]],
+            "presence": [],
+        }
+        return ReplyNarrativeArc(
+            arc_key="self_sacrifice_boundary_care_arc",
+            title="我慢して抱え込む旧い方法から、自分を守る境界へ移る流れ",
+            opening_thesis=_self_sacrifice_opening_thesis(blocks),
+            ordered_roles=[role for role in composition_plan.ordered_line_roles if role != "greeting"],
+            role_to_block_keys=role_to_keys,
+            transition_groups={role: "guarded" for role in composition_plan.ordered_line_roles},
+            grounding_required=True,
+            clarity=0.88,
+            evidence=_evidence(blocks),
+        )
+
     used: set[str] = set()
     role_to_keys: Dict[str, List[str]] = {}
     for phase, roles in _ROLE_PHASES:

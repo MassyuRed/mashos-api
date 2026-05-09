@@ -24,6 +24,7 @@ BROKEN_CONNECTION_RE = re.compile(
 MECHANICAL_META_RE = re.compile(r"(入力として|認識しています|構造として|分析すると|理解しました|受け取りました)")
 INTERNAL_OBSERVATION_LANGUAGE_RE = re.compile(r"(コンフォートゾーン|スペック|精神の問題|皮算用|要求と期待が膨れ上が|本質は|あなたの本質)")
 ABSTRACT_HISTORY_RE = re.compile(r"(最近の履歴の中でも、近いテーマ|最近の流れも踏まえて|今の気持ちを見ます|近いテーマがまた顔を出して)")
+STALE_MEANING_BLOCK_RE = re.compile(r"(前回入力|前回の入力|以前の入力|別の入力|過去の入力|前の入力)")
 PRESENCE_RE = re.compile(r"(軽く扱いません|雑に扱いません|小さく扱いません|そのまま置いて大丈夫|きれいにしなくて大丈夫|そばに置いて|大切にします|大切に扱います)")
 BROKEN_NOUN_PHRASE_RE = re.compile(r"(だ|だから|けど|けれど|から)(気持ち|思い|願い|状態)")
 MIDSTREAM_OPENING_RE = re.compile(r"^(ただ同時に|でも同時に|それでも|だから|だからこそ|そのため|一方で|ただ)[、,]")
@@ -57,17 +58,28 @@ def _ending_group(line: str) -> str:
 def _repair_ending_repetition(lines: List[str]) -> List[str]:
     repaired: List[str] = []
     ne_count = 0
-    previous_group = ""
+    groups: List[str] = []
     for line in lines:
         cur = line
         group = _ending_group(cur)
         if group == "ne_desu":
             ne_count += 1
-            if previous_group == "ne_desu" or ne_count > 2:
+            if ne_count > 2:
                 cur = re.sub(r"のですね。?$", "のだと思います。", cur)
                 group = _ending_group(cur)
+        if len(groups) >= 2 and groups[-1] == groups[-2] == group and group != "other":
+            if group == "arimashita":
+                cur = re.sub(r"ありました。?$", "あります。", cur)
+                cur = re.sub(r"いました。?$", "います。", cur)
+            elif group == "omoimasu":
+                cur = re.sub(r"と思います。?$", "と見ています。", cur)
+            elif group == "masen":
+                cur = re.sub(r"ません。?$", "ない場所です。", cur)
+            elif group == "ne_desu":
+                cur = re.sub(r"のですね。?$", "のだと思います。", cur)
+            group = _ending_group(cur)
         repaired.append(cur)
-        previous_group = group
+        groups.append(group)
     return repaired
 
 
@@ -96,6 +108,36 @@ def _summary_covered(text: str, summary: str) -> bool:
     return False
 
 
+def _role_terms(role: str) -> tuple[str, ...]:
+    return {
+        "burden_avoidance": ("心配", "負担", "我慢", "丸く収"),
+        "self_suppression": ("我慢", "正しい"),
+        "limit_or_exhaustion": ("一人で抱え込", "余裕がなく", "しんど"),
+        "fatigue_or_limit": ("しんど", "疲", "余裕"),
+        "support_need": ("話したり頼ったり", "頼る", "話す"),
+        "self_protection": ("距離を取", "無理しない選択", "自分を守"),
+        "state_awareness": ("自分の状態", "状態を見"),
+        "other_contribution": ("誰かの役に立", "役に立つ"),
+        "self_dislike_from_halfway": ("中途半端", "好きになれない"),
+        "future_not_giving_up": ("諦めたくない",),
+        "betrayal_fear": ("諦めている自分", "裏切られたくない", "裏切られるのが怖"),
+        "own_happiness_wish": ("幸せになりたい",),
+        "concrete_life_wishes": ("好きなこと", "パートナー", "たのしみたい", "楽しみたい"),
+        "unreachable_wish": ("手の届かない",),
+        "present_effort_toward_wish": ("今頑張れること", "今できること"),
+    }.get(str(role or ""), ())
+
+
+def _block_covered(text: str, block: object) -> bool:
+    summary = str(getattr(block, "summary", "") or "")
+    if _summary_covered(text, summary):
+        return True
+    terms = _role_terms(str(getattr(block, "role", "") or ""))
+    if not terms:
+        return False
+    return any(term and term in text for term in terms)
+
+
 def _long_input_underanswered(lines: List[str], world_model: Optional[WorldModel]) -> bool:
     coverage = getattr(getattr(world_model, "facts", None), "meaning_coverage_plan", None) if world_model is not None else None
     blocks = list(getattr(getattr(world_model, "facts", None), "meaning_blocks", []) or []) if world_model is not None else []
@@ -108,7 +150,7 @@ def _long_input_underanswered(lines: List[str], world_model: Optional[WorldModel
     required = min(max(3, min_blocks), len(blocks)) if blocks else 0
     if required <= 0:
         return False
-    covered = sum(1 for block in blocks if _summary_covered(text, str(getattr(block, "summary", "") or "")))
+    covered = sum(1 for block in blocks if _block_covered(text, block))
     return covered < required
 
 
@@ -130,6 +172,10 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
             issues.append(FinalReviewIssue(code="broken_noun_phrase", severity="block", line_index=idx, message=line))
             changed = True
             continue
+        if STALE_MEANING_BLOCK_RE.search(line):
+            issues.append(FinalReviewIssue(code="stale_meaning_block_leak", severity="block", line_index=idx, message=line))
+            changed = True
+            continue
         if ABSTRACT_HISTORY_RE.search(line):
             issues.append(FinalReviewIssue(code="abstract_history_reference", severity="repair", line_index=idx, message=line))
             changed = True
@@ -145,8 +191,9 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
         repaired_lines.append(line)
 
     original_ne_count = sum(line.count("のですね") for line in repaired_lines)
+    original_ending_repetition = original_ne_count > 2 or _has_three_same_endings(repaired_lines)
     repaired_lines = _repair_ending_repetition(repaired_lines)
-    if original_ne_count > 2 or _has_three_same_endings(repaired_lines):
+    if original_ending_repetition:
         issues.append(FinalReviewIssue(code="sentence_ending_repetition", severity="repair", line_index=None, message="ending repetition repaired"))
         changed = True
 
@@ -163,10 +210,13 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     final_lines = _lines(final_text)
     final_first_idx = _first_content_index(final_lines)
     midstream_remaining = final_first_idx is not None and MIDSTREAM_OPENING_RE.search(final_lines[final_first_idx])
-    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or midstream_remaining)
+    stale_remaining = bool(STALE_MEANING_BLOCK_RE.search(final_text))
+    block_remaining = bool(BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or stale_remaining or midstream_remaining)
     repetition_remaining = sum(line.count("のですね") for line in final_lines) > 2 or _has_three_same_endings(final_lines)
     underanswered = _long_input_underanswered(final_lines, world_model)
     passed = bool(final_text) and not block_remaining and not repetition_remaining and not underanswered and any(PRESENCE_RE.search(line) for line in final_lines)
+    if stale_remaining:
+        issues.append(FinalReviewIssue(code="stale_meaning_block_leak_remaining", severity="block", line_index=None, message="stale current-input leak remains"))
     if block_remaining:
         issues.append(FinalReviewIssue(code="final_block_issue_remaining", severity="block", line_index=None, message="unrepaired block issue remains"))
     if repetition_remaining:
@@ -174,4 +224,4 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     return FinalReviewResult(passed=passed, issues=issues, repaired_text=repaired_text, review_version="emlis.final_reader.v1")
 
 
-__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "INTERNAL_OBSERVATION_LANGUAGE_RE", "review_emlis_ai_reply_text"]
+__all__ = ["BROKEN_CONNECTION_RE", "PRESENCE_RE", "BROKEN_NOUN_PHRASE_RE", "INTERNAL_OBSERVATION_LANGUAGE_RE", "STALE_MEANING_BLOCK_RE", "review_emlis_ai_reply_text"]

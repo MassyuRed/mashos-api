@@ -10,6 +10,7 @@ Deprecated rows remain listed until their compatibility window is closed.
 | GET | `/app/bootstrap` | `app.bootstrap.v1` | `false` |  | Runtime guardrail / maintenance switch |
 | GET | `/app/startup` | `app.startup.v1` | `false` |  | Auth-required startup bundle for unread / popup / lightweight prefetch only; Home hydration moved to /home/state |
 | GET | `/home/state` | `home.state.v1` | `false` |  | Auth-required Home hydration bundle (input summary + global summary + notices + today question + reflection quota); app.startup intentionally excludes heavy Home counters |
+| POST | `/ops/client-events` | `ops.client_events.write.v1` | `false` |  | Best-effort RN client observability event ingest; no product state mutation |
 | POST | `/emotion/submit` | `emotion.submit.v1` | `false` |  | Legacy payloads must remain accepted; input_feedback.comment_text stays stable while input_feedback.emlis_ai remains additive-only across observation-kernel metadata expansions |
 | GET | `/emotion/reflection/quota` | `emotion.reflection.quota.v1` | `true` | /emotion/piece/quota | Current-month publish quota / capability probe for Home reflection flow |
 | POST | `/emotion/reflection/preview` | `emotion.reflection.preview.v1` | `true` | /emotion/piece/preview | Preview-only reflection generation; does not canonical-save Home input |

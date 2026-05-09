@@ -25,23 +25,57 @@ _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
 
 _ROLE_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {"role": "other_contribution", "title": "誰かの役に立つこと", "keywords": ("誰かの役に立", "役に立て", "人たちが幸せ", "幸せに笑", "その人たちの役"), "priority": 0.995},
+    {"role": "self_dislike_from_halfway", "title": "自分を中途半端だと見てしまうこと", "keywords": ("中途半端", "好きになれない", "自分のことは好き"), "priority": 0.992},
+    {"role": "future_not_giving_up", "title": "今後をまだ諦めたくないこと", "keywords": ("まだ諦めたくない", "諦めたくない", "今後のこと"), "priority": 0.99},
+    {"role": "betrayal_fear", "title": "期待して裏切られたくない怖さ", "keywords": ("裏切られたくない", "期待して", "諦めている自分", "諦めてる自分"), "priority": 0.988},
+    {"role": "own_happiness_wish", "title": "自分自身も幸せになりたい願い", "keywords": ("私も幸せになりたい", "自分も幸せ", "幸せになりたい"), "priority": 0.986},
+    {"role": "concrete_life_wishes", "title": "具体的に楽しみたいことや出会いたいこと", "keywords": ("好きなこと", "たのしみたい", "楽しみたい", "パートナー", "出会って", "十分に"), "priority": 0.984},
+    {"role": "unreachable_wish", "title": "手の届かないように見える願い", "keywords": ("手の届かない", "手の届かい", "届かない所", "届きにく"), "priority": 0.982},
+    {"role": "present_effort_toward_wish", "title": "願いに届くために今できること", "keywords": ("今頑張れること", "届くように", "今できること", "大切にしたい"), "priority": 0.98},
+    {"role": "state_awareness", "title": "今の状態への気づき", "keywords": ("自分でも", "分かって", "わかって", "状態", "気づけ", "気づいて", "見えて"), "priority": 0.98},
+    {"role": "effort_history", "title": "ここまで積み重ねてきた努力", "keywords": ("ここまで頑張", "頑張ってきた", "無理してきた", "積み重な", "時間もちゃんと", "続けてきた"), "priority": 0.97},
+    {"role": "continuation_wish", "title": "まだ続けたい願い", "keywords": ("もう少し頑張りたい", "もう少し", "頑張りたい", "続けたい", "進みたい", "残ってるのも本音"), "priority": 0.96},
+    {"role": "not_want_to_quit", "title": "投げ出したくない気持ち", "keywords": ("投げ出したいわけじゃ", "終わりにしたくない", "ここで終わり", "諦めたくない", "終わらせたくない"), "priority": 0.955},
+    {"role": "fatigue_or_limit", "title": "しんどさや限界感", "keywords": ("しんど", "疲", "つら", "辛", "余裕", "限界", "体が重", "気持ちがついてこ", "ボロボロ", "消耗"), "priority": 0.95},
+    {"role": "collapse_anxiety", "title": "崩れてしまいそうな不安", "keywords": ("崩れて", "崩れ", "無理したら", "不安", "壊れ", "倒れ"), "priority": 0.945},
+    {"role": "dual_holding", "title": "両方を抱えたまま進みたいこと", "keywords": ("どっちも", "両方", "抱えたまま", "無理やり選", "片方", "同時"), "priority": 0.94},
+    {"role": "paced_progress", "title": "自分のペースで整えながら進むこと", "keywords": ("頑張れる日", "しんどい日", "立ち止", "整えながら", "前に進", "少しだけ", "無理に削"), "priority": 0.935},
+    {"role": "self_understanding", "title": "弱さではなく状態理解として見ること", "keywords": ("弱いわけじゃ", "弱いわけでは", "限界に気づ", "状態なんだ", "自分は弱", "気づけてる"), "priority": 0.93},
     {"role": "self_suppression", "title": "自分を抑えてきたこと", "keywords": ("我慢", "抑え", "飲み込", "耐え"), "priority": 0.90},
     {"role": "burden_avoidance", "title": "心配や負担を避けたいこと", "keywords": ("心配", "負担", "迷惑", "丸く", "収ま"), "priority": 0.86},
-    {"role": "limit_or_exhaustion", "title": "しんどさや限界感", "keywords": ("しんど", "疲", "つら", "辛", "余裕", "限界", "重", "崩", "消耗"), "priority": 0.94},
+    {"role": "limit_or_exhaustion", "title": "しんどさや限界感", "keywords": ("しんど", "疲", "つら", "辛", "余裕", "限界", "重", "崩", "消耗", "抱え込"), "priority": 0.90},
     {"role": "support_need", "title": "話すことや頼ることの必要", "keywords": ("頼", "相談", "話", "助け", "支え"), "priority": 0.92},
     {"role": "self_protection", "title": "自分を守る選択", "keywords": ("守", "距離", "境界", "離れ", "無理しない"), "priority": 0.90},
-    {"role": "wish_or_hope", "title": "願いや望み", "keywords": ("したい", "なりたい", "ほしい", "欲しい", "願", "叶", "求め"), "priority": 0.93},
-    {"role": "fear_or_disappointment", "title": "怖さや傷つきへの警戒", "keywords": ("怖", "恐", "不安", "裏切", "嫌われ", "見捨", "傷つ", "期待"), "priority": 0.91},
-    {"role": "self_view", "title": "自分への見方", "keywords": ("自分", "好きになれ", "弱", "中途", "責任", "非", "気づ"), "priority": 0.88},
-    {"role": "effort_direction", "title": "今できることや進み方", "keywords": ("頑張", "進", "続け", "整え", "大切", "立ち止", "諦め"), "priority": 0.89},
-    {"role": "dual_feeling", "title": "両方の気持ち", "keywords": ("両方", "どっちも", "同時", "一方", "それでも", "でも"), "priority": 0.86},
-    {"role": "relationship_or_others", "title": "人との関係や他者への思い", "keywords": ("相手", "恋人", "友達", "家族", "職場", "上司", "同僚", "他者", "周り"), "priority": 0.84},
-    {"role": "relief_source", "title": "安心や癒しになるもの", "keywords": ("癒", "安心", "落ち着", "楽になる"), "priority": 0.80},
+    {"role": "wish_or_hope", "title": "願いや望み", "keywords": ("したい", "なりたい", "ほしい", "欲しい", "願", "叶", "求め"), "priority": 0.89},
+    {"role": "fear_or_disappointment", "title": "怖さや傷つきへの警戒", "keywords": ("怖", "恐", "不安", "裏切", "嫌われ", "見捨", "傷つ", "期待"), "priority": 0.88},
+    {"role": "self_view", "title": "自分への見方", "keywords": ("自分", "好きになれ", "弱", "中途", "責任", "非", "気づ"), "priority": 0.87},
+    {"role": "effort_direction", "title": "今できることや進み方", "keywords": ("頑張", "進", "続け", "整え", "大切", "立ち止", "諦め"), "priority": 0.86},
+    {"role": "dual_feeling", "title": "両方の気持ち", "keywords": ("両方", "どっちも", "同時", "一方", "それでも", "でも"), "priority": 0.85},
+    {"role": "relationship_or_others", "title": "人との関係や他者への思い", "keywords": ("相手", "恋人", "友達", "家族", "職場", "上司", "同僚", "他者", "周り", "先輩"), "priority": 0.84},
+    {"role": "relief_source", "title": "安心や癒しになるもの", "keywords": ("チャット", "お話", "癒", "安心", "落ち着", "楽になる"), "priority": 0.925},
     {"role": "anger_or_frustration", "title": "怒りや悔しさ", "keywords": ("怒", "むかつ", "イライラ", "悔", "腹立"), "priority": 0.82},
     {"role": "sadness_or_pain", "title": "悲しさや痛み", "keywords": ("悲", "泣", "苦し", "痛", "寂", "つら", "辛"), "priority": 0.82},
 )
 
 _REQUIRED_LONG_ROLES = (
+    "other_contribution",
+    "self_dislike_from_halfway",
+    "future_not_giving_up",
+    "betrayal_fear",
+    "own_happiness_wish",
+    "concrete_life_wishes",
+    "unreachable_wish",
+    "present_effort_toward_wish",
+    "state_awareness",
+    "effort_history",
+    "continuation_wish",
+    "not_want_to_quit",
+    "fatigue_or_limit",
+    "collapse_anxiety",
+    "dual_holding",
+    "paced_progress",
+    "self_understanding",
     "limit_or_exhaustion",
     "wish_or_hope",
     "fear_or_disappointment",
@@ -51,6 +85,7 @@ _REQUIRED_LONG_ROLES = (
     "self_protection",
     "dual_feeling",
     "relationship_or_others",
+    "relief_source",
 )
 
 
@@ -65,20 +100,32 @@ def _compact(value: Any) -> str:
 
 
 def _current_text(current_input: Mapping[str, Any]) -> str:
-    return "\n".join(_clean(current_input.get(field)) for field in ("memo", "memo_action") if _clean(current_input.get(field)))
+    parts: List[str] = []
+    for field in ("memo", "memo_action"):
+        raw = str(current_input.get(field) or "").replace("\r", "\n").strip()
+        if raw:
+            parts.append(raw)
+    return "\n".join(parts)
 
 
 def _paragraphs(text: str) -> List[str]:
-    raw_parts = re.split(r"\n\s*\n+", str(text or ""))
-    if len([p for p in raw_parts if _clean(p)]) <= 1:
-        raw_parts = _SENTENCE_SPLIT_RE.split(str(text or ""))
-    out: List[str] = []
-    for part in raw_parts:
-        clean = _clean(part)
-        if clean:
-            out.append(clean)
-    return out
+    # Keep source order while avoiding over-compressed paragraph blocks.
+    # Long diary-like inputs often use line breaks rather than punctuation; each
+    # line can carry a distinct meaning that must remain available to EmlisAI.
+    raw_units: List[str] = []
+    for paragraph in re.split(r"\n\s*\n+", str(text or "")):
+        for part in re.split(r"[。！？!?\n\r]+", paragraph):
+            clean = _clean(part)
+            if clean:
+                raw_units.append(clean)
 
+    out: List[str] = []
+    for unit in raw_units:
+        if out and out[-1].endswith(("一人で", "話したり", "無理せず", "ことも")):
+            out[-1] = _clean(f"{out[-1]}{unit}")
+        else:
+            out.append(unit)
+    return out
 
 def _input_level(char_count: int) -> str:
     if char_count <= 0:
@@ -120,6 +167,9 @@ def _matching_phrases(phrases: Sequence[ShapedUserPhrase], text: str, role: str)
 
 def _summary(text: str) -> str:
     clean = _clean(text)
+    clean = clean.replace("時ある", "時がある").replace("ことある", "ことがある")
+    clean = clean.replace("めっちゃ", "かなり").replace("くんない", "もらえない")
+    clean = clean.replace("1番", "一番").replace("届かい", "届かない").replace("諦めてる", "諦めている")
     clean = re.sub(r"^(ただ同時に|でも同時に|それでも|だからこそ|だから|一方で|でも|ただ)[、,\s]*", "", clean)
     if len(clean) <= 88:
         return clean
@@ -137,7 +187,29 @@ def _block(*, role: str, title: str, summary: str, phrases: Sequence[ShapedUserP
         priority=priority,
         clarity=0.86 if role != "current_expression" else 0.62,
         include_in_emlis_reply=True,
-        include_in_piece_core=role in {"wish_or_hope", "fear_or_disappointment", "self_view", "effort_direction", "dual_feeling", "relationship_or_others"},
+        include_in_piece_core=role in {
+            "other_contribution",
+            "self_dislike_from_halfway",
+            "future_not_giving_up",
+            "betrayal_fear",
+            "own_happiness_wish",
+            "concrete_life_wishes",
+            "unreachable_wish",
+            "present_effort_toward_wish",
+            "continuation_wish",
+            "not_want_to_quit",
+            "collapse_anxiety",
+            "dual_holding",
+            "paced_progress",
+            "self_understanding",
+            "wish_or_hope",
+            "fear_or_disappointment",
+            "self_view",
+            "effort_direction",
+            "dual_feeling",
+            "relationship_or_others",
+            "relief_source",
+        },
     )
 
 
@@ -177,7 +249,7 @@ def build_input_meaning_blocks(*, current_input: Mapping[str, Any], shaped_user_
     # Keep enough breadth for long inputs without turning every clause into a line.
     # Preserve source order here; selection can use priority but the reply should
     # still read in the user's own order.
-    return blocks[:10]
+    return blocks[:16]
 
 
 def build_meaning_coverage_plan(*, current_input: Mapping[str, Any], meaning_blocks: Sequence[InputMeaningBlock]) -> MeaningCoveragePlan:
@@ -195,12 +267,12 @@ def build_meaning_coverage_plan(*, current_input: Mapping[str, Any], meaning_blo
     max_blocks = 0
     target_ratio = 0.0
     if clear_long:
-        min_blocks = min(5 if level == "long" else 6, max(3, len(meaning_blocks)))
-        max_blocks = min(8, max(min_blocks, len(meaning_blocks)))
+        min_blocks = min(8 if level == "long" else 9, max(3, len(meaning_blocks)))
+        max_blocks = min(18, max(min_blocks, len(meaning_blocks)))
         target_ratio = 0.60 if level == "long" else 0.68
     elif level == "medium":
-        min_blocks = min(3, len(meaning_blocks))
-        max_blocks = min(4, len(meaning_blocks))
+        min_blocks = min(4, len(meaning_blocks))
+        max_blocks = min(6, len(meaning_blocks))
         target_ratio = 0.45
     elif level == "short":
         min_blocks = min(2, len(meaning_blocks))
@@ -237,11 +309,16 @@ def selected_meaning_blocks_for_reply(*, meaning_blocks: Sequence[InputMeaningBl
         except Exception:
             return 999
     cap = int(limit or getattr(coverage_plan, "max_blocks_to_cover", 0) or 5)
-    if not selected:
+    if selected:
+        for block in blocks:
+            if len(selected) >= max(1, cap):
+                break
+            if block not in selected:
+                selected.append(block)
+        selected = sorted(selected, key=_order)
+    else:
         top = sorted(blocks, key=lambda block: (-float(block.priority or 0), _order(block)))[: max(1, cap)]
         selected = sorted(top, key=_order)
-    else:
-        selected = sorted(selected, key=_order)
     return selected[: max(1, cap)]
 
 
@@ -250,25 +327,39 @@ def build_whole_input_meaning_arc(*, meaning_blocks: Sequence[InputMeaningBlock]
     if not blocks:
         return None
     roles = [block.role for block in blocks]
+    if "other_contribution" in roles and "own_happiness_wish" in roles:
+        summary_parts = [block.summary for block in blocks[:6] if block.summary]
+        return WholeInputMeaningArc(
+            arc_key="self_and_others_happiness_toward_unreachable_wish",
+            title="誰かの幸せと自分自身の願いを同時に扱う流れ",
+            summary=" / ".join(summary_parts) if summary_parts else "誰かの役に立つ気持ちと自分自身の幸せへの願い",
+            ordered_block_keys=[block.block_key for block in blocks],
+            tension_pairs=[("other_contribution", "own_happiness_wish"), ("future_not_giving_up", "betrayal_fear")],
+            core_wish_keys=[block.block_key for block in blocks if block.role in {"own_happiness_wish", "concrete_life_wishes", "unreachable_wish", "present_effort_toward_wish"}],
+            fear_keys=[block.block_key for block in blocks if block.role in {"betrayal_fear", "self_dislike_from_halfway"}],
+            present_action_keys=[block.block_key for block in blocks if block.role in {"present_effort_toward_wish"}],
+            clarity=0.86,
+            evidence=[evidence],
+        )
     summary_parts = [block.summary for block in blocks[:4] if block.summary]
     title = "現在入力の意味の流れ"
     summary = " / ".join(summary_parts) if summary_parts else "現在入力に含まれる複数の気持ちや考え"
     tension_pairs: list[tuple[str, str]] = []
-    if "wish_or_hope" in roles and "fear_or_disappointment" in roles:
-        tension_pairs.append(("wish_or_hope", "fear_or_disappointment"))
+    if ("wish_or_hope" in roles or "continuation_wish" in roles) and ("fear_or_disappointment" in roles or "collapse_anxiety" in roles):
+        tension_pairs.append(("continuation_wish" if "continuation_wish" in roles else "wish_or_hope", "collapse_anxiety" if "collapse_anxiety" in roles else "fear_or_disappointment"))
     if "self_suppression" in roles and "self_protection" in roles:
         tension_pairs.append(("self_suppression", "self_protection"))
-    if "limit_or_exhaustion" in roles and "effort_direction" in roles:
-        tension_pairs.append(("limit_or_exhaustion", "effort_direction"))
+    if ("fatigue_or_limit" in roles or "limit_or_exhaustion" in roles) and ("paced_progress" in roles or "effort_direction" in roles):
+        tension_pairs.append(("fatigue_or_limit" if "fatigue_or_limit" in roles else "limit_or_exhaustion", "paced_progress" if "paced_progress" in roles else "effort_direction"))
     return WholeInputMeaningArc(
         arc_key="generic_current_input_arc",
         title=title,
         summary=summary,
         ordered_block_keys=[block.block_key for block in blocks],
         tension_pairs=tension_pairs,
-        core_wish_keys=[block.block_key for block in blocks if block.role in {"wish_or_hope", "effort_direction"}],
-        fear_keys=[block.block_key for block in blocks if block.role in {"fear_or_disappointment", "limit_or_exhaustion"}],
-        present_action_keys=[block.block_key for block in blocks if block.role in {"effort_direction", "self_protection", "support_need"}],
+        core_wish_keys=[block.block_key for block in blocks if block.role in {"wish_or_hope", "continuation_wish", "effort_direction", "paced_progress"}],
+        fear_keys=[block.block_key for block in blocks if block.role in {"fear_or_disappointment", "collapse_anxiety", "limit_or_exhaustion", "fatigue_or_limit"}],
+        present_action_keys=[block.block_key for block in blocks if block.role in {"effort_direction", "paced_progress", "self_protection", "support_need"}],
         clarity=0.82,
         evidence=[evidence],
     )
@@ -279,6 +370,31 @@ def build_major_meaning_retention_plan(*, meaning_blocks: Sequence[InputMeaningB
     if not blocks:
         return MajorMeaningRetentionPlan(clear_long_input=False, total_block_count=0)
     selected = selected_meaning_blocks_for_reply(meaning_blocks=blocks, coverage_plan=coverage_plan)
+    roles = [block.role for block in blocks]
+    if "other_contribution" in roles and "own_happiness_wish" in roles:
+        must_roles = [
+            role for role in (
+                "other_contribution",
+                "self_dislike_from_halfway",
+                "future_not_giving_up",
+                "betrayal_fear",
+                "own_happiness_wish",
+                "concrete_life_wishes",
+                "unreachable_wish",
+                "present_effort_toward_wish",
+            ) if role in roles
+        ]
+        return MajorMeaningRetentionPlan(
+            clear_long_input=bool(getattr(coverage_plan, "clear_long_input", False)),
+            total_block_count=len(blocks),
+            must_keep_block_keys=must_roles,
+            should_keep_block_keys=[],
+            optional_block_keys=[block.block_key for block in blocks if block.role not in set(must_roles)],
+            forbidden_overcompression_targets=["single_topic_summary", "category_only_reply", "fixed_example_answer"],
+            min_must_keep_coverage_ratio=0.82,
+            reason="self_and_others_happiness_major_meaning_retention",
+        )
+
     must = [block.block_key for block in selected if block.role in set(getattr(coverage_plan, "required_roles", []) or [])]
     if getattr(coverage_plan, "clear_long_input", False) and len(must) < min(4, len(selected)):
         must = [block.block_key for block in selected[: min(6, len(selected))]]

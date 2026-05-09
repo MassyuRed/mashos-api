@@ -59,6 +59,8 @@ def _compact(value: Any) -> str:
 def _strip_unfinished_connectors(text: str) -> tuple[str, list[str]]:
     clean = _clean(text)
     reasons: list[str] = []
+    if clean.endswith("中途半端だから"):
+        return clean[: -len("だから")] + "に感じている", reasons
     while True:
         match = _UNFINISHED_CONNECTOR_RE.search(clean)
         if not match:
@@ -80,12 +82,17 @@ def _soften_colloquial(text: str) -> str:
 
 
 def _role_from_text(text: str, fallback: str) -> str:
+    normalized_fallback = str(fallback or "").strip()
+    # Explicit anchors may carry a caller-owned semantic label. Keep it unless
+    # it is one of the generic placeholders used for synthesized chunks.
+    if normalized_fallback and normalized_fallback not in {"other", "current_expression", "action"}:
+        return normalized_fallback
     compact = _compact(text)
     for role, keywords in _ROLE_KEYWORDS:
         if any(keyword in compact for keyword in keywords):
             return role
-    if fallback and fallback != "other":
-        return fallback
+    if normalized_fallback and normalized_fallback != "other":
+        return normalized_fallback
     return "current_expression"
 
 

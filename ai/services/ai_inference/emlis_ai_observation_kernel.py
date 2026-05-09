@@ -105,6 +105,16 @@ def _as_topic(text: str) -> str:
         return clean
     return f"{clean}こと"
 
+
+def _as_sensation(text: str) -> str:
+    clean = _clean(text).rstrip("。")
+    if not clean:
+        return ""
+    if clean.endswith(("感覚", "不安", "怖さ", "しんどさ", "痛み", "疲れ", "状態")):
+        return clean
+    return f"{clean}感覚"
+
+
 def _opening_text(world_model: WorldModel, blocks: List[InputMeaningBlock], phrases: List[ShapedUserPhrase]) -> str:
     arc = getattr(world_model.facts, "reply_narrative_arc", None)
     opening = _clean(getattr(arc, "opening_thesis", ""))
@@ -131,16 +141,81 @@ def _block_line(block: InputMeaningBlock, *, index: int) -> str:
     if not summary:
         return ""
     prefix = "一方で、" if index == 1 else ""
-    if role in {"self_suppression", "burden_avoidance", "self_view", "relationship_or_others"}:
-        return f"{prefix}その背景には、{summary}流れもありました。"
-    if role in {"limit_or_exhaustion", "fear_or_disappointment", "sadness_or_pain", "anger_or_frustration"}:
-        return f"{prefix}そこには、{summary}感覚もありました。"
-    if role in {"support_need", "self_protection", "effort_direction", "wish_or_hope", "relief_source"}:
-        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
-    if role == "dual_feeling":
-        return f"{prefix}その中で、{_as_topic(summary)}が重なっていました。"
-    return f"{prefix}そこには、{_as_topic(summary)}も含まれていました。"
 
+    if role == "other_contribution":
+        return f"{prefix}{summary}という、誰かの役に立つことを大切にする気持ちがありました。"
+    if role == "self_dislike_from_halfway":
+        if "好きになれない" in summary:
+            return f"{prefix}自分のことを好きになれない気持ちも、ここにちゃんとありました。"
+        if "中途半端" in summary:
+            return f"{prefix}頑張ることも楽しむことも中途半端だと感じて、自分を好きになれない痛みもありました。"
+        return f"{prefix}{summary}という、自分への厳しい見方もありました。"
+    if role == "future_not_giving_up":
+        return f"{prefix}{summary}という、まだ諦めたくない気持ちも残っていました。"
+    if role == "betrayal_fear":
+        return f"{prefix}諦めている自分もいて、期待して裏切られたくない怖さもありました。"
+    if role == "own_happiness_wish":
+        return f"{prefix}{summary}という、自分自身も幸せになりたい願いもありました。"
+    if role == "concrete_life_wishes":
+        if "パートナー" in summary:
+            return f"{prefix}素敵なパートナーと出会って幸せになりたい願いも、ここにありました。"
+        if "好きなこと" in summary:
+            return f"{prefix}好きなことをもっとしたい願いも、なかったことにはできません。"
+        return f"{prefix}{summary}という、具体的に楽しみたい願いもありました。"
+    if role == "unreachable_wish":
+        return f"{prefix}手の届かない所にあるように見える願いも、ここでは小さく扱いません。"
+    if role == "present_effort_toward_wish":
+        return f"{prefix}その願いに近づくために、今頑張れることを大切にしたい気持ちもあります。"
+
+    if role in {"state_awareness"}:
+        if "我慢" in summary or "自分の状態" in summary:
+            return f"{prefix}我慢することだけが正しいわけではなく、自分の状態を見ながら動くことも大切だと気づいています。"
+        return f"{prefix}今の自分の状態を、{_as_topic(summary)}としてちゃんと見ているのだと思います。"
+    if role in {"effort_history"}:
+        return f"{prefix}その背景には、{summary}流れもあります。"
+    if role in {"continuation_wish"}:
+        return f"{prefix}同時に、{_as_topic(summary)}もまだ残っている大切な場所です。"
+    if role in {"not_want_to_quit"}:
+        return f"{prefix}{_as_topic(summary)}も、ここで小さく扱いたくない本音です。"
+    if role in {"limit_or_exhaustion"}:
+        if "抱え込" in summary or "余裕" in summary:
+            return f"{prefix}それを続けていくと、しんどい気持ちを一人で抱え込むことになり、余裕がなくなってしまう感覚もありました。"
+        return f"{prefix}そこには、{_as_sensation(summary)}もありました。"
+    if role in {"fatigue_or_limit", "fear_or_disappointment", "sadness_or_pain", "anger_or_frustration", "collapse_anxiety"}:
+        return f"{prefix}そこには、{_as_sensation(summary)}もありました。"
+    if role in {"dual_holding", "dual_feeling"}:
+        return f"{prefix}その中で、{_as_topic(summary)}が重なっていました。"
+    if role in {"paced_progress"}:
+        return f"{prefix}そこには、{_as_topic(summary)}も、自分を守りながら進むための大切な向きとしてあります。"
+    if role in {"self_understanding"}:
+        if "弱いわけじゃ" in summary or "弱いわけでは" in summary:
+            return f"{prefix}今の自分は弱いのではなく、限界に気づけている状態として見ています。"
+        if "限界に気づ" in summary:
+            return f"{prefix}限界に気づけていることを、弱さではなく今の状態を理解する言葉として見ています。"
+        return f"{prefix}{_as_topic(summary)}を、弱さではなく今の状態を理解する言葉として見ています。"
+    if role in {"relief_source"}:
+        if "癒され" in summary:
+            return f"{prefix}そして、癒しになる時間も、少し楽になりたい気持ちとつながっていました。"
+        return f"{prefix}そして、{_as_topic(summary)}も、少し楽になりたい気持ちとつながっていました。"
+    if role in {"burden_avoidance"}:
+        if "心配" in summary or "負担" in summary:
+            return f"{prefix}心配や負担をかけないように、我慢して丸く収めようとしてきた流れもありました。"
+        return f"{prefix}我慢して丸く収めることを、楽なやり方として選んできた流れもありました。"
+    if role in {"self_suppression"}:
+        return f"{prefix}我慢することだけが正しいわけではない、という気づきもありました。"
+    if role in {"support_need"}:
+        return f"{prefix}本当はしんどい時に、誰かに話したり頼ったりすることも必要だと感じています。"
+    if role in {"self_protection"}:
+        if "無理しない" in summary:
+            return f"{prefix}無理しない選択をすることも、自分を守るために必要なこととして見えています。"
+        if "距離" in summary:
+            return f"{prefix}自分を守るために距離を取ることも、大切な選択として見えています。"
+        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
+    if role in {"effort_direction", "wish_or_hope"}:
+        return f"{prefix}同時に、{_as_topic(summary)}も大切な場所として見えています。"
+    if role in {"self_view", "relationship_or_others"}:
+        return f"{prefix}その背景には、{summary}流れもありました。"
+    return f"{prefix}そこには、{_as_topic(summary)}も含まれていました。"
 
 def _phrase_line(phrase: ShapedUserPhrase, *, index: int) -> str:
     fragment = _clean(getattr(phrase, "sentence_fragment", "") or getattr(phrase, "phrase", "")).rstrip("。")
@@ -164,10 +239,10 @@ def _presence_text(world_model: WorldModel, blocks: List[InputMeaningBlock], phr
             return "ここでは、悲しみも怒りも、無理にきれいにしなくて大丈夫です。"
         return "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
     if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
-        return "ここでは、抑えてきた気持ちも、自分を守ろうとしている気持ちも、どちらも大切に扱います。"
-    if {"wish_or_hope", "fear_or_disappointment", "effort_direction", "wish"} & roles:
+        return "ここでは、抑えてきた気持ちも、自分を守ろうとしている気持ちも、どちらも雑に扱いませんし、大切に扱います。"
+    if {"wish_or_hope", "continuation_wish", "not_want_to_quit", "fear_or_disappointment", "collapse_anxiety", "effort_direction", "paced_progress", "wish"} & roles:
         return "ここでは、願いも怖さも、今できることを大切にしたい気持ちも、小さく扱いません。"
-    if {"anger_or_frustration", "sadness_or_pain", "relief_source"} & roles:
+    if {"fatigue_or_limit", "anger_or_frustration", "sadness_or_pain", "relief_source"} & roles:
         return "ここでは、しんどさも、怒りも、少し楽になりたい気持ちも、雑に扱いません。"
     labels = _selected_emotion_text(world_model)
     if "怒り" in labels and "悲しみ" in labels:
@@ -387,7 +462,7 @@ def generate_observation_candidates(*, kernel_input: ObservationKernelInput) -> 
     candidates.extend(_value_observation_candidates(world_model, current_ref))
 
     if selected_blocks:
-        for idx, block in enumerate(selected_blocks[:8]):
+        for idx, block in enumerate(selected_blocks[:16]):
             line = _block_line(block, index=idx)
             if line:
                 candidates.append(_candidate(f"word_reflection.meaning.{idx:02d}", "word_reflection", line, _evidence_from_blocks([block], current_ref), confidence=0.90))
@@ -463,7 +538,9 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     selected_count = len(getattr(plan, "selected_block_keys", []) or []) if plan is not None else 0
     tier_ceiling = max(2, int(capability.max_reply_lines or 3))
     if clear_long:
-        tier_ceiling = max(tier_ceiling, 10 if capability.tier == "free" else 12 if capability.tier == "plus" else 14)
+        tier_ceiling = max(tier_ceiling, 18 if capability.tier == "free" else 20 if capability.tier == "plus" else 22)
+    elif memo_char_count >= 120 and selected_count >= 4:
+        tier_ceiling = max(tier_ceiling, 8 if capability.tier == "free" else 10 if capability.tier == "plus" else 12)
     target = 2
     if memo_char_count:
         target += 1
@@ -472,7 +549,9 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     if memo_char_count >= 120:
         target += 1
     if clear_long:
-        target = max(target, 2 + min(max(selected_count, len(blocks)), 8))
+        target = max(target, 2 + min(max(selected_count, len(blocks)), 16))
+    elif memo_char_count >= 120 and selected_count >= 4:
+        target = max(target, 2 + min(selected_count, 8))
     history_usable = bool(capability.history_mode != "none" and (bundle.same_day_recent_inputs or bundle.similar_inputs or memory_richness_score >= 0.28))
     derived_model_usable = bool(capability.interpretation_mode != "current_only" and working_model is not None and capability.include_derived_user_model)
     cross_core_usable = bool(capability.cross_core_enabled and getattr(world_model.facts, "cross_core_context", []))
@@ -485,7 +564,7 @@ def decide_reply_length_plan(*, capability: EmlisAICapabilityConfig, bundle: Sou
     if interpretive_frame_usable:
         # One line for interpretive frame plus the normal close; partner line can use the extra line when available.
         target += 2
-    evidence_ceiling = max(2, 2 + min(max(selected_count, len(blocks)), 8)) if clear_long else max(2, 2 + min(3, len(world_model.facts.user_word_anchors or [])))
+    evidence_ceiling = max(2, 2 + min(max(selected_count, len(blocks)), 16)) if clear_long else max(2, 2 + min(8, max(selected_count, len(world_model.facts.user_word_anchors or []))))
     if value_observation_count:
         evidence_ceiling += 1
     max_lines = min(tier_ceiling, max(2, target), max(2, evidence_ceiling + (2 if history_usable else 0) + (2 if interpretive_frame_usable else 0)))
@@ -529,7 +608,11 @@ def arbitrate_candidates(candidates: List[ObservationCandidate], rejected_candid
     receive = _pick(candidates, "receive")
     if receive is not None:
         accepted.append(receive)
-    has_selected_line = bool((not reply_length_plan.clear_long_input) and any(c.kind in {"selected_emotions", "emotion_response"} for c in candidates))
+    has_selected_line = bool(
+        (not reply_length_plan.clear_long_input)
+        and int(getattr(reply_length_plan, "selected_meaning_block_count", 0) or 0) < 4
+        and any(c.kind in {"selected_emotions", "emotion_response"} for c in candidates)
+    )
     selected_reserve = 1 if has_selected_line else 0
     for candidate in [c for c in candidates if c.kind == "word_reflection"]:
         if candidate.candidate_key == "word_reflection.phrase.00" and receive is not None and candidate.text.startswith("あなたは、"):
