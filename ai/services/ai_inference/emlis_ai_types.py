@@ -899,6 +899,10 @@ class TemplateEchoReport:
     matched_raw_quote_fragments: List[str] = field(default_factory=list)
     repeated_limited_surface_score: float = 0.0
     matched_limited_surface_patterns: List[str] = field(default_factory=list)
+    # Phase 8: Japanese / semantic coherence diagnostics for Limited Composer.
+    phase8_emotion_label_body_line_count: int = 0
+    phase8_missing_must_keep_roles: List[str] = field(default_factory=list)
+    phase8_quality_rejection_reasons: List[str] = field(default_factory=list)
     matched_banned_patterns: List[str] = field(default_factory=list)
     rejection_reasons: List[str] = field(default_factory=list)
 

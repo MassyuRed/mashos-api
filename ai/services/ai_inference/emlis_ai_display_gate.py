@@ -137,6 +137,9 @@ def build_emlis_gate_trace(
             "raw_quote_char_ratio": float(getattr(template_echo_report, "raw_quote_char_ratio", 0.0) or 0.0),
             "matched_raw_quote_fragments": list(getattr(template_echo_report, "matched_raw_quote_fragments", []) or []),
             "matched_limited_surface_patterns": list(getattr(template_echo_report, "matched_limited_surface_patterns", []) or []),
+            "phase8_emotion_label_body_line_count": int(getattr(template_echo_report, "phase8_emotion_label_body_line_count", 0) or 0),
+            "phase8_missing_must_keep_roles": list(getattr(template_echo_report, "phase8_missing_must_keep_roles", []) or []),
+            "phase8_quality_rejection_reasons": list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or []),
         },
         "generation_source": {
             "passed": source == "ai_generated",

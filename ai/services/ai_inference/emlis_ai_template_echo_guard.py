@@ -14,6 +14,7 @@ from difflib import SequenceMatcher
 from typing import Any, Iterable, List, Mapping, Sequence, Set, Tuple
 
 from emlis_ai_types import EvidenceSpan, TemplateEchoReport
+from emlis_ai_limited_sentence_quality_guard import judge_limited_sentence_quality
 
 # Old and newly-discovered surface patterns that caused broken outputs. These
 # are rejection signatures, not generation templates.
@@ -40,6 +41,12 @@ _BANNED_PATTERNS = [
     r"今の言葉として一緒に見ます",
     r"一つの結論へ急がず",
     r"Emlisは、?「?.+」?を急いで片づけず",
+    r"^\s*(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)[。.!！]?\s*$",
+    r".+がつながっています",
+    r".+同じ中にあります",
+    r"なんであ(?:が|$)",
+    r"考え始めが|考え始め[。.!！]?$",
+    r"悪化するが(?:同じ中にあります|$)",
 ]
 _BANNED_RE = [re.compile(p) for p in _BANNED_PATTERNS]
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
@@ -379,6 +386,19 @@ def guard_template_echo(
     if abstract_score >= 1.0:
         reasons.append("abstract_phrase_repetition")
 
+    quality_report = judge_limited_sentence_quality(
+        comment_text=text,
+        evidence_spans=evidence_spans,
+        used_evidence_span_ids=used_evidence_span_ids,
+        composer_meta=composer_meta,
+    )
+    if limited and not bool(quality_report.get("passed")):
+        for reason in list(quality_report.get("rejection_reasons") or []):
+            reasons.append(str(reason))
+        for fragment in list(quality_report.get("matched_surfaces") or quality_report.get("matched_fragments") or []):
+            if fragment and fragment not in matched:
+                matched.append(str(fragment))
+
     # Generic repeated-shape detection is kept as a broad legacy/template guard,
     # but it looks at body sentences only so a greeting does not turn a short
     # three-sentence candidate into a false positive.
@@ -407,6 +427,8 @@ def guard_template_echo(
         matched_raw_quote_fragments=quote_hits[:6],
         repeated_limited_surface_score=round(limited_surface_score, 3),
         matched_limited_surface_patterns=matched_limited,
+        phase8_emotion_label_body_line_count=len([r for r in list(quality_report.get("rejection_reasons") or []) if r == "phase8_emotion_label_body_line"]),
+        phase8_quality_rejection_reasons=list(quality_report.get("rejection_reasons") or []),
         matched_banned_patterns=matched,
         rejection_reasons=reasons,
     )

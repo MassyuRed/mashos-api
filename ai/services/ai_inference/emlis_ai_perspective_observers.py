@@ -131,8 +131,8 @@ _EXPLICIT_CLAIM_TYPE_BY_SPAN_TYPE = {
     "relation_marker": "explicit_relation_marker",
 }
 
-_CONFLICT_WISH_VALUE_RE = re.compile(r"(嬉し|うれし|リラックス|優先|整え|したい|いたい|生活したい|楽しい|安心|幸せ|繋が|つなが|過ごしたい)")
-_CONFLICT_CONSTRAINT_RE = re.compile(r"(悪化|不便|怖|こわ|気をつけ|気を付け|無視|ダメージ|できない|出来ない|疲れ|しんど|責め|ミス|分からな|わからな)")
+_CONFLICT_WISH_VALUE_RE = re.compile(r"(嬉し|うれし|リラックス|優先|整え|したい|いたい|生活したい|頼りたい|楽しい|楽しか|笑え|元気|安心|幸せ|繋が|つなが|過ごしたい|片付け|気持ちが軽い|ちゃんとでき)")
+_CONFLICT_CONSTRAINT_RE = re.compile(r"(悪化|不便|怖|こわ|気をつけ|気を付け|無視|ダメージ|できない|出来ない|疲れ|しんど|責め|ミス|分からな|わからな|迷惑|嫌われ|重い|言えない|限界)")
 _TEXT_FIELDS = {"memo", "memo_action"}
 
 
