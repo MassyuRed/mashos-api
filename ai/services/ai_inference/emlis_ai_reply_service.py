@@ -1007,7 +1007,13 @@ def _multi_perspective_meta(
     phase5_board_ready = phase5_board_contract_ready(board)
     phase5_graph_ready = phase5_observation_graph_ready(board, graph)
     phase5_ready = bool(phase4_ready and phase5_board_ready and phase5_graph_ready)
-    phase6_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    phase6_contract_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    composer_candidate_available = bool(
+        composer_candidate is not None
+        and str(getattr(composer_candidate, "composer_source", "") or "") == "ai_generated"
+        and str(getattr(composer_candidate, "comment_text", "") or "").strip()
+    )
+    phase6_ready = bool(phase6_contract_ready and composer_candidate_available)
     phase7_ready = bool(
         phase6_ready
         and phase7_judge_contract_ready(
@@ -1099,18 +1105,18 @@ def _multi_perspective_meta(
                 "observer_contract_only_structured": phase4_ready,
                 "perspective_board_ready": phase5_board_ready,
                 "observation_graph_ready": phase5_graph_ready,
-                "composer_contract_ready": phase6_ready,
+                "composer_contract_ready": phase6_contract_ready,
                 "reader_gate_ready": isinstance(gate_trace.get("reader"), dict),
                 "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
                 "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
                 "judge_contract_ready": phase7_ready,
-                "composer_candidate_available": str(getattr(composer_candidate, "composer_source", "") or "") == "ai_generated",
+                "composer_candidate_available": composer_candidate_available,
                 "composer_status": str(getattr(composer_candidate, "status", "") or ""),
                 "board_validation_issues": validate_perspective_board(board),
                 "graph_validation_issues": validate_observation_graph(graph, board),
                 "gate_trace": gate_trace,
                 "display_gate_ready": phase8_ready,
-                "display_gate_release_ready": bool(release_readiness.get("display_gate_release_ready")),
+                "display_gate_release_ready": bool(phase8_ready and release_readiness.get("display_gate_release_ready")),
                 "frontend_display_control_ready": phase9_ready,
                 "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
                 "phase10_regression_release_ready": phase10_ready,
@@ -1177,7 +1183,7 @@ async def render_emlis_ai_reply(
     # On judge rejection, a single regeneration attempt may be requested with
     # rejection reason codes only.  No sample text or fallback observation is sent.
     phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_observation_graph_ready(board, graph))
-    phase6_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    phase6_contract_ready = bool(phase5_ready and phase6_composer_contract_ready())
     composer_candidate = None
     comment_text = ""
     composer_source = ""
@@ -1192,7 +1198,7 @@ async def render_emlis_ai_reply(
         safety_report=safety_report,
         trace_id=trace_id,
         composer_source="unavailable" if not safety_requires_block else "",
-        phase_completion_ready=phase6_ready,
+        phase_completion_ready=False,
     )
 
     max_attempts = 2 if composer_client is not None and not safety_requires_block else 1
@@ -1216,6 +1222,11 @@ async def render_emlis_ai_reply(
         reader_report = judge_listener_readability(comment_text)
         grounding_report = judge_grounding(comment_text=comment_text, graph=graph, evidence_spans=evidence_spans)
         template_echo_report = guard_template_echo(comment_text=comment_text, evidence_spans=evidence_spans, composer_source=composer_source)
+        composer_candidate_available = bool(
+            composer_source == "ai_generated"
+            and str(getattr(composer_candidate, "comment_text", "") or "").strip()
+        )
+        phase6_ready = bool(phase6_contract_ready and composer_candidate_available)
         phase7_ready = bool(
             phase6_ready
             and phase7_judge_contract_ready(

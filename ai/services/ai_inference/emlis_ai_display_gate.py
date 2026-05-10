@@ -185,6 +185,13 @@ def build_phase10_release_readiness(
     display_gate_ready = phase8_display_gate_contract_ready(display_decision) if display_decision is not None else True
     if not display_gate_ready:
         blockers.append("display_gate_contract_not_ready")
+    if display_decision is not None:
+        status = str(getattr(display_decision, "observation_status", "") or "")
+        comment_text = str(getattr(display_decision, "comment_text", "") or "").strip()
+        if status != "passed":
+            blockers.append("observation_not_passed")
+        elif not comment_text:
+            blockers.append("passed_comment_text_missing")
     if not phase9_frontend_display_contract_ready(display_gate_ready=frontend_display_control_ready):
         blockers.append("frontend_passed_only_display_not_verified")
     failed_checks = [key for key in _PHASE10_REQUIRED_RELEASE_CHECKS if checks.get(key) is not True]

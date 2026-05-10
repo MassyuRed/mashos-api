@@ -46,18 +46,21 @@ def test_retired_kernel_delegates_to_multi_perspective_adapter_without_templates
     assert decision.reply_lines == []
     assert decision.accepted_candidates == []
     assert decision.debug["phase_gate"]["legacy_text_routes_sealed"] is True
-    assert decision.debug["phase_gate"]["current_phase"] == 10
-    assert decision.debug["phase_gate"]["next_phase"] is None
-    assert decision.debug["phase_gate"]["release_ready"] is True
-    assert decision.debug["phase_gate"]["phase10_regression_release_ready"] is True
+    assert decision.debug["phase_gate"]["completed_phases"] == [0, 1, 2, 3, 4, 5]
+    assert decision.debug["phase_gate"]["current_phase"] == 5
+    assert decision.debug["phase_gate"]["next_phase"] == 6
+    assert decision.debug["phase_gate"]["release_ready"] is False
+    assert "observation_not_passed" in decision.debug["phase_gate"]["release_blockers"]
+    assert "frontend_passed_only_display_not_verified" in decision.debug["phase_gate"]["release_blockers"]
+    assert decision.debug["phase_gate"]["phase10_regression_release_ready"] is False
     assert decision.debug["phase_gate"]["composer_contract_ready"] is True
-    assert decision.debug["phase_gate"]["judge_contract_ready"] is True
+    assert decision.debug["phase_gate"]["judge_contract_ready"] is False
     assert decision.debug["phase_gate"]["composer_candidate_available"] is False
     assert decision.debug["composer_status"] == "unavailable"
     assert decision.debug["observation_status"] == "unavailable"
-    assert decision.debug["phase_gate"]["display_gate_ready"] is True
+    assert decision.debug["phase_gate"]["display_gate_ready"] is False
     assert decision.debug["phase_gate"]["comment_text_allowed"] is False
-    assert "phase_not_complete" not in decision.debug["rejection_reasons"]
+    assert "phase_not_complete" in decision.debug["rejection_reasons"]
     assert "composer_source_not_ai_generated" in decision.debug["rejection_reasons"]
 
 

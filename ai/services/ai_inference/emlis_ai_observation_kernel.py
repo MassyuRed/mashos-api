@@ -139,6 +139,7 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
     # injected Composer AI, the candidate remains unavailable and display stays
     # fail-closed.
     phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_integrator_contract_ready(board, graph))
+    phase6_contract_ready = bool(phase5_ready and phase6_composer_contract_ready())
     composer_candidate = compose_emlis_conversation_candidate(
         graph=graph,
         evidence_spans=evidence_spans,
@@ -152,9 +153,13 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
     grounding = judge_grounding(comment_text=candidate_text, graph=graph, evidence_spans=evidence_spans)
     composer_source = str(composer_candidate.composer_source or "") if phase5_ready else "phase_4_observers_ready_composer_not_connected"
     template_echo = guard_template_echo(comment_text=candidate_text, evidence_spans=evidence_spans, composer_source=composer_source)
+    composer_candidate_available = bool(
+        composer_source == "ai_generated"
+        and str(getattr(composer_candidate, "comment_text", "") or "").strip()
+    )
+    phase6_ready = bool(phase6_contract_ready and composer_candidate_available)
     phase7_contract_ready = bool(
-        phase5_ready
-        and phase6_composer_contract_ready()
+        phase6_ready
         and phase7_judge_contract_ready(
             reader_report=reader,
             grounding_report=grounding,
@@ -197,7 +202,7 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         else (
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
             if phase9_ready
-            else ([0, 1, 2, 3, 4, 5, 6, 7, 8] if phase8_ready else ([0, 1, 2, 3, 4, 5, 6, 7] if phase7_ready else ([0, 1, 2, 3, 4, 5, 6] if phase5_ready and phase6_composer_contract_ready() else ([0, 1, 2, 3, 4, 5] if phase5_ready else [0, 1, 2, 3, 4]))))
+            else ([0, 1, 2, 3, 4, 5, 6, 7, 8] if phase8_ready else ([0, 1, 2, 3, 4, 5, 6, 7] if phase7_ready else ([0, 1, 2, 3, 4, 5, 6] if phase6_ready else ([0, 1, 2, 3, 4, 5] if phase5_ready else [0, 1, 2, 3, 4]))))
         )
     )
     length_plan = ReplyLengthPlan(
@@ -225,8 +230,8 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
             "kernel_version": "multi_perspective_adapter.v1",
             "phase_gate": {
                 "completed_phases": completed_phases,
-                "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase5_ready and phase6_composer_contract_ready() else (5 if phase5_ready else 4))))),
-                "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase5_ready and phase6_composer_contract_ready() else (6 if phase5_ready else 5))))),
+                "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase6_ready else (5 if phase5_ready else 4))))),
+                "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase6_ready else (6 if phase5_ready else 5))))),
                 "phase_completion_ready": phase10_ready,
                 "release_ready": bool(release_readiness.get("release_ready")),
                 "release_blockers": list(release_readiness.get("release_blockers") or []),
@@ -238,10 +243,10 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
                 "specialist_observers_ready": phase4_observer_contract_ready(reports, evidence_spans),
                 "perspective_board_ready": phase5_board_contract_ready(board),
                 "observation_graph_ready": phase5_integrator_contract_ready(board, graph),
-                "composer_contract_ready": phase6_composer_contract_ready(),
+                "composer_contract_ready": phase6_contract_ready,
                 "judge_contract_ready": phase7_ready,
                 "display_gate_ready": phase8_ready,
-                "display_gate_release_ready": bool(release_readiness.get("display_gate_release_ready")),
+                "display_gate_release_ready": bool(phase8_ready and release_readiness.get("display_gate_release_ready")),
                 "frontend_display_control_ready": phase9_ready,
                 "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
                 "phase10_regression_release_ready": phase10_ready,
@@ -249,7 +254,7 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
                 "reader_gate_ready": True,
                 "grounding_gate_ready": True,
                 "template_echo_gate_ready": True,
-                "composer_candidate_available": str(composer_candidate.composer_source or "") == "ai_generated",
+                "composer_candidate_available": composer_candidate_available,
                 "composer_status": str(composer_candidate.status or ""),
                 "display_gate_status": decision.observation_status,
                 "comment_text_allowed": bool(phase8_ready and decision.observation_status == "passed" and final_text),

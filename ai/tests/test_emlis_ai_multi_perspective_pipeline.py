@@ -624,15 +624,20 @@ async def test_phase8_reply_orchestrator_keeps_empty_comment_when_composer_is_un
     phase_gate = envelope.meta["multi_perspective"]["phase_gate"]
     assert envelope.comment_text == ""
     assert envelope.meta["observation_status"] == "unavailable"
-    assert phase_gate["completed_phases"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    assert phase_gate["current_phase"] == 10
-    assert phase_gate["next_phase"] is None
-    assert phase_gate["display_gate_ready"] is True
-    assert phase_gate["frontend_display_control_ready"] is True
-    assert phase_gate["phase10_regression_release_ready"] is True
-    assert phase_gate["release_ready"] is True
+    assert phase_gate["completed_phases"] == [0, 1, 2, 3, 4, 5]
+    assert phase_gate["current_phase"] == 5
+    assert phase_gate["next_phase"] == 6
+    assert phase_gate["composer_contract_ready"] is True
+    assert phase_gate["composer_candidate_available"] is False
+    assert phase_gate["display_gate_ready"] is False
+    assert phase_gate["frontend_display_control_ready"] is False
+    assert phase_gate["phase10_regression_release_ready"] is False
+    assert phase_gate["release_ready"] is False
+    assert "observation_not_passed" in phase_gate["release_blockers"]
+    assert "frontend_passed_only_display_not_verified" in phase_gate["release_blockers"]
     assert phase_gate["comment_text_allowed"] is False
     assert phase_gate["gate_trace"]["display_gate"]["passed"] is False
+    assert "phase_not_complete" in envelope.meta["rejection_reasons"]
     assert "composer_source_unavailable" in envelope.meta["rejection_reasons"]
 
 
@@ -647,6 +652,22 @@ def test_phase10_release_readiness_requires_frontend_and_regression_contracts():
     assert ready["phase10_regression_release_ready"] is True
     assert ready["release_blockers"] == []
     assert phase10_release_readiness_contract_ready(frontend_display_control_ready=True) is True
+
+    from emlis_ai_types import DisplayDecision
+
+    unavailable_decision = DisplayDecision(
+        observation_status="unavailable",
+        comment_text="",
+        rejection_reasons=["composer_source_unavailable"],
+        trace_id="phase10-unavailable",
+    )
+    unavailable = build_phase10_release_readiness(
+        display_decision=unavailable_decision,
+        frontend_display_control_ready=False,
+    )
+    assert unavailable["release_ready"] is False
+    assert "observation_not_passed" in unavailable["release_blockers"]
+    assert "frontend_passed_only_display_not_verified" in unavailable["release_blockers"]
 
     blocked = build_phase10_release_readiness(
         frontend_display_control_ready=False,
