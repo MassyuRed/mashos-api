@@ -24,7 +24,7 @@ _RELATION_RE = re.compile(
     r"(同じ場所|同じ中|並んで|せめぎ合|重なって|一方|だけではなく|離れていない|簡単には|"
     r"その二つ|二つの間|つながって|同時に|抱えて|混ざって|残って)"
 )
-_ADDRESSEE_RE = re.compile(r"(^[^\n]{0,24}さん、Emlisです。|^Emlisです。)")
+_ADDRESSEE_RE = re.compile(r"(^[^\n]{0,32}さん、[^\n]{0,24}Emlisです。|^Emlisです。)")
 _LISTING_RE = re.compile(r"(.+もありました。?\s*){2,}|(.+も含まれていました。?\s*){2,}")
 _GENERIC_CLOSING_RE = re.compile(r"(小さく扱いません|軽く扱いません|今の言葉として一緒に見ます|一つの結論へ急がず)")
 

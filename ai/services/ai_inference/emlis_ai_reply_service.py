@@ -37,7 +37,10 @@ from emlis_ai_user_model_store import (
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
+from emlis_ai_composer_client_registry import default_composer_flag_state, resolve_emlis_ai_composer_client
 from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
+from emlis_ai_limited_observation_scope_service import build_limited_observation_scope
+from emlis_ai_limited_release_service import build_phase7_rollout_metrics, evaluate_limited_composer_release
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
@@ -109,6 +112,32 @@ def _current_ref(bundle: SourceBundle) -> EvidenceRef:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _evidence_ids_from_observation_graph(graph: Any) -> List[str]:
+    """Collect evidence ids that belong to the graph currently being judged.
+
+    Phase 4 uses this for scoped grounding: when the Limited Composer receives a
+    scoped graph, Grounding should not validate sentences using evidence that
+    only belongs to excluded full-graph claims.
+    """
+
+    out: List[str] = []
+
+    def add(values: Any) -> None:
+        for value in list(values or []):
+            span_id = str(value or "").strip()
+            if span_id and span_id not in out:
+                out.append(span_id)
+
+    primary = getattr(graph, "primary_state", None)
+    add(getattr(primary, "evidence_span_ids", []) or [])
+    for attr in ("pressure_sources", "limit_signals", "self_awareness", "value_or_strength_signals"):
+        for claim in list(getattr(graph, attr, []) or []):
+            add(getattr(claim, "evidence_span_ids", []) or [])
+    for edge in list(getattr(graph, "core_tensions", []) or []):
+        add(getattr(edge, "evidence_span_ids", []) or [])
+    return out
 
 
 def _collect_used_evidence(reply_lines: List[ReplyLine]) -> List[EvidenceRef]:
@@ -990,6 +1019,12 @@ def _multi_perspective_meta(
     display_decision: Any,
     composer_source: str = "",
     composer_candidate: Any = None,
+    composer_client_resolution: Any = None,
+    limited_observation_scope: Any = None,
+    limited_release_decision: Any = None,
+    grounding_graph: Any = None,
+    grounding_scope: str = "full_graph",
+    grounding_allowed_evidence_span_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     used_sources: List[str] = ["current_input"]
     if bundle.greeting:
@@ -1046,6 +1081,44 @@ def _multi_perspective_meta(
         composer_source=str(composer_source or ""),
         phase_completion_ready=False,
     )
+    resolution_meta: Dict[str, Any] = {}
+    as_meta = getattr(composer_client_resolution, "as_meta", None)
+    if callable(as_meta):
+        try:
+            payload = as_meta()
+            resolution_meta = dict(payload or {}) if isinstance(payload, dict) else {}
+        except Exception:
+            resolution_meta = {}
+    scope_meta: Dict[str, Any] = {}
+    scope_as_meta = getattr(limited_observation_scope, "as_meta", None)
+    if callable(scope_as_meta):
+        try:
+            payload = scope_as_meta()
+            scope_meta = dict(payload or {}) if isinstance(payload, dict) else {}
+        except Exception:
+            scope_meta = {}
+    release_meta: Dict[str, Any] = {}
+    release_as_meta = getattr(limited_release_decision, "as_meta", None)
+    if callable(release_as_meta):
+        try:
+            payload = release_as_meta()
+            release_meta = dict(payload or {}) if isinstance(payload, dict) else {}
+        except Exception:
+            release_meta = {}
+    phase7_rollout_metrics = build_phase7_rollout_metrics(
+        release_decision=limited_release_decision,
+        observation_status=getattr(display_decision, "observation_status", ""),
+        rejection_reasons=list(getattr(display_decision, "rejection_reasons", []) or []),
+    )
+    allowed_grounding_ids = [str(v) for v in list(grounding_allowed_evidence_span_ids or []) if str(v)]
+    grounding_graph_payload = _jsonable(grounding_graph) if grounding_graph is not None else {}
+    scoped_grounding_meta = {
+        "enabled": bool(str(grounding_scope or "") != "full_graph"),
+        "grounding_scope": str(grounding_scope or "full_graph"),
+        "allowed_evidence_span_ids": allowed_grounding_ids,
+        "full_graph_retained_for_meta": bool(scope_meta),
+        "excluded_claims_retained_for_meta": list(scope_meta.get("excluded_claims") or []) if isinstance(scope_meta, dict) else [],
+    }
     return {
         "version": "emlis_ai_v3",
         "kernel_version": "multi_perspective_observation.v1",
@@ -1089,6 +1162,12 @@ def _multi_perspective_meta(
             "composer_source": str(composer_source or ""),
             "composer_status": str(getattr(composer_candidate, "status", "") or ""),
             "composer_rejection_reasons": list(getattr(composer_candidate, "rejection_reasons", []) or []),
+            "composer_client_resolution": resolution_meta,
+            "limited_composer_release": release_meta,
+            "phase7_rollout_metrics": phase7_rollout_metrics,
+            "limited_observation_scope": scope_meta,
+            "scoped_grounding": scoped_grounding_meta,
+            "grounding_graph": grounding_graph_payload,
             "phase_gate": {
                 "completed_phases": completed_phases,
                 "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase6_ready else (5 if phase5_ready else (4 if phase4_ready else 3)))))),
@@ -1110,6 +1189,11 @@ def _multi_perspective_meta(
                 "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
                 "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
                 "judge_contract_ready": phase7_ready,
+                "phase7_staged_release_ready": bool(release_meta.get("enabled", False)) if release_meta else False,
+                "phase7_rollout_stage": str(release_meta.get("stage", "") or "") if release_meta else "",
+                "phase7_rollout_cohort": str(release_meta.get("cohort", "") or "") if release_meta else "",
+                "phase7_rollout_attempted": bool(phase7_rollout_metrics.get("attempted", False)),
+                "phase7_rollout_rejection_reasons": list(phase7_rollout_metrics.get("rejection_reasons") or []),
                 "composer_candidate_available": composer_candidate_available,
                 "composer_status": str(getattr(composer_candidate, "status", "") or ""),
                 "board_validation_issues": validate_perspective_board(board),
@@ -1177,6 +1261,37 @@ async def render_emlis_ai_reply(
 
         safety_report = SafetyBoundaryReport(requires_block=True, reasons=["safety_boundary"])
 
+    composer_flag_state = default_composer_flag_state()
+    limited_observation_scope = None
+    if composer_client is None and not safety_requires_block and bool(composer_flag_state.get("enabled")):
+        limited_observation_scope = build_limited_observation_scope(
+            graph=graph,
+            evidence_spans=evidence_spans,
+        )
+    limited_release_decision = evaluate_limited_composer_release(
+        user_id=user_id,
+        current_input=current_input,
+        limited_observation_scope=limited_observation_scope,
+        feature_flag_enabled=bool(composer_flag_state.get("enabled")),
+    )
+    composer_client_resolution = resolve_emlis_ai_composer_client(
+        composer_client=composer_client,
+        safety_requires_block=safety_requires_block,
+        release_allowed=bool(getattr(limited_release_decision, "enabled", False)),
+        release_meta=limited_release_decision.as_meta(),
+    )
+    resolved_composer_client = composer_client_resolution.composer_client
+    composer_graph = graph
+    grounding_graph = graph
+    grounding_scope = "full_graph"
+    grounding_allowed_evidence_span_ids: List[str] = []
+    if bool(getattr(composer_client_resolution, "default_client_used", False)) and limited_observation_scope is not None:
+        composer_graph = limited_observation_scope.scoped_graph
+        grounding_graph = composer_graph
+        grounding_scope = "limited_scoped_graph"
+        grounding_allowed_evidence_span_ids = _evidence_ids_from_observation_graph(grounding_graph)
+
+
     # Phase 8: run Display Gate as the final fail-closed boundary.  The gate may
     # allow a Composer AI candidate only when every judge passes, the source is
     # ai_generated, and the pipeline phases through Judge are structurally ready.
@@ -1188,7 +1303,13 @@ async def render_emlis_ai_reply(
     comment_text = ""
     composer_source = ""
     reader_report = judge_listener_readability("")
-    grounding_report = judge_grounding(comment_text="", graph=graph, evidence_spans=evidence_spans)
+    grounding_report = judge_grounding(
+        comment_text="",
+        graph=grounding_graph,
+        evidence_spans=evidence_spans,
+        allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
+        grounding_scope=grounding_scope,
+    )
     template_echo_report = guard_template_echo(comment_text="", evidence_spans=evidence_spans, composer_source="unavailable")
     display_decision = decide_emlis_observation_display(
         comment_text="",
@@ -1201,27 +1322,44 @@ async def render_emlis_ai_reply(
         phase_completion_ready=False,
     )
 
-    max_attempts = 2 if composer_client is not None and not safety_requires_block else 1
+    max_attempts = 2 if resolved_composer_client is not None and not safety_requires_block else 1
     regeneration_reasons: List[str] = []
     for attempt in range(1, max_attempts + 1):
         composer_candidate = compose_emlis_conversation_candidate(
-            graph=graph,
+            graph=composer_graph,
             evidence_spans=evidence_spans,
             display_name=bundle.display_name or display_name,
             greeting_text=build_emlis_observation_greeting(
                 display_name=bundle.display_name or display_name,
                 greeting_text=getattr(bundle.greeting, "greeting_text", "") if bundle.greeting else "",
             ),
-            composer_client=None if safety_requires_block else composer_client,
+            composer_client=None if safety_requires_block else resolved_composer_client,
             trace_id=trace_id,
             attempt_count=attempt,
             rejection_reasons=regeneration_reasons,
+            limited_observation_scope=limited_observation_scope,
         )
         comment_text = "" if safety_requires_block else str(composer_candidate.comment_text or "").strip()
         composer_source = "" if safety_requires_block else str(composer_candidate.composer_source or "")
         reader_report = judge_listener_readability(comment_text)
-        grounding_report = judge_grounding(comment_text=comment_text, graph=graph, evidence_spans=evidence_spans)
-        template_echo_report = guard_template_echo(comment_text=comment_text, evidence_spans=evidence_spans, composer_source=composer_source)
+        grounding_report = judge_grounding(
+            comment_text=comment_text,
+            graph=grounding_graph,
+            evidence_spans=evidence_spans,
+            allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
+            grounding_scope=grounding_scope,
+        )
+        template_echo_report = guard_template_echo(
+            comment_text=comment_text,
+            evidence_spans=evidence_spans,
+            composer_source=composer_source,
+            composer_model=getattr(composer_candidate, "composer_model", ""),
+            generation_method=getattr(composer_candidate, "generation_method", ""),
+            generation_scope=getattr(composer_candidate, "generation_scope", ""),
+            coverage_scope=getattr(composer_candidate, "coverage_scope", ""),
+            composer_meta=getattr(composer_candidate, "composer_meta", {}),
+            used_evidence_span_ids=getattr(composer_candidate, "used_evidence_span_ids", []),
+        )
         composer_candidate_available = bool(
             composer_source == "ai_generated"
             and str(getattr(composer_candidate, "comment_text", "") or "").strip()
@@ -1248,7 +1386,7 @@ async def render_emlis_ai_reply(
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break
-        if composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
+        if resolved_composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
             break
         regeneration_reasons = list(display_decision.rejection_reasons or [])
 
@@ -1268,6 +1406,12 @@ async def render_emlis_ai_reply(
         display_decision=display_decision,
         composer_source=composer_source,
         composer_candidate=composer_candidate,
+        composer_client_resolution=composer_client_resolution,
+        limited_observation_scope=limited_observation_scope,
+        limited_release_decision=limited_release_decision,
+        grounding_graph=grounding_graph,
+        grounding_scope=grounding_scope,
+        grounding_allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
     )
 
     return ReplyEnvelope(

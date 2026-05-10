@@ -128,12 +128,25 @@ def build_conversation_composer_payload(
     trace_id: str = "",
     attempt_count: int = 1,
     rejection_reasons: Sequence[str] | None = None,
+    limited_observation_scope: object = None,
 ) -> Dict[str, Any]:
     """Build the structured request sent to the Composer AI.
 
     The payload contains graph/evidence/constraints only.  It deliberately does
     not include example replies, fixed closing sentences, or surface templates.
     """
+
+    scope_meta: Dict[str, Any] = {}
+    if isinstance(limited_observation_scope, Mapping):
+        scope_meta = dict(limited_observation_scope)
+    else:
+        as_meta = getattr(limited_observation_scope, "as_meta", None)
+        if callable(as_meta):
+            try:
+                raw_scope_meta = as_meta()
+                scope_meta = dict(raw_scope_meta) if isinstance(raw_scope_meta, Mapping) else {}
+            except Exception:
+                scope_meta = {}
 
     addressee = graph.addressee_notes
     return {
@@ -162,6 +175,7 @@ def build_conversation_composer_payload(
             "missing_information": list(graph.missing_information),
         },
         "evidence_spans": [_evidence_payload(span) for span in evidence_spans],
+        "limited_observation_scope": scope_meta,
         "composition_contract": {
             "produce_user_facing_text": True,
             "composer_source_required": "ai_generated",
@@ -178,7 +192,17 @@ def build_conversation_composer_payload(
         "expected_response_schema": {
             "schema_version": _RESPONSE_SCHEMA_VERSION,
             "required": ["comment_text", "used_evidence_span_ids", "confidence"],
-            "optional": ["response_schema_version", "composer_source"],
+            "optional": [
+                "response_schema_version",
+                "composer_source",
+                "composer_model",
+                "generation_method",
+                "generation_scope",
+                "coverage_scope",
+                "fixed_string_renderer_used",
+                "used_claim_ids",
+                "used_relation_ids",
+            ],
         },
     }
 
@@ -220,27 +244,62 @@ def _normalize_ai_response(
     attempt_count: int,
     allowed_evidence_ids: set[str],
 ) -> ConversationComposerCandidate:
-    text = _extract_text_from_response(response)
-    if not text:
-        return ConversationComposerCandidate(
-            composer_source="empty",
-            status="empty",
-            trace_id=trace_id,
-            attempt_count=attempt_count,
-            rejection_reasons=["composer_returned_empty_text"],
-            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
-        )
-
     response_source = ""
     response_schema = ""
+    composer_model = ""
+    generation_method = ""
+    coverage_scope = ""
+    generation_scope = ""
+    used_claim_ids: List[str] = []
+    used_relation_ids: List[str] = []
+    fixed_string_renderer_used = False
+    composer_meta: Dict[str, Any] = {}
     confidence = 0.0
     if isinstance(response, Mapping):
         response_source = _clean_text(response.get("composer_source") or response.get("source"))
         response_schema = _clean_text(response.get("response_schema_version") or response.get("schema_version"))
+        composer_model = _clean_text(response.get("composer_model"))
+        generation_method = _clean_text(response.get("generation_method"))
+        coverage_scope = _clean_text(response.get("coverage_scope"))
+        generation_scope = _clean_text(response.get("generation_scope")) or generation_method
+        raw_claim_ids = response.get("used_claim_ids") if isinstance(response.get("used_claim_ids"), (list, tuple, set)) else []
+        raw_relation_ids = response.get("used_relation_ids") if isinstance(response.get("used_relation_ids"), (list, tuple, set)) else []
+        used_claim_ids = [str(item or "").strip() for item in raw_claim_ids if str(item or "").strip()]
+        used_relation_ids = [str(item or "").strip() for item in raw_relation_ids if str(item or "").strip()]
+        fixed_string_renderer_used = bool(response.get("fixed_string_renderer_used"))
+        raw_meta = response.get("composer_meta") or {}
+        composer_meta = dict(raw_meta) if isinstance(raw_meta, Mapping) else {}
         try:
             confidence = float(response.get("confidence") or 0.0)
         except (TypeError, ValueError):
             confidence = 0.0
+
+    text = _extract_text_from_response(response)
+    if not text:
+        source = response_source or "empty"
+        status = "unavailable" if source == "unavailable" else "empty"
+        reasons = []
+        if isinstance(response, Mapping) and isinstance(response.get("rejection_reasons"), (list, tuple)):
+            reasons = [str(item) for item in response.get("rejection_reasons") if str(item)]
+        if not reasons:
+            reasons = ["composer_returned_empty_text"]
+        return ConversationComposerCandidate(
+            composer_source=source,
+            status=status,
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=reasons,
+            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+            response_schema_version=response_schema,
+            composer_model=composer_model,
+            generation_method=generation_method,
+            coverage_scope=coverage_scope,
+            generation_scope=generation_scope,
+            used_claim_ids=used_claim_ids,
+            used_relation_ids=used_relation_ids,
+            fixed_string_renderer_used=fixed_string_renderer_used,
+            composer_meta=composer_meta,
+        )
 
     if response_source and response_source != "ai_generated":
         return ConversationComposerCandidate(
@@ -252,6 +311,14 @@ def _normalize_ai_response(
             rejection_reasons=["composer_source_not_ai_generated"],
             request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
             response_schema_version=response_schema,
+            composer_model=composer_model,
+            generation_method=generation_method,
+            coverage_scope=coverage_scope,
+            generation_scope=generation_scope,
+            used_claim_ids=used_claim_ids,
+            used_relation_ids=used_relation_ids,
+            fixed_string_renderer_used=fixed_string_renderer_used,
+            composer_meta=composer_meta,
         )
 
     return ConversationComposerCandidate(
@@ -265,7 +332,14 @@ def _normalize_ai_response(
         confidence=confidence,
         request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
         response_schema_version=response_schema or _RESPONSE_SCHEMA_VERSION,
-        fixed_string_renderer_used=False,
+        fixed_string_renderer_used=fixed_string_renderer_used,
+        composer_model=composer_model,
+        generation_method=generation_method,
+        coverage_scope=coverage_scope,
+        generation_scope=generation_scope,
+        used_claim_ids=used_claim_ids,
+        used_relation_ids=used_relation_ids,
+        composer_meta=composer_meta,
     )
 
 
@@ -280,6 +354,7 @@ def compose_emlis_conversation_candidate(
     trace_id: str = "",
     attempt_count: int = 1,
     rejection_reasons: Sequence[str] | None = None,
+    limited_observation_scope: object = None,
 ) -> ConversationComposerCandidate:
     """Ask the Composer AI for a candidate and validate the response shape.
 
@@ -295,6 +370,7 @@ def compose_emlis_conversation_candidate(
         trace_id=trace_id,
         attempt_count=attempt_count,
         rejection_reasons=rejection_reasons,
+        limited_observation_scope=limited_observation_scope,
     )
     if composer_client is None:
         return ConversationComposerCandidate(
@@ -343,6 +419,7 @@ def compose_emlis_conversation(
     greeting_text: object = "",
     composer_client: ConversationComposerClient | None = None,
     trace_id: str = "",
+    limited_observation_scope: object = None,
 ) -> str:
     """Backward-compatible text accessor for tests and legacy adapters."""
 
@@ -353,6 +430,7 @@ def compose_emlis_conversation(
         greeting_text=greeting_text,
         composer_client=composer_client,
         trace_id=trace_id,
+        limited_observation_scope=limited_observation_scope,
     )
     return candidate.comment_text if candidate.composer_source == "ai_generated" else ""
 

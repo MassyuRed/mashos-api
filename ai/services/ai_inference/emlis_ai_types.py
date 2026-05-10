@@ -768,6 +768,51 @@ class ObservationGraph:
     missing_information: List[str] = field(default_factory=list)
 
 
+LimitedScopeStatus = Literal["eligible", "out_of_scope", "safety_blocked"]
+LimitedCoverageScope = Literal["partial_observation", "current_input_core"]
+
+
+@dataclass(frozen=True)
+class LimitedScopeExcludedItem:
+    item_kind: str
+    item_id: str
+    reason_code: str
+    source: str = ""
+
+    def as_meta(self) -> Dict[str, Any]:
+        return {
+            "item_kind": self.item_kind,
+            "item_id": self.item_id,
+            "reason_code": self.reason_code,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True)
+class LimitedObservationScope:
+    scope_status: LimitedScopeStatus
+    scoped_graph: ObservationGraph
+    included_claim_ids: List[str] = field(default_factory=list)
+    included_relation_ids: List[str] = field(default_factory=list)
+    excluded_claims: List[LimitedScopeExcludedItem] = field(default_factory=list)
+    min_reply_sentence_count: int = 2
+    max_reply_sentence_count: int = 4
+    coverage_scope: LimitedCoverageScope = "current_input_core"
+    rejection_reasons: List[str] = field(default_factory=list)
+
+    def as_meta(self) -> Dict[str, Any]:
+        return {
+            "scope_status": self.scope_status,
+            "included_claim_ids": list(self.included_claim_ids),
+            "included_relation_ids": list(self.included_relation_ids),
+            "excluded_claims": [item.as_meta() for item in self.excluded_claims],
+            "min_reply_sentence_count": int(self.min_reply_sentence_count),
+            "max_reply_sentence_count": int(self.max_reply_sentence_count),
+            "coverage_scope": self.coverage_scope,
+            "rejection_reasons": list(self.rejection_reasons),
+        }
+
+
 ComposerCandidateStatus = Literal["generated", "unavailable", "schema_invalid", "empty", "blocked"]
 
 
@@ -791,6 +836,13 @@ class ConversationComposerCandidate:
     request_schema_version: str = "emlis.composer.request.v1"
     response_schema_version: str = ""
     fixed_string_renderer_used: bool = False
+    composer_model: str = ""
+    generation_method: str = ""
+    coverage_scope: str = ""
+    generation_scope: str = ""
+    composer_meta: Dict[str, Any] = field(default_factory=dict)
+    used_claim_ids: List[str] = field(default_factory=list)
+    used_relation_ids: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -822,6 +874,9 @@ class GroundingReport:
     rejection_reasons: List[str] = field(default_factory=list)
     coverage_ratio: float = 0.0
     confidence: float = 0.0
+    grounding_scope: str = "full_graph"
+    allowed_evidence_span_ids: List[str] = field(default_factory=list)
+    ignored_evidence_span_ids: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -831,6 +886,19 @@ class TemplateEchoReport:
     max_previous_output_similarity: float = 0.0
     raw_echo_ratio: float = 0.0
     repeated_sentence_pattern_score: float = 0.0
+    # Phase 5: Limited Composer guard metrics. These are diagnostic meta only;
+    # the public response contract remains observation_status/comment_text.
+    max_sentence_echo_ratio: float = 0.0
+    raw_quote_span_count: int = 0
+    raw_copy_sentence_ratio: float = 0.0
+    limited_surface_repetition_score: float = 0.0
+    abstract_repetition_score: float = 0.0
+    abstract_phrase_repetition_score: float = 0.0
+    # Compatibility aliases retained for trace readers that use Phase 5 names.
+    raw_quote_char_ratio: float = 0.0
+    matched_raw_quote_fragments: List[str] = field(default_factory=list)
+    repeated_limited_surface_score: float = 0.0
+    matched_limited_surface_patterns: List[str] = field(default_factory=list)
     matched_banned_patterns: List[str] = field(default_factory=list)
     rejection_reasons: List[str] = field(default_factory=list)
 
