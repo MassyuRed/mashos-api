@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 
 
 LONG_MEMO = """
@@ -10,15 +10,15 @@ LONG_MEMO = """
 """
 
 
-def test_long_clear_input_builds_multiple_observation_layers_and_passes_gate():
+def test_long_clear_input_builds_multiple_observation_layers_and_stays_closed_before_composer():
     result = run_multi_perspective_case(LONG_MEMO, display_name="Mash", emotion="自己理解", category="生活")
 
     assert len(result.evidence) >= 4
     assert result.graph.primary_state.text
     assert result.graph.core_tensions or result.graph.pressure_sources
     assert result.graph.value_or_strength_signals or result.graph.limit_signals or result.graph.self_awareness
-    assert result.reader.understandable is True
-    assert result.grounding.passed is True
-    assert result.template.passed is True
-    assert result.decision.observation_status == "passed"
+    assert result.text == ""
+    assert result.reader.understandable is False
+    assert result.grounding.passed is False
+    assert_phase1_display_closed(result.decision)
     assert_no_legacy_observation_text(result.text)

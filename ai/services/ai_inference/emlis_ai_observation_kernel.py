@@ -13,14 +13,14 @@ ledger -> perspective observers -> graph -> composer -> judges pipeline.
 from dataclasses import dataclass
 from typing import List, Optional
 
-from emlis_ai_conversation_composer_service import compose_emlis_conversation
-from emlis_ai_display_gate import decide_emlis_observation_display
+from emlis_ai_display_gate import build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
+from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_listener_reader_judge import judge_listener_readability
-from emlis_ai_observation_integrator_service import integrate_perspective_board
-from emlis_ai_perspective_board import build_perspective_board
-from emlis_ai_perspective_observers import run_perspective_observers
+from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_integrator_contract_ready, validate_observation_graph
+from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
+from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_template_echo_guard import guard_template_echo
 from emlis_ai_types import (
     DerivedUserModel,
@@ -134,15 +134,34 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
     reports = run_perspective_observers(evidence_spans)
     board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
     graph = integrate_perspective_board(board=board, display_name=bundle.display_name)
-    candidate_text = compose_emlis_conversation(
+    # Phase 6 seal: the retired single-kernel adapter may ask the Composer AI
+    # boundary, but it must not render user-facing body text itself. Without an
+    # injected Composer AI, the candidate remains unavailable and display stays
+    # fail-closed.
+    phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_integrator_contract_ready(board, graph))
+    composer_candidate = compose_emlis_conversation_candidate(
         graph=graph,
         evidence_spans=evidence_spans,
         display_name=bundle.display_name,
-        greeting_text=getattr(getattr(bundle, "greeting", None), "greeting_text", "") or "",
+        greeting_text="",
+        composer_client=None,
+        trace_id="legacy-kernel-adapter",
     )
+    candidate_text = str(composer_candidate.comment_text or "").strip()
     reader = judge_listener_readability(candidate_text)
     grounding = judge_grounding(comment_text=candidate_text, graph=graph, evidence_spans=evidence_spans)
-    template_echo = guard_template_echo(comment_text=candidate_text, evidence_spans=evidence_spans)
+    composer_source = str(composer_candidate.composer_source or "") if phase5_ready else "phase_4_observers_ready_composer_not_connected"
+    template_echo = guard_template_echo(comment_text=candidate_text, evidence_spans=evidence_spans, composer_source=composer_source)
+    phase7_contract_ready = bool(
+        phase5_ready
+        and phase6_composer_contract_ready()
+        and phase7_judge_contract_ready(
+            reader_report=reader,
+            grounding_report=grounding,
+            template_echo_report=template_echo,
+            composer_source=composer_source,
+        )
+    )
     decision = decide_emlis_observation_display(
         comment_text=candidate_text,
         reader_report=reader,
@@ -150,6 +169,8 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         template_echo_report=template_echo,
         safety_report=None,
         trace_id="legacy-kernel-adapter",
+        composer_source=composer_source,
+        phase_completion_ready=phase7_contract_ready,
     )
     final_text = decision.comment_text if decision.observation_status == "passed" else ""
     reply_lines = _reply_lines_from_text(final_text, current_ref)
@@ -162,6 +183,23 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         notes={"observation_status": decision.observation_status, "rejection_reasons": decision.rejection_reasons},
     )
     max_lines = max(3, min(8, int(getattr(graph.addressee_notes, "sentence_target", 5) or 5) + 1))
+    phase7_ready = phase7_contract_ready
+    phase8_ready = bool(phase7_ready and phase8_display_gate_contract_ready(decision))
+    release_readiness = build_phase10_release_readiness(
+        display_decision=decision,
+        frontend_display_control_ready=phase8_ready,
+    )
+    phase9_ready = bool(phase8_ready and release_readiness.get("phase9_frontend_display_control_ready"))
+    phase10_ready = bool(phase9_ready and release_readiness.get("phase10_regression_release_ready"))
+    completed_phases = (
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        if phase10_ready
+        else (
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            if phase9_ready
+            else ([0, 1, 2, 3, 4, 5, 6, 7, 8] if phase8_ready else ([0, 1, 2, 3, 4, 5, 6, 7] if phase7_ready else ([0, 1, 2, 3, 4, 5, 6] if phase5_ready and phase6_composer_contract_ready() else ([0, 1, 2, 3, 4, 5] if phase5_ready else [0, 1, 2, 3, 4]))))
+        )
+    )
     length_plan = ReplyLengthPlan(
         mode="input_scaled",
         max_lines=max_lines,
@@ -185,6 +223,42 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         reply_length_plan=length_plan,
         debug={
             "kernel_version": "multi_perspective_adapter.v1",
+            "phase_gate": {
+                "completed_phases": completed_phases,
+                "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase5_ready and phase6_composer_contract_ready() else (5 if phase5_ready else 4))))),
+                "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase5_ready and phase6_composer_contract_ready() else (6 if phase5_ready else 5))))),
+                "phase_completion_ready": phase10_ready,
+                "release_ready": bool(release_readiness.get("release_ready")),
+                "release_blockers": list(release_readiness.get("release_blockers") or []),
+                "required_completed_phases": list(release_readiness.get("required_completed_phases") or []),
+                "release_checks": dict(release_readiness.get("release_checks") or {}),
+                "legacy_text_routes_sealed": True,
+                "type_state_contract_ready": True,
+                "evidence_ledger_ready": True,
+                "specialist_observers_ready": phase4_observer_contract_ready(reports, evidence_spans),
+                "perspective_board_ready": phase5_board_contract_ready(board),
+                "observation_graph_ready": phase5_integrator_contract_ready(board, graph),
+                "composer_contract_ready": phase6_composer_contract_ready(),
+                "judge_contract_ready": phase7_ready,
+                "display_gate_ready": phase8_ready,
+                "display_gate_release_ready": bool(release_readiness.get("display_gate_release_ready")),
+                "frontend_display_control_ready": phase9_ready,
+                "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
+                "phase10_regression_release_ready": phase10_ready,
+                "regression_release_tests_ready": phase10_ready,
+                "reader_gate_ready": True,
+                "grounding_gate_ready": True,
+                "template_echo_gate_ready": True,
+                "composer_candidate_available": str(composer_candidate.composer_source or "") == "ai_generated",
+                "composer_status": str(composer_candidate.status or ""),
+                "display_gate_status": decision.observation_status,
+                "comment_text_allowed": bool(phase8_ready and decision.observation_status == "passed" and final_text),
+                "board_validation_issues": validate_perspective_board(board),
+                "graph_validation_issues": validate_observation_graph(graph, board),
+            },
+            "composer_source": composer_source,
+            "composer_status": str(composer_candidate.status or ""),
+            "composer_rejection_reasons": list(composer_candidate.rejection_reasons or []),
             "observation_status": decision.observation_status,
             "rejection_reasons": decision.rejection_reasons,
             "observer_ids": [report.observer_id for report in reports],

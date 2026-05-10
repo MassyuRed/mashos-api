@@ -1,149 +1,338 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Conversation composer for EmlisAI.
+"""Conversation Composer boundary for EmlisAI.
 
-Only this layer writes user-facing text. It receives an ObservationGraph and
-EvidenceSpans. It does not receive sample replies or legacy wording lists.
+Phase 6 connects the ObservationGraph to an AI composer boundary without
+reintroducing runtime fixed observation sentences.  This module is allowed to
+build structured request payloads, validate AI responses, and record trace
+metadata.  It must not render user-facing Emlis observation text from Python
+strings, role maps, f-strings, or fallback sentences.
 """
 
-import re
-from typing import Dict, List, Sequence, Tuple
+from dataclasses import asdict, is_dataclass
+import ast
+import inspect
+from typing import Any, Dict, List, Mapping, Protocol, Sequence, runtime_checkable
 
-from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph, RelationEdge
-from emlis_ai_user_address_service import build_emlis_observation_greeting
+from emlis_ai_types import (
+    ConversationComposerCandidate,
+    EvidenceSpan,
+    GraphClaim,
+    ObservationGraph,
+    RelationEdge,
+)
 
-_SPACE_RE = re.compile(r"\s+")
-_QUOTE_WRAP_RE = re.compile(r"^[「『](.*)[」』]$")
+_REQUEST_SCHEMA_VERSION = "emlis.composer.request.v1"
+_RESPONSE_SCHEMA_VERSION = "emlis.composer.response.v1"
+
+_FORBIDDEN_OUTPUT_SURFACES = [
+    "そこには",
+    "もありました",
+    "も含まれていました",
+    "受け取りました",
+    "と思います",
+    "として見ています",
+    "小さく扱いません",
+    "軽く扱いません",
+    "今の私は",
+    "あなたは",
+    "あなたの",
+    "あなたが",
+    "あなたに",
+    "言葉の流れには",
+    "外からは見えにくい緊張",
+    "まだ決めきれない揺れ",
+    "急いで片づけず",
+    "一緒に見ます",
+]
+
+_RUNTIME_RENDERER_MARKERS = [
+    "_line_primary",
+    "_line_pressure",
+    "_line_limit",
+    "_line_closing",
+    "closing_template",
+    "role_template",
+    "static_observation_text",
+]
 
 
-def _clean(text: object, limit: int = 52) -> str:
-    value = _SPACE_RE.sub(" ", str(text or "")).strip(" 、,。.!！?？")
-    m = _QUOTE_WRAP_RE.match(value)
-    if m:
-        value = m.group(1).strip()
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1].rstrip("、,") + "…"
+@runtime_checkable
+class ConversationComposerClient(Protocol):
+    """Synchronous Composer AI client boundary used by tests/adapters."""
+
+    def generate(self, payload: Mapping[str, Any]) -> Mapping[str, Any] | str:
+        ...
 
 
-def _span_map(spans: Sequence[EvidenceSpan]) -> Dict[str, EvidenceSpan]:
-    return {span.span_id: span for span in spans}
+
+def _jsonable(value: Any) -> Any:
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    return value
 
 
-def _complete_wish_fragment(value: str, spans_by_id: Dict[str, EvidenceSpan]) -> str:
-    text = _clean(value)
-    if not text:
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+
+def _graph_claim_payload(claim: GraphClaim | None) -> Dict[str, Any]:
+    if claim is None:
+        return {}
+    return {
+        "claim_id": claim.claim_id,
+        "claim_type": claim.claim_type,
+        "text": claim.text,
+        "evidence_span_ids": list(claim.evidence_span_ids),
+        "confidence": float(claim.confidence or 0.0),
+    }
+
+
+
+def _relation_payload(edge: RelationEdge) -> Dict[str, Any]:
+    return {
+        "edge_id": edge.edge_id,
+        "from_claim_id": edge.from_claim_id,
+        "to_claim_id": edge.to_claim_id,
+        "relation_type": edge.relation_type,
+        "evidence_span_ids": list(edge.evidence_span_ids),
+        "confidence": float(edge.confidence or 0.0),
+    }
+
+
+
+def _evidence_payload(span: EvidenceSpan) -> Dict[str, Any]:
+    return {
+        "span_id": span.span_id,
+        "raw_text": span.raw_text,
+        "detected_type": span.detected_type,
+        "confidence": float(span.confidence or 0.0),
+        "source_field": span.source_field,
+    }
+
+
+
+def build_conversation_composer_payload(
+    *,
+    graph: ObservationGraph,
+    evidence_spans: Sequence[EvidenceSpan],
+    display_name: object = None,
+    greeting_text: object = "",
+    trace_id: str = "",
+    attempt_count: int = 1,
+    rejection_reasons: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    """Build the structured request sent to the Composer AI.
+
+    The payload contains graph/evidence/constraints only.  It deliberately does
+    not include example replies, fixed closing sentences, or surface templates.
+    """
+
+    addressee = graph.addressee_notes
+    return {
+        "schema_version": _REQUEST_SCHEMA_VERSION,
+        "trace_id": str(trace_id or ""),
+        "attempt_count": int(attempt_count or 1),
+        "task": "conversation_composer_candidate",
+        "addressee": {
+            "display_name": _clean_text(display_name),
+            "display_name_call": _clean_text(addressee.display_name_call),
+            "greeting_text": _clean_text(greeting_text),
+            "sentence_target": int(addressee.sentence_target or 5),
+            "voice_distance": _clean_text(addressee.voice_distance),
+            "needs_gentle_pacing": bool(addressee.needs_gentle_pacing),
+            "avoid_report_like": bool(addressee.avoid_report_like),
+        },
+        "observation_graph": {
+            "primary_state": _graph_claim_payload(graph.primary_state),
+            "core_tensions": [_relation_payload(edge) for edge in graph.core_tensions],
+            "pressure_sources": [_graph_claim_payload(claim) for claim in graph.pressure_sources],
+            "limit_signals": [_graph_claim_payload(claim) for claim in graph.limit_signals],
+            "self_awareness": [_graph_claim_payload(claim) for claim in graph.self_awareness],
+            "value_or_strength_signals": [_graph_claim_payload(claim) for claim in graph.value_or_strength_signals],
+            "safety_boundaries": list(graph.safety_boundaries),
+            "forbidden_claims": list(graph.forbidden_claims),
+            "missing_information": list(graph.missing_information),
+        },
+        "evidence_spans": [_evidence_payload(span) for span in evidence_spans],
+        "composition_contract": {
+            "produce_user_facing_text": True,
+            "composer_source_required": "ai_generated",
+            "do_not_use_examples": True,
+            "do_not_use_fixed_templates": True,
+            "do_not_use_fallback_observation": True,
+            "forbidden_output_surfaces": list(_FORBIDDEN_OUTPUT_SURFACES),
+            "preserve_speaker": "Emlis",
+            "avoid_second_person_pronouns": True,
+            "avoid_user_first_person_hijack": True,
+            "return_schema_version": _RESPONSE_SCHEMA_VERSION,
+            "previous_rejection_reasons": [str(item) for item in list(rejection_reasons or []) if str(item)],
+        },
+        "expected_response_schema": {
+            "schema_version": _RESPONSE_SCHEMA_VERSION,
+            "required": ["comment_text", "used_evidence_span_ids", "confidence"],
+            "optional": ["response_schema_version", "composer_source"],
+        },
+    }
+
+
+
+def _extract_text_from_response(response: Mapping[str, Any] | str) -> str:
+    if isinstance(response, str):
+        return response.strip()
+    text = _clean_text(response.get("comment_text") or response.get("text"))
+    if text:
         return text
-    if text.endswith("普通に") or text.endswith("普通に生活"):
-        for span in spans_by_id.values():
-            candidate = _clean(span.raw_text, 24)
-            if candidate.endswith("したい") and candidate not in text:
-                return f"{text}{candidate}"
-    return text
+    reply_lines = response.get("reply_lines") or response.get("lines")
+    if isinstance(reply_lines, (list, tuple)):
+        return "\n".join(_clean_text(line) for line in reply_lines if _clean_text(line)).strip()
+    return ""
 
 
-def _edge_phrases(edge: RelationEdge, spans_by_id: Dict[str, EvidenceSpan]) -> Tuple[str, str]:
-    values = [_clean(spans_by_id[sid].raw_text) for sid in edge.evidence_span_ids if sid in spans_by_id]
-    values = [v for v in values if v]
-    if len(values) >= 2:
-        return _complete_wish_fragment(values[0], spans_by_id), _complete_wish_fragment(values[-1], spans_by_id)
-    if len(values) == 1:
-        return _complete_wish_fragment(values[0], spans_by_id), "まだ言葉にしきれない重さ"
-    return "今の気持ち", "別の気持ち"
 
-
-def _join_items(items: Sequence[str], *, limit: int = 3) -> str:
-    values = []
-    raw_values = [_clean(item, 34) for item in items]
-    skip_next = False
-    for idx, text in enumerate(raw_values):
-        if skip_next:
-            skip_next = False
-            continue
-        if text.endswith("普通に") and idx + 1 < len(raw_values) and raw_values[idx + 1].endswith("したい"):
-            text = f"{text}{raw_values[idx + 1]}"
-            skip_next = True
-        if text and text not in values:
-            values.append(text)
-        if len(values) >= limit:
-            break
-    if not values:
-        return ""
-    if len(values) == 1:
-        return values[0]
-    return "、".join(values[:-1]) + "、そして" + values[-1]
-
-
-def _line_primary(graph: ObservationGraph, spans_by_id: Dict[str, EvidenceSpan]) -> str:
-    if graph.core_tensions:
-        left, right = _edge_phrases(graph.core_tensions[0], spans_by_id)
-        if graph.core_tensions[0].relation_type in {"limit_tension", "tension", "explicit_transition"}:
-            return f"入力全体では、「{left}」という動きと、「{right}」という重さが、同じ場所でせめぎ合っています。"
-        return f"入力全体では、「{left}」と「{right}」が、どちらか一方だけではなく並んでいます。"
-    primary = _clean(graph.primary_state.text)
-    if primary:
-        return f"入力全体では、「{primary}」が中心に出ています。"
-    return "今ここに出した言葉は、まだ一つの意味に決めきれないまま置かれています。"
-
-
-def _line_pressure(graph: ObservationGraph) -> str:
-    pressure = _join_items([item.text for item in graph.pressure_sources], limit=3)
-    self_awareness = _join_items([item.text for item in graph.self_awareness], limit=2)
-    if pressure and self_awareness:
-        return f"負荷になっているのは「{pressure}」で、そこに「{self_awareness}」という自覚も重なっています。"
-    if pressure:
-        return f"負荷として強く出ているのは、「{pressure}」の部分です。"
-    if self_awareness:
-        return f"自分の中で「{self_awareness}」まで見えているから、簡単には流せない状態です。"
-    return "言葉の流れには、外からは見えにくい緊張が含まれています。"
-
-
-def _line_limit(graph: ObservationGraph) -> str:
-    limits = _join_items([item.text for item in graph.limit_signals], limit=2)
-    if not limits:
-        return "まだ決めきれない揺れも、今の状態を形づくる大事な手がかりです。"
-    return f"「{limits}」という言葉は、張りつめた状態が外へ出てきたサインとして扱います。"
-
-
-def _line_value(graph: ObservationGraph) -> str:
-    values = [item.text for item in graph.value_or_strength_signals if item.claim_type == "value_signal"]
-    strengths = [item.text for item in graph.value_or_strength_signals if item.claim_type == "grounded_strength_signal"]
-    value_text = _join_items(values, limit=3)
-    strength_text = _join_items(strengths, limit=2)
-    if value_text and strength_text:
-        return f"それでも「{value_text}」を残していて、「{strength_text}」まで見ているところに、現実から目を逸らしきっていない力があります。"
-    if value_text:
-        return f"その中でも「{value_text}」が残っているので、苦しさだけで全部が埋まっているわけではありません。"
-    if strength_text:
-        return f"「{strength_text}」まで言葉にしているところには、自分の状態を見失わない力があります。"
-    return "Emlisは、その揺れを一つの結論へ急がず、今のままの重さとして並べます。"
-
-
-def _line_close(graph: ObservationGraph) -> str:
-    primary = _clean(graph.primary_state.text, 34)
-    if graph.limit_signals and graph.value_or_strength_signals:
-        return "Emlisは、苦しさだけを取り出さず、その奥に残っている願いや自覚も一緒に追います。"
-    if graph.core_tensions:
-        return "Emlisは、片方だけを正解にせず、並んでいる気持ちの関係を一緒に見ます。"
-    if primary:
-        return f"Emlisは、「{primary}」を急いで片づけず、今の言葉として一緒に見ます。"
-    return "Emlisは、今ここに出た言葉を急いで結論にせず、一緒に見ます。"
-
-
-def _dedupe_lines(lines: Sequence[str]) -> List[str]:
+def _extract_used_evidence_ids(response: Mapping[str, Any] | str, allowed: set[str]) -> List[str]:
+    if not isinstance(response, Mapping):
+        return []
+    values = response.get("used_evidence_span_ids") or response.get("used_evidence_ids") or []
+    if not isinstance(values, (list, tuple, set)):
+        return []
     out: List[str] = []
-    seen = set()
-    for raw in lines:
-        text = _SPACE_RE.sub(" ", str(raw or "")).strip()
-        if not text:
-            continue
-        key = re.sub(r"[「」『』、。\s]", "", text)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(text)
+    for item in values:
+        span_id = str(item or "").strip()
+        if span_id and span_id in allowed and span_id not in out:
+            out.append(span_id)
     return out
+
+
+
+def _normalize_ai_response(
+    *,
+    response: Mapping[str, Any] | str,
+    payload: Mapping[str, Any],
+    trace_id: str,
+    attempt_count: int,
+    allowed_evidence_ids: set[str],
+) -> ConversationComposerCandidate:
+    text = _extract_text_from_response(response)
+    if not text:
+        return ConversationComposerCandidate(
+            composer_source="empty",
+            status="empty",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=["composer_returned_empty_text"],
+            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+        )
+
+    response_source = ""
+    response_schema = ""
+    confidence = 0.0
+    if isinstance(response, Mapping):
+        response_source = _clean_text(response.get("composer_source") or response.get("source"))
+        response_schema = _clean_text(response.get("response_schema_version") or response.get("schema_version"))
+        try:
+            confidence = float(response.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+    if response_source and response_source != "ai_generated":
+        return ConversationComposerCandidate(
+            comment_text="",
+            composer_source=response_source,
+            status="schema_invalid",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=["composer_source_not_ai_generated"],
+            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+            response_schema_version=response_schema,
+        )
+
+    return ConversationComposerCandidate(
+        comment_text=text,
+        composer_source="ai_generated",
+        status="generated",
+        ai_generated=True,
+        trace_id=trace_id,
+        attempt_count=attempt_count,
+        used_evidence_span_ids=_extract_used_evidence_ids(response, allowed_evidence_ids),
+        confidence=confidence,
+        request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+        response_schema_version=response_schema or _RESPONSE_SCHEMA_VERSION,
+        fixed_string_renderer_used=False,
+    )
+
+
+
+def compose_emlis_conversation_candidate(
+    *,
+    graph: ObservationGraph,
+    evidence_spans: Sequence[EvidenceSpan],
+    display_name: object = None,
+    greeting_text: object = "",
+    composer_client: ConversationComposerClient | None = None,
+    trace_id: str = "",
+    attempt_count: int = 1,
+    rejection_reasons: Sequence[str] | None = None,
+) -> ConversationComposerCandidate:
+    """Ask the Composer AI for a candidate and validate the response shape.
+
+    If no Composer AI client is connected, this returns an unavailable candidate
+    with empty text.  It never creates a rule-rendered fallback observation.
+    """
+
+    payload = build_conversation_composer_payload(
+        graph=graph,
+        evidence_spans=evidence_spans,
+        display_name=display_name,
+        greeting_text=greeting_text,
+        trace_id=trace_id,
+        attempt_count=attempt_count,
+        rejection_reasons=rejection_reasons,
+    )
+    if composer_client is None:
+        return ConversationComposerCandidate(
+            composer_source="unavailable",
+            status="unavailable",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=["composer_client_not_connected"],
+            request_schema_version=_REQUEST_SCHEMA_VERSION,
+        )
+    try:
+        response = composer_client.generate(payload)
+    except Exception:
+        return ConversationComposerCandidate(
+            composer_source="unavailable",
+            status="unavailable",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=["composer_client_error"],
+            request_schema_version=_REQUEST_SCHEMA_VERSION,
+        )
+    if inspect.isawaitable(response):
+        return ConversationComposerCandidate(
+            composer_source="unavailable",
+            status="unavailable",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=["composer_client_returned_awaitable_in_sync_path"],
+            request_schema_version=_REQUEST_SCHEMA_VERSION,
+        )
+    return _normalize_ai_response(
+        response=response,
+        payload=payload,
+        trace_id=trace_id,
+        attempt_count=attempt_count,
+        allowed_evidence_ids={span.span_id for span in evidence_spans},
+    )
+
 
 
 def compose_emlis_conversation(
@@ -152,29 +341,58 @@ def compose_emlis_conversation(
     evidence_spans: Sequence[EvidenceSpan],
     display_name: object = None,
     greeting_text: object = "",
+    composer_client: ConversationComposerClient | None = None,
+    trace_id: str = "",
 ) -> str:
-    if graph.safety_boundaries:
-        return ""
-    spans_by_id = _span_map(evidence_spans)
-    greeting = build_emlis_observation_greeting(display_name=display_name, greeting_text=greeting_text)
-    target = max(3, min(7, int(graph.addressee_notes.sentence_target or 5)))
-    lines = [
-        greeting,
-        _line_primary(graph, spans_by_id),
-        _line_pressure(graph),
-        _line_limit(graph),
-        _line_value(graph),
-        _line_close(graph),
-    ]
-    lines = _dedupe_lines(lines)
-    if len(lines) > target + 1:
-        # Keep greeting, primary and closing while trimming middle observations.
-        greeting_line = lines[0:1]
-        body = lines[1:-1]
-        close = lines[-1:]
-        body = body[: max(1, target - 1)]
-        lines = [*greeting_line, *body, *close]
-    return "\n".join(lines).strip()
+    """Backward-compatible text accessor for tests and legacy adapters."""
+
+    candidate = compose_emlis_conversation_candidate(
+        graph=graph,
+        evidence_spans=evidence_spans,
+        display_name=display_name,
+        greeting_text=greeting_text,
+        composer_client=composer_client,
+        trace_id=trace_id,
+    )
+    return candidate.comment_text if candidate.composer_source == "ai_generated" else ""
 
 
-__all__ = ["compose_emlis_conversation"]
+
+def audit_runtime_fixed_string_renderer() -> List[str]:
+    """Return suspicious runtime renderer definitions in this module.
+
+    The marker list itself is not a violation; a violation is a helper/function
+    or assignment that could own a role-specific completed observation line.
+    """
+
+    source = inspect.getsource(inspect.getmodule(audit_runtime_fixed_string_renderer))
+    tree = ast.parse(source)
+    markers = set(_RUNTIME_RENDERER_MARKERS)
+    findings: List[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in markers:
+            findings.append(node.name)
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in markers:
+                    findings.append(target.id)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id in markers:
+            findings.append(node.target.id)
+    return sorted(set(findings))
+
+
+
+def phase6_composer_contract_ready() -> bool:
+    """Phase 6 is structurally ready when no fixed renderer markers remain."""
+
+    return not audit_runtime_fixed_string_renderer()
+
+
+__all__ = [
+    "ConversationComposerClient",
+    "build_conversation_composer_payload",
+    "compose_emlis_conversation",
+    "compose_emlis_conversation_candidate",
+    "audit_runtime_fixed_string_renderer",
+    "phase6_composer_contract_ready",
+]

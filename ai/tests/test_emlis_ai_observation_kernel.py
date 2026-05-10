@@ -5,7 +5,7 @@ from emlis_ai_observation_kernel import ObservationKernelInput, run_emlis_ai_obs
 from emlis_ai_style_profile_service import build_style_profile
 from emlis_ai_types import SourceBundle
 from emlis_ai_world_model_service import build_emlis_ai_world_model
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 
 
 SAMPLE_MEMO = """
@@ -43,11 +43,22 @@ def test_retired_kernel_delegates_to_multi_perspective_adapter_without_templates
 
     assert decision.debug["kernel_version"] == "multi_perspective_adapter.v1"
     assert decision.reply_length_plan is not None
-    assert decision.reply_lines
-    text = "\n".join(line.text for line in decision.reply_lines)
-    assert "繋がっていたい" in text or "静かに過ごしたい" in text
-    assert_no_legacy_observation_text(text)
-    assert all(line.sentence_evidence.evidence for line in decision.reply_lines)
+    assert decision.reply_lines == []
+    assert decision.accepted_candidates == []
+    assert decision.debug["phase_gate"]["legacy_text_routes_sealed"] is True
+    assert decision.debug["phase_gate"]["current_phase"] == 10
+    assert decision.debug["phase_gate"]["next_phase"] is None
+    assert decision.debug["phase_gate"]["release_ready"] is True
+    assert decision.debug["phase_gate"]["phase10_regression_release_ready"] is True
+    assert decision.debug["phase_gate"]["composer_contract_ready"] is True
+    assert decision.debug["phase_gate"]["judge_contract_ready"] is True
+    assert decision.debug["phase_gate"]["composer_candidate_available"] is False
+    assert decision.debug["composer_status"] == "unavailable"
+    assert decision.debug["observation_status"] == "unavailable"
+    assert decision.debug["phase_gate"]["display_gate_ready"] is True
+    assert decision.debug["phase_gate"]["comment_text_allowed"] is False
+    assert "phase_not_complete" not in decision.debug["rejection_reasons"]
+    assert "composer_source_not_ai_generated" in decision.debug["rejection_reasons"]
 
 
 def test_multi_perspective_observers_replace_model_line_expectations():
@@ -65,5 +76,5 @@ def test_multi_perspective_observers_replace_model_line_expectations():
         "safety_boundary",
     }
     assert result.graph.core_tensions
-    assert result.decision.observation_status == "passed"
+    assert_phase1_display_closed(result.decision)
     assert_no_legacy_observation_text(result.text)

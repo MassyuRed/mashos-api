@@ -2163,7 +2163,7 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
             created_at=str(persisted.get("created_at") or payload.created_at or datetime.now(timezone.utc).isoformat()),
             input_feedback=(
                 EmotionSubmitInputFeedback(comment_text=input_feedback_comment, emlis_ai=input_feedback_meta)
-                if input_feedback_comment
+                if (input_feedback_comment or isinstance(input_feedback_meta, dict))
                 else None
             ),
         )

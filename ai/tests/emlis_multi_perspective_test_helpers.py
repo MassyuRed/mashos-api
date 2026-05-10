@@ -64,6 +64,8 @@ def run_multi_perspective_case(
         grounding_report=grounding,
         template_echo_report=template,
         trace_id="test-trace",
+        composer_source="phase_5_integrator_ready_composer_not_connected",
+        phase_completion_ready=False,
     )
     return MultiPerspectiveRun(current_input, evidence, reports, board, graph, text, reader, grounding, template, decision)
 
@@ -83,6 +85,16 @@ def assert_no_legacy_observation_text(text: str) -> None:
         "小さく扱いません",
         "軽く扱いません",
         "弱さではなく",
+        "言葉の流れには",
+        "決めきれない揺れ",
+        "急いで片づけず",
     ]
     for phrase in banned:
         assert phrase not in text
+
+
+def assert_phase1_display_closed(decision: Any) -> None:
+    assert decision.observation_status == "unavailable"
+    assert decision.comment_text == ""
+    assert "phase_not_complete" in decision.rejection_reasons
+    assert "composer_source_not_ai_generated" in decision.rejection_reasons

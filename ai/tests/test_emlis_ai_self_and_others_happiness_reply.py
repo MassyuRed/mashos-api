@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 
 
 SELF_AND_OTHERS_HAPPINESS_MEMO = """
@@ -10,11 +10,12 @@ SELF_AND_OTHERS_HAPPINESS_MEMO = """
 """
 
 
-def test_self_and_others_happiness_uses_relation_graph_not_fixed_reply():
+def test_self_and_others_happiness_uses_relation_graph_without_fixed_reply_body():
     result = run_multi_perspective_case(SELF_AND_OTHERS_HAPPINESS_MEMO, display_name="Mash", emotion="悲しみ", category="人間関係")
 
-    assert result.decision.observation_status == "passed"
+    assert_phase1_display_closed(result.decision)
     assert result.graph.core_tensions or len(result.graph.value_or_strength_signals) >= 2
-    assert "役に立" in result.text or "幸せ" in result.text
-    assert result.template.passed is True
+    assert result.text == ""
+    joined_evidence = "\n".join(span.raw_text for span in result.evidence)
+    assert "役に立" in joined_evidence or "幸せ" in joined_evidence
     assert_no_legacy_observation_text(result.text)

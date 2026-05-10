@@ -37,14 +37,14 @@ from emlis_ai_user_model_store import (
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
-from emlis_ai_perspective_observers import run_perspective_observers
-from emlis_ai_perspective_board import build_perspective_board
-from emlis_ai_observation_integrator_service import integrate_perspective_board
-from emlis_ai_conversation_composer_service import compose_emlis_conversation
+from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
+from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
+from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
+from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_template_echo_guard import guard_template_echo
-from emlis_ai_display_gate import decide_emlis_observation_display
+from emlis_ai_display_gate import build_emlis_gate_trace, build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
 from emotion_history_search_service import build_open_topic_anchor_candidates, extract_repeated_categories
 
 _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
@@ -988,6 +988,8 @@ def _multi_perspective_meta(
     grounding_report: Any,
     template_echo_report: Any,
     display_decision: Any,
+    composer_source: str = "",
+    composer_candidate: Any = None,
 ) -> Dict[str, Any]:
     used_sources: List[str] = ["current_input"]
     if bundle.greeting:
@@ -1001,6 +1003,43 @@ def _multi_perspective_meta(
         used_memory_layers.append("derived_user_model")
     if bundle.side_state:
         used_memory_layers.append("side_state")
+    phase4_ready = phase4_observer_contract_ready(reports, evidence_spans)
+    phase5_board_ready = phase5_board_contract_ready(board)
+    phase5_graph_ready = phase5_observation_graph_ready(board, graph)
+    phase5_ready = bool(phase4_ready and phase5_board_ready and phase5_graph_ready)
+    phase6_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    phase7_ready = bool(
+        phase6_ready
+        and phase7_judge_contract_ready(
+            reader_report=reader_report,
+            grounding_report=grounding_report,
+            template_echo_report=template_echo_report,
+            composer_source=str(composer_source or ""),
+        )
+    )
+    phase8_ready = bool(phase7_ready and phase8_display_gate_contract_ready(display_decision))
+    release_readiness = build_phase10_release_readiness(
+        display_decision=display_decision,
+        frontend_display_control_ready=phase8_ready,
+    )
+    phase9_ready = bool(phase8_ready and release_readiness.get("phase9_frontend_display_control_ready"))
+    phase10_ready = bool(phase9_ready and release_readiness.get("phase10_regression_release_ready"))
+    completed_phases = (
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        if phase10_ready
+        else (
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            if phase9_ready
+            else ([0, 1, 2, 3, 4, 5, 6, 7, 8] if phase8_ready else ([0, 1, 2, 3, 4, 5, 6, 7] if phase7_ready else ([0, 1, 2, 3, 4, 5, 6] if phase6_ready else ([0, 1, 2, 3, 4, 5] if phase5_ready else ([0, 1, 2, 3, 4] if phase4_ready else [0, 1, 2, 3])))))
+        )
+    )
+    gate_trace = getattr(display_decision, "gate_trace", {}) or build_emlis_gate_trace(
+        reader_report=reader_report,
+        grounding_report=grounding_report,
+        template_echo_report=template_echo_report,
+        composer_source=str(composer_source or ""),
+        phase_completion_ready=False,
+    )
     return {
         "version": "emlis_ai_v3",
         "kernel_version": "multi_perspective_observation.v1",
@@ -1034,10 +1073,50 @@ def _multi_perspective_meta(
             "observer_ids": [str(getattr(report, "observer_id", "")) for report in reports],
             "evidence_spans": _jsonable(evidence_spans[:12]),
             "perspective_reports": _jsonable(reports),
+            "perspective_board": _jsonable(board),
             "observation_graph": _jsonable(graph),
             "reader_report": _jsonable(reader_report),
             "grounding_report": _jsonable(grounding_report),
             "template_echo_report": _jsonable(template_echo_report),
+            "gate_trace": gate_trace,
+            "composer_candidate": _jsonable(composer_candidate) if composer_candidate is not None else {},
+            "composer_source": str(composer_source or ""),
+            "composer_status": str(getattr(composer_candidate, "status", "") or ""),
+            "composer_rejection_reasons": list(getattr(composer_candidate, "rejection_reasons", []) or []),
+            "phase_gate": {
+                "completed_phases": completed_phases,
+                "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase6_ready else (5 if phase5_ready else (4 if phase4_ready else 3)))))),
+                "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase6_ready else (6 if phase5_ready else (5 if phase4_ready else 4)))))),
+                "phase_completion_ready": phase10_ready,
+                "release_ready": bool(release_readiness.get("release_ready")),
+                "release_blockers": list(release_readiness.get("release_blockers") or []),
+                "required_completed_phases": list(release_readiness.get("required_completed_phases") or []),
+                "release_checks": dict(release_readiness.get("release_checks") or {}),
+                "legacy_text_routes_sealed": True,
+                "type_state_contract_ready": True,
+                "evidence_ledger_ready": True,
+                "specialist_observers_ready": phase4_ready,
+                "observer_contract_only_structured": phase4_ready,
+                "perspective_board_ready": phase5_board_ready,
+                "observation_graph_ready": phase5_graph_ready,
+                "composer_contract_ready": phase6_ready,
+                "reader_gate_ready": isinstance(gate_trace.get("reader"), dict),
+                "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
+                "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
+                "judge_contract_ready": phase7_ready,
+                "composer_candidate_available": str(getattr(composer_candidate, "composer_source", "") or "") == "ai_generated",
+                "composer_status": str(getattr(composer_candidate, "status", "") or ""),
+                "board_validation_issues": validate_perspective_board(board),
+                "graph_validation_issues": validate_observation_graph(graph, board),
+                "gate_trace": gate_trace,
+                "display_gate_ready": phase8_ready,
+                "display_gate_release_ready": bool(release_readiness.get("display_gate_release_ready")),
+                "frontend_display_control_ready": phase9_ready,
+                "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
+                "phase10_regression_release_ready": phase10_ready,
+                "regression_release_tests_ready": phase10_ready,
+                "comment_text_allowed": bool(phase8_ready and display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip()),
+            },
         },
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -1060,6 +1139,7 @@ async def render_emlis_ai_reply(
     current_input: Dict[str, Any],
     display_name: Optional[str] = None,
     timezone_name: Optional[str] = None,
+    composer_client: Any = None,
 ) -> ReplyEnvelope:
     """Render an immediate Emlis observation using the multi-perspective pipeline.
 
@@ -1091,28 +1171,75 @@ async def render_emlis_ai_reply(
 
         safety_report = SafetyBoundaryReport(requires_block=True, reasons=["safety_boundary"])
 
-    raw_greeting_text = bundle.greeting.greeting_text if bundle.greeting else ""
+    # Phase 8: run Display Gate as the final fail-closed boundary.  The gate may
+    # allow a Composer AI candidate only when every judge passes, the source is
+    # ai_generated, and the pipeline phases through Judge are structurally ready.
+    # On judge rejection, a single regeneration attempt may be requested with
+    # rejection reason codes only.  No sample text or fallback observation is sent.
+    phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_observation_graph_ready(board, graph))
+    phase6_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    composer_candidate = None
     comment_text = ""
-    if not safety_requires_block:
-        comment_text = compose_emlis_conversation(
-            graph=graph,
-            evidence_spans=evidence_spans,
-            display_name=bundle.display_name or display_name,
-            greeting_text=raw_greeting_text,
-        )
-        comment_text = _naturalize_reply_text(comment_text)
-
-    reader_report = judge_listener_readability(comment_text)
-    grounding_report = judge_grounding(comment_text=comment_text, graph=graph, evidence_spans=evidence_spans)
-    template_echo_report = guard_template_echo(comment_text=comment_text, evidence_spans=evidence_spans)
+    composer_source = ""
+    reader_report = judge_listener_readability("")
+    grounding_report = judge_grounding(comment_text="", graph=graph, evidence_spans=evidence_spans)
+    template_echo_report = guard_template_echo(comment_text="", evidence_spans=evidence_spans, composer_source="unavailable")
     display_decision = decide_emlis_observation_display(
-        comment_text=comment_text,
+        comment_text="",
         reader_report=reader_report,
         grounding_report=grounding_report,
         template_echo_report=template_echo_report,
         safety_report=safety_report,
         trace_id=trace_id,
+        composer_source="unavailable" if not safety_requires_block else "",
+        phase_completion_ready=phase6_ready,
     )
+
+    max_attempts = 2 if composer_client is not None and not safety_requires_block else 1
+    regeneration_reasons: List[str] = []
+    for attempt in range(1, max_attempts + 1):
+        composer_candidate = compose_emlis_conversation_candidate(
+            graph=graph,
+            evidence_spans=evidence_spans,
+            display_name=bundle.display_name or display_name,
+            greeting_text=build_emlis_observation_greeting(
+                display_name=bundle.display_name or display_name,
+                greeting_text=getattr(bundle.greeting, "greeting_text", "") if bundle.greeting else "",
+            ),
+            composer_client=None if safety_requires_block else composer_client,
+            trace_id=trace_id,
+            attempt_count=attempt,
+            rejection_reasons=regeneration_reasons,
+        )
+        comment_text = "" if safety_requires_block else str(composer_candidate.comment_text or "").strip()
+        composer_source = "" if safety_requires_block else str(composer_candidate.composer_source or "")
+        reader_report = judge_listener_readability(comment_text)
+        grounding_report = judge_grounding(comment_text=comment_text, graph=graph, evidence_spans=evidence_spans)
+        template_echo_report = guard_template_echo(comment_text=comment_text, evidence_spans=evidence_spans, composer_source=composer_source)
+        phase7_ready = bool(
+            phase6_ready
+            and phase7_judge_contract_ready(
+                reader_report=reader_report,
+                grounding_report=grounding_report,
+                template_echo_report=template_echo_report,
+                composer_source=composer_source,
+            )
+        )
+        display_decision = decide_emlis_observation_display(
+            comment_text=comment_text,
+            reader_report=reader_report,
+            grounding_report=grounding_report,
+            template_echo_report=template_echo_report,
+            safety_report=safety_report,
+            trace_id=trace_id,
+            composer_source=composer_source,
+            phase_completion_ready=phase7_ready,
+        )
+        if display_decision.observation_status in {"passed", "safety_blocked"}:
+            break
+        if composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
+            break
+        regeneration_reasons = list(display_decision.rejection_reasons or [])
 
     # No fixed fallback. The display gate is fail-closed.
     final_text = str(display_decision.comment_text or "").strip()
@@ -1128,6 +1255,8 @@ async def render_emlis_ai_reply(
         grounding_report=grounding_report,
         template_echo_report=template_echo_report,
         display_decision=display_decision,
+        composer_source=composer_source,
+        composer_candidate=composer_candidate,
     )
 
     return ReplyEnvelope(

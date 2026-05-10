@@ -9,8 +9,8 @@ from typing import Any, Iterable, List, Sequence, Set
 
 from emlis_ai_types import EvidenceSpan, TemplateEchoReport
 
-# Old surface patterns that caused the broken outputs. These are rejection
-# signatures, not generation templates.
+# Old and newly-discovered surface patterns that caused broken outputs. These
+# are rejection signatures, not generation templates.
 _BANNED_PATTERNS = [
     r"そこには、?.+もありました",
     r".+も含まれていました",
@@ -24,6 +24,16 @@ _BANNED_PATTERNS = [
     r"今の私は",
     r"私は、",
     r"あなたは|あなたの|あなたが|あなたに",
+    r"入力全体では、?.+中心に出ています",
+    r"選択した感情[:：].+中心として見ている感情",
+    r"言葉の流れには、?外からは見えにくい緊張",
+    r"外からは見えにくい緊張が含まれています",
+    r"まだ決めきれない揺れ",
+    r"今の状態を形づくる大事な手がかり",
+    r"急いで片づけず",
+    r"今の言葉として一緒に見ます",
+    r"一つの結論へ急がず",
+    r"Emlisは、?「?.+」?を急いで片づけず",
 ]
 _BANNED_RE = [re.compile(p) for p in _BANNED_PATTERNS]
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
@@ -34,7 +44,12 @@ _OLD_TEMPLATE_SIGNATURES = [
     "ここでは、願いも怖さも、今できることを大切にしたい気持ちも、小さく扱いません。",
     "逃げ出したくなる気持ちは、弱さではなく、それだけ気を張ってきた反応として見ています。",
     "今の生活にある良さと、ふっと現実に戻った時の不便さを同時に抱えている状態として見ています。",
+    "入力全体では、中心に出ています。",
+    "言葉の流れには、外からは見えにくい緊張が含まれています。",
+    "まだ決めきれない揺れも、今の状態を形づくる大事な手がかりです。",
+    "Emlisは、急いで片づけず、今の言葉として一緒に見ます。",
 ]
+_NON_AI_SOURCES = {"rule_rendered", "fallback", "static_string", "legacy_kernel", "safe_fallback"}
 
 
 def _normalize(text: Any) -> str:
@@ -65,10 +80,22 @@ def _sentence_shapes(text: str) -> List[str]:
     return shapes
 
 
-def guard_template_echo(*, comment_text: Any, evidence_spans: Sequence[EvidenceSpan], previous_outputs: Iterable[str] | None = None) -> TemplateEchoReport:
+def guard_template_echo(
+    *,
+    comment_text: Any,
+    evidence_spans: Sequence[EvidenceSpan],
+    previous_outputs: Iterable[str] | None = None,
+    composer_source: Any = None,
+) -> TemplateEchoReport:
     text = str(comment_text or "").strip()
     reasons: List[str] = []
     matched: List[str] = []
+
+    source = str(composer_source or "").strip()
+    if source and source != "ai_generated":
+        reasons.append("composer_source_not_ai_generated")
+        if source in _NON_AI_SOURCES:
+            reasons.append("rule_rendered_or_fallback_source")
 
     for pattern in _BANNED_RE:
         if pattern.search(text):
@@ -100,6 +127,7 @@ def guard_template_echo(*, comment_text: Any, evidence_spans: Sequence[EvidenceS
     if repeated_shape_score >= 0.45 and len(shapes) >= 4:
         reasons.append("repeated_sentence_pattern")
 
+    reasons = list(dict.fromkeys(reasons))
     return TemplateEchoReport(
         passed=not reasons,
         max_old_template_similarity=round(max_old, 3),

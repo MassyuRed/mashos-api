@@ -710,6 +710,30 @@ class PerspectiveReport:
 class PerspectiveBoard:
     reports: List[PerspectiveReport] = field(default_factory=list)
     evidence_spans: List[EvidenceSpan] = field(default_factory=list)
+    report_ids: List[str] = field(default_factory=list)
+    claim_ids: List[str] = field(default_factory=list)
+    relation_ids: List[str] = field(default_factory=list)
+    evidence_span_ids: List[str] = field(default_factory=list)
+    claim_index: Dict[str, ObservationClaim] = field(default_factory=dict)
+    relation_index: Dict[str, RelationEdge] = field(default_factory=dict)
+    evidence_span_index: Dict[str, EvidenceSpan] = field(default_factory=dict)
+    uncertainty: List[str] = field(default_factory=list)
+    do_not_say: List[str] = field(default_factory=list)
+    claims_by_id: Dict[str, ObservationClaim] = field(default_factory=dict)
+    relations_by_id: Dict[str, RelationEdge] = field(default_factory=dict)
+    validation_issues: List[str] = field(default_factory=list)
+
+    @property
+    def report_count(self) -> int:
+        return len(self.reports)
+
+    @property
+    def claim_count(self) -> int:
+        return len(self.claim_ids)
+
+    @property
+    def relation_count(self) -> int:
+        return len(self.relation_ids)
 
 
 @dataclass(frozen=True)
@@ -742,6 +766,31 @@ class ObservationGraph:
     safety_boundaries: List[str] = field(default_factory=list)
     forbidden_claims: List[str] = field(default_factory=list)
     missing_information: List[str] = field(default_factory=list)
+
+
+ComposerCandidateStatus = Literal["generated", "unavailable", "schema_invalid", "empty", "blocked"]
+
+
+@dataclass(frozen=True)
+class ConversationComposerCandidate:
+    """Conversation Composer output candidate.
+
+    This object records whether final text came from the Composer AI boundary.
+    It is not a fallback renderer and does not make display decisions by itself.
+    """
+
+    comment_text: str = ""
+    composer_source: str = ""
+    status: ComposerCandidateStatus = "unavailable"
+    ai_generated: bool = False
+    trace_id: str = ""
+    attempt_count: int = 0
+    used_evidence_span_ids: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    rejection_reasons: List[str] = field(default_factory=list)
+    request_schema_version: str = "emlis.composer.request.v1"
+    response_schema_version: str = ""
+    fixed_string_renderer_used: bool = False
 
 
 @dataclass(frozen=True)
@@ -798,3 +847,4 @@ class DisplayDecision:
     comment_text: str = ""
     rejection_reasons: List[str] = field(default_factory=list)
     trace_id: str = ""
+    gate_trace: Dict[str, Any] = field(default_factory=dict)

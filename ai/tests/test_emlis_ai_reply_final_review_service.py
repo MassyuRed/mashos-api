@@ -12,12 +12,11 @@ def test_final_review_blocks_broken_connection_before_user_return():
     review = review_emlis_ai_reply_text(comment_text=text, world_model=WorldModel(facts=WorldModelFacts()))
 
     assert any(issue.code == "raw_anchor_broken_connection" for issue in review.issues)
-    assert review.repaired_text is not None
-    assert "それだとこと" not in review.repaired_text
-    assert "軽く扱いません" in review.repaired_text or "雑に扱いません" in review.repaired_text
+    assert review.passed is False
+    assert review.repaired_text is None
 
 
-def test_final_review_repairs_ending_repetition_and_adds_presence_line():
+def test_final_review_reports_ending_repetition_without_adding_presence_line():
     text = """Emlisです。
 泣きそうになるくらい嫌になる時があったのですね。
 怒りも同じ場所にあったのですね。
@@ -25,6 +24,6 @@ def test_final_review_repairs_ending_repetition_and_adds_presence_line():
 
     review = review_emlis_ai_reply_text(comment_text=text, world_model=WorldModel(facts=WorldModelFacts()))
 
-    assert review.repaired_text is not None
-    assert review.repaired_text.count("のですね") <= 2
-    assert "軽く扱いません" in review.repaired_text or "雑に扱いません" in review.repaired_text
+    assert review.passed is False
+    assert review.repaired_text is None
+    assert any(issue.code in {"sentence_ending_repetition", "sentence_ending_repetition_remaining", "presence_line_missing"} for issue in review.issues)

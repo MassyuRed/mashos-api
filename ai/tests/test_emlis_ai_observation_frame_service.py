@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_observation_frame_service import build_emlis_observation_frame
 from emlis_ai_types import EvidenceRef, SourceBundle
@@ -59,10 +59,12 @@ def test_observation_frame_keeps_structure_without_user_facing_templates():
 def test_multi_perspective_case_passes_without_sample_phrase_expectation():
     result = run_multi_perspective_case(SAMPLE_MEMO, display_name="Mash")
 
-    assert result.decision.observation_status == "passed"
+    assert_phase1_display_closed(result.decision)
     assert result.graph.core_tensions
     assert result.graph.pressure_sources
     assert result.graph.limit_signals
     assert result.graph.self_awareness
-    assert result.text.startswith("Mashさん、Emlisです。")
+    assert result.text == ""
+    assert result.reader.understandable is False
+    assert result.grounding.passed is False
     assert_no_legacy_observation_text(result.text)

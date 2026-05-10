@@ -20,12 +20,11 @@ def test_phrase_shaping_avoids_broken_noun_phrase_for_halfway_clause():
     assert "中途半端に" in phrase.phrase
 
 
-def test_final_review_removes_broken_noun_phrase_before_return():
+def test_final_review_blocks_broken_noun_phrase_without_rewriting():
     review = review_emlis_ai_reply_text(
         comment_text="Emlisです。\nそこには、中途半端だ気持ちも近くにありました。\nここに置いてくれた言葉を、Emlisは軽く扱いません。",
         world_model=None,
     )
     assert any(issue.code == "broken_noun_phrase" for issue in review.issues)
-    assert review.repaired_text is not None
-    assert "中途半端だ気持ち" not in review.repaired_text
-    assert review.passed is True
+    assert review.passed is False
+    assert review.repaired_text is None

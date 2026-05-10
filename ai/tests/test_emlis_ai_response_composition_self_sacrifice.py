@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 
 
 SELF_SACRIFICE_MEMO = """
@@ -10,13 +10,14 @@ SELF_SACRIFICE_MEMO = """
 """
 
 
-def test_self_sacrifice_reply_is_generated_by_multi_perspective_composer():
+def test_self_sacrifice_structure_is_ready_but_body_is_closed_before_composer_phase():
     result = run_multi_perspective_case(SELF_SACRIFICE_MEMO, display_name="Mash", emotion="自己理解", category="人間関係")
 
-    assert result.decision.observation_status == "passed"
+    assert_phase1_display_closed(result.decision)
     assert result.graph.core_tensions
     assert result.graph.pressure_sources or result.graph.self_awareness
-    assert "我慢" in result.text or "心配" in result.text or "負担" in result.text
-    assert result.reader.understandable is True
-    assert result.grounding.passed is True
+    assert result.text == ""
+    assert any(term in span.raw_text for span in result.evidence for term in ("我慢", "心配", "負担"))
+    assert result.reader.understandable is False
+    assert result.grounding.passed is False
     assert_no_legacy_observation_text(result.text)

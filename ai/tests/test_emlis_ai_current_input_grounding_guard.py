@@ -27,6 +27,5 @@ def test_explicit_previous_input_leak_is_blocked():
     codes = {issue.code for issue in review.issues}
     assert "stale_meaning_block_leak" in codes or "stale_meaning_block_leak_remaining" in codes
     assert "second_person_pronoun" not in codes
-    assert review.repaired_text is not None
-    assert "前回入力" not in review.repaired_text
-    assert "別の入力" not in review.repaired_text
+    assert review.passed is False
+    assert review.repaired_text is None

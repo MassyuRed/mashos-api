@@ -15,14 +15,26 @@ from emlis_ai_types import ListenerReaderReport
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
 _SECOND_PERSON_RE = re.compile(r"(あなたは|あなたの|あなたが|あなたに)")
 _FIRST_PERSON_HIJACK_RE = re.compile(r"(^|[\n。！？!?])\s*(今の)?私[はがもに]|(^|[\n。！？!?])\s*私は")
-_UNCLEAR_RE = re.compile(r"(こととしてちゃんと|大切な場所として|含まれていました|ありました|受け取りました|と思います|として見ています)")
-_REPORT_LIKE_RE = re.compile(r"(観測結果|判定|分析すると|構造としては|以下の|項目)")
-_RELATION_RE = re.compile(r"(同じ場所|並んで|せめぎ合|重なって|一方|だけではなく|簡単には|そこに|その中でも)")
-_ADDRESSEE_RE = re.compile(r"(さん、Emlisです。|Emlisです。)")
+_UNCLEAR_RE = re.compile(
+    r"(こととしてちゃんと|大切な場所として|含まれていました|ありました|受け取りました|と思います|として見ています|"
+    r"ここにいていいんだってこと|言葉の流れには|外からは見えにくい緊張|決めきれない揺れ|急いで片づけず|一緒に見ます)"
+)
+_REPORT_LIKE_RE = re.compile(r"(観測結果|判定|分析すると|構造としては|以下の|項目|レポート|結論として)")
+_RELATION_RE = re.compile(
+    r"(同じ場所|同じ中|並んで|せめぎ合|重なって|一方|だけではなく|離れていない|簡単には|"
+    r"その二つ|二つの間|つながって|同時に|抱えて|混ざって|残って)"
+)
+_ADDRESSEE_RE = re.compile(r"(^[^\n]{0,24}さん、Emlisです。|^Emlisです。)")
+_LISTING_RE = re.compile(r"(.+もありました。?\s*){2,}|(.+も含まれていました。?\s*){2,}")
+_GENERIC_CLOSING_RE = re.compile(r"(小さく扱いません|軽く扱いません|今の言葉として一緒に見ます|一つの結論へ急がず)")
 
 
 def _sentences(text: Any) -> List[str]:
     return [s.strip() for s in _SENTENCE_SPLIT_RE.split(str(text or "")) if s.strip()]
+
+
+def _dedupe(values: List[str]) -> List[str]:
+    return list(dict.fromkeys(values))
 
 
 def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
@@ -42,6 +54,11 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
         reasons.append("second_person_pronoun_present")
     if _FIRST_PERSON_HIJACK_RE.search(text):
         reasons.append("first_person_hijack")
+    if _LISTING_RE.search(text):
+        reasons.append("result_listing_pattern")
+    if _GENERIC_CLOSING_RE.search(text):
+        reasons.append("generic_fixed_closing")
+
     for sentence in sentences:
         if _UNCLEAR_RE.search(sentence):
             unclear.append(sentence)
@@ -65,9 +82,10 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
     if len(endings) >= 3 and len(set(endings)) <= max(1, len(endings) // 2):
         reasons.append("repeated_sentence_endings")
 
-    understandable = not reasons or set(reasons).issubset({"relation_not_expressed"}) and len(sentences) <= 6
+    reasons = _dedupe(reasons)
     speaker_integrity_ok = "first_person_hijack" not in reasons and "second_person_pronoun_present" not in reasons
-    conversational = not report_like and bool(addressee_clear) and len(lines) >= 3
+    conversational = not report_like and bool(addressee_clear) and len(lines) >= 3 and speaker_integrity_ok
+    understandable = not reasons and speaker_integrity_ok and addressee_clear and conversational and relation_count >= 1
 
     summary = ""
     if sentences:
@@ -75,7 +93,7 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
         summary = " / ".join(body[:2])[:160]
 
     return ListenerReaderReport(
-        understandable=bool(understandable and speaker_integrity_ok and addressee_clear and not unclear),
+        understandable=bool(understandable),
         addressee_clear=addressee_clear,
         speaker_integrity_ok=speaker_integrity_ok,
         conversational=conversational,
@@ -83,7 +101,7 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
         summary_of_output=summary,
         unclear_sentences=unclear,
         rejection_reasons=reasons,
-        confidence=0.86 if not reasons else 0.45,
+        confidence=0.88 if not reasons else 0.42,
     )
 
 

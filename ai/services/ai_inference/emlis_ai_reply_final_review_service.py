@@ -37,12 +37,9 @@ def _lines(text: Any) -> List[str]:
 
 
 def _presence_line(world_model: Optional[WorldModel]) -> str:
-    roles = {str(getattr(item, "role", "") or "") for item in list(getattr(getattr(world_model, "facts", None), "meaning_blocks", []) or [])} if world_model is not None else set()
-    if {"self_suppression", "self_protection", "support_need", "burden_avoidance"} & roles:
-        return "ここでは、抑えてきた気持ちも、自分を守ろうとしている気持ちも、どちらも大切に扱います。"
-    if {"wish_or_hope", "fear_or_disappointment", "effort_direction"} & roles:
-        return "ここでは、願いも怖さも、今できることを大切にしたい気持ちも、小さく扱いません。"
-    return "ここに置いてくれた言葉を、Emlisは軽く扱いません。"
+    """Retired: final review must not add user-facing Emlis body text."""
+
+    return ""
 
 
 def _ending_group(line: str) -> str:
@@ -232,15 +229,18 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
         changed = True
 
     if not any(PRESENCE_RE.search(line) for line in repaired_lines):
-        issues.append(FinalReviewIssue(code="presence_line_missing", severity="repair", line_index=None, message="presence line added"))
-        repaired_lines.append(_presence_line(world_model))
-        changed = True
+        # Phase 1 seal: final review must not add replacement / presence
+        # sentences.  It can only judge.  Missing presence is a blocking issue
+        # for legacy text, and Display Gate will fail closed.
+        issues.append(FinalReviewIssue(code="presence_line_missing", severity="block", line_index=None, message="presence line missing"))
 
     if _long_input_underanswered(repaired_lines, world_model):
         issues.append(FinalReviewIssue(code="long_input_underanswered", severity="block", line_index=None, message="clear long input reply is too short"))
 
-    repaired_text = "\n".join(repaired_lines).strip() if changed else None
-    final_text = repaired_text if repaired_text is not None else "\n".join(lines).strip()
+    # Phase 1 seal: final review does not rewrite, delete, or append
+    # user-facing Emlis observation text.  It only reports pass/fail issues.
+    repaired_text = None
+    final_text = "\n".join(lines).strip()
     final_lines = _lines(final_text)
     final_first_idx = _first_content_index(final_lines)
     midstream_remaining = final_first_idx is not None and MIDSTREAM_OPENING_RE.search(final_lines[final_first_idx])
@@ -248,9 +248,12 @@ def review_emlis_ai_reply_text(*, comment_text: Any, world_model: Optional[World
     block_remaining = bool(SECOND_PERSON_PRONOUN_RE.search(final_text) or BROKEN_GENERIC_PHRASE_RE.search(final_text) or BROKEN_CONNECTION_RE.search(final_text) or BROKEN_NOUN_PHRASE_RE.search(final_text) or MECHANICAL_META_RE.search(final_text) or INTERNAL_OBSERVATION_LANGUAGE_RE.search(final_text) or stale_remaining or midstream_remaining)
     repetition_remaining = sum(line.count("のですね") for line in final_lines) > 2 or _has_three_same_endings(final_lines)
     underanswered = _long_input_underanswered(final_lines, world_model)
-    passed = bool(final_text) and not block_remaining and not repetition_remaining and not underanswered and any(PRESENCE_RE.search(line) for line in final_lines)
+    presence_missing = not any(PRESENCE_RE.search(line) for line in final_lines)
+    passed = bool(final_text) and not block_remaining and not repetition_remaining and not underanswered and not presence_missing
     if stale_remaining:
         issues.append(FinalReviewIssue(code="stale_meaning_block_leak_remaining", severity="block", line_index=None, message="stale current-input leak remains"))
+    if presence_missing:
+        issues.append(FinalReviewIssue(code="presence_line_missing_remaining", severity="block", line_index=None, message="presence line missing"))
     if block_remaining:
         issues.append(FinalReviewIssue(code="final_block_issue_remaining", severity="block", line_index=None, message="unrepaired block issue remains"))
     if repetition_remaining:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_types import SourceBundle
 from emlis_ai_world_model_service import build_emlis_ai_world_model
-from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, run_multi_perspective_case
+from emlis_multi_perspective_test_helpers import assert_no_legacy_observation_text, assert_phase1_display_closed, run_multi_perspective_case
 
 
 def test_emlis_world_model_keeps_value_signal_but_observation_uses_new_pipeline():
@@ -28,6 +28,8 @@ def test_emlis_world_model_keeps_value_signal_but_observation_uses_new_pipeline(
 
     assert "inner_activity_fatigue_gap" in keys
     result = run_multi_perspective_case(memo, display_name="Mash", emotion="自己理解", category="自己理解")
-    assert result.decision.observation_status == "passed"
-    assert "疲れ" in result.text or "頭の中" in result.text or "内側" in result.text
+    assert_phase1_display_closed(result.decision)
+    assert result.text == ""
+    joined_evidence = "\n".join(span.raw_text for span in result.evidence)
+    assert "疲れ" in joined_evidence or "頭の中" in joined_evidence or "内側" in joined_evidence
     assert_no_legacy_observation_text(result.text)
