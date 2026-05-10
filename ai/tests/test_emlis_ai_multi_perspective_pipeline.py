@@ -624,13 +624,15 @@ async def test_phase8_reply_orchestrator_keeps_empty_comment_when_composer_is_un
     phase_gate = envelope.meta["multi_perspective"]["phase_gate"]
     assert envelope.comment_text == ""
     assert envelope.meta["observation_status"] == "unavailable"
-    assert phase_gate["completed_phases"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    assert phase_gate["current_phase"] == 10
-    assert phase_gate["next_phase"] is None
+    assert phase_gate["completed_phases"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert phase_gate["current_phase"] == 9
+    assert phase_gate["next_phase"] == 10
     assert phase_gate["display_gate_ready"] is True
     assert phase_gate["frontend_display_control_ready"] is True
-    assert phase_gate["phase10_regression_release_ready"] is True
-    assert phase_gate["release_ready"] is True
+    assert phase_gate["composer_backend_ready"] is False
+    assert phase_gate["phase10_regression_release_ready"] is False
+    assert phase_gate["release_ready"] is False
+    assert "composer_backend_not_configured" in phase_gate["release_blockers"]
     assert phase_gate["comment_text_allowed"] is False
     assert phase_gate["gate_trace"]["display_gate"]["passed"] is False
     assert "composer_source_unavailable" in envelope.meta["rejection_reasons"]
@@ -659,3 +661,31 @@ def test_phase10_release_readiness_requires_frontend_and_regression_contracts():
         frontend_display_control_ready=False,
         release_checks={"phase10_screenshot_regression": False},
     ) is False
+
+
+def test_phase10_default_composer_client_is_env_configured(monkeypatch):
+    from emlis_ai_conversation_composer_service import (
+        OpenAICompatibleConversationComposerClient,
+        get_default_conversation_composer_client,
+        is_default_conversation_composer_configured,
+    )
+
+    monkeypatch.delenv("EMLIS_AI_COMPOSER_ENDPOINT", raising=False)
+    monkeypatch.delenv("EMLIS_AI_COMPOSER_API_URL", raising=False)
+    monkeypatch.delenv("EMLIS_AI_COMPOSER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("EMLIS_AI_COMPOSER_DISABLED", raising=False)
+    assert is_default_conversation_composer_configured() is False
+    assert get_default_conversation_composer_client() is None
+
+    monkeypatch.setenv("EMLIS_AI_COMPOSER_API_KEY", "test-key")
+    monkeypatch.setenv("EMLIS_AI_COMPOSER_MODEL", "test-model")
+    client = get_default_conversation_composer_client()
+    assert is_default_conversation_composer_configured() is True
+    assert isinstance(client, OpenAICompatibleConversationComposerClient)
+    assert client.model == "test-model"
+    assert client.endpoint.endswith("/chat/completions")
+
+    monkeypatch.setenv("EMLIS_AI_COMPOSER_DISABLED", "1")
+    assert is_default_conversation_composer_configured() is False
+    assert get_default_conversation_composer_client() is None

@@ -37,7 +37,12 @@ from emlis_ai_user_model_store import (
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
-from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
+from emlis_ai_conversation_composer_service import (
+    compose_emlis_conversation_candidate,
+    get_default_conversation_composer_client,
+    is_default_conversation_composer_configured,
+    phase6_composer_contract_ready,
+)
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
@@ -990,6 +995,7 @@ def _multi_perspective_meta(
     display_decision: Any,
     composer_source: str = "",
     composer_candidate: Any = None,
+    composer_backend_ready: bool = True,
 ) -> Dict[str, Any]:
     used_sources: List[str] = ["current_input"]
     if bundle.greeting:
@@ -1021,6 +1027,7 @@ def _multi_perspective_meta(
     release_readiness = build_phase10_release_readiness(
         display_decision=display_decision,
         frontend_display_control_ready=phase8_ready,
+        composer_backend_ready=composer_backend_ready,
     )
     phase9_ready = bool(phase8_ready and release_readiness.get("phase9_frontend_display_control_ready"))
     phase10_ready = bool(phase9_ready and release_readiness.get("phase10_regression_release_ready"))
@@ -1104,6 +1111,8 @@ def _multi_perspective_meta(
                 "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
                 "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
                 "judge_contract_ready": phase7_ready,
+                "composer_backend_ready": bool(composer_backend_ready),
+                "composer_default_configured": bool(is_default_conversation_composer_configured()),
                 "composer_candidate_available": str(getattr(composer_candidate, "composer_source", "") or "") == "ai_generated",
                 "composer_status": str(getattr(composer_candidate, "status", "") or ""),
                 "board_validation_issues": validate_perspective_board(board),
@@ -1178,6 +1187,8 @@ async def render_emlis_ai_reply(
     # rejection reason codes only.  No sample text or fallback observation is sent.
     phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_observation_graph_ready(board, graph))
     phase6_ready = bool(phase5_ready and phase6_composer_contract_ready())
+    effective_composer_client = composer_client if composer_client is not None else get_default_conversation_composer_client()
+    composer_backend_ready = bool(effective_composer_client is not None)
     composer_candidate = None
     comment_text = ""
     composer_source = ""
@@ -1195,7 +1206,7 @@ async def render_emlis_ai_reply(
         phase_completion_ready=phase6_ready,
     )
 
-    max_attempts = 2 if composer_client is not None and not safety_requires_block else 1
+    max_attempts = 2 if effective_composer_client is not None and not safety_requires_block else 1
     regeneration_reasons: List[str] = []
     for attempt in range(1, max_attempts + 1):
         composer_candidate = compose_emlis_conversation_candidate(
@@ -1206,7 +1217,7 @@ async def render_emlis_ai_reply(
                 display_name=bundle.display_name or display_name,
                 greeting_text=getattr(bundle.greeting, "greeting_text", "") if bundle.greeting else "",
             ),
-            composer_client=None if safety_requires_block else composer_client,
+            composer_client=None if safety_requires_block else effective_composer_client,
             trace_id=trace_id,
             attempt_count=attempt,
             rejection_reasons=regeneration_reasons,
@@ -1237,7 +1248,7 @@ async def render_emlis_ai_reply(
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break
-        if composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
+        if effective_composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
             break
         regeneration_reasons = list(display_decision.rejection_reasons or [])
 
@@ -1257,6 +1268,7 @@ async def render_emlis_ai_reply(
         display_decision=display_decision,
         composer_source=composer_source,
         composer_candidate=composer_candidate,
+        composer_backend_ready=composer_backend_ready,
     )
 
     return ReplyEnvelope(
