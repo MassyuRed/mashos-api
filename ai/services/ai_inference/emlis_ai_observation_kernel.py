@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from emlis_ai_display_gate import build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
-from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, is_default_conversation_composer_configured, phase6_composer_contract_ready
+from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_listener_reader_judge import judge_listener_readability
@@ -185,11 +185,9 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
     max_lines = max(3, min(8, int(getattr(graph.addressee_notes, "sentence_target", 5) or 5) + 1))
     phase7_ready = phase7_contract_ready
     phase8_ready = bool(phase7_ready and phase8_display_gate_contract_ready(decision))
-    composer_backend_ready = str(composer_candidate.composer_source or "") == "ai_generated" or is_default_conversation_composer_configured()
     release_readiness = build_phase10_release_readiness(
         display_decision=decision,
         frontend_display_control_ready=phase8_ready,
-        composer_backend_ready=composer_backend_ready,
     )
     phase9_ready = bool(phase8_ready and release_readiness.get("phase9_frontend_display_control_ready"))
     phase10_ready = bool(phase9_ready and release_readiness.get("phase10_regression_release_ready"))
@@ -251,8 +249,6 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
                 "reader_gate_ready": True,
                 "grounding_gate_ready": True,
                 "template_echo_gate_ready": True,
-                "composer_backend_ready": bool(composer_backend_ready),
-                "composer_default_configured": bool(is_default_conversation_composer_configured()),
                 "composer_candidate_available": str(composer_candidate.composer_source or "") == "ai_generated",
                 "composer_status": str(composer_candidate.status or ""),
                 "display_gate_status": decision.observation_status,

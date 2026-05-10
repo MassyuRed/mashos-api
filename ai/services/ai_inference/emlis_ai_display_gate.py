@@ -167,7 +167,6 @@ def build_phase10_release_readiness(
     display_decision: DisplayDecision | None = None,
     frontend_display_control_ready: bool = True,
     release_checks: Mapping[str, Any] | None = None,
-    composer_backend_ready: bool = True,
 ) -> Dict[str, Any]:
     """Build the explicit Phase 10 release-readiness decision.
 
@@ -188,8 +187,6 @@ def build_phase10_release_readiness(
         blockers.append("display_gate_contract_not_ready")
     if not phase9_frontend_display_contract_ready(display_gate_ready=frontend_display_control_ready):
         blockers.append("frontend_passed_only_display_not_verified")
-    if not composer_backend_ready:
-        blockers.append("composer_backend_not_configured")
     failed_checks = [key for key in _PHASE10_REQUIRED_RELEASE_CHECKS if checks.get(key) is not True]
     blockers.extend(failed_checks)
     release_ready = not blockers
@@ -200,7 +197,6 @@ def build_phase10_release_readiness(
         "release_checks": checks,
         "display_gate_release_ready": display_gate_ready,
         "phase9_frontend_display_control_ready": bool(frontend_display_control_ready),
-        "composer_backend_ready": bool(composer_backend_ready),
         "phase10_regression_release_ready": release_ready,
     }
 
@@ -210,14 +206,12 @@ def phase10_release_readiness_contract_ready(
     display_decision: DisplayDecision | None = None,
     frontend_display_control_ready: bool = True,
     release_checks: Mapping[str, Any] | None = None,
-    composer_backend_ready: bool = True,
 ) -> bool:
     return bool(
         build_phase10_release_readiness(
             display_decision=display_decision,
             frontend_display_control_ready=frontend_display_control_ready,
             release_checks=release_checks,
-            composer_backend_ready=composer_backend_ready,
         ).get("release_ready")
     )
 

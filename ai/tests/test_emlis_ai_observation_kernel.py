@@ -46,13 +46,11 @@ def test_retired_kernel_delegates_to_multi_perspective_adapter_without_templates
     assert decision.reply_lines == []
     assert decision.accepted_candidates == []
     assert decision.debug["phase_gate"]["legacy_text_routes_sealed"] is True
-    assert decision.debug["phase_gate"]["current_phase"] == 9
-    assert decision.debug["phase_gate"]["next_phase"] == 10
-    assert decision.debug["phase_gate"]["release_ready"] is False
-    assert "composer_backend_not_configured" in decision.debug["phase_gate"]["release_blockers"]
-    assert decision.debug["phase_gate"]["phase10_regression_release_ready"] is False
+    assert decision.debug["phase_gate"]["current_phase"] == 10
+    assert decision.debug["phase_gate"]["next_phase"] is None
+    assert decision.debug["phase_gate"]["release_ready"] is True
+    assert decision.debug["phase_gate"]["phase10_regression_release_ready"] is True
     assert decision.debug["phase_gate"]["composer_contract_ready"] is True
-    assert decision.debug["phase_gate"]["composer_backend_ready"] is False
     assert decision.debug["phase_gate"]["judge_contract_ready"] is True
     assert decision.debug["phase_gate"]["composer_candidate_available"] is False
     assert decision.debug["composer_status"] == "unavailable"

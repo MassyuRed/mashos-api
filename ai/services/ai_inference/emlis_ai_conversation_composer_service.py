@@ -13,11 +13,7 @@ strings, role maps, f-strings, or fallback sentences.
 from dataclasses import asdict, is_dataclass
 import ast
 import inspect
-import json
-import os
-import urllib.error
-import urllib.request
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Dict, List, Mapping, Protocol, Sequence, runtime_checkable
 
 from emlis_ai_types import (
     ConversationComposerCandidate,
@@ -274,191 +270,6 @@ def _normalize_ai_response(
 
 
 
-
-_COMPOSER_SYSTEM_PROMPT_JA = """あなたは Cocolon の EmlisAI Conversation Composer です。
-ObservationGraph と EvidenceSpan だけを根拠に、ユーザー本人へ届く短い会話文候補を日本語で作成してください。
-
-厳守:
-- 返答は JSON object のみ。markdown、説明、コードフェンスは禁止。
-- comment_text は3〜5行。最初の行は payload.addressee.greeting_text があればそれを自然に使う。
-- 原文にない原因、診断、性格判断、医療判断、行動指示を足さない。
-- 「あなたは/あなたの/あなたが/あなたに」を使わない。
-- Emlis がユーザー本人の一人称を名乗らない。
-- payload.composition_contract.forbidden_output_surfaces に含まれる表面文型を使わない。
-- 観測結果の箇条書きではなく、相手に話す会話文にする。
-- EvidenceSpan の raw_text を根拠として使い、ただの貼り付けや原文順の復唱にしない。
-
-必ず次の JSON schema で返してください:
-{
-  "response_schema_version": "emlis.composer.response.v1",
-  "composer_source": "ai_generated",
-  "comment_text": "...",
-  "used_evidence_span_ids": ["s1"],
-  "confidence": 0.0
-}
-"""
-
-
-def _first_env(*names: str) -> str:
-    for name in names:
-        value = str(os.getenv(name, "") or "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _truthy_env(name: str, default: bool = False) -> bool:
-    raw = str(os.getenv(name, "") or "").strip().lower()
-    if not raw:
-        return default
-    return raw in {"1", "true", "yes", "on", "enabled"}
-
-
-def _float_env(name: str, default: float, *, low: float, high: float) -> float:
-    try:
-        value = float(str(os.getenv(name, "") or default))
-    except Exception:
-        value = default
-    return max(low, min(high, value))
-
-
-def _int_env(name: str, default: int, *, low: int, high: int) -> int:
-    try:
-        value = int(str(os.getenv(name, "") or default))
-    except Exception:
-        value = default
-    return max(low, min(high, value))
-
-
-def _join_chat_completions_url(base_or_url: str) -> str:
-    url = str(base_or_url or "").strip()
-    if not url:
-        return ""
-    if url.rstrip("/").endswith("/chat/completions"):
-        return url.rstrip("/")
-    return url.rstrip("/") + "/chat/completions"
-
-
-class OpenAICompatibleConversationComposerClient:
-    """OpenAI-compatible HTTP adapter for the Composer AI boundary.
-
-    The adapter only transports the structured ObservationGraph/EvidenceSpan
-    payload to an external AI service. It does not own user-facing observation
-    sentences and never produces a rule-rendered fallback body.
-    """
-
-    def __init__(
-        self,
-        *,
-        endpoint: str,
-        api_key: str = "",
-        model: str = "",
-        timeout_seconds: float = 2.2,
-        temperature: float = 0.55,
-        max_tokens: int = 520,
-        mode: str = "openai_chat",
-    ) -> None:
-        self.endpoint = str(endpoint or "").strip()
-        self.api_key = str(api_key or "").strip()
-        self.model = str(model or "").strip()
-        self.timeout_seconds = float(timeout_seconds or 2.2)
-        self.temperature = float(temperature or 0.55)
-        self.max_tokens = int(max_tokens or 520)
-        self.mode = str(mode or "openai_chat").strip() or "openai_chat"
-
-    def _headers(self) -> Dict[str, str]:
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
-
-    def _post_json(self, body: Mapping[str, Any]) -> Mapping[str, Any] | str:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(self.endpoint, data=data, headers=self._headers(), method="POST")
-        with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:  # nosec B310 - configured trusted endpoint
-            raw = response.read().decode("utf-8", errors="replace")
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            return raw
-        return parsed if isinstance(parsed, Mapping) else raw
-
-    def generate(self, payload: Mapping[str, Any]) -> Mapping[str, Any] | str:
-        if not self.endpoint:
-            raise RuntimeError("composer_endpoint_not_configured")
-        if self.mode == "raw_payload":
-            return self._post_json(payload)
-
-        request_body: Dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": _COMPOSER_SYSTEM_PROMPT_JA},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-            ],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "response_format": {"type": "json_object"},
-        }
-        response = self._post_json(request_body)
-        if not isinstance(response, Mapping):
-            return response
-        choices = response.get("choices")
-        if not isinstance(choices, list) or not choices:
-            return response
-        first = choices[0] if isinstance(choices[0], Mapping) else {}
-        message = first.get("message") if isinstance(first, Mapping) else {}
-        content = message.get("content") if isinstance(message, Mapping) else ""
-        content_text = str(content or "").strip()
-        if not content_text:
-            return response
-        try:
-            parsed_content = json.loads(content_text)
-        except Exception:
-            return {"comment_text": content_text, "composer_source": "ai_generated"}
-        return parsed_content if isinstance(parsed_content, Mapping) else {"comment_text": content_text, "composer_source": "ai_generated"}
-
-
-def is_default_conversation_composer_configured() -> bool:
-    """Return whether production has a Composer AI endpoint/key available."""
-
-    if _truthy_env("EMLIS_AI_COMPOSER_DISABLED", default=False):
-        return False
-    endpoint = _first_env("EMLIS_AI_COMPOSER_ENDPOINT", "EMLIS_AI_COMPOSER_API_URL")
-    api_key = _first_env("EMLIS_AI_COMPOSER_API_KEY", "OPENAI_API_KEY")
-    if endpoint:
-        return True
-    return bool(api_key)
-
-
-def get_default_conversation_composer_client() -> Optional[ConversationComposerClient]:
-    """Resolve the default Composer AI client from environment variables.
-
-    Supported runtime configuration:
-    - EMLIS_AI_COMPOSER_ENDPOINT / EMLIS_AI_COMPOSER_API_URL
-    - EMLIS_AI_COMPOSER_API_KEY or OPENAI_API_KEY
-    - EMLIS_AI_COMPOSER_MODEL or OPENAI_MODEL
-    - EMLIS_AI_COMPOSER_MODE=openai_chat|raw_payload
-    """
-
-    if not is_default_conversation_composer_configured():
-        return None
-    mode = _first_env("EMLIS_AI_COMPOSER_MODE") or "openai_chat"
-    endpoint = _first_env("EMLIS_AI_COMPOSER_ENDPOINT", "EMLIS_AI_COMPOSER_API_URL")
-    api_key = _first_env("EMLIS_AI_COMPOSER_API_KEY", "OPENAI_API_KEY")
-    if mode != "raw_payload":
-        endpoint = endpoint or _join_chat_completions_url(_first_env("EMLIS_AI_COMPOSER_BASE_URL", "OPENAI_BASE_URL") or "https://api.openai.com/v1")
-    model = _first_env("EMLIS_AI_COMPOSER_MODEL", "OPENAI_MODEL") or "gpt-4o-mini"
-    return OpenAICompatibleConversationComposerClient(
-        endpoint=endpoint,
-        api_key=api_key,
-        model=model,
-        timeout_seconds=_float_env("EMLIS_AI_COMPOSER_TIMEOUT_SECONDS", 2.2, low=0.3, high=8.0),
-        temperature=_float_env("EMLIS_AI_COMPOSER_TEMPERATURE", 0.55, low=0.0, high=1.2),
-        max_tokens=_int_env("EMLIS_AI_COMPOSER_MAX_TOKENS", 520, low=160, high=1200),
-        mode=mode,
-    )
-
-
 def compose_emlis_conversation_candidate(
     *,
     graph: ObservationGraph,
@@ -579,9 +390,6 @@ def phase6_composer_contract_ready() -> bool:
 
 __all__ = [
     "ConversationComposerClient",
-    "OpenAICompatibleConversationComposerClient",
-    "get_default_conversation_composer_client",
-    "is_default_conversation_composer_configured",
     "build_conversation_composer_payload",
     "compose_emlis_conversation",
     "compose_emlis_conversation_candidate",
