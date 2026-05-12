@@ -20,14 +20,14 @@ PREMIUM_CANONICAL_SUBTITLE = None
 PLUS_CANONICAL_FEATURES = [
     "履歴全般：表示期間1年分。",
     "ホーム：Emlisの観測が入力履歴を踏まえた内容になります。",
-    "分析：感情分析レポートが深くなります。",
+    "分析：こころ天気（日/週/月）の本文と観測理由を見られます。",
     "分析：自己分析レポートが閲覧可能になります。",
     "ピース：生成回数が月30回になります。",
 ]
 PREMIUM_CANONICAL_FEATURES = [
     "履歴全般：表示期間無制限。",
     "ホーム：Emlisの観測がユーザーごとに合わせた内容になります。",
-    "分析：感情分析レポートがさらに深くなります。",
+    "分析：こころ天気（日/週/月）の変化パターンや長期傾向まで見られます。",
     "分析：自己分析レポートがさらに深くなります。",
     "ピース：生成回数が無制限になります。",
 ]
@@ -205,6 +205,8 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
         .replace("ReflectionCreate", "ProfileCreate")
         .replace("Reflections", "ピース")
         .replace("Reflection", "ピース")
+        .replace("感情分析レポート", "こころ天気（日/週/月）")
+        .replace("日報・週報・月報", "こころ天気（日/週/月）")
         .replace("Piece", "ピース")
         .replace("ピース作成", "ピース生成")
         .replace("ピースの作成", "ピースの生成")

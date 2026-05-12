@@ -19,6 +19,7 @@ from supabase_client import sb_get
 from analysis_summary_reader import get_myweb_home_summary_from_artifacts
 from input_summary_reader import get_input_summary_snapshot
 from emlis_context_anchor_service import sanitize_content_json_for_public_read
+from kokoro_weather_service import build_current_kokoro_weather, with_previous_available
 
 try:
     from subscription import SubscriptionTier  # type: ignore
@@ -78,6 +79,9 @@ class MyWebHomeSummaryResponse(BaseModel):
     weekly: MyWebWeeklySummary
     monthly: MyWebMonthlySummary
     input_status: MyWebInputStatusSummary = Field(default_factory=MyWebInputStatusSummary)
+    # Additive Phase 1 field for the Analysis top "今のこころ天気" card.
+    # Existing clients can ignore this field safely.
+    current_weather: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MyWebWeeklyDay(BaseModel):
@@ -110,11 +114,11 @@ def _pick_rows(resp) -> List[Dict[str, Any]]:
     return []
 
 
-def _coerce_int(value: Any) -> int:
+def _coerce_int(value: Any, default: int = 0) -> int:
     try:
-        return int(value or 0)
+        return int(value or default)
     except Exception:
-        return 0
+        return int(default)
 
 
 def _parse_iso(value: str) -> datetime:
@@ -383,16 +387,24 @@ async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any
                 weekly=MyWebWeeklySummary(error="missing_user_id"),
                 monthly=MyWebMonthlySummary(error="missing_user_id"),
                 input_status=MyWebInputStatusSummary(error="missing_user_id"),
+                current_weather={
+                    "status": "error",
+                    "period_mode": "today_jst",
+                    "label": "今のこころ天気",
+                    "error": "missing_user_id",
+                },
             )
         )
 
     async def _build_payload() -> Dict[str, Any]:
         analysis_summary_task = get_myweb_home_summary_from_artifacts(uid)
         input_status_task = get_input_summary_snapshot(uid)
+        current_weather_task = build_current_kokoro_weather(uid)
 
-        analysis_summary_res, input_status_res = await asyncio.gather(
+        analysis_summary_res, input_status_res, current_weather_res = await asyncio.gather(
             analysis_summary_task,
             input_status_task,
+            current_weather_task,
             return_exceptions=True,
         )
 
@@ -427,11 +439,32 @@ async def get_myweb_home_summary_payload_for_user(user_id: str) -> Dict[str, Any
         else:
             input_status = _input_status_from_payload(input_status_res)
 
+        if isinstance(current_weather_res, Exception):
+            logger.warning(
+                "myweb home summary: current weather load failed user_id=%s err=%r",
+                uid,
+                current_weather_res,
+            )
+            current_weather = {
+                "status": "error",
+                "period_mode": "today_jst",
+                "label": "今のこころ天気",
+                "error": "failed_to_load_current_weather",
+            }
+        else:
+            current_weather = current_weather_res if isinstance(current_weather_res, dict) else {}
+
+        current_weather = with_previous_available(
+            current_weather,
+            previous_available=bool(input_status.last_input_at),
+        )
+
         return jsonable_encoder(
             MyWebHomeSummaryResponse(
                 weekly=weekly,
                 monthly=monthly,
                 input_status=input_status,
+                current_weather=current_weather,
             )
         )
 

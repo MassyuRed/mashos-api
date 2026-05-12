@@ -46,6 +46,10 @@ from emlis_context_anchor_service import (
     build_emotion_report_emlis_context_anchors,
     sanitize_content_json_for_public_read,
 )
+try:
+    from kokoro_weather_service import build_report_kokoro_weather
+except Exception:  # pragma: no cover - optional additive report payload
+    build_report_kokoro_weather = None  # type: ignore
 
 from api_emotion_submit import (
     _ensure_supabase_config,
@@ -4111,18 +4115,18 @@ def _build_target_period_from_snapshot(report_type: str, period_start_iso: str, 
 
     if report_type == "daily":
         title_date = _format_jst_md(ps)
-        title = f"日報：{title_date}"
+        title = f"こころ天気（日）：{title_date}"
         meta = {"titleDate": title_date}
     elif report_type == "weekly":
         s = _format_jst_md(ps)
         e = _format_jst_md(pe)
         title_range = f"{s} ～ {e}"
-        title = f"週報：{title_range}"
+        title = f"こころ天気（週）：{title_range}"
         meta = {"titleRange": title_range}
     elif report_type == "monthly":
         end_jst = pe.astimezone(JST)
         title_month = f"{end_jst.year}/{end_jst.month}"
-        title = f"月報：{title_month}"
+        title = f"こころ天気（月）：{title_month}"
         meta = {"titleMonth": title_month}
     else:
         raise HTTPException(status_code=400, detail="Unsupported report type for snapshot-driven generation")
@@ -4212,21 +4216,21 @@ def _build_target_period(report_type: str, now_utc: datetime) -> TargetPeriod:
     if report_type == "daily":
         period_start_utc = dist_utc - DAY
         title_date = _format_jst_md(period_start_utc)
-        title = f"日報：{title_date}"
+        title = f"こころ天気（日）：{title_date}"
         meta = {"titleDate": title_date}
     elif report_type == "weekly":
         period_start_utc = dist_utc - 7 * DAY
         s = _format_jst_md(period_start_utc)
         e = _format_jst_md(period_end_utc)
         title_range = f"{s} ～ {e}"
-        title = f"週報：{title_range}"
+        title = f"こころ天気（週）：{title_range}"
         meta = {"titleRange": title_range}
     else:
         # monthly (28 days)
         period_start_utc = dist_utc - 28 * DAY
         end_jst = period_end_utc.astimezone(JST)
         title_month = f"{end_jst.year}/{end_jst.month}"
-        title = f"月報：{title_month}"
+        title = f"こころ天気（月）：{title_month}"
         meta = {"titleMonth": title_month}
 
     # ISO: always UTC with milliseconds like JS's toISOString()
@@ -4971,7 +4975,20 @@ async def _generate_and_save(
             supplement_text=astor_text,
         )
 
-    # 3) upsert
+    # 3) additive kokoroWeather payload (report UI data; no DB/API key rename)
+    try:
+        if build_report_kokoro_weather is not None:
+            content_json["kokoroWeather"] = build_report_kokoro_weather(
+                report_type=target.report_type,
+                rows=rows,
+                period_start_utc=target.period_start_utc,
+                period_end_utc=target.period_end_utc,
+                existing_metrics=content_json.get("metrics") if isinstance(content_json.get("metrics"), dict) else {},
+                existing_days=content_json.get("days") if isinstance(content_json.get("days"), list) else [],
+                existing_weeks=content_json.get("weeks") if isinstance(content_json.get("weeks"), list) else [],
+            )
+    except Exception as exc:
+        logger.warning("failed to attach kokoroWeather report payload report_type=%s err=%r", target.report_type, exc)
 
     # --- MyWeb report v3 structure (Standard / Structural) ---
     try:
@@ -5321,6 +5338,26 @@ async def _generate_and_save_from_snapshot(
             content_json["deepReport"] = astor_report
     except Exception:
         standard_text = light_text
+
+    # additive kokoroWeather payload for report UI. Build after snapshot/analysis payloads
+    # are available so daily time buckets can be reused when present.
+    try:
+        if build_report_kokoro_weather is not None:
+            content_json["kokoroWeather"] = build_report_kokoro_weather(
+                report_type=report_type,
+                rows=[],
+                period_start_utc=target.period_start_utc,
+                period_end_utc=target.period_end_utc,
+                existing_metrics=content_json.get("metrics") if isinstance(content_json.get("metrics"), dict) else {},
+                existing_days=content_json.get("days") if isinstance(content_json.get("days"), list) else [],
+                existing_weeks=content_json.get("weeks") if isinstance(content_json.get("weeks"), list) else [],
+                existing_time_buckets=_extract_time_bucket_rows(
+                    snapshot_views=views,
+                    analysis_payload=analysis_payload,
+                ),
+            )
+    except Exception as exc:
+        logger.warning("failed to attach snapshot kokoroWeather report payload scope=%s err=%r", sc, exc)
 
     # --- Governance: publish meta (DRAFT -> inspect -> READY) ---
     try:

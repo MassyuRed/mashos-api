@@ -1431,11 +1431,11 @@ def _report_distribution_family_priority(family: str) -> int:
 def _candidate_report_label(row: Dict[str, Any]) -> str:
     family = str((row or {}).get("report_family") or "").strip()
     if family == "emotion_daily":
-        return "日報"
+        return "こころ天気（日）"
     if family == "emotion_weekly":
-        return "週報"
+        return "こころ天気（週）"
     if family == "emotion_monthly":
-        return "月報"
+        return "こころ天気（月）"
     if family == "self_structure_monthly":
         return "自己構造月報"
     return "レポート"
@@ -1503,15 +1503,15 @@ def _build_report_distribution_push_payload(bundle_rows: List[Dict[str, Any]], *
     if len(families) == 1:
         family = families[0]
         if family == "emotion_daily":
-            body = "日報が届きました"
+            body = "こころ天気（日）が届きました"
             open_mode = "reportHistory"
             report_type = "daily"
         elif family == "emotion_weekly":
-            body = "週報が届きました"
+            body = "こころ天気（週）が届きました"
             open_mode = "reportHistory"
             report_type = "weekly"
         elif family == "emotion_monthly":
-            body = "月報が届きました"
+            body = "こころ天気（月）が届きました"
             open_mode = "reportHistory"
             report_type = "monthly"
         elif family == "self_structure_monthly":
