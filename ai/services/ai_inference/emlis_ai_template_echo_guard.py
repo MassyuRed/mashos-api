@@ -428,6 +428,7 @@ def guard_template_echo(
         repeated_limited_surface_score=round(limited_surface_score, 3),
         matched_limited_surface_patterns=matched_limited,
         phase8_emotion_label_body_line_count=len([r for r in list(quality_report.get("rejection_reasons") or []) if r == "phase8_emotion_label_body_line"]),
+        phase8_missing_must_keep_roles=list(quality_report.get("missing_must_keep_roles") or quality_report.get("missing_required_roles") or []),
         phase8_quality_rejection_reasons=list(quality_report.get("rejection_reasons") or []),
         matched_banned_patterns=matched,
         rejection_reasons=reasons,

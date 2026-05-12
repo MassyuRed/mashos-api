@@ -101,6 +101,16 @@ except Exception:  # pragma: no cover
     evaluate_analysis_report_validity = None  # type: ignore
     infer_emotion_material_fields_from_rows = None  # type: ignore
 
+# Phase12: AnalysisComposer common-core connection (additive meta only).
+try:
+    from cocolon_text_generation_core.adapters.analysis_composer import (
+        attach_analysis_composer_meta,
+        evaluate_analysis_composer,
+    )
+except Exception:  # pragma: no cover
+    attach_analysis_composer_meta = None  # type: ignore
+    evaluate_analysis_composer = None  # type: ignore
+
 
 logger = logging.getLogger("myweb_reports_api")
 
@@ -152,22 +162,119 @@ def _attach_analysis_report_validity_meta_if_available(
     output_payload: Any = None,
     material_fields: Optional[List[str]] = None,
     target_period: Optional[str] = None,
+    materials: Any = None,
+    source_id: Optional[str] = None,
+    domain: str = "emotion_structure",
 ) -> Dict[str, Any]:
     if evaluate_analysis_report_validity is None or attach_report_validity_meta is None:
         return content_json
     try:
         result = evaluate_analysis_report_validity(
-            domain="emotion_structure",
+            domain=domain,
             material_count=material_count,
             output_text=output_text,
             output_payload=output_payload,
             material_fields=material_fields or [],
+            material_sources=materials,
             target_period=target_period,
             save_requested=True,
+            enforce_text_generation_core=True,
         )
-        return attach_report_validity_meta(content_json, result)
+        updated = attach_report_validity_meta(content_json, result)
     except Exception:
-        return content_json
+        updated = content_json
+
+    if evaluate_analysis_composer is None or attach_analysis_composer_meta is None:
+        return updated
+
+    try:
+        evaluation = evaluate_analysis_composer(
+            domain=domain,
+            materials=materials,
+            report_text=output_text,
+            content_json=updated,
+            output_payload=output_payload if output_payload is not None else updated,
+            material_fields=material_fields or [],
+            target_period=target_period,
+            source_id=source_id or "analysis-report-runtime",
+        )
+        updated = attach_analysis_composer_meta(updated, evaluation)
+        validity = updated.get("reportValidity") if isinstance(updated.get("reportValidity"), dict) else None
+        if validity is not None:
+            validity["analysis_composer_checked"] = True
+            validity["analysis_composer_passed"] = bool(evaluation.passed)
+            validity["analysis_composer_model"] = evaluation.result.composer_model
+            if not evaluation.passed:
+                reasons = list(validity.get("blocked_reasons") or [])
+                reasons.extend(evaluation.rejection_reasons)
+                validity["blocked_reasons"] = list(dict.fromkeys(str(reason) for reason in reasons if str(reason or "").strip()))
+                validity["save_allowed"] = False
+                validity["display_valid"] = False
+    except Exception:
+        return updated
+    return updated
+
+
+def _analysis_report_save_allowed(content_json: Dict[str, Any]) -> bool:
+    validity = content_json.get("reportValidity") if isinstance(content_json.get("reportValidity"), dict) else {}
+    if validity and validity.get("save_allowed") is False:
+        return False
+    core_meta = content_json.get("textGenerationCore") if isinstance(content_json.get("textGenerationCore"), dict) else {}
+    analysis_meta = core_meta.get("analysis_composer") if isinstance(core_meta.get("analysis_composer"), dict) else {}
+    if analysis_meta and analysis_meta.get("passed") is False:
+        return False
+    return True
+
+
+def _analysis_report_blocked_reasons(content_json: Dict[str, Any]) -> List[str]:
+    reasons: List[str] = []
+    validity = content_json.get("reportValidity") if isinstance(content_json.get("reportValidity"), dict) else {}
+    if validity:
+        reasons.extend(str(reason) for reason in (validity.get("blocked_reasons") or []) if str(reason or "").strip())
+    core_meta = content_json.get("textGenerationCore") if isinstance(content_json.get("textGenerationCore"), dict) else {}
+    analysis_meta = core_meta.get("analysis_composer") if isinstance(core_meta.get("analysis_composer"), dict) else {}
+    if analysis_meta:
+        reasons.extend(str(reason) for reason in (analysis_meta.get("rejection_reasons") or []) if str(reason or "").strip())
+    return list(dict.fromkeys(reasons))
+
+
+def _snapshot_analysis_materials_for_core(
+    *,
+    snapshot_id: Optional[str],
+    snapshot_hash: Optional[str],
+    report_type: str,
+    summary: Dict[str, Any],
+    views: Dict[str, Any],
+    report_text: Any,
+) -> List[Dict[str, Any]]:
+    metrics = views.get("metrics") if isinstance(views.get("metrics"), dict) else {}
+    share = metrics.get("sharePct") if isinstance(metrics.get("sharePct"), dict) else {}
+    totals = metrics.get("totals") if isinstance(metrics.get("totals"), dict) else {}
+    signals: List[str] = []
+    for source in (share, totals):
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            try:
+                numeric = int(float(value or 0))
+            except Exception:
+                numeric = 0
+            if numeric > 0:
+                signals.append(str(key))
+    material_summary = str(summary.get("emotions_public") or summary.get("emotions_total") or metrics.get("totalAll") or "").strip()
+    if material_summary:
+        material_summary = f"{report_type} public emotion material count {material_summary}"
+    text = str(report_text or "").strip() or material_summary or "analysis report material snapshot"
+    return [
+        {
+            "id": snapshot_id or snapshot_hash or f"analysis-{report_type}-snapshot",
+            "source_id": snapshot_id or snapshot_hash or f"analysis-{report_type}-snapshot",
+            "summary": material_summary or text,
+            "memo": text,
+            "emotion_signals": list(dict.fromkeys(signals)),
+            "domain": "emotion_structure",
+        }
+    ]
 
 
 # Strength weights (match client)
@@ -4925,7 +5032,17 @@ async def _generate_and_save(
         output_payload=content_json,
         material_fields=material_fields,
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
+        materials=rows,
+        source_id=f"analysis-{target.report_type}-runtime",
     )
+    if not _analysis_report_save_allowed(content_json):
+        return "", content_json, astor_text, {
+            "status": "skipped",
+            "report_type": target.report_type,
+            "report_id": None,
+            "skip_reason": "analysis_report_text_generation_rejected",
+            "blocked_reasons": _analysis_report_blocked_reasons(content_json),
+        }
     try:
         content_json = attach_emlis_context_anchors(
             content_json,
@@ -5239,11 +5356,30 @@ async def _generate_and_save_from_snapshot(
     content_json = _attach_analysis_report_validity_meta_if_available(
         content_json,
         material_count=snapshot_material_count,
-        output_text=light_text,
+        output_text=standard_text,
         output_payload=content_json,
         material_fields=["emotion_details", "timestamp", "memo", "categories"],
         target_period=f"{target.period_start_iso}/{target.period_end_iso}",
+        materials=_snapshot_analysis_materials_for_core(
+            snapshot_id=snap_id,
+            snapshot_hash=snap_hash,
+            report_type=report_type,
+            summary=summary,
+            views=views,
+            report_text=standard_text,
+        ),
+        source_id=snap_id or snap_hash or f"analysis-{report_type}-snapshot",
     )
+    if not _analysis_report_save_allowed(content_json):
+        return "", content_json, astor_text, {
+            "status": "skipped",
+            "report_type": report_type,
+            "scope": sc,
+            "report_id": None,
+            "public_source_hash": snap_hash,
+            "skip_reason": "analysis_report_text_generation_rejected",
+            "blocked_reasons": _analysis_report_blocked_reasons(content_json),
+        }
     try:
         content_json = attach_emlis_context_anchors(
             content_json,

@@ -20,6 +20,9 @@ def test_piece_uses_value_observation_without_overcompressing_user_claims():
     assert core.get("focus_key") == "ideal_capacity_switch_gap"
     assert "ideal_capacity_switch_gap" in core.get("must_keep_signal_keys", [])
     assert core.get("answer_preservation_policy") == "preserve_user_claims"
+    assert core.get("piece_composer_connected") is True
+    assert core.get("core_guard_passed") is True
+    assert (core.get("text_generation_core") or {}).get("answer_passed") is True
     assert "整理" in answer and "量" in answer and "目についた" in answer
     assert answer.count("。") >= 2
     assert "自己理解で大切にしているのは" not in answer
@@ -34,3 +37,6 @@ def test_piece_value_observation_blocks_broken_display_rewrite():
     assert "明る" in answer and "嬉" in answer and "怖" in answer
     assert "ますです" not in answer
     assert core.get("communicative_core_ok") is True
+    assert (core.get("text_generation_core") or {}).get("piece_composer_connected") is True
+    assert core.get("piece_composer_connected") is True
+    assert (core.get("text_generation_core") or {}).get("answer_passed") is True

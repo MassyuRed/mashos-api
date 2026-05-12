@@ -1,0 +1,434 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""EmlisObservationComposer adapter for the common text generation core.
+
+The adapter is intentionally additive.  It evaluates the candidate text that
+EmlisAI has already produced, and it never invents user-facing text.  When the
+common core rejects the candidate, callers must keep EmlisAI's existing
+fail-closed display boundary.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping, Sequence
+
+from cocolon_text_generation_core.adapters.emlis_evidence_adapter import convert_emlis_evidence_spans
+from cocolon_text_generation_core.composer import CORE_TEXT_COMPOSER_NAME, CoreTextComposer
+from cocolon_text_generation_core.policies import CORE_ID_EMLIS, DEFAULT_COVERAGE_SCOPE, STATUS_GENERATED
+from cocolon_text_generation_core.result import CoreTextCandidate
+from cocolon_text_generation_core.types import CoreTextPayload, PhraseUnit, SentencePlan, TextGenerationResult
+
+ADAPTER_NAME = "emlis_observation_composer_adapter.v1"
+EMLIS_OBSERVATION_CORE_MODEL = "cocolon_text_generation_core.emlis_observation.v1"
+REJECTION_CORE_GATE_REJECTED = "emlis_observation_core_rejected"
+REJECTION_CORE_GATE_UNAVAILABLE = "emlis_observation_core_unavailable"
+
+
+def _mapping_get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _clean(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _tokens(values: Iterable[Any] | Any | None) -> tuple[str, ...]:
+    out: list[str] = []
+    for value in _as_list(values):
+        token = _clean(value)
+        if token and token not in out:
+            out.append(token)
+    return tuple(out)
+
+
+def _payload_source_id(payload: Mapping[str, Any] | None) -> str:
+    if not isinstance(payload, Mapping):
+        return "emlis_current_input"
+    for key in ("current_input_id", "input_id", "emotion_id", "trace_id"):
+        token = _clean(payload.get(key))
+        if token:
+            return token
+    return "emlis_current_input"
+
+
+def _composition_contract(payload: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+    value = payload.get("composition_contract")
+    return value if isinstance(value, Mapping) else {}
+
+
+def _forbidden_surfaces(payload: Mapping[str, Any] | None) -> tuple[str, ...]:
+    contract = _composition_contract(payload)
+    return _tokens(contract.get("forbidden_output_surfaces") or ())
+
+
+def _unit_id(unit: Any) -> str:
+    return _clean(_mapping_get(unit, "phrase_unit_id", ""))
+
+
+def _unit_evidence_id(unit: Any) -> str:
+    return _clean(_mapping_get(unit, "evidence_span_id", ""))
+
+
+def _unit_text(unit: Any) -> str:
+    return _clean(_mapping_get(unit, "compressed_text", "") or _mapping_get(unit, "text", "") or _mapping_get(unit, "raw_text", ""))
+
+
+def _unit_role(unit: Any) -> str:
+    return _clean(_mapping_get(unit, "role", ""))
+
+
+def _unit_quality_flags(unit: Any) -> tuple[str, ...]:
+    return _tokens(_mapping_get(unit, "quality_flags", ()))
+
+
+def _unit_must_keep(unit: Any) -> bool:
+    return bool(_mapping_get(unit, "must_keep", False))
+
+
+def _unit_meta(unit: Any) -> dict[str, Any]:
+    return {
+        "source_adapter": ADAPTER_NAME,
+        "source_kind": "emlis_phrase_unit",
+        "polarity": _clean(_mapping_get(unit, "polarity", "")),
+        "raw_text": _clean(_mapping_get(unit, "raw_text", "")),
+    }
+
+
+def convert_emlis_phrase_unit(unit: Any, *, force_must_keep: bool | None = None) -> PhraseUnit | None:
+    unit_id = _unit_id(unit)
+    evidence_span_id = _unit_evidence_id(unit)
+    text = _unit_text(unit)
+    if not unit_id or not evidence_span_id or not text:
+        return None
+    return PhraseUnit(
+        phrase_unit_id=unit_id,
+        evidence_span_id=evidence_span_id,
+        text=text,
+        role=_unit_role(unit),
+        quality_flags=_unit_quality_flags(unit),
+        must_keep=_unit_must_keep(unit) if force_must_keep is None else bool(force_must_keep),
+        meta=_unit_meta(unit),
+    )
+
+
+def _selected_emlis_units(
+    phrase_units: Iterable[Any] | None,
+    *,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str] | None,
+) -> list[Any]:
+    units = list(phrase_units or [])
+    used_ids = set(_tokens(used_phrase_unit_ids))
+    used_evidence = set(_tokens(used_evidence_span_ids))
+    selected: list[Any] = []
+    for unit in units:
+        unit_id = _unit_id(unit)
+        evidence_id = _unit_evidence_id(unit)
+        if used_ids and unit_id in used_ids:
+            selected.append(unit)
+        elif not used_ids and evidence_id in used_evidence:
+            selected.append(unit)
+    return selected
+
+
+def convert_emlis_phrase_units(
+    phrase_units: Iterable[Any] | None,
+    *,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str] | None = None,
+    required_roles: Sequence[str] | None = None,
+) -> tuple[PhraseUnit, ...]:
+    required = set(_tokens(required_roles))
+    selected = _selected_emlis_units(
+        phrase_units,
+        used_evidence_span_ids=used_evidence_span_ids,
+        used_phrase_unit_ids=used_phrase_unit_ids,
+    )
+    converted: list[PhraseUnit] = []
+    for unit in selected:
+        must_keep = _unit_role(unit) in required or _unit_must_keep(unit)
+        common = convert_emlis_phrase_unit(unit, force_must_keep=must_keep)
+        if common is not None and common.phrase_unit_id not in {item.phrase_unit_id for item in converted}:
+            converted.append(common)
+    return tuple(converted)
+
+
+def _plan_ids(plan: Any) -> tuple[str, ...]:
+    return _tokens(_mapping_get(plan, "phrase_unit_ids", ()))
+
+
+def _plan_id(plan: Any, index: int) -> str:
+    return _clean(_mapping_get(plan, "sentence_plan_id", "") or _mapping_get(plan, "plan_id", "") or _mapping_get(plan, "line_role", "")) or f"emlis-plan-{index}"
+
+
+def convert_emlis_sentence_plan(plan: Any, *, index: int, available_phrase_unit_ids: set[str]) -> SentencePlan | None:
+    ids = tuple(unit_id for unit_id in _plan_ids(plan) if unit_id in available_phrase_unit_ids)
+    if not ids:
+        return None
+    return SentencePlan(
+        sentence_plan_id=_plan_id(plan, index),
+        phrase_unit_ids=ids,
+        relation_type=_clean(_mapping_get(plan, "relation_type", "")),
+        line_role=_clean(_mapping_get(plan, "line_role", "")),
+        max_chars=int(_mapping_get(plan, "max_chars", 120) or 120),
+        must_include=bool(_mapping_get(plan, "must_include", True)),
+        meta={"source_adapter": ADAPTER_NAME, "source_kind": "emlis_sentence_plan"},
+    )
+
+
+def convert_emlis_sentence_plans(
+    sentence_plans: Iterable[Any] | None,
+    *,
+    phrase_units: Sequence[PhraseUnit],
+    used_phrase_unit_ids: Sequence[str] | None = None,
+) -> tuple[SentencePlan, ...]:
+    available_ids = {unit.phrase_unit_id for unit in phrase_units if unit.phrase_unit_id}
+    converted: list[SentencePlan] = []
+    for index, plan in enumerate(sentence_plans or (), start=1):
+        common = convert_emlis_sentence_plan(plan, index=index, available_phrase_unit_ids=available_ids)
+        if common is not None:
+            converted.append(common)
+    if converted:
+        return tuple(converted)
+
+    # The shallow current-input path does not own Emlis SentencePlan objects.
+    # It still needs a common plan so the core can validate the already-built
+    # candidate without generating new text.
+    ordered_ids = tuple(unit_id for unit_id in _tokens(used_phrase_unit_ids) if unit_id in available_ids) or tuple(
+        unit.phrase_unit_id for unit in phrase_units
+    )
+    return tuple(
+        SentencePlan(
+            sentence_plan_id=f"emlis-used-unit-{index}",
+            phrase_unit_ids=(unit_id,),
+            relation_type="candidate_used_phrase_unit",
+            line_role="candidate_line",
+            must_include=True,
+            meta={"source_adapter": ADAPTER_NAME, "source_kind": "emlis_candidate_used_unit"},
+        )
+        for index, unit_id in enumerate(ordered_ids, start=1)
+    )
+
+
+def _candidate_meta(response: Mapping[str, Any] | None, composer_meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = dict(composer_meta or {}) if isinstance(composer_meta, Mapping) else {}
+    if isinstance(response, Mapping):
+        meta.update(
+            {
+                "adapter_name": ADAPTER_NAME,
+                "composer_source": _clean(response.get("composer_source")),
+                "generation_method": _clean(response.get("generation_method")),
+                "generation_scope": _clean(response.get("generation_scope")),
+                "fixed_string_renderer_used": bool(response.get("fixed_string_renderer_used")),
+            }
+        )
+    else:
+        meta["adapter_name"] = ADAPTER_NAME
+    return meta
+
+
+def _common_candidate(
+    *,
+    comment_text: str,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str] | None,
+    coverage_scope: str,
+    composer_model: str,
+    response: Mapping[str, Any] | None,
+    composer_meta: Mapping[str, Any] | None,
+) -> CoreTextCandidate:
+    return CoreTextCandidate(
+        text=comment_text,
+        used_evidence_span_ids=used_evidence_span_ids,
+        used_phrase_unit_ids=used_phrase_unit_ids or (),
+        coverage_scope=coverage_scope or DEFAULT_COVERAGE_SCOPE,
+        composer_model=composer_model or EMLIS_OBSERVATION_CORE_MODEL,
+        meta=_candidate_meta(response, composer_meta),
+    )
+
+
+def required_roles_from_meta(composer_meta: Mapping[str, Any] | None) -> tuple[str, ...]:
+    if not isinstance(composer_meta, Mapping):
+        return tuple()
+    covered = _tokens(composer_meta.get("covered_roles") or ())
+    if covered:
+        return covered
+    return _tokens(composer_meta.get("required_roles") or ())
+
+
+def build_emlis_observation_core_payload(
+    *,
+    composer_payload: Mapping[str, Any] | None,
+    evidence_items: Iterable[Any] | None,
+    phrase_units: Iterable[Any] | None,
+    sentence_plans: Iterable[Any] | None,
+    comment_text: str,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str] | None = None,
+    coverage_scope: str = "",
+    composer_model: str = "",
+    composer_meta: Mapping[str, Any] | None = None,
+    response: Mapping[str, Any] | None = None,
+) -> tuple[CoreTextPayload, CoreTextCandidate]:
+    required_roles = required_roles_from_meta(composer_meta)
+    evidence_result = convert_emlis_evidence_spans(evidence_items, source_id=_payload_source_id(composer_payload))
+    used_ids = set(_tokens(used_evidence_span_ids))
+    common_evidence = tuple(
+        span for span in evidence_result.evidence_spans if not used_ids or span.span_id in used_ids
+    )
+    common_phrases = convert_emlis_phrase_units(
+        phrase_units,
+        used_evidence_span_ids=tuple(used_ids),
+        used_phrase_unit_ids=used_phrase_unit_ids,
+        required_roles=required_roles,
+    )
+    common_used_phrase_ids = tuple(
+        unit_id for unit_id in _tokens(used_phrase_unit_ids) if unit_id in {unit.phrase_unit_id for unit in common_phrases}
+    ) or tuple(unit.phrase_unit_id for unit in common_phrases)
+    common_plans = convert_emlis_sentence_plans(
+        sentence_plans,
+        phrase_units=common_phrases,
+        used_phrase_unit_ids=common_used_phrase_ids,
+    )
+    candidate = _common_candidate(
+        comment_text=comment_text,
+        used_evidence_span_ids=tuple(used_ids),
+        used_phrase_unit_ids=common_used_phrase_ids,
+        coverage_scope=coverage_scope,
+        composer_model=composer_model,
+        response=response,
+        composer_meta=composer_meta,
+    )
+    payload = CoreTextPayload(
+        core_id=CORE_ID_EMLIS,
+        source_anchors=evidence_result.source_anchors,
+        evidence_spans=common_evidence,
+        phrase_units=common_phrases,
+        sentence_plans=common_plans,
+        tone_policy={"core_id": CORE_ID_EMLIS, "voice_distance": "emlis_observation"},
+        safety_policy={"core_id": CORE_ID_EMLIS, "strictness": "emlis_observation"},
+        must_keep_roles=required_roles,
+        forbidden_surface_patterns=_forbidden_surfaces(composer_payload),
+        composer_model=composer_model or EMLIS_OBSERVATION_CORE_MODEL,
+        meta={
+            "adapter_name": ADAPTER_NAME,
+            "source_core": CORE_ID_EMLIS,
+            "coverage_scope": coverage_scope,
+            "evidence_adapter": evidence_result.as_meta(),
+            "candidate": candidate.as_meta(),
+        },
+    )
+    return payload, candidate
+
+
+@dataclass(frozen=True)
+class EmlisObservationCoreEvaluation:
+    adapter_name: str
+    payload: CoreTextPayload
+    candidate: CoreTextCandidate
+    result: TextGenerationResult
+
+    @property
+    def passed(self) -> bool:
+        return bool(self.result.status == STATUS_GENERATED and self.result.text)
+
+    def as_meta(self) -> dict[str, Any]:
+        return {
+            "adapter_name": self.adapter_name,
+            "core_composer": CORE_TEXT_COMPOSER_NAME,
+            "core_id": self.payload.core_id,
+            "status": self.result.status,
+            "passed": self.passed,
+            "text_length": len(self.result.text or self.candidate.text or ""),
+            "used_evidence_span_ids": list(self.result.used_evidence_span_ids or self.candidate.used_evidence_span_ids),
+            "used_phrase_unit_ids": list(self.candidate.used_phrase_unit_ids),
+            "coverage_scope": self.result.coverage_scope or self.candidate.coverage_scope,
+            "quality_flags": list(self.result.quality_flags),
+            "rejection_reasons": list(self.result.rejection_reasons),
+            "composer_model": self.result.composer_model,
+            "payload": {
+                "evidence_span_count": len(self.payload.evidence_spans),
+                "phrase_unit_count": len(self.payload.phrase_units),
+                "sentence_plan_count": len(self.payload.sentence_plans),
+                "must_keep_roles": list(self.payload.must_keep_roles),
+            },
+            "result": self.result.as_meta(),
+        }
+
+
+def evaluate_emlis_observation_candidate(
+    *,
+    composer_payload: Mapping[str, Any] | None,
+    evidence_items: Iterable[Any] | None,
+    phrase_units: Iterable[Any] | None,
+    sentence_plans: Iterable[Any] | None,
+    comment_text: str,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str] | None = None,
+    coverage_scope: str = "",
+    composer_model: str = "",
+    composer_meta: Mapping[str, Any] | None = None,
+    response: Mapping[str, Any] | None = None,
+    core_composer: CoreTextComposer | None = None,
+) -> EmlisObservationCoreEvaluation:
+    payload, candidate = build_emlis_observation_core_payload(
+        composer_payload=composer_payload,
+        evidence_items=evidence_items,
+        phrase_units=phrase_units,
+        sentence_plans=sentence_plans,
+        comment_text=comment_text,
+        used_evidence_span_ids=used_evidence_span_ids,
+        used_phrase_unit_ids=used_phrase_unit_ids,
+        coverage_scope=coverage_scope,
+        composer_model=composer_model or EMLIS_OBSERVATION_CORE_MODEL,
+        composer_meta=composer_meta,
+        response=response,
+    )
+    result = (core_composer or CoreTextComposer(composer_model=EMLIS_OBSERVATION_CORE_MODEL)).generate(payload, candidate)
+    return EmlisObservationCoreEvaluation(adapter_name=ADAPTER_NAME, payload=payload, candidate=candidate, result=result)
+
+
+def attach_core_evaluation_meta(response: Mapping[str, Any], evaluation: EmlisObservationCoreEvaluation) -> dict[str, Any]:
+    out = dict(response or {})
+    meta = dict(out.get("composer_meta") or {}) if isinstance(out.get("composer_meta"), Mapping) else {}
+    core_meta = evaluation.as_meta()
+    meta["text_generation_core"] = core_meta
+    meta["core_text_generation"] = core_meta
+    out["composer_meta"] = meta
+    return out
+
+
+def core_rejection_reason(evaluation: EmlisObservationCoreEvaluation) -> str:
+    if evaluation.result.status == "unavailable":
+        return REJECTION_CORE_GATE_UNAVAILABLE
+    return REJECTION_CORE_GATE_REJECTED
+
+
+__all__ = [
+    "ADAPTER_NAME",
+    "EMLIS_OBSERVATION_CORE_MODEL",
+    "EmlisObservationCoreEvaluation",
+    "REJECTION_CORE_GATE_REJECTED",
+    "REJECTION_CORE_GATE_UNAVAILABLE",
+    "attach_core_evaluation_meta",
+    "build_emlis_observation_core_payload",
+    "convert_emlis_phrase_unit",
+    "convert_emlis_phrase_units",
+    "convert_emlis_sentence_plan",
+    "convert_emlis_sentence_plans",
+    "core_rejection_reason",
+    "evaluate_emlis_observation_candidate",
+    "required_roles_from_meta",
+]

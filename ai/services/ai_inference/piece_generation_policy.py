@@ -66,10 +66,14 @@ class PieceGenerationPolicyResult:
     value_observation_signal_keys: Optional[List[str]] = None
     answer_preservation_policy: str = "source_scaled"
     minimum_detail_level: str = "source_scaled"
+    text_generation_core: Optional[Dict[str, Any]] = None
+    piece_composer_connected: bool = False
+    core_text_generation_status: str = ""
     schema_version: str = PIECE_CORE_SCHEMA_VERSION
 
     def as_storage_meta(self) -> Dict[str, Any]:
-        return {
+        text_generation_core = dict(self.text_generation_core or {}) if isinstance(self.text_generation_core, Mapping) else {}
+        payload = {
             "schema_version": str(self.schema_version),
             "core_id": "piece",
             "visibility_status": str(self.visibility_status),
@@ -86,7 +90,13 @@ class PieceGenerationPolicyResult:
             "value_observation_signal_keys": list(self.value_observation_signal_keys or []),
             "answer_preservation_policy": str(self.answer_preservation_policy),
             "minimum_detail_level": str(self.minimum_detail_level),
+            "piece_composer_connected": bool(self.piece_composer_connected or text_generation_core.get("piece_composer_connected", False)),
+            "core_text_generation_status": str(self.core_text_generation_status or text_generation_core.get("status") or text_generation_core.get("answer_status") or ""),
         }
+        if text_generation_core:
+            payload["text_generation_core"] = text_generation_core
+            payload["core_text_generation"] = text_generation_core
+        return payload
 
     def as_public_contract(self, *, include_safety_flags: bool = False) -> Dict[str, Any]:
         payload = {
@@ -119,6 +129,29 @@ def _ordered_unique(values: Iterable[Any]) -> List[str]:
     out: List[str] = []
     for value in values or []:
         _append_once(out, str(value or ""))
+    return out
+
+
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Mapping):
+        return _json_safe_mapping(value)
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_value(item) for item in value]
+    return str(value)
+
+
+def _json_safe_mapping(value: Mapping[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    out: Dict[str, Any] = {}
+    for key, item in value.items():
+        key_text = str(key or "").strip()
+        if key_text:
+            out[key_text] = _json_safe_value(item)
     return out
 
 
@@ -363,6 +396,7 @@ def build_piece_generation_policy(
     source_texts: Optional[Sequence[Any]] = None,
     emotion_input: Mapping[str, Any] | None = None,
     visibility_status: str = VISIBILITY_PREVIEW_READY,
+    text_generation_core: Mapping[str, Any] | None = None,
 ) -> PieceGenerationPolicyResult:
     text = _collapse(piece_text)
     state = str(getattr(display_result, "answer_display_state", "") or "").strip().lower()
@@ -395,6 +429,10 @@ def build_piece_generation_policy(
         _append_once(safety_flags, "overcompression_risk")
     if not value_policy.get("meaning_preserved", True):
         _append_once(safety_flags, "meaning_not_preserved")
+    core_meta = _json_safe_mapping(text_generation_core)
+    core_status = str(core_meta.get("status") or core_meta.get("answer_status") or "")
+    if core_meta and core_status not in {"generated", "passed"}:
+        _append_once(safety_flags, "core_text_generation_rejected")
     return PieceGenerationPolicyResult(
         visibility_status=str(visibility_status or VISIBILITY_PREVIEW_READY),
         generation_status=generation_status,
@@ -408,6 +446,9 @@ def build_piece_generation_policy(
         value_observation_signal_keys=list(value_policy.get("signal_keys", []) or []),
         answer_preservation_policy=str(value_policy.get("answer_preservation_policy") or "source_scaled"),
         minimum_detail_level=str(value_policy.get("minimum_detail_level") or "source_scaled"),
+        text_generation_core=core_meta,
+        piece_composer_connected=bool(core_meta.get("piece_composer_connected", False)),
+        core_text_generation_status=core_status,
     )
 
 
@@ -416,6 +457,10 @@ def piece_policy_from_content_json(content_json: Mapping[str, Any] | None) -> Pi
     national_core = source.get("national_core") if isinstance(source.get("national_core"), Mapping) else {}
     piece_core = source.get("piece_core") if isinstance(source.get("piece_core"), Mapping) else {}
     core = {**dict(piece_core), **dict(national_core)}
+    text_generation_core = core.get("text_generation_core") if isinstance(core.get("text_generation_core"), Mapping) else {}
+    if not text_generation_core and isinstance(core.get("core_text_generation"), Mapping):
+        text_generation_core = core.get("core_text_generation")
+    safe_core_meta = _json_safe_mapping(text_generation_core)
     return PieceGenerationPolicyResult(
         visibility_status=str(core.get("visibility_status") or VISIBILITY_PREVIEW_READY),
         generation_status=str(core.get("generation_status") or GENERATION_GENERATED),
@@ -430,6 +475,9 @@ def piece_policy_from_content_json(content_json: Mapping[str, Any] | None) -> Pi
         value_observation_signal_keys=[str(x).strip() for x in (core.get("value_observation_signal_keys") or []) if str(x).strip()],
         answer_preservation_policy=str(core.get("answer_preservation_policy") or "source_scaled"),
         minimum_detail_level=str(core.get("minimum_detail_level") or "source_scaled"),
+        text_generation_core=safe_core_meta,
+        piece_composer_connected=bool(core.get("piece_composer_connected", False) or safe_core_meta.get("piece_composer_connected", False)),
+        core_text_generation_status=str(core.get("core_text_generation_status") or safe_core_meta.get("status") or safe_core_meta.get("answer_status") or ""),
         schema_version=str(core.get("schema_version") or PIECE_CORE_SCHEMA_VERSION),
     )
 
@@ -455,6 +503,9 @@ def with_piece_policy_visibility(
         value_observation_signal_keys=list(policy.value_observation_signal_keys or []),
         answer_preservation_policy=policy.answer_preservation_policy,
         minimum_detail_level=policy.minimum_detail_level,
+        text_generation_core=dict(policy.text_generation_core or {}),
+        piece_composer_connected=bool(policy.piece_composer_connected),
+        core_text_generation_status=str(policy.core_text_generation_status or ""),
         schema_version=policy.schema_version,
     )
 

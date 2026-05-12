@@ -49,6 +49,11 @@ from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_template_echo_guard import guard_template_echo
 from emlis_ai_display_gate import build_emlis_gate_trace, build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
 from emotion_history_search_service import build_open_topic_anchor_candidates, extract_repeated_categories
+from cocolon_text_generation_core.policies import (
+    CORE_ID_EMLIS,
+    TEXT_GENERATION_CORE_PHASE8_NEXT_PHASE,
+    TEXT_GENERATION_CORE_PHASE8_STOP_POINT,
+)
 
 _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
 
@@ -1004,6 +1009,14 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+def _composer_core_generation_meta(composer_candidate: Any) -> Dict[str, Any]:
+    meta = getattr(composer_candidate, "composer_meta", {}) or {}
+    if not isinstance(meta, dict):
+        return {}
+    core_meta = meta.get("text_generation_core") or meta.get("core_text_generation")
+    return dict(core_meta or {}) if isinstance(core_meta, dict) else {}
+
+
 def _multi_perspective_meta(
     *,
     trace_id: str,
@@ -1119,6 +1132,9 @@ def _multi_perspective_meta(
         "full_graph_retained_for_meta": bool(scope_meta),
         "excluded_claims_retained_for_meta": list(scope_meta.get("excluded_claims") or []) if isinstance(scope_meta, dict) else [],
     }
+    core_generation_meta = _composer_core_generation_meta(composer_candidate)
+    core_adapter_ready = bool(core_generation_meta.get("adapter_name") == "emlis_observation_composer_adapter.v1")
+    core_generation_ready = bool(core_generation_meta.get("passed"))
     return {
         "version": "emlis_ai_v3",
         "kernel_version": "multi_perspective_observation.v1",
@@ -1167,6 +1183,8 @@ def _multi_perspective_meta(
             "phase7_rollout_metrics": phase7_rollout_metrics,
             "limited_observation_scope": scope_meta,
             "scoped_grounding": scoped_grounding_meta,
+            "text_generation_core": core_generation_meta,
+            "core_text_generation": core_generation_meta,
             "grounding_graph": grounding_graph_payload,
             "phase_gate": {
                 "completed_phases": completed_phases,
@@ -1185,6 +1203,14 @@ def _multi_perspective_meta(
                 "perspective_board_ready": phase5_board_ready,
                 "observation_graph_ready": phase5_graph_ready,
                 "composer_contract_ready": phase6_contract_ready,
+                "emlis_observation_composer_adapter_ready": core_adapter_ready,
+                "text_generation_core_ready": core_generation_ready,
+                "text_generation_core_stop_point": TEXT_GENERATION_CORE_PHASE8_STOP_POINT,
+                "text_generation_core_next_phase": TEXT_GENERATION_CORE_PHASE8_NEXT_PHASE,
+                "text_generation_core_current_connected_core": CORE_ID_EMLIS,
+                "piece_composer_connected": False,
+                "analysis_composer_connected": False,
+                "piece_analysis_text_generation_unstarted": True,
                 "reader_gate_ready": isinstance(gate_trace.get("reader"), dict),
                 "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
                 "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),

@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import ast
 import inspect
+import re
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import emlis_ai_limited_composer_client as limited_composer_module
 
 from emlis_ai_conversation_composer_service import (
     build_conversation_composer_payload,
@@ -9,6 +17,7 @@ from emlis_ai_conversation_composer_service import (
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_limited_composer_client import CocolonLimitedComposerClient
 from emlis_ai_limited_observation_scope_service import build_limited_observation_scope
+from fixtures.emlis_ai_phase8_cases import PHASE8_CASES
 from emlis_ai_observation_integrator_service import integrate_perspective_board
 from emlis_ai_perspective_board import build_perspective_board
 from emlis_ai_perspective_observers import run_perspective_observers
@@ -20,6 +29,77 @@ SAMPLE_MEMO = """
 気をつけなきゃ行けないこと、全部無視して普通に生活したい。でもそうしたらもっと悪化する。
 そんなの分かってる。たまに逃げ出したくなる。
 """
+
+
+_ALLOWED_GUARD_ONLY_CONSTANT_NAMES = {"_FORBIDDEN_SURFACES", "_MARKER_NAMES"}
+
+
+def _limited_composer_module_source() -> str:
+    return inspect.getsource(limited_composer_module)
+
+
+def _is_guard_only_assignment(node: ast.AST) -> bool:
+    if isinstance(node, ast.Assign):
+        names = {target.id for target in node.targets if isinstance(target, ast.Name)}
+        return bool(names.intersection(_ALLOWED_GUARD_ONLY_CONSTANT_NAMES))
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return node.target.id in _ALLOWED_GUARD_ONLY_CONSTANT_NAMES
+    return False
+
+
+def _limited_composer_source_without_guard_only_constants() -> str:
+    source = _limited_composer_module_source()
+    tree = ast.parse(source)
+    excluded_lines: set[int] = set()
+    for node in tree.body:
+        if _is_guard_only_assignment(node):
+            start = int(getattr(node, "lineno", 0) or 0)
+            end = int(getattr(node, "end_lineno", start) or start)
+            excluded_lines.update(range(start, end + 1))
+    return "\n".join(
+        line
+        for lineno, line in enumerate(source.splitlines(), start=1)
+        if lineno not in excluded_lines
+    )
+
+
+def _limited_composer_runtime_string_literals() -> list[str]:
+    source = _limited_composer_module_source()
+    tree = ast.parse(source)
+    literals: list[str] = []
+
+    class RuntimeStringVisitor(ast.NodeVisitor):
+        def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802 - ast visitor API
+            if _is_guard_only_assignment(node):
+                return
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802 - ast visitor API
+            if _is_guard_only_assignment(node):
+                return
+            self.generic_visit(node)
+
+        def visit_Constant(self, node: ast.Constant) -> None:  # noqa: N802 - ast visitor API
+            if isinstance(node.value, str):
+                literals.append(node.value)
+
+    RuntimeStringVisitor().visit(tree)
+    return literals
+
+
+def _compact_source_text(value: str) -> str:
+    return re.sub(r"[\s　、,。.!！?？\t\n\r『』「」（）()\[\]【】]", "", str(value or ""))
+
+
+def _phase8_example_input_phrases() -> list[str]:
+    phrases: set[str] = set()
+    for case in PHASE8_CASES:
+        memo = str(case.get("memo") or "")
+        for phrase in re.split(r"[。！？!?\n]+", memo):
+            cleaned = phrase.strip(" 　、,。.!！?？")
+            if len(_compact_source_text(cleaned)) >= 8:
+                phrases.add(cleaned)
+    return sorted(phrases)
 
 
 def _payload_for(memo: str = SAMPLE_MEMO):
@@ -105,7 +185,42 @@ def test_limited_composer_returns_unavailable_for_non_scoped_or_unsafe_payload()
 
 
 def test_limited_composer_source_has_no_runtime_fixed_observation_surfaces():
-    source = inspect.getsource(CocolonLimitedComposerClient)
+    source = _limited_composer_source_without_guard_only_constants()
+    class_source = inspect.getsource(CocolonLimitedComposerClient)
+    literals = _limited_composer_runtime_string_literals()
+    literal_blob = "\n".join(literals).lower()
+
+    assert "class CocolonLimitedComposerClient" in source
+    assert "def _compress_text" in source
+    assert "def _compress_text" not in class_source
+
     for banned in ("そこには", "もありました", "も含まれていました", "と思います", "として見ています", "一緒に見ます"):
-        assert banned not in source
+        assert banned not in source, banned
+        assert all(banned not in literal for literal in literals), banned
     assert "fallback" not in source.lower()
+    assert "fallback" not in literal_blob
+
+
+def test_limited_composer_module_does_not_embed_phase8_example_input_sentences():
+    source = _limited_composer_source_without_guard_only_constants()
+    compact_source = _compact_source_text(source)
+    compact_literals = [_compact_source_text(value) for value in _limited_composer_runtime_string_literals()]
+
+    for phrase in _phase8_example_input_phrases():
+        compact_phrase = _compact_source_text(phrase)
+        assert compact_phrase not in compact_source, phrase
+        assert all(compact_phrase not in literal for literal in compact_literals), phrase
+
+
+def test_limited_composer_module_has_no_example_phrase_replacement_table():
+    source = _limited_composer_source_without_guard_only_constants()
+    for marker in (
+        "example_phrase_replacement",
+        "example_replacement",
+        "fixed_observation_template",
+        "static_observation_text",
+        "role_template",
+        "replacement_map",
+        "replacements =",
+    ):
+        assert marker not in source

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import inspect
 
+import emlis_ai_limited_composer_client as limited_composer_module
 from emlis_ai_conversation_composer_service import (
     compose_emlis_conversation_candidate,
     phase6_composer_contract_ready,
@@ -29,6 +31,31 @@ SAMPLE_MEMO = """
 気をつけなきゃ行けないこと、全部無視して普通に生活したい。でもそうしたらもっと悪化する。
 そんなの分かってる。たまに逃げ出したくなる。
 """
+
+
+_ALLOWED_STATIC_GUARD_TABLES = {"_FORBIDDEN_SURFACES", "_MARKER_NAMES"}
+
+
+def _limited_composer_source_without_static_guard_tables() -> str:
+    source = inspect.getsource(limited_composer_module)
+    tree = ast.parse(source)
+    suppressed_lines: set[int] = set()
+    for node in tree.body:
+        target_names: set[str] = set()
+        if isinstance(node, ast.Assign):
+            target_names = {target.id for target in node.targets if isinstance(target, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target_names = {node.target.id}
+        if not target_names.intersection(_ALLOWED_STATIC_GUARD_TABLES):
+            continue
+        start = int(getattr(node, "lineno", 0) or 0)
+        end = int(getattr(node, "end_lineno", start) or start)
+        suppressed_lines.update(range(start, end + 1))
+    return "\n".join(
+        line
+        for line_no, line in enumerate(source.splitlines(), start=1)
+        if line_no not in suppressed_lines
+    )
 
 
 def _scoped_case():
@@ -77,7 +104,13 @@ def test_phase6_limited_composer_static_renderer_contract_stays_sealed():
     assert phase6_composer_contract_ready() is True
     assert audit_limited_composer_contract() == []
 
-    source = inspect.getsource(CocolonLimitedComposerClient)
+    source = _limited_composer_source_without_static_guard_tables()
+    class_source = inspect.getsource(CocolonLimitedComposerClient)
+
+    assert "class CocolonLimitedComposerClient" in source
+    assert "def _compress_text" in source
+    assert "def _compress_text" not in class_source
+
     forbidden_runtime_markers = (
         "_line_primary",
         "_line_pressure",

@@ -29,3 +29,37 @@ def test_emotion_domain_blocks_self_structure_value_observation_material():
     assert result.save_allowed is False
     assert result.value_observation_domain_ok is False
     assert "emotion_domain_contains_self_structure_material" in result.blocked_reasons
+
+
+def test_analysis_validity_gate_uses_common_analysis_text_safety_meta():
+    from analysis_report_validity_gate import attach_report_validity_meta
+
+    result = evaluate_analysis_report_validity(
+        domain="emotion_structure",
+        material_count=2,
+        output_text="この期間は、緊張が続いた記録が観測されています。",
+        output_payload={"standardReport": {"contentText": "この期間は、緊張が続いた記録が観測されています。"}},
+        material_fields=["emotion_details", "memo"],
+    )
+    updated = attach_report_validity_meta({"standardReport": {"contentText": "本文"}}, result)
+
+    assert result.save_allowed is True
+    assert result.analysis_text_generation_checked is True
+    assert result.analysis_text_generation_passed is True
+    assert result.as_meta()["analysis_composer_connected"] is True
+    assert updated["standardReport"] == {"contentText": "本文"}
+    assert updated["textGenerationCore"]["analysis_composer"]["validity_gate_connected"] is True
+
+
+def test_analysis_validity_gate_blocks_second_person_diagnosis_through_common_guard():
+    result = evaluate_analysis_report_validity(
+        domain="self_structure",
+        material_count=2,
+        output_text="あなたは人との距離を避けるタイプです。心理学的にはトラウマの症状として説明できます。",
+        material_fields=["text_primary", "role_hint", "target_hint"],
+    )
+
+    assert result.save_allowed is False
+    assert result.analysis_text_generation_checked is True
+    assert result.analysis_text_generation_passed is False
+    assert "analysis_common_text_safety_rejected" in result.blocked_reasons

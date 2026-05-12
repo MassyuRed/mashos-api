@@ -98,3 +98,46 @@ def test_emlis_ai_quality_gate_blocks_empty_receive_repetition():
     assert result.relationship_line_ok is False
     assert result.mechanical_meta_language_ok is False
     assert result.passed is False
+
+
+
+def test_phase12_connects_analysis_composer_while_evidence_adapters_remain_fail_closed():
+    from pathlib import Path
+
+    from cocolon_text_generation_core.adapters.analysis_composer import (
+        ADAPTER_NAME as ANALYSIS_COMPOSER_ADAPTER_NAME,
+        ANALYSIS_COMPOSER_CONNECTED,
+        ANALYSIS_VALIDITY_GATE_CONNECTED,
+    )
+    from cocolon_text_generation_core.adapters.analysis_evidence_adapter import (
+        REJECTION_NOT_CONNECTED as ANALYSIS_REJECTION_NOT_CONNECTED,
+        convert_analysis_evidence_spans,
+    )
+    from cocolon_text_generation_core.adapters.piece_composer import ADAPTER_NAME as PIECE_COMPOSER_ADAPTER_NAME
+    from cocolon_text_generation_core.adapters.piece_evidence_adapter import (
+        REJECTION_NOT_CONNECTED as PIECE_REJECTION_NOT_CONNECTED,
+        convert_piece_evidence_spans,
+    )
+
+    ai_root = Path(__file__).resolve().parents[2]
+    adapter_dir = ai_root / "services" / "ai_inference" / "cocolon_text_generation_core" / "adapters"
+
+    assert (adapter_dir / "piece_composer.py").exists()
+    assert PIECE_COMPOSER_ADAPTER_NAME == "piece_composer.v1"
+    assert (adapter_dir / "analysis_composer.py").exists()
+    assert ANALYSIS_COMPOSER_ADAPTER_NAME == "analysis_composer.v1"
+    assert ANALYSIS_COMPOSER_CONNECTED is True
+    assert ANALYSIS_VALIDITY_GATE_CONNECTED is True
+
+    # PieceComposer and AnalysisComposer are connected through their input
+    # contracts. The older raw evidence adapters stay skeleton-only and
+    # fail-closed until each runtime owns a dedicated evidence path.
+    piece_result = convert_piece_evidence_spans([{"span_id": "piece-1", "raw_text": "まだ接続しない"}])
+    analysis_result = convert_analysis_evidence_spans([{"span_id": "analysis-1", "raw_text": "まだ接続しない"}])
+
+    assert piece_result.usable is False
+    assert analysis_result.usable is False
+    assert PIECE_REJECTION_NOT_CONNECTED in piece_result.rejection_reasons
+    assert ANALYSIS_REJECTION_NOT_CONNECTED in analysis_result.rejection_reasons
+    assert "source_evidence_missing" in piece_result.rejection_reasons
+    assert "source_evidence_missing" in analysis_result.rejection_reasons

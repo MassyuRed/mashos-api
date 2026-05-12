@@ -26,6 +26,10 @@ from piece_generated_display import (
 from piece_text_formatter import STATE_BLOCKED, format_reflection_text
 from piece_generated_identity import compute_generated_question_q_key
 from piece_generation_policy import build_piece_generation_policy
+from cocolon_text_generation_core.adapters.piece_composer import (
+    build_runtime_piece_plan,
+    evaluate_piece_composer,
+)
 from cocolon_value_observation_service import (
     build_value_observation_plan,
     build_value_observation_signals,
@@ -1045,6 +1049,46 @@ def generate_emotion_reflection_preview(
         )
 
     answer_display_text = display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer)
+
+    piece_runtime_plan = core_plan or build_runtime_piece_plan(
+        focus_key=focus_key,
+        question=question,
+        answer=answer_display_text,
+        source_claims=text_candidates,
+        answer_preservation_policy="source_scaled",
+        overcompression_risk=False,
+        minimum_detail_level="source_scaled",
+    )
+    piece_core_evaluation = evaluate_piece_composer(
+        piece_runtime_plan,
+        source_texts=text_candidates,
+        source_id="piece_preview_current_input",
+        question_text=question,
+        answer_text=answer_display_text,
+    )
+    piece_core_generation_meta = piece_core_evaluation.as_meta()
+    if piece_core_evaluation.answer_passed:
+        # Phase 10 uses the common core as a guard layer.  Public Piece text is
+        # not regenerated here, so preview/publish hash identity stays tied to
+        # the preview body that passed the guard.
+        display_result = replace(
+            display_result,
+            flags=_merge_unique(display_result.flags, ["piece:common_core_guarded"]),
+            actions=_merge_unique(display_result.actions, ["piece:common_core_guarded"]),
+        )
+    else:
+        answer_display_text = ""
+        display_result = replace(
+            display_result,
+            answer_display_text="",
+            answer_display_state=STATE_BLOCKED,
+            changed=True,
+            flags=_merge_unique(display_result.flags, ["piece:common_core_fail_closed"]),
+            actions=_merge_unique(display_result.actions, ["piece:common_core_fail_closed"]),
+            answer_norm_hash="",
+            rewrite_needed=True,
+        )
+
     piece_policy = build_piece_generation_policy(
         piece_text=answer_display_text,
         raw_answer=raw_answer,
@@ -1056,6 +1100,7 @@ def generate_emotion_reflection_preview(
             "memo_action": normalized_memo_action,
             "category": normalized_categories,
         },
+        text_generation_core=piece_core_generation_meta,
     )
 
     return {
@@ -1089,7 +1134,18 @@ def generate_emotion_reflection_preview(
             "overcompression_risk": bool(getattr(core_plan, "overcompression_risk", False)),
             "minimum_detail_level": str(getattr(core_plan, "minimum_detail_level", "source_scaled") or "source_scaled"),
             "reason": core_plan.reason,
-        } if core_plan is not None else None,
+            "text_generation_core": piece_core_generation_meta,
+            "piece_composer_connected": True,
+            "core_guard_passed": bool(piece_core_evaluation.answer_passed),
+        } if core_plan is not None else {
+            "focus_key": focus_key,
+            "text_generation_core": piece_core_generation_meta,
+            "piece_composer_connected": True,
+            "core_guard_passed": bool(piece_core_evaluation.answer_passed),
+            "answer_preservation_policy": "source_scaled",
+            "overcompression_risk": False,
+            "minimum_detail_level": "source_scaled",
+        },
     }
 
 

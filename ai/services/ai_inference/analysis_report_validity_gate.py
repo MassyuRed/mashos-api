@@ -11,6 +11,28 @@ payload stays within Cocolon's non-diagnostic observation boundary.
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
+# Optional Phase12: common text-generation core for Analysis reports.
+try:
+    from cocolon_text_generation_core.adapters.analysis_composer import (
+        ADAPTER_NAME as ANALYSIS_COMPOSER_ADAPTER_NAME,
+        ANALYSIS_COMPOSER_META_KEY,
+        ANALYSIS_COMPOSER_MODEL,
+        PHASE_LABEL as ANALYSIS_COMPOSER_PHASE_LABEL,
+        REJECTION_ANALYSIS_COMMON_TEXT_SAFETY_REJECTED,
+        evaluate_analysis_composer,
+        evaluate_analysis_report_text_safety,
+    )
+    from cocolon_text_generation_core.adapters.analysis_composer_input_contract import TEXT_GENERATION_META_KEY
+except Exception:  # pragma: no cover
+    ANALYSIS_COMPOSER_ADAPTER_NAME = "analysis_composer.unavailable"  # type: ignore
+    ANALYSIS_COMPOSER_META_KEY = "analysis_composer"  # type: ignore
+    ANALYSIS_COMPOSER_MODEL = "cocolon_text_generation_core.analysis_composer.v1"  # type: ignore
+    ANALYSIS_COMPOSER_PHASE_LABEL = "phase12_analysis_composer_unavailable"  # type: ignore
+    REJECTION_ANALYSIS_COMMON_TEXT_SAFETY_REJECTED = "analysis_common_text_safety_rejected"  # type: ignore
+    TEXT_GENERATION_META_KEY = "textGenerationCore"  # type: ignore
+    evaluate_analysis_composer = None  # type: ignore
+    evaluate_analysis_report_text_safety = None  # type: ignore
+
 ANALYSIS_REPORT_VALIDITY_SCHEMA_VERSION = "analysis.validity.v1"
 
 ANALYSIS_DOMAIN_EMOTION = "emotion_structure"
@@ -181,8 +203,24 @@ class AnalysisReportValidityResult:
     material_fields: list[str] = field(default_factory=list)
     value_observation_signal_keys: list[str] = field(default_factory=list)
     value_observation_domain_ok: bool = True
+    text_generation_core_checked: bool = False
+    text_generation_core_passed: bool = False
+    text_generation_core_meta: Dict[str, Any] = field(default_factory=dict)
+    analysis_composer_connected: bool = False
     target_period: Optional[str] = None
     schema_version: str = ANALYSIS_REPORT_VALIDITY_SCHEMA_VERSION
+
+    @property
+    def analysis_text_generation_checked(self) -> bool:
+        return bool(self.text_generation_core_checked)
+
+    @property
+    def analysis_text_generation_passed(self) -> bool:
+        return bool(self.text_generation_core_passed)
+
+    @property
+    def analysis_text_generation_meta(self) -> Dict[str, Any]:
+        return dict(self.text_generation_core_meta)
 
     def as_meta(self) -> Dict[str, Any]:
         return {
@@ -200,6 +238,13 @@ class AnalysisReportValidityResult:
             "material_fields": list(self.material_fields),
             "value_observation_signal_keys": list(self.value_observation_signal_keys),
             "value_observation_domain_ok": bool(self.value_observation_domain_ok),
+            "text_generation_core_checked": bool(self.text_generation_core_checked),
+            "text_generation_core_passed": bool(self.text_generation_core_passed),
+            "analysis_text_generation_checked": bool(self.text_generation_core_checked),
+            "analysis_text_generation_passed": bool(self.text_generation_core_passed),
+            "analysis_composer_connected": bool(self.analysis_composer_connected),
+            "analysis_text_generation": dict(self.text_generation_core_meta),
+            "textGenerationCore": dict(self.text_generation_core_meta),
         }
 
 
@@ -210,9 +255,11 @@ def evaluate_analysis_report_validity(
     output_text: Any = None,
     output_payload: Any = None,
     material_fields: Optional[Iterable[Any]] = None,
+    material_sources: Optional[Iterable[Any]] = None,
     target_period: Any = None,
     save_requested: bool = True,
     min_material_count: Optional[int] = None,
+    enforce_text_generation_core: bool = False,
 ) -> AnalysisReportValidityResult:
     """Evaluate whether an analysis artifact is valid to save/display.
 
@@ -262,13 +309,97 @@ def evaluate_analysis_report_validity(
     if not overclaim_checked:
         reasons.append("overclaim_output")
 
+
     display_valid = True
     if save_requested:
         display_valid = text_present
         if not display_valid:
             reasons.append("display_output_empty")
 
-    save_allowed = bool(material_sufficient and domain_separated and diagnosis_checked and overclaim_checked and display_valid)
+    text_generation_core_checked = False
+    text_generation_core_passed = True
+    analysis_composer_connected = False
+    text_generation_core_meta: Dict[str, Any] = {
+        "adapter_name": ANALYSIS_COMPOSER_ADAPTER_NAME,
+        "phase": ANALYSIS_COMPOSER_PHASE_LABEL,
+        "composer_model": ANALYSIS_COMPOSER_MODEL,
+        "analysis_composer_available": evaluate_analysis_report_text_safety is not None,
+        "analysis_composer_connected": evaluate_analysis_report_text_safety is not None,
+        "validity_gate_connected": evaluate_analysis_report_text_safety is not None,
+        "runtime_connected": evaluate_analysis_report_text_safety is not None,
+        "checked": False,
+        "passed": True,
+        "enforced": True,
+        "cross_core_enabled": False,
+        "mode": "text_safety_only",
+    }
+    if evaluate_analysis_report_text_safety is not None:
+        try:
+            safety_result = evaluate_analysis_report_text_safety(
+                joined_text,
+                domain=normalized_domain,
+                material_fields=fields,
+                target_period=target_period,
+            )
+            text_generation_core_checked = True
+            text_generation_core_passed = bool(safety_result.passed)
+            analysis_composer_connected = True
+            text_generation_core_meta.update(safety_result.as_meta())
+            text_generation_core_meta.update(
+                {
+                    "adapter_name": ANALYSIS_COMPOSER_ADAPTER_NAME,
+                    "phase": ANALYSIS_COMPOSER_PHASE_LABEL,
+                    "composer_model": ANALYSIS_COMPOSER_MODEL,
+                    "analysis_composer_connected": True,
+                    "validity_gate_connected": True,
+                    "runtime_connected": True,
+                    "checked": True,
+                    "passed": bool(safety_result.passed),
+                    "enforced": True,
+                    "cross_core_enabled": False,
+                    "mode": "text_safety_only",
+                }
+            )
+            if not safety_result.passed:
+                reasons.append(REJECTION_ANALYSIS_COMMON_TEXT_SAFETY_REJECTED)
+                reasons.extend(str(reason) for reason in safety_result.rejection_reasons)
+        except Exception as exc:  # pragma: no cover - defensive additive meta
+            text_generation_core_checked = True
+            text_generation_core_passed = False
+            text_generation_core_meta.update({"checked": True, "passed": False, "error": exc.__class__.__name__})
+            reasons.append("analysis_text_generation_core_unavailable")
+
+    if evaluate_analysis_composer is not None and material_sources is not None:
+        try:
+            evaluation = evaluate_analysis_composer(
+                domain=normalized_domain,
+                material_sources=material_sources,
+                output_text=joined_text,
+                output_payload=output_payload if isinstance(output_payload, Mapping) else None,
+                material_fields=sorted(fields),
+                target_period=target_period,
+                source_id="analysis-report-validity-gate",
+            )
+            analysis_composer_connected = True
+            full_meta = evaluation.as_meta()
+            text_generation_core_meta["full_analysis_composer"] = full_meta
+            if enforce_text_generation_core and not evaluation.passed:
+                text_generation_core_passed = False
+                reasons.append("analysis_text_generation_core_rejected")
+        except Exception as exc:  # pragma: no cover - defensive additive meta
+            text_generation_core_meta["full_analysis_composer"] = {"checked": True, "error": exc.__class__.__name__}
+            if enforce_text_generation_core:
+                text_generation_core_passed = False
+                reasons.append("analysis_text_generation_core_unavailable")
+
+    save_allowed = bool(
+        material_sufficient
+        and domain_separated
+        and diagnosis_checked
+        and overclaim_checked
+        and display_valid
+        and text_generation_core_passed
+    )
 
     return AnalysisReportValidityResult(
         domain=normalized_domain,
@@ -283,6 +414,10 @@ def evaluate_analysis_report_validity(
         material_fields=sorted(fields),
         value_observation_signal_keys=value_observation_signal_keys,
         value_observation_domain_ok=value_observation_domain_ok,
+        text_generation_core_checked=text_generation_core_checked,
+        text_generation_core_passed=text_generation_core_passed,
+        text_generation_core_meta=text_generation_core_meta,
+        analysis_composer_connected=analysis_composer_connected,
         target_period=_safe_str(target_period) or None,
     )
 
@@ -293,6 +428,30 @@ def attach_report_validity_meta(
 ) -> Dict[str, Any]:
     base = dict(content_json or {})
     base["reportValidity"] = result.as_meta()
+    if result.text_generation_core_meta:
+        core_meta = dict(base.get(TEXT_GENERATION_META_KEY) or {}) if isinstance(base.get(TEXT_GENERATION_META_KEY), Mapping) else {}
+        composer_meta = {
+            "adapter_name": ANALYSIS_COMPOSER_ADAPTER_NAME,
+            "phase": ANALYSIS_COMPOSER_PHASE_LABEL,
+            "composer_model": ANALYSIS_COMPOSER_MODEL,
+            "analysis_composer_connected": bool(result.analysis_composer_connected),
+            "validity_gate_connected": bool(result.text_generation_core_checked),
+            "runtime_connected": bool(result.text_generation_core_checked),
+            "cross_core_enabled": False,
+            "status": "passed" if result.text_generation_core_passed else "rejected",
+            "rejection_reasons": list(result.text_generation_core_meta.get("rejection_reasons") or ()),
+            "text_generation_result": dict(result.text_generation_core_meta),
+            "content_json_shape_changed": False,
+            "content_json_contract_touched": False,
+            "standardReport_contract_untouched": True,
+            "contentText_contract_untouched": True,
+        }
+        core_meta[ANALYSIS_COMPOSER_META_KEY] = composer_meta
+        core_meta["analysis_report_validity_gate"] = dict(result.text_generation_core_meta)
+        core_meta["analysis_composer_connected"] = bool(result.analysis_composer_connected)
+        core_meta["runtime_connected"] = bool(result.text_generation_core_checked)
+        core_meta["cross_core_enabled"] = False
+        base[TEXT_GENERATION_META_KEY] = core_meta
     return base
 
 

@@ -119,10 +119,18 @@ def test_publish_preview_draft_promotes_same_preview_hash(monkeypatch):
     from piece_generation_policy import build_piece_generation_policy, compute_piece_text_hash
 
     preview_text = "最近気になっているのは、疲れが残っていることです。"
+    text_generation_core = {
+        "adapter_name": "piece_composer.v1",
+        "status": "generated",
+        "piece_composer_connected": True,
+        "answer_passed": True,
+        "preview_publish_no_regeneration": True,
+    }
     policy = build_piece_generation_policy(
         piece_text=preview_text,
         raw_answer="疲れた",
         source_texts=["疲れた"],
+        text_generation_core=text_generation_core,
     ).as_storage_meta()
     content_json = {
         "display": {"answer_display_text": preview_text},
@@ -176,6 +184,9 @@ def test_publish_preview_draft_promotes_same_preview_hash(monkeypatch):
     assert national_core["visibility_status"] == "published"
     assert national_core["piece_text_hash"] == compute_piece_text_hash(preview_text)
     assert national_core["published_text_hash"] == national_core["piece_text_hash"]
+    assert national_core["text_generation_core"] == text_generation_core
+    assert national_core["piece_composer_connected"] is True
+    assert national_core["text_generation_core"]["preview_publish_no_regeneration"] is True
     assert published["content_json"]["display_answer"] == preview_text
     assert captured["json_body"]["status"] == "ready"
     assert captured["json_body"]["is_active"] is True
