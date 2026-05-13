@@ -72,6 +72,12 @@ except Exception:  # pragma: no cover
     def sanitize_content_json_for_public_read(raw):  # type: ignore
         return dict(raw or {}) if isinstance(raw, dict) else {}
 
+# Watashi Map additive payload projection for Free light reads.
+try:
+    from watashi_map_service import build_watashi_map_from_content_json
+except Exception:  # pragma: no cover
+    build_watashi_map_from_content_json = None  # type: ignore
+
 # Shared Supabase HTTP client (connection pooled)
 from supabase_client import (
     sb_delete as _sb_delete_shared,
@@ -298,7 +304,7 @@ class MyProfileLatestEnsureResponse(BaseModel):
         ...,
         description="missing | stale_analysis | schema_mismatch | force | up_to_date | no_analysis | no_visible_content | in_progress",
     )
-    report_mode: str = Field(..., description="standard | deep")
+    report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     patterns_updated_at: Optional[str] = Field(
         default=None, description="updated_at of structure patterns"
@@ -322,7 +328,7 @@ class MyProfileLatestStatusResponse(BaseModel):
     status: str = Field("ok", description="ok")
     version_key: Optional[str] = Field(default=None, description="stable content/version key for app-internal banner polling")
     generated_at: Optional[str] = Field(default=None, description="generated_at of the saved latest report")
-    saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (standard | deep)")
+    saved_report_mode: Optional[str] = Field(default=None, description="saved latest report mode (light | standard | deep)")
     has_visible_content: bool = Field(default=False, description="false when the latest view is no-data only")
     skip_reason: Optional[str] = Field(default=None, description="optional no-data reason")
 
@@ -349,7 +355,7 @@ class MyProfileMonthlyEnsureBody(BaseModel):
     )
     report_mode: Optional[str] = Field(
         default=None,
-        description="Requested report mode (standard|deep). Tier-gated.",
+        description="Requested report mode (light|standard|deep). Tier-gated.",
     )
     include_secret: bool = Field(
         default=True,
@@ -446,7 +452,7 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
     status: str = Field("ok", description="ok")
     refreshed: bool = Field(..., description="True if regenerated & saved")
     reason: str = Field(..., description="missing | force | mode_mismatch | schema_mismatch | up_to_date | no_visible_content | unchanged | in_progress")
-    report_mode: str = Field(..., description="standard | deep")
+    report_mode: str = Field(..., description="light | standard | deep")
     period: str = Field(..., description="lookback period (e.g. 28d)")
     period_start: str = Field(..., description="period_start (ISO)")
     period_end: str = Field(..., description="period_end (ISO)")
@@ -465,23 +471,24 @@ class MyProfileMonthlyEnsureResponse(BaseModel):
 
 def _canonicalize_report_mode_value(x: Any) -> str:
     """
-    Normalize external/internal MyProfile report mode into one of: standard | deep.
+    Normalize external/internal MyProfile/Self Structure report mode.
+
+    Current wire modes:
+    - light: Free わたしマップ概要
+    - standard: Plus 標準マップ
+    - deep: Premium 深いマップ
 
     Backward-compat:
     - structural -> deep
-    - light -> standard
     """
     s = str(x or "").strip().lower()
     if not s:
         return "standard"
     if s == "structural":
         return "deep"
-    if s == "light":
-        return "standard"
-    if s in ("standard", "deep"):
+    if s in ("light", "standard", "deep"):
         return s
     return s
-
 
 def _subscription_mode_input(x: Optional[str]) -> Optional[str]:
     """
@@ -523,7 +530,14 @@ def _row_matches_requested_mode(row: Optional[Dict[str, Any]], requested_mode: s
     saved = _extract_saved_report_mode(row)
     if not saved:
         return False
-    return _canonicalize_report_mode_value(saved) == _canonicalize_report_mode_value(requested_mode)
+    requested = _canonicalize_report_mode_value(requested_mode)
+    saved_mode = _canonicalize_report_mode_value(saved)
+    if requested == "light":
+        # Free light is a summary view. A saved standard/deep row can satisfy it
+        # after response-time projection, so we do not overwrite paid rows just
+        # because a Free viewer opened the latest endpoint.
+        return saved_mode in {"light", "standard", "deep"}
+    return saved_mode == requested
 
 
 def _extract_saved_self_structure_ref_source_hash(
@@ -578,6 +592,120 @@ def _extract_saved_skip_reason(row: Optional[Dict[str, Any]]) -> Optional[str]:
     history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
     s = str(history.get("skip_reason") or cj.get("skip_reason") or "").strip()
     return s or None
+
+
+
+SELF_STRUCTURE_LIGHT_LOCKED_SECTIONS = [
+    "role_content",
+    "role_background",
+    "reaction_flow",
+    "emotion_bridge",
+    "diff",
+    "detail_report",
+]
+
+
+def _extract_summary_text_from_content(row: Optional[Dict[str, Any]]) -> str:
+    cj = _extract_report_content_json(row)
+    summary = str(cj.get("summaryText") or "").strip()
+    if summary:
+        return summary
+
+    sections = cj.get("sections") if isinstance(cj.get("sections"), dict) else {}
+    current = sections.get("current_structure") if isinstance(sections.get("current_structure"), list) else []
+    for item in current:
+        text = str(item or "").strip()
+        if text:
+            return text
+
+    raw_text = str((row or {}).get("content_text") or "").strip()
+    if not raw_text:
+        return ""
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    # Skip bracketed report titles when falling back to legacy content_text.
+    body_lines = [line for line in lines if not (line.startswith("【") and line.endswith("】"))]
+    return (body_lines[0] if body_lines else lines[0]).strip()
+
+
+def _build_self_structure_light_content_json(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    cj = _extract_report_content_json(row)
+    summary = _extract_summary_text_from_content(row)
+    distribution = cj.get("distribution") if isinstance(cj.get("distribution"), dict) else {}
+    history = cj.get("history") if isinstance(cj.get("history"), dict) else {}
+    analysis_refs = cj.get("analysis_refs") if isinstance(cj.get("analysis_refs"), dict) else {}
+
+    has_visible = bool(summary or str((row or {}).get("content_text") or "").strip())
+    sections = {
+        "current_structure": [summary] if summary else [],
+    }
+    light_content = {
+        "engine": str(cj.get("engine") or "astor_myprofile_report"),
+        "version": str(cj.get("version") or MYPROFILE_REPORT_SCHEMA_VERSION),
+        "report_mode": "light",
+        "report_type": str(cj.get("report_type") or (row or {}).get("report_type") or "latest"),
+        "report_source": str(cj.get("report_source") or "analysis_results"),
+        "distribution": distribution,
+        "analysis_refs": analysis_refs,
+        "summaryText": summary or None,
+        "sections": sections,
+        "visibility": {
+            "has_visible_content": has_visible,
+            "viewer_tier": "free",
+            "summary_visible": True,
+            "detail_report_visible": False,
+            "visible_sections": ["current_structure"] if summary else [],
+            "hidden_sections": list(SELF_STRUCTURE_LIGHT_LOCKED_SECTIONS),
+            "locked_sections": list(SELF_STRUCTURE_LIGHT_LOCKED_SECTIONS),
+        },
+        "history": {
+            **history,
+            "archive_eligible": bool(history.get("archive_eligible", has_visible)),
+        },
+        "light_entry": {
+            "label": "今のわたしマップ",
+            "detail_report_locked": True,
+            "detail_report_lock_label": "詳しい自己分析レポートは Plus プラン以上で読めます。",
+        },
+    }
+    if build_watashi_map_from_content_json is not None:
+        try:
+            source_content = dict(cj or {})
+            source_content.setdefault("summaryText", summary or None)
+            source_content.setdefault("sections", sections)
+            source_content.setdefault("distribution", distribution)
+            light_content["watashiMap"] = build_watashi_map_from_content_json(
+                source_content,
+                report_mode="light",
+                viewer_tier="free",
+            )
+        except Exception:
+            # watashiMap is additive; never break the legacy light projection.
+            pass
+    return light_content
+
+
+def _build_self_structure_light_content_text(row: Optional[Dict[str, Any]], content_json: Optional[Dict[str, Any]] = None) -> str:
+    cj = content_json if isinstance(content_json, dict) else _build_self_structure_light_content_json(row)
+    summary = str(cj.get("summaryText") or "").strip()
+    if not summary:
+        return "まだ地図にできる観測が少なめです\n"
+    return "\n".join([
+        "今のわたしマップ",
+        "",
+        summary,
+        "",
+        "詳しい自己分析レポートは Plus プラン以上で読めます。",
+    ]).strip() + "\n"
+
+def _project_latest_row_for_light(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not isinstance(row, dict):
+        return row
+    projected = dict(row)
+    light_json = _build_self_structure_light_content_json(row)
+    projected["title"] = "今のわたしマップ"
+    projected["content_json"] = light_json
+    projected["content_text"] = _build_self_structure_light_content_text(row, light_json)
+    return projected
 
 
 SELF_STRUCTURE_MONTHLY_TITLE_BASE = "自己構造レポート"
@@ -1263,7 +1391,7 @@ def register_self_structure_routes(app: FastAPI) -> None:
         ),
         report_mode: Optional[str] = Query(
             default=None,
-            description="Requested report mode (standard|deep). Tier-gated.",
+            description="Requested report mode (light|standard|deep). Tier-gated.",
         ),
     ) -> SelfStructureLatestEnsureResponse:
         access_token = _extract_bearer_token(authorization)
@@ -1281,8 +1409,9 @@ def register_self_structure_routes(app: FastAPI) -> None:
         effective_period = (period or DEFAULT_LATEST_PERIOD or "28d").strip() or "28d"
 
         # ---- Resolve report_mode (with subscription gating; fail-closed) ----
-        # Spec v2: free users cannot view MyProfile self-structure reports.
-        effective_report_mode = "standard"
+        # わたしマップ Phase 1: Free は latest の light 概要のみ許可する。
+        # Plus は standard、Premium は deep を既定にし、DB / route / report family は変更しない。
+        effective_report_mode = "light"
         try:
             from subscription import (
                 SubscriptionTier,
@@ -1294,22 +1423,18 @@ def register_self_structure_routes(app: FastAPI) -> None:
             from subscription_store import get_subscription_tier_for_user
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
-            if tier == SubscriptionTier.FREE:
-                raise HTTPException(status_code=403, detail="MyProfile report is available for Plus/Premium users only")
-
-            default_mode = MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD
+            default_mode = (
+                MyProfileMode.LIGHT
+                if tier == SubscriptionTier.FREE
+                else (MyProfileMode.STRUCTURAL if tier == SubscriptionTier.PREMIUM else MyProfileMode.STANDARD)
+            )
             requested_mode = _subscription_mode_input(report_mode)
             mode_enum = normalize_myprofile_mode(requested_mode, default=default_mode)
-
-            # "light" is kept only for backward-compat input; disallow for MyProfile.
-            if mode_enum == MyProfileMode.LIGHT:
-                raise HTTPException(status_code=403, detail="report_mode 'light' is not available")
 
             if not is_myprofile_mode_allowed(tier, mode_enum):
                 allowed = [
                     _canonicalize_report_mode_value(m.value)
                     for m in allowed_myprofile_modes_for_tier(tier)
-                    if m != MyProfileMode.LIGHT
                 ]
                 raise HTTPException(
                     status_code=403,
@@ -1400,6 +1525,8 @@ def register_self_structure_routes(app: FastAPI) -> None:
             reason_value: str,
             generated_at_value: Optional[str] = None,
         ) -> SelfStructureLatestEnsureResponse:
+            if effective_report_mode == "light":
+                row = _project_latest_row_for_light(row)
             report_meta = _extract_report_content_json(row) if row else None
             period_start_value, period_end_value = _extract_report_window(row)
             generated_value = generated_at_value or (row.get("generated_at") if row else latest_generated_at)

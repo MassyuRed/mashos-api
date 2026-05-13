@@ -297,7 +297,15 @@ def test_myweb_unread_status_matches_snapshot_shape(client, monkeypatch):
                     "report_type": report_type,
                     "period_start": "2026-03-02T00:00:00Z",
                     "period_end": "2026-03-02T23:59:59Z",
-                    "content_json": {"publish": {"status": "READY"}, "metrics": {"totalAll": 3}},
+                    "content_json": {
+                        "publish": {"status": "READY"},
+                        "metrics": {"totalAll": 3},
+                        "kokoroWeather": {
+                            "version": "kokoro.weather.v1",
+                            "summary": {"weather_label": "うすぐもり"},
+                            "items": [{"kind": "day", "label": "5/12"}],
+                        },
+                    },
                 },
             ]
             return _FakeResponse(200, rows)

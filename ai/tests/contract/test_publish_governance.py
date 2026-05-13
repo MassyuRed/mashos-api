@@ -43,7 +43,15 @@ def test_myweb_unread_status_ignores_non_publishable_reports(client, monkeypatch
                     "report_type": report_type,
                     "period_start": ready_start,
                     "period_end": ready_end,
-                    "content_json": {"publish": {"status": "READY"}, "metrics": {"totalAll": 3}},
+                    "content_json": {
+                        "publish": {"status": "READY"},
+                        "metrics": {"totalAll": 3},
+                        "kokoroWeather": {
+                            "version": "kokoro.weather.v1",
+                            "summary": {"weather_label": "うすぐもり"},
+                            "items": [{"kind": "day", "label": "5/12"}],
+                        },
+                    },
                 },
             ]
             return FakeResponse(200, rows)

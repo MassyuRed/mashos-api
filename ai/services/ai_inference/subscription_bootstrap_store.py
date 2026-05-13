@@ -21,14 +21,14 @@ PLUS_CANONICAL_FEATURES = [
     "履歴全般：表示期間1年分。",
     "ホーム：Emlisの観測が入力履歴を踏まえた内容になります。",
     "分析：こころ天気（日/週/月）の本文と観測理由を見られます。",
-    "分析：自己分析レポートが閲覧可能になります。",
+    "分析：わたしマップで役割スイッチと詳しい自己分析レポートを読めます。",
     "ピース：生成回数が月30回になります。",
 ]
 PREMIUM_CANONICAL_FEATURES = [
     "履歴全般：表示期間無制限。",
     "ホーム：Emlisの観測がユーザーごとに合わせた内容になります。",
     "分析：こころ天気（日/週/月）の変化パターンや長期傾向まで見られます。",
-    "分析：自己分析レポートがさらに深くなります。",
+    "分析：わたしマップで長期変化や深い分かれ道まで見られます。",
     "ピース：生成回数が無制限になります。",
 ]
 
@@ -197,15 +197,22 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
     s = _string_or_none(value)
     if not s:
         return None
+    detail_token = "__COCOLON_DETAIL_SELF_REPORT__"
     return (
-        s.replace("無料会員", "Freeプラン")
+        s.replace("詳しい自己分析レポート", detail_token)
+        .replace("無料会員", "Freeプラン")
         .replace("Plus会員", "Plusプラン")
         .replace("Premium会員", "Premiumプラン")
         .replace("MyModelCreate", "ProfileCreate")
         .replace("ReflectionCreate", "ProfileCreate")
         .replace("Reflections", "ピース")
         .replace("Reflection", "ピース")
+        .replace("自己分析レポートが閲覧可能になります", f"わたしマップで役割スイッチと{detail_token}を読めます")
+        .replace("自己分析レポートがさらに深くなります", "わたしマップで長期変化や深い分かれ道まで見られます")
         .replace("感情分析レポート", "こころ天気（日/週/月）")
+        .replace("自己分析レポート", detail_token)
+        .replace("自己構造", "わたしマップ")
+        .replace("自己分析", "わたしマップ")
         .replace("日報・週報・月報", "こころ天気（日/週/月）")
         .replace("Piece", "ピース")
         .replace("ピース作成", "ピース生成")
@@ -214,6 +221,7 @@ def _replace_legacy_subscription_text(value: Any) -> Optional[str]:
         .replace("作成回数", "生成回数")
         .replace("MyModel", "ピース画面")
         .replace("MyWeb", "Analysis")
+        .replace(detail_token, "詳しい自己分析レポート")
     )
 
 

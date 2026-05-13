@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -145,11 +146,17 @@ MYWEB_DETAIL_CACHE_TTL_SECONDS = float(os.getenv("MYWEB_DETAIL_CACHE_TTL_SECONDS
 MYWEB_READY_CANDIDATE_SELECT = (
     "id,report_type,period_start,period_end,title,generated_at,updated_at,"
     "publish_status:content_json->publish->>status,"
+    "kokoro_weather_version:content_json->kokoroWeather->>version,"
+    "kokoro_weather_legacy_version:content_json->kokoro_weather->>version,"
+    "standard_kokoro_weather_version:content_json->standardReport->kokoroWeather->>version,"
+    "standard_report_kokoro_weather_version:content_json->standard_report->kokoro_weather->>version,"
     "metrics_total_all:content_json->metrics->>totalAll,"
     "standard_total_all:content_json->standardReport->metrics->>totalAll"
 )
 MYWEB_READY_FULL_SELECT = "id,report_type,period_start,period_end,title,content_text,content_json,generated_at,updated_at"
 MYWEB_READY_LATEST_RAW_PAGE_SIZE = max(2, int(os.getenv("MYWEB_READY_LATEST_RAW_PAGE_SIZE", "4") or "4"))
+KOKORO_WEATHER_SCHEMA_VERSION = "kokoro.weather.v1"
+KOKORO_WEATHER_REPORT_TYPES = frozenset({"daily", "weekly", "monthly"})
 
 # JST fixed
 JST_OFFSET = timedelta(hours=9)
@@ -374,6 +381,10 @@ class MyWebReportRecord(BaseModel):
     title: Optional[str] = Field(default=None)
     content_text: Optional[str] = Field(default=None)
     content_json: Dict[str, Any] = Field(default_factory=dict)
+    kokoro_weather_version: Optional[str] = Field(default=None)
+    kokoro_weather_legacy_version: Optional[str] = Field(default=None)
+    standard_kokoro_weather_version: Optional[str] = Field(default=None)
+    standard_report_kokoro_weather_version: Optional[str] = Field(default=None)
     generated_at: Optional[str] = Field(default=None)
     updated_at: Optional[str] = Field(default=None)
 
@@ -466,6 +477,10 @@ def _build_myweb_report_record(row: Dict[str, Any], *, include_body: bool) -> My
         title=row.get("title"),
         content_text=(row.get("content_text") if include_body else None),
         content_json=(content_json if include_body else {}),
+        kokoro_weather_version=row.get("kokoro_weather_version"),
+        kokoro_weather_legacy_version=row.get("kokoro_weather_legacy_version"),
+        standard_kokoro_weather_version=row.get("standard_kokoro_weather_version"),
+        standard_report_kokoro_weather_version=row.get("standard_report_kokoro_weather_version"),
         generated_at=row.get("generated_at"),
         updated_at=row.get("updated_at"),
     )
@@ -487,6 +502,88 @@ def _build_myweb_id_in_filter(report_ids: List[str]) -> Optional[str]:
     if not values:
         return None
     return f"in.({','.join(values)})"
+
+
+def _normalize_json_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _extract_kokoro_weather_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the additive kokoroWeather payload from a report row if present.
+
+    The canonical location is ``content_json.kokoroWeather``.  The fallback
+    locations are accepted only as read-side compatibility for already materialized
+    rows.  New writes should continue to use ``content_json.kokoroWeather``.
+    """
+    if not isinstance(row, dict):
+        return {}
+
+    content_json = _normalize_json_object(row.get("content_json"))
+    if not content_json:
+        return {}
+
+    direct = content_json.get("kokoroWeather") or content_json.get("kokoro_weather")
+    if isinstance(direct, dict):
+        return dict(direct)
+
+    standard = content_json.get("standardReport") or content_json.get("standard_report")
+    if isinstance(standard, dict):
+        nested = standard.get("kokoroWeather") or standard.get("kokoro_weather")
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    return {}
+
+
+def _has_kokoro_weather_projection_version(row: Dict[str, Any]) -> bool:
+    if not isinstance(row, dict):
+        return False
+    for key in (
+        "kokoro_weather_version",
+        "kokoro_weather_legacy_version",
+        "standard_kokoro_weather_version",
+        "standard_report_kokoro_weather_version",
+    ):
+        if str(row.get(key) or "").strip() == KOKORO_WEATHER_SCHEMA_VERSION:
+            return True
+    return False
+
+
+def _is_kokoro_weather_report_row(row: Dict[str, Any]) -> bool:
+    """True only for emotion reports that are displayable as kokoro weather.
+
+    Projection rows do not carry full ``content_json``, so the projected version
+    alias is enough there.  Full rows must carry a valid payload with either a
+    summary or items so an old emotion-analysis report cannot fall through to the
+    kokoro-weather UI.
+    """
+    if not isinstance(row, dict):
+        return False
+
+    report_type = str(row.get("report_type") or "").strip().lower()
+    if report_type and report_type not in KOKORO_WEATHER_REPORT_TYPES:
+        return False
+
+    payload = _extract_kokoro_weather_payload(row)
+    if payload:
+        if str(payload.get("version") or "").strip() != KOKORO_WEATHER_SCHEMA_VERSION:
+            return False
+        return bool(payload.get("summary") or payload.get("items"))
+
+    # Projection rows intentionally omit content_json.  In that case the select
+    # alias is the display eligibility signal.
+    if "content_json" not in row:
+        return _has_kokoro_weather_projection_version(row)
+
+    return False
 
 
 async def _fetch_myweb_ready_candidate_chunk(
@@ -614,6 +711,8 @@ async def _build_myweb_ready_payload_projection_first(
                 )
                 if not published_row:
                     continue
+                if not _is_kokoro_weather_report_row(published_row):
+                    continue
                 visible_rows.append(published_row)
                 if len(visible_rows) >= needed:
                     break
@@ -662,6 +761,8 @@ async def _build_myweb_ready_payload_projection_first(
             )
             if not published_row:
                 continue
+            if not _is_kokoro_weather_report_row(published_row):
+                continue
             visible_candidates.append(published_row)
             if len(visible_candidates) >= needed:
                 break
@@ -689,7 +790,7 @@ async def _build_myweb_ready_payload_projection_first(
                 requested_report_type=report_type,
                 now_utc=now_utc,
             )
-            if published_row:
+            if published_row and _is_kokoro_weather_report_row(published_row):
                 materialized_rows.append(published_row)
     else:
         materialized_rows = page_rows
@@ -723,8 +824,8 @@ async def _build_myweb_detail_payload(*, user_id: str, report_id: str) -> Dict[s
         context=view_ctx,
         now_utc=now_utc,
     )
-    if not published_row:
-        raise HTTPException(status_code=404, detail="MyWeb report not found")
+    if not published_row or not _is_kokoro_weather_report_row(published_row):
+        raise HTTPException(status_code=404, detail="Kokoro weather report not found")
 
     response = MyWebReportDetailResponse(
         user_id=user_id,
@@ -5713,6 +5814,7 @@ def register_analysis_report_routes(app: FastAPI) -> None:
 
         await invalidate_prefix(f"myweb:ready:{user_id}")
         await invalidate_prefix(f"myweb:detail:{user_id}")
+        await invalidate_prefix(f"report_reads:analysis_unread:{user_id}")
         await invalidate_prefix(f"report_reads:myweb_unread:{user_id}")
         return AnalysisEnsureResponse(
             user_id=user_id,
@@ -5738,7 +5840,14 @@ def register_analysis_report_routes(app: FastAPI) -> None:
         include_body_bool = bool(include_body)
         cache_key = build_cache_key(
             f"myweb:ready:{user_id}",
-            {"report_type": str(report_type), "limit": lim, "offset": off, "include_body": include_body_bool},
+            {
+                "kokoro_weather_only": True,
+                "kokoro_weather_version": KOKORO_WEATHER_SCHEMA_VERSION,
+                "report_type": str(report_type),
+                "limit": lim,
+                "offset": off,
+                "include_body": include_body_bool,
+            },
         )
 
         async def _build_payload() -> Dict[str, Any]:
@@ -5786,7 +5895,11 @@ def register_analysis_report_routes(app: FastAPI) -> None:
         rid = str(report_id or "").strip()
         cache_key = build_cache_key(
             f"myweb:detail:{user_id}",
-            {"report_id": rid},
+            {
+                "kokoro_weather_only": True,
+                "kokoro_weather_version": KOKORO_WEATHER_SCHEMA_VERSION,
+                "report_id": rid,
+            },
         )
 
         payload = await get_or_compute(
@@ -5818,8 +5931,10 @@ __all__ = [
     "MyWebReportDetailResponse",
     "_build_analysis_target_period",
     "_analysis_report_exists",
+    "_extract_kokoro_weather_payload",
     "_generate_analysis_report_and_save",
     "_generate_analysis_report_and_save_from_snapshot",
+    "_is_kokoro_weather_report_row",
     "register_analysis_report_routes",
     "register_myweb_report_routes",
 ]

@@ -19,6 +19,7 @@ from publish_governance import (
 )
 from supabase_client import sb_get, sb_post
 from response_microcache import build_cache_key, get_or_compute, invalidate_prefix
+from api_analysis_reports import KOKORO_WEATHER_SCHEMA_VERSION, _is_kokoro_weather_report_row
 
 try:
     from subscription import SubscriptionTier  # type: ignore
@@ -261,71 +262,89 @@ async def _resolve_viewer_tier(user_id: str) -> str:
 
 
 async def _fetch_latest_ready_myweb_ids(user_id: str, report_type: str, *, tier_str: str, limit: int) -> List[str]:
-    fetch_limit = max(limit * 4, 30)
+    raw_page_size = max(limit * 4, 30)
     projection_select = (
         "id,report_type,period_start,period_end,"
         "publish_status:content_json->publish->>status,"
+        "kokoro_weather_version:content_json->kokoroWeather->>version,"
+        "kokoro_weather_legacy_version:content_json->kokoro_weather->>version,"
+        "standard_kokoro_weather_version:content_json->standardReport->kokoroWeather->>version,"
+        "standard_report_kokoro_weather_version:content_json->standard_report->kokoro_weather->>version,"
         "metrics_total_all:content_json->metrics->>totalAll,"
         "standard_total_all:content_json->standardReport->metrics->>totalAll"
     )
     fallback_select = "id,report_type,period_start,period_end,content_json"
 
-    resp = await sb_get(
-        f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
-        params={
-            "select": projection_select,
-            "user_id": f"eq.{user_id}",
-            "report_type": f"eq.{report_type}",
-            "order": "period_start.desc",
-            "limit": str(fetch_limit),
-        },
-        timeout=8.0,
-    )
-    rows = _pick_rows(resp) if resp.status_code < 300 else []
-    projection_ok = resp.status_code < 300 and (
-        not rows or any(
-            any(key in row for key in ("publish_status", "metrics_total_all", "standard_total_all"))
-            for row in rows[:3]
-        )
-    )
+    ids: List[str] = []
+    raw_offset = 0
 
-    if not projection_ok:
-        logger.warning(
-            "myweb unread projection select fallback: status=%s body=%s",
-            resp.status_code,
-            (resp.text or "")[:800],
-        )
+    while len(ids) < limit:
         resp = await sb_get(
             f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
             params={
-                "select": fallback_select,
+                "select": projection_select,
                 "user_id": f"eq.{user_id}",
                 "report_type": f"eq.{report_type}",
                 "order": "period_start.desc",
-                "limit": str(fetch_limit),
+                "limit": str(raw_page_size),
+                "offset": str(raw_offset),
             },
             timeout=8.0,
         )
-        if resp.status_code >= 300:
-            logger.warning("myweb_reports select failed: %s %s", resp.status_code, resp.text[:800])
-            raise HTTPException(status_code=502, detail="Failed to load MyWeb report status")
-        rows = _pick_rows(resp)
-
-    ids: List[str] = []
-    for row in rows:
-        published_row = decide_myweb_report_publish(
-            row,
-            tier_str=tier_str,
-            requested_report_type=report_type,
+        rows = _pick_rows(resp) if resp.status_code < 300 else []
+        projection_ok = resp.status_code < 300 and (
+            not rows or any(
+                any(key in row for key in ("publish_status", "metrics_total_all", "standard_total_all"))
+                for row in rows[:3]
+            )
         )
-        if not published_row:
-            continue
 
-        rid = str(published_row.get("id") or "").strip()
-        if not rid:
-            continue
-        ids.append(rid)
-        if len(ids) >= limit:
+        if not projection_ok:
+            logger.warning(
+                "myweb unread projection select fallback: status=%s body=%s",
+                resp.status_code,
+                (resp.text or "")[:800],
+            )
+            resp = await sb_get(
+                f"/rest/v1/{ANALYSIS_REPORTS_READ_TABLE}",
+                params={
+                    "select": fallback_select,
+                    "user_id": f"eq.{user_id}",
+                    "report_type": f"eq.{report_type}",
+                    "order": "period_start.desc",
+                    "limit": str(raw_page_size),
+                    "offset": str(raw_offset),
+                },
+                timeout=8.0,
+            )
+            if resp.status_code >= 300:
+                logger.warning("myweb_reports select failed: %s %s", resp.status_code, resp.text[:800])
+                raise HTTPException(status_code=502, detail="Failed to load MyWeb report status")
+            rows = _pick_rows(resp)
+
+        if not rows:
+            break
+
+        raw_offset += len(rows)
+        for row in rows:
+            published_row = decide_myweb_report_publish(
+                row,
+                tier_str=tier_str,
+                requested_report_type=report_type,
+            )
+            if not published_row:
+                continue
+            if not _is_kokoro_weather_report_row(published_row):
+                continue
+
+            rid = str(published_row.get("id") or "").strip()
+            if not rid:
+                continue
+            ids.append(rid)
+            if len(ids) >= limit:
+                break
+
+        if len(rows) < raw_page_size:
             break
 
     return ids
@@ -412,7 +431,12 @@ async def get_analysis_unread_status_payload_for_user(
     lim = max(1, min(int(limit or 1), 10))
     cache_key = build_cache_key(
         f"report_reads:analysis_unread:{uid}",
-        {"limit": lim, "include_self_structure": bool(include_self_structure)},
+        {
+            "kokoro_weather_only": True,
+            "kokoro_weather_version": KOKORO_WEATHER_SCHEMA_VERSION,
+            "limit": lim,
+            "include_self_structure": bool(include_self_structure),
+        },
     )
 
     async def _build_payload() -> Dict[str, Any]:

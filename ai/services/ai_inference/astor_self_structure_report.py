@@ -89,6 +89,12 @@ except Exception:  # pragma: no cover
     attach_report_validity_meta = None  # type: ignore
     evaluate_analysis_report_validity = None  # type: ignore
 
+# Watashi Map additive payload builder (self-structure visible layer).
+try:
+    from watashi_map_service import build_watashi_map
+except Exception:  # pragma: no cover
+    build_watashi_map = None  # type: ignore
+
 try:
     from emlis_context_anchor_service import (
         attach_emlis_context_anchors,
@@ -100,11 +106,15 @@ except Exception:  # pragma: no cover
 
 
 def _normalize_report_mode(x: Any) -> str:
-    """Normalize report_mode into one of: standard / deep.
+    """Normalize report_mode into one of: light / standard / deep.
+
+    Current wire modes:
+    - light: Free わたしマップ概要
+    - standard: Plus 標準マップ
+    - deep: Premium 深いマップ
 
     Backward-compat:
     - structural -> deep
-    - light -> standard (MyProfile API should gate this, but keep safe fallback)
     """
     # Prefer subscription.py normalizer if available
     if normalize_myprofile_mode is not None and MyProfileMode is not None:
@@ -113,7 +123,7 @@ def _normalize_report_mode(x: Any) -> str:
             if str(raw) == "structural":
                 return "deep"
             if str(raw) == "light":
-                return "standard"
+                return "light"
             return str(raw)
         except Exception:
             return "standard"
@@ -123,15 +133,13 @@ def _normalize_report_mode(x: Any) -> str:
     if not s:
         return "standard"
     s2 = s.lower()
-    if s2 in ("standard", "deep"):
+    if s2 in ("light", "standard", "deep"):
         return s2
     if s2 in ("structural",):
         return "deep"
-    if s2 in ("light",):
-        return "standard"
     # common JP labels
     if s in ("ライト", "Light"):
-        return "standard"
+        return "light"
     if s in ("スタンダード", "Standard"):
         return "standard"
     if s in ("ディープ", "Deep", "Structural", "ストラクチュラル"):
@@ -2672,19 +2680,54 @@ def _build_myprofile_report_content_json(
             "self_structure": (self_structure_set or {}).get("refs") or {},
             "emotion_bridge": (emotion_bridge_set or {}).get("refs") or {},
         },
-        "identity_snapshot_excerpt": basis.get("identity_snapshot_excerpt") or {},
-        "standardReport": _extract_self_structure_standard_report(std_payload),
-        "deepReport": _extract_self_structure_deep_report(deep_payload),
-        "emotionBridge": basis.get("emotion_bridge") or {},
         "sections": sections,
         "generated_at_server": generated_at_server,
     }
+
+    current_lines = sections.get("current_structure") if isinstance(sections, dict) else []
+    summary_text = ""
+    if isinstance(current_lines, list):
+        summary_text = str(next((line for line in current_lines if str(line or "").strip()), "") or "").strip()
+
+    if normalized_mode == "light":
+        content["lightReport"] = {
+            "label": "今のわたしマップ",
+            "summary": summary_text or None,
+            "detail_report_locked": True,
+            "detail_report_lock_label": "詳しい自己分析レポートは Plus プラン以上で読めます。",
+        }
+    else:
+        content["identity_snapshot_excerpt"] = basis.get("identity_snapshot_excerpt") or {}
+        content["standardReport"] = _extract_self_structure_standard_report(std_payload)
+        content["deepReport"] = _extract_self_structure_deep_report(deep_payload)
+        content["emotionBridge"] = basis.get("emotion_bridge") or {}
+
+    if build_watashi_map is not None:
+        try:
+            viewer_tier = "free" if normalized_mode == "light" else ("premium" if normalized_mode == "deep" else "plus")
+            content["watashiMap"] = build_watashi_map(
+                basis,
+                report_mode=normalized_mode,
+                viewer_tier=viewer_tier,
+                period=period,
+                sections=sections,
+            )
+        except Exception:
+            # watashiMap is additive; generation failures must not break legacy self-structure reports.
+            pass
 
     if normalized_mode == "deep":
         deep_visual = _build_self_structure_deep_visual_from_basis(basis)
         if deep_visual:
             content["selfStructureDeepVisual"] = deep_visual
-            content["visual_contracts"] = ["self_structure_deep_visual.v1"]
+            contracts = list(content.get("visual_contracts") or [])
+            contracts.append("self_structure_deep_visual.v1")
+            content["visual_contracts"] = list(dict.fromkeys(contracts))
+
+    if content.get("watashiMap"):
+        contracts = list(content.get("visual_contracts") or [])
+        contracts.append("watashi.map.v1")
+        content["visual_contracts"] = list(dict.fromkeys(contracts))
 
     if evaluate_analysis_report_validity is not None and attach_report_validity_meta is not None:
         try:
@@ -3164,6 +3207,10 @@ def build_myprofile_monthly_report(
         "emotion_bridge": emotion_lines,
         "diff": change_lines,
     }
+    if mode == "light":
+        sections_for_meta = {
+            "current_structure": [summary_text] if summary_text.strip() else [],
+        }
 
     basis_snapshot = _basis_snapshot_for_history(basis)
     history_fingerprint = None
@@ -3193,12 +3240,22 @@ def build_myprofile_monthly_report(
     meta["section_text_template_id"] = section_tid
     meta["analysis_source"] = "analysis_results"
     meta["data_scope"] = "self" if include_secret else "public"
-    meta["basis_snapshot"] = basis_snapshot
+    meta["basis_snapshot"] = {} if mode == "light" else basis_snapshot
     meta["visibility"] = {
         "has_visible_content": has_visible_content,
         "visible_sections": (["current_structure"] if summary_text.strip() else []) + visible_sections,
         "hidden_sections": ([] if summary_text.strip() else ["current_structure"]) + hidden_sections,
     }
+    if mode == "light":
+        meta["visibility"] = {
+            "has_visible_content": has_visible_content,
+            "viewer_tier": "free",
+            "summary_visible": True,
+            "detail_report_visible": False,
+            "visible_sections": ["current_structure"] if summary_text.strip() else [],
+            "hidden_sections": ["role_content", "role_background", "reaction_flow", "emotion_bridge", "diff", "detail_report"],
+            "locked_sections": ["role_content", "role_background", "reaction_flow", "emotion_bridge", "diff", "detail_report"],
+        }
     meta["history"] = {
         "archive_eligible": has_visible_content,
         "history_fingerprint": history_fingerprint,
@@ -3210,6 +3267,14 @@ def build_myprofile_monthly_report(
         lines_no_data: List[str] = [report_title, "", no_data_text]
         _append_self_structure_report_note(lines_no_data)
         return ("\n".join(lines_no_data).strip() + "\n", meta)
+
+    if mode == "light":
+        lines_light: List[str] = ["今のわたしマップ", ""]
+        if summary_text.strip():
+            lines_light.append(summary_text.strip())
+        lines_light.extend(["", "詳しい自己分析レポートは Plus プラン以上で読めます。"] )
+        _append_self_structure_report_note(lines_light)
+        return ("\n".join([str(x) for x in lines_light if x is not None]).strip() + "\n", meta)
 
     lines: List[str] = [report_title, "", summary_title, summary_text.strip()]
     section_no = 1
@@ -3433,7 +3498,7 @@ async def refresh_myprofile_latest_report(
                 pass
 
     # ---- determine report_mode (fail-closed) ----
-    # Spec v2: Plus=standard, Premium=structural, Free=not entitled (keep "light" for compatibility).
+    # わたしマップ Phase 1: Free=light、Plus=standard、Premium=deep(structural alias)。
     if str(report_mode_override or "").strip():
         report_mode = _normalize_report_mode(report_mode_override)
     else:
@@ -3444,7 +3509,7 @@ async def refresh_myprofile_latest_report(
 
             tier = await get_subscription_tier_for_user(uid, default=SubscriptionTier.FREE)
             if tier == SubscriptionTier.PREMIUM:
-                report_mode = "structural"
+                report_mode = "deep"
             elif tier == SubscriptionTier.PLUS:
                 report_mode = "standard"
             else:

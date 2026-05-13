@@ -7,13 +7,15 @@ This module defines:
 
 - SubscriptionTier: free / plus / premium
 - MyProfileMode:    light / standard / deep
-- TierPermissionMap: allowed MyProfile modes per tier
+- TierPermissionMap: allowed MyProfile/Self Structure modes per tier
 
 Design notes:
 - Keep this file dependency-free (std lib only).
 - Normalization helpers accept common variants (case, JP labels).
 - Other feature entitlements (MyWeb limits, etc.) may be added
   in later steps; Step 1 focuses on tier+mode primitives.
+- Self Structure / わたしマップ shares these modes while the DB/public route
+  boundary keeps the MyProfile-era names.
 """
 
 from __future__ import annotations
@@ -39,10 +41,10 @@ class MyProfileMode(str, Enum):
 
     Notes:
     - "deep" is kept as a backward-compatible alias for "structural".
-    - "light" is kept for backward-compat input, but is not entitled by default.
+    - "light" is the Free わたしマップ概要 mode for Self Structure latest.
     """
 
-    LIGHT = "light"  # deprecated
+    LIGHT = "light"  # Free わたしマップ概要
     STANDARD = "standard"
     STRUCTURAL = "structural"
     # Backward-compatible alias
@@ -151,6 +153,17 @@ def allowed_myprofile_modes_for_tier(tier: TierLike) -> List[MyProfileMode]:
     return list(TIER_ALLOWED_MYPROFILE_MODES.get(t, (MyProfileMode.LIGHT,)))
 
 
+
+def allowed_self_structure_modes_for_tier(tier: TierLike) -> List[MyProfileMode]:
+    """Return allowed Self Structure / わたしマップ modes for the given tier.
+
+    The underlying enum remains MyProfileMode because DB physical names and legacy
+    public contracts are intentionally preserved during the rename-safe phase.
+    """
+
+    return allowed_myprofile_modes_for_tier(tier)
+
+
 def is_myprofile_mode_allowed(tier: TierLike, mode: ModeLike) -> bool:
     """True if tier allows the mode."""
 
@@ -158,6 +171,13 @@ def is_myprofile_mode_allowed(tier: TierLike, mode: ModeLike) -> bool:
     m = normalize_myprofile_mode(mode)
     allowed = TIER_ALLOWED_MYPROFILE_MODES.get(t, (MyProfileMode.LIGHT,))
     return m in allowed
+
+
+
+def is_self_structure_mode_allowed(tier: TierLike, mode: ModeLike) -> bool:
+    """True if tier allows the Self Structure / わたしマップ mode."""
+
+    return is_myprofile_mode_allowed(tier, mode)
 
 
 def assert_myprofile_mode_allowed(tier: TierLike, mode: ModeLike) -> None:
@@ -168,3 +188,9 @@ def assert_myprofile_mode_allowed(tier: TierLike, mode: ModeLike) -> None:
         m = normalize_myprofile_mode(mode)
         allowed = ",".join([x.value for x in allowed_myprofile_modes_for_tier(t)])
         raise ValueError(f"MyProfile mode '{m.value}' is not allowed for tier '{t.value}'. Allowed: {allowed}")
+
+
+def assert_self_structure_mode_allowed(tier: TierLike, mode: ModeLike) -> None:
+    """Raise ValueError if tier does not allow the Self Structure / わたしマップ mode."""
+
+    return assert_myprofile_mode_allowed(tier, mode)

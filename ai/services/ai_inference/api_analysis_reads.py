@@ -20,6 +20,7 @@ from analysis_summary_reader import get_myweb_home_summary_from_artifacts
 from input_summary_reader import get_input_summary_snapshot
 from emlis_context_anchor_service import sanitize_content_json_for_public_read
 from kokoro_weather_service import build_current_kokoro_weather, with_previous_available
+from api_analysis_reports import _is_kokoro_weather_report_row
 
 try:
     from subscription import SubscriptionTier  # type: ignore
@@ -509,6 +510,8 @@ def register_analysis_read_routes(app: FastAPI) -> None:
         report_type = str(row.get("report_type") or "").strip().lower()
         if report_type != "weekly":
             raise HTTPException(status_code=400, detail="weekly report only")
+        if not _is_kokoro_weather_report_row(row):
+            raise HTTPException(status_code=404, detail="Kokoro weather report not found")
 
         content_json = _normalize_content_json(row.get("content_json"))
         saved_days = _extract_saved_days(content_json)
