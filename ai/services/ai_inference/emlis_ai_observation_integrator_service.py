@@ -23,6 +23,7 @@ from emlis_ai_types import (
     RelationEdge,
 )
 from emlis_ai_user_address_service import display_name_call
+from emlis_ai_safety_boundary_service import normalize_safety_boundary_codes
 
 _TEXT_FIELDS = {"memo", "memo_action"}
 _STRUCTURE_LABEL_SEPARATOR = " | "
@@ -161,12 +162,13 @@ def integrate_perspective_board(*, board: PerspectiveBoard, display_name: object
         for claim in _select_claims(reports, "value_signal", "grounded_strength_signal", limit=5)
     ]
 
-    safety_boundaries: List[str] = []
+    safety_boundary_inputs: List[str] = []
     for claim in _select_claims(reports, "safety_boundary", limit=3):
         for span_id in claim.evidence_span_ids or []:
             span = spans_by_id.get(span_id)
-            if span and span.raw_text and span.raw_text not in safety_boundaries:
-                safety_boundaries.append(span.raw_text)
+            if span and span.raw_text:
+                safety_boundary_inputs.append(span.raw_text)
+    safety_boundaries = normalize_safety_boundary_codes(safety_boundary_inputs)
 
     addressee_claim = next((claim for report in reports if report.observer_id == "addressee_model" for claim in report.claims), None)
     memo_len = sum(len(span.raw_text) for span in board.evidence_spans if span.source_field in _TEXT_FIELDS)

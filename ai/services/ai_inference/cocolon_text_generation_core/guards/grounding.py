@@ -16,6 +16,10 @@ REJECTION_USED_EVIDENCE_IDS_MISSING = "used_evidence_span_ids_missing"
 REJECTION_USED_EVIDENCE_NOT_FOUND = "used_evidence_span_ids_not_found"
 REJECTION_UNSUPPORTED_SENTENCE = "unsupported_sentence"
 REJECTION_DECLARED_EVIDENCE_NOT_REFLECTED = "declared_evidence_not_reflected"
+REJECTION_UNSUPPORTED_DIAGNOSIS_LIKE = "unsupported_diagnosis_like"
+REJECTION_UNSUPPORTED_PERSONALITY_LABEL = "unsupported_personality_label"
+REJECTION_UNSUPPORTED_GENERAL_KNOWLEDGE_COMPLETION = "unsupported_general_knowledge_completion"
+REJECTION_UNSUPPORTED_ADVICE_ASSERTION = "unsupported_advice_assertion"
 QUALITY_FLAG_GROUNDING_FAILED = "grounding_failed"
 
 REJECTION_GROUNDING_TEXT_MISSING = REJECTION_GROUNDING_EMPTY_TEXT
@@ -33,6 +37,10 @@ REJECTION_GROUNDING_DECLARED_EVIDENCE_NOT_REFLECTED = REJECTION_DECLARED_EVIDENC
 
 _GREETING_RE = re.compile(r"^(?:[^。！？!?\n]{1,36}さん、)?(?:おはようございます|こんにちは|こんばんは|Emlisです|.+Emlisです)[。.!！]?")
 _FUNCTION_WORDS = frozenset({"入力全体", "言葉", "気持ち", "状態", "場所", "重さ", "願い", "反応", "感覚", "中", "今", "今回", "あります", "出ています"})
+_STEP14_DIAGNOSIS_LIKE_RE = re.compile(r"診断|治療|病気|症状|トラウマ|障害|発達障害|ADHD|うつ|鬱|自律神経|依存症|PTSD|医療|心理療法|心理学的")
+_STEP14_PERSONALITY_LABEL_RE = re.compile(r"(?:あなた|その人|本人)(?:は|の)(?:[^。！？!?]{0,28})?(?:性格|人格|本質|タイプ|こういう人|弱い人|強い人|怠け|甘え)")
+_STEP14_GENERAL_KNOWLEDGE_RE = re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")
+_STEP14_ADVICE_ASSERTION_RE = re.compile(r"(?:必要があります|すべきです|するべきです|しなければなりません|正解です|間違いです)")
 
 
 def _mapping_get(value: Any, key: str, default: Any = None) -> Any:
@@ -144,6 +152,18 @@ def _span_matches_sentence(sentence: str, raw: str) -> bool:
     return SequenceMatcher(None, sent_norm, raw_norm).ratio() >= 0.42
 
 
+def _step14_unbacked_reason(sentence: str, evidence_text: str) -> str:
+    if _STEP14_DIAGNOSIS_LIKE_RE.search(sentence) and not _STEP14_DIAGNOSIS_LIKE_RE.search(evidence_text):
+        return REJECTION_UNSUPPORTED_DIAGNOSIS_LIKE
+    if _STEP14_PERSONALITY_LABEL_RE.search(sentence) and not _STEP14_PERSONALITY_LABEL_RE.search(evidence_text):
+        return REJECTION_UNSUPPORTED_PERSONALITY_LABEL
+    if _STEP14_GENERAL_KNOWLEDGE_RE.search(sentence) and not _STEP14_GENERAL_KNOWLEDGE_RE.search(evidence_text):
+        return REJECTION_UNSUPPORTED_GENERAL_KNOWLEDGE_COMPLETION
+    if _STEP14_ADVICE_ASSERTION_RE.search(sentence) and not _STEP14_ADVICE_ASSERTION_RE.search(evidence_text):
+        return REJECTION_UNSUPPORTED_ADVICE_ASSERTION
+    return ""
+
+
 def guard_grounding(
     comment_text: Any,
     *,
@@ -177,6 +197,7 @@ def guard_grounding(
 
     allowed = set(declared) if declared else all_ids
     scoped = tuple(span for span in spans if _span_id(span) in allowed)
+    evidence_text = "\n".join(_span_raw(span) for span in scoped)
     phrase_supports = _phrase_supports(
         phrase_units=phrase_units,
         used_phrase_unit_ids=used_phrase_unit_ids,
@@ -189,7 +210,12 @@ def guard_grounding(
         phrase_matches = [span_id for span_id, phrase_text in phrase_supports if _span_matches_sentence(sentence, phrase_text)]
         sentence_matches = list(dict.fromkeys(sentence_matches + phrase_matches))
         sentence_claims.append({"sentence": sentence, "evidence_span_ids": sentence_matches})
-        if sentence_matches:
+        step14_reason = _step14_unbacked_reason(sentence, evidence_text)
+        if step14_reason:
+            reasons.append(step14_reason)
+            matched.append(sentence)
+            unsupported.append(sentence)
+        elif sentence_matches:
             matched_ids.extend(sentence_matches)
         else:
             unsupported.append(sentence)
@@ -252,6 +278,10 @@ __all__ = [
     "REJECTION_USED_EVIDENCE_IDS_MISSING",
     "REJECTION_USED_EVIDENCE_NOT_FOUND",
     "REJECTION_UNSUPPORTED_SENTENCE",
+    "REJECTION_UNSUPPORTED_DIAGNOSIS_LIKE",
+    "REJECTION_UNSUPPORTED_PERSONALITY_LABEL",
+    "REJECTION_UNSUPPORTED_GENERAL_KNOWLEDGE_COMPLETION",
+    "REJECTION_UNSUPPORTED_ADVICE_ASSERTION",
     "REJECTION_GROUNDING_UNSUPPORTED_SENTENCE",
     "REJECTION_DECLARED_EVIDENCE_NOT_REFLECTED",
     "REJECTION_GROUNDING_DECLARED_EVIDENCE_NOT_REFLECTED",

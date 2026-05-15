@@ -52,6 +52,16 @@ def _stable_hash(*parts: object) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Mapping):
+        return _json_safe_mapping(value)
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_value(item) for item in value]
+    return str(value)
+
+
 def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         return {}
@@ -60,14 +70,7 @@ def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
         key_text = _clean_token(key)
         if not key_text:
             continue
-        if isinstance(item, (str, int, float, bool)) or item is None:
-            out[key_text] = item
-        elif isinstance(item, (list, tuple)):
-            out[key_text] = [str(v) if not isinstance(v, (str, int, float, bool)) and v is not None else v for v in item]
-        elif isinstance(item, Mapping):
-            out[key_text] = _json_safe_mapping(item)
-        else:
-            out[key_text] = str(item)
+        out[key_text] = _json_safe_value(item)
     return out
 
 

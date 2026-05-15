@@ -28,7 +28,7 @@ _FEAR_RE = re.compile(r"(怖|こわ|不安|心配|ダメージ|責め|ミス|迷
 _VALUE_RE = re.compile(r"(嬉し|うれし|リラックス|楽し|笑え|元気|片付け|気持ちが軽い|ちゃんとでき|大切|好き|整え|守り|安心|休ま|家のこと|優先|幸せ|役に立)")
 _RELATION_RE = re.compile(r"(でも|だけど|けど|一方|同時に|その中で|ただ|なのに|からこそ|だからこそ|とはいえ)")
 _EMOTION_WORD_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り|寂し|さびし|嬉し|怖|こわ|しんど|苦し)")
-_SAFETY_RISK_RE = re.compile(r"(死にたい|消えたい|自傷|殺したい|OD|首を吊|飛び降り|リスカ)")
+_SAFETY_RISK_RE = re.compile(r"(死にたい|消えたい|自殺|自傷|自分を傷つけたい|殺したい|OD|過量服薬|首を吊|首吊|飛び降り|リスカ|生きていたくない|生きるのをやめたい)", re.IGNORECASE)
 
 _STRUCTURED_TEXT_FIELDS: Tuple[str, ...] = ("memo", "memo_action")
 _STRUCTURED_LIST_FIELDS: Tuple[str, ...] = ("emotion_details", "emotions", "category")

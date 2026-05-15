@@ -141,3 +141,30 @@ async def test_render_keeps_fail_closed_when_feature_flag_disabled(monkeypatch):
     assert multi["composer_client_resolution"]["source"] == "none"
     assert reply.comment_text == ""
     assert multi["composer_source"] == "unavailable"
+
+
+def test_step06_default_registry_marks_scope_block_before_composer(monkeypatch):
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
+
+    client, meta = resolve_default_emlis_composer_client(
+        release_allowed=False,
+        release_meta={
+            "stage": "limited_cases",
+            "enabled": False,
+            "attempted": False,
+            "reason_code": "scope_limited_case_not_eligible",
+            "rejection_reasons": ["limited_composer_scope_not_allowed", "scope_out_of_scope"],
+        },
+    )
+
+    assert client is None
+    assert meta["default_limited_enabled"] is True
+    assert meta["default_client_used"] is False
+    assert meta["composer_attempted"] is False
+    assert meta["connection_status"] == "blocked_scope"
+    assert meta["pre_connection_stop_stage"] == "scope"
+    assert meta["default_composer_resolution"]["release_allowed"] is False
+    assert meta["default_composer_resolution"]["connection_status"] == "blocked_scope"
+    assert "limited_composer_rollout_not_allowed" in meta["rejection_reasons"]
+    assert "limited_composer_scope_not_allowed" in meta["rejection_reasons"]

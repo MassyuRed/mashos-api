@@ -44,6 +44,20 @@ def _all_core_gates_passed(gate_trace: Mapping[str, Any]) -> bool:
     return all(_gate_passed(gate_trace, key) for key in _required_gate_trace_keys())
 
 
+def _step14_reason_subset(reasons: List[str]) -> List[str]:
+    markers = (
+        "diagnosis",
+        "personality",
+        "general_knowledge",
+        "overclaim",
+        "advice",
+        "causal",
+        "repeated_surface",
+        "unsupported_sentence",
+    )
+    return _dedupe([reason for reason in reasons or [] if any(marker in str(reason or "") for marker in markers)])
+
+
 def _status_for_failure(*, source: str, reasons: List[str]) -> str:
     reason_set = set(_dedupe(reasons))
     if "phase_not_complete" in reason_set:
@@ -119,6 +133,23 @@ def build_emlis_gate_trace(
                 if getattr(c, "unsupported_reason", "")
             ]),
             "confidence": float(grounding_report.confidence or 0.0),
+            # Step07: keep the scoped-grounding contract visible in the gate
+            # trace so QA can verify that B-plan partial observations are
+            # grounded only against the scoped graph, while excluded full-graph
+            # evidence remains unavailable for display validation.
+            "grounding_scope": str(getattr(grounding_report, "grounding_scope", "full_graph") or "full_graph"),
+            "allowed_evidence_span_count": len(list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])),
+            "ignored_evidence_span_count": len(list(getattr(grounding_report, "ignored_evidence_span_ids", []) or [])),
+            "step14_guard_rejection_reasons": _step14_reason_subset(list(grounding_report.rejection_reasons or [])),
+            "step14_guard_strengthening": {
+                "version": "emlis.guard_strengthening.v1",
+                "target_step": "Step14_guard_strengthening",
+                "guard_threshold_relaxed": False,
+                "unsupported_sentence_guarded": "unsupported_sentence" in list(grounding_report.rejection_reasons or []),
+                "diagnosis_like_guarded": "unsupported_diagnosis_like" in list(grounding_report.rejection_reasons or []),
+                "personality_label_guarded": "unsupported_personality_label" in list(grounding_report.rejection_reasons or []),
+                "general_knowledge_completion_guarded": "unsupported_general_knowledge_completion" in list(grounding_report.rejection_reasons or []),
+            },
         },
         "template_echo": {
             "passed": bool(template_echo_report.passed),
@@ -140,6 +171,19 @@ def build_emlis_gate_trace(
             "phase8_emotion_label_body_line_count": int(getattr(template_echo_report, "phase8_emotion_label_body_line_count", 0) or 0),
             "phase8_missing_must_keep_roles": list(getattr(template_echo_report, "phase8_missing_must_keep_roles", []) or []),
             "phase8_quality_rejection_reasons": list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or []),
+            "step14_guard_rejection_reasons": _step14_reason_subset([
+                *list(template_echo_report.rejection_reasons or []),
+                *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or []),
+            ]),
+            "step14_guard_strengthening": {
+                "version": "emlis.guard_strengthening.v1",
+                "target_step": "Step14_guard_strengthening",
+                "guard_threshold_relaxed": False,
+                "diagnosis_like_guarded": any("diagnosis" in str(reason) for reason in [*list(template_echo_report.rejection_reasons or []), *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or [])]),
+                "personality_label_guarded": any("personality" in str(reason) for reason in [*list(template_echo_report.rejection_reasons or []), *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or [])]),
+                "general_knowledge_completion_guarded": any("general_knowledge" in str(reason) for reason in [*list(template_echo_report.rejection_reasons or []), *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or [])]),
+                "repeated_surface_guarded": any("repeated_surface" in str(reason) for reason in [*list(template_echo_report.rejection_reasons or []), *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or [])]),
+            },
         },
         "generation_source": {
             "passed": source == "ai_generated",
@@ -149,6 +193,11 @@ def build_emlis_gate_trace(
         "safety": {
             "passed": not bool(safety.requires_block),
             "rejection_reasons": list(safety.reasons or []) if safety.requires_block else [],
+            "diagnostics": safety.as_meta() if hasattr(safety, "as_meta") else {
+                "requires_block": bool(safety.requires_block),
+                "reasons": list(safety.reasons or []),
+                "blocked_before_composer": bool(safety.requires_block),
+            },
         },
         "phase_completion": {
             "passed": bool(phase_completion_ready),

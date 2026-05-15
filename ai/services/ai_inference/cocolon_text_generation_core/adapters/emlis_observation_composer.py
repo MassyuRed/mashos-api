@@ -16,6 +16,10 @@ from cocolon_text_generation_core.adapters.emlis_evidence_adapter import convert
 from cocolon_text_generation_core.composer import CORE_TEXT_COMPOSER_NAME, CoreTextComposer
 from cocolon_text_generation_core.policies import CORE_ID_EMLIS, DEFAULT_COVERAGE_SCOPE, STATUS_GENERATED
 from cocolon_text_generation_core.result import CoreTextCandidate
+from cocolon_text_generation_core.stabilization import (
+    build_core_stabilization_report,
+    emlis_observation_output_contract,
+)
 from cocolon_text_generation_core.types import CoreTextPayload, PhraseUnit, SentencePlan, TextGenerationResult
 
 ADAPTER_NAME = "emlis_observation_composer_adapter.v1"
@@ -345,7 +349,25 @@ class EmlisObservationCoreEvaluation:
         return bool(self.result.status == STATUS_GENERATED and self.result.text)
 
     def as_meta(self) -> dict[str, Any]:
-        return {
+        stabilization_report = build_core_stabilization_report(
+            payload=self.payload,
+            result=self.result,
+            expected_core_id=CORE_ID_EMLIS,
+            output_contract=emlis_observation_output_contract(
+                coverage_scope=self.result.coverage_scope or self.candidate.coverage_scope
+            ),
+            meta={"adapter_name": self.adapter_name, "core_composer": CORE_TEXT_COMPOSER_NAME},
+        ).as_meta()
+        step19_meta = {}
+        if isinstance(self.candidate.meta, Mapping):
+            raw_step19 = (
+                self.candidate.meta.get("step19_a_plan_equivalent_composer")
+                or self.candidate.meta.get("step19_a_plan_equivalent")
+                or self.candidate.meta.get("a1_composer_introduction")
+            )
+            if isinstance(raw_step19, Mapping):
+                step19_meta = dict(raw_step19)
+        meta = {
             "adapter_name": self.adapter_name,
             "core_composer": CORE_TEXT_COMPOSER_NAME,
             "core_id": self.payload.core_id,
@@ -364,8 +386,14 @@ class EmlisObservationCoreEvaluation:
                 "sentence_plan_count": len(self.payload.sentence_plans),
                 "must_keep_roles": list(self.payload.must_keep_roles),
             },
+            "step15_common_core_stabilization": stabilization_report,
+            "common_core_stabilization": stabilization_report,
             "result": self.result.as_meta(),
         }
+        if step19_meta:
+            meta["step19_a_plan_equivalent_composer"] = step19_meta
+            meta["a1_composer_introduction"] = step19_meta
+        return meta
 
 
 def evaluate_emlis_observation_candidate(

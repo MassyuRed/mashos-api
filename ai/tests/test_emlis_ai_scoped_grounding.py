@@ -159,3 +159,55 @@ async def test_render_records_scoped_grounding_when_default_limited_composer_ena
     assert grounding_report["allowed_evidence_span_ids"] == scoped_grounding["allowed_evidence_span_ids"]
     assert grounding_report["ignored_evidence_span_ids"]
     assert reply.meta["observation_status"] in {"passed", "rejected", "unavailable"}
+
+@pytest.mark.asyncio
+async def test_step07_default_route_keeps_scoped_grounding_and_passed_only_comment(monkeypatch):
+    monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
+    monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ROLLOUT_STAGE", "all")
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    reply = await render_emlis_ai_reply(
+        user_id="step07-render-user",
+        subscription_tier="free",
+        current_input={
+            "id": "step07-render-emotion",
+            "created_at": "2026-05-10T00:00:00Z",
+            "memo": SAMPLE_MEMO,
+            "memo_action": "",
+            "emotion_details": [{"type": "自己理解", "strength": "medium"}],
+            "emotions": ["自己理解"],
+            "category": ["生活"],
+        },
+        display_name="Mash",
+        timezone_name="Asia/Tokyo",
+    )
+
+    multi = reply.meta["multi_perspective"]
+    phase_gate = multi["phase_gate"]
+    scoped_grounding = multi["scoped_grounding"]
+    grounding_report = multi["grounding_report"]
+    grounding_gate = phase_gate["gate_trace"]["grounding"]
+    summary = reply.meta["diagnostic_summary"]
+    grounding_diagnostics = summary["gate_results"]["grounding"]["diagnostics"]
+
+    assert reply.meta["observation_status"] == "passed"
+    assert reply.comment_text.strip()
+    assert summary["normal_connection"]["decision"] == "default_composer_connected"
+    assert scoped_grounding["enabled"] is True
+    assert scoped_grounding["grounding_scope"] == "limited_scoped_graph"
+    assert scoped_grounding["allowed_evidence_span_ids"]
+    assert scoped_grounding["excluded_claims_retained_for_meta"]
+    assert grounding_report["grounding_scope"] == "limited_scoped_graph"
+    assert grounding_report["allowed_evidence_span_ids"] == scoped_grounding["allowed_evidence_span_ids"]
+    assert grounding_gate["grounding_scope"] == "limited_scoped_graph"
+    assert grounding_gate["allowed_evidence_span_count"] == len(scoped_grounding["allowed_evidence_span_ids"])
+    assert grounding_gate["ignored_evidence_span_count"] > 0
+    assert grounding_diagnostics["grounding_scope"] == "limited_scoped_graph"
+    assert grounding_diagnostics["allowed_evidence_span_count"] == len(scoped_grounding["allowed_evidence_span_ids"])
+    assert grounding_diagnostics["ignored_evidence_span_count"] == grounding_gate["ignored_evidence_span_count"]
+
+    assert phase_gate["comment_text_allowed"] is True
+    assert phase_gate["frontend_display_control_ready"] is True
+    assert phase_gate["phase9_frontend_display_control_ready"] is True
+    assert phase_gate["release_ready"] is True
+

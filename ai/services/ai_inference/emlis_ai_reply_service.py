@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -19,7 +20,9 @@ from emlis_ai_user_address_service import build_emlis_observation_greeting, disp
 from emlis_ai_types import (
     DerivedModelHypothesis,
     DerivedUserModel,
+    DiagnosticGateResult,
     EmlisAICapabilityConfig,
+    EmlisAIDiagnosticSummary,
     EvidenceRef,
     ReplyEnvelope,
     ReplyLine,
@@ -39,8 +42,14 @@ from emlis_ai_world_model_service import build_emlis_ai_world_model
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_composer_client_registry import default_composer_flag_state, resolve_emlis_ai_composer_client
 from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
-from emlis_ai_limited_observation_scope_service import build_limited_observation_scope
+from emlis_ai_limited_observation_scope_service import build_limited_observation_scope, has_limited_scope_safety_boundary
 from emlis_ai_limited_release_service import build_phase7_rollout_metrics, evaluate_limited_composer_release
+from emlis_ai_rollout_metrics_service import build_step16_rollout_metrics
+from emlis_ai_ap0_migration_decision_service import build_step18_ap0_migration_decision
+from emlis_ai_a_plan_equivalent_composer_service import build_step19_a_plan_equivalent_meta
+from emlis_ai_long_term_quality_service import build_step20_long_term_quality_meta
+from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix
+from emlis_ai_safety_boundary_service import build_emlis_safety_boundary_report
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
@@ -113,6 +122,36 @@ def _current_ref(bundle: SourceBundle) -> EvidenceRef:
         ref_id=str(bundle.current_input.get("id") or bundle.current_input.get("created_at") or "current"),
         weight=1.0,
     )
+
+
+def _previous_emlis_outputs_from_bundle(bundle: SourceBundle) -> List[Dict[str, Any]]:
+    """Collect optional same-user previous Emlis outputs for Step20 QA meta.
+
+    This is intentionally read-only.  It does not fetch, infer, or write history;
+    callers may pass already-owned history through side_state/debug/current_input.
+    """
+
+    outputs: List[Dict[str, Any]] = []
+
+    def add_many(values: Any) -> None:
+        if isinstance(values, (list, tuple)):
+            for item in values:
+                if isinstance(item, dict):
+                    outputs.append(dict(item))
+                elif str(item or "").strip():
+                    outputs.append({"comment_text": str(item)})
+
+    if isinstance(bundle.current_input, dict):
+        add_many(bundle.current_input.get("previous_emlis_outputs"))
+        add_many(bundle.current_input.get("previous_observation_outputs"))
+    if isinstance(bundle.side_state, dict):
+        add_many(bundle.side_state.get("previous_emlis_outputs"))
+        add_many(bundle.side_state.get("previous_observation_outputs"))
+    if isinstance(bundle.debug, dict):
+        add_many(bundle.debug.get("previous_emlis_outputs"))
+        add_many(bundle.debug.get("previous_observation_outputs"))
+    # Keep the list bounded for QA meta size; Step20 needs trend signals, not a dump.
+    return outputs[-12:]
 
 
 def _clean(value: Any) -> str:
@@ -1017,6 +1056,1037 @@ def _composer_core_generation_meta(composer_candidate: Any) -> Dict[str, Any]:
     return dict(core_meta or {}) if isinstance(core_meta, dict) else {}
 
 
+
+def _dedupe_reason_codes(values: Any) -> List[str]:
+    out: List[str] = []
+    for value in list(values or []):
+        reason = str(value or "").strip()
+        if reason and reason not in out:
+            out.append(reason)
+    return out
+
+
+def _gate_reason_category_for_summary(gate_key: str, reason: str) -> str:
+    value = str(reason or "").strip()
+    if not value or value == "passed":
+        return "passed"
+    if gate_key == "reader":
+        if "addressee" in value:
+            return "reader_addressee"
+        if "speaker" in value or "person" in value or "pronoun" in value or "hijack" in value:
+            return "reader_speaker_integrity"
+        if "too_short" in value or "too_long" in value or "empty" in value or "unclear" in value:
+            return "reader_readability"
+        if "report" in value or "listing" in value:
+            return "reader_report_like"
+        if "relation" in value:
+            return "reader_relation"
+        return "reader_general"
+    if gate_key == "grounding":
+        if "diagnosis" in value or "personality" in value or "overclaim" in value:
+            return "grounding_overclaim"
+        if "general_knowledge" in value:
+            return "grounding_general_knowledge_completion"
+        if "unsupported" in value or "no_evidence" in value:
+            return "grounding_unsupported"
+        if "relation" in value:
+            return "grounding_relation"
+        if "evidence" in value or "graph" in value or "scope" in value:
+            return "grounding_evidence"
+        if "empty" in value:
+            return "grounding_empty_text"
+        return "grounding_general"
+    if gate_key == "template_echo":
+        if "diagnosis" in value or "personality" in value or "overclaim" in value:
+            return "template_echo_overclaim"
+        if "general_knowledge" in value:
+            return "template_echo_general_knowledge_completion"
+        if "raw" in value or "quote" in value or "copy" in value or "echo" in value:
+            return "template_echo_raw_copy"
+        if "repeated" in value or "surface" in value or "template" in value or "fixed" in value:
+            return "template_echo_repetition"
+        if "emotion_label" in value or "unfinished" in value or "quality" in value:
+            return "template_echo_quality"
+        return "template_echo_general"
+    if gate_key == "display":
+        if "empty_comment" in value or "comment" in value:
+            return "display_empty_comment"
+        if "source" in value or "composer" in value:
+            return "display_source"
+        if "phase" in value:
+            return "display_phase"
+        if "reader" in value:
+            return "display_reader"
+        if "ground" in value or "evidence" in value:
+            return "display_grounding"
+        if "template" in value or "echo" in value:
+            return "display_template_echo"
+        if "safety" in value:
+            return "display_safety"
+        return "display_general"
+    return "gate_general"
+
+
+def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[str, Any]:
+    if gate_key == "reader":
+        keys = (
+            "understandable",
+            "addressee_clear",
+            "speaker_integrity_ok",
+            "conversational",
+            "report_like",
+            "confidence",
+        )
+    elif gate_key == "grounding":
+        keys = (
+            "coverage_ratio",
+            "sentence_count",
+            "unsupported_sentence_count",
+            "grounding_scope",
+            "allowed_evidence_span_count",
+            "ignored_evidence_span_count",
+            "step14_guard_rejection_reasons",
+            "step14_guard_strengthening",
+            "confidence",
+        )
+    elif gate_key == "template_echo":
+        keys = (
+            "matched_banned_patterns",
+            "max_old_template_similarity",
+            "max_previous_output_similarity",
+            "raw_echo_ratio",
+            "repeated_sentence_pattern_score",
+            "max_sentence_echo_ratio",
+            "raw_quote_span_count",
+            "raw_copy_sentence_ratio",
+            "limited_surface_repetition_score",
+            "abstract_repetition_score",
+            "abstract_phrase_repetition_score",
+            "raw_quote_char_ratio",
+            "matched_limited_surface_patterns",
+            "phase8_emotion_label_body_line_count",
+            "phase8_missing_must_keep_roles",
+            "phase8_quality_rejection_reasons",
+            "step14_guard_rejection_reasons",
+            "step14_guard_strengthening",
+        )
+    elif gate_key == "display":
+        keys = (
+            "observation_status",
+            "comment_text_allowed",
+            "comment_text_present",
+        )
+    else:
+        keys = ()
+    diagnostics = {key: deepcopy(gate.get(key)) for key in keys if key in gate}
+    if gate_key == "template_echo":
+        # Step05 diagnostic meta keeps counts/codes only and avoids raw quoted user fragments.
+        diagnostics["matched_raw_quote_fragment_count"] = len(list(gate.get("matched_raw_quote_fragments") or []))
+        diagnostics["matched_banned_pattern_count"] = len(list(gate.get("matched_banned_patterns") or []))
+        diagnostics["matched_limited_surface_pattern_count"] = len(list(gate.get("matched_limited_surface_patterns") or []))
+        diagnostics["phase8_missing_must_keep_role_count"] = len(list(gate.get("phase8_missing_must_keep_roles") or []))
+        diagnostics["phase8_quality_rejection_reason_count"] = len(list(gate.get("phase8_quality_rejection_reasons") or []))
+    return diagnostics
+
+
+def _gate_result_from_trace(gate_trace: Dict[str, Any], key: str) -> DiagnosticGateResult:
+    gate = gate_trace.get(key) if isinstance(gate_trace, dict) else None
+    public_key = "display" if key == "display_gate" else key
+    if not isinstance(gate, dict):
+        return DiagnosticGateResult(
+            passed=False,
+            rejection_reasons=["gate_trace_missing"],
+            primary_reason="gate_trace_missing",
+            reason_category="gate_trace_missing",
+            diagnostics={},
+        )
+    reasons = _dedupe_reason_codes(gate.get("rejection_reasons") or [])
+    passed = bool(gate.get("passed"))
+    primary_reason = str(gate.get("primary_reason") or ("passed" if passed else _first_reason(reasons, default=f"{public_key}_failed")))
+    reason_category = str(gate.get("reason_category") or _gate_reason_category_for_summary(public_key, primary_reason))
+    return DiagnosticGateResult(
+        passed=passed,
+        rejection_reasons=reasons,
+        primary_reason=primary_reason,
+        reason_category=reason_category,
+        diagnostics=_gate_diagnostics_from_trace(gate, public_key),
+    )
+
+
+def _first_reason(*groups: Any, default: str = "unknown") -> str:
+    for group in groups:
+        for reason in _dedupe_reason_codes(group):
+            return reason
+    return default
+
+
+def _diagnostic_gate_results(gate_trace: Dict[str, Any]) -> Dict[str, DiagnosticGateResult]:
+    return {
+        "reader": _gate_result_from_trace(gate_trace, "reader"),
+        "grounding": _gate_result_from_trace(gate_trace, "grounding"),
+        "template_echo": _gate_result_from_trace(gate_trace, "template_echo"),
+        "display": _gate_result_from_trace(gate_trace, "display_gate"),
+    }
+
+
+def _build_gate_diagnostic_summary(
+    *,
+    gate_results: Dict[str, DiagnosticGateResult],
+    observation_status: str,
+    composer_status: str,
+) -> Dict[str, Any]:
+    order = ["reader", "grounding", "template_echo", "display"]
+    gate_meta = {key: value.as_meta() for key, value in dict(gate_results or {}).items()}
+    failed_gates: List[str] = []
+    gate_primary_reasons: Dict[str, str] = {}
+    gate_rejection_reasons: Dict[str, List[str]] = {}
+    first_failed_gate = ""
+    first_failed_reason = ""
+    first_failed_category = ""
+    for key in order:
+        result = gate_results.get(key)
+        if result is None:
+            continue
+        gate_primary_reasons[key] = result.primary_reason or ("passed" if result.passed else f"{key}_failed")
+        gate_rejection_reasons[key] = list(result.rejection_reasons or [])
+        if not bool(result.passed):
+            failed_gates.append(key)
+            if not first_failed_gate:
+                first_failed_gate = key
+                first_failed_reason = result.primary_reason or _first_reason(result.rejection_reasons, default=f"{key}_failed")
+                first_failed_category = result.reason_category or _gate_reason_category_for_summary(key, first_failed_reason)
+    reason_codes = _dedupe_reason_codes(
+        reason
+        for key in order
+        for reason in list((gate_results.get(key) or DiagnosticGateResult(False)).rejection_reasons or [])
+    )
+    reason_categories = _dedupe_reason_codes(
+        (gate_results.get(key).reason_category if gate_results.get(key) is not None else "")
+        for key in order
+        if gate_results.get(key) is not None
+    )
+    return {
+        "version": "emlis.gate_diagnostic.v1",
+        "gate_order": order,
+        "gate_results": gate_meta,
+        "gate_primary_reasons": gate_primary_reasons,
+        "gate_rejection_reasons": gate_rejection_reasons,
+        "failed_gates": failed_gates,
+        "all_gates_passed": all(bool(gate_results.get(key) and gate_results[key].passed) for key in order),
+        "first_failed_gate": first_failed_gate,
+        "first_failed_reason": first_failed_reason,
+        "first_failed_category": first_failed_category,
+        "reader_passed": bool(gate_results.get("reader") and gate_results["reader"].passed),
+        "grounding_passed": bool(gate_results.get("grounding") and gate_results["grounding"].passed),
+        "template_echo_passed": bool(gate_results.get("template_echo") and gate_results["template_echo"].passed),
+        "display_passed": bool(gate_results.get("display") and gate_results["display"].passed),
+        "display_observation_status": observation_status,
+        "generated_but_not_displayed": bool(str(composer_status or "") == "generated" and str(observation_status or "") != "passed"),
+        "reason_codes": reason_codes,
+        "reason_categories": reason_categories,
+        "coverage_matrix_hints": [first_failed_category] if first_failed_category else (["gate_passed"] if observation_status == "passed" else ["gate_not_classified"]),
+    }
+
+
+def _reason_count_map(values: Any) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for value in list(values or []):
+        reason = str(value or "").strip()
+        if reason:
+            counts[reason] = int(counts.get(reason, 0)) + 1
+    return counts
+
+
+def _scope_reason_category(reason: str) -> str:
+    value = str(reason or "").strip().lower()
+    if not value:
+        return "unknown"
+    if "safety" in value:
+        return "safety_boundary"
+    if "required_structure" in value or "structure" in value:
+        return "required_structure"
+    if "no_current_input" in value or "missing" in value:
+        return "minimum_claim"
+    if "primary" in value:
+        return "primary_state"
+    if "evidence" in value or "ground" in value or "confidence" in value:
+        return "evidence_grounding"
+    if "relation" in value or "tension" in value:
+        return "relation_complexity"
+    if "claim_limit" in value or "optional_claim_limit" in value:
+        return "scope_complexity"
+    if "structured_label" in value:
+        return "structured_label"
+    return "scope_general"
+
+
+def _scope_reason_categories(values: Any) -> List[str]:
+    out: List[str] = []
+    for value in list(values or []):
+        category = _scope_reason_category(str(value or ""))
+        if category and category not in out:
+            out.append(category)
+    return out
+
+
+def _scope_coverage_matrix_hint(*, scope_status: str, coverage_scope: str, reason_codes: List[str]) -> str:
+    if scope_status == "safety_blocked" or any("safety" in reason for reason in reason_codes):
+        return "safety_boundary"
+    if scope_status == "eligible":
+        return "partial_observation" if coverage_scope == "partial_observation" else "current_input_core"
+    categories = _scope_reason_categories(reason_codes)
+    if "required_structure" in categories:
+        return "required_structure"
+    if "primary_state" in categories or "evidence_grounding" in categories:
+        return "current_input_core_evidence"
+    if "relation_complexity" in categories:
+        return "core_tension"
+    if "scope_complexity" in categories:
+        return "scope_complexity"
+    if scope_status:
+        return scope_status
+    return "not_evaluated"
+
+
+def _scope_diagnostic_meta(*, scope_meta: Dict[str, Any], gate_trace: Dict[str, Any]) -> Dict[str, Any]:
+    """Build Step 03 developer-facing scope diagnostics.
+
+    This payload stays in meta only. It classifies why the limited scope was
+    eligible, out_of_scope, or safety_blocked without adding user-facing text or
+    weakening the fail-closed display gate.
+    """
+
+    scope_meta = scope_meta if isinstance(scope_meta, dict) else {}
+    safety_gate = gate_trace.get("safety") if isinstance(gate_trace, dict) else {}
+    safety_reason_codes = _dedupe_reason_codes(
+        safety_gate.get("rejection_reasons") if isinstance(safety_gate, dict) else []
+    )
+    if not scope_meta:
+        coverage_hint = "safety_boundary" if safety_reason_codes else "not_evaluated"
+        categories = _scope_reason_categories(safety_reason_codes)
+        return {
+            "version": "emlis.scope_diagnostic.v1",
+            "scope_attempted": False,
+            "scope_status": "safety_blocked" if safety_reason_codes else "",
+            "coverage_scope": "current_input_core" if safety_reason_codes else "",
+            "scope_ready_for_composer": False,
+            "included_claim_count": 0,
+            "included_relation_count": 0,
+            "excluded_claim_count": 0,
+            "rejection_reasons": safety_reason_codes,
+            "safety_reason_codes": safety_reason_codes,
+            "safety_boundaries": safety_reason_codes,
+            "missing_information": [],
+            "excluded_reason_codes": [],
+            "excluded_reason_counts": {},
+            "excluded_source_counts": {},
+            "scoped_claim_counts": {},
+            "scoped_optional_claim_count": 0,
+            "reason_codes": safety_reason_codes,
+            "reason_categories": categories,
+            "reason_category": categories[0] if categories else "",
+            "coverage_matrix_hint": coverage_hint,
+            "coverage_matrix_hints": [coverage_hint] if coverage_hint else [],
+            "coverage_groups": [],
+            "scope_expansion": {},
+            "safety_boundary": {
+                "version": "emlis.scope_safety_boundary.v1",
+                "requires_block": bool(safety_reason_codes),
+                "blocked_before_composer": bool(safety_reason_codes),
+                "reason_codes": safety_reason_codes,
+                "safety_boundaries": safety_reason_codes,
+                "comment_text_allowed": False if safety_reason_codes else None,
+                "composer_must_not_run": bool(safety_reason_codes),
+            },
+            "safety_pre_generation_block": {
+                "version": "emlis.safety_pre_generation_block.v1",
+                "target_step": "Step10_safety_boundary",
+                "phase": "B-S1",
+                "blocked_before_composer": bool(safety_reason_codes),
+                "composer_generation_allowed": False if safety_reason_codes else True,
+                "comment_text_allowed": False,
+                "fixed_reply_allowed": False,
+                "fallback_observation_allowed": False,
+                "raw_user_text_included": False,
+                "primary_reason": "safety_boundary" if safety_reason_codes else "",
+            },
+            "out_of_scope_reason": safety_reason_codes[0] if safety_reason_codes else "",
+        }
+
+    nested = scope_meta.get("scope_diagnostic") if isinstance(scope_meta.get("scope_diagnostic"), dict) else {}
+    scope_status = str(scope_meta.get("scope_status") or nested.get("scope_status") or "")
+    coverage_scope = str(scope_meta.get("coverage_scope") or nested.get("coverage_scope") or "")
+    included_claim_ids = [str(v) for v in list(scope_meta.get("included_claim_ids") or nested.get("included_claim_ids") or []) if str(v)]
+    included_relation_ids = [str(v) for v in list(scope_meta.get("included_relation_ids") or nested.get("included_relation_ids") or []) if str(v)]
+    excluded_claims = list(scope_meta.get("excluded_claims") or nested.get("excluded_claims") or [])
+    excluded_reason_codes: List[str] = []
+    excluded_sources: List[str] = []
+    for item in excluded_claims:
+        if not isinstance(item, dict):
+            continue
+        reason = str(item.get("reason_code") or "").strip()
+        source = str(item.get("source") or "").strip()
+        if reason:
+            excluded_reason_codes.append(reason)
+        if source:
+            excluded_sources.append(source)
+
+    nested_excluded = nested.get("excluded_reason_codes") if isinstance(nested.get("excluded_reason_codes"), list) else []
+    excluded_reason_codes = _dedupe_reason_codes([
+        *(scope_meta.get("excluded_reason_codes") or []),
+        *nested_excluded,
+        *excluded_reason_codes,
+    ])
+    rejection_reasons = _dedupe_reason_codes([*(scope_meta.get("rejection_reasons") or []), *(nested.get("rejection_reasons") or []), *safety_reason_codes])
+    missing_information = _dedupe_reason_codes([*(scope_meta.get("missing_information") or []), *(nested.get("missing_information") or [])])
+    safety_boundaries = _dedupe_reason_codes([*(scope_meta.get("safety_boundaries") or []), *(nested.get("safety_boundaries") or [])])
+    scope_expansion = scope_meta.get("scope_expansion") if isinstance(scope_meta.get("scope_expansion"), dict) else nested.get("scope_expansion") if isinstance(nested.get("scope_expansion"), dict) else {}
+    safety_boundary = scope_meta.get("safety_boundary") if isinstance(scope_meta.get("safety_boundary"), dict) else nested.get("safety_boundary") if isinstance(nested.get("safety_boundary"), dict) else {}
+    safety_pre_generation_block = (
+        scope_meta.get("safety_pre_generation_block")
+        if isinstance(scope_meta.get("safety_pre_generation_block"), dict)
+        else nested.get("safety_pre_generation_block")
+        if isinstance(nested.get("safety_pre_generation_block"), dict)
+        else {}
+    )
+    expansion_groups = scope_expansion.get("coverage_groups") if isinstance(scope_expansion, dict) else []
+    safety_groups = safety_boundary.get("coverage_groups") if isinstance(safety_boundary, dict) else []
+    coverage_groups = _dedupe_reason_codes([
+        *(scope_meta.get("coverage_groups") or []),
+        *(nested.get("coverage_groups") or []),
+        *(expansion_groups if isinstance(expansion_groups, list) else []),
+        *(safety_groups if isinstance(safety_groups, list) else []),
+    ])
+    safety_boundary_codes = list(safety_boundary.get("reason_codes") or []) if isinstance(safety_boundary, dict) else []
+    safety_pre_generation_block = scope_meta.get("safety_pre_generation_block") if isinstance(scope_meta.get("safety_pre_generation_block"), dict) else nested.get("safety_pre_generation_block") if isinstance(nested.get("safety_pre_generation_block"), dict) else {}
+    safety_boundaries = _dedupe_reason_codes([
+        *safety_boundaries,
+        *(safety_boundary.get("safety_boundaries") or [] if isinstance(safety_boundary, dict) else []),
+    ])
+    reason_codes = _dedupe_reason_codes([
+        *rejection_reasons,
+        *safety_reason_codes,
+        *safety_boundary_codes,
+        *missing_information,
+        *excluded_reason_codes,
+    ])
+    categories = _scope_reason_categories(reason_codes)
+    if not safety_pre_generation_block and (
+        scope_status == "safety_blocked"
+        or bool(safety_boundary.get("requires_block") if isinstance(safety_boundary, dict) else False)
+        or bool(safety_boundary.get("blocked_before_composer") if isinstance(safety_boundary, dict) else False)
+        or bool(safety_boundaries)
+    ):
+        safety_pre_generation_block = {
+            "version": "emlis.safety_pre_generation_block.v1",
+            "target_step": "Step10_safety_boundary",
+            "policy": "scope_pre_composer_block",
+            "scope_status": scope_status,
+            "blocked_before_composer": True,
+            "composer_generation_allowed": False,
+            "fixed_reply_allowed": False,
+            "fallback_observation_allowed": False,
+            "comment_text_allowed": False,
+            "normal_observation_allowed": False,
+            "user_facing_text_allowed": False,
+            "safety_boundaries": list(safety_boundaries or ["safety_boundary"]),
+            "reason_codes": list(reason_codes or safety_reason_codes or ["safety_boundary"]),
+            "evidence_span_ids": list(safety_boundary.get("evidence_span_ids") or []) if isinstance(safety_boundary, dict) else [],
+            "coverage_groups": list(safety_boundary.get("coverage_groups") or []) if isinstance(safety_boundary, dict) else [],
+            "raw_user_text_included": False,
+        }
+    coverage_hint = _scope_coverage_matrix_hint(
+        scope_status=scope_status,
+        coverage_scope=coverage_scope,
+        reason_codes=reason_codes,
+    )
+    if isinstance(nested.get("coverage_matrix_hint"), str) and nested.get("coverage_matrix_hint"):
+        coverage_hint = str(nested.get("coverage_matrix_hint"))
+
+    return {
+        "version": "emlis.scope_diagnostic.v1",
+        "scope_attempted": True,
+        "scope_status": scope_status,
+        "coverage_scope": coverage_scope,
+        "scope_ready_for_composer": bool(scope_status == "eligible"),
+        "included_claim_ids": included_claim_ids,
+        "included_relation_ids": included_relation_ids,
+        "included_claim_count": int(scope_meta.get("included_claim_count") or nested.get("included_claim_count") or len(included_claim_ids)),
+        "included_relation_count": int(scope_meta.get("included_relation_count") or nested.get("included_relation_count") or len(included_relation_ids)),
+        "excluded_claims": excluded_claims,
+        "excluded_claim_count": int(scope_meta.get("excluded_claim_count") or nested.get("excluded_claim_count") or len(excluded_claims)),
+        "excluded_reason_codes": excluded_reason_codes,
+        "excluded_reason_counts": dict(scope_meta.get("excluded_reason_counts") or nested.get("excluded_reason_counts") or _reason_count_map(excluded_reason_codes)),
+        "excluded_source_counts": dict(nested.get("excluded_source_counts") or _reason_count_map(excluded_sources)),
+        "rejection_reasons": rejection_reasons,
+        "rejection_reason_count": int(scope_meta.get("rejection_reason_count") or nested.get("rejection_reason_count") or len(rejection_reasons)),
+        "safety_reason_codes": safety_reason_codes,
+        "safety_boundaries": safety_boundaries,
+        "safety_boundary_count": int(scope_meta.get("safety_boundary_count") or nested.get("safety_boundary_count") or len(safety_boundaries)),
+        "missing_information": missing_information,
+        "missing_information_count": int(scope_meta.get("missing_information_count") or nested.get("missing_information_count") or len(missing_information)),
+        "scoped_claim_counts": dict(scope_meta.get("scoped_claim_counts") or nested.get("scoped_claim_counts") or {}),
+        "scoped_optional_claim_count": int(scope_meta.get("scoped_optional_claim_count") or nested.get("scoped_optional_claim_count") or 0),
+        "min_reply_sentence_count": int(scope_meta.get("min_reply_sentence_count") or nested.get("min_reply_sentence_count") or 0),
+        "max_reply_sentence_count": int(scope_meta.get("max_reply_sentence_count") or nested.get("max_reply_sentence_count") or 0),
+        "reason_codes": reason_codes,
+        "reason_categories": categories,
+        "reason_category": categories[0] if categories else "",
+        "coverage_matrix_hint": coverage_hint,
+        "coverage_matrix_hints": [coverage_hint] if coverage_hint else [],
+        "coverage_groups": coverage_groups,
+        "scope_expansion": dict(scope_expansion or {}),
+        "safety_boundary": dict(safety_boundary or {}) if isinstance(safety_boundary, dict) else {},
+        "safety_pre_generation_block": dict(safety_pre_generation_block or {}) if isinstance(safety_pre_generation_block, dict) else {},
+        "safety_blocked_before_composer": bool(
+            scope_status == "safety_blocked"
+            or (safety_boundary.get("blocked_before_composer") if isinstance(safety_boundary, dict) else False)
+            or (safety_pre_generation_block.get("blocked_before_composer") if isinstance(safety_pre_generation_block, dict) else False)
+        ),
+        "safety_evidence_span_ids": list(safety_boundary.get("evidence_span_ids") or []) if isinstance(safety_boundary, dict) else [],
+        "out_of_scope_reason": _first_reason(rejection_reasons, excluded_reason_codes, safety_reason_codes, safety_boundaries, missing_information, default="") if scope_status in {"out_of_scope", "safety_blocked"} else "",
+    }
+
+
+
+def _composer_diagnostic_meta(
+    *,
+    composer_candidate: Any = None,
+    composer_reasons: List[str] | None = None,
+    composer_status: str = "",
+    composer_model: str = "",
+    coverage_scope: str = "",
+) -> Dict[str, Any]:
+    """Step04 summary view for Composer-side stop reasons.
+
+    Composer diagnostics are developer-facing meta. They distinguish scoped
+    graph availability from text-material failures such as missing PhraseUnits,
+    missing required roles, shallow evidence, unmatched profiles, or unavailable
+    SentencePlans.
+    """
+
+    reasons = _dedupe_reason_codes(composer_reasons or [])
+    candidate_meta = getattr(composer_candidate, "composer_meta", {}) or {}
+    if not isinstance(candidate_meta, dict):
+        candidate_meta = {}
+    raw = candidate_meta.get("composer_diagnostic") if isinstance(candidate_meta.get("composer_diagnostic"), dict) else {}
+    diagnostic = dict(raw or {})
+    if not diagnostic:
+        categories = _dedupe_reason_codes(
+            _composer_reason_category_for_summary(reason)
+            for reason in reasons
+            if _composer_reason_category_for_summary(reason)
+        )
+        diagnostic = {
+            "version": "emlis.composer_diagnostic.v1",
+            "composer_attempted": bool(composer_candidate is not None),
+            "composer_status": composer_status,
+            "composer_ready_for_gate": bool(composer_status == "generated"),
+            "coverage_scope": coverage_scope,
+            "profile_key": str(candidate_meta.get("profile_key") or ""),
+            "source_profile_key": str(candidate_meta.get("source_profile_key") or ""),
+            "profile_matched": False,
+            "profile_unmatched": False,
+            "shallow_observation_path": bool(candidate_meta.get("shallow_observation_path")),
+            "phrase_unit_count": int(candidate_meta.get("phrase_unit_count") or 0),
+            "sentence_plan_count": int(candidate_meta.get("sentence_plan_count") or 0),
+            "required_roles": list(candidate_meta.get("required_roles") or []),
+            "available_roles": list(candidate_meta.get("available_roles") or []),
+            "covered_roles": list(candidate_meta.get("covered_roles") or []),
+            "missing_roles": list(candidate_meta.get("missing_roles") or []),
+            "required_role_missing": bool("required_role_missing" in categories),
+            "missing_phrase_units": bool("missing_phrase_units" in categories),
+            "shallow_insufficient_evidence": bool("shallow_insufficient_evidence" in categories),
+            "sentence_plan_unavailable": bool("sentence_plan_unavailable" in categories),
+            "reason_codes": reasons,
+            "reason_categories": categories,
+            "reason_category": categories[0] if categories else "",
+            "coverage_matrix_hints": categories or (["composer_generated"] if composer_status == "generated" else ["composer_not_classified"]),
+            "stop_reason": categories[0] if composer_status != "generated" and categories else "",
+        }
+    diagnostic.setdefault("version", "emlis.composer_diagnostic.v1")
+    diagnostic.setdefault("composer_status", composer_status)
+    diagnostic.setdefault("composer_model", composer_model)
+    diagnostic.setdefault("coverage_scope", coverage_scope)
+    diagnostic.setdefault("reason_codes", reasons)
+    diagnostic.setdefault("reason_categories", [])
+    diagnostic.setdefault("coverage_matrix_hints", [])
+    return diagnostic
+
+
+def _composer_reason_category_for_summary(reason: str) -> str:
+    value = str(reason or "").strip()
+    if not value:
+        return ""
+    if "required_role" in value:
+        return "required_role_missing"
+    if "phrase_unit" in value:
+        return "missing_phrase_units"
+    if "short_ambiguous" in value or ("shallow" in value and ("evidence" in value or "empty" in value)):
+        return "shallow_insufficient_evidence" if "evidence" in value or "ambiguous" in value else "sentence_plan_unavailable"
+    if "profile_unmatched" in value:
+        return "profile_unmatched"
+    if "sentence_plan" in value or "empty_candidate" in value or "minimum_body" in value:
+        return "sentence_plan_unavailable"
+    if "quality" in value or "core" in value or "forbidden" in value:
+        return "composer_quality"
+    if "evidence" in value:
+        return "composer_evidence"
+    if "scope" in value:
+        return "scope_not_eligible"
+    if "graph" in value:
+        return "missing_graph"
+    return "composer_general"
+
+
+
+def _b_plan_normal_connection_meta(
+    *,
+    resolution_meta: Dict[str, Any],
+    release_decision: Dict[str, Any],
+    rollout_decision: Dict[str, Any],
+    rollout_metrics: Dict[str, Any],
+    composer_candidate: Any,
+    observation_status: str,
+) -> Dict[str, Any]:
+    """Step06 developer-facing B-plan normal connection contract.
+
+    This meta fixes the normal ``composer_client=None`` route without changing
+    user-facing output.  It lets QA distinguish environment / rollout blocking
+    from Composer, Scope, or Gate failures after the default client is connected.
+    """
+
+    resolution_meta = resolution_meta if isinstance(resolution_meta, dict) else {}
+    release_decision = release_decision if isinstance(release_decision, dict) else {}
+    rollout_decision = rollout_decision if isinstance(rollout_decision, dict) else {}
+    rollout_metrics = rollout_metrics if isinstance(rollout_metrics, dict) else {}
+
+    explicit_client_used = bool(resolution_meta.get("explicit_client_used") or resolution_meta.get("explicit_client_provided"))
+    default_client_used = bool(resolution_meta.get("default_client_used"))
+    default_client_resolved = bool(resolution_meta.get("default_client_resolved") or default_client_used)
+    default_connection_active = bool(resolution_meta.get("default_connection_active") or default_client_used)
+    connection_status = str(resolution_meta.get("connection_status") or "")
+    feature_flag_enabled = bool(
+        resolution_meta.get("feature_flag_enabled")
+        or resolution_meta.get("feature_enabled")
+        or release_decision.get("feature_flag_enabled")
+    )
+    release_enabled = bool(release_decision.get("enabled"))
+    release_allowed = resolution_meta.get("release_allowed")
+    rollout_stage = str(release_decision.get("stage") or rollout_decision.get("stage") or "")
+    release_reason_code = str(release_decision.get("reason_code") or rollout_decision.get("reason_code") or "")
+    release_rejections = _dedupe_reason_codes([
+        *(release_decision.get("rejection_reasons") or []),
+        *(resolution_meta.get("rejection_reasons") or []),
+    ])
+    composer_model = str(
+        resolution_meta.get("composer_model")
+        or getattr(composer_candidate, "composer_model", "")
+        or ""
+    )
+    composer_status = str(getattr(composer_candidate, "status", "") or "not_attempted")
+    composer_connection_attempted = bool(explicit_client_used or default_connection_active)
+    if not composer_connection_attempted and composer_status == "unavailable":
+        composer_status = "not_attempted"
+    safety_blocked = bool(resolution_meta.get("safety_blocked") or observation_status == "safety_blocked")
+
+    if safety_blocked:
+        route = "blocked_safety_route"
+        decision = "blocked_safety"
+        composer_connection_attempted = False
+        if composer_status == "unavailable":
+            composer_status = "not_attempted"
+    elif explicit_client_used:
+        route = "provided_client_route"
+        decision = "provided_client"
+    elif default_connection_active and release_enabled:
+        route = "default_composer_route"
+        decision = "default_composer_connected"
+    elif not feature_flag_enabled:
+        route = "default_composer_route"
+        decision = "blocked_feature_flag"
+    elif release_allowed is False or not release_enabled:
+        route = "default_composer_route"
+        if connection_status == "blocked_scope" or release_reason_code.startswith("scope_") or str(release_decision.get("cohort") or "") == "blocked_scope":
+            decision = "blocked_scope"
+        else:
+            decision = "blocked_rollout"
+    else:
+        route = "default_composer_route"
+        decision = "not_resolved"
+
+    if safety_blocked:
+        allowed_observation_statuses = ["safety_blocked"]
+    elif composer_connection_attempted:
+        allowed_observation_statuses = ["passed", "rejected", "unavailable"]
+    else:
+        allowed_observation_statuses = ["unavailable"]
+
+    if explicit_client_used:
+        release_registry_consistent = True
+    elif safety_blocked:
+        release_registry_consistent = bool(connection_status in {"blocked_safety", ""} and not default_client_used)
+    elif not feature_flag_enabled:
+        release_registry_consistent = bool(connection_status == "blocked_feature_flag" and not default_client_used)
+    elif release_enabled:
+        release_registry_consistent = bool(connection_status == "default_client_resolved" and default_client_resolved)
+    elif decision == "blocked_scope":
+        release_registry_consistent = bool(connection_status == "blocked_scope" and not default_client_used)
+    else:
+        release_registry_consistent = bool(connection_status == "blocked_rollout" and not default_client_used)
+
+    rollout_attempted = bool(rollout_metrics.get("attempted") or release_decision.get("attempted") or release_enabled)
+    rollout_release_consistent = bool(rollout_attempted == bool(release_decision.get("attempted") or release_enabled))
+    environment_blocked = bool(decision in {"blocked_feature_flag", "blocked_rollout"})
+    scope_blocked = bool(decision == "blocked_scope")
+    generator_or_gate_path = bool(composer_connection_attempted and not safety_blocked)
+
+    if observation_status == "passed":
+        status_family = "passed"
+    elif scope_blocked:
+        status_family = "scope_blocked"
+    elif environment_blocked:
+        status_family = "environment_blocked"
+    elif decision == "blocked_scope":
+        status_family = "scope_blocked"
+    elif generator_or_gate_path:
+        status_family = "composer_or_gate"
+    elif safety_blocked:
+        status_family = "safety_blocked"
+    else:
+        status_family = "unavailable"
+
+    return {
+        "version": "emlis.b_plan_normal_connection.v1",
+        "phase": "B-D1",
+        "route": route,
+        "decision": decision,
+        "feature_flag_enabled": feature_flag_enabled,
+        "rollout_stage": rollout_stage,
+        "release_gate_allowed": release_enabled,
+        "release_enabled": release_enabled,
+        "release_allowed": release_allowed,
+        "release_cohort": str(release_decision.get("cohort") or ""),
+        "release_reason_code": release_reason_code,
+        "release_rejection_reasons": release_rejections,
+        "registry_connection_status": connection_status,
+        "connection_status": connection_status,
+        "environment_stop_stage": str(resolution_meta.get("pre_connection_stop_stage") or ""),
+        "environment_stop_reason": _first_reason(release_rejections, default=release_reason_code or decision),
+        "explicit_client_used": explicit_client_used,
+        "default_client_used": default_client_used,
+        "default_client_resolved": default_client_resolved,
+        "default_connection_active": default_connection_active,
+        "composer_connection_attempted": composer_connection_attempted,
+        "composer_attempted": composer_connection_attempted,
+        "composer_model": composer_model,
+        "composer_model_expected": "cocolon_limited_composer.v1" if default_client_resolved else composer_model,
+        "composer_status": composer_status,
+        "observation_status": observation_status,
+        "status_branch": observation_status,
+        "allowed_observation_statuses": allowed_observation_statuses,
+        "environment_blocked": environment_blocked,
+        "environment_blocked_before_composer": bool(not composer_connection_attempted),
+        "scope_blocked": scope_blocked,
+        "generator_or_gate_path": generator_or_gate_path,
+        "blocked_before_composer": bool(not composer_connection_attempted),
+        "rollout_attempted": rollout_attempted,
+        "release_registry_consistent": release_registry_consistent,
+        "rollout_release_consistent": rollout_release_consistent,
+        "diagnostic_consistent": bool(release_registry_consistent and rollout_release_consistent),
+        "diagnostic_consistency": {
+            "release_stage_matches_summary": bool(rollout_stage == str(release_decision.get("stage") or "")),
+            "release_enabled_matches_summary": bool(release_enabled == bool(release_decision.get("enabled"))),
+            "release_enabled_matches_rollout": bool(release_enabled == bool(rollout_decision.get("enabled"))),
+            "release_attempt_matches_rollout_metrics": bool(bool(release_decision.get("attempted") or release_enabled) == bool(rollout_metrics.get("attempted"))),
+            "composer_attempt_matches_registry": bool(composer_connection_attempted == bool(resolution_meta.get("composer_attempted") or composer_connection_attempted)),
+            "registry_status_matches_default_resolution": bool(connection_status == str(resolution_meta.get("connection_status") or connection_status)),
+        },
+        "status_family": status_family,
+    }
+
+def _diagnostic_summary_meta(
+    *,
+    display_decision: Any,
+    gate_trace: Dict[str, Any],
+    resolution_meta: Dict[str, Any],
+    release_meta: Dict[str, Any],
+    scope_meta: Dict[str, Any],
+    composer_candidate: Any = None,
+    phase_gate: Dict[str, Any] | None = None,
+    rollout_metrics: Dict[str, Any] | None = None,
+    current_input: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Build the developer-facing Step 01 diagnostic summary.
+
+    The summary intentionally stores only status codes, counts, and reason codes.
+    It is safe to keep in meta because it does not add user-visible text and it
+    does not contain hidden reasoning or example replies.
+    """
+
+    phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
+    rollout_metrics = rollout_metrics if isinstance(rollout_metrics, dict) else {}
+    gate_results = _diagnostic_gate_results(gate_trace)
+    observation_status = str(getattr(display_decision, "observation_status", "") or "unavailable")
+    display_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
+    resolution_reasons = _dedupe_reason_codes(resolution_meta.get("rejection_reasons") or [])
+    release_reasons = _dedupe_reason_codes(release_meta.get("rejection_reasons") or [])
+    scope_diagnostic = _scope_diagnostic_meta(scope_meta=scope_meta, gate_trace=gate_trace)
+    scope_reasons = _dedupe_reason_codes([
+        *(scope_meta.get("rejection_reasons") or []),
+        *(scope_diagnostic.get("safety_reason_codes") or []),
+        *(scope_diagnostic.get("missing_information") or []),
+        *(scope_diagnostic.get("reason_codes") or []),
+    ])
+    composer_reasons = _dedupe_reason_codes(getattr(composer_candidate, "rejection_reasons", []) or [])
+
+    feature_flag_enabled = bool(
+        resolution_meta.get("feature_flag_enabled")
+        or resolution_meta.get("feature_enabled")
+        or release_meta.get("feature_flag_enabled")
+        or False
+    )
+    rollout_stage = str(release_meta.get("stage") or phase_gate.get("phase7_rollout_stage") or "")
+    scope_status = str(scope_diagnostic.get("scope_status") or scope_meta.get("scope_status") or "")
+    coverage_scope = str(
+        scope_diagnostic.get("coverage_scope")
+        or scope_meta.get("coverage_scope")
+        or getattr(composer_candidate, "coverage_scope", "")
+        or ""
+    )
+    composer_model = str(
+        getattr(composer_candidate, "composer_model", "")
+        or resolution_meta.get("composer_model")
+        or ""
+    )
+    feature_flag_state = dict(resolution_meta.get("feature_flag_state") or {}) if isinstance(resolution_meta.get("feature_flag_state"), dict) else {}
+    default_composer_resolution = dict(resolution_meta.get("default_composer_resolution") or {}) if isinstance(resolution_meta.get("default_composer_resolution"), dict) else {
+        "resolution_source": str(resolution_meta.get("resolution_source") or resolution_meta.get("source") or ""),
+        "explicit_client_used": bool(resolution_meta.get("explicit_client_used") or resolution_meta.get("explicit_client_provided")),
+        "default_client_used": bool(resolution_meta.get("default_client_used")),
+        "default_connection_active": bool(resolution_meta.get("default_connection_active") or resolution_meta.get("default_client_used")),
+        "resolved_client_class": str(resolution_meta.get("resolved_client_class") or resolution_meta.get("resolved_client_name") or ""),
+        "composer_model": str(resolution_meta.get("composer_model") or ""),
+        "release_allowed": resolution_meta.get("release_allowed"),
+        "safety_blocked": bool(resolution_meta.get("safety_blocked")),
+        "connection_status": str(resolution_meta.get("connection_status") or ""),
+        "pre_connection_stop_stage": str(resolution_meta.get("pre_connection_stop_stage") or ""),
+        "composer_attempted": bool(resolution_meta.get("composer_attempted")),
+        "default_client_resolved": bool(resolution_meta.get("default_client_resolved")),
+    }
+    release_decision = {
+        "stage": str(release_meta.get("stage") or ""),
+        "enabled": bool(release_meta.get("enabled")),
+        "attempted": bool(release_meta.get("attempted") or release_meta.get("enabled")),
+        "composer_attempt_allowed": bool(release_meta.get("composer_attempt_allowed") or release_meta.get("enabled")),
+        "rollout_allowed": bool(release_meta.get("rollout_allowed") or release_meta.get("enabled")),
+        "cohort": str(release_meta.get("cohort") or ""),
+        "reason_code": str(release_meta.get("reason_code") or ""),
+        "rejection_reasons": _dedupe_reason_codes(release_meta.get("rejection_reasons") or []),
+        "internal_user": bool(release_meta.get("internal_user")),
+        "tutorial_case": bool(release_meta.get("tutorial_case")),
+        "limited_case": bool(release_meta.get("limited_case")),
+        "scope_status": str(release_meta.get("scope_status") or ""),
+        "scope_coverage": str(release_meta.get("scope_coverage") or ""),
+        "feature_flag_enabled": bool(release_meta.get("feature_flag_enabled")),
+        "stage_source": str(release_meta.get("stage_source") or ""),
+    }
+    composer_connection_attempted = bool(
+        default_composer_resolution.get("explicit_client_used")
+        or default_composer_resolution.get("default_client_used")
+        or default_composer_resolution.get("default_connection_active")
+        or resolution_meta.get("composer_attempted")
+    )
+    if bool(default_composer_resolution.get("safety_blocked") or resolution_meta.get("safety_blocked") or observation_status == "safety_blocked"):
+        composer_connection_attempted = False
+    rollout_attempted = bool(rollout_metrics.get("attempted") or release_decision.get("attempted") or release_decision.get("enabled"))
+    rollout_decision = dict(release_meta.get("rollout_decision") or release_decision) if isinstance(release_meta, dict) else dict(release_decision)
+    registry_resolution = {
+        "default_registry_version": str(resolution_meta.get("default_registry_version") or ""),
+        "connection_status": str(resolution_meta.get("connection_status") or default_composer_resolution.get("connection_status") or ""),
+        "pre_connection_stop_stage": str(resolution_meta.get("pre_connection_stop_stage") or default_composer_resolution.get("pre_connection_stop_stage") or ""),
+        "resolution_source": str(resolution_meta.get("resolution_source") or resolution_meta.get("source") or ""),
+        "explicit_client_used": bool(resolution_meta.get("explicit_client_used") or resolution_meta.get("explicit_client_provided")),
+        "default_client_used": bool(resolution_meta.get("default_client_used")),
+        "default_client_resolved": bool(resolution_meta.get("default_client_resolved") or default_composer_resolution.get("default_client_resolved")),
+        "composer_attempted": bool(resolution_meta.get("composer_attempted") or composer_connection_attempted),
+        "blocked_before_composer": bool(resolution_meta.get("blocked_before_composer") if "blocked_before_composer" in resolution_meta else not composer_connection_attempted),
+        "resolved_client_class": str(resolution_meta.get("resolved_client_class") or resolution_meta.get("resolved_client_name") or ""),
+        "composer_model": str(resolution_meta.get("composer_model") or ""),
+        "release_allowed": resolution_meta.get("release_allowed"),
+        "rejection_reasons": _dedupe_reason_codes(resolution_meta.get("rejection_reasons") or []),
+    }
+    pre_connection = {
+        "version": "emlis.pre_connection_diagnostic.v1",
+        "feature_flag_enabled": feature_flag_enabled,
+        "feature_flag_state": feature_flag_state,
+        "rollout_stage": rollout_stage,
+        "rollout_decision": rollout_decision,
+        "release_decision": release_decision,
+        "registry_resolution": registry_resolution,
+        "default_composer_resolution": default_composer_resolution,
+        "composer_connection_attempted": composer_connection_attempted,
+        "rollout_attempted": rollout_attempted,
+        "composer_attempted": composer_connection_attempted,
+        "blocked_before_composer": bool(not composer_connection_attempted),
+    }
+    b_plan_connection = _b_plan_normal_connection_meta(
+        resolution_meta=resolution_meta,
+        release_decision=release_decision,
+        rollout_decision=rollout_decision,
+        rollout_metrics=rollout_metrics,
+        composer_candidate=composer_candidate,
+        observation_status=observation_status,
+    )
+    pre_connection["b_plan_connection"] = b_plan_connection
+    raw_composer_status = str(getattr(composer_candidate, "status", "") or "not_attempted")
+    if not composer_connection_attempted and raw_composer_status == "unavailable" and "composer_client_not_connected" in composer_reasons:
+        composer_status = "not_attempted"
+    else:
+        composer_status = raw_composer_status
+    composer_diagnostic = _composer_diagnostic_meta(
+        composer_candidate=composer_candidate,
+        composer_reasons=composer_reasons,
+        composer_status=composer_status,
+        composer_model=composer_model,
+        coverage_scope=coverage_scope,
+    )
+    composer_reason_categories = _dedupe_reason_codes(composer_diagnostic.get("reason_categories") or [])
+    composer_coverage_matrix_hints = _dedupe_reason_codes(composer_diagnostic.get("coverage_matrix_hints") or [])
+    gate_diagnostic = _build_gate_diagnostic_summary(
+        gate_results=gate_results,
+        observation_status=observation_status,
+        composer_status=composer_status,
+    )
+    gate_rejection_reasons = _dedupe_reason_codes(gate_diagnostic.get("reason_codes") or [])
+    gate_coverage_matrix_hints = _dedupe_reason_codes(gate_diagnostic.get("coverage_matrix_hints") or [])
+    used_evidence_span_count = len(list(getattr(composer_candidate, "used_evidence_span_ids", []) or []))
+    included_claim_count = int(scope_diagnostic.get("included_claim_count") or 0)
+    excluded_claim_count = int(scope_diagnostic.get("excluded_claim_count") or 0)
+    comment_text_allowed = bool(phase_gate.get("comment_text_allowed"))
+
+    safety_gate = gate_trace.get("safety") if isinstance(gate_trace, dict) else {}
+    safety_reasons = _dedupe_reason_codes(safety_gate.get("rejection_reasons") if isinstance(safety_gate, dict) else [])
+
+    stage = "display"
+    primary_reason = "passed" if observation_status == "passed" else _first_reason(display_reasons, default=observation_status or "unavailable")
+
+    explicit_client_used = bool(resolution_meta.get("explicit_client_used") or resolution_meta.get("explicit_client_provided"))
+    default_client_used = bool(resolution_meta.get("default_client_used"))
+    rollout_not_allowed = (
+        "limited_composer_rollout_not_allowed" in resolution_reasons
+        or "limited_composer_rollout_not_allowed" in release_reasons
+        or str(release_meta.get("reason_code") or "") in {"rollout_stage_off", "rollout_stage_not_matched"}
+    )
+
+    if observation_status == "passed":
+        stage = "display"
+        primary_reason = "passed"
+    elif observation_status == "safety_blocked" or safety_reasons or scope_status == "safety_blocked":
+        stage = "scope"
+        primary_reason = _first_reason(safety_reasons, scope_reasons, display_reasons, default="safety_blocked")
+    elif (not explicit_client_used) and (not default_client_used) and (not feature_flag_enabled):
+        stage = "flag"
+        primary_reason = _first_reason(resolution_reasons, release_reasons, display_reasons, default="default_limited_composer_feature_disabled")
+    elif scope_status and scope_status not in {"eligible"}:
+        stage = "scope"
+        primary_reason = _first_reason(scope_reasons, release_reasons, display_reasons, default=f"scope_{scope_status}")
+    elif (not explicit_client_used) and rollout_not_allowed:
+        stage = "rollout"
+        primary_reason = _first_reason(resolution_reasons, release_reasons, display_reasons, default="limited_composer_rollout_not_allowed")
+    elif composer_status != "generated" or "composer_source_unavailable" in display_reasons:
+        stage = "composer"
+        primary_reason = _first_reason(composer_reasons, resolution_reasons, display_reasons, default=composer_status or "composer_unavailable")
+    else:
+        for gate_key, gate_stage in (("reader", "reader"), ("grounding", "grounding"), ("template_echo", "template")):
+            result = gate_results.get(gate_key)
+            if result is not None and not result.passed:
+                stage = gate_stage
+                primary_reason = str(getattr(result, "primary_reason", "") or _first_reason(result.rejection_reasons, display_reasons, default=f"{gate_stage}_failed"))
+                break
+        else:
+            stage = "display"
+            primary_reason = _first_reason(display_reasons, default=observation_status or "display_gate")
+
+    gate_primary_reasons = [
+        str(getattr(result, "primary_reason", "") or "")
+        for result in dict(gate_results or {}).values()
+        if str(getattr(result, "primary_reason", "") or "") and str(getattr(result, "primary_reason", "") or "") != "passed"
+    ]
+    secondary_reasons = _dedupe_reason_codes(
+        [
+            *display_reasons,
+            *resolution_reasons,
+            *release_reasons,
+            *scope_reasons,
+            *composer_reasons,
+            *gate_rejection_reasons,
+            *gate_primary_reasons,
+        ]
+    )
+    if primary_reason and primary_reason not in secondary_reasons:
+        secondary_reasons.insert(0, primary_reason)
+
+    summary = EmlisAIDiagnosticSummary(
+        observation_status=observation_status,  # type: ignore[arg-type]
+        stage=stage,  # type: ignore[arg-type]
+        primary_reason=primary_reason,
+        secondary_reasons=secondary_reasons,
+        feature_flag_enabled=feature_flag_enabled,
+        rollout_stage=rollout_stage,
+        scope_status=scope_status,
+        coverage_scope=coverage_scope,
+        composer_model=composer_model,
+        composer_status=composer_status,
+        composer_diagnostic=composer_diagnostic,
+        composer_rejection_reasons=composer_reasons,
+        composer_reason_category=composer_reason_categories[0] if composer_reason_categories else "",
+        composer_coverage_matrix_hints=composer_coverage_matrix_hints,
+        gate_diagnostic=gate_diagnostic,
+        gate_rejection_reasons=gate_rejection_reasons,
+        gate_reason_category=str(gate_diagnostic.get("first_failed_category") or ("passed" if observation_status == "passed" else "")),
+        gate_coverage_matrix_hints=gate_coverage_matrix_hints,
+        gate_failure_stage=str(gate_diagnostic.get("first_failed_gate") or ""),
+        safety_boundary=dict(scope_diagnostic.get("safety_boundary") or {}),
+        feature_flag_state=feature_flag_state,
+        release_enabled=bool(release_decision.get("enabled")),
+        release_cohort=str(release_decision.get("cohort") or ""),
+        release_reason_code=str(release_decision.get("reason_code") or ""),
+        release_decision=release_decision,
+        default_composer_resolution=default_composer_resolution,
+        rollout_decision=rollout_decision,
+        registry_resolution=registry_resolution,
+        pre_connection=pre_connection,
+        b_plan_connection=b_plan_connection,
+        normal_connection=b_plan_connection,
+        scope_diagnostic=scope_diagnostic,
+        scope_rejection_reasons=list(scope_diagnostic.get("rejection_reasons") or []),
+        scope_safety_boundaries=list(scope_diagnostic.get("safety_boundaries") or []),
+        scope_excluded_reason_codes=list(scope_diagnostic.get("excluded_reason_codes") or []),
+        scope_reason_category=str(scope_diagnostic.get("reason_category") or ""),
+        scope_coverage_matrix_hints=list(scope_diagnostic.get("coverage_matrix_hints") or []),
+        composer_connection_attempted=composer_connection_attempted,
+        rollout_attempted=rollout_attempted,
+        used_evidence_span_count=used_evidence_span_count,
+        included_claim_count=included_claim_count,
+        excluded_claim_count=excluded_claim_count,
+        comment_text_allowed=comment_text_allowed,
+        gate_results=gate_results,
+    )
+    summary_meta = summary.as_meta()
+    coverage_matrix = build_emlis_coverage_matrix(
+        diagnostic_summary=summary_meta,
+        current_input=current_input or {},
+    )
+    summary_meta["coverage_matrix"] = coverage_matrix
+    summary_meta["coverage_groups"] = list(coverage_matrix.get("coverage_groups") or [])
+    summary_meta["coverage_primary_group"] = str(coverage_matrix.get("primary_coverage_group") or "")
+    summary_meta["coverage_next_steps"] = list(coverage_matrix.get("next_steps") or [])
+    summary_meta["coverage_unclassified_reasons"] = list(coverage_matrix.get("unclassified_reasons") or [])
+    summary_meta["coverage_unmapped_reasons"] = list(coverage_matrix.get("unmapped_reason_codes") or coverage_matrix.get("unclassified_reasons") or [])
+    return summary_meta
+
+
 def _multi_perspective_meta(
     *,
     trace_id: str,
@@ -1135,6 +2205,172 @@ def _multi_perspective_meta(
     core_generation_meta = _composer_core_generation_meta(composer_candidate)
     core_adapter_ready = bool(core_generation_meta.get("adapter_name") == "emlis_observation_composer_adapter.v1")
     core_generation_ready = bool(core_generation_meta.get("passed"))
+    core_stabilization_meta = (
+        core_generation_meta.get("step15_common_core_stabilization")
+        or core_generation_meta.get("common_core_stabilization")
+        or {}
+    )
+    if not isinstance(core_stabilization_meta, dict):
+        core_stabilization_meta = {}
+    core_stabilization_ready = bool(core_stabilization_meta.get("passed"))
+    phase_gate_meta = {
+        "completed_phases": completed_phases,
+        "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase6_ready else (5 if phase5_ready else (4 if phase4_ready else 3)))))),
+        "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase6_ready else (6 if phase5_ready else (5 if phase4_ready else 4)))))),
+        "phase_completion_ready": phase10_ready,
+        "release_ready": bool(release_readiness.get("release_ready")),
+        "release_blockers": list(release_readiness.get("release_blockers") or []),
+        "required_completed_phases": list(release_readiness.get("required_completed_phases") or []),
+        "release_checks": dict(release_readiness.get("release_checks") or {}),
+        "legacy_text_routes_sealed": True,
+        "type_state_contract_ready": True,
+        "evidence_ledger_ready": True,
+        "specialist_observers_ready": phase4_ready,
+        "observer_contract_only_structured": phase4_ready,
+        "perspective_board_ready": phase5_board_ready,
+        "observation_graph_ready": phase5_graph_ready,
+        "composer_contract_ready": phase6_contract_ready,
+        "emlis_observation_composer_adapter_ready": core_adapter_ready,
+        "text_generation_core_ready": core_generation_ready,
+        "step15_common_core_stabilization_ready": core_stabilization_ready,
+        "common_core_stabilization_ready": core_stabilization_ready,
+        "text_generation_core_stop_point": TEXT_GENERATION_CORE_PHASE8_STOP_POINT,
+        "text_generation_core_next_phase": TEXT_GENERATION_CORE_PHASE8_NEXT_PHASE,
+        "text_generation_core_current_connected_core": CORE_ID_EMLIS,
+        "piece_composer_connected": False,
+        "analysis_composer_connected": False,
+        "piece_analysis_text_generation_unstarted": True,
+        "reader_gate_ready": isinstance(gate_trace.get("reader"), dict),
+        "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
+        "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
+        "judge_contract_ready": phase7_ready,
+        "phase7_staged_release_ready": bool(release_meta.get("enabled", False)) if release_meta else False,
+        "phase7_rollout_stage": str(release_meta.get("stage", "") or "") if release_meta else "",
+        "phase7_rollout_cohort": str(release_meta.get("cohort", "") or "") if release_meta else "",
+        "phase7_rollout_attempted": bool(phase7_rollout_metrics.get("attempted", False)),
+        "phase7_rollout_rejection_reasons": list(phase7_rollout_metrics.get("rejection_reasons") or []),
+        "composer_candidate_available": composer_candidate_available,
+        "composer_status": str(getattr(composer_candidate, "status", "") or ""),
+        "board_validation_issues": validate_perspective_board(board),
+        "graph_validation_issues": validate_observation_graph(graph, board),
+        "gate_trace": gate_trace,
+        "display_gate_ready": phase8_ready,
+        "display_gate_release_ready": bool(phase8_ready and release_readiness.get("display_gate_release_ready")),
+        "frontend_display_control_ready": phase9_ready,
+        "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
+        "phase10_regression_release_ready": phase10_ready,
+        "regression_release_tests_ready": phase10_ready,
+        "comment_text_allowed": bool(phase8_ready and display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip()),
+    }
+    diagnostic_summary = _diagnostic_summary_meta(
+        display_decision=display_decision,
+        gate_trace=gate_trace,
+        resolution_meta=resolution_meta,
+        release_meta=release_meta,
+        scope_meta=scope_meta,
+        composer_candidate=composer_candidate,
+        phase_gate=phase_gate_meta,
+        rollout_metrics=phase7_rollout_metrics,
+        current_input=bundle.current_input,
+    )
+    step16_rollout_metrics = build_step16_rollout_metrics(
+        release_meta=release_meta,
+        diagnostic_summary=diagnostic_summary,
+        phase7_rollout_metrics=phase7_rollout_metrics,
+        composer_candidate=composer_candidate,
+    )
+    phase_gate_meta["step16_rollout_metrics_ready"] = bool(step16_rollout_metrics.get("ready"))
+    phase_gate_meta["step16_rollout_metrics_aggregation_ready"] = bool(step16_rollout_metrics.get("aggregation_ready"))
+    phase_gate_meta["b_r1_rollout_metrics_ready"] = bool(step16_rollout_metrics.get("ready"))
+    phase_gate_meta["step16_rollout_metric_fields"] = list(step16_rollout_metrics.get("metric_fields") or [])
+    phase_gate_meta["step16_rollout_primary_reason"] = str(step16_rollout_metrics.get("primary_reason") or "")
+    phase_gate_meta["step16_rollout_coverage_group"] = str(step16_rollout_metrics.get("coverage_group") or "")
+    phase_gate_meta["step16_rollout_composer_model"] = str(step16_rollout_metrics.get("composer_model") or "")
+    diagnostic_summary["step16_rollout_metrics"] = step16_rollout_metrics
+    diagnostic_summary["rollout_metrics"] = step16_rollout_metrics
+    step18_ap0_migration_decision = build_step18_ap0_migration_decision(
+        diagnostic_summary=diagnostic_summary,
+        rollout_metrics=step16_rollout_metrics,
+        coverage_matrix=diagnostic_summary.get("coverage_matrix") if isinstance(diagnostic_summary, dict) else {},
+    )
+    phase_gate_meta["step18_ap0_migration_decision_ready"] = bool(step18_ap0_migration_decision.get("decision_ready"))
+    phase_gate_meta["step18_ap0_can_proceed_to_a1"] = bool(step18_ap0_migration_decision.get("can_proceed_to_a1"))
+    phase_gate_meta["a_p0_migration_decision"] = str(step18_ap0_migration_decision.get("decision") or "")
+    phase_gate_meta["a_p0_return_steps"] = list(step18_ap0_migration_decision.get("return_steps") or [])
+    diagnostic_summary["step18_ap0_migration_decision"] = step18_ap0_migration_decision
+    diagnostic_summary["a_p0_migration_decision"] = step18_ap0_migration_decision
+
+    composer_candidate_payload = _jsonable(composer_candidate) if composer_candidate is not None else {}
+    if not isinstance(composer_candidate_payload, dict):
+        composer_candidate_payload = {}
+    step19_a_plan_equivalent = build_step19_a_plan_equivalent_meta(
+        composer_model=(
+            str(getattr(composer_candidate, "composer_model", "") or "")
+            or str(resolution_meta.get("composer_model") or "")
+        ),
+        response=composer_candidate_payload,
+        release_meta=release_meta,
+        display_status=getattr(display_decision, "observation_status", ""),
+        ap0_decision=step18_ap0_migration_decision,
+    )
+    phase_gate_meta["step19_a_plan_equivalent_ready"] = bool(step19_a_plan_equivalent.get("ready"))
+    phase_gate_meta["step19_a_plan_model"] = str(step19_a_plan_equivalent.get("composer_model") or "")
+    phase_gate_meta["step19_a_plan_rollout_stage"] = str(step19_a_plan_equivalent.get("rollout_stage") or "")
+    phase_gate_meta["step19_a_plan_rollout_allowed"] = bool(step19_a_plan_equivalent.get("rollout_allowed"))
+    phase_gate_meta["step19_b_plan_gate_preserved"] = bool(step19_a_plan_equivalent.get("b_plan_gate_preserved"))
+    phase_gate_meta["step19_scoped_graph_preserved"] = bool(step19_a_plan_equivalent.get("scoped_graph_preserved"))
+    phase_gate_meta["step19_fail_closed_preserved"] = bool(step19_a_plan_equivalent.get("fail_closed_preserved"))
+    phase_gate_meta["step19_passed_only_preserved"] = bool(step19_a_plan_equivalent.get("passed_only_preserved"))
+    diagnostic_summary["step19_a_plan_equivalent"] = step19_a_plan_equivalent
+    diagnostic_summary["step19_a_plan_equivalent_composer"] = step19_a_plan_equivalent
+    diagnostic_summary["a1_composer_introduction"] = step19_a_plan_equivalent
+
+    current_evidence_span_ids = [
+        str(getattr(span, "span_id", "") or "").strip()
+        for span in evidence_spans
+        if str(getattr(span, "span_id", "") or "").strip()
+    ]
+    step20_history_scope = {
+        "same_day_recent_input_count": len(list(getattr(bundle, "same_day_recent_inputs", []) or [])),
+        "similar_input_count": len(list(getattr(bundle, "similar_inputs", []) or [])),
+        "derived_user_model_present": bool(getattr(bundle, "derived_user_model", None)),
+        "history_mode": getattr(capability, "history_mode", ""),
+        "continuity_mode": getattr(capability, "continuity_mode", ""),
+        "source_scope": getattr(capability, "source_scope", ""),
+        "policy": "history_is_evidence_only",
+    }
+    step20_cross_core_scope = {
+        "cross_core_enabled": bool(getattr(capability, "cross_core_enabled", False)),
+        "cross_core_context_count": len(list(getattr(bundle, "cross_core_context", []) or [])),
+        "policy": "cross_core_context_is_evidence_only",
+    }
+    step20_long_term_quality = build_step20_long_term_quality_meta(
+        response=composer_candidate_payload,
+        comment_text=getattr(display_decision, "comment_text", "") or composer_candidate_payload.get("comment_text"),
+        previous_outputs=_previous_emlis_outputs_from_bundle(bundle),
+        evidence_spans=evidence_spans,
+        used_evidence_span_ids=composer_candidate_payload.get("used_evidence_span_ids", []),
+        current_evidence_span_ids=current_evidence_span_ids,
+        history_scope=step20_history_scope,
+        cross_core_scope=step20_cross_core_scope,
+        step19_a_plan_equivalent=step19_a_plan_equivalent,
+        diagnostic_summary=diagnostic_summary,
+        current_input=bundle.current_input,
+    )
+    phase_gate_meta["step20_long_term_quality_ready"] = bool(step20_long_term_quality.get("ready"))
+    phase_gate_meta["step20_long_term_operation_ready"] = bool(step20_long_term_quality.get("long_term_operation_ready"))
+    phase_gate_meta["step20_previous_output_sample_available"] = bool(step20_long_term_quality.get("previous_output_sample_available"))
+    phase_gate_meta["step20_primary_reason"] = str(step20_long_term_quality.get("primary_reason") or "")
+    phase_gate_meta["step20_history_is_evidence_only"] = bool(step20_long_term_quality.get("history_is_evidence_only"))
+    phase_gate_meta["step20_overclaim_history_completion"] = bool(step20_long_term_quality.get("overclaim_history_completion"))
+    diagnostic_summary["step20_long_term_quality"] = step20_long_term_quality
+    diagnostic_summary["a2_long_term_quality"] = step20_long_term_quality
+    diagnostic_summary["long_term_quality"] = step20_long_term_quality
+    b_plan_connection_meta = (
+        dict(diagnostic_summary.get("normal_connection") or diagnostic_summary.get("b_plan_connection") or {})
+        if isinstance(diagnostic_summary, dict)
+        else {}
+    )
     return {
         "version": "emlis_ai_v3",
         "kernel_version": "multi_perspective_observation.v1",
@@ -1142,6 +2378,16 @@ def _multi_perspective_meta(
         "observation_status": display_decision.observation_status,
         "observation_trace_id": trace_id,
         "rejection_reasons": list(display_decision.rejection_reasons),
+        "diagnostic_summary": diagnostic_summary,
+        "step16_rollout_metrics": step16_rollout_metrics,
+        "step18_ap0_migration_decision": step18_ap0_migration_decision,
+        "a_p0_migration_decision": step18_ap0_migration_decision,
+        "step19_a_plan_equivalent": step19_a_plan_equivalent,
+        "step19_a_plan_equivalent_composer": step19_a_plan_equivalent,
+        "a1_composer_introduction": step19_a_plan_equivalent,
+        "step20_long_term_quality": step20_long_term_quality,
+        "a2_long_term_quality": step20_long_term_quality,
+        "long_term_quality": step20_long_term_quality,
         "display": {
             "display_name_call": display_name_call(bundle.display_name),
             "visible_name": "Emlisの観測",
@@ -1181,58 +2427,30 @@ def _multi_perspective_meta(
             "composer_client_resolution": resolution_meta,
             "limited_composer_release": release_meta,
             "phase7_rollout_metrics": phase7_rollout_metrics,
+            "step16_rollout_metrics": step16_rollout_metrics,
+            "rollout_metrics": step16_rollout_metrics,
+            "step18_ap0_migration_decision": step18_ap0_migration_decision,
+            "a_p0_migration_decision": step18_ap0_migration_decision,
+            "step19_a_plan_equivalent": step19_a_plan_equivalent,
+            "step19_a_plan_equivalent_composer": step19_a_plan_equivalent,
+            "a1_composer_introduction": step19_a_plan_equivalent,
+            "step20_long_term_quality": step20_long_term_quality,
+            "a2_long_term_quality": step20_long_term_quality,
+            "long_term_quality": step20_long_term_quality,
+            "rollout_metrics_aggregate": dict(step16_rollout_metrics.get("rollout_metrics_aggregate") or {}),
+            "internal_qa_rollout_metrics": dict(step16_rollout_metrics.get("internal_qa_aggregate") or {}),
+            "b_plan_connection": b_plan_connection_meta,
+            "b_plan_normal_connection": b_plan_connection_meta,
+            "normal_connection": b_plan_connection_meta,
             "limited_observation_scope": scope_meta,
             "scoped_grounding": scoped_grounding_meta,
             "text_generation_core": core_generation_meta,
             "core_text_generation": core_generation_meta,
+            "step15_common_core_stabilization": core_stabilization_meta,
+            "common_core_stabilization": core_stabilization_meta,
             "grounding_graph": grounding_graph_payload,
-            "phase_gate": {
-                "completed_phases": completed_phases,
-                "current_phase": 10 if phase10_ready else (9 if phase9_ready else (8 if phase8_ready else (7 if phase7_ready else (6 if phase6_ready else (5 if phase5_ready else (4 if phase4_ready else 3)))))),
-                "next_phase": None if phase10_ready else (10 if phase9_ready else (9 if phase8_ready else (8 if phase7_ready else (7 if phase6_ready else (6 if phase5_ready else (5 if phase4_ready else 4)))))),
-                "phase_completion_ready": phase10_ready,
-                "release_ready": bool(release_readiness.get("release_ready")),
-                "release_blockers": list(release_readiness.get("release_blockers") or []),
-                "required_completed_phases": list(release_readiness.get("required_completed_phases") or []),
-                "release_checks": dict(release_readiness.get("release_checks") or {}),
-                "legacy_text_routes_sealed": True,
-                "type_state_contract_ready": True,
-                "evidence_ledger_ready": True,
-                "specialist_observers_ready": phase4_ready,
-                "observer_contract_only_structured": phase4_ready,
-                "perspective_board_ready": phase5_board_ready,
-                "observation_graph_ready": phase5_graph_ready,
-                "composer_contract_ready": phase6_contract_ready,
-                "emlis_observation_composer_adapter_ready": core_adapter_ready,
-                "text_generation_core_ready": core_generation_ready,
-                "text_generation_core_stop_point": TEXT_GENERATION_CORE_PHASE8_STOP_POINT,
-                "text_generation_core_next_phase": TEXT_GENERATION_CORE_PHASE8_NEXT_PHASE,
-                "text_generation_core_current_connected_core": CORE_ID_EMLIS,
-                "piece_composer_connected": False,
-                "analysis_composer_connected": False,
-                "piece_analysis_text_generation_unstarted": True,
-                "reader_gate_ready": isinstance(gate_trace.get("reader"), dict),
-                "grounding_gate_ready": isinstance(gate_trace.get("grounding"), dict),
-                "template_echo_gate_ready": isinstance(gate_trace.get("template_echo"), dict),
-                "judge_contract_ready": phase7_ready,
-                "phase7_staged_release_ready": bool(release_meta.get("enabled", False)) if release_meta else False,
-                "phase7_rollout_stage": str(release_meta.get("stage", "") or "") if release_meta else "",
-                "phase7_rollout_cohort": str(release_meta.get("cohort", "") or "") if release_meta else "",
-                "phase7_rollout_attempted": bool(phase7_rollout_metrics.get("attempted", False)),
-                "phase7_rollout_rejection_reasons": list(phase7_rollout_metrics.get("rejection_reasons") or []),
-                "composer_candidate_available": composer_candidate_available,
-                "composer_status": str(getattr(composer_candidate, "status", "") or ""),
-                "board_validation_issues": validate_perspective_board(board),
-                "graph_validation_issues": validate_observation_graph(graph, board),
-                "gate_trace": gate_trace,
-                "display_gate_ready": phase8_ready,
-                "display_gate_release_ready": bool(phase8_ready and release_readiness.get("display_gate_release_ready")),
-                "frontend_display_control_ready": phase9_ready,
-                "phase9_frontend_display_control_ready": bool(release_readiness.get("phase9_frontend_display_control_ready")),
-                "phase10_regression_release_ready": phase10_ready,
-                "regression_release_tests_ready": phase10_ready,
-                "comment_text_allowed": bool(phase8_ready and display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip()),
-            },
+            "phase_gate": phase_gate_meta,
+            "diagnostic_summary": diagnostic_summary,
         },
         "used_sources": used_sources,
         "used_memory_layers": used_memory_layers,
@@ -1280,16 +2498,15 @@ async def render_emlis_ai_reply(
     board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
     graph = integrate_perspective_board(board=board, display_name=bundle.display_name or display_name)
 
-    safety_requires_block = bool(getattr(graph, "safety_boundaries", []) or [])
+    safety_requires_block = has_limited_scope_safety_boundary(graph=graph, evidence_spans=evidence_spans)
     safety_report = None
     if safety_requires_block:
-        from emlis_ai_types import SafetyBoundaryReport
+        safety_report = build_emlis_safety_boundary_report(graph=graph, evidence_spans=evidence_spans)
 
-        safety_report = SafetyBoundaryReport(requires_block=True, reasons=["safety_boundary"])
-
-    composer_flag_state = default_composer_flag_state()
+    composer_env = dict(os.environ)
+    composer_flag_state = default_composer_flag_state(composer_env)
     limited_observation_scope = None
-    if composer_client is None and not safety_requires_block and bool(composer_flag_state.get("enabled")):
+    if (composer_client is None and bool(composer_flag_state.get("enabled"))) or safety_requires_block:
         limited_observation_scope = build_limited_observation_scope(
             graph=graph,
             evidence_spans=evidence_spans,
@@ -1299,10 +2516,12 @@ async def render_emlis_ai_reply(
         current_input=current_input,
         limited_observation_scope=limited_observation_scope,
         feature_flag_enabled=bool(composer_flag_state.get("enabled")),
+        env=composer_env,
     )
     composer_client_resolution = resolve_emlis_ai_composer_client(
         composer_client=composer_client,
         safety_requires_block=safety_requires_block,
+        env=composer_env,
         release_allowed=bool(getattr(limited_release_decision, "enabled", False)),
         release_meta=limited_release_decision.as_meta(),
     )
@@ -1348,7 +2567,7 @@ async def render_emlis_ai_reply(
         phase_completion_ready=False,
     )
 
-    max_attempts = 2 if resolved_composer_client is not None and not safety_requires_block else 1
+    max_attempts = 0 if safety_requires_block else (2 if resolved_composer_client is not None else 1)
     regeneration_reasons: List[str] = []
     for attempt in range(1, max_attempts + 1):
         composer_candidate = compose_emlis_conversation_candidate(

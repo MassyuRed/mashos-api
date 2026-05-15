@@ -655,6 +655,155 @@ class ReplyEnvelope:
 
 ObservationRiskLevel = Literal["low", "medium", "high"]
 ObservationStatus = Literal["passed", "rejected", "unavailable", "safety_blocked"]
+DiagnosticStage = Literal[
+    "flag",
+    "rollout",
+    "scope",
+    "composer",
+    "reader",
+    "grounding",
+    "template",
+    "display",
+]
+
+
+@dataclass(frozen=True)
+class DiagnosticGateResult:
+    passed: bool
+    rejection_reasons: List[str] = field(default_factory=list)
+    primary_reason: str = ""
+    reason_category: str = ""
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
+
+    def as_meta(self) -> Dict[str, Any]:
+        return {
+            "passed": bool(self.passed),
+            "status": "passed" if self.passed else "failed",
+            "primary_reason": self.primary_reason or ("passed" if self.passed else "gate_failed"),
+            "rejection_reasons": list(self.rejection_reasons),
+            "reason_category": self.reason_category or ("passed" if self.passed else "gate_general"),
+            "diagnostics": dict(self.diagnostics or {}),
+        }
+
+
+@dataclass(frozen=True)
+class EmlisAIDiagnosticSummary:
+    """Developer-facing stop-point summary for the Emlis observation pipeline.
+
+    This object is meta only. It must not be copied into user-facing
+    ``comment_text``. It makes the B-D0 diagnostic path explicit: one
+    submitted input can be classified by the first meaningful stage that
+    stopped or passed the B-plan observation path.
+    """
+
+    observation_status: ObservationStatus
+    stage: DiagnosticStage
+    primary_reason: str
+    secondary_reasons: List[str] = field(default_factory=list)
+    feature_flag_enabled: bool = False
+    rollout_stage: str = ""
+    scope_status: str = ""
+    coverage_scope: str = ""
+    scope_diagnostic: Dict[str, Any] = field(default_factory=dict)
+    scope_rejection_reasons: List[str] = field(default_factory=list)
+    scope_safety_boundaries: List[str] = field(default_factory=list)
+    scope_excluded_reason_codes: List[str] = field(default_factory=list)
+    scope_reason_category: str = ""
+    scope_coverage_matrix_hints: List[str] = field(default_factory=list)
+    composer_model: str = ""
+    composer_status: str = ""
+    composer_diagnostic: Dict[str, Any] = field(default_factory=dict)
+    composer_rejection_reasons: List[str] = field(default_factory=list)
+    composer_reason_category: str = ""
+    composer_coverage_matrix_hints: List[str] = field(default_factory=list)
+    gate_diagnostic: Dict[str, Any] = field(default_factory=dict)
+    gate_rejection_reasons: List[str] = field(default_factory=list)
+    gate_reason_category: str = ""
+    gate_coverage_matrix_hints: List[str] = field(default_factory=list)
+    gate_failure_stage: str = ""
+    safety_boundary: Dict[str, Any] = field(default_factory=dict)
+    coverage_matrix: Dict[str, Any] = field(default_factory=dict)
+    coverage_groups: List[str] = field(default_factory=list)
+    coverage_primary_group: str = ""
+    coverage_next_steps: List[str] = field(default_factory=list)
+    coverage_unclassified_reasons: List[str] = field(default_factory=list)
+    coverage_unmapped_reasons: List[str] = field(default_factory=list)
+    feature_flag_state: Dict[str, Any] = field(default_factory=dict)
+    release_enabled: bool = False
+    release_cohort: str = ""
+    release_reason_code: str = ""
+    release_decision: Dict[str, Any] = field(default_factory=dict)
+    default_composer_resolution: Dict[str, Any] = field(default_factory=dict)
+    rollout_decision: Dict[str, Any] = field(default_factory=dict)
+    registry_resolution: Dict[str, Any] = field(default_factory=dict)
+    pre_connection: Dict[str, Any] = field(default_factory=dict)
+    b_plan_connection: Dict[str, Any] = field(default_factory=dict)
+    normal_connection: Dict[str, Any] = field(default_factory=dict)
+    composer_connection_attempted: bool = False
+    rollout_attempted: bool = False
+    used_evidence_span_count: int = 0
+    included_claim_count: int = 0
+    excluded_claim_count: int = 0
+    comment_text_allowed: bool = False
+    gate_results: Dict[str, DiagnosticGateResult] = field(default_factory=dict)
+
+    def as_meta(self) -> Dict[str, Any]:
+        return {
+            "version": "emlis.diagnostic_summary.v1",
+            "observation_status": self.observation_status,
+            "stage": self.stage,
+            "primary_reason": self.primary_reason,
+            "secondary_reasons": list(self.secondary_reasons),
+            "feature_flag_enabled": bool(self.feature_flag_enabled),
+            "rollout_stage": self.rollout_stage,
+            "scope_status": self.scope_status,
+            "coverage_scope": self.coverage_scope,
+            "scope_diagnostic": dict(self.scope_diagnostic or {}),
+            "scope_rejection_reasons": list(self.scope_rejection_reasons or []),
+            "scope_safety_boundaries": list(self.scope_safety_boundaries or []),
+            "scope_excluded_reason_codes": list(self.scope_excluded_reason_codes or []),
+            "scope_reason_category": self.scope_reason_category,
+            "scope_coverage_matrix_hints": list(self.scope_coverage_matrix_hints or []),
+            "composer_model": self.composer_model,
+            "composer_status": self.composer_status,
+            "composer_diagnostic": dict(self.composer_diagnostic or {}),
+            "composer_rejection_reasons": list(self.composer_rejection_reasons or []),
+            "composer_reason_category": self.composer_reason_category,
+            "composer_coverage_matrix_hints": list(self.composer_coverage_matrix_hints or []),
+            "gate_diagnostic": dict(self.gate_diagnostic or {}),
+            "gate_rejection_reasons": list(self.gate_rejection_reasons or []),
+            "gate_reason_category": self.gate_reason_category,
+            "gate_coverage_matrix_hints": list(self.gate_coverage_matrix_hints or []),
+            "gate_failure_stage": self.gate_failure_stage,
+            "safety_boundary": dict(self.safety_boundary or {}),
+            "coverage_matrix": dict(self.coverage_matrix or {}),
+            "coverage_groups": list(self.coverage_groups or []),
+            "coverage_primary_group": self.coverage_primary_group,
+            "coverage_next_steps": list(self.coverage_next_steps or []),
+            "coverage_unclassified_reasons": list(self.coverage_unclassified_reasons or []),
+            "coverage_unmapped_reasons": list(self.coverage_unmapped_reasons or []),
+            "feature_flag_state": dict(self.feature_flag_state or {}),
+            "release_enabled": bool(self.release_enabled),
+            "release_cohort": self.release_cohort,
+            "release_reason_code": self.release_reason_code,
+            "release_decision": dict(self.release_decision or {}),
+            "default_composer_resolution": dict(self.default_composer_resolution or {}),
+            "rollout_decision": dict(self.rollout_decision or {}),
+            "registry_resolution": dict(self.registry_resolution or {}),
+            "pre_connection": dict(self.pre_connection or {}),
+            "b_plan_connection": dict(self.b_plan_connection or {}),
+            "normal_connection": dict(self.normal_connection or self.b_plan_connection or {}),
+            "composer_connection_attempted": bool(self.composer_connection_attempted),
+            "rollout_attempted": bool(self.rollout_attempted),
+            "used_evidence_span_count": int(self.used_evidence_span_count),
+            "included_claim_count": int(self.included_claim_count),
+            "excluded_claim_count": int(self.excluded_claim_count),
+            "comment_text_allowed": bool(self.comment_text_allowed),
+            "gate_results": {
+                key: value.as_meta()
+                for key, value in dict(self.gate_results or {}).items()
+            },
+        }
 
 
 @dataclass(frozen=True)
@@ -788,6 +937,51 @@ class LimitedScopeExcludedItem:
         }
 
 
+def _limited_scope_count_reasons(values: List[str]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for value in values or []:
+        key = str(value or "").strip()
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _limited_scope_claim_counts(graph: ObservationGraph) -> Dict[str, int]:
+    return {
+        "primary_state": 1 if str(getattr(graph.primary_state, "text", "") or "").strip() else 0,
+        "pressure_sources": len(list(graph.pressure_sources or [])),
+        "limit_signals": len(list(graph.limit_signals or [])),
+        "self_awareness": len(list(graph.self_awareness or [])),
+        "value_or_strength_signals": len(list(graph.value_or_strength_signals or [])),
+        "core_tensions": len(list(graph.core_tensions or [])),
+    }
+
+
+def _limited_scope_coverage_matrix_hint(
+    *,
+    scope_status: str,
+    coverage_scope: str,
+    rejection_reasons: List[str],
+    excluded_reason_codes: List[str],
+    safety_boundaries: List[str],
+) -> str:
+    reasons = {str(value or "") for value in [*rejection_reasons, *excluded_reason_codes, *safety_boundaries]}
+    joined = " ".join(sorted(reasons)).lower()
+    if scope_status == "safety_blocked" or safety_boundaries or "safety" in joined:
+        return "safety_boundary"
+    if "limited_scope_required_structure_missing" in reasons or "required_structure" in joined:
+        return "required_structure"
+    if "limited_scope_no_grounded_primary_state" in reasons or "no_grounded_primary_state" in reasons or "primary" in joined:
+        return "primary_state_grounding"
+    if any(reason.endswith("claim_limit") or reason.endswith("relation_limit") for reason in reasons):
+        return "complexity_limit"
+    if scope_status == "out_of_scope":
+        return "minimum_claim"
+    if coverage_scope == "partial_observation":
+        return "eligible_partial_observation"
+    return "eligible_current_input_core"
+
+
 @dataclass(frozen=True)
 class LimitedObservationScope:
     scope_status: LimitedScopeStatus
@@ -799,17 +993,147 @@ class LimitedObservationScope:
     max_reply_sentence_count: int = 4
     coverage_scope: LimitedCoverageScope = "current_input_core"
     rejection_reasons: List[str] = field(default_factory=list)
+    coverage_groups: List[str] = field(default_factory=list)
+    scope_expansion: Dict[str, Any] = field(default_factory=dict)
+    safety_boundary: Dict[str, Any] = field(default_factory=dict)
+    safety_boundary_policy: Dict[str, Any] = field(default_factory=dict)
 
     def as_meta(self) -> Dict[str, Any]:
-        return {
+        included_claim_ids = list(self.included_claim_ids or [])
+        included_relation_ids = list(self.included_relation_ids or [])
+        excluded_claims = [item.as_meta() for item in self.excluded_claims]
+        excluded_reason_codes = [
+            str(item.get("reason_code") or "")
+            for item in excluded_claims
+            if str(item.get("reason_code") or "").strip()
+        ]
+        rejection_reasons = list(self.rejection_reasons or [])
+        safety_boundary = dict(self.safety_boundary or {})
+        safety_boundary_policy = dict(self.safety_boundary_policy or safety_boundary or {})
+        if safety_boundary_policy and not safety_boundary_policy.get("version"):
+            safety_boundary_policy["version"] = "emlis.scope_safety_boundary.v1"
+        if safety_boundary and not safety_boundary.get("version"):
+            safety_boundary["version"] = "emlis.scope_safety_boundary.v1"
+
+        safety_boundaries = [
+            *list(getattr(self.scoped_graph, "safety_boundaries", []) or []),
+            *list(safety_boundary.get("safety_boundaries") or []),
+            *list(safety_boundary_policy.get("safety_boundaries") or []),
+        ]
+        safety_boundaries = list(dict.fromkeys(str(item or "").strip() for item in safety_boundaries if str(item or "").strip()))
+
+        missing_information = list(getattr(self.scoped_graph, "missing_information", []) or [])
+        scoped_claim_counts = _limited_scope_claim_counts(self.scoped_graph)
+        coverage_groups = [str(item or "").strip() for item in list(self.coverage_groups or []) if str(item or "").strip()]
+        scope_expansion = dict(self.scope_expansion or {})
+        safety_policy_groups = [
+            str(item or "").strip()
+            for item in list(safety_boundary.get("coverage_groups") or safety_boundary_policy.get("coverage_groups") or [])
+            if str(item or "").strip()
+        ]
+        coverage_groups = list(dict.fromkeys([*coverage_groups, *safety_policy_groups]))
+        if coverage_groups and not scope_expansion.get("coverage_groups"):
+            scope_expansion["coverage_groups"] = list(coverage_groups)
+        if scope_expansion and not scope_expansion.get("version"):
+            scope_expansion["version"] = "emlis.scope_expansion.v1"
+
+        safety_blocked_before_composer = bool(
+            self.scope_status == "safety_blocked"
+            or safety_boundary.get("requires_block")
+            or safety_boundary.get("blocked_before_composer")
+            or safety_boundary_policy.get("requires_block")
+            or safety_boundary_policy.get("blocked_before_composer")
+            or safety_boundaries
+        )
+        safety_pre_generation_block = (
+            safety_boundary.get("safety_pre_generation_block")
+            if isinstance(safety_boundary.get("safety_pre_generation_block"), dict)
+            else safety_boundary_policy.get("safety_pre_generation_block")
+            if isinstance(safety_boundary_policy.get("safety_pre_generation_block"), dict)
+            else {}
+        )
+        safety_pre_generation_block = dict(safety_pre_generation_block or {})
+        safety_pre_generation_block.setdefault("version", "emlis.safety_pre_generation_block.v1")
+        safety_pre_generation_block.setdefault("target_step", "Step10_safety_boundary")
+        safety_pre_generation_block.setdefault("phase", "B-S1")
+        safety_pre_generation_block.setdefault("policy", "scope_pre_composer_block")
+        safety_pre_generation_block.setdefault("scope_status", self.scope_status)
+        safety_pre_generation_block.setdefault("blocked_before_composer", safety_blocked_before_composer)
+        safety_pre_generation_block.setdefault("composer_generation_allowed", not safety_blocked_before_composer)
+        safety_pre_generation_block.setdefault("fixed_reply_allowed", False)
+        safety_pre_generation_block.setdefault("fallback_observation_allowed", False)
+        safety_pre_generation_block.setdefault("comment_text_allowed", False if safety_blocked_before_composer else True)
+        safety_pre_generation_block.setdefault("normal_observation_allowed", not safety_blocked_before_composer)
+        safety_pre_generation_block.setdefault("user_facing_text_allowed", not safety_blocked_before_composer)
+        safety_pre_generation_block.setdefault("safety_boundaries", list(safety_boundaries))
+        safety_pre_generation_block.setdefault("reason_codes", list(safety_boundary.get("reason_codes") or safety_boundary_policy.get("reason_codes") or rejection_reasons or []))
+        safety_pre_generation_block.setdefault("evidence_span_ids", list(safety_boundary.get("evidence_span_ids") or safety_boundary_policy.get("evidence_span_ids") or []))
+        safety_pre_generation_block.setdefault("coverage_groups", list(coverage_groups))
+        safety_pre_generation_block.setdefault("raw_user_text_included", False)
+
+        coverage_matrix_hint = _limited_scope_coverage_matrix_hint(
+            scope_status=self.scope_status,
+            coverage_scope=self.coverage_scope,
+            rejection_reasons=rejection_reasons,
+            excluded_reason_codes=excluded_reason_codes,
+            safety_boundaries=safety_boundaries,
+        )
+        scope_diagnostic = {
+            "version": "emlis.limited_scope_diagnostic.v1",
             "scope_status": self.scope_status,
-            "included_claim_ids": list(self.included_claim_ids),
-            "included_relation_ids": list(self.included_relation_ids),
-            "excluded_claims": [item.as_meta() for item in self.excluded_claims],
+            "coverage_scope": self.coverage_scope,
+            "coverage_matrix_hint": coverage_matrix_hint,
+            "included_claim_count": len(included_claim_ids),
+            "included_relation_count": len(included_relation_ids),
+            "excluded_claim_count": len(excluded_claims),
+            "rejection_reasons": rejection_reasons,
+            "safety_boundaries": safety_boundaries,
+            "missing_information": missing_information,
+            "excluded_reason_codes": excluded_reason_codes,
+            "scoped_claim_counts": scoped_claim_counts,
+            "excluded_reason_counts": _limited_scope_count_reasons(excluded_reason_codes),
+            "coverage_groups": list(coverage_groups),
+            "scope_expansion": dict(scope_expansion),
+            "safety_boundary": dict(safety_boundary),
+            "safety_boundary_policy": dict(safety_boundary_policy),
+            "safety_pre_generation_block": dict(safety_pre_generation_block),
+            "safety_blocked_before_composer": safety_blocked_before_composer,
+            "safety_evidence_span_ids": list(safety_boundary.get("evidence_span_ids") or safety_boundary_policy.get("evidence_span_ids") or []),
+            "minimum_coverage": {
+                "has_primary_state": bool(scoped_claim_counts.get("primary_state", 0)),
+                "included_claim_count": len(included_claim_ids),
+                "included_relation_count": len(included_relation_ids),
+                "meets_minimum_claim": bool(len(included_claim_ids) >= 1 and scoped_claim_counts.get("primary_state", 0) >= 1),
+            },
+        }
+        return {
+            "version": "emlis.limited_observation_scope.v2",
+            "scope_status": self.scope_status,
+            "included_claim_ids": included_claim_ids,
+            "included_relation_ids": included_relation_ids,
+            "included_claim_count": len(included_claim_ids),
+            "included_relation_count": len(included_relation_ids),
+            "excluded_claims": excluded_claims,
+            "excluded_claim_count": len(excluded_claims),
+            "excluded_reason_codes": excluded_reason_codes,
             "min_reply_sentence_count": int(self.min_reply_sentence_count),
             "max_reply_sentence_count": int(self.max_reply_sentence_count),
             "coverage_scope": self.coverage_scope,
-            "rejection_reasons": list(self.rejection_reasons),
+            "rejection_reasons": rejection_reasons,
+            "rejection_reason_count": len(rejection_reasons),
+            "safety_boundaries": safety_boundaries,
+            "safety_boundary_count": len(safety_boundaries),
+            "missing_information": missing_information,
+            "missing_information_count": len(missing_information),
+            "scoped_claim_counts": scoped_claim_counts,
+            "coverage_groups": list(coverage_groups),
+            "scope_expansion": dict(scope_expansion),
+            "safety_boundary": dict(safety_boundary),
+            "safety_boundary_policy": dict(safety_boundary_policy),
+            "safety_pre_generation_block": dict(safety_pre_generation_block),
+            "safety_blocked_before_composer": safety_blocked_before_composer,
+            "safety_evidence_span_ids": list(safety_boundary.get("evidence_span_ids") or safety_boundary_policy.get("evidence_span_ids") or []),
+            "scope_diagnostic": scope_diagnostic,
         }
 
 
@@ -911,6 +1235,31 @@ class TemplateEchoReport:
 class SafetyBoundaryReport:
     requires_block: bool = False
     reasons: List[str] = field(default_factory=list)
+    boundary_count: int = 0
+    boundary_kinds: List[str] = field(default_factory=list)
+    source_span_ids: List[str] = field(default_factory=list)
+    source_fields: List[str] = field(default_factory=list)
+    policy_version: str = "emlis.safety_boundary_policy.v1"
+    blocks_before_composer: bool = False
+    normal_observation_allowed: bool = True
+    user_facing_text_allowed: bool = True
+
+    def as_meta(self) -> Dict[str, Any]:
+        requires_block = bool(self.requires_block)
+        return {
+            "version": "emlis.safety_boundary_report.v1",
+            "policy_version": str(self.policy_version or ""),
+            "requires_block": requires_block,
+            "blocks_before_composer": bool(self.blocks_before_composer or requires_block),
+            "normal_observation_allowed": bool(self.normal_observation_allowed and not requires_block),
+            "user_facing_text_allowed": bool(self.user_facing_text_allowed and not requires_block),
+            "reasons": list(self.reasons or []),
+            "boundary_count": int(self.boundary_count or 0),
+            "boundary_kinds": list(self.boundary_kinds or []),
+            "source_span_ids": list(self.source_span_ids or []),
+            "source_fields": list(self.source_fields or []),
+            "raw_user_text_included": False,
+        }
 
 
 @dataclass(frozen=True)

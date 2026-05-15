@@ -23,6 +23,7 @@ QUALITY_FLAG_INTERNAL_MARKER_VISIBLE = "internal_marker_visible"
 QUALITY_FLAG_JAPANESE_EMPTY_TEXT = "japanese_coherence_empty_text"
 QUALITY_FLAG_ORPHAN_PARTICLE_FRAGMENT = "orphan_particle_fragment"
 QUALITY_FLAG_UNFINISHED_PHRASE = "unfinished_phrase"
+QUALITY_FLAG_REPEATED_SURFACE = "repeated_surface"
 
 REJECTION_EMOTION_LABEL_BODY = "emotion_label_body_line"
 REJECTION_EMOTION_LABEL_BODY_LINE = REJECTION_EMOTION_LABEL_BODY
@@ -32,6 +33,7 @@ REJECTION_INTERNAL_MARKER_VISIBLE = "internal_marker_visible"
 REJECTION_JAPANESE_EMPTY_TEXT = "japanese_coherence_empty_text"
 REJECTION_ORPHAN_PARTICLE_FRAGMENT = "orphan_particle_fragment"
 REJECTION_UNFINISHED_PHRASE = "unfinished_phrase"
+REJECTION_REPEATED_SURFACE = "repeated_surface"
 
 # Compatibility aliases used by earlier phase drafts.
 REJECTION_JAPANESE_EMOTION_LABEL_BODY_LINE = REJECTION_EMOTION_LABEL_BODY
@@ -84,6 +86,24 @@ def is_emotion_label_body_line(value: object) -> bool:
     return normalize_text(value) in _EMOTION_LABELS
 
 
+def _repeated_surface_shapes(sentences: tuple[str, ...]) -> tuple[str, ...]:
+    suffix_patterns = (
+        ("表に出ています", re.compile(r"表に出ています[。.!！]?$")),
+        ("重なっています", re.compile(r"重なっています[。.!！]?$")),
+        ("混ざっています", re.compile(r"混ざっています[。.!！]?$")),
+        ("残っています", re.compile(r"残っています[。.!！]?$")),
+        ("続いています", re.compile(r"続いています[。.!！]?$")),
+        ("同じ中にあります", re.compile(r"同じ中にあります[。.!！]?$")),
+    )
+    shapes: list[str] = []
+    for sentence in sentences:
+        for key, pattern in suffix_patterns:
+            if pattern.search(sentence):
+                shapes.append(key)
+                break
+    return tuple(value for value in dict.fromkeys(shapes) if shapes.count(value) >= 3)
+
+
 def guard_japanese_coherence(
     text: Any,
     *,
@@ -131,12 +151,18 @@ def guard_japanese_coherence(
             flags.extend((QUALITY_FLAG_JAPANESE_COHERENCE_FAILED, QUALITY_FLAG_ORPHAN_PARTICLE_FRAGMENT))
             matched.append(sentence)
 
+    repeated_shapes = _repeated_surface_shapes(sentences)
+    if len(sentences) >= 4 and repeated_shapes:
+        reasons.append(REJECTION_REPEATED_SURFACE)
+        flags.extend((QUALITY_FLAG_JAPANESE_COHERENCE_FAILED, QUALITY_FLAG_REPEATED_SURFACE))
+        matched.extend(repeated_shapes)
+
     return make_guard_result(
         guard_name=JAPANESE_COHERENCE_GUARD_NAME,
         reasons=reasons,
         quality_flags=flags,
         matched_texts=matched,
-        meta={"body_sentence_count": len(sentences), "forbidden_surface_count": len(token_list(forbidden_surface_patterns))},
+        meta={"body_sentence_count": len(sentences), "forbidden_surface_count": len(token_list(forbidden_surface_patterns)), "repeated_surface_shapes": list(repeated_shapes)},
     )
 
 
@@ -165,6 +191,7 @@ __all__ = [
     "QUALITY_FLAG_JAPANESE_EMPTY_TEXT",
     "QUALITY_FLAG_ORPHAN_PARTICLE_FRAGMENT",
     "QUALITY_FLAG_UNFINISHED_PHRASE",
+    "QUALITY_FLAG_REPEATED_SURFACE",
     "REJECTION_EMOTION_LABEL_BODY",
     "REJECTION_EMOTION_LABEL_BODY_LINE",
     "REJECTION_FORBIDDEN_SURFACE",
@@ -178,6 +205,7 @@ __all__ = [
     "REJECTION_JAPANESE_UNFINISHED_PHRASE",
     "REJECTION_ORPHAN_PARTICLE_FRAGMENT",
     "REJECTION_UNFINISHED_PHRASE",
+    "REJECTION_REPEATED_SURFACE",
     "JapaneseCoherenceGuard",
     "check_japanese_coherence",
     "evaluate_japanese_coherence",

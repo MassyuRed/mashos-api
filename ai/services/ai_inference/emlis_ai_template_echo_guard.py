@@ -49,6 +49,15 @@ _BANNED_PATTERNS = [
     r"悪化するが(?:同じ中にあります|$)",
 ]
 _BANNED_RE = [re.compile(p) for p in _BANNED_PATTERNS]
+_GENERIC_CLOSING_RE = re.compile(
+    r"(?:今の言葉として|ここに置いてくれた言葉|急いで片づけず|一つの結論へ急がず)[^。！？!?]{0,40}"
+    r"(?:一緒に見ます|一緒に見ていきます|小さく扱いません|軽く扱いません)[。.!！]?"
+)
+_STEP14_FORBIDDEN_SURFACE_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
+    ("diagnosis_like", re.compile(r"診断|治療|病気|症状|トラウマ|障害|発達障害|ADHD|うつ|鬱|自律神経|依存症|PTSD|医療|心理療法|心理学的")),
+    ("personality_label", re.compile(r"(?:あなた|その人|本人)(?:は|の)(?:[^。！？!?]{0,28})?(?:性格|人格|本質|タイプ|こういう人|弱い人|強い人|怠け|甘え)")),
+    ("general_knowledge_completion", re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")),
+)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
 _GREETING_RE = re.compile(r"^(?:[^。！？!?\n]{1,36}さん、)?(?:おはようございます|こんにちは|こんばんは|Emlisです|.+Emlisです)[。.!！]?$")
 
@@ -64,7 +73,13 @@ _OLD_TEMPLATE_SIGNATURES = [
     "Emlisは、急いで片づけず、今の言葉として一緒に見ます。",
 ]
 _NON_AI_SOURCES = {"rule_rendered", "fallback", "static_string", "legacy_kernel", "safe_fallback"}
-_LIMITED_MODEL_MARKERS = ("cocolon_limited_composer", "limited_composer")
+_LIMITED_MODEL_MARKERS = (
+    "cocolon_limited_composer",
+    "limited_composer",
+    "cocolon_emlis_observation_composer",
+    "emlis_observation_composer.a1",
+    "a_plan_equivalent",
+)
 _LIMITED_METHOD_MARKERS = ("scoped_graph_evidence_composer", "scoped_graph_only")
 _LIMITED_COVERAGE_VALUES = {"partial_observation", "current_input_core"}
 
@@ -318,6 +333,19 @@ def guard_template_echo(
     for pattern in _BANNED_RE:
         if pattern.search(text):
             matched.append(pattern.pattern)
+    if _GENERIC_CLOSING_RE.search(text):
+        matched.append("generic_closing_surface")
+        reasons.append("generic_closing")
+
+    step14_forbidden: List[str] = []
+    for reason, pattern in _STEP14_FORBIDDEN_SURFACE_PATTERNS:
+        if pattern.search(text):
+            step14_forbidden.append(reason)
+            matched.append(reason)
+    if step14_forbidden:
+        reasons.append("phase14_overclaim_guard")
+        reasons.extend(step14_forbidden)
+
     if matched:
         reasons.append("banned_legacy_pattern")
 
@@ -395,6 +423,16 @@ def guard_template_echo(
     if limited and not bool(quality_report.get("passed")):
         for reason in list(quality_report.get("rejection_reasons") or []):
             reasons.append(str(reason))
+            if str(reason) == "phase8_generic_closing":
+                reasons.append("limited_composer_generic_closing")
+            if str(reason) == "general_knowledge_completion":
+                reasons.append("limited_composer_general_knowledge_completion")
+            if str(reason) == "diagnosis_like":
+                reasons.append("limited_composer_diagnosis_like")
+            if str(reason) == "personality_label":
+                reasons.append("limited_composer_personality_label")
+            if str(reason) == "repeated_surface":
+                reasons.append("limited_composer_repeated_surface")
         for fragment in list(quality_report.get("matched_surfaces") or quality_report.get("matched_fragments") or []):
             if fragment and fragment not in matched:
                 matched.append(str(fragment))

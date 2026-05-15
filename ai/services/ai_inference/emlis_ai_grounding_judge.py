@@ -24,6 +24,12 @@ _RELATION_RE = re.compile(
 )
 _GENERIC_RELATION_SENTENCE_RE = re.compile(r"(その二つ|二つの間|同じ場所|同じ中|並んで|重なって|離れていない|同時に)")
 _OVERCLAIM_RE = re.compile(r"(本当は|本当の願い|頼りたい|愛されたい|前向き|強い人|性格|診断|病気|治療|医療|弱さではなく)")
+# Step14: A-plan readiness guard surfaces.  These are rejection signatures,
+# not generation rules.
+_STEP14_DIAGNOSIS_LIKE_RE = re.compile(r"診断|治療|病気|症状|トラウマ|障害|発達障害|ADHD|うつ|鬱|自律神経|依存症|PTSD|医療|心理療法|心理学的")
+_STEP14_PERSONALITY_LABEL_RE = re.compile(r"(?:あなた|その人|本人)(?:は|の)(?:[^。！？!?]{0,28})?(?:性格|人格|本質|タイプ|こういう人|弱い人|強い人|怠け|甘え)")
+_STEP14_GENERAL_KNOWLEDGE_RE = re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")
+_STEP14_ADVICE_ASSERTION_RE = re.compile(r"(?:必要があります|すべきです|するべきです|しなければなりません|正解です|間違いです)")
 _GREETING_SENTENCE_RE = re.compile(r"^[^。！？!?\n]{1,40}さん、(?:こんにちは|おはようございます|こんばんは)[。.!！]?$")
 
 
@@ -79,6 +85,20 @@ def _span_matches_sentence(sentence: str, span: EvidenceSpan) -> bool:
     if sentence_terms.intersection(span_terms):
         return True
     return _ngram_overlap(sentence, raw) >= 0.18
+
+
+def _step14_unbacked_reason(sentence: str, evidence_text: str) -> str:
+    """Return a Step14 reason when a natural sentence completes beyond evidence."""
+
+    if _STEP14_DIAGNOSIS_LIKE_RE.search(sentence) and not _STEP14_DIAGNOSIS_LIKE_RE.search(evidence_text):
+        return "unsupported_diagnosis_like"
+    if _STEP14_PERSONALITY_LABEL_RE.search(sentence) and not _STEP14_PERSONALITY_LABEL_RE.search(evidence_text):
+        return "unsupported_personality_label"
+    if _STEP14_GENERAL_KNOWLEDGE_RE.search(sentence) and not _STEP14_GENERAL_KNOWLEDGE_RE.search(evidence_text):
+        return "unsupported_general_knowledge_completion"
+    if _STEP14_ADVICE_ASSERTION_RE.search(sentence) and not _STEP14_ADVICE_ASSERTION_RE.search(evidence_text):
+        return "unsupported_advice_assertion"
+    return ""
 
 
 def _dedupe(values: Iterable[str]) -> List[str]:
@@ -173,10 +193,10 @@ def judge_grounding(
         if not matched_ids and relation_supported and _GENERIC_RELATION_SENTENCE_RE.search(sentence):
             matched_ids = relation_edge_ids[:5]
 
-        unsupported_reason = ""
-        if _OVERCLAIM_RE.search(sentence) and not _OVERCLAIM_RE.search(evidence_text):
+        unsupported_reason = _step14_unbacked_reason(sentence, evidence_text)
+        if not unsupported_reason and _OVERCLAIM_RE.search(sentence) and not _OVERCLAIM_RE.search(evidence_text):
             unsupported_reason = "unsupported_overclaim"
-        elif not matched_ids:
+        elif not unsupported_reason and not matched_ids:
             unsupported_reason = "no_evidence_span_or_relation"
 
         if unsupported_reason:
@@ -198,6 +218,14 @@ def judge_grounding(
         reasons.append("empty_text")
     if unsupported > 0:
         reasons.append("unsupported_sentence")
+    for claim in claims:
+        if claim.unsupported_reason in {
+            "unsupported_diagnosis_like",
+            "unsupported_personality_label",
+            "unsupported_general_knowledge_completion",
+            "unsupported_advice_assertion",
+        }:
+            reasons.append(claim.unsupported_reason)
     if graph.core_tensions and relation_supported_count < 1:
         reasons.append("core_relation_not_reflected")
     if graph_evidence_ids and not any(set(c.evidence_span_ids).intersection(graph_evidence_ids) for c in claims):

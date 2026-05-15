@@ -10,8 +10,9 @@ spans required by real-input profiles.
 """
 
 import re
-from typing import Iterable, List, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 
+from emlis_ai_safety_boundary_service import build_emlis_safety_boundary_decision, normalize_safety_boundary_codes
 from emlis_ai_types import (
     EvidenceSpan,
     GraphClaim,
@@ -28,6 +29,9 @@ _MAX_CORE_TENSIONS = 1
 _MAX_OPTIONAL_CLAIMS = 4
 _MAX_CLAIMS_PER_GROUP = 1
 _TEXT_SOURCE_FIELDS = {"memo", "memo_action"}
+_SCOPE_EXPANSION_VERSION = "emlis.scope_expansion.v1"
+_SCOPE_SAFETY_BOUNDARY_VERSION = "emlis.scope_safety_boundary.v1"
+_SAFETY_BOUNDARY_REASON = "limited_scope_safety_boundary"
 
 _REQUIRED_MISSING_INFO_BLOCKERS = {
     "no_current_input_text",
@@ -42,11 +46,17 @@ _GRAPH_GROUPS: Tuple[Tuple[str, str], ...] = (
     ("self_awareness", "self_awareness"),
 )
 
-_POSITIVE_RE = re.compile(r"(楽しか|笑え|元気|嬉し|うれし|リラックス|優先|整え|家のこと|片付け|気持ちが軽|ちゃんとでき)")
-_PRESSURE_RE = re.compile(r"(不安|不便|ダメージ|悪化|気をつけ|気を付け|責め|きつ|言い方|腹が立|怖|しんどい|迷惑|重い|嫌われ|落ちる)")
-_LIMIT_RE = re.compile(r"(限界|逃げ出|何もしたくない|だるい|気が抜け|止まらなく|動けなく|面倒|距離)")
-_SELF_RE = re.compile(r"(分かって|わかって|考えすぎ|考え始め|完璧|適当に)")
-_WISH_RE = re.compile(r"(頼りたい|生活したい|普通に生活|優先|整え|したい)")
+_POSITIVE_RE = re.compile(r"(楽しか|楽し|笑え|元気|嬉し|うれし|リラックス|安心|ほっと|落ち着|回復|優先|整え|家のこと|片付け|気持ちが軽|ちゃんとでき|できた)")
+_PRESSURE_RE = re.compile(r"(不安|心配|焦|緊張|不便|ダメージ|悪化|気をつけ|気を付け|責め|きつ|言い方|腹が立|怒|怖|こわ|しんどい|つら|辛|傷つ|悔し|迷惑|困らせ|重い|嫌われ|嫌だ|嫌にな|落ちる|多すぎ|詰ま|追いつ|余裕がない|失敗)")
+_LIMIT_RE = re.compile(r"(限界|逃げ出|投げ出|何もしたくない|もう無理|無理|休みたい|疲れ|疲労|消耗|だるい|気が抜け|止まらなく|動けなく|抱え|一人で考え|つらい|辛い|苦し|面倒|距離|全部嫌|嫌だ)")
+_SELF_RE = re.compile(r"(分かって|わかって|分かる|わかる|考えすぎ|考え始め|完璧|適当に|気づいて|気づい|理解して|ちゃんと見|自分でも|見えている)")
+_WISH_RE = re.compile(r"(頼りたい|相談したい|話したい|助けを借りたい|支えてほしい|生活したい|普通に生活|優先|整え|したい|大事にしたい|大切にしたい|守りたい|選びたい|欲しい|ほしい|願い)")
+_GROUP_TO_COVERAGE = {
+    "pressure_sources": ("anxiety", "anger_hurt", "relationship"),
+    "limit_signals": ("energy_fatigue", "limit_escape"),
+    "self_awareness": ("long_meaning_arc",),
+    "value_or_strength_signals": ("positive_recovery", "value_wish"),
+}
 
 
 def _dedupe(values: Iterable[str]) -> List[str]:
@@ -56,6 +66,54 @@ def _dedupe(values: Iterable[str]) -> List[str]:
         if item and item not in out:
             out.append(item)
     return out
+
+
+
+def _scope_safety_boundary_meta(*, graph: ObservationGraph, evidence_spans: Sequence[EvidenceSpan]) -> Dict[str, Any]:
+    """Return Step10 scope-side safety boundary diagnostics.
+
+    Step10 keeps the fail-closed safety decision inside the scope layer so the
+    Limited Composer never receives a normal body-generation request when the
+    current input contains a safety boundary.  This is developer-facing meta;
+    it stores only stable codes, never raw unsafe source fragments.
+    """
+
+    decision = build_emlis_safety_boundary_decision(graph=graph, evidence_spans=evidence_spans)
+    detector_meta = decision.as_meta()
+    requires_block = bool(detector_meta.get("requires_block"))
+    graph_codes = normalize_safety_boundary_codes(getattr(graph, "safety_boundaries", []) or [])
+    return {
+        "version": _SCOPE_SAFETY_BOUNDARY_VERSION,
+        "target_step": "Step10_safety_boundary",
+        "policy": "scope_pre_composer_block",
+        "requires_block": requires_block,
+        "blocked_before_composer": requires_block,
+        "reason_codes": [_SAFETY_BOUNDARY_REASON] if requires_block else [],
+        "primary_reason": _SAFETY_BOUNDARY_REASON if requires_block else "",
+        "safety_boundaries": list(detector_meta.get("reason_codes") or []),
+        "graph_safety_boundaries": graph_codes,
+        "evidence_safety_boundaries": list(detector_meta.get("boundary_types") or []),
+        "evidence_span_ids": list(detector_meta.get("evidence_span_ids") or []),
+        "source_fields": list(detector_meta.get("source_fields") or []),
+        "detected_types": ["safety_risk"] if detector_meta.get("evidence_span_ids") else [],
+        "detected_categories": list(detector_meta.get("boundary_types") or []),
+        "boundary_sources": list(detector_meta.get("boundary_sources") or []),
+        "boundary_count": int(detector_meta.get("graph_boundary_count") or 0) + int(detector_meta.get("evidence_span_count") or 0),
+        "graph_boundary_count": int(detector_meta.get("graph_boundary_count") or 0),
+        "evidence_boundary_count": int(detector_meta.get("evidence_span_count") or 0),
+        "coverage_groups": ["safety_boundary", "limit_escape"] if requires_block else [],
+        "comment_text_allowed": False if requires_block else None,
+        "normal_observation_blocked": requires_block,
+        "composer_must_not_run": requires_block,
+        "raw_user_text_included": False,
+        "detector": detector_meta,
+    }
+
+
+def has_limited_scope_safety_boundary(*, graph: ObservationGraph, evidence_spans: Sequence[EvidenceSpan]) -> bool:
+    """Return True when Step10 requires a pre-composer safety block."""
+
+    return bool(_scope_safety_boundary_meta(graph=graph, evidence_spans=evidence_spans).get("requires_block"))
 
 
 def _known_evidence_ids(evidence_spans: Sequence[EvidenceSpan]) -> Set[str]:
@@ -111,7 +169,12 @@ def _empty_primary() -> GraphClaim:
     )
 
 
-def _empty_scoped_graph(graph: ObservationGraph, *, missing_reason: str) -> ObservationGraph:
+def _empty_scoped_graph(
+    graph: ObservationGraph,
+    *,
+    missing_reason: str,
+    safety_boundaries: Sequence[str] | None = None,
+) -> ObservationGraph:
     return ObservationGraph(
         primary_state=_empty_primary(),
         core_tensions=[],
@@ -120,7 +183,7 @@ def _empty_scoped_graph(graph: ObservationGraph, *, missing_reason: str) -> Obse
         self_awareness=[],
         value_or_strength_signals=[],
         addressee_notes=graph.addressee_notes,
-        safety_boundaries=list(graph.safety_boundaries or []),
+        safety_boundaries=list(graph.safety_boundaries or []) if safety_boundaries is None else _dedupe(safety_boundaries),
         forbidden_claims=list(graph.forbidden_claims or []),
         missing_information=_dedupe([*(graph.missing_information or []), missing_reason]),
     )
@@ -154,21 +217,57 @@ def _clean_span_text(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\r", " ").replace("\n", " ")).strip(" 　、,。.!！?？")
 
 
-def _span_group(span: EvidenceSpan) -> str:
+def _span_groups(span: EvidenceSpan) -> List[str]:
+    """Return B-S1 scope groups that this text span can ground.
+
+    Step09 broadens scope by allowing one source span to back more than one
+    scoped claim when the user explicitly wrote both sides, for example a wish
+    to rely and a fear of being a burden.  This still stays source-bound: no
+    group is created without a memo/memo_action evidence span and a local cue.
+    """
+
     text = _clean_span_text(getattr(span, "raw_text", ""))
     detected = str(getattr(span, "detected_type", "") or "").strip()
     source = str(getattr(span, "source_field", "") or "").strip()
     if source not in _TEXT_SOURCE_FIELDS or not text:
-        return ""
+        return []
+    groups: List[str] = []
     if detected == "self_awareness" or _SELF_RE.search(text):
-        return "self_awareness"
+        groups.append("self_awareness")
     if detected == "limit_signal" or _LIMIT_RE.search(text):
-        return "limit_signals"
+        groups.append("limit_signals")
     if detected in {"constraint", "fear"} or _PRESSURE_RE.search(text):
-        return "pressure_sources"
+        groups.append("pressure_sources")
     if detected in {"value", "wish"} or _POSITIVE_RE.search(text) or _WISH_RE.search(text):
-        return "value_or_strength_signals"
-    return ""
+        groups.append("value_or_strength_signals")
+    return _dedupe(groups)
+
+
+def _coverage_groups_for_scope_group(group_key: str, text: str) -> List[str]:
+    value = str(text or "")
+    coverage: List[str] = []
+    if group_key == "pressure_sources":
+        if re.search(r"(不安|心配|怖|こわ|焦|緊張|失敗|悪化|落ちる)", value):
+            coverage.append("anxiety")
+        if re.search(r"(怒|腹が立|傷つ|つら|辛|悔し|嫌|責め|言い方|きつ)", value):
+            coverage.append("anger_hurt")
+        if re.search(r"(友達|友人|家族|相手|職場|学校|上司|同僚|相談|頼|迷惑|困らせ|嫌われ|重い)", value):
+            coverage.append("relationship")
+    elif group_key == "limit_signals":
+        if re.search(r"(疲れ|疲労|だる|消耗|休みたい|動けな|何もしたくない)", value):
+            coverage.append("energy_fatigue")
+        if re.search(r"(限界|逃げ|投げ出|もう無理|無理|距離|普通に生活|全部嫌|抱え)", value):
+            coverage.append("limit_escape")
+    elif group_key == "self_awareness":
+        coverage.append("long_meaning_arc")
+    elif group_key == "value_or_strength_signals":
+        if re.search(r"(嬉し|うれし|楽しか|楽し|安心|リラックス|ほっと|落ち着|回復|整え|できた|片付け)", value):
+            coverage.append("positive_recovery")
+        if re.search(r"(したい|願い|大事|大切|優先|守りたい|選びたい|欲しい|ほしい|頼りたい|相談したい|生活したい)", value):
+            coverage.append("value_wish")
+    if not coverage:
+        coverage.extend(_GROUP_TO_COVERAGE.get(group_key, ()))
+    return _dedupe(coverage)
 
 
 def _synthetic_claim_for_span(span: EvidenceSpan, *, group_key: str) -> GraphClaim:
@@ -188,31 +287,54 @@ def _synthetic_claim_for_span(span: EvidenceSpan, *, group_key: str) -> GraphCla
     )
 
 
-def _augment_groups_from_evidence(*, graph: ObservationGraph, evidence_spans: Sequence[EvidenceSpan]) -> dict[str, List[GraphClaim]]:
+def _augment_groups_from_evidence(*, graph: ObservationGraph, evidence_spans: Sequence[EvidenceSpan]) -> Tuple[dict[str, List[GraphClaim]], Dict[str, Any]]:
     groups: dict[str, List[GraphClaim]] = {
         "pressure_sources": list(graph.pressure_sources or []),
         "limit_signals": list(graph.limit_signals or []),
         "self_awareness": list(graph.self_awareness or []),
         "value_or_strength_signals": list(graph.value_or_strength_signals or []),
     }
-    existing_span_ids = {
-        span_id
-        for claims in groups.values()
+    existing_pairs = {
+        (span_id, group_key)
+        for group_key, claims in groups.items()
         for claim in claims
         for span_id in list(getattr(claim, "evidence_span_ids", []) or [])
     }
+    created_by_group: Dict[str, List[str]] = {key: [] for key in groups}
+    span_groups: Dict[str, List[str]] = {}
+    coverage_groups: List[str] = []
+    for group_key, claims in groups.items():
+        for claim in claims:
+            coverage_groups.extend(_coverage_groups_for_scope_group(group_key, str(getattr(claim, "text", "") or "")))
     for span in evidence_spans or []:
         span_id = str(getattr(span, "span_id", "") or "").strip()
-        if not span_id or span_id in existing_span_ids:
+        if not span_id:
             continue
-        group_key = _span_group(span)
-        if not group_key:
+        raw_text = _clean_span_text(getattr(span, "raw_text", ""))
+        scope_groups = _span_groups(span)
+        if not scope_groups:
             continue
-        claim = _synthetic_claim_for_span(span, group_key=group_key)
-        if claim.text:
-            groups[group_key].append(claim)
-            existing_span_ids.add(span_id)
-    return groups
+        span_groups[span_id] = list(scope_groups)
+        for group_key in scope_groups:
+            if (span_id, group_key) in existing_pairs:
+                continue
+            claim = _synthetic_claim_for_span(span, group_key=group_key)
+            if claim.text:
+                groups[group_key].append(claim)
+                existing_pairs.add((span_id, group_key))
+                created_by_group.setdefault(group_key, []).append(claim.claim_id)
+                coverage_groups.extend(_coverage_groups_for_scope_group(group_key, raw_text))
+    expansion_meta = {
+        "version": _SCOPE_EXPANSION_VERSION,
+        "target_step": "Step09_scope_expansion",
+        "created_claim_ids_by_group": {key: value for key, value in created_by_group.items() if value},
+        "created_claim_count": sum(len(value) for value in created_by_group.values()),
+        "span_groups": {key: value for key, value in span_groups.items() if value},
+        "coverage_groups": _dedupe(coverage_groups),
+        "expansion_policy": "source_span_to_scoped_claim",
+        "allows_multiple_groups_per_span": True,
+    }
+    return groups, expansion_meta
 
 
 def _select_core_tensions(
@@ -304,16 +426,38 @@ def build_limited_observation_scope(
     text_ids = _text_evidence_ids(evidence_spans)
     source_by_id = _evidence_source_index(evidence_spans)
     excluded: List[LimitedScopeExcludedItem] = []
-    augmented_groups = _augment_groups_from_evidence(graph=graph, evidence_spans=evidence_spans)
+    safety_boundary_policy = _scope_safety_boundary_meta(graph=graph, evidence_spans=evidence_spans)
 
-    if list(graph.safety_boundaries or []):
+    if bool(safety_boundary_policy.get("requires_block")):
+        safety_boundaries = _dedupe(safety_boundary_policy.get("safety_boundaries") or [_SAFETY_BOUNDARY_REASON])
+        safety_coverage_groups = _dedupe(safety_boundary_policy.get("coverage_groups") or ["safety_boundary"])
+        safety_expansion_meta = {
+            "version": _SCOPE_EXPANSION_VERSION,
+            "target_step": "Step10_safety_boundary",
+            "created_claim_ids_by_group": {},
+            "created_claim_count": 0,
+            "span_groups": {},
+            "coverage_groups": list(safety_coverage_groups),
+            "expansion_policy": "safety_boundary_blocks_scope_before_composer",
+            "allows_multiple_groups_per_span": False,
+        }
         return LimitedObservationScope(
             scope_status="safety_blocked",
-            scoped_graph=_empty_scoped_graph(graph, missing_reason="limited_scope_safety_blocked"),
+            scoped_graph=_empty_scoped_graph(
+                graph,
+                missing_reason="limited_scope_safety_blocked",
+                safety_boundaries=safety_boundaries,
+            ),
             excluded_claims=excluded,
             coverage_scope="current_input_core",
-            rejection_reasons=["limited_scope_safety_boundary"],
+            rejection_reasons=[_SAFETY_BOUNDARY_REASON],
+            coverage_groups=safety_coverage_groups,
+            scope_expansion=safety_expansion_meta,
+            safety_boundary=safety_boundary_policy,
+            safety_boundary_policy=safety_boundary_policy,
         )
+
+    augmented_groups, expansion_meta = _augment_groups_from_evidence(graph=graph, evidence_spans=evidence_spans)
 
     blockers = _scope_status_blockers(graph)
     if blockers:
@@ -323,6 +467,8 @@ def build_limited_observation_scope(
             excluded_claims=excluded,
             coverage_scope="current_input_core",
             rejection_reasons=["limited_scope_required_structure_missing", *blockers],
+            coverage_groups=list(expansion_meta.get("coverage_groups") or []),
+            scope_expansion=expansion_meta,
         )
 
     primary = graph.primary_state
@@ -335,6 +481,8 @@ def build_limited_observation_scope(
                 excluded_claims=[_exclude("claim", getattr(primary, "claim_id", "primary_state"), "no_grounded_primary_state", "primary_state")],
                 coverage_scope="current_input_core",
                 rejection_reasons=["limited_scope_no_grounded_primary_state"],
+                coverage_groups=list(expansion_meta.get("coverage_groups") or []),
+                scope_expansion=expansion_meta,
             )
         reason = "structured_label_not_body_primary" if _structured_label_primary(primary, source_by_id) else "primary_state_replaced_by_text_grounded_claim"
         excluded.append(_exclude("claim", getattr(primary, "claim_id", "primary_state"), reason, "primary_state"))
@@ -411,6 +559,8 @@ def build_limited_observation_scope(
         max_reply_sentence_count=max_sentences,
         coverage_scope=coverage_scope,
         rejection_reasons=[],
+        coverage_groups=list(expansion_meta.get("coverage_groups") or []),
+        scope_expansion=expansion_meta,
     )
 
 
@@ -458,6 +608,7 @@ def limited_observation_scope_ready(scope: LimitedObservationScope, evidence_spa
 
 __all__ = [
     "build_limited_observation_scope",
+    "has_limited_scope_safety_boundary",
     "limited_observation_scope_ready",
     "validate_limited_observation_scope",
 ]

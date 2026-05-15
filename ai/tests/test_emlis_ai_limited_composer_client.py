@@ -15,7 +15,7 @@ from emlis_ai_conversation_composer_service import (
     compose_emlis_conversation_candidate,
 )
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
-from emlis_ai_limited_composer_client import CocolonLimitedComposerClient
+from emlis_ai_limited_composer_client import CocolonLimitedComposerClient, EmlisPhraseUnit
 from emlis_ai_limited_observation_scope_service import build_limited_observation_scope
 from fixtures.emlis_ai_phase8_cases import PHASE8_CASES
 from emlis_ai_observation_integrator_service import integrate_perspective_board
@@ -224,3 +224,447 @@ def test_limited_composer_module_has_no_example_phrase_replacement_table():
         "replacements =",
     ):
         assert marker not in source
+
+
+
+def _step04_payload(evidence_spans):
+    ids = [str(item.get("span_id") or "") for item in evidence_spans if str(item.get("span_id") or "")]
+    return {
+        "schema_version": "emlis.composer.request.v1",
+        "addressee": {"display_name_call": "Mashさん", "greeting_text": "Emlisです"},
+        "observation_graph": {
+            "primary_state": {"claim_id": "c1", "claim_type": "primary_state", "text": "source anchored", "evidence_span_ids": ids[:2]},
+            "core_tensions": [],
+            "pressure_sources": [],
+            "limit_signals": [],
+            "self_awareness": [],
+            "value_or_strength_signals": [],
+            "safety_boundaries": [],
+            "forbidden_claims": [],
+            "missing_information": [],
+        },
+        "evidence_spans": evidence_spans,
+        "limited_observation_scope": {"scope_status": "eligible", "coverage_scope": "partial_observation"},
+        "composition_contract": {"forbidden_output_surfaces": []},
+    }
+
+
+def _step04_profile_evidence():
+    return [
+        {"span_id": "s1", "raw_text": "友達と話せて楽しかった。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "s2", "raw_text": "夜になって急に不安になった。", "detected_type": "event", "source_field": "memo"},
+    ]
+
+
+def test_step04_limited_composer_diagnostic_marks_missing_phrase_units(monkeypatch):
+    monkeypatch.setattr(limited_composer_module, "detect_phase8_profile", lambda _items: "mixed_positive_anxiety")
+    monkeypatch.setattr(limited_composer_module, "_build_phrase_units", lambda _items: [])
+
+    result = CocolonLimitedComposerClient().generate(_step04_payload(_step04_profile_evidence()))
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+
+    assert result["composer_source"] == "unavailable"
+    assert "limited_composer_missing_phrase_units" in result["rejection_reasons"]
+    assert diagnostic["version"] == "emlis.composer_diagnostic.v1"
+    assert diagnostic["composer_status"] == "unavailable"
+    assert diagnostic["missing_phrase_units"] is True
+    assert diagnostic["reason_category"] == "missing_phrase_units"
+    assert diagnostic["stop_reason"] == "missing_phrase_units"
+    assert "missing_phrase_units" in diagnostic["coverage_matrix_hints"]
+
+
+def test_step04_limited_composer_diagnostic_marks_required_role_missing(monkeypatch):
+    monkeypatch.setattr(limited_composer_module, "detect_phase8_profile", lambda _items: "mixed_positive_anxiety")
+    monkeypatch.setattr(
+        limited_composer_module,
+        "_build_phrase_units",
+        lambda _items: [
+            EmlisPhraseUnit(
+                phrase_unit_id="pu1",
+                evidence_span_id="s1",
+                raw_text="友達と話せて楽しかった。",
+                compressed_text="友達と話せた楽しさ",
+                role="positive_state",
+                polarity="positive",
+                must_keep=True,
+            )
+        ],
+    )
+
+    result = CocolonLimitedComposerClient().generate(_step04_payload(_step04_profile_evidence()))
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+
+    assert result["composer_source"] == "unavailable"
+    assert "limited_composer_required_role_missing" in result["rejection_reasons"]
+    assert diagnostic["required_role_missing"] is True
+    assert diagnostic["missing_roles"] == ["anxiety_return"]
+    assert diagnostic["available_roles"] == ["positive_state"]
+    assert diagnostic["reason_category"] == "required_role_missing"
+    assert "required_role_missing" in diagnostic["coverage_matrix_hints"]
+
+
+def test_step04_limited_composer_diagnostic_marks_sentence_plan_unavailable(monkeypatch):
+    monkeypatch.setattr(limited_composer_module, "detect_phase8_profile", lambda _items: "mixed_positive_anxiety")
+    monkeypatch.setattr(
+        limited_composer_module,
+        "_build_phrase_units",
+        lambda _items: [
+            EmlisPhraseUnit("pu1", "s1", "友達と話せて楽しかった。", "友達と話せた楽しさ", "positive_state", "positive", True),
+            EmlisPhraseUnit("pu2", "s2", "夜になって急に不安になった。", "戻ってきた不安", "anxiety_return", "negative", True),
+        ],
+    )
+    monkeypatch.setattr(limited_composer_module, "_sentence_plans_for_profile", lambda **_kwargs: [])
+
+    result = CocolonLimitedComposerClient().generate(_step04_payload(_step04_profile_evidence()))
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+
+    assert result["composer_source"] == "unavailable"
+    assert "limited_composer_sentence_plan_unavailable" in result["rejection_reasons"]
+    assert diagnostic["sentence_plan_unavailable"] is True
+    assert diagnostic["reason_category"] == "sentence_plan_unavailable"
+    assert diagnostic["phrase_unit_count"] == 2
+    assert diagnostic["sentence_plan_count"] == 0
+
+
+def test_step04_limited_composer_diagnostic_marks_shallow_profile_unmatched():
+    evidence = [
+        {"span_id": "a", "raw_text": "今日は仕事で疲れた。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "b", "raw_text": "お茶を飲んで少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+
+    result = CocolonLimitedComposerClient().generate(_step04_payload(evidence))
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+
+    assert result["composer_source"] == "ai_generated"
+    assert diagnostic["composer_status"] == "generated"
+    assert diagnostic["profile_key"] == "current_input_core"
+    assert diagnostic["source_profile_key"] == "unknown"
+    assert diagnostic["profile_unmatched"] is True
+    assert diagnostic["shallow_observation_path"] is True
+    assert diagnostic["phrase_unit_count"] >= 2
+    assert "profile_unmatched" in diagnostic["reason_codes"]
+    assert "profile_unmatched" in diagnostic["coverage_matrix_hints"]
+
+
+def test_step04_limited_composer_diagnostic_marks_shallow_insufficient_evidence():
+    evidence = [
+        {"span_id": "a", "raw_text": "今日は疲れた。", "detected_type": "event", "source_field": "memo"},
+    ]
+
+    result = CocolonLimitedComposerClient().generate(_step04_payload(evidence))
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+
+    assert result["composer_source"] == "unavailable"
+    assert "limited_composer_shallow_insufficient_evidence" in result["rejection_reasons"]
+    assert diagnostic["shallow_insufficient_evidence"] is True
+    assert diagnostic["reason_category"] == "shallow_insufficient_evidence"
+    assert diagnostic["stop_reason"] == "shallow_insufficient_evidence"
+    assert "shallow_insufficient_evidence" in diagnostic["coverage_matrix_hints"]
+
+
+def test_step11_phrase_unit_role_expansion_handles_fatigue_value_and_repair_material():
+    evidence = [
+        {"span_id": "s1", "raw_text": "今日は疲れが溜まっていて、休みたい気持ちが強い。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "s2", "raw_text": "それでも大事にしたい作業を少し選びたい。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "s3", "raw_text": "机を少し整えたら少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["s1", "s2", "s3"]
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    assert result["coverage_scope"] in {"current_input_core", "partial_observation"}
+    compact = _compact_source_text(result["comment_text"])
+    assert "それこと" not in compact
+    assert "疲れが溜まっている" in compact
+    assert "大事にしたい気持ち" in compact
+    assert "机を整えた" in compact
+
+    role_expansion = result["composer_meta"]["step11_role_expansion"]
+    assert role_expansion["completion_sentence_templates_added"] is False
+    assert role_expansion["role_is_material_only"] is True
+    assert set(role_expansion["expanded_roles"]) >= {"fatigue_accumulation", "small_repair", "value_wish"}
+    assert {"energy_fatigue", "positive_recovery", "value_wish"}.issubset(set(role_expansion["coverage_groups"]))
+    assert {"fatigue_accumulation", "small_repair", "value_wish"}.issubset(
+        set(result["composer_meta"]["composer_diagnostic"]["expanded_roles"])
+    )
+
+
+def test_step11_phrase_units_filter_orphan_particles_and_label_only_fragments():
+    evidence = [
+        {"span_id": "x1", "raw_text": "不安", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "x2", "raw_text": "普通に", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "x3", "raw_text": "資料が多すぎて頭が回らず、追いつかない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "x4", "raw_text": "少しだけ机を整えた。", "detected_type": "event", "source_field": "memo"},
+    ]
+
+    units = limited_composer_module._build_current_input_core_phrase_units(evidence)
+
+    compact_units = {_compact_source_text(unit.compressed_text) for unit in units}
+    assert "不安" not in compact_units
+    assert "普通にこと" not in compact_units
+    assert all("orphan_particle" not in unit.quality_flags for unit in units)
+    assert all("unfinished_phrase" not in unit.quality_flags for unit in units)
+    assert {"loss_of_control", "small_repair"}.issubset({unit.role for unit in units})
+
+def test_step12_profile_sentence_plan_expansion_handles_energy_fatigue_profile():
+    evidence = [
+        {"span_id": "ef1", "raw_text": "朝から疲れが溜まっていて体力が残っていない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "ef2", "raw_text": "資料を直そうとしても頭が回らず、集中が切れている。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "ef3", "raw_text": "途中でお茶を飲んだら少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["ef1", "ef2", "ef3"]
+    result = CocolonLimitedComposerClient().generate(payload)
+    assert result["composer_source"] == "ai_generated"
+    assert result["composer_meta"]["profile_key"] == "energy_fatigue"
+    compact = _compact_source_text(result["comment_text"])
+    assert "疲れが溜まっている" in compact or "疲労が残っている" in compact
+    assert "頭が回" in compact or "集中が切れている" in compact
+    step12 = result["composer_meta"]["step12_profile_sentence_plan"]
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+    assert step12["profile_key"] == "energy_fatigue"
+    assert step12["profile_expanded"] is True
+    assert step12["completion_sentence_templates_added"] is False
+    assert step12["profile_sentence_plan_is_material_only"] is True
+    assert {"fatigue_accumulation", "loss_of_control"}.issubset(set(step12["planned_roles"]))
+    assert diagnostic["expanded_profile"] is True
+    assert "energy_fatigue" in diagnostic["expanded_profiles"]
+
+
+def test_step12_profile_sentence_plan_expansion_handles_value_wish_profile():
+    evidence = [
+        {"span_id": "vw1", "raw_text": "大切にしたい作業を今日は選びたい。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "vw2", "raw_text": "でも資料が多すぎて頭が回らず、休みたい気持ちもある。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "vw3", "raw_text": "少しだけ机を整えたら落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["vw1", "vw2", "vw3"]
+    result = CocolonLimitedComposerClient().generate(payload)
+    assert result["composer_source"] == "ai_generated"
+    assert result["composer_meta"]["profile_key"] == "value_wish"
+    compact = _compact_source_text(result["comment_text"])
+    assert "大切にしたい" in compact or "選びたい" in compact
+    assert "頭が回" in compact or "休みたい" in compact
+    step12 = result["composer_meta"]["step12_profile_sentence_plan"]
+    assert step12["profile_key"] == "value_wish"
+    assert step12["expanded_profiles"] == ["value_wish"]
+    assert step12["role_combination_based"] is True
+    assert step12["completion_sentence_templates_added"] is False
+    assert {"value", "pressure"}.issubset(set(step12["sentence_plan_roles"].keys()))
+    assert "value_wish" in result["composer_meta"]["available_roles"]
+
+
+def test_step12_detects_long_meaning_arc_as_structural_profile():
+    evidence = [
+        {"span_id": "la1", "raw_text": "朝から疲れが溜まっていて、予定も詰まっていて頭が回らない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "la2", "raw_text": "本当は大事にしたい作業を選びたいけれど、休みたい気持ちも強い。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "la3", "raw_text": "少しだけ机を整えてお茶を飲んだら、少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "la4", "raw_text": "このまま一人で抱えるのは限界に近い。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["la1", "la2", "la3", "la4"]
+    result = CocolonLimitedComposerClient().generate(payload)
+    assert result["composer_source"] == "ai_generated"
+    assert result["composer_meta"]["profile_key"] == "long_meaning_arc"
+    assert result["coverage_scope"] == "partial_observation"
+    assert result["coverage_scope"] != "current_input_core"
+    compact = _compact_source_text(result["comment_text"])
+    assert "疲れが溜まっている" in compact or "頭が回" in compact
+    assert "大事にしたい" in compact or "選びたい" in compact or "休みたい" in compact
+    assert "机を整え" in compact or "お茶" in compact or "落ち着いた" in compact
+    step12 = result["composer_meta"]["step12_profile_sentence_plan"]
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+    assert step12["profile_expanded"] is True
+    assert step12["sentence_plan_count"] >= 3
+    assert {"state", "tension"}.issubset(set(step12["sentence_plan_roles"].keys()))
+    assert diagnostic["expanded_profile"] is True
+    assert "long_meaning_arc" in diagnostic["expanded_profiles"]
+
+
+
+def test_step13_surface_realizer_uses_grammar_parts_without_completion_templates():
+    evidence = [
+        {"span_id": "sr1", "raw_text": "朝から疲れが溜まっていて、予定も詰まっていて頭が回らない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr2", "raw_text": "本当は大事にしたい作業を選びたいけれど、休みたい気持ちも強い。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr3", "raw_text": "少しだけ机を整えてお茶を飲んだら、少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr4", "raw_text": "このまま一人で抱えるのは限界に近い。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = [item["span_id"] for item in evidence]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    assert "中心として書かれています" not in result["comment_text"]
+    assert "ことが書かれています" not in result["comment_text"]
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    diagnostic_surface = result["composer_meta"]["composer_diagnostic"]["step13_surface_realizer"]
+    assert surface["version"] == "emlis.surface_realizer.v1"
+    assert surface["phase"] == "B-C1"
+    assert surface["grammar_parts_only"] is True
+    assert surface["completion_sentence_templates_added"] is False
+    assert surface["fixed_closing_sentence_added"] is False
+    assert surface["generic_closing_added"] is False
+    assert surface["claim_relation_derived_tail_only"] is True
+    assert surface["raw_evidence_sentence_copy_guarded"] is True
+    assert surface["generic_closing_guarded"] is True
+    assert surface["length_mode"] in {"short", "medium", "long"}
+    assert surface["tail_variation_enabled"] is True
+    assert {"connector", "particle", "predicate_tail", "tail_variation"}.issubset(set(surface["surface_unit_types"]))
+    assert surface["unique_tail_key_count"] >= 3
+    assert diagnostic_surface["predicate_keys"] == surface["predicate_keys"]
+    assert result["composer_meta"]["composer_diagnostic"]["surface_realizer_grammar_parts_only"] is True
+    assert result["composer_meta"]["composer_diagnostic"]["completion_sentence_templates_added"] is False
+
+
+def test_step13_surface_realizer_naturalizes_shallow_current_input_core_line():
+    evidence = [
+        {"span_id": "sh1", "raw_text": "今日は仕事で疲れた。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sh2", "raw_text": "お茶を飲んで少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["sh1", "sh2"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    assert "中心として書かれています" not in result["comment_text"]
+    assert "仕事で疲れたことが中心にあります" in result["comment_text"]
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    assert surface["shallow_observation_path"] is True
+    assert surface["grammar_parts_only"] is True
+    assert surface["completion_sentence_templates_added"] is False
+    assert "center" in surface["used_tail_keys"]
+    assert result["composer_meta"]["composer_diagnostic"]["surface_variation_enabled"] is True
+
+
+
+def test_step13_surface_realizer_naturalizes_value_tail_without_completion_templates():
+    evidence = [
+        {"span_id": "sr1", "raw_text": "大切にしたい作業を今日は選びたい。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr2", "raw_text": "でも資料が多すぎて頭が回らず、休みたい気持ちもある。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr3", "raw_text": "少しだけ机を整えたら落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["sr1", "sr2", "sr3"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    text = result["comment_text"]
+    compact = _compact_source_text(text)
+    assert "大切にしたい気持ちが書かれています" not in compact
+    assert "大切にしたい気持ちが言葉になっています" in compact or "大切にしたい気持ちが前面にあります" in compact
+
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+    assert surface["target_step"] == "Step13_surface_realizer"
+    assert surface["grammar_parts_only"] is True
+    assert surface["completion_sentence_templates_added"] is False
+    assert surface["fixed_observation_sentence_added"] is False
+    assert surface["role_sentence_templates_added"] is False
+    assert surface["example_sentence_match_used"] is False
+    assert "worded" in surface["predicate_keys"]
+    assert diagnostic["surface_realizer_enabled"] is True
+    assert diagnostic["surface_realizer_grammar_parts_only"] is True
+    assert diagnostic["completion_sentence_templates_added"] is False
+    assert "worded" in diagnostic["surface_tail_keys"]
+
+
+def test_step13_surface_realizer_uses_relation_aware_tail_variation_for_energy_pressure():
+    evidence = [
+        {"span_id": "se1", "raw_text": "朝から疲れが溜まっていて体力が残っていない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "se2", "raw_text": "資料を直そうとしても頭が回らず、集中が切れている。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "se3", "raw_text": "途中でお茶を飲んだら少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["se1", "se2", "se3"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    compact = _compact_source_text(result["comment_text"])
+    assert "疲れが溜まっていることが書かれています" not in compact
+    assert "頭が回りにくいことが混ざっています" not in compact
+    assert "疲れが溜まっていることが強く残っています" in compact or "疲れが溜まっていることが続いています" in compact
+    assert "頭が回りにくいことも残っています" in compact or "集中が切れていることも残っています" in compact or "頭が回りにくいことも見えています" in compact
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    assert surface["tail_variation_enabled"] is True
+    assert surface["repeated_tail_avoidance"] is True
+    assert surface["unique_tail_key_count"] >= 2
+    assert {"strong_remain", "continue"}.intersection(set(surface["predicate_keys"]))
+
+
+def test_step13_surface_realizer_records_shallow_current_input_core_surface_keys():
+    evidence = [
+        {"span_id": "ss1", "raw_text": "今日は仕事で疲れた。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "ss2", "raw_text": "お茶を飲んで少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["ss1", "ss2"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    compact = _compact_source_text(result["comment_text"])
+    assert "中心として書かれています" not in compact
+    assert "中心にあります" in compact
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    assert surface["shallow_observation_path"] is True
+    assert "center" in surface["predicate_keys"]
+    assert surface["completion_sentence_templates_added"] is False
+
+
+def test_step13_surface_realizer_records_componentized_tail_policy():
+    evidence = [
+        {"span_id": "sr1", "raw_text": "朝から仕事で疲れが溜まっていて、頭が回らない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sr2", "raw_text": "途中でお茶を飲んだら少し落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["sr1", "sr2"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    diagnostic = result["composer_meta"]["composer_diagnostic"]
+    assert surface["version"] == "emlis.surface_realizer.v1"
+    assert surface["target_step"] == "Step13_surface_realizer"
+    assert surface["grammar_parts_only"] is True
+    assert surface["surface_realizer_is_componentized"] is True
+    assert surface["connector_particle_tail_components_only"] is True
+    assert surface["relation_aware"] is True
+    assert surface["role_aware"] is True
+    assert surface["completion_sentence_templates_added"] is False
+    assert surface["fixed_closing_sentence_added"] is False
+    assert surface["generic_closing_added"] is False
+    assert surface["example_sentence_match_used"] is False
+    assert surface["naturalized_surface_count"] >= 2
+    assert surface["repeated_predicate_keys"] == []
+    assert len(surface["predicate_keys"]) == surface["unique_tail_key_count"]
+    assert diagnostic["step13_surface_realizer"]["version"] == surface["version"]
+    assert diagnostic["surface_realizer_componentized"] is True
+
+
+def test_step13_surface_realizer_naturalizes_value_profile_without_generic_written_tail():
+    evidence = [
+        {"span_id": "sv1", "raw_text": "大切にしたい作業を今日は選びたい。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sv2", "raw_text": "でも資料が多すぎて頭が回らず、休みたい気持ちもある。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sv3", "raw_text": "少しだけ机を整えたら落ち着いた。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["sv1", "sv2", "sv3"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    assert result["composer_meta"]["profile_key"] == "value_wish"
+    assert "書かれています" not in result["comment_text"]
+    surface = result["composer_meta"]["step13_surface_realizer"]
+    assert surface["generic_tail_key_count"] == 0
+    assert "worded" in surface["predicate_keys"]
+    assert {"value", "coexistence", "sequence"}.issubset(set(surface["relation_types"]))
+    assert "value_wish" in surface["used_roles"]
+

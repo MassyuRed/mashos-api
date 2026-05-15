@@ -19,11 +19,16 @@ _BROKEN_SURFACE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("phase8_orphan_particle_fragment", re.compile(r"(?:けど|でも|のに|から|なら|すると|したい|怖い|嬉しい)が(?:同じ中|つながって)")),
 )
 _TRAILING_UNFINISHED_RE = re.compile(r"(なんであ|考え始め|現実と|普通に|けど|でも|のに|から|なら|すると)$")
+_GENERIC_CLOSING_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("phase8_generic_closing", re.compile(r"(?:今の言葉として|ここに置いてくれた言葉|急いで片づけず|一つの結論へ急がず)[^。！？!?]{0,40}(?:一緒に見ます|小さく扱いません|軽く扱いません)[。.!！]?$")),
+    ("phase8_generic_closing", re.compile(r"(?:一緒に見ます|一緒に見ていきます|軽く扱いません|小さく扱いません)[。.!！]?$")),
+)
 _LIMITED_TAIL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("surface_visible", re.compile(r"表に出ています[。.!！]?$")),
     ("front", re.compile(r"前面にあります[。.!！]?$")),
     ("written", re.compile(r"(?:が|も)書かれています[。.!！]?$")),
     ("remain", re.compile(r"(?:が|も|同時に)残っています[。.!！]?$")),
+    ("strong_remain", re.compile(r"強く残っています[。.!！]?$")),
     ("return", re.compile(r"戻ってきています[。.!！]?$")),
     ("mixed", re.compile(r"混ざっています[。.!！]?$")),
     ("stack", re.compile(r"重なっています[。.!！]?$")),
@@ -31,6 +36,12 @@ _LIMITED_TAIL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("impact", re.compile(r"大きく響いています[。.!！]?$")),
     ("center", re.compile(r"中心にあります[。.!！]?$")),
     ("arrived", re.compile(r"来ています[。.!！]?$")),
+    ("visible", re.compile(r"見えています[。.!！]?$")),
+    ("progress_shape", re.compile(r"形になっています[。.!！]?$")),
+    ("worded", re.compile(r"言葉になっています[。.!！]?$")),
+    ("tension", re.compile(r"ぶつかっています[。.!！]?$")),
+    ("parallel", re.compile(r"並んでいます[。.!！]?$")),
+    ("exists", re.compile(r"あります[。.!！]?$")),
 )
 _COMPACT_TRIM_RE = re.compile(r"[\s\n\r\t 　、,。.!！?？『』\"'「」（）()\[\]【】]+")
 
@@ -43,6 +54,10 @@ _KNOWN_PHASE8_PROFILES = {
     "positive_progress",
     "relationship_approach_avoidance",
     "reality_escape_tension",
+    "energy_fatigue",
+    "anxiety_anticipation",
+    "value_wish",
+    "long_meaning_arc",
 }
 _SHALLOW_PROFILE_KEYS = {"", "unknown", "current_input_core", "short_ambiguous_low_evidence"}
 
@@ -53,11 +68,15 @@ _PROFILE_REQUIRED_ROLES: Dict[str, tuple[str, ...]] = {
     "positive_progress": ("small_action", "achievement"),
     "relationship_approach_avoidance": ("wish_to_rely", "burden_fear", "rejection_fear", "limit"),
     "reality_escape_tension": ("safe_home", "reality_damage", "ordinary_life_wish", "worsening_risk"),
+    "energy_fatigue": ("fatigue_accumulation", "loss_of_control"),
+    "anxiety_anticipation": ("anticipation_loop", "anxiety_return"),
+    "value_wish": ("value_wish", "loss_of_control"),
+    "long_meaning_arc": ("fatigue_accumulation", "value_wish"),
 }
 
 _ROLE_REFLECTION_CUES: Dict[str, tuple[str, ...]] = {
     "positive_state": ("友達", "楽しか", "楽しさ", "笑え", "元気", "ほっと", "落ち着", "安心", "散歩"),
-    "anxiety_return": ("不安", "落ちる", "落差"),
+    "anxiety_return": ("不安", "心配", "落ちる", "落差"),
     "anger_surface": ("怒り", "腹が立", "むっと", "ムッと", "言い方", "返し方", "雑"),
     "hurt_core": ("しんど", "大事に扱", "軽く扱", "傷つ"),
     "anticipation_loop": ("考えすぎ", "止ま", "動け", "進めない", "手が止ま", "先のこと"),
@@ -72,6 +91,11 @@ _ROLE_REFLECTION_CUES: Dict[str, tuple[str, ...]] = {
     "reality_damage": ("現実", "不便", "ダメージ", "移動", "準備", "重く"),
     "ordinary_life_wish": ("生活したい", "いつも通り", "過ごしたい", "普通に生活"),
     "worsening_risk": ("悪化", "体調", "崩れ", "リスク", "怖さ"),
+    "fatigue_accumulation": ("疲れ", "疲労", "消耗", "体力", "へとへと", "ぐったり", "だる", "眠", "抜けない"),
+    "loss_of_control": ("集中", "手が止ま", "手につか", "追いつ", "余裕", "予定", "動け", "頭が回", "多すぎ"),
+    "small_repair": ("整え", "片付け", "お茶", "散歩", "休め", "深呼吸", "洗い物", "落ち着"),
+    "avoidance_wish": ("逃げ", "休みたい", "横になりたい", "寝たい", "距離", "離れたい", "投げ出", "やめたい", "全部無視"),
+    "value_wish": ("大事", "大切", "守りたい", "選びたい", "優先", "欲しい", "ほしい", "願"),
 }
 
 _DEEP_OVERCLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -82,6 +106,13 @@ _DEEP_OVERCLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("助言断定", re.compile(r"必要があります|すべきです|するべきです")),
     ("あなた断定", re.compile(r"あなた(?:は|の本質|の性格|が)")),
 )
+
+# Step14 A-plan readiness guard surfaces. These are rejection signatures,
+# not user-facing text templates.
+_STEP14_DIAGNOSIS_LIKE_RE = re.compile(r"診断|治療|病気|症状|トラウマ|障害|発達障害|ADHD|うつ|鬱|自律神経|依存症|PTSD|医療|心理療法|心理学的")
+_STEP14_PERSONALITY_LABEL_RE = re.compile(r"(?:あなた|その人|本人)(?:は|の)(?:[^。！？!?]{0,28})?(?:性格|人格|本質|タイプ|こういう人|弱い人|強い人|怠け|甘え)")
+_STEP14_GENERAL_KNOWLEDGE_RE = re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")
+_STEP14_CAUSAL_ADVICE_RE = re.compile(r"(?:原因は[^。！？!?]{0,40}(?:です|あります)|必要があります|すべきです|するべきです|しなければなりません|正解です|間違いです)")
 
 _INTERNAL_TEMPLATE_MARKER_RE = re.compile(
     r"role_template|static_observation_text|fallback_observation|input_feedback_text_templates|"
@@ -120,9 +151,19 @@ _PHASE8_ROLE_META: Dict[str, tuple[str, bool]] = {
     "worsening_risk": ("negative", True),
     "low_energy": ("negative", True),
     "pressure_or_limit": ("negative", False),
+    "fatigue_accumulation": ("negative", True),
+    "loss_of_control": ("negative", True),
+    "small_repair": ("positive", True),
+    "avoidance_wish": ("negative", True),
+    "value_wish": ("mixed", True),
 }
 
 _PRIMARY_ROLE_PRIORITY: tuple[str, ...] = (
+    "avoidance_wish",
+    "value_wish",
+    "loss_of_control",
+    "fatigue_accumulation",
+    "small_repair",
     "anticipation_loop",
     "perfection_fear",
     "known_action",
@@ -155,6 +196,9 @@ _PROFILE_ROLE_REQUIREMENTS: tuple[tuple[str, tuple[set[str], ...]], ...] = (
     ("self_understanding_loop", ({"anticipation_loop"}, {"perfection_fear"})),
     ("positive_progress", ({"small_action"}, {"relieved_weight", "achievement"})),
     ("mixed_positive_anxiety", ({"positive_state"}, {"anxiety_return"})),
+    ("energy_fatigue", ({"fatigue_accumulation"}, {"loss_of_control"})),
+    ("anxiety_anticipation", ({"anticipation_loop"}, {"anxiety_return", "loss_of_control"})),
+    ("value_wish", ({"value_wish"}, {"loss_of_control", "wish_to_rely"})),
 )
 
 
@@ -192,6 +236,18 @@ def phase8_roles_for_text(text: Any, detected_type: str = "") -> tuple[str, ...]
 
     roles: List[str] = []
 
+    # Step11 PhraseUnit/role expansion roles
+    if _has_any(c, ("仕事で疲れ", "疲れた", "疲れて", "疲れが溜", "疲れがたま", "疲れが抜け", "疲労", "消耗", "体力", "へとへと", "ぐったり", "くたくた", "眠気", "寝ても", "休んでも")):
+        _add_role(roles, "fatigue_accumulation")
+    if _has_any(c, ("頭が回", "集中が切", "手につか", "手が止ま", "予定が詰", "やることが多", "余裕がな", "追いつ", "動けな")):
+        _add_role(roles, "loss_of_control")
+    if _has_any(c, ("机を整", "少し整", "片付け", "お茶", "深呼吸", "散歩", "手帳", "少し休め", "休めた", "整えたら", "落ち着いた")):
+        _add_role(roles, "small_repair")
+    if _has_any(c, ("休みたい", "横になりたい", "寝たい", "逃げたい", "逃げ出", "投げ出", "距離を置", "離れたい", "やめたい", "全部無視")):
+        _add_role(roles, "avoidance_wish")
+    if _has_any(c, ("大事にしたい", "大切にしたい", "守りたい", "選びたい", "優先したい", "願", "欲しい", "ほしい")):
+        _add_role(roles, "value_wish")
+
     # relationship_approach_avoidance roles
     if _has_any(c, ("頼りたい", "頼ったら", "相談したい", "話したい", "助けを借りたい", "支えてほしい")):
         _add_role(roles, "wish_to_rely")
@@ -215,9 +271,9 @@ def phase8_roles_for_text(text: Any, detected_type: str = "") -> tuple[str, ...]
     # self_understanding_loop roles
     if _has_any(c, ("分かってる", "分かっている", "やることは分か", "やることは見えて", "見えている")):
         _add_role(roles, "known_action")
-    if _has_any(c, ("考えすぎ", "先のこと", "止まら", "手が止ま", "動けなく", "動けない", "進めない")):
+    if _has_any(c, ("考えすぎ", "先のこと", "止まら", "手が止ま", "動けなく", "動けない", "進めない", "考え始め")):
         _add_role(roles, "anticipation_loop")
-    if _has_any(c, ("完璧", "適当にやる", "適当", "失敗が怖", "ちゃんとできない")):
+    if _has_any(c, ("完璧", "適当にやる", "適当", "失敗が怖", "失敗しそう", "失敗が不安", "ちゃんとできない")):
         _add_role(roles, "perfection_fear")
 
     # positive_progress roles
@@ -244,7 +300,7 @@ def phase8_roles_for_text(text: Any, detected_type: str = "") -> tuple[str, ...]
     if _has_any(c, ("友達と話せ", "楽しかった", "笑えた", "元気", "ほっと", "落ち着いた", "安心した")) and "ちゃんとできない" not in c:
         if not _has_any(c, ("家にいる", "家にいて", "自分のペース", "お家", "おうち")):
             _add_role(roles, "positive_state")
-    if _has_any(c, ("一人にな", "夜にな", "静かにな", "急に不安", "不安にな", "落ちる")):
+    if _has_any(c, ("一人にな", "夜にな", "静かにな", "急に不安", "不安にな", "不安が強", "心配", "落ちる")):
         _add_role(roles, "anxiety_return")
     if _has_any(c, ("落差", "楽しかったはず")):
         _add_role(roles, "fall_contrast")
@@ -457,6 +513,41 @@ def _matched_deep_overclaims(text: str) -> List[str]:
     return matches
 
 
+def _matched_step14_overclaims(text: str) -> List[str]:
+    matches: List[str] = []
+    checks = (
+        ("diagnosis_like", _STEP14_DIAGNOSIS_LIKE_RE),
+        ("personality_label", _STEP14_PERSONALITY_LABEL_RE),
+        ("general_knowledge_completion", _STEP14_GENERAL_KNOWLEDGE_RE),
+        ("causal_or_advice_assertion", _STEP14_CAUSAL_ADVICE_RE),
+    )
+    for label, pattern in checks:
+        if pattern.search(text) and label not in matches:
+            matches.append(label)
+    return matches
+
+
+def _sentence_shapes_for_step14(sentences: Sequence[str]) -> List[str]:
+    # Structural repetition only: do not collapse every Japanese sentence to
+    # ``x``.  Step14 must not reduce passed rate by treating ordinary varied
+    # sentences as repeated just because they share Japanese characters.
+    suffix_patterns = (
+        ("表に出ています", re.compile(r"表に出ています[。.!！]?$")),
+        ("重なっています", re.compile(r"重なっています[。.!！]?$")),
+        ("混ざっています", re.compile(r"混ざっています[。.!！]?$")),
+        ("残っています", re.compile(r"残っています[。.!！]?$")),
+        ("続いています", re.compile(r"続いています[。.!！]?$")),
+        ("同じ中にあります", re.compile(r"同じ中にあります[。.!！]?$")),
+    )
+    shapes: List[str] = []
+    for sentence in sentences:
+        for key, pattern in suffix_patterns:
+            if pattern.search(sentence):
+                shapes.append(key)
+                break
+    return shapes
+
+
 def _is_shallow_path(profile_key: str, composer_meta: Mapping[str, Any] | None) -> bool:
     meta = composer_meta if isinstance(composer_meta, Mapping) else {}
     return profile_key == "current_input_core" or bool(meta.get("shallow_observation_path")) or str(meta.get("coverage_scope") or "") == "current_input_core"
@@ -477,6 +568,16 @@ def detect_phase8_profile(evidence_spans: Sequence[Any] | None = None) -> str:
     compact_text = _compact("\n".join(_span_raw(span) for span in text_spans))
     if "low_energy" in role_set and role_set.issubset({"low_energy", "limit"}) and len(compact_text) < 40:
         return "short_ambiguous_low_evidence"
+
+    # Step12: long arcs are selected by role composition and source span count,
+    # not by direct example sentence matching.
+    if (
+        len(text_spans) >= 4
+        and role_set.intersection({"fatigue_accumulation", "loss_of_control"})
+        and role_set.intersection({"value_wish", "avoidance_wish"})
+        and role_set.intersection({"small_repair", "limit", "perfection_fear"})
+    ):
+        return "long_meaning_arc"
 
     for profile_key, requirements in _PROFILE_ROLE_REQUIREMENTS:
         if _roles_match(role_set, requirements):
@@ -510,6 +611,10 @@ def judge_limited_sentence_quality(
         if _TRAILING_UNFINISHED_RE.search(normalized):
             unfinished.append(sentence)
         for key, pattern in _BROKEN_SURFACE_PATTERNS:
+            if pattern.search(sentence):
+                reasons.append(key)
+                matched.append(sentence)
+        for key, pattern in _GENERIC_CLOSING_PATTERNS:
             if pattern.search(sentence):
                 reasons.append(key)
                 matched.append(sentence)
@@ -547,13 +652,30 @@ def judge_limited_sentence_quality(
             reasons.append("phase8_ungrounded_deep_wish")
         if "人格" in deep_overclaims:
             reasons.append("phase8_personality_overclaim")
+            reasons.append("personality_label")
         if "診断" in deep_overclaims:
             reasons.append("phase8_diagnosis_overclaim")
+            reasons.append("diagnosis_like")
         if "原因断定" in deep_overclaims:
             reasons.append("phase8_causal_overclaim")
         if "助言断定" in deep_overclaims:
             reasons.append("phase8_advice_overclaim")
         matched.extend(deep_overclaims)
+
+    step14_overclaims = _matched_step14_overclaims(text)
+    if step14_overclaims:
+        reasons.append("phase14_overclaim_guard")
+        for label in step14_overclaims:
+            reasons.append(label)
+            if label == "diagnosis_like":
+                reasons.append("phase14_diagnosis_like")
+            elif label == "personality_label":
+                reasons.append("phase14_personality_label")
+            elif label == "general_knowledge_completion":
+                reasons.append("phase14_general_knowledge_completion")
+            elif label == "causal_or_advice_assertion":
+                reasons.append("phase14_causal_or_advice_assertion")
+        matched.extend(step14_overclaims)
 
     if _is_shallow_path(effective_profile, meta):
         used_text_spans = _candidate_text_spans(evidence_spans, used_evidence_span_ids)
@@ -579,7 +701,14 @@ def judge_limited_sentence_quality(
     repeated_tails = _repeated_values(_limited_tail_signatures(body), min_count=2)
     if repeated_tails:
         reasons.append("phase8_repeated_sentence_tail")
+        reasons.append("repeated_surface")
         matched.extend(repeated_tails)
+
+    repeated_shapes = _repeated_values(_sentence_shapes_for_step14(body), min_count=3)
+    if repeated_shapes and len(body) >= 4:
+        reasons.append("repeated_surface")
+        reasons.append("phase14_repeated_surface")
+        matched.extend(repeated_shapes)
 
     reasons = list(dict.fromkeys(reasons))
     matched = list(dict.fromkeys(matched))
@@ -595,6 +724,17 @@ def judge_limited_sentence_quality(
         "missing_required_roles": missing_roles,
         "raw_copy_fragments": raw_copy_fragments,
         "deep_overclaim_matches": deep_overclaims,
+        "step14_overclaim_matches": step14_overclaims,
+        "step14_repeated_surface_shapes": repeated_shapes,
+        "step14_guard_strengthening": {
+            "version": "emlis.guard_strengthening.v1",
+            "target_step": "Step14_guard_strengthening",
+            "diagnosis_like_guarded": "diagnosis_like" in reasons,
+            "personality_label_guarded": "personality_label" in reasons,
+            "general_knowledge_completion_guarded": "general_knowledge_completion" in reasons,
+            "repeated_surface_guarded": "repeated_surface" in reasons,
+            "guard_threshold_relaxed": False,
+        },
         "template_meta_rejection_reasons": template_reasons,
         "profile_key": effective_profile,
         "body_sentence_count": len(body),

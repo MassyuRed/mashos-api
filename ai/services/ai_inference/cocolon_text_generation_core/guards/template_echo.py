@@ -22,6 +22,9 @@ REJECTION_RAW_INPUT_ECHO = "raw_input_echo"
 REJECTION_EXCESSIVE_RAW_QUOTE = "excessive_raw_quote"
 REJECTION_REPEATED_SURFACE_PATTERN = "repeated_surface_pattern"
 REJECTION_REPEATED_LIMITED_SURFACE_PATTERN = "repeated_limited_surface_pattern"
+REJECTION_GENERAL_KNOWLEDGE_COMPLETION = "general_knowledge_completion"
+REJECTION_DIAGNOSIS_LIKE = "diagnosis_like"
+REJECTION_PERSONALITY_LABEL = "personality_label"
 REJECTION_TEMPLATE_EXCESSIVE_RAW_QUOTE = REJECTION_EXCESSIVE_RAW_QUOTE
 
 QUALITY_FLAG_TEMPLATE_ECHO_FAILED = "template_echo_failed"
@@ -34,6 +37,11 @@ _FIXED_SURFACE_PATTERNS = (
     re.compile(r"[^。！？!?]{0,24}と見ています[。.!！]?"),
     re.compile(r"一緒に見ます[。.!！]?"),
 )
+_STEP14_FORBIDDEN_SURFACES = (
+    (REJECTION_DIAGNOSIS_LIKE, re.compile(r"診断|治療|病気|症状|トラウマ|障害|発達障害|ADHD|うつ|鬱|自律神経|依存症|PTSD|医療|心理療法|心理学的")),
+    (REJECTION_PERSONALITY_LABEL, re.compile(r"(?:あなた|その人|本人)(?:は|の)(?:[^。！？!?]{0,28})?(?:性格|人格|本質|タイプ|こういう人|弱い人|強い人|怠け|甘え)")),
+    (REJECTION_GENERAL_KNOWLEDGE_COMPLETION, re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")),
+)
 
 _LIMITED_SURFACE_PATTERNS = (
     ("remain", re.compile(r"(?:が|も|同時に)残っています[。.!！]?$")),
@@ -41,6 +49,7 @@ _LIMITED_SURFACE_PATTERNS = (
     ("stack", re.compile(r"重なっています[。.!！]?$")),
     ("continue", re.compile(r"続いています[。.!！]?$")),
     ("front", re.compile(r"前面にあります[。.!！]?$")),
+    ("surface_visible", re.compile(r"表に出ています[。.!！]?$")),
     ("same_inside", re.compile(r"同じ中にあります[。.!！]?$")),
 )
 
@@ -163,6 +172,10 @@ def guard_template_echo(
         if pattern.search(text):
             reasons.append(REJECTION_TEMPLATE_FIXED_SURFACE)
             matched.append(pattern.pattern)
+    for reason, pattern in _STEP14_FORBIDDEN_SURFACES:
+        if pattern.search(text):
+            reasons.append(reason)
+            matched.append(reason)
 
     previous_similarity = _previous_similarity(text, previous_outputs)
     if previous_similarity >= 0.72:
@@ -265,4 +278,7 @@ __all__ = [
     "REJECTION_TEMPLATE_EXCESSIVE_RAW_QUOTE",
     "REJECTION_REPEATED_SURFACE_PATTERN",
     "REJECTION_REPEATED_LIMITED_SURFACE_PATTERN",
+    "REJECTION_GENERAL_KNOWLEDGE_COMPLETION",
+    "REJECTION_DIAGNOSIS_LIKE",
+    "REJECTION_PERSONALITY_LABEL",
 ]

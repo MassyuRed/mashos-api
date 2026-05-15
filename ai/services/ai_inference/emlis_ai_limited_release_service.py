@@ -66,11 +66,15 @@ class LimitedComposerReleaseDecision:
     stage_source: str = "default"
 
     def as_meta(self) -> Dict[str, Any]:
+        attempted = bool(self.enabled)
         return {
             "phase": 7,
             "version": "emlis.limited_composer_release.v1",
             "stage": self.stage,
             "enabled": bool(self.enabled),
+            "attempted": attempted,
+            "composer_attempt_allowed": attempted,
+            "rollout_allowed": bool(self.enabled),
             "cohort": self.cohort,
             "reason_code": self.reason_code,
             "rejection_reasons": list(self.rejection_reasons),
@@ -82,16 +86,46 @@ class LimitedComposerReleaseDecision:
             "feature_flag_enabled": bool(self.feature_flag_enabled),
             "stage_source": self.stage_source,
             "stage_env_names": list(_ROLLOUT_STAGE_ENV_NAMES),
+            "rollout_decision": {
+                "stage": self.stage,
+                "enabled": bool(self.enabled),
+                "attempted": attempted,
+                "cohort": self.cohort,
+                "reason_code": self.reason_code,
+                "rejection_reasons": list(self.rejection_reasons),
+                "internal_user": bool(self.internal_user),
+                "tutorial_case": bool(self.tutorial_case),
+                "limited_case": bool(self.limited_case),
+                "scope_status": self.scope_status,
+                "scope_coverage": self.scope_coverage,
+                "feature_flag_enabled": bool(self.feature_flag_enabled),
+                "stage_source": self.stage_source,
+            },
             "metrics_fields": [
                 "attempted",
                 "passed",
                 "rejected",
                 "unavailable",
                 "safety_blocked",
+                "primary_reason",
+                "coverage_group",
+                "coverage_groups",
+                "composer_model",
                 "passed_rate_numerator",
                 "passed_rate_denominator",
                 "rejection_reasons",
             ],
+            "step16_metric_fields": [
+                "attempted",
+                "passed",
+                "rejected",
+                "unavailable",
+                "safety_blocked",
+                "primary_reason",
+                "coverage_group",
+                "composer_model",
+            ],
+            "step16_metrics_version": "emlis.step16_rollout_metrics.v1",
         }
 
 
@@ -191,6 +225,24 @@ def evaluate_limited_composer_release(
     status = _scope_status(limited_observation_scope)
     coverage = _scope_coverage(limited_observation_scope)
 
+    # Step10: safety is not a rollout failure.  It must stop before Composer
+    # even when the feature flag is disabled or rollout would otherwise allow it.
+    if status == "safety_blocked":
+        return LimitedComposerReleaseDecision(
+            stage=stage,
+            enabled=False,
+            cohort="blocked_safety",
+            reason_code="safety_boundary_blocked",
+            rejection_reasons=("limited_scope_safety_boundary", "safety_boundary"),
+            internal_user=internal,
+            tutorial_case=tutorial,
+            limited_case=False,
+            scope_status=status,
+            scope_coverage=coverage,
+            feature_flag_enabled=bool(feature_flag_enabled),
+            stage_source=stage_source,
+        )
+
     if not feature_flag_enabled:
         return LimitedComposerReleaseDecision(
             stage=stage,
@@ -222,6 +274,22 @@ def evaluate_limited_composer_release(
             stage_source=stage_source,
         )
 
+    if stage == "limited_cases" and not (internal or tutorial or limited) and status and status != "eligible":
+        return LimitedComposerReleaseDecision(
+            stage=stage,
+            enabled=False,
+            cohort="blocked_scope",
+            reason_code="scope_limited_case_not_eligible",
+            rejection_reasons=("limited_composer_scope_not_allowed", f"scope_{status}"),
+            internal_user=internal,
+            tutorial_case=tutorial,
+            limited_case=limited,
+            scope_status=status,
+            scope_coverage=coverage,
+            feature_flag_enabled=True,
+            stage_source=stage_source,
+        )
+
     allowed = False
     cohort = "blocked"
     reason = "rollout_stage_not_matched"
@@ -243,8 +311,6 @@ def evaluate_limited_composer_release(
         reason = "scope_limited_case_allowed" if limited else "internal_or_tutorial_allowed"
 
     rejections: tuple[str, ...] = () if allowed else ("limited_composer_rollout_not_allowed",)
-    if not allowed and stage == "limited_cases" and status and status != "eligible":
-        rejections = ("limited_composer_rollout_not_allowed", f"scope_{status}")
     return LimitedComposerReleaseDecision(
         stage=stage,
         enabled=allowed,

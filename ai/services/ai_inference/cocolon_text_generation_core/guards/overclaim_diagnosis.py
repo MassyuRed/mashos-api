@@ -22,6 +22,9 @@ REJECTION_DEEP_WISH_OVERCLAIM = "deep_wish_overclaim"
 REJECTION_CAUSAL_ASSERTION = "causal_assertion"
 REJECTION_ADVICE_ASSERTION = "advice_assertion"
 REJECTION_GENERAL_THEORY = "general_theory"
+REJECTION_GENERAL_KNOWLEDGE_COMPLETION = "general_knowledge_completion"
+REJECTION_DIAGNOSIS_LIKE = "diagnosis_like"
+REJECTION_PERSONALITY_LABEL = "personality_label"
 
 QUALITY_FLAG_OVERCLAIM_DIAGNOSIS_FAILED = "overclaim_diagnosis_failed"
 
@@ -106,6 +109,12 @@ def guard_overclaim_diagnosis(
     for reason, pattern in checks:
         if pattern.search(scan_text):
             reasons.append(reason)
+            if reason == REJECTION_DIAGNOSIS_SURFACE:
+                reasons.append(REJECTION_DIAGNOSIS_LIKE)
+            if reason == REJECTION_PERSONALITY_ASSERTION:
+                reasons.append(REJECTION_PERSONALITY_LABEL)
+            if reason == REJECTION_GENERAL_THEORY:
+                reasons.append(REJECTION_GENERAL_KNOWLEDGE_COMPLETION)
             matched.append(pattern.pattern)
 
     analysis_strict = _strict_analysis(policy, core_id, strict)
@@ -158,6 +167,9 @@ __all__ = [
     "REJECTION_CAUSAL_ASSERTION",
     "REJECTION_ADVICE_ASSERTION",
     "REJECTION_GENERAL_THEORY",
+    "REJECTION_GENERAL_KNOWLEDGE_COMPLETION",
+    "REJECTION_DIAGNOSIS_LIKE",
+    "REJECTION_PERSONALITY_LABEL",
     "REJECTION_DIAGNOSIS_WORDING",
     "REJECTION_PERSONALITY_LOCK_IN",
     "REJECTION_INNER_TRUTH_CLAIM",
