@@ -20,6 +20,7 @@ Notes
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Sequence, Union
@@ -41,6 +42,9 @@ from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
 from subscription_store import get_subscription_tier_for_user
+
+
+logger = logging.getLogger(__name__)
 
 
 def _emlis_ai_reply_timeout_seconds() -> float:
@@ -199,7 +203,37 @@ async def persist_emotion_submission(
         )
         input_feedback_comment = str(reply.comment_text or "").strip()
         input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
+
+        diagnostic_summary: Dict[str, Any] = {}
+        if isinstance(input_feedback_meta, dict):
+            raw_diagnostic_summary = input_feedback_meta.get("diagnostic_summary")
+            if not isinstance(raw_diagnostic_summary, dict):
+                multi_perspective_meta = input_feedback_meta.get("multi_perspective")
+                raw_diagnostic_summary = (
+                    multi_perspective_meta.get("diagnostic_summary", {})
+                    if isinstance(multi_perspective_meta, dict)
+                    else {}
+                )
+            diagnostic_summary = (
+                raw_diagnostic_summary if isinstance(raw_diagnostic_summary, dict) else {}
+            )
+
+        logger.info(
+            "emlis_observation_result comment_text_present=%s observation_status=%s stage=%s primary_reason=%s coverage_group=%s",
+            bool(input_feedback_comment),
+            input_feedback_meta.get("observation_status")
+            if isinstance(input_feedback_meta, dict)
+            else "",
+            diagnostic_summary.get("stage") if isinstance(diagnostic_summary, dict) else "",
+            diagnostic_summary.get("primary_reason")
+            if isinstance(diagnostic_summary, dict)
+            else "",
+            diagnostic_summary.get("coverage_group")
+            if isinstance(diagnostic_summary, dict)
+            else "",
+        )
     except Exception:
+        logger.exception("emlis_ai_reply_failed")
         # Fail-closed: do not fall back to a fixed Emlis observation sentence.
         # The saved emotion remains successful, but Emlisの観測 is not shown.
         input_feedback_comment = ""
