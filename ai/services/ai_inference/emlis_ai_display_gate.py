@@ -28,6 +28,8 @@ _PHASE10_REQUIRED_RELEASE_CHECKS = (
 
 _STEP7_GATE_BINDING_TRACE_VERSION = "emlis.limited_composer_gate_binding_reflection.v1"
 _STEP7_GATE_BINDING_TARGET_STEP = "7_Gate_binding_reflection"
+GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
+_BINDING_DECISION_GATES = {"grounding", "display"}
 
 
 def _dedupe(values: List[str]) -> List[str]:
@@ -59,6 +61,8 @@ def _binding_trace(binding_meta: Mapping[str, Any] | None = None) -> Dict[str, A
         or (binding_required and expected_binding_count and binding_count < expected_binding_count)
     )
     return {
+        "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
+        "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
         "binding_used": bool(binding.get("binding_used")),
         "binding_present": binding_present,
         "binding_available": binding_present,
@@ -68,9 +72,43 @@ def _binding_trace(binding_meta: Mapping[str, Any] | None = None) -> Dict[str, A
         "sentence_count": sentence_count,
         "expected_binding_count": expected_binding_count,
         "binding_version": str(binding.get("binding_version") or binding.get("version") or ""),
+        "binding_support_source": str(binding.get("binding_support_source") or binding.get("grounding_support_source") or "none"),
         "raw_text_included": False,
         "raw_input_required_for_debug": False,
     }
+
+
+def _gate_requires_binding(gate: str, fields: Mapping[str, Any]) -> bool:
+    gate_key = "display" if gate == "display_gate" else str(gate or "")
+    if gate_key not in _BINDING_DECISION_GATES:
+        return False
+    return bool(
+        fields.get("binding_required")
+        or fields.get("binding_expected")
+        or fields.get("expected_binding_count")
+        or fields.get("binding_count")
+        or fields.get("binding_present")
+    )
+
+
+def _default_binding_support_source(*, gate: str, binding_used: bool, binding_meta: Mapping[str, Any] | None = None) -> str:
+    if not binding_used:
+        return "none"
+    binding = binding_meta if isinstance(binding_meta, Mapping) else {}
+    explicit = str(
+        binding.get("binding_support_source")
+        or binding.get("grounding_support_source")
+        or binding.get("support_source")
+        or ""
+    ).strip()
+    if explicit and explicit != "none":
+        return explicit
+    gate_key = "display" if gate == "display_gate" else str(gate or "")
+    if gate_key == "display":
+        return "display_binding_aware_result"
+    if gate_key == "grounding":
+        return "declared_relation_binding"
+    return "none"
 
 
 def _gate_binding_fields(
@@ -85,6 +123,8 @@ def _gate_binding_fields(
     expected_binding_count: int | None = None,
     binding_version: str | None = None,
     binding_supported_sentence_count: int | None = None,
+    binding_required: bool | None = None,
+    binding_support_source: str | None = None,
 ) -> Dict[str, Any]:
     """Build Step 7 binding trace fields for a single gate.
 
@@ -107,12 +147,30 @@ def _gate_binding_fields(
         fields["expected_binding_count"] = _safe_int(expected_binding_count)
     if binding_version:
         fields["binding_version"] = str(binding_version)
+    if binding_required is not None:
+        fields["binding_required"] = bool(binding_required)
+    else:
+        fields["binding_required"] = _gate_requires_binding(gate, fields)
     fields["binding_available"] = bool(fields.get("binding_present") or fields.get("binding_count"))
     if fields.get("binding_required") and fields.get("expected_binding_count"):
         fields["binding_missing"] = bool(_safe_int(fields.get("binding_count")) < _safe_int(fields.get("expected_binding_count")))
+    elif not fields.get("binding_required"):
+        fields["binding_missing"] = False
+    fields["gate_binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
+    fields["binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
+    fields["binding_support_source"] = str(
+        binding_support_source
+        or _default_binding_support_source(
+            gate=gate,
+            binding_used=bool(fields.get("binding_used")),
+            binding_meta=binding_meta,
+        )
+    )
     fields["step7_gate_binding_reflection"] = {
         "version": _STEP7_GATE_BINDING_TRACE_VERSION,
         "target_step": _STEP7_GATE_BINDING_TARGET_STEP,
+        "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
+        "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
         "gate": str(gate or ""),
         "binding_trace_present": True,
         "binding_used": bool(fields.get("binding_used")),
@@ -125,6 +183,7 @@ def _gate_binding_fields(
         "sentence_count": _safe_int(fields.get("sentence_count")),
         "binding_supported_sentence_count": _safe_int(binding_supported_sentence_count),
         "binding_version": str(fields.get("binding_version") or ""),
+        "binding_support_source": str(fields.get("binding_support_source") or "none"),
         "gate_threshold_relaxed": False,
         "display_contract_relaxed": False,
         "raw_text_included": False,
@@ -139,8 +198,30 @@ def _display_binding_used_from_trace(gate_trace: Mapping[str, Any] | None, bindi
     return bool(
         (grounding or {}).get("binding_used")
         or (grounding or {}).get("binding_supported_sentence_count")
-        or _binding_trace(binding_meta).get("binding_used")
     )
+
+
+def _grounding_binding_support_source(grounding_report: GroundingReport) -> str:
+    diagnostics = getattr(grounding_report, "binding_diagnostics", {}) or {}
+    if isinstance(diagnostics, Mapping):
+        explicit = str(
+            diagnostics.get("binding_support_source")
+            or diagnostics.get("grounding_support_source")
+            or diagnostics.get("support_source")
+            or ""
+        ).strip()
+        if explicit:
+            return explicit
+    if not bool(getattr(grounding_report, "binding_used", False)):
+        return "none"
+    relation_types = list(getattr(grounding_report, "declared_relation_types", []) or [])
+    phrase_ids = list(getattr(grounding_report, "declared_phrase_unit_ids", []) or [])
+    sentence_claims = list(getattr(grounding_report, "sentence_claims", []) or [])
+    if relation_types or any(str(getattr(claim, "declared_relation_type", "") or getattr(claim, "binding_relation_type", "")) for claim in sentence_claims):
+        return "declared_relation_binding"
+    if phrase_ids or any(list(getattr(claim, "declared_phrase_unit_ids", []) or getattr(claim, "binding_phrase_unit_ids", []) or []) for claim in sentence_claims):
+        return "declared_phrase_binding"
+    return "declared_evidence_binding"
 
 def _required_gate_trace_keys() -> tuple[str, ...]:
     return ("reader", "grounding", "template_echo", "generation_source", "safety", "phase_completion")
@@ -238,6 +319,7 @@ def build_emlis_gate_trace(
         expected_binding_count=int(getattr(grounding_report, "expected_binding_count", 0) or 0) or None,
         binding_version=str(getattr(grounding_report, "binding_version", "") or "") or None,
         binding_supported_sentence_count=int(getattr(grounding_report, "binding_supported_sentence_count", 0) or 0),
+        binding_support_source=_grounding_binding_support_source(grounding_report),
     )
     template_binding_fields = _gate_binding_fields(binding_meta, gate="template_echo", binding_used=False)
     generation_source_binding_fields = _gate_binding_fields(binding_meta, gate="generation_source", binding_used=False)
@@ -305,6 +387,14 @@ def build_emlis_gate_trace(
             "raw_quote_span_count": int(getattr(template_echo_report, "raw_quote_span_count", 0) or 0),
             "raw_copy_sentence_ratio": float(getattr(template_echo_report, "raw_copy_sentence_ratio", 0.0) or 0.0),
             "limited_surface_repetition_score": float(getattr(template_echo_report, "limited_surface_repetition_score", 0.0) or 0.0),
+            "surface_signature_row_count": int(getattr(template_echo_report, "surface_signature_row_count", 0) or 0),
+            "surface_signature_repeat_count": int(getattr(template_echo_report, "surface_signature_repeat_count", 0) or 0),
+            "same_ending_major_count": int(getattr(template_echo_report, "same_ending_major_count", 0) or 0),
+            "surface_connector_repetition_count": int(getattr(template_echo_report, "surface_connector_repetition_count", 0) or 0),
+            "repeated_surface_signature_keys": list(getattr(template_echo_report, "repeated_surface_signature_keys", []) or []),
+            "repeated_surface_ending_keys": list(getattr(template_echo_report, "repeated_surface_ending_keys", []) or []),
+            "repeated_surface_connector_keys": list(getattr(template_echo_report, "repeated_surface_connector_keys", []) or []),
+            "product_quality_surface_variation_guarded": any(str(reason) in {"same_ending_major", "surface_signature_repeat", "surface_connector_repetition", "surface_signature_template_flag", "surface_signature_raw_input_included"} for reason in list(getattr(template_echo_report, "rejection_reasons", []) or [])),
             "abstract_repetition_score": float(getattr(template_echo_report, "abstract_repetition_score", 0.0) or 0.0),
             "abstract_phrase_repetition_score": float(getattr(template_echo_report, "abstract_phrase_repetition_score", 0.0) or 0.0),
             "raw_quote_char_ratio": float(getattr(template_echo_report, "raw_quote_char_ratio", 0.0) or 0.0),

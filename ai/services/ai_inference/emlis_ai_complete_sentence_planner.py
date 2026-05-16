@@ -90,6 +90,7 @@ COVERAGE_SENTENCE_BUDGETS: dict[str, tuple[int, int, int]] = {
     "conflict": (3, 3, 3),
     "recovery": (2, 3, 3),
     "pressure": (2, 4, 3),
+    "desire_fear": (2, 4, 3),
     "relationship": (3, 3, 3),
     "history_cross_core": (2, 3, 2),
 }
@@ -102,9 +103,11 @@ COVERAGE_ALIASES = {
     "long_arc": "long_meaning_arc",
     "long_input": "long_meaning_arc",
     "meaning_arc": "long_meaning_arc",
-    "desire_fear": "conflict",
-    "desire-fear": "conflict",
-    "approach_avoidance": "conflict",
+    "desire_fear": "desire_fear",
+    "desire-fear": "desire_fear",
+    "desire_and_fear": "desire_fear",
+    "wish_fear": "desire_fear",
+    "approach_avoidance": "desire_fear",
     "positive_progress_recovery": "recovery",
     "positive_progress": "recovery",
     "energy_recovery": "recovery",
@@ -290,6 +293,8 @@ def _coverage_budget(coverage_group: str, requested_budget: Any = 0, *, relation
         wanted = 4 if node_count >= 3 and relation_count >= 2 else default
     elif group == "recovery":
         wanted = 3 if node_count >= 2 else 2
+    elif group == "desire_fear":
+        wanted = 3 if relation_count >= 1 or node_count >= 2 else default
     else:
         wanted = default
     return max(2, min(maximum, max(minimum, wanted)))
@@ -723,7 +728,7 @@ def _build_lines(*, plan_id: str, coverage_group: str, budget: int, nodes: Seque
             )
         )
 
-    if len(lines) < budget and ("closing" in set(required_line_roles) or coverage_group in {"long_meaning_arc", "pressure", "relationship", "recovery", "history_cross_core"}):
+    if len(lines) < budget and ("closing" in set(required_line_roles) or coverage_group in {"long_meaning_arc", "pressure", "desire_fear", "relationship", "recovery", "history_cross_core"}):
         closing_node = _pick_next(ordered_nodes, {line.meta.get("node_ids", [""])[0] for line in lines if line.meta.get("node_ids")}) or primary
         lines.append(
             _plan_line(
@@ -791,6 +796,7 @@ def build_complete_sentence_planner_contract_meta() -> dict[str, Any]:
         "conflict_budget": 3,
         "recovery_budget": "2..3",
         "pressure_budget": "2..4",
+        "desire_fear_budget": "2..4",
         "relationship_budget": 3,
         "history_cross_core_budget": "2..3",
         "must_include_repair_protected": True,

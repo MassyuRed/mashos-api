@@ -80,10 +80,13 @@ def test_step7_gate_trace_records_binding_used_on_reader_grounding_template_and_
         assert "binding_present" in gate
         assert "binding_available" in gate
         assert "binding_count" in gate
+        assert gate["gate_binding_contract_version"] == "emlis.gate_binding_contract.v2"
+        assert gate["binding_contract_version"] == "emlis.gate_binding_contract.v2"
         assert gate["binding_present"] is True
         assert gate["binding_available"] is True
         step7 = gate["step7_gate_binding_reflection"]
         assert step7["target_step"] == "7_Gate_binding_reflection"
+        assert step7["gate_binding_contract_version"] == "emlis.gate_binding_contract.v2"
         assert step7["gate"] == ("display" if gate_name == "display_gate" else gate_name)
         assert step7["raw_text_included"] is False
         assert step7["display_contract_relaxed"] is False
@@ -92,6 +95,8 @@ def test_step7_gate_trace_records_binding_used_on_reader_grounding_template_and_
     assert decision.gate_trace["grounding"]["binding_used"] is True
     assert decision.gate_trace["template_echo"]["binding_used"] is False
     assert decision.gate_trace["display_gate"]["binding_used"] is True
+    assert decision.gate_trace["grounding"]["binding_support_source"] == "declared_relation_binding"
+    assert decision.gate_trace["display_gate"]["binding_support_source"] == "display_binding_aware_result"
 
 
 def test_step7_build_gate_trace_keeps_binding_meta_even_when_grounding_did_not_use_it() -> None:

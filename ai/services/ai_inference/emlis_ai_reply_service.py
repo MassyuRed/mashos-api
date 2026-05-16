@@ -59,6 +59,12 @@ from emlis_ai_a_plan_equivalent_composer_service import build_step19_a_plan_equi
 from emlis_ai_long_term_quality_service import build_step20_long_term_quality_meta
 from emlis_ai_complete_reply_diagnostics_service import build_complete_reply_service_diagnostics
 from emlis_ai_complete_scorecard_service import build_complete_scorecard_harness
+from emlis_ai_complete_product_quality_scorecard_service import (
+    build_complete_product_quality_blind_qa_rubric,
+    build_complete_product_quality_scorecard,
+    build_complete_product_quality_scorecard_event_schema,
+)
+from emlis_ai_complete_release_ladder_service import build_complete_product_quality_release_ladder
 from emlis_ai_complete_initial_fixture_qa_service import build_complete_initial_fixture_qa_run
 from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_emlis_limited_composer_scorecard_harness
 from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
@@ -70,7 +76,7 @@ from emlis_ai_observation_integrator_service import integrate_perspective_board,
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_template_echo_guard import guard_template_echo
-from emlis_ai_display_gate import build_emlis_gate_trace, build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
+from emlis_ai_display_gate import GATE_BINDING_CONTRACT_VERSION, build_emlis_gate_trace, build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
 from emotion_history_search_service import build_open_topic_anchor_candidates, extract_repeated_categories
 from cocolon_text_generation_core.policies import (
     CORE_ID_EMLIS,
@@ -79,6 +85,9 @@ from cocolon_text_generation_core.policies import (
 )
 
 _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
+
+_COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION = "emlis.complete_product_quality_connection.v1"
+_BINDING_DECISION_GATES = {"grounding", "display"}
 
 
 _EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
@@ -1631,12 +1640,18 @@ def _complete_initial_gate_step5_trace(gate_trace: Dict[str, Any]) -> Dict[str, 
     return {
         key: {
             "evaluated": bool(value),
+            "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
+            "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
             "passed": bool(value.get("passed")) if isinstance(value, dict) else False,
             "rejection_reasons": _safe_step5_list(value.get("rejection_reasons")) if isinstance(value, dict) else [],
             "binding_present": bool(value.get("binding_present") or value.get("binding_available")) if isinstance(value, dict) else False,
-            "binding_used": bool(value.get("binding_used")) if isinstance(value, dict) else False,
-            "binding_missing": bool(value.get("binding_missing")) if isinstance(value, dict) else False,
+            "binding_available": bool(value.get("binding_available") or value.get("binding_present")) if isinstance(value, dict) else False,
+            "binding_required": bool(key in _BINDING_DECISION_GATES and value.get("binding_required")) if isinstance(value, dict) else False,
+            "binding_used": bool(key in _BINDING_DECISION_GATES and value.get("binding_used")) if isinstance(value, dict) else False,
+            "binding_missing": bool(key in _BINDING_DECISION_GATES and value.get("binding_missing")) if isinstance(value, dict) else False,
             "binding_count": int(value.get("binding_count") or 0) if isinstance(value, dict) else 0,
+            "expected_binding_count": int(value.get("expected_binding_count") or 0) if isinstance(value, dict) else 0,
+            "binding_support_source": str(value.get("binding_support_source") or ("display_binding_aware_result" if key == "display" and value.get("binding_used") else "declared_relation_binding" if key == "grounding" and value.get("binding_used") else "none")) if isinstance(value, dict) else "none",
         }
         for key, value in gates.items()
     }
@@ -3094,6 +3109,8 @@ def _diagnostic_summary_meta(
         gate_results=gate_results,
     )
     summary_meta = summary.as_meta()
+    summary_meta["diagnostic_contract_version"] = _COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION
+    summary_meta["gate_binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
     limited_composer_baseline = build_limited_composer_extension_baseline_meta()
     connection_visibility = build_limited_composer_connection_visibility_meta(
         resolution_meta=resolution_meta,
@@ -3141,6 +3158,7 @@ def _diagnostic_summary_meta(
     summary_meta["binding_diagnostic"] = dict(step2_extension.get("binding") or step2_extension.get("binding_presence") or {})
     for gate_name, gate in dict(summary_meta.get("gate_results") or {}).items():
         if isinstance(gate, dict):
+            gate_key = "display" if str(gate_name) == "display_gate" else str(gate_name)
             diagnostics = gate.get("diagnostics") if isinstance(gate.get("diagnostics"), dict) else {}
             step7_trace = diagnostics.get("step7_gate_binding_reflection") if isinstance(diagnostics.get("step7_gate_binding_reflection"), dict) else {}
             binding_present = bool(
@@ -3150,21 +3168,30 @@ def _diagnostic_summary_meta(
                 or step2_extension.get("binding_present")
             )
             binding_used = bool(
-                gate.get("binding_used")
-                or diagnostics.get("binding_used")
-                or step7_trace.get("binding_used")
-            )
-            binding_missing = bool(
-                gate.get("binding_missing")
-                or diagnostics.get("binding_missing")
-                or step7_trace.get("binding_missing")
-                or step2_extension.get("binding_missing")
+                gate_key in _BINDING_DECISION_GATES
+                and (
+                    gate.get("binding_used")
+                    or diagnostics.get("binding_used")
+                    or step7_trace.get("binding_used")
+                )
             )
             binding_required = bool(
-                gate.get("binding_required")
-                or diagnostics.get("binding_required")
-                or step7_trace.get("binding_required")
-                or (step2_extension.get("binding") or {}).get("binding_expected")
+                gate_key in _BINDING_DECISION_GATES
+                and (
+                    gate.get("binding_required")
+                    or diagnostics.get("binding_required")
+                    or step7_trace.get("binding_required")
+                    or (step2_extension.get("binding") or {}).get("binding_expected")
+                )
+            )
+            binding_missing = bool(
+                binding_required
+                and (
+                    gate.get("binding_missing")
+                    or diagnostics.get("binding_missing")
+                    or step7_trace.get("binding_missing")
+                    or step2_extension.get("binding_missing")
+                )
             )
             binding_count = int(
                 gate.get("binding_count")
@@ -3173,14 +3200,34 @@ def _diagnostic_summary_meta(
                 or step2_extension.get("binding_count")
                 or 0
             )
+            binding_support_source = str(
+                gate.get("binding_support_source")
+                or diagnostics.get("binding_support_source")
+                or step7_trace.get("binding_support_source")
+                or ("display_binding_aware_result" if gate_key == "display" and binding_used else "declared_relation_binding" if gate_key == "grounding" and binding_used else "none")
+            )
+            gate["gate_binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
+            gate["binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
             gate["binding_used"] = binding_used
             gate["binding_present"] = binding_present
             gate["binding_available"] = binding_present
             gate["binding_missing"] = binding_missing
             gate["binding_required"] = binding_required
             gate["binding_count"] = binding_count
+            gate["expected_binding_count"] = int(
+                gate.get("expected_binding_count")
+                or diagnostics.get("expected_binding_count")
+                or step7_trace.get("expected_binding_count")
+                or step2_extension.get("expected_binding_count")
+                or 0
+            )
+            gate["binding_support_source"] = binding_support_source
             if step7_trace:
-                gate["step7_gate_binding_reflection"] = dict(step7_trace)
+                enriched_trace = dict(step7_trace)
+                enriched_trace.setdefault("gate_binding_contract_version", GATE_BINDING_CONTRACT_VERSION)
+                enriched_trace.setdefault("binding_contract_version", GATE_BINDING_CONTRACT_VERSION)
+                enriched_trace.setdefault("binding_support_source", binding_support_source)
+                gate["step7_gate_binding_reflection"] = enriched_trace
     return summary_meta
 
 
@@ -3652,6 +3699,68 @@ def _multi_perspective_meta(
     phase_gate_meta["step9_comment_text_contract_preserved"] = bool(step9_complete_initial_fixture_qa_run.get("comment_text_contract") == "passed_only")
     phase_gate_meta["step9_display_gate_relaxed"] = bool(step9_complete_initial_fixture_qa_run.get("display_gate_relaxed"))
 
+    step6_product_quality_scorecard = build_complete_product_quality_scorecard(
+        scorecard_event=complete_scorecard_event,
+        scorecard_harness=step12_complete_scorecard_harness,
+        fixture_qa_run=step9_complete_initial_fixture_qa_run,
+        diagnostic_summary=diagnostic_summary,
+    )
+    step6_product_quality_event_schema = build_complete_product_quality_scorecard_event_schema()
+    step6_product_quality_blind_qa_rubric = dict(
+        step6_product_quality_scorecard.get("blind_qa_rubric")
+        or build_complete_product_quality_blind_qa_rubric()
+    )
+    diagnostic_summary["step6_product_quality_scorecard"] = step6_product_quality_scorecard
+    diagnostic_summary["product_quality_scorecard"] = step6_product_quality_scorecard
+    diagnostic_summary["complete_product_quality_scorecard"] = step6_product_quality_scorecard
+    diagnostic_summary["complete_composer_product_quality_scorecard"] = step6_product_quality_scorecard
+    diagnostic_summary["complete_composer_initial_product_quality_scorecard"] = step6_product_quality_scorecard
+    diagnostic_summary["product_quality_scorecard_event_schema"] = step6_product_quality_event_schema
+    diagnostic_summary["complete_product_quality_scorecard_event_schema"] = step6_product_quality_event_schema
+    diagnostic_summary["product_quality_blind_qa_rubric"] = step6_product_quality_blind_qa_rubric
+    diagnostic_summary["complete_product_quality_blind_qa_rubric"] = step6_product_quality_blind_qa_rubric
+    diagnostic_summary["step6_product_quality_machine_metrics"] = dict(step6_product_quality_scorecard.get("machine_metrics") or {})
+    diagnostic_summary["step6_product_quality_blind_qa_metrics"] = dict(step6_product_quality_scorecard.get("blind_qa_metrics") or {})
+    phase_gate_meta["step6_product_quality_scorecard_ready"] = bool(step6_product_quality_scorecard.get("product_quality_scorecard_ready"))
+    phase_gate_meta["step6_product_quality_machine_metrics_ready"] = bool(step6_product_quality_scorecard.get("machine_metrics_ready"))
+    phase_gate_meta["step6_product_quality_blind_qa_ready"] = bool(step6_product_quality_scorecard.get("blind_qa_ready"))
+    phase_gate_meta["product_quality_scorecard_ready"] = bool(step6_product_quality_scorecard.get("scorecard_ready") or step6_product_quality_scorecard.get("product_quality_scorecard_ready"))
+    phase_gate_meta["step6_product_quality_display_reach_rate"] = float(step6_product_quality_scorecard.get("display_reach_rate") or 0.0)
+    phase_gate_meta["step6_product_quality_binding_pass_rate"] = float(step6_product_quality_scorecard.get("binding_pass_rate") or 0.0)
+    phase_gate_meta["step6_product_quality_read_feeling_requires_blind_qa"] = bool(step6_product_quality_scorecard.get("read_feeling_requires_blind_qa"))
+    phase_gate_meta["step6_product_quality_safety_major_count"] = int(step6_product_quality_scorecard.get("safety_major_count") or 0)
+    phase_gate_meta["step6_product_quality_template_major_count"] = int(step6_product_quality_scorecard.get("template_major_count") or 0)
+    phase_gate_meta["step6_product_quality_release_ladder_stage"] = str(step6_product_quality_scorecard.get("release_ladder_stage") or "")
+    phase_gate_meta["step6_product_quality_product_gate_reached"] = bool(step6_product_quality_scorecard.get("product_gate_reached"))
+    phase_gate_meta["step6_product_gate_ready"] = bool(step6_product_quality_scorecard.get("product_gate_ready"))
+    phase_gate_meta["step6_product_quality_response_shape_changed"] = bool(step6_product_quality_scorecard.get("response_shape_changed"))
+    phase_gate_meta["step6_product_quality_comment_text_written"] = bool(step6_product_quality_scorecard.get("comment_text_written_by_step6_product_quality"))
+    phase_gate_meta["step6_product_quality_raw_input_included"] = bool(step6_product_quality_scorecard.get("raw_input_included"))
+    phase_gate_meta["step6_product_quality_display_gate_relaxed"] = bool(step6_product_quality_scorecard.get("display_gate_relaxed"))
+
+    step7_product_quality_release_ladder = build_complete_product_quality_release_ladder(
+        product_quality_scorecard=step6_product_quality_scorecard,
+        diagnostic_summary=diagnostic_summary,
+        phase_gate=phase_gate_meta,
+    )
+    diagnostic_summary["step7_product_quality_release_ladder"] = step7_product_quality_release_ladder
+    diagnostic_summary["product_quality_release_ladder"] = step7_product_quality_release_ladder
+    diagnostic_summary["complete_product_quality_release_ladder"] = step7_product_quality_release_ladder
+    diagnostic_summary["complete_composer_product_quality_release_ladder"] = step7_product_quality_release_ladder
+    diagnostic_summary["complete_composer_initial_product_quality_release_ladder"] = step7_product_quality_release_ladder
+    diagnostic_summary["release_ladder_guard"] = step7_product_quality_release_ladder
+    phase_gate_meta["step7_product_quality_release_ladder_connected"] = bool(step7_product_quality_release_ladder.get("release_ladder_connected"))
+    phase_gate_meta["step7_product_quality_release_ladder_guard_ready"] = bool(step7_product_quality_release_ladder.get("release_ladder_guard_ready"))
+    phase_gate_meta["step7_product_quality_current_stage"] = str(step7_product_quality_release_ladder.get("current_stage") or "")
+    phase_gate_meta["step7_product_quality_max_allowed_stage"] = str(step7_product_quality_release_ladder.get("max_allowed_stage") or "")
+    phase_gate_meta["step7_product_quality_product_gate_ready"] = bool(step7_product_quality_release_ladder.get("product_gate_ready"))
+    phase_gate_meta["step7_product_quality_product_gate_reached"] = bool(step7_product_quality_release_ladder.get("product_gate_reached"))
+    phase_gate_meta["step7_product_quality_public_release_applied"] = bool(step7_product_quality_release_ladder.get("product_gate_public_release_applied"))
+    phase_gate_meta["step7_product_quality_comment_text_written"] = bool(step7_product_quality_release_ladder.get("comment_text_written_by_step7_release_ladder"))
+    phase_gate_meta["step7_product_quality_response_shape_changed"] = bool(step7_product_quality_release_ladder.get("response_shape_changed"))
+    phase_gate_meta["step7_product_quality_display_gate_relaxed"] = bool(step7_product_quality_release_ladder.get("display_gate_relaxed"))
+    phase_gate_meta["step7_product_quality_raw_input_included"] = bool(step7_product_quality_release_ladder.get("raw_input_included"))
+
     b_plan_connection_meta = (
         dict(diagnostic_summary.get("normal_connection") or diagnostic_summary.get("b_plan_connection") or {})
         if isinstance(diagnostic_summary, dict)
@@ -3731,6 +3840,18 @@ def _multi_perspective_meta(
         "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
         "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
         "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
+        "step6_product_quality_scorecard": step6_product_quality_scorecard,
+        "product_quality_scorecard": step6_product_quality_scorecard,
+        "complete_product_quality_scorecard": step6_product_quality_scorecard,
+        "product_quality_scorecard_event_schema": step6_product_quality_event_schema,
+        "complete_product_quality_scorecard_event_schema": step6_product_quality_event_schema,
+        "product_quality_blind_qa_rubric": step6_product_quality_blind_qa_rubric,
+        "complete_product_quality_blind_qa_rubric": step6_product_quality_blind_qa_rubric,
+        "step7_product_quality_release_ladder": step7_product_quality_release_ladder,
+        "product_quality_release_ladder": step7_product_quality_release_ladder,
+        "complete_product_quality_release_ladder": step7_product_quality_release_ladder,
+        "complete_composer_product_quality_release_ladder": step7_product_quality_release_ladder,
+        "release_ladder_guard": step7_product_quality_release_ladder,
         "step9_fixture_qa_run": step9_complete_initial_fixture_qa_run,
         "step9_product_scorecard_seed": step9_product_scorecard_seed,
         "complete_initial_product_scorecard_seed": step9_product_scorecard_seed,
@@ -3845,6 +3966,19 @@ def _multi_perspective_meta(
             "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
             "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
             "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
+            "product_quality_scorecard": step6_product_quality_scorecard,
+            "complete_product_quality_scorecard": step6_product_quality_scorecard,
+            "complete_composer_product_quality_scorecard": step6_product_quality_scorecard,
+            "step6_product_quality_scorecard": step6_product_quality_scorecard,
+            "step6_scorecard_blind_qa": step6_product_quality_scorecard,
+            "product_quality_blind_qa_rubric": step6_product_quality_blind_qa_rubric,
+            "complete_product_quality_blind_qa_rubric": step6_product_quality_blind_qa_rubric,
+            "product_quality_machine_metrics": dict(step6_product_quality_scorecard.get("machine_metrics") or {}),
+            "step7_product_quality_release_ladder": step7_product_quality_release_ladder,
+            "product_quality_release_ladder": step7_product_quality_release_ladder,
+            "complete_product_quality_release_ladder": step7_product_quality_release_ladder,
+            "complete_composer_product_quality_release_ladder": step7_product_quality_release_ladder,
+            "release_ladder_guard": step7_product_quality_release_ladder,
             "step9_fixture_qa_run": step9_complete_initial_fixture_qa_run,
             "step9_product_scorecard_seed": step9_product_scorecard_seed,
             "complete_initial_product_scorecard_seed": step9_product_scorecard_seed,

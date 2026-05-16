@@ -131,9 +131,24 @@ def _assert_step2_contract(summary: dict):
     assert summary["binding_present"] == step2["binding_present"]
     assert summary["binding_count"] == step2["binding_count"]
     assert summary["expected_binding_count"] == step2["expected_binding_count"]
-    for gate in summary["gate_results"].values():
-        assert gate["binding_used"] is False
+    assert summary["gate_binding_contract_version"] == "emlis.gate_binding_contract.v2"
+    for gate_name, gate in summary["gate_results"].items():
+        assert gate["gate_binding_contract_version"] == "emlis.gate_binding_contract.v2"
+        assert gate["binding_contract_version"] == "emlis.gate_binding_contract.v2"
+        assert isinstance(gate["binding_used"], bool)
         assert isinstance(gate["binding_available"], bool)
+        assert isinstance(gate["binding_present"], bool)
+        assert isinstance(gate["binding_required"], bool)
+        assert isinstance(gate["binding_missing"], bool)
+        assert gate["binding_support_source"] in {
+            "none",
+            "declared_evidence_binding",
+            "declared_phrase_binding",
+            "declared_relation_binding",
+            "display_binding_aware_result",
+        }
+        if gate_name in {"reader", "template_echo"}:
+            assert gate["binding_used"] is False
     assert step2["raw_input_required_for_debug"] is False
     assert step2["binding"]["raw_text_included"] is False
 
@@ -162,6 +177,7 @@ async def test_step2_diagnostic_summary_extension_records_pre_connection_without
     assert reply.meta["step2_diagnostic_summary_extension"] == summary["step2_diagnostic_summary_extension"]
     assert reply.meta["multi_perspective"]["step2_diagnostic_summary_extension"] == summary["step2_diagnostic_summary_extension"]
     assert reply.meta["multi_perspective"]["gate_trace"]["display_gate"]["binding_missing"] is False
+    assert all(gate["binding_used"] is False for gate in summary["gate_results"].values())
     assert reply.comment_text == ""
 
 
@@ -192,6 +208,11 @@ async def test_step2_diagnostic_summary_extension_marks_missing_binding_for_gene
     assert reply.meta["binding_diagnostic"] == summary["binding_diagnostic"]
     assert reply.meta["multi_perspective"]["gate_trace"]["display_gate"]["binding_required"] is True
     assert reply.meta["multi_perspective"]["gate_trace"]["display_gate"]["binding_missing"] is True
+    assert summary["gate_results"]["reader"]["binding_required"] is False
+    assert summary["gate_results"]["template_echo"]["binding_required"] is False
+    assert summary["gate_results"]["grounding"]["binding_required"] is True
+    assert summary["gate_results"]["display"]["binding_required"] is True
+    assert all(gate["binding_used"] is False for gate in summary["gate_results"].values())
     assert reply.comment_text == PASSING_TEXT
 
 
@@ -223,6 +244,12 @@ async def test_step2_diagnostic_summary_extension_uses_sanitized_sentence_bindin
     assert binding["relation_taxonomy_version"] == "test.relation_taxonomy.v1"
     assert all("text" not in row for row in binding["binding_rows_sanitized"])
     assert all(gate["binding_available"] is True for gate in summary["gate_results"].values())
+    assert summary["gate_results"]["reader"]["binding_used"] is False
+    assert summary["gate_results"]["grounding"]["binding_used"] is True
+    assert summary["gate_results"]["grounding"]["binding_support_source"] in {"declared_relation_binding", "declared_phrase_binding", "declared_evidence_binding"}
+    assert summary["gate_results"]["template_echo"]["binding_used"] is False
+    assert summary["gate_results"]["display"]["binding_used"] is True
+    assert summary["gate_results"]["display"]["binding_support_source"] == "display_binding_aware_result"
     assert reply.meta["multi_perspective"]["gate_trace"]["display_gate"]["binding_present"] is True
     assert reply.meta["multi_perspective"]["gate_trace"]["display_gate"]["binding_missing"] is False
     assert reply.meta["multi_perspective"]["diagnostic_summary"] == summary

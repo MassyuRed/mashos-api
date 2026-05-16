@@ -51,6 +51,10 @@ _COMPLETE_BINDING_AWARE_TARGET_STEP = "Step8_Binding_aware_Grounding"
 # Backward-friendly aliases for tests/integration code that names the step explicitly.
 _STEP8_COMPLETE_BINDING_AWARE_GROUNDING_VERSION = _COMPLETE_BINDING_AWARE_GROUNDING_VERSION
 _STEP8_COMPLETE_BINDING_AWARE_TARGET_STEP = _COMPLETE_BINDING_AWARE_TARGET_STEP
+_COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION = "emlis.complete_product_quality_grounding.v2"
+_COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP = "Step2_Grounding_relation_binding_strengthening"
+_COMPLETE_PRODUCT_QUALITY_GROUNDING_STAGE = _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP
+_GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 
 _REJECTION_BINDING_DECLARED_EVIDENCE_NOT_FOUND = "binding_declared_evidence_not_found"
 _REJECTION_BINDING_DECLARED_EVIDENCE_OUT_OF_SCOPE = "binding_declared_evidence_out_of_scope"
@@ -65,14 +69,20 @@ _REJECTION_COMPLETE_PHRASE_BINDING_MISSING = _REJECTION_COMPLETE_BINDING_PHRASE_
 _REJECTION_COMPLETE_RELATION_BINDING_MISSING = _REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING
 _REJECTION_COMPLETE_RELATION_NOT_EXPRESSED = "relation_not_expressed"
 _REJECTION_COMPLETE_OVER_ECHO = "over_echo"
+_REJECTION_COMPLETE_PHRASE_UNIT_MISSING = "phrase_unit_missing"
+_REJECTION_COMPLETE_WEAK_MATERIAL = "weak_material"
+_REJECTION_COMPLETE_OVERCLAIM_DETECTED = "overclaim_detected"
+_REJECTION_COMPLETE_RAW_ECHO = "raw_echo"
 
 _COMPLETE_RELATION_TEXT_PATTERNS: Dict[str, re.Pattern[str]] = {
-    "contrast": re.compile(r"別々|一方|片方|並んで|寄らず|同じ場所|せめぎ"),
-    "coexistence": re.compile(r"同時|同じ時間|重な|片方だけ|同じ中|並んで"),
-    "pressure": re.compile(r"圧力|負荷|重さ|限界|強く|前面"),
-    "approach_avoidance": re.compile(r"近づ|止ま|避け|両方|一方向|決まりきって"),
-    "recovery": re.compile(r"回復|戻|取り直|それでも|消えず"),
-    "residue": re.compile(r"残|余韻|あと|終わったあと"),
+    "contrast": re.compile(r"別々|一方|片方|並んで|寄らず|同じ場所|せめぎ|ただ"),
+    "coexistence": re.compile(r"同時|同じ時間|重な|片方だけ|同じ中|並んで|保って|減らず"),
+    "pressure": re.compile(r"圧力|圧迫|負荷|重さ|限界|強く|前面|続いて|急がせない"),
+    "approach_avoidance": re.compile(r"近づ|止ま|避け|両方|一方向|決まりきって|同じ線上"),
+    "recovery": re.compile(r"回復|戻|取り直|それでも|消えず|少し"),
+    "residue": re.compile(r"残|余韻|あと|終わったあと|まだ"),
+    "limit": re.compile(r"限界|境目|急がせない|これ以上"),
+    "context": re.compile(r"背景|接続|支え|根拠"),
 }
 
 
@@ -248,6 +258,165 @@ def _binding_declared_phrase_ids(row: Mapping[str, Any]) -> List[str]:
     return _dedupe(row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or row.get("declared_phrase_unit_ids") or [])
 
 
+def _nested_mapping(row: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = row.get(key)
+    return value if isinstance(value, Mapping) else {}
+
+
+def _binding_phrase_roles(row: Mapping[str, Any]) -> List[str]:
+    source_line = _nested_mapping(row, "source_sentence_plan_line")
+    meta = _nested_mapping(row, "meta")
+    values: List[Any] = []
+    for key in (
+        "phrase_unit_roles",
+        "used_phrase_unit_roles",
+        "roles",
+        "role",
+        "must_include_roles",
+        "role_phrase_keys",
+        "role_phrase_key",
+    ):
+        values.extend(_as_list(row.get(key)))
+        values.extend(_as_list(source_line.get(key)))
+        values.extend(_as_list(meta.get(key)))
+    return _dedupe(values)
+
+
+def _binding_phrase_polarities(row: Mapping[str, Any]) -> List[str]:
+    source_line = _nested_mapping(row, "source_sentence_plan_line")
+    meta = _nested_mapping(row, "meta")
+    values: List[Any] = []
+    for key in ("phrase_unit_polarities", "used_phrase_unit_polarities", "polarities", "polarity"):
+        values.extend(_as_list(row.get(key)))
+        values.extend(_as_list(source_line.get(key)))
+        values.extend(_as_list(meta.get(key)))
+    return _dedupe(values)
+
+
+def _binding_material_quality_flags(row: Mapping[str, Any]) -> List[str]:
+    source_line = _nested_mapping(row, "source_sentence_plan_line")
+    meta = _nested_mapping(row, "meta")
+    flags: List[Any] = []
+    for key in ("material_quality_flags", "quality_flags", "material_rejection_reasons"):
+        flags.extend(_as_list(row.get(key)))
+        flags.extend(_as_list(source_line.get(key)))
+        flags.extend(_as_list(meta.get(key)))
+    return _dedupe(flags)
+
+
+def _binding_phrase_quality_reasons(row: Mapping[str, Any], phrase_ids: Sequence[str]) -> List[str]:
+    """Return product-quality phrase material blockers for a binding row.
+
+    Existing Step 8 rows only guarantee ids.  Step 2 strengthens grounding when
+    material metadata is available, but keeps older id-only rows compatible.
+    """
+
+    if not phrase_ids:
+        return [_REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING]
+
+    reasons: List[str] = []
+    quality_values = _dedupe(
+        list(_as_list(row.get("phrase_unit_quality")))
+        + list(_as_list(row.get("phrase_unit_quality_flags")))
+        + list(_as_list(row.get("quality_flags")))
+        + list(_as_list(row.get("material_quality_flags")))
+        + list(_as_list(row.get("validation_errors")))
+        + list(_as_list(row.get("rejection_reasons")))
+    )
+    weak_markers = {
+        "weak_material",
+        "phrase_unit_not_bodyable",
+        "emotion_label_only",
+        "fragment_only",
+        "particle_only",
+        "role_missing",
+        "unusable_phrase_unit_material",
+        "complete_material_unit_unusable",
+    }
+    if {item.lower() for item in quality_values}.intersection(weak_markers):
+        reasons.append(_REJECTION_COMPLETE_WEAK_MATERIAL)
+
+    for key in ("phrase_units", "used_phrase_units", "declared_phrase_units", "phrase_unit_rows"):
+        for item in _as_list(row.get(key)):
+            if not isinstance(item, Mapping):
+                continue
+            phrase_id = _clean(item.get("phrase_unit_id") or item.get("id"))
+            if phrase_id and phrase_id not in set(phrase_ids):
+                continue
+            item_reasons = _dedupe(item.get("validation_errors") or item.get("rejection_reasons") or item.get("quality_flags"))
+            if item.get("usable") is False or "role_missing" in item_reasons or "weak_material" in item_reasons:
+                reasons.append(_REJECTION_COMPLETE_WEAK_MATERIAL)
+
+    return _dedupe(reasons)
+
+
+def _sentence_id_from_binding(row: Mapping[str, Any] | None, *, fallback_index: int) -> str:
+    if isinstance(row, Mapping):
+        value = _clean(row.get("sentence_id") or row.get("id"))
+        if value:
+            return value
+    return f"complete-s{fallback_index}"
+
+
+def _relation_requires_surface_expression(relation_type: str) -> bool:
+    relation = _clean(relation_type).lower()
+    return bool(relation and relation not in {"center", "context", "unknown", "neutral", "none"})
+
+
+def _binding_support_source(*, binding_used_count: int, declared_relation_types: Sequence[str]) -> str:
+    if binding_used_count <= 0:
+        return ""
+    return "declared_relation_binding" if _dedupe(declared_relation_types) else "declared_evidence_binding"
+
+
+def _claim_sentence_id(claim: GroundingSentenceClaim, *, fallback_index: int) -> str:
+    return _clean(claim.binding_sentence_id) or f"complete-s{fallback_index}"
+
+
+def _sentence_ids_for_reason(claims: Sequence[GroundingSentenceClaim], reasons: set[str] | None = None) -> List[str]:
+    ids: List[str] = []
+    for index, claim in enumerate(claims, start=1):
+        reason = _clean(claim.unsupported_reason)
+        if not reason:
+            continue
+        if reasons is not None and reason not in reasons:
+            continue
+        ids.append(_claim_sentence_id(claim, fallback_index=index))
+    return _dedupe(ids)
+
+
+def _release_blocker_reasons(reasons: Sequence[str]) -> List[str]:
+    blockers = {
+        "unsupported_sentence",
+        "unsupported_diagnosis_like",
+        "unsupported_personality_label",
+        "unsupported_general_knowledge_completion",
+        "unsupported_advice_assertion",
+        "unsupported_overclaim",
+        _REJECTION_COMPLETE_OVER_ECHO,
+        _REJECTION_COMPLETE_RAW_ECHO,
+        _REJECTION_COMPLETE_RELATION_NOT_EXPRESSED,
+        _REJECTION_COMPLETE_BINDING_MISSING,
+        _REJECTION_COMPLETE_BINDING_EVIDENCE_IDS_MISSING,
+        _REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING,
+        _REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING,
+        _REJECTION_COMPLETE_WEAK_MATERIAL,
+    }
+    return [reason for reason in _dedupe(reasons) if reason in blockers]
+
+
+def _is_product_quality_grounding_mode(*, grounding_scope: str, binding_source_meta: Mapping[str, Any]) -> bool:
+    scope = _clean(grounding_scope).lower()
+    if "product_quality" in scope or "grounding_relation_binding" in scope:
+        return True
+    if binding_source_meta.get("product_quality_grounding") is True:
+        return True
+    if binding_source_meta.get("grounding_relation_binding_v2") is True:
+        return True
+    marker = _source_step_text(binding_source_meta).lower()
+    return "complete_product_quality_grounding" in marker or "grounding_relation_binding" in marker
+
+
 def _binding_rows_from_meta(binding_meta: Any) -> List[Mapping[str, Any]]:
     """Extract sentence binding rows from Limited and Complete meta shapes."""
 
@@ -373,6 +542,8 @@ def _binding_support(
     all_ids = set(evidence_by_id.keys())
     declared_evidence = _binding_declared_evidence_ids(row)
     declared_phrase = _binding_declared_phrase_ids(row)
+    declared_phrase_roles = _binding_phrase_roles(row)
+    declared_phrase_polarities = _binding_phrase_polarities(row)
     relation_type = _clean(row.get("relation_type") or row.get("relation") or row.get("declared_relation_type"))
     not_found = [span_id for span_id in declared_evidence if span_id not in all_ids]
     out_of_scope = [span_id for span_id in declared_evidence if span_id in all_ids and allowed_set and span_id not in allowed_set]
@@ -387,6 +558,10 @@ def _binding_support(
         reasons.append(_REJECTION_BINDING_DECLARED_EVIDENCE_OUT_OF_SCOPE)
     if require_phrase_unit_ids and not declared_phrase:
         reasons.append(_REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING)
+    if require_phrase_unit_ids and declared_phrase and not (declared_phrase_roles or declared_phrase_polarities):
+        reasons.append(_REJECTION_COMPLETE_WEAK_MATERIAL)
+    if require_phrase_unit_ids:
+        reasons.extend(_binding_phrase_quality_reasons(row, declared_phrase))
     if require_relation_type and not relation_type:
         reasons.append(_REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING)
         reasons.append(_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED)
@@ -402,6 +577,8 @@ def _binding_support(
         "line_role": _clean(row.get("line_role") or row.get("role")),
         "declared_evidence_span_ids": declared_evidence,
         "declared_phrase_unit_ids": declared_phrase,
+        "declared_phrase_unit_roles": declared_phrase_roles,
+        "declared_phrase_unit_polarities": declared_phrase_polarities,
         "declared_relation_type": relation_type,
         "supported_evidence_span_ids": supported,
         "rejection_reasons": _dedupe(reasons),
@@ -469,12 +646,198 @@ def _complete_over_echo_reason(sentence: str, evidence_spans: Sequence[EvidenceS
     return ""
 
 
+
+
+def _claim_sentence_id(claim: GroundingSentenceClaim, fallback_index: int = 0) -> str:
+    return _clean(
+        getattr(claim, "binding_sentence_id", "")
+        or f"complete-s{fallback_index if fallback_index >= 1 else fallback_index + 1}"
+    )
+
+
+def _product_quality_reason(reason: str) -> str:
+    code = _clean(reason)
+    if not code:
+        return ""
+    if code == _REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING:
+        return _REJECTION_COMPLETE_PHRASE_UNIT_MISSING
+    if code in {_REJECTION_COMPLETE_BINDING_MISSING, _REJECTION_COMPLETE_BINDING_EVIDENCE_IDS_MISSING, "no_evidence_span_or_relation"}:
+        return "unsupported_sentence"
+    if code in {_REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING, _REJECTION_COMPLETE_RELATION_NOT_EXPRESSED}:
+        return _REJECTION_COMPLETE_RELATION_NOT_EXPRESSED
+    if code == _REJECTION_COMPLETE_OVER_ECHO:
+        return _REJECTION_COMPLETE_RAW_ECHO
+    if code in {
+        "unsupported_overclaim",
+        "unsupported_diagnosis_like",
+        "unsupported_personality_label",
+        "unsupported_general_knowledge_completion",
+        "unsupported_advice_assertion",
+    }:
+        return _REJECTION_COMPLETE_OVERCLAIM_DETECTED
+    return code
+
+
+def _grounding_support_source(*, binding_used_count: int, declared_relation_types: Sequence[str], declared_phrase_unit_ids: Sequence[str]) -> str:
+    if binding_used_count <= 0:
+        return "none"
+    if _dedupe(declared_relation_types):
+        return "declared_relation_binding"
+    if _dedupe(declared_phrase_unit_ids):
+        return "declared_phrase_binding"
+    return "declared_evidence_binding"
+
+
+def _grounding_report_v2_payload(
+    *,
+    claims: Sequence[GroundingSentenceClaim],
+    rejection_reasons: Sequence[str],
+    binding_used_count: int,
+    content_sentence_count: int,
+    binding_count: int,
+    expected_binding_count: int,
+    binding_missing: bool,
+    declared_relation_types: Sequence[str],
+    declared_phrase_unit_ids: Sequence[str],
+    binding_rejection_reasons: Sequence[str],
+    relation_not_expressed_count: int,
+    over_echo_count: int,
+) -> dict[str, Any]:
+    unsupported_sentence_ids: List[str] = []
+    relation_not_expressed_sentence_ids: List[str] = []
+    phrase_unit_missing_sentence_ids: List[str] = []
+    weak_material_sentence_ids: List[str] = []
+    raw_echo_sentence_ids: List[str] = []
+    overclaim_sentence_ids: List[str] = []
+    sentence_fail_reasons: Dict[str, List[str]] = {}
+    product_reasons: List[str] = []
+
+    for fallback_index, claim in enumerate(claims, start=1):
+        reason = _clean(getattr(claim, "unsupported_reason", ""))
+        if not reason:
+            continue
+        sentence_id = _claim_sentence_id(claim, fallback_index)
+        unsupported_sentence_ids.append(sentence_id)
+        normalized_reason = _product_quality_reason(reason)
+        if normalized_reason:
+            product_reasons.append(normalized_reason)
+            sentence_fail_reasons.setdefault(sentence_id, []).append(normalized_reason)
+        if reason in {_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED, _REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING}:
+            relation_not_expressed_sentence_ids.append(sentence_id)
+        if reason == _REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING:
+            phrase_unit_missing_sentence_ids.append(sentence_id)
+        if reason in {_REJECTION_COMPLETE_BINDING_EVIDENCE_IDS_MISSING, _REJECTION_COMPLETE_BINDING_MISSING, "no_evidence_span_or_relation"}:
+            weak_material_sentence_ids.append(sentence_id)
+        if reason == _REJECTION_COMPLETE_OVER_ECHO:
+            raw_echo_sentence_ids.append(sentence_id)
+        if normalized_reason == _REJECTION_COMPLETE_OVERCLAIM_DETECTED:
+            overclaim_sentence_ids.append(sentence_id)
+
+    for reason in rejection_reasons:
+        normalized = _product_quality_reason(reason)
+        if normalized:
+            product_reasons.append(normalized)
+    for reason in binding_rejection_reasons:
+        normalized = _product_quality_reason(reason)
+        if normalized:
+            product_reasons.append(normalized)
+
+    if unsupported_sentence_ids and "unsupported_sentence" not in product_reasons:
+        product_reasons.insert(0, "unsupported_sentence")
+    product_reasons = _dedupe(product_reasons)
+    binding_pass_rate = 0.0 if content_sentence_count <= 0 else round(binding_used_count / max(1, content_sentence_count), 3)
+    binding_support_source = _grounding_support_source(
+        binding_used_count=binding_used_count,
+        declared_relation_types=declared_relation_types,
+        declared_phrase_unit_ids=declared_phrase_unit_ids,
+    )
+    release_blocker = bool(unsupported_sentence_ids or product_reasons or binding_missing)
+    repair_handoff = {
+        "unsupported_sentence": {
+            "operation": "drop_optional_sentence_or_rebind_stronger_evidence",
+            "target_sentence_ids": _dedupe(unsupported_sentence_ids),
+            "return_step": "self_repair",
+        },
+        "phrase_unit_missing": {
+            "operation": "return_to_material_service_for_phrase_unit",
+            "target_sentence_ids": _dedupe(phrase_unit_missing_sentence_ids),
+            "return_step": "material_service",
+        },
+        "weak_material": {
+            "operation": "return_to_material_service_for_stronger_material",
+            "target_sentence_ids": _dedupe(weak_material_sentence_ids),
+            "return_step": "material_service",
+        },
+        "relation_not_expressed": {
+            "operation": "make_relation_line_explicit_or_rewrite_connector",
+            "target_sentence_ids": _dedupe(relation_not_expressed_sentence_ids),
+            "return_step": "self_repair",
+        },
+        "raw_echo": {
+            "operation": "lower_echo_density_from_phrase_role",
+            "target_sentence_ids": _dedupe(raw_echo_sentence_ids),
+            "return_step": "surface_realizer",
+        },
+        "overclaim_detected": {
+            "operation": "reject_or_remove_overclaim_sentence_only",
+            "target_sentence_ids": _dedupe(overclaim_sentence_ids),
+            "return_step": "display_reject_preferred",
+        },
+    }
+    active_repair_handoff = {
+        key: value
+        for key, value in repair_handoff.items()
+        if value["target_sentence_ids"] or key in product_reasons
+    }
+    return {
+        "version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "target_step": _COMPLETE_PRODUCT_QUALITY_GROUNDING_STAGE,
+        "binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+        "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+        "binding_used": bool(binding_used_count),
+        "binding_present": bool(binding_count),
+        "binding_missing": bool(binding_missing),
+        "binding_count": int(binding_count),
+        "expected_binding_count": int(expected_binding_count),
+        "binding_supported_sentence_count": int(binding_used_count),
+        "binding_pass_rate": binding_pass_rate,
+        "binding_support_source": binding_support_source,
+        "unsupported_sentence_ids": _dedupe(unsupported_sentence_ids),
+        "relation_not_expressed_sentence_ids": _dedupe(relation_not_expressed_sentence_ids),
+        "phrase_unit_missing_sentence_ids": _dedupe(phrase_unit_missing_sentence_ids),
+        "weak_material_sentence_ids": _dedupe(weak_material_sentence_ids),
+        "raw_echo_sentence_ids": _dedupe(raw_echo_sentence_ids),
+        "overclaim_sentence_ids": _dedupe(overclaim_sentence_ids),
+        "relation_not_expressed_count": int(relation_not_expressed_count),
+        "over_echo_count": int(over_echo_count),
+        "fail_reasons": product_reasons,
+        "product_quality_rejection_reasons": product_reasons,
+        "sentence_fail_reasons": {key: _dedupe(value) for key, value in sentence_fail_reasons.items()},
+        "repair_handoff": active_repair_handoff,
+        "release_blocker": release_blocker,
+        "sentence_evidence_checked": True,
+        "phrase_unit_checked": True,
+        "relation_expression_checked": True,
+        "overclaim_checked": True,
+        "echo_density_checked": True,
+        "surface_threshold_relaxed": False,
+        "guard_threshold_relaxed": False,
+        "display_gate_relaxed": False,
+        "response_shape_changed": False,
+        "raw_input_included": False,
+    }
+
 def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
     return {
         "version": _COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
         "target_step": _COMPLETE_BINDING_AWARE_TARGET_STEP,
         "stage": "complete_composer_initial",
         "implementation_unit": "Commit 8",
+        "product_quality_grounding_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "product_quality_grounding_step": _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+        "grounding_report_contract_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+        "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
         "binding_aware_grounding_strengthened": True,
         "complete_binding_aware_grounding": True,
         "accepts_complete_sentence_plan_v2": True,
@@ -487,6 +850,14 @@ def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
         "used_phrase_unit_ids_required": True,
         "requires_relation_type": True,
         "relation_type_required": True,
+        "relation_expression_checker": True,
+        "relation_expression_checked": True,
+        "binding_support_source_required": True,
+        "unsupported_sentence_ids_reported": True,
+        "relation_not_expressed_sentence_ids_reported": True,
+        "phrase_unit_quality_checked": True,
+        "weak_material_reason_enabled": True,
+        "binding_pass_rate_measurable": True,
         "unsupported_sentence_release_blocker": True,
         "relation_not_expressed_repair_target": True,
         "over_echo_repair_target": True,
@@ -536,6 +907,10 @@ def judge_grounding(
         binding_source_meta.setdefault("grounding_input", surface_grounding_input)
 
     complete_binding_mode = _is_complete_binding_mode(
+        grounding_scope=grounding_scope,
+        binding_source_meta=binding_source_meta,
+    )
+    product_quality_grounding_mode = _is_product_quality_grounding_mode(
         grounding_scope=grounding_scope,
         binding_source_meta=binding_source_meta,
     )
@@ -613,15 +988,25 @@ def judge_grounding(
         sentence_binding_used = bool(binding.get("binding_used"))
         sentence_binding_reasons = list(binding.get("rejection_reasons") or [])
 
-        if complete_binding_mode and binding_relation and binding_line_role == "relation" and not _relation_expressed_by_surface(sentence, binding_relation):
-            sentence_binding_reasons.append(_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED)
-            complete_relation_not_expressed_count += 1
+        relation_expression_required = bool(
+            complete_binding_mode
+            and binding_relation
+            and _relation_requires_surface_expression(binding_relation)
+            and (product_quality_grounding_mode or binding_line_role == "relation")
+        )
+        relation_expressed = True
+        if relation_expression_required:
+            relation_expressed = _relation_expressed_by_surface(sentence, binding_relation)
+            if not relation_expressed:
+                sentence_binding_reasons.append(_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED)
+                complete_relation_not_expressed_count += 1
         if binding_relation:
             declared_relation_types.append(binding_relation)
-            relation_supported = True
+            relation_supported = bool(relation_supported or (not relation_expression_required or relation_expressed))
         declared_phrase_unit_ids.extend(binding_declared_phrase)
         if sentence_binding_reasons:
             binding_rejection_reasons.extend(sentence_binding_reasons)
+        sentence_binding_used = bool(sentence_binding_used and not sentence_binding_reasons)
 
         if sentence_binding_used:
             # Complete and Limited both keep the declared evidence ids as the
@@ -691,11 +1076,13 @@ def judge_grounding(
             "unsupported_advice_assertion",
             "unsupported_overclaim",
             _REJECTION_COMPLETE_OVER_ECHO,
+            _REJECTION_COMPLETE_RAW_ECHO,
             _REJECTION_COMPLETE_RELATION_NOT_EXPRESSED,
             _REJECTION_COMPLETE_BINDING_MISSING,
             _REJECTION_COMPLETE_BINDING_EVIDENCE_IDS_MISSING,
             _REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING,
             _REJECTION_COMPLETE_BINDING_RELATION_TYPE_MISSING,
+            _REJECTION_COMPLETE_WEAK_MATERIAL,
         }:
             reasons.append(claim.unsupported_reason)
     if graph.core_tensions and relation_supported_count < 1:
@@ -706,14 +1093,55 @@ def judge_grounding(
         reasons.append("scoped_evidence_not_found")
     if binding_rejection_reasons:
         reasons.extend(binding_rejection_reasons)
+    if _REJECTION_COMPLETE_OVER_ECHO in reasons and _REJECTION_COMPLETE_RAW_ECHO not in reasons:
+        reasons.append(_REJECTION_COMPLETE_RAW_ECHO)
 
     reasons = list(dict.fromkeys(reasons))
     binding_rejection_reasons = _dedupe(binding_rejection_reasons)
     binding_missing = bool(binding_rows and len(binding_rows) < content_sentence_count) or bool(complete_binding_mode and not binding_rows and content_sentence_count > 0)
-    repair_targets = [reason for reason in reasons if reason in {_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED, _REJECTION_COMPLETE_OVER_ECHO, "unsupported_sentence"}]
+    repair_targets = [reason for reason in reasons if reason in {_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED, _REJECTION_COMPLETE_OVER_ECHO, _REJECTION_COMPLETE_RAW_ECHO, "unsupported_sentence"}]
+    binding_pass_rate = round(float(binding_used_count) / float(content_sentence_count), 3) if content_sentence_count else 0.0
+    binding_support_source = _grounding_support_source(
+        binding_used_count=binding_used_count,
+        declared_relation_types=declared_relation_types,
+        declared_phrase_unit_ids=declared_phrase_unit_ids,
+    )
+    unsupported_sentence_ids = _sentence_ids_for_reason(claims)
+    relation_not_expressed_sentence_ids = _sentence_ids_for_reason(claims, {_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED})
+    phrase_unit_missing_sentence_ids = _sentence_ids_for_reason(claims, {_REJECTION_COMPLETE_BINDING_PHRASE_UNIT_MISSING})
+    weak_material_sentence_ids = _sentence_ids_for_reason(claims, {_REJECTION_COMPLETE_WEAK_MATERIAL})
+    raw_echo_sentence_ids = _sentence_ids_for_reason(claims, {_REJECTION_COMPLETE_OVER_ECHO, _REJECTION_COMPLETE_RAW_ECHO})
+    overclaim_sentence_ids = _sentence_ids_for_reason(claims, {
+        "unsupported_overclaim",
+        "unsupported_diagnosis_like",
+        "unsupported_personality_label",
+        "unsupported_general_knowledge_completion",
+        "unsupported_advice_assertion",
+    })
+    grounding_report_v2 = _grounding_report_v2_payload(
+        claims=claims,
+        rejection_reasons=reasons,
+        binding_used_count=binding_used_count,
+        content_sentence_count=content_sentence_count,
+        binding_count=len(binding_rows),
+        expected_binding_count=content_sentence_count,
+        binding_missing=binding_missing,
+        declared_relation_types=declared_relation_types,
+        declared_phrase_unit_ids=declared_phrase_unit_ids,
+        binding_rejection_reasons=binding_rejection_reasons,
+        relation_not_expressed_count=complete_relation_not_expressed_count,
+        over_echo_count=complete_over_echo_count,
+    )
+    release_blocker = bool(grounding_report_v2.get("release_blocker") or _release_blocker_reasons(reasons))
     binding_diagnostics = {
         "version": _COMPLETE_BINDING_AWARE_GROUNDING_VERSION if complete_binding_mode else _STEP6_BINDING_AWARE_GROUNDING_VERSION,
         "target_step": _COMPLETE_BINDING_AWARE_TARGET_STEP if complete_binding_mode else _STEP6_BINDING_AWARE_TARGET_STEP,
+        "product_quality_grounding_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "product_quality_grounding_step": _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+        "grounding_report_contract_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+        "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+        "product_quality_grounding": product_quality_grounding_mode,
         "binding_aware_grounding": True,
         "complete_binding_aware_grounding": complete_binding_mode,
         "binding_present": bool(binding_rows),
@@ -722,6 +1150,8 @@ def judge_grounding(
         "expected_binding_count": content_sentence_count,
         "binding_missing": binding_missing,
         "binding_supported_sentence_count": binding_used_count,
+        "binding_pass_rate": binding_pass_rate,
+        "binding_support_source": binding_support_source,
         "binding_rejection_reasons": binding_rejection_reasons,
         "declared_relation_types": _dedupe(declared_relation_types),
         "declared_phrase_unit_ids": _dedupe(declared_phrase_unit_ids),
@@ -729,10 +1159,22 @@ def judge_grounding(
         "evidence_span_ids_checked": bool(binding_rows),
         "phrase_unit_ids_checked": bool(binding_rows),
         "relation_type_checked": bool(binding_rows),
+        "relation_expression_checked": complete_binding_mode,
+        "phrase_unit_quality_checked": complete_binding_mode,
         "surface_realizer_grounding_input_supported": complete_binding_mode,
         "complete_sentence_plan_v2_supported": complete_binding_mode,
         "relation_not_expressed_count": complete_relation_not_expressed_count,
         "over_echo_count": complete_over_echo_count,
+        "unsupported_sentence_ids": unsupported_sentence_ids,
+        "relation_not_expressed_sentence_ids": relation_not_expressed_sentence_ids,
+        "phrase_unit_missing_sentence_ids": phrase_unit_missing_sentence_ids,
+        "weak_material_sentence_ids": weak_material_sentence_ids,
+        "raw_echo_sentence_ids": raw_echo_sentence_ids,
+        "overclaim_sentence_ids": overclaim_sentence_ids,
+        "product_quality_rejection_reasons": list(grounding_report_v2.get("product_quality_rejection_reasons") or []),
+        "fail_reasons": list(grounding_report_v2.get("fail_reasons") or []),
+        "repair_handoff": dict(grounding_report_v2.get("repair_handoff") or {}),
+        "grounding_report_v2": grounding_report_v2,
         "repair_targets": repair_targets,
         "unsupported_sentence_is_release_blocker": True,
         "relation_not_expressed_is_repair_target": True,
@@ -741,6 +1183,7 @@ def judge_grounding(
         "surface_threshold_relaxed": False,
         "guard_threshold_relaxed": False,
         "display_gate_relaxed": False,
+        "release_blocker": release_blocker,
         "response_shape_changed": False,
         "raw_input_included": False,
     }
@@ -766,6 +1209,19 @@ def judge_grounding(
         declared_phrase_unit_ids=_dedupe(declared_phrase_unit_ids),
         binding_diagnostics=binding_diagnostics,
         binding_aware_grounding=binding_diagnostics,
+        grounding_report_contract_version=_COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION if complete_binding_mode else "",
+        gate_binding_contract_version=_GATE_BINDING_CONTRACT_VERSION if complete_binding_mode else "",
+        binding_contract_version=_GATE_BINDING_CONTRACT_VERSION if complete_binding_mode else "",
+        binding_support_source=binding_support_source,
+        binding_pass_rate=binding_pass_rate,
+        unsupported_sentence_ids=unsupported_sentence_ids,
+        relation_not_expressed_sentence_ids=relation_not_expressed_sentence_ids,
+        phrase_unit_missing_sentence_ids=phrase_unit_missing_sentence_ids,
+        weak_material_sentence_ids=weak_material_sentence_ids,
+        raw_echo_sentence_ids=raw_echo_sentence_ids,
+        overclaim_sentence_ids=overclaim_sentence_ids,
+        release_blocker=release_blocker,
+        grounding_report_v2=grounding_report_v2,
     )
 
 
@@ -788,4 +1244,8 @@ __all__ = [
     "_REJECTION_COMPLETE_RELATION_BINDING_MISSING",
     "_REJECTION_COMPLETE_RELATION_NOT_EXPRESSED",
     "_REJECTION_COMPLETE_OVER_ECHO",
+    "_REJECTION_COMPLETE_RAW_ECHO",
+    "_REJECTION_COMPLETE_WEAK_MATERIAL",
+    "_COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION",
+    "_COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP",
 ]

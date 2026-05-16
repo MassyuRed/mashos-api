@@ -79,6 +79,16 @@ _SAFE_META_KEYS = (
     "sentence_binding_bundle",
     "surface_realizer",
     "surface_signature",
+    "tone_engine_version",
+    "product_quality_tone_engine_version",
+    "tone_policy",
+    "tone_policy_contract",
+    "tone_policy_applied",
+    "tone_guard_report",
+    "tone_guard_major_count",
+    "tone_guard_passed",
+    "tone_guard_reasons",
+    "tone_meaning_added",
     "initial_grounding_report",
     "final_grounding_report",
     "grounding_input",
@@ -86,7 +96,10 @@ _SAFE_META_KEYS = (
     "binding_meta",
     "sentence_bindings",
     "self_repair",
+    "self_repair_report_v2",
+    "product_quality_self_repair",
     "repair_trace",
+    "repair_trace_v2",
     "complete_composer_candidate",
     "used_evidence_span_ids",
     "used_phrase_unit_ids",
@@ -255,6 +268,82 @@ def _binding_count_from_meta(meta: Mapping[str, Any]) -> int:
     return 0
 
 
+def _final_grounding_report_from_meta(meta: Mapping[str, Any]) -> Mapping[str, Any]:
+    item = meta.get("final_grounding_report")
+    if isinstance(item, Mapping):
+        return item
+    for key in ("grounding_report", "initial_grounding_report"):
+        item = meta.get(key)
+        if isinstance(item, Mapping):
+            return item
+    return {}
+
+
+def _product_quality_grounding_report_from_meta(report: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in ("product_quality_grounding_report", "grounding_report_v2"):
+        item = report.get(key)
+        if isinstance(item, Mapping):
+            return item
+    diagnostics = report.get("binding_diagnostics")
+    if isinstance(diagnostics, Mapping):
+        item = diagnostics.get("grounding_report_v2") or diagnostics.get("product_quality_grounding_report")
+        if isinstance(item, Mapping):
+            return item
+    return {}
+
+
+def _surface_variation_report_from_meta(meta: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Read Step3 surface-variation diagnostics from sanitized Complete meta."""
+
+    for key in ("surface_variation_report", "surface_variation_profile"):
+        item = meta.get(key)
+        if isinstance(item, Mapping):
+            return item
+    surface = meta.get("surface_realizer")
+    if isinstance(surface, Mapping):
+        for key in ("surface_variation_report", "surface_variation_profile"):
+            item = surface.get(key)
+            if isinstance(item, Mapping):
+                return item
+    signature = meta.get("surface_signature")
+    if isinstance(signature, Mapping):
+        for key in ("surface_variation_report", "surface_variation_profile"):
+            item = signature.get(key)
+            if isinstance(item, Mapping):
+                return item
+        return signature
+    return {}
+
+
+
+def _tone_guard_report_from_meta(meta: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Read Step5 Tone Engine diagnostics from sanitized Complete meta."""
+
+    item = meta.get("tone_guard_report")
+    if isinstance(item, Mapping):
+        return item
+    surface = meta.get("surface_realizer")
+    if isinstance(surface, Mapping):
+        item = surface.get("tone_guard_report")
+        if isinstance(item, Mapping):
+            return item
+    signature = meta.get("surface_signature")
+    if isinstance(signature, Mapping):
+        item = signature.get("tone_guard_report")
+        if isinstance(item, Mapping):
+            return item
+    tone_policy = meta.get("tone_policy")
+    if isinstance(tone_policy, Mapping):
+        return {
+            "tone_policy_version": tone_policy.get("version"),
+            "tone_guard_major_count": 0,
+            "tone_guard_reasons": [],
+            "passed": True,
+            "release_blocker": False,
+            "raw_input_included": False,
+        }
+    return {}
+
 def _as_list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -294,6 +383,70 @@ def _repair_succeeded(self_repair: Mapping[str, Any], repair_trace: list[Any], d
         return True
     result = _clean(self_repair.get("result") or self_repair.get("status") or self_repair.get("final_status"))
     return result in {"passed", "repaired", "generated"} or bool(self_repair.get("repaired"))
+
+
+def _trace_meta_row(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return _safe_mapping(value)
+    if hasattr(value, "as_meta"):
+        try:
+            meta = value.as_meta()
+            if isinstance(meta, Mapping):
+                return _safe_mapping(meta)
+        except Exception:
+            return {}
+    return {}
+
+
+def _repair_trace_v2_summary(repair_trace: list[Any], self_repair: Mapping[str, Any]) -> dict[str, Any]:
+    rows = [_trace_meta_row(row) for row in repair_trace]
+    if not rows and isinstance(self_repair, Mapping):
+        rows = [_trace_meta_row(row) for row in _as_list(self_repair.get("repair_trace_v2") or self_repair.get("repair_trace"))]
+    rows = [row for row in rows if row]
+    operation_counts: dict[str, int] = {}
+    reason_counts: dict[str, int] = {}
+    result_counts: dict[str, int] = {}
+    abort_reasons: list[str] = []
+    source_gates: list[str] = []
+    meaning_added_count = 0
+    policy_violation_count = 0
+    for row in rows:
+        operation = _clean(row.get("operation") or row.get("applied_operation"))
+        reason = _clean(row.get("reason_code"))
+        result = _clean(row.get("result"))
+        if operation:
+            operation_counts[operation] = operation_counts.get(operation, 0) + 1
+        if reason:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if result:
+            result_counts[result] = result_counts.get(result, 0) + 1
+        if row.get("abort_reason"):
+            abort_reasons.append(str(row.get("abort_reason")))
+        if row.get("source_gate"):
+            source_gates.append(str(row.get("source_gate")))
+        meaning_added = bool(row.get("meaning_added") or row.get("new_meaning_added"))
+        meaning_added_count += 1 if meaning_added else 0
+        evidence_ok = bool(row.get("evidence_ids_preserved", row.get("evidence_ids_unchanged", True)))
+        relation_ok = bool(row.get("relation_ids_preserved", row.get("relation_ids_unchanged", True)))
+        if meaning_added or not evidence_ok or not relation_ok or bool(row.get("gate_relaxed")):
+            policy_violation_count += 1
+    return {
+        "repair_trace_contract_version": "emlis.complete_repair_trace.v2",
+        "repair_trace_v2_count": len(rows),
+        "repair_passed_count": result_counts.get("passed", 0),
+        "repair_failed_count": result_counts.get("failed", 0),
+        "repair_aborted_count": result_counts.get("aborted", 0),
+        "repair_meaning_added_count": meaning_added_count,
+        "repair_policy_violation_count": policy_violation_count,
+        "repair_operation_counts": operation_counts,
+        "repair_reason_counts": reason_counts,
+        "repair_result_counts": result_counts,
+        "repair_abort_reasons": _dedupe(abort_reasons),
+        "repair_source_gates": _dedupe(source_gates),
+        "repair_trace_v2_ready": bool(rows),
+        "meaning_added": meaning_added_count > 0,
+        "raw_input_included": False,
+    }
 
 
 def build_complete_reply_diagnostics_contract_meta() -> dict[str, Any]:
@@ -348,16 +501,61 @@ def build_complete_scorecard_event(
     used_evidence = _dedupe(_candidate_attr(composer_candidate, "used_evidence_span_ids", []) or runtime_meta.get("used_evidence_span_ids") or [])
     used_phrase = _dedupe(runtime_meta.get("used_phrase_unit_ids") or [])
     used_relations = _dedupe(_candidate_attr(composer_candidate, "used_relation_ids", []) or runtime_meta.get("used_relation_ids") or runtime_meta.get("relation_types") or [])
-    repair_trace = _as_list(runtime_meta.get("repair_trace")) if isinstance(runtime_meta.get("repair_trace"), (list, tuple, set)) else []
-    self_repair = runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
+    repair_trace_source = runtime_meta.get("repair_trace_v2") or runtime_meta.get("repair_trace")
+    repair_trace = _as_list(repair_trace_source) if isinstance(repair_trace_source, (list, tuple, set)) else []
+    self_repair = runtime_meta.get("self_repair_report_v2") if isinstance(runtime_meta.get("self_repair_report_v2"), Mapping) else runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
     binding_count = _binding_count_from_meta(runtime_meta)
+    grounding_report = _final_grounding_report_from_meta(runtime_meta)
+    product_grounding = _product_quality_grounding_report_from_meta(grounding_report)
+    surface_variation = _surface_variation_report_from_meta(runtime_meta)
+    tone_guard_report = _tone_guard_report_from_meta(runtime_meta)
+    tone_guard_major_count = _safe_int(tone_guard_report.get("tone_guard_major_count"), 0)
+    tone_guard_reasons = _dedupe(tone_guard_report.get("tone_guard_reasons") or tone_guard_report.get("blocker_reasons"))
+    surface_same_ending_major_count = _safe_int(surface_variation.get("same_ending_major_count"), 0)
+    surface_signature_repeat_count = _safe_int(surface_variation.get("surface_signature_repeat_count"), 0)
+    surface_connector_repetition_count = _safe_int(surface_variation.get("connector_repetition_major_count") or surface_variation.get("surface_connector_repetition_count"), 0)
+    surface_template_flag_count = len(_as_list(surface_variation.get("flagged_template_sentence_ids")))
+    surface_raw_input_signature_count = len(_as_list(surface_variation.get("raw_input_sentence_ids")))
+    surface_variation_major_count = (
+        surface_same_ending_major_count
+        + surface_signature_repeat_count
+        + surface_connector_repetition_count
+        + surface_template_flag_count
+        + surface_raw_input_signature_count
+    )
+    binding_supported_sentence_count = _safe_int(
+        product_grounding.get("binding_supported_sentence_count")
+        or grounding_report.get("binding_supported_sentence_count"),
+        0,
+    )
+    expected_binding_count = _safe_int(
+        product_grounding.get("expected_binding_count")
+        or grounding_report.get("expected_binding_count")
+        or binding_count,
+        binding_count,
+    )
+    if binding_supported_sentence_count == 0 and grounding_report.get("binding_used") and expected_binding_count:
+        binding_supported_sentence_count = expected_binding_count
+    binding_pass_rate = (
+        round(binding_supported_sentence_count / max(1, expected_binding_count), 3)
+        if expected_binding_count
+        else (1.0 if binding_count and used_evidence and (used_phrase or used_relations) else 0.0 if candidate_seen else None)
+    )
     observation_status = _clean(_candidate_attr(display_decision, "observation_status", ""))
     display_passed = observation_status == "passed"
     gate_reasons = _dedupe(_candidate_attr(display_decision, "rejection_reasons", []))
     summary = dict(diagnostic_summary or {}) if isinstance(diagnostic_summary, Mapping) else {}
     repair_attempted = bool(repair_trace or self_repair.get("attempt_count") or self_repair.get("repair_attempted"))
     repair_success = _repair_succeeded(self_repair, repair_trace, display_passed)
-    binding_pass = bool(binding_count and used_evidence and (used_phrase or used_relations))
+    repair_trace_v2 = _repair_trace_v2_summary(repair_trace, self_repair)
+    if repair_trace_v2["repair_meaning_added_count"] or repair_trace_v2["repair_policy_violation_count"]:
+        repair_success = False
+    binding_pass = bool(
+        (expected_binding_count and binding_supported_sentence_count >= expected_binding_count)
+        or (binding_count and used_evidence and (used_phrase or used_relations))
+    )
+    template_major_count = _count_reason_markers(gate_reasons, _TEMPLATE_REASON_MARKERS) + surface_variation_major_count
+    safety_major_count = _count_reason_markers(gate_reasons, _SAFETY_REASON_MARKERS) + (1 if observation_status == "safety_blocked" else 0) + tone_guard_major_count
     return {
         "version": COMPLETE_SCORECARD_EVENT_VERSION,
         "target_step": "Step12_Scorecard_fixture_extension",
@@ -374,13 +572,54 @@ def build_complete_scorecard_event(
         "passed_display_count": 1 if display_passed and candidate_seen else 0,
         "candidate_generated_count": 1 if composer_status == "generated" and composer_source == "ai_generated" and candidate_seen else 0,
         "binding_pass": binding_pass,
-        "binding_pass_rate": 1.0 if binding_pass else 0.0 if candidate_seen else None,
+        "binding_pass_rate": binding_pass_rate,
+        "binding_supported_sentence_count": binding_supported_sentence_count,
+        "expected_binding_count": expected_binding_count,
+        "unsupported_sentence_ids": list(product_grounding.get("unsupported_sentence_ids") or grounding_report.get("unsupported_sentence_ids") or []),
+        "relation_not_expressed_sentence_ids": list(product_grounding.get("relation_not_expressed_sentence_ids") or grounding_report.get("relation_not_expressed_sentence_ids") or []),
+        "phrase_unit_missing_sentence_ids": list(product_grounding.get("phrase_unit_missing_sentence_ids") or grounding_report.get("phrase_unit_missing_sentence_ids") or []),
+        "weak_material_sentence_ids": list(product_grounding.get("weak_material_sentence_ids") or grounding_report.get("weak_material_sentence_ids") or []),
+        "binding_support_source": _clean(product_grounding.get("binding_support_source") or grounding_report.get("binding_support_source")),
         "repair_success": repair_success,
         "repair_success_rate": 1.0 if repair_success else 0.0 if repair_attempted else None,
-        "template_major_count": _count_reason_markers(gate_reasons, _TEMPLATE_REASON_MARKERS),
-        "safety_major_count": _count_reason_markers(gate_reasons, _SAFETY_REASON_MARKERS) + (1 if observation_status == "safety_blocked" else 0),
+        "repair_trace_contract_version": repair_trace_v2["repair_trace_contract_version"],
+        "repair_trace_v2_count": repair_trace_v2["repair_trace_v2_count"],
+        "repair_passed_count": repair_trace_v2["repair_passed_count"],
+        "repair_failed_count": repair_trace_v2["repair_failed_count"],
+        "repair_aborted_count": repair_trace_v2["repair_aborted_count"],
+        "repair_meaning_added_count": repair_trace_v2["repair_meaning_added_count"],
+        "repair_policy_violation_count": repair_trace_v2["repair_policy_violation_count"],
+        "repair_operation_counts": repair_trace_v2["repair_operation_counts"],
+        "repair_reason_counts": repair_trace_v2["repair_reason_counts"],
+        "repair_result_counts": repair_trace_v2["repair_result_counts"],
+        "repair_abort_reasons": repair_trace_v2["repair_abort_reasons"],
+        "repair_source_gates": repair_trace_v2["repair_source_gates"],
+        "repair_trace_v2_ready": repair_trace_v2["repair_trace_v2_ready"],
+        "repair_meaning_added": repair_trace_v2["meaning_added"],
+        "template_major_count": template_major_count,
+        "surface_same_ending_major_count": surface_same_ending_major_count,
+        "surface_signature_repeat_count": surface_signature_repeat_count,
+        "surface_connector_repetition_count": surface_connector_repetition_count,
+        "surface_template_flag_count": surface_template_flag_count,
+        "surface_raw_input_signature_count": surface_raw_input_signature_count,
+        "surface_variation_major_count": surface_variation_major_count,
+        "surface_variation_passed": bool(surface_variation.get("passed", True)) and surface_variation_major_count == 0,
+        "surface_variation_report": _safe_mapping(surface_variation),
+        "tone_engine_version": _clean(tone_guard_report.get("tone_engine_version")),
+        "product_quality_tone_engine_version": _clean(tone_guard_report.get("product_quality_tone_engine_version")),
+        "tone_policy_applied": bool(runtime_meta.get("tone_policy_applied") or runtime_meta.get("tone_policy")),
+        "tone_guard_report": _safe_mapping(tone_guard_report),
+        "tone_guard_major_count": tone_guard_major_count,
+        "tone_guard_passed": bool(tone_guard_report.get("passed", tone_guard_major_count == 0)) and tone_guard_major_count == 0,
+        "tone_guard_reasons": list(tone_guard_reasons),
+        "tone_over_empathy_count": _safe_int(tone_guard_report.get("over_empathy_count"), 0),
+        "tone_diagnostic_count": _safe_int(tone_guard_report.get("diagnostic_tone_count"), 0),
+        "tone_advice_count": _safe_int(tone_guard_report.get("advice_like_count"), 0),
+        "tone_generic_count": _safe_int(tone_guard_report.get("generic_comfort_count"), 0),
+        "tone_meaning_added": bool(runtime_meta.get("tone_meaning_added") or tone_guard_report.get("meaning_added") or tone_guard_report.get("meaning_added_by_tone_policy")),
+        "safety_major_count": safety_major_count,
         "read_feeling_score": None,
-        "top_rejection_reasons": gate_reasons[:5],
+        "top_rejection_reasons": list(dict.fromkeys([*gate_reasons[:5], *tone_guard_reasons[:3]])),
         "observation_status": observation_status,
         "display_passed": display_passed,
         "composer_source": composer_source,
@@ -445,8 +684,10 @@ def build_complete_reply_service_diagnostics(
         resolution_meta=resolution_meta,
         diagnostic_summary=diagnostic_summary,
     )
-    repair_trace = _as_list(runtime_meta.get("repair_trace")) if isinstance(runtime_meta.get("repair_trace"), (list, tuple, set)) else []
-    self_repair = runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
+    repair_trace_source = runtime_meta.get("repair_trace_v2") or runtime_meta.get("repair_trace")
+    repair_trace = _as_list(repair_trace_source) if isinstance(repair_trace_source, (list, tuple, set)) else []
+    self_repair = runtime_meta.get("self_repair_report_v2") if isinstance(runtime_meta.get("self_repair_report_v2"), Mapping) else runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
+    repair_trace_v2 = _repair_trace_v2_summary(repair_trace, self_repair)
     grounding_input = runtime_meta.get("grounding_input") if isinstance(runtime_meta.get("grounding_input"), Mapping) else {}
     if not grounding_input and isinstance(runtime_meta.get("complete_grounding_binding"), Mapping):
         grounding_input = runtime_meta.get("complete_grounding_binding")
@@ -495,6 +736,13 @@ def build_complete_reply_service_diagnostics(
         "complete_composer_initial_meta": runtime_meta,
         "complete_repair_trace": repair_trace,
         "repair_trace": repair_trace,
+        "repair_trace_v2_summary": repair_trace_v2,
+        "repair_trace_v2_count": repair_trace_v2["repair_trace_v2_count"],
+        "repair_meaning_added_count": repair_trace_v2["repair_meaning_added_count"],
+        "repair_policy_violation_count": repair_trace_v2["repair_policy_violation_count"],
+        "repair_aborted_count": repair_trace_v2["repair_aborted_count"],
+        "repair_abort_reasons": repair_trace_v2["repair_abort_reasons"],
+        "repair_source_gates": repair_trace_v2["repair_source_gates"],
         "repair_trace_connected": bool(repair_trace),
         "repair_trace_count": len(repair_trace),
         "self_repair": _safe_mapping(self_repair),

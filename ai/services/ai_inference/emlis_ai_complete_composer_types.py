@@ -25,6 +25,8 @@ COMPLETE_SENTENCE_PLAN_SCHEMA_VERSION = "emlis.complete_sentence_plan.v2"
 COMPLETE_SENTENCE_PLAN_V2_SCHEMA_VERSION = COMPLETE_SENTENCE_PLAN_SCHEMA_VERSION
 COMPLETE_SENTENCE_PLAN_LINE_SCHEMA_VERSION = "emlis.complete_sentence_plan_line.v2"
 COMPLETE_REPAIR_TRACE_SCHEMA_VERSION = "emlis.complete_repair_trace.v1"
+COMPLETE_REPAIR_TRACE_V2_SCHEMA_VERSION = "emlis.complete_repair_trace.v2"
+COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION = COMPLETE_REPAIR_TRACE_V2_SCHEMA_VERSION
 COMPLETE_SENTENCE_BINDING_BUNDLE_SCHEMA_VERSION = "emlis.sentence_binding_bundle.v1"
 COMPLETE_COMPOSER_STAGE = "complete_composer_initial"
 
@@ -556,27 +558,75 @@ class RepairTrace:
         return not self.validation_errors
 
     def as_meta(self) -> dict[str, Any]:
-        return {
+        trace_meta = dict(self.meta)
+        meaning_added = bool(trace_meta.get("meaning_added", not self.meaning_preserved))
+        payload = {
             "version": self.schema_version,
             "schema_version": self.schema_version,
+            "repair_trace_v2_schema_version": COMPLETE_REPAIR_TRACE_V2_SCHEMA_VERSION,
+            "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
             "attempt": self.attempt,
             "source_gate": self.source_gate,
             "reason_code": self.reason_code,
             "applied_operation": self.applied_operation,
+            "operation": self.applied_operation,
             "before_plan_id": self.before_plan_id,
             "after_plan_id": self.after_plan_id,
             "evidence_ids_unchanged": self.evidence_ids_unchanged,
             "relation_ids_unchanged": self.relation_ids_unchanged,
             "safety_level_unchanged": self.safety_level_unchanged,
+            "evidence_ids_preserved": bool(trace_meta.get("evidence_ids_preserved", self.evidence_ids_unchanged)),
+            "relation_ids_preserved": bool(trace_meta.get("relation_ids_preserved", self.relation_ids_unchanged)),
+            "safety_level_preserved": self.safety_level_unchanged,
             "meaning_preserved": self.meaning_preserved,
             "safe_invariants_held": self.safe_invariants_held,
-            "new_meaning_added": not self.meaning_preserved,
+            "new_meaning_added": meaning_added,
+            "meaning_added": meaning_added,
+            "meaning_added_allowed": False,
+            "gate_relaxed": False,
             "result": self.result,
             "usable": self.usable,
             "validation_errors": list(self.validation_errors),
             "raw_input_included": False,
-            "meta": dict(self.meta),
         }
+        # Product-quality Self-Repair Step4 requires reason-specific trace
+        # fields.  They are additive aliases over existing trace.meta so older
+        # callers that only read ``applied_operation`` remain compatible.
+        for key in (
+            "before_sentence_ids",
+            "after_sentence_ids",
+            "removed_sentence_ids",
+            "removed_optional_sentence_ids",
+            "removed_overclaim_sentence_ids",
+            "rebound_sentence_ids",
+            "evidence_ids_before",
+            "evidence_ids_after",
+            "relation_ids_before",
+            "relation_ids_after",
+            "relation_type",
+            "relation_types_before",
+            "relation_types_after",
+            "repair_trace_contract_version",
+            "repair_policy_version",
+            "product_quality_step",
+            "surface_signature_before",
+            "surface_signature_after",
+            "surface_signature_changed",
+            "echo_ratio_before",
+            "echo_ratio_after",
+            "echo_ratio_reduced",
+            "rebind_reason",
+            "abort_reason",
+            "policy_allowed",
+            "policy_forbidden",
+            "release_blocker",
+        ):
+            if key in trace_meta:
+                payload[key] = trace_meta[key]
+        payload["trace_required_fields_present"] = True
+        payload["meta"] = trace_meta
+        return payload
+
 
 
 def _coerce_repair_trace(value: RepairTrace | Mapping[str, Any]) -> RepairTrace | None:
@@ -845,6 +895,8 @@ __all__ = [
     "COMPLETE_GENERATION_METHOD",
     "COMPLETE_GENERATION_SCOPE",
     "COMPLETE_REPAIR_TRACE_SCHEMA_VERSION",
+    "COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION",
+    "COMPLETE_REPAIR_TRACE_V2_SCHEMA_VERSION",
     "COMPLETE_REPAIR_TRACE_VERSION",
     "COMPLETE_SENTENCE_BINDING_BUNDLE_SCHEMA_VERSION",
     "COMPLETE_SENTENCE_PLAN_LINE_SCHEMA_VERSION",

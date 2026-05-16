@@ -18,9 +18,15 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from emlis_ai_complete_composer_initial_meta import build_complete_composer_initial_term_meta
 from emlis_ai_complete_reply_diagnostics_service import COMPLETE_SCORECARD_EVENT_VERSION
+from emlis_ai_complete_tone_policy import (
+    COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+    COMPLETE_TONE_ENGINE_STAGE,
+    COMPLETE_TONE_ENGINE_VERSION,
+)
 
 COMPLETE_SCORECARD_SERVICE_VERSION = "emlis.complete_scorecard_service.v1"
 COMPLETE_SCORECARD_FIXTURE_SUITE_VERSION = "emlis.complete_scorecard_fixture_suite.v1"
+COMPLETE_PRODUCT_QUALITY_COVERAGE_SUITE_VERSION = "emlis.complete_product_quality_coverage_suite.v1"
 COMPLETE_SCORECARD_NORMALIZED_EVENT_VERSION = "emlis.complete_scorecard_normalized_event.v1"
 COMPLETE_SCORECARD_EVENT_NORMALIZED_VERSION = COMPLETE_SCORECARD_NORMALIZED_EVENT_VERSION
 COMPLETE_BLIND_QA_RUBRIC_VERSION = "emlis.complete_blind_qa_rubric.v1"
@@ -43,14 +49,14 @@ COMPLETE_COVERAGE_GROUP_ORDER: Sequence[str] = (
     "conflict",
     "recovery",
     "pressure",
+    "desire_fear",
     "relationship",
-    "history_cross_core",
 )
 COMPLETE_SCORECARD_COVERAGE_GROUPS = COMPLETE_COVERAGE_GROUP_ORDER
 COMPLETE_SCORECARD_REQUIRED_COVERAGE_GROUPS = COMPLETE_COVERAGE_GROUP_ORDER
 COMPLETE_FIXTURE_SUITE_VERSION = COMPLETE_SCORECARD_FIXTURE_SUITE_VERSION
 
-_TEMPLATE_REASON_MARKERS = ("template", "fixed", "raw_echo", "over_echo", "same_ending", "emotion_label_only")
+_TEMPLATE_REASON_MARKERS = ("template", "fixed", "raw_echo", "over_echo", "same_ending", "surface_signature_repeat", "surface_connector_repetition", "signature_repeat", "emotion_label_only")
 _SAFETY_REASON_MARKERS = ("safety", "diagnosis", "overclaim", "personality", "advice", "action_instruction", "medical", "unsafe")
 
 _COVERAGE_GROUP_ALIASES = {
@@ -60,12 +66,17 @@ _COVERAGE_GROUP_ALIASES = {
     "anger_hurt": "conflict",
     "limit_escape": "pressure",
     "value_wish": "short_daily",
+    "wish_fear": "desire_fear",
+    "desire_and_fear": "desire_fear",
+    "desire-fear": "desire_fear",
+    "approach_avoidance": "desire_fear",
     "scope_contract": "short_daily",
     "composer_material": "short_daily",
     "gate_quality": "short_daily",
     "safety_boundary": "pressure",
     "connection_rollout": "short_daily",
     "unclassified": "short_daily",
+    "history_cross_core": "long_meaning_arc",
 }
 
 _RELATION_TO_COVERAGE_GROUP = {
@@ -73,9 +84,54 @@ _RELATION_TO_COVERAGE_GROUP = {
     "pressure": "pressure",
     "contrast": "conflict",
     "coexistence": "conflict",
-    "approach_avoidance": "conflict",
+    "approach_avoidance": "desire_fear",
     "residue": "short_daily",
-    "history_cross_core": "history_cross_core",
+    "history_cross_core": "long_meaning_arc",
+}
+
+_COVERAGE_TAXONOMY: Mapping[str, Mapping[str, Any]] = {
+    "short_daily": {
+        "eligible_conditions": ("short_daily_emotion_or_residue", "no_overinterpretation"),
+        "ng_conditions": ("diagnosis", "generic_comfort_only"),
+        "expected_relations": ("residue", "coexistence"),
+        "primary_gate_reasons": ("overclaim", "generic_comfort"),
+    },
+    "long_meaning_arc": {
+        "eligible_conditions": ("multi_sentence_meaning_arc", "recurring_core_or_residue"),
+        "ng_conditions": ("full_summary_only", "focus_drift"),
+        "expected_relations": ("coexistence", "residue"),
+        "primary_gate_reasons": ("too_long", "focus_drift"),
+    },
+    "conflict": {
+        "eligible_conditions": ("two_or_more_inner_positions", "relation_traceable"),
+        "ng_conditions": ("one_side_declared_true_self",),
+        "expected_relations": ("contrast", "coexistence"),
+        "primary_gate_reasons": ("relation_not_expressed",),
+    },
+    "recovery": {
+        "eligible_conditions": ("recovery_signal", "prior_load_kept"),
+        "ng_conditions": ("over_comfort", "already_ok_claim"),
+        "expected_relations": ("recovery", "coexistence"),
+        "primary_gate_reasons": ("over_comfort", "missing_prior_load"),
+    },
+    "pressure": {
+        "eligible_conditions": ("internal_or_external_pressure", "no_causal_personality_claim"),
+        "ng_conditions": ("diagnostic_tone", "cause_overclaim"),
+        "expected_relations": ("pressure",),
+        "primary_gate_reasons": ("diagnostic_tone", "cause_overclaim"),
+    },
+    "desire_fear": {
+        "eligible_conditions": ("desire_and_fear_coexist", "approach_avoidance_relation"),
+        "ng_conditions": ("advice_like", "action_instruction"),
+        "expected_relations": ("approach_avoidance", "coexistence"),
+        "primary_gate_reasons": ("advice_like", "relation_missing"),
+    },
+    "relationship": {
+        "eligible_conditions": ("relationship_tension_on_user_side", "no_other_person_diagnosis"),
+        "ng_conditions": ("personality_claim", "blame_overclaim"),
+        "expected_relations": ("coexistence", "pressure"),
+        "primary_gate_reasons": ("personality_claim", "blame_overclaim"),
+    },
 }
 
 _TEXT_PAYLOAD_KEYS = {
@@ -118,6 +174,9 @@ class CompleteScorecardFixtureCase:
     scenario_key: str
     fixture_kind: str = "eligible_normal_input"
     target_relations: Iterable[str] = dataclass_field(default_factory=tuple)
+    eligible_conditions: Iterable[str] = dataclass_field(default_factory=tuple)
+    ng_conditions: Iterable[str] = dataclass_field(default_factory=tuple)
+    expected_primary_reasons: Iterable[str] = dataclass_field(default_factory=tuple)
     expected_min_sentences: int = 2
     expected_max_sentences: int = 4
     binding_required: bool = True
@@ -129,12 +188,17 @@ class CompleteScorecardFixtureCase:
     ))
 
     def as_meta(self) -> dict[str, Any]:
+        taxonomy = _COVERAGE_TAXONOMY.get(self.coverage_group, {})
         return {
+            "coverage_suite_version": COMPLETE_PRODUCT_QUALITY_COVERAGE_SUITE_VERSION,
             "fixture_id": self.fixture_id,
             "coverage_group": self.coverage_group,
             "scenario_key": self.scenario_key,
             "fixture_kind": self.fixture_kind,
             "target_relations": _dedupe(self.target_relations),
+            "eligible_conditions": _dedupe(self.eligible_conditions or taxonomy.get("eligible_conditions")),
+            "ng_conditions": _dedupe(self.ng_conditions or taxonomy.get("ng_conditions")),
+            "expected_primary_reasons": _dedupe(self.expected_primary_reasons or taxonomy.get("primary_gate_reasons")),
             "expected_min_sentences": int(self.expected_min_sentences),
             "expected_max_sentences": int(self.expected_max_sentences),
             "binding_required": bool(self.binding_required),
@@ -172,7 +236,7 @@ _DEFAULT_FIXTURE_CASES: Sequence[CompleteScorecardFixtureCase] = (
     CompleteScorecardFixtureCase(
         fixture_id="complete_fixture_conflict_01",
         coverage_group="conflict",
-        scenario_key="wish_and_fear_coexist",
+        scenario_key="two_positions_coexist_without_true_self_claim",
         target_relations=("contrast", "coexistence"),
         expected_min_sentences=2,
         expected_max_sentences=4,
@@ -194,18 +258,18 @@ _DEFAULT_FIXTURE_CASES: Sequence[CompleteScorecardFixtureCase] = (
         expected_max_sentences=4,
     ),
     CompleteScorecardFixtureCase(
-        fixture_id="complete_fixture_relationship_01",
-        coverage_group="relationship",
-        scenario_key="relationship_tension_kept_on_self_side",
-        target_relations=("coexistence", "pressure"),
+        fixture_id="complete_fixture_desire_fear_01",
+        coverage_group="desire_fear",
+        scenario_key="approach_avoidance_desire_and_fear",
+        target_relations=("approach_avoidance", "coexistence"),
         expected_min_sentences=2,
         expected_max_sentences=4,
     ),
     CompleteScorecardFixtureCase(
-        fixture_id="complete_fixture_history_cross_core_01",
-        coverage_group="history_cross_core",
-        scenario_key="history_anchor_evidence_only",
-        target_relations=("history_cross_core",),
+        fixture_id="complete_fixture_relationship_01",
+        coverage_group="relationship",
+        scenario_key="relationship_tension_kept_on_self_side",
+        target_relations=("coexistence", "pressure"),
         expected_min_sentences=2,
         expected_max_sentences=4,
     ),
@@ -329,8 +393,17 @@ def build_complete_scorecard_contract_meta() -> dict[str, Any]:
         "scorecard_service_added": True,
         "fixture_suite_added": True,
         "fixture_extension_added": True,
+        "product_quality_coverage_suite_version": COMPLETE_PRODUCT_QUALITY_COVERAGE_SUITE_VERSION,
         "blind_qa_rubric_added": True,
+        "tone_engine_added": True,
+        "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+        "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+        "tone_engine_step": COMPLETE_TONE_ENGINE_STAGE,
+        "tone_policy_scorecard_connected": True,
+        "tone_guard_metrics_added": True,
+        "tone_meaning_added_allowed": False,
         "coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+        "coverage_taxonomy": {key: {nested_key: _dedupe(nested_value) for nested_key, nested_value in value.items()} for key, value in _COVERAGE_TAXONOMY.items()},
         "coverage_groups_supported": list(COMPLETE_COVERAGE_GROUP_ORDER),
         "initial_display_target_range": [COMPLETE_INITIAL_DISPLAY_TARGET_MIN, COMPLETE_INITIAL_DISPLAY_TARGET_MAX],
         "product_gate_display_target": COMPLETE_PRODUCT_GATE_DISPLAY_TARGET,
@@ -391,10 +464,12 @@ def build_complete_initial_fixture_suite(
         "target_step": COMPLETE_SCORECARD_STEP,
         "step": COMPLETE_SCORECARD_STEP,
         "fixture_suite_added": True,
+        "product_quality_coverage_suite_version": COMPLETE_PRODUCT_QUALITY_COVERAGE_SUITE_VERSION,
         "ready": True,
         "scorecard_fixture_suite_ready": True,
         "fixture_kind": "complete_composer_initial_structural_fixture_suite",
         "coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+        "coverage_taxonomy": {key: {nested_key: _dedupe(nested_value) for nested_key, nested_value in value.items()} for key, value in _COVERAGE_TAXONOMY.items()},
         "fixture_count": len(cases),
         "fixture_counts_by_group": fixture_counts,
         "fixture_suite_ready": all(fixture_counts.get(group, 0) > 0 for group in COMPLETE_COVERAGE_GROUP_ORDER),
@@ -411,8 +486,12 @@ def build_complete_initial_fixture_suite(
                     "checks": ["input_specific_structure_reflected", "input_feels_read"],
                 },
                 "relation_kept": {
-                    "weight": 0.20,
+                    "weight": 0.18,
                     "checks": ["relation_type_present", "relation_surface_present"],
+                },
+                "tone_distance_stable": {
+                    "weight": 0.12,
+                    "checks": ["not_too_close", "not_cold", "no_over_empathy", "no_generic_comfort"],
                 },
                 "evidence_bound": {
                     "weight": 0.25,
@@ -496,18 +575,66 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
     observation_status = _clean(event.get("observation_status")) or ("passed" if passed_display_count else "unavailable")
     binding_pass = bool(event.get("binding_pass"))
     binding_count = _safe_int(event.get("binding_count"), 0)
+    # Step2 prefers sentence-level binding counts.  Older Step9/Step12 events
+    # only expose binding_pass/binding_count, so do not treat their binding_count
+    # as an expected sentence denominator unless sentence-level fields are present.
+    binding_supported_sentence_count = _safe_int(event.get("binding_supported_sentence_count"), 0)
+    expected_binding_count = _safe_int(event.get("expected_binding_count"), 0)
+    has_sentence_binding_counts = bool(expected_binding_count > 0 or binding_supported_sentence_count > 0)
+    if has_sentence_binding_counts and expected_binding_count <= 0:
+        expected_binding_count = binding_count
+    sentence_binding_pass_rate = _rate(binding_supported_sentence_count, expected_binding_count)
+    if expected_binding_count:
+        binding_pass = bool(binding_pass or sentence_binding_pass_rate >= COMPLETE_BINDING_TARGET_RATE)
     read_feeling_score = _safe_float(event.get("read_feeling_score"))
     reason_markers = _dedupe([
         *_dedupe(event.get("top_rejection_reasons") or event.get("gate_rejection_reasons")),
         event.get("primary_reason"),
         event.get("gate_primary_reason"),
     ])
+    surface_same_ending_major_count = _safe_int(event.get("surface_same_ending_major_count"), 0)
+    surface_signature_repeat_count = _safe_int(event.get("surface_signature_repeat_count"), 0)
+    surface_connector_repetition_count = _safe_int(event.get("surface_connector_repetition_count"), 0)
+    surface_variation_major_count = _safe_int(event.get("surface_variation_major_count"), 0)
+    if surface_variation_major_count <= 0:
+        surface_variation_major_count = surface_same_ending_major_count + surface_signature_repeat_count + surface_connector_repetition_count
+    tone_guard_major_count = _safe_int(event.get("tone_guard_major_count"), 0)
+    tone_over_empathy_count = _safe_int(event.get("tone_over_empathy_count"), _safe_int(event.get("over_empathy_count"), 0))
+    tone_diagnostic_count = _safe_int(event.get("tone_diagnostic_count"), _safe_int(event.get("diagnostic_tone_count"), 0))
+    tone_advice_count = _safe_int(event.get("tone_advice_count"), _safe_int(event.get("advice_like_count"), 0))
+    tone_generic_count = _safe_int(event.get("tone_generic_count"), _safe_int(event.get("generic_comfort_count"), 0))
+    tone_guard_report = event.get("tone_guard_report") if isinstance(event.get("tone_guard_report"), Mapping) else {}
+    if tone_guard_report:
+        tone_guard_major_count = max(tone_guard_major_count, _safe_int(tone_guard_report.get("tone_guard_major_count"), 0))
+        tone_over_empathy_count = max(tone_over_empathy_count, _safe_int(tone_guard_report.get("over_empathy_count"), 0))
+        tone_diagnostic_count = max(tone_diagnostic_count, _safe_int(tone_guard_report.get("diagnostic_tone_count"), 0))
+        tone_advice_count = max(tone_advice_count, _safe_int(tone_guard_report.get("advice_like_count"), 0))
+        tone_generic_count = max(tone_generic_count, _safe_int(tone_guard_report.get("generic_comfort_count"), 0))
+    tone_guard_reasons = _dedupe([
+        *_dedupe(event.get("tone_guard_reasons")),
+        *_dedupe(tone_guard_report.get("tone_guard_reasons") if isinstance(tone_guard_report, Mapping) else None),
+        *_dedupe(tone_guard_report.get("blocker_reasons") if isinstance(tone_guard_report, Mapping) else None),
+    ])
+    tone_meaning_added = bool(event.get("tone_meaning_added") or event.get("meaning_added_by_tone_policy") or (tone_guard_report.get("meaning_added_by_tone_policy") if isinstance(tone_guard_report, Mapping) else False))
+    reason_markers = _dedupe([*reason_markers, *tone_guard_reasons])
     template_major_count = _safe_int(event.get("template_major_count"), 0) + _count_reason_markers(reason_markers, _TEMPLATE_REASON_MARKERS)
+    if template_major_count <= 0 and surface_variation_major_count > 0:
+        template_major_count = surface_variation_major_count
     safety_major_count = _safe_int(event.get("safety_major_count"), 0) + _count_reason_markers(reason_markers, _SAFETY_REASON_MARKERS)
+    if safety_major_count < tone_guard_major_count:
+        safety_major_count = tone_guard_major_count
     if observation_status == "safety_blocked" and safety_major_count <= 0:
         safety_major_count = 1
-    repair_attempted = bool(event.get("repair_attempted")) or _safe_int(event.get("repair_trace_count"), 0) > 0
-    repair_success = bool(event.get("repair_success"))
+    repair_trace_v2_count = _safe_int(event.get("repair_trace_v2_count"), _safe_int(event.get("repair_trace_count"), 0))
+    repair_passed_count = _safe_int(event.get("repair_passed_count"), 0)
+    repair_failed_count = _safe_int(event.get("repair_failed_count"), 0)
+    repair_aborted_count = _safe_int(event.get("repair_aborted_count"), 0)
+    repair_meaning_added_count = _safe_int(event.get("repair_meaning_added_count"), 0)
+    repair_policy_violation_count = _safe_int(event.get("repair_policy_violation_count"), 0)
+    repair_attempted = bool(event.get("repair_attempted")) or repair_trace_v2_count > 0 or _safe_int(event.get("repair_trace_count"), 0) > 0
+    repair_success = bool(event.get("repair_success")) and repair_meaning_added_count == 0 and repair_policy_violation_count == 0
+    repair_operation_counts = event.get("repair_operation_counts") if isinstance(event.get("repair_operation_counts"), Mapping) else {}
+    repair_reason_counts = event.get("repair_reason_counts") if isinstance(event.get("repair_reason_counts"), Mapping) else {}
     normalized = {
         "version": COMPLETE_SCORECARD_NORMALIZED_EVENT_VERSION,
         "source_event_version": _clean(event.get("version")) or COMPLETE_SCORECARD_EVENT_VERSION,
@@ -526,6 +653,14 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
         "binding_pass": binding_pass,
         "binding_pass_count": 1 if binding_pass else 0,
         "binding_count": binding_count,
+        "binding_supported_sentence_count": binding_supported_sentence_count,
+        "expected_binding_count": expected_binding_count,
+        "sentence_binding_pass_rate": sentence_binding_pass_rate,
+        "unsupported_sentence_ids": list(_dedupe(event.get("unsupported_sentence_ids"))),
+        "relation_not_expressed_sentence_ids": list(_dedupe(event.get("relation_not_expressed_sentence_ids"))),
+        "phrase_unit_missing_sentence_ids": list(_dedupe(event.get("phrase_unit_missing_sentence_ids"))),
+        "weak_material_sentence_ids": list(_dedupe(event.get("weak_material_sentence_ids"))),
+        "binding_support_source": _clean(event.get("binding_support_source")),
         "binding_present": bool(event.get("binding_present") or binding_count > 0),
         "used_evidence_span_count": _safe_int(event.get("used_evidence_span_count"), 0),
         "used_phrase_unit_count": _safe_int(event.get("used_phrase_unit_count"), 0),
@@ -535,7 +670,34 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
         "repair_attempt_count": 1 if repair_attempted else 0,
         "repair_success": repair_success,
         "repair_success_count": 1 if repair_success else 0,
+        "repair_trace_contract_version": _clean(event.get("repair_trace_contract_version")),
+        "repair_trace_v2_count": repair_trace_v2_count,
+        "repair_passed_count": repair_passed_count,
+        "repair_failed_count": repair_failed_count,
+        "repair_aborted_count": repair_aborted_count,
+        "repair_meaning_added_count": repair_meaning_added_count,
+        "repair_policy_violation_count": repair_policy_violation_count,
+        "repair_operation_counts": {str(key): _safe_int(value, 0) for key, value in repair_operation_counts.items()},
+        "repair_reason_counts": {str(key): _safe_int(value, 0) for key, value in repair_reason_counts.items()},
         "template_major_count": template_major_count,
+        "surface_same_ending_major_count": surface_same_ending_major_count,
+        "surface_signature_repeat_count": surface_signature_repeat_count,
+        "surface_connector_repetition_count": surface_connector_repetition_count,
+        "surface_variation_major_count": surface_variation_major_count,
+        "surface_variation_passed": bool(event.get("surface_variation_passed", surface_variation_major_count == 0)),
+        "tone_engine_version": _clean(event.get("tone_engine_version")) or COMPLETE_TONE_ENGINE_VERSION,
+        "product_quality_tone_engine_version": _clean(event.get("product_quality_tone_engine_version")) or COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+        "tone_policy_applied": bool(event.get("tone_policy_applied", True)),
+        "tone_guard_report": _safe_json(tone_guard_report) if tone_guard_report else {},
+        "tone_guard_major_count": tone_guard_major_count,
+        "tone_guard_passed": bool(event.get("tone_guard_passed", tone_guard_major_count == 0)) and tone_guard_major_count == 0,
+        "tone_guard_reasons": tone_guard_reasons,
+        "tone_over_empathy_count": tone_over_empathy_count,
+        "tone_diagnostic_count": tone_diagnostic_count,
+        "tone_advice_count": tone_advice_count,
+        "tone_generic_count": tone_generic_count,
+        "tone_meaning_added": tone_meaning_added,
+        "tone_meaning_added_count": 1 if tone_meaning_added else 0,
         "safety_major_count": safety_major_count,
         "read_feeling_score": read_feeling_score,
         "read_feeling_evaluated_count": 1 if read_feeling_score is not None else 0,
@@ -577,13 +739,33 @@ def _empty_bucket(group: str, fixture_suite: Mapping[str, Any]) -> dict[str, Any
         "safety_blocked_count": 0,
         "binding_pass_count": 0,
         "binding_count_total": 0,
+        "binding_supported_sentence_count_total": 0,
+        "expected_binding_count_total": 0,
         "repair_attempt_count": 0,
         "repair_success_count": 0,
+        "repair_trace_v2_count": 0,
+        "repair_passed_count": 0,
+        "repair_failed_count": 0,
+        "repair_aborted_count": 0,
+        "repair_meaning_added_count": 0,
+        "repair_policy_violation_count": 0,
         "template_major_count": 0,
+        "surface_same_ending_major_count": 0,
+        "surface_signature_repeat_count": 0,
+        "surface_connector_repetition_count": 0,
+        "surface_variation_major_count": 0,
+        "tone_guard_major_count": 0,
+        "tone_over_empathy_count": 0,
+        "tone_diagnostic_count": 0,
+        "tone_advice_count": 0,
+        "tone_generic_count": 0,
+        "tone_meaning_added_count": 0,
         "safety_major_count": 0,
         "read_feeling_evaluated_count": 0,
         "read_feeling_pass_count": 0,
         "relation_type_counts": {},
+        "repair_operation_counts": {},
+        "repair_reason_counts": {},
         "reason_counts": {},
         "display_reach_rate": 0.0,
         "candidate_generation_rate": 0.0,
@@ -616,17 +798,46 @@ def _merge_event(bucket: dict[str, Any], event: Mapping[str, Any]) -> None:
         "binding_pass_count",
         "repair_attempt_count",
         "repair_success_count",
+        "repair_trace_v2_count",
+        "repair_passed_count",
+        "repair_failed_count",
+        "repair_aborted_count",
+        "repair_meaning_added_count",
+        "repair_policy_violation_count",
         "template_major_count",
+        "surface_same_ending_major_count",
+        "surface_signature_repeat_count",
+        "surface_connector_repetition_count",
+        "surface_variation_major_count",
+        "tone_guard_major_count",
+        "tone_over_empathy_count",
+        "tone_diagnostic_count",
+        "tone_advice_count",
+        "tone_generic_count",
+        "tone_meaning_added_count",
         "safety_major_count",
         "read_feeling_evaluated_count",
         "read_feeling_pass_count",
     ):
         bucket[key] = _safe_int(bucket.get(key), 0) + _safe_int(event.get(key), 0)
     bucket["binding_count_total"] = _safe_int(bucket.get("binding_count_total"), 0) + _safe_int(event.get("binding_count"), 0)
+    bucket["binding_supported_sentence_count_total"] = _safe_int(bucket.get("binding_supported_sentence_count_total"), 0) + _safe_int(event.get("binding_supported_sentence_count"), 0)
+    bucket["expected_binding_count_total"] = _safe_int(bucket.get("expected_binding_count_total"), 0) + _safe_int(event.get("expected_binding_count"), 0)
     for relation in _dedupe(event.get("relation_types")):
         _inc_count_map(bucket, "relation_type_counts", relation)
+    repair_operation_counts = event.get("repair_operation_counts")
+    if isinstance(repair_operation_counts, Mapping):
+        for operation, count in repair_operation_counts.items():
+            _inc_count_map(bucket, "repair_operation_counts", operation, _safe_int(count, 0))
+    repair_reason_counts = event.get("repair_reason_counts")
+    if isinstance(repair_reason_counts, Mapping):
+        for reason, count in repair_reason_counts.items():
+            _inc_count_map(bucket, "repair_reason_counts", reason, _safe_int(count, 0))
+            _inc_count_map(bucket, "reason_counts", reason, _safe_int(count, 0))
     for reason in _dedupe(event.get("top_rejection_reasons")):
         _inc_count_map(bucket, "reason_counts", reason)
+    for reason in _dedupe(event.get("tone_guard_reasons")):
+        _inc_count_map(bucket, "reason_counts", f"tone_guard:{reason}")
     primary_reason = _clean(event.get("gate_primary_reason"))
     if primary_reason:
         _inc_count_map(bucket, "reason_counts", primary_reason)
@@ -635,7 +846,11 @@ def _merge_event(bucket: dict[str, Any], event: Mapping[str, Any]) -> None:
     read_eval = _safe_int(bucket.get("read_feeling_evaluated_count"), 0)
     bucket["display_reach_rate"] = _rate(_safe_int(bucket.get("passed_display_count"), 0), eligible)
     bucket["candidate_generation_rate"] = _rate(_safe_int(bucket.get("candidate_generated_count"), 0), eligible)
-    bucket["binding_pass_rate"] = _rate(_safe_int(bucket.get("binding_pass_count"), 0), eligible)
+    expected_bindings = _safe_int(bucket.get("expected_binding_count_total"), 0)
+    if expected_bindings:
+        bucket["binding_pass_rate"] = _rate(_safe_int(bucket.get("binding_supported_sentence_count_total"), 0), expected_bindings)
+    else:
+        bucket["binding_pass_rate"] = _rate(_safe_int(bucket.get("binding_pass_count"), 0), eligible)
     bucket["repair_success_rate"] = _rate(_safe_int(bucket.get("repair_success_count"), 0), repair_attempts)
     bucket["read_feeling_pass_rate"] = _rate(_safe_int(bucket.get("read_feeling_pass_count"), 0), read_eval)
     bucket["non_template_major_clear"] = _safe_int(bucket.get("template_major_count"), 0) == 0
@@ -663,9 +878,17 @@ def aggregate_complete_scorecard_events(
     release_blockers: list[str] = []
     if _safe_int(totals.get("safety_major_count"), 0) > 0:
         release_blockers.append("safety_major_detected")
+    if _safe_int(totals.get("tone_guard_major_count"), 0) > 0:
+        release_blockers.append("tone_guard_major_detected")
+    if _safe_int(totals.get("tone_meaning_added_count"), 0) > 0:
+        release_blockers.append("tone_meaning_added_detected")
     if _safe_int(totals.get("template_major_count"), 0) > 0:
         release_blockers.append("template_major_detected")
-    if _safe_int(totals.get("eligible_count"), 0) and float(totals.get("binding_pass_rate") or 0.0) < COMPLETE_BINDING_TARGET_RATE:
+    if _safe_int(totals.get("repair_meaning_added_count"), 0) > 0:
+        release_blockers.append("repair_meaning_added_detected")
+    if _safe_int(totals.get("repair_policy_violation_count"), 0) > 0:
+        release_blockers.append("repair_policy_violation_detected")
+    if _safe_int(totals.get("eligible_count", 0), 0) and float(totals.get("binding_pass_rate") or 0.0) < COMPLETE_BINDING_TARGET_RATE:
         release_blockers.append("binding_target_not_met")
     if missing_fixture_groups:
         release_blockers.append("fixture_coverage_incomplete")
@@ -677,7 +900,11 @@ def aggregate_complete_scorecard_events(
         or _safe_int(row.get("unavailable_count"), 0)
         or _safe_int(row.get("safety_blocked_count"), 0)
         or _safe_int(row.get("safety_major_count"), 0)
+        or _safe_int(row.get("tone_guard_major_count"), 0)
+        or _safe_int(row.get("tone_meaning_added_count"), 0)
         or _safe_int(row.get("template_major_count"), 0)
+        or _safe_int(row.get("repair_meaning_added_count"), 0)
+        or _safe_int(row.get("repair_policy_violation_count"), 0)
         or (_safe_int(row.get("eligible_count"), 0) and float(row.get("binding_pass_rate") or 0.0) < COMPLETE_BINDING_TARGET_RATE)
     ]
     return {
@@ -706,6 +933,12 @@ def aggregate_complete_scorecard_events(
         "read_feeling_pass_rate": float(totals.get("read_feeling_pass_rate") or 0.0),
         "safety_major_count": _safe_int(totals.get("safety_major_count"), 0),
         "template_major_count": _safe_int(totals.get("template_major_count"), 0),
+        "tone_guard_major_count": _safe_int(totals.get("tone_guard_major_count"), 0),
+        "tone_over_empathy_count": _safe_int(totals.get("tone_over_empathy_count"), 0),
+        "tone_diagnostic_count": _safe_int(totals.get("tone_diagnostic_count"), 0),
+        "tone_advice_count": _safe_int(totals.get("tone_advice_count"), 0),
+        "tone_generic_count": _safe_int(totals.get("tone_generic_count"), 0),
+        "tone_meaning_added_count": _safe_int(totals.get("tone_meaning_added_count"), 0),
         "read_feeling_evaluated_count": _safe_int(totals.get("read_feeling_evaluated_count"), 0),
         "groups_needing_attention": groups_needing_attention,
         "non_template_major_clear": bool(totals.get("non_template_major_clear")),
@@ -783,6 +1016,9 @@ def build_complete_scorecard_harness(
         "read_feeling_pass_rate": float(aggregate.get("read_feeling_pass_rate") or 0.0),
         "non_template_major_clear": bool(aggregate.get("non_template_major_clear")),
         "safety_major_clear": bool(aggregate.get("safety_major_clear")),
+        "tone_guard_major_count": _safe_int(aggregate.get("tone_guard_major_count"), 0),
+        "tone_guard_clear": _safe_int(aggregate.get("tone_guard_major_count"), 0) == 0,
+        "tone_meaning_added_count": _safe_int(aggregate.get("tone_meaning_added_count"), 0),
         "missing_fixture_groups": list(aggregate.get("missing_fixture_groups") or []),
         "fixture_coverage_rate": float(aggregate.get("fixture_coverage_rate") or 0.0),
         "release_blockers": list(aggregate.get("release_blockers") or []),
@@ -855,6 +1091,7 @@ __all__ = [
     "COMPLETE_FIXTURE_SUITE_VERSION",
     "COMPLETE_SCORECARD_AGGREGATE_VERSION",
     "COMPLETE_SCORECARD_FIXTURE_SUITE_VERSION",
+    "COMPLETE_PRODUCT_QUALITY_COVERAGE_SUITE_VERSION",
     "COMPLETE_SCORECARD_HARNESS_VERSION",
     "COMPLETE_SCORECARD_IMPLEMENTATION_UNIT",
     "COMPLETE_SCORECARD_STAGE",

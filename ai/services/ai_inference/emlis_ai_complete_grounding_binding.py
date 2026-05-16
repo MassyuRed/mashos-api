@@ -16,7 +16,12 @@ from emlis_ai_complete_composer_initial_meta import build_complete_composer_init
 from emlis_ai_complete_composer_types import COMPLETE_COMPOSER_STAGE, CompleteSentencePlanV2
 from emlis_ai_complete_sentence_planner import COMPLETE_SENTENCE_PLAN_STAGE, build_complete_sentence_binding_bundle_meta
 from emlis_ai_complete_surface_realizer import COMPLETE_SURFACE_REALIZER_STAGE, CompleteSurfaceRealizationV2
-from emlis_ai_grounding_judge import _COMPLETE_BINDING_AWARE_GROUNDING_VERSION, judge_grounding
+from emlis_ai_grounding_judge import (
+    _COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
+    _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+    _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+    judge_grounding,
+)
 from emlis_ai_types import EvidenceSpan, GroundingReport, ObservationGraph
 
 COMPLETE_BINDING_AWARE_GROUNDING_VERSION = _COMPLETE_BINDING_AWARE_GROUNDING_VERSION
@@ -25,6 +30,9 @@ COMPLETE_BINDING_AWARE_GROUNDING_STAGE = "Step8_Binding_aware_Grounding"
 COMPLETE_BINDING_AWARE_GROUNDING_STEP = COMPLETE_BINDING_AWARE_GROUNDING_STAGE
 COMPLETE_BINDING_AWARE_GROUNDING_TARGET_STEP = COMPLETE_BINDING_AWARE_GROUNDING_STAGE
 COMPLETE_BINDING_AWARE_GROUNDING_IMPLEMENTATION_UNIT = "Commit 8"
+COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION = _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION
+COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP = _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP
+GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 
 RAW_INPUT_META_KEYS = {
     "raw_text",
@@ -122,6 +130,21 @@ def _surface_rows_from_input(grounding_input: Mapping[str, Any]) -> list[dict[st
             continue
         surface_text = _clean(row.get("surface_text") or row.get("text") or row.get("sentence"))
         sentence_id = _clean(row.get("sentence_id") or row.get("id") or f"complete-s{index}")
+        source_sentence_plan_line = _json_safe_mapping(row.get("source_sentence_plan_line") or {})
+        role_values = _dedupe(
+            row.get("phrase_unit_roles")
+            or row.get("role_phrase_keys")
+            or row.get("must_include_roles")
+            or source_sentence_plan_line.get("must_include_roles")
+            or source_sentence_plan_line.get("phrase_unit_roles")
+            or row.get("role_phrase_key")
+        )
+        polarity_values = _dedupe(
+            row.get("phrase_unit_polarities")
+            or row.get("polarities")
+            or row.get("polarity")
+            or source_sentence_plan_line.get("phrase_unit_polarities")
+        )
         rows.append(
             {
                 "version": row.get("version") or row.get("schema_version") or "emlis.complete_surface_line.v2",
@@ -132,6 +155,12 @@ def _surface_rows_from_input(grounding_input: Mapping[str, Any]) -> list[dict[st
                 "relation_type": _clean(row.get("relation_type") or row.get("relation") or row.get("declared_relation_type")),
                 "used_evidence_span_ids": list(_dedupe(row.get("used_evidence_span_ids") or row.get("evidence_span_ids") or row.get("declared_evidence_span_ids"))),
                 "used_phrase_unit_ids": list(_dedupe(row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or row.get("declared_phrase_unit_ids"))),
+                "role_phrase_key": _clean(row.get("role_phrase_key")),
+                "role_phrase_keys": list(_dedupe(row.get("role_phrase_keys") or role_values)),
+                "phrase_unit_roles": list(role_values),
+                "phrase_unit_polarities": list(polarity_values),
+                "source_sentence_plan_line": source_sentence_plan_line,
+                "relation_expression_required": bool(row.get("relation_expression_required")) or _clean(row.get("line_role") or row.get("role")) == "relation",
                 "surface_signature": _json_safe_mapping(row.get("surface_signature") or {}),
                 "source_step": row.get("source_step") or COMPLETE_SURFACE_REALIZER_STAGE,
                 "target_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
@@ -157,6 +186,8 @@ def _plan_rows_from_sentence_plan(sentence_plan: Any) -> list[dict[str, Any]]:
     for item in list(bundle.get("bindings") or bundle.get("sentence_bindings") or bundle.get("items") or ()):  # type: ignore[union-attr]
         row = _as_mapping(item)
         if row:
+            phrase_roles = _dedupe(row.get("must_include_roles") or row.get("phrase_unit_roles") or row.get("role_phrase_keys"))
+            phrase_polarities = _dedupe(row.get("phrase_unit_polarities") or row.get("polarities") or row.get("polarity"))
             rows.append(
                 {
                     "sentence_id": _clean(row.get("sentence_id") or row.get("id")),
@@ -164,6 +195,12 @@ def _plan_rows_from_sentence_plan(sentence_plan: Any) -> list[dict[str, Any]]:
                     "relation_type": _clean(row.get("relation_type") or row.get("relation") or row.get("declared_relation_type")),
                     "used_evidence_span_ids": list(_dedupe(row.get("used_evidence_span_ids") or row.get("evidence_span_ids") or row.get("declared_evidence_span_ids"))),
                     "used_phrase_unit_ids": list(_dedupe(row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or row.get("declared_phrase_unit_ids"))),
+                    "role_phrase_key": _clean(row.get("role_phrase_key")),
+                    "role_phrase_keys": list(_dedupe(row.get("role_phrase_keys") or phrase_roles)),
+                    "phrase_unit_roles": list(phrase_roles),
+                    "phrase_unit_polarities": list(phrase_polarities),
+                    "source_sentence_plan_line": _json_safe_mapping(row),
+                    "relation_expression_required": _clean(row.get("line_role") or row.get("role")) == "relation",
                     "source_step": COMPLETE_SENTENCE_PLAN_STAGE,
                     "target_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
                     "raw_input_included": False,
@@ -214,6 +251,11 @@ def build_complete_grounding_binding_bundle(
     return {
         "version": COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
         "service_version": COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
+        "product_quality_grounding_version": COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "product_quality_grounding_step": COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+        "grounding_report_contract_version": COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
+        "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
         "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
         "target_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
         "step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
@@ -223,6 +265,8 @@ def build_complete_grounding_binding_bundle(
         "target_composer_family_term": term_meta["target_composer_family_term"],
         "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
         "complete_binding_aware_grounding": True,
+        "product_quality_grounding": True,
+        "grounding_relation_binding_v2": True,
         "step8_binding_aware_grounding": True,
         "complete_binding_required": True,
         "binding_required": True,
@@ -230,6 +274,10 @@ def build_complete_grounding_binding_bundle(
         "require_evidence_span_ids": True,
         "require_phrase_unit_ids": True,
         "require_relation_type": True,
+        "relation_expression_checker": True,
+        "relation_expression_checked": True,
+        "phrase_unit_quality_checked": True,
+        "binding_support_source_required": True,
         "binding_count": len(rows),
         "sentence_binding_count": len(rows),
         "expected_binding_count": len(rows),
@@ -302,6 +350,11 @@ def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
     return {
         "version": COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
         "service_version": COMPLETE_BINDING_AWARE_GROUNDING_VERSION,
+        "product_quality_grounding_version": COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "product_quality_grounding_step": COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+        "grounding_report_contract_version": COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
+        "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
+        "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
         "target_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
         "step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
         "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
@@ -316,6 +369,14 @@ def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
         "used_evidence_span_ids_required": True,
         "used_phrase_unit_ids_required": True,
         "relation_type_required": True,
+        "relation_expression_checker": True,
+        "relation_expression_checked": True,
+        "binding_support_source_required": True,
+        "unsupported_sentence_ids_reported": True,
+        "relation_not_expressed_sentence_ids_reported": True,
+        "phrase_unit_quality_checked": True,
+        "weak_material_reason_enabled": True,
+        "binding_pass_rate_measurable": True,
         "unsupported_sentence_release_blocker": True,
         "relation_not_expressed_repair_target": True,
         "over_echo_repair_target": True,
@@ -346,6 +407,9 @@ __all__ = [
     "COMPLETE_BINDING_AWARE_GROUNDING_STEP",
     "COMPLETE_BINDING_AWARE_GROUNDING_TARGET_STEP",
     "COMPLETE_BINDING_AWARE_GROUNDING_IMPLEMENTATION_UNIT",
+    "COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION",
+    "COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP",
+    "GATE_BINDING_CONTRACT_VERSION",
     "build_complete_grounding_binding_bundle",
     "build_complete_grounding_binding_meta",
     "build_complete_binding_aware_grounding_meta",

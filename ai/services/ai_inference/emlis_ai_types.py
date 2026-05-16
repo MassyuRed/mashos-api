@@ -698,6 +698,9 @@ class DiagnosticGateResult:
             "sentence_count",
             "expected_binding_count",
             "binding_version",
+            "binding_contract_version",
+            "gate_binding_contract_version",
+            "binding_support_source",
             "step7_gate_binding_reflection",
         ):
             if key in diagnostics:
@@ -1250,6 +1253,22 @@ class GroundingReport:
     binding_rejection_reasons: List[str] = field(default_factory=list)
     declared_relation_types: List[str] = field(default_factory=list)
     declared_phrase_unit_ids: List[str] = field(default_factory=list)
+    # Product-quality connection Step 2: additive GroundingReportV2 fields.
+    # These diagnostics do not alter the public response shape or the RN
+    # passed-only display contract.
+    grounding_report_contract_version: str = ""
+    gate_binding_contract_version: str = ""
+    binding_contract_version: str = ""
+    binding_support_source: str = ""
+    binding_pass_rate: float = 0.0
+    unsupported_sentence_ids: List[str] = field(default_factory=list)
+    relation_not_expressed_sentence_ids: List[str] = field(default_factory=list)
+    phrase_unit_missing_sentence_ids: List[str] = field(default_factory=list)
+    weak_material_sentence_ids: List[str] = field(default_factory=list)
+    raw_echo_sentence_ids: List[str] = field(default_factory=list)
+    overclaim_sentence_ids: List[str] = field(default_factory=list)
+    release_blocker: bool = False
+    grounding_report_v2: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1267,6 +1286,14 @@ class TemplateEchoReport:
     limited_surface_repetition_score: float = 0.0
     abstract_repetition_score: float = 0.0
     abstract_phrase_repetition_score: float = 0.0
+    # Product-quality connection Step 3: surface signature / ending diagnostics.
+    surface_signature_row_count: int = 0
+    surface_signature_repeat_count: int = 0
+    same_ending_major_count: int = 0
+    surface_connector_repetition_count: int = 0
+    repeated_surface_signature_keys: List[str] = field(default_factory=list)
+    repeated_surface_ending_keys: List[str] = field(default_factory=list)
+    repeated_surface_connector_keys: List[str] = field(default_factory=list)
     # Compatibility aliases retained for trace readers that use Phase 5 names.
     raw_quote_char_ratio: float = 0.0
     matched_raw_quote_fragments: List[str] = field(default_factory=list)

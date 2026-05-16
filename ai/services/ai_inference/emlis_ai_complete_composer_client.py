@@ -35,10 +35,17 @@ from emlis_ai_complete_surface_realizer import (
     build_complete_surface_realization_v2,
     build_complete_surface_signature,
 )
+from emlis_ai_complete_tone_policy import (
+    COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+    COMPLETE_TONE_ENGINE_VERSION,
+    build_complete_tone_guard_report,
+    build_complete_tone_policy,
+    build_complete_tone_policy_contract_meta,
+)
 from emlis_ai_complete_grounding_service import (
     build_complete_grounding_input,
     build_complete_grounding_report_meta,
-    judge_complete_binding_aware_grounding,
+    judge_complete_product_quality_grounding,
 )
 from emlis_ai_complete_self_repair_service import run_complete_self_repair_loop
 from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph, RelationEdge
@@ -638,9 +645,16 @@ class CocolonCompleteComposerClient:
                 extra_meta={"sentence_plan": sentence_plan.as_meta()},
             )
 
+        tone_policy = build_complete_tone_policy(
+            sentence_plan=sentence_plan,
+            coverage_group=coverage_group,
+            relation_types=sentence_plan.relation_types,
+            meta={"source": "complete_composer_client"},
+        )
         surface_realization = build_complete_surface_realization_v2(
             sentence_plan=sentence_plan,
-            meta={"source": "complete_composer_client"},
+            tone_policy=tone_policy,
+            meta={"source": "complete_composer_client", "tone_policy": tone_policy.as_meta()},
         )
         if not surface_realization.ready:
             return _unavailable_response(
@@ -650,7 +664,7 @@ class CocolonCompleteComposerClient:
             )
 
         grounding_graph = _grounding_observation_graph(relation_graph, evidence_span_objects)
-        initial_grounding_report = judge_complete_binding_aware_grounding(
+        initial_grounding_report = judge_complete_product_quality_grounding(
             graph=grounding_graph,
             evidence_spans=evidence_span_objects,
             comment_text=surface_realization.comment_text,
@@ -686,7 +700,7 @@ class CocolonCompleteComposerClient:
                 )
 
         comment_text = final_realization.comment_text
-        final_grounding_report = judge_complete_binding_aware_grounding(
+        final_grounding_report = judge_complete_product_quality_grounding(
             graph=grounding_graph,
             evidence_spans=evidence_span_objects,
             comment_text=comment_text,
@@ -739,6 +753,11 @@ class CocolonCompleteComposerClient:
             )
 
         surface_meta = final_realization.as_meta(include_realized_text=False)
+        tone_guard_report = build_complete_tone_guard_report(
+            surface_realization=final_realization,
+            tone_policy=tone_policy,
+            comment_text=final_realization.realized_text,
+        )
         repair_meta = repair_result.as_meta(include_realized_text=False) if repair_result is not None else {}
         grounding_meta = dict(grounding_input)
         composer_meta = {
@@ -759,6 +778,15 @@ class CocolonCompleteComposerClient:
             "relation_graph": relation_graph.as_meta(),
             "sentence_plan": sentence_plan.as_meta(),
             "sentence_binding_bundle": sentence_binding_bundle,
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+            "tone_policy": tone_policy.as_meta(),
+            "tone_policy_contract": build_complete_tone_policy_contract_meta(),
+            "tone_guard_report": tone_guard_report,
+            "tone_guard_major_count": int(tone_guard_report.get("tone_guard_major_count") or 0),
+            "tone_guard_passed": bool(tone_guard_report.get("passed", True)),
+            "tone_policy_applied": True,
+            "tone_meaning_added": False,
             "surface_realizer": surface_meta,
             "surface_signature": build_complete_surface_signature(final_realization),
             "initial_grounding_report": build_complete_grounding_report_meta(initial_grounding_report),
@@ -769,7 +797,10 @@ class CocolonCompleteComposerClient:
             "binding_meta": grounding_meta,
             "sentence_bindings": list(grounding_meta.get("sentence_bindings") or []),
             "self_repair": repair_meta,
+            "self_repair_report_v2": repair_meta,
+            "product_quality_self_repair": bool(repair_meta),
             "repair_trace": list(repair_meta.get("repair_trace") or []),
+            "repair_trace_v2": list(repair_meta.get("repair_trace_v2") or repair_meta.get("repair_trace") or []),
             "complete_composer_candidate": candidate.as_meta(include_comment_text=False),
             "used_evidence_span_ids": list(candidate.used_evidence_span_ids),
             "used_phrase_unit_ids": list(candidate.used_phrase_unit_ids),

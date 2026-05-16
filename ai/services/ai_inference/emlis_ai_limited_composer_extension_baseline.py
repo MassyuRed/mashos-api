@@ -13,6 +13,8 @@ _BASELINE_VERSION = "emlis.limited_composer_extension_baseline.v1"
 _CONNECTION_VISIBILITY_VERSION = "emlis.limited_composer_connection_visibility.v1"
 _BINDING_PRESENCE_VERSION = "emlis.limited_composer_binding_presence.v1"
 _DIAGNOSTIC_SUMMARY_EXTENSION_VERSION = "emlis.limited_composer_diagnostic_summary_extension.v1"
+_GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
+_BINDING_DECISION_GATES = {"grounding", "display"}
 
 
 def _clean(value: Any) -> str:
@@ -36,6 +38,23 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, (list, tuple, set)):
         return list(value)
     return []
+
+
+def _gate_support_source(*, gate: str, binding_used: bool, diagnostics: Mapping[str, Any]) -> str:
+    if not binding_used:
+        return "none"
+    explicit = _clean(
+        diagnostics.get("binding_support_source")
+        or diagnostics.get("grounding_support_source")
+        or diagnostics.get("support_source")
+    )
+    if explicit:
+        return explicit
+    if gate == "display":
+        return "display_binding_aware_result"
+    if gate == "grounding":
+        return "declared_relation_binding"
+    return "none"
 
 
 def _candidate_mapping(candidate: Any) -> Mapping[str, Any]:
@@ -238,16 +257,32 @@ def _gate_results_meta(gate_results: Any) -> dict[str, Any]:
         meta = as_meta() if callable(as_meta) else value
         if isinstance(meta, Mapping):
             diagnostics = meta.get("diagnostics") if isinstance(meta.get("diagnostics"), Mapping) else {}
+            gate_key = str(key)
+            raw_binding_used = bool(meta.get("binding_used") or diagnostics.get("binding_used"))
+            binding_used = bool(raw_binding_used and gate_key in _BINDING_DECISION_GATES)
+            binding_required = bool(
+                gate_key in _BINDING_DECISION_GATES
+                and (meta.get("binding_required") or diagnostics.get("binding_required"))
+            )
+            binding_present = bool(meta.get("binding_present") or meta.get("binding_available") or diagnostics.get("binding_present"))
+            binding_available = bool(meta.get("binding_available") or meta.get("binding_present") or diagnostics.get("binding_present"))
+            binding_missing = bool(binding_required and (meta.get("binding_missing") or diagnostics.get("binding_missing")))
             out[str(key)] = {
                 "gate": str(key),
+                "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
+                "binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
                 "passed": bool(meta.get("passed")),
                 "primary_reason": _clean(meta.get("primary_reason")),
                 "rejection_reasons": _dedupe(meta.get("rejection_reasons") or []),
                 "reason_category": _clean(meta.get("reason_category")),
-                "binding_used": bool(meta.get("binding_used") or diagnostics.get("binding_used")),
-                "binding_present": bool(meta.get("binding_present") or meta.get("binding_available") or diagnostics.get("binding_present")),
-                "binding_available": bool(meta.get("binding_available") or meta.get("binding_present") or diagnostics.get("binding_present")),
-                "binding_missing": bool(meta.get("binding_missing") or diagnostics.get("binding_missing")),
+                "binding_used": binding_used,
+                "binding_present": binding_present,
+                "binding_available": binding_available,
+                "binding_required": binding_required,
+                "binding_missing": binding_missing,
+                "binding_count": int(meta.get("binding_count") or diagnostics.get("binding_count") or 0),
+                "expected_binding_count": int(meta.get("expected_binding_count") or diagnostics.get("expected_binding_count") or 0),
+                "binding_support_source": _gate_support_source(gate=gate_key, binding_used=binding_used, diagnostics=diagnostics),
             }
     return out
 
@@ -277,11 +312,22 @@ def build_limited_composer_diagnostic_summary_extension_meta(
     )
     coverage_groups = _dedupe(summary.get("coverage_groups") or matrix.get("coverage_groups") or [])
     gate_meta = _gate_results_meta(gate_results or summary.get("gate_results"))
-    for value in gate_meta.values():
+    for key, value in gate_meta.items():
         if isinstance(value, dict):
+            gate_key = str(key)
+            gate_requires_binding = bool(gate_key in _BINDING_DECISION_GATES and binding.get("binding_required"))
             value["binding_available"] = bool(value.get("binding_available") or binding.get("binding_present"))
             value["binding_present"] = bool(value.get("binding_present") or binding.get("binding_present"))
-            value["binding_missing"] = bool(value.get("binding_missing") or binding.get("binding_missing"))
+            value["binding_required"] = gate_requires_binding
+            value["binding_missing"] = bool(gate_requires_binding and (value.get("binding_missing") or binding.get("binding_missing")))
+            value["binding_used"] = bool(value.get("binding_used") and gate_key in _BINDING_DECISION_GATES)
+            value["gate_binding_contract_version"] = _GATE_BINDING_CONTRACT_VERSION
+            value["binding_contract_version"] = _GATE_BINDING_CONTRACT_VERSION
+            value["binding_support_source"] = _gate_support_source(
+                gate=gate_key,
+                binding_used=bool(value.get("binding_used")),
+                diagnostics=value,
+            )
     first_failed_gate = ""
     first_failed_reason = ""
     for key in ("reader", "grounding", "template_echo", "display"):
@@ -296,6 +342,7 @@ def build_limited_composer_diagnostic_summary_extension_meta(
         "step": "2_diagnostic_summary_extension",
         "baseline_stage": "limited_composer_extension",
         "diagnostic_contract": "stage_primary_reason_coverage_group_binding_presence",
+        "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
         "stage": stage,
         "failed_stage": stage if _clean(summary.get("observation_status")) != "passed" else "",
         "primary_reason": primary_reason,

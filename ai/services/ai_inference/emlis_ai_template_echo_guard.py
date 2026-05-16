@@ -289,6 +289,127 @@ def _repeated_values(values: Sequence[str], *, min_count: int = 2) -> List[str]:
     return out
 
 
+def _surface_signature_rows_from_meta(
+    *,
+    composer_meta: Mapping[str, Any] | None = None,
+    surface_signatures: Sequence[Mapping[str, Any]] | None = None,
+) -> List[Mapping[str, Any]]:
+    rows: List[Mapping[str, Any]] = []
+
+    def add_from(value: Any) -> None:
+        if isinstance(value, Mapping):
+            rows.append(value)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                add_from(item)
+
+    add_from(surface_signatures or ())
+    meta = composer_meta if isinstance(composer_meta, Mapping) else {}
+    for key in ("surface_signature_rows", "surface_signatures"):
+        add_from(meta.get(key))
+    for signature_key in ("surface_signature", "surface_signature_meta"):
+        signature_meta = meta.get(signature_key)
+        if isinstance(signature_meta, Mapping):
+            for key in ("surface_signature_rows", "surface_signatures"):
+                add_from(signature_meta.get(key))
+    for nested_key in ("surface_realizer", "surface_realization", "surface_variation_report", "complete_surface_realizer"):
+        nested = meta.get(nested_key)
+        if isinstance(nested, Mapping):
+            for key in ("surface_signature_rows", "surface_signatures", "surface_lines"):
+                add_from(nested.get(key))
+            signature_meta = nested.get("surface_signature")
+            if isinstance(signature_meta, Mapping):
+                for key in ("surface_signature_rows", "surface_signatures"):
+                    add_from(signature_meta.get(key))
+    # The rows can arrive from surface_lines where the signature is nested.
+    normalized: List[Mapping[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        signature = row.get("surface_signature")
+        if isinstance(signature, Mapping):
+            normalized.append(signature)
+        else:
+            normalized.append(row)
+    # Keep order but de-duplicate by full row representation.
+    deduped: List[Mapping[str, Any]] = []
+    seen: Set[str] = set()
+    for row in normalized:
+        marker = repr(sorted((str(k), str(v)) for k, v in row.items()))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(row)
+    return deduped
+
+
+def _row_text(row: Mapping[str, Any], key: str) -> str:
+    return str(row.get(key) or "").strip()
+
+
+def _surface_signature_repetition_stats(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    row_list = [row for row in rows if isinstance(row, Mapping)]
+    signatures = [_row_text(row, "signature") for row in row_list if _row_text(row, "signature")]
+    ending_keys = [_row_text(row, "ending_key") for row in row_list if _row_text(row, "ending_key")]
+    connector_keys = [_row_text(row, "connector_key") for row in row_list if _row_text(row, "connector_key")]
+    repeated_signatures = _repeated_values(signatures, min_count=2)
+    repeated_endings = _repeated_values(ending_keys, min_count=3)
+    repeated_connectors = [key for key in _repeated_values(connector_keys, min_count=3) if key != "none"]
+    template_flags = (
+        "completion_sentence_template_used",
+        "role_completed_sentence_template_used",
+        "input_specific_template_used",
+        "fixed_sentence_template_used",
+    )
+    flagged_template_rows = [
+        str(row.get("sentence_id") or index)
+        for index, row in enumerate(row_list, start=1)
+        if any(bool(row.get(flag)) for flag in template_flags)
+    ]
+    raw_rows = [
+        str(row.get("sentence_id") or index)
+        for index, row in enumerate(row_list, start=1)
+        if bool(row.get("raw_input_included") or row.get("raw_text_included"))
+    ]
+    return {
+        "row_count": len(row_list),
+        "surface_signature_repeat_count": len(repeated_signatures),
+        "repeated_surface_signature_keys": repeated_signatures,
+        "same_ending_major_count": len(repeated_endings),
+        "repeated_ending_keys": repeated_endings,
+        "connector_repetition_major_count": len(repeated_connectors),
+        "repeated_connector_keys": repeated_connectors,
+        "flagged_template_sentence_ids": flagged_template_rows,
+        "raw_input_sentence_ids": raw_rows,
+    }
+
+
+def _tone_guard_report_from_meta(composer_meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return Step5 Tone Guard report from Complete composer meta.
+
+    Template/Echo Guard stays mechanical: it does not rewrite tone, but it can
+    fail closed when the Tone Engine has already detected over-empathy,
+    diagnostic voice, advice-like surface, or generic comfort.
+    """
+
+    if not isinstance(composer_meta, Mapping):
+        return {}
+    direct = composer_meta.get("tone_guard_report")
+    if isinstance(direct, Mapping):
+        return dict(direct)
+    surface = composer_meta.get("surface_realizer")
+    if isinstance(surface, Mapping):
+        nested = surface.get("tone_guard_report")
+        if isinstance(nested, Mapping):
+            return dict(nested)
+    complete_runtime = composer_meta.get("complete_initial_runtime")
+    if isinstance(complete_runtime, Mapping):
+        nested = complete_runtime.get("tone_guard_report")
+        if isinstance(nested, Mapping):
+            return dict(nested)
+    return {}
+
+
 def _limited_surface_repetition_score(signatures: Sequence[str]) -> float:
     if not signatures:
         return 0.0
@@ -318,6 +439,7 @@ def guard_template_echo(
     coverage_scope: Any = None,
     composer_meta: Mapping[str, Any] | None = None,
     used_evidence_span_ids: Sequence[str] | None = None,
+    surface_signatures: Sequence[Mapping[str, Any]] | None = None,
 ) -> TemplateEchoReport:
     text = str(comment_text or "").strip()
     reasons: List[str] = []
@@ -447,6 +569,42 @@ def guard_template_echo(
     if repeated_shape_score >= 0.45 and len(shapes) >= 4:
         reasons.append("repeated_sentence_pattern")
 
+    # Product-quality Step3: consume surface signatures emitted by the
+    # Complete Surface Realizer. This keeps template detection structural: the
+    # guard inspects connector / ending / signature repetition instead of exact
+    # sentence matches, and it still never rewrites text.
+    surface_signature_rows = _surface_signature_rows_from_meta(
+        composer_meta=composer_meta,
+        surface_signatures=surface_signatures,
+    )
+    surface_signature_stats = _surface_signature_repetition_stats(surface_signature_rows)
+    if surface_signature_stats["same_ending_major_count"] > 0:
+        reasons.append("same_ending_major")
+    if surface_signature_stats["surface_signature_repeat_count"] > 0:
+        reasons.append("surface_signature_repeat")
+    if surface_signature_stats["connector_repetition_major_count"] > 0:
+        reasons.append("surface_connector_repetition")
+    if surface_signature_stats["flagged_template_sentence_ids"]:
+        reasons.append("surface_signature_template_flag")
+    if surface_signature_stats["raw_input_sentence_ids"]:
+        reasons.append("surface_signature_raw_input_included")
+
+    # Product-quality Step5: consume Tone Engine diagnostics as a fail-closed
+    # signal.  Tone is planned before surface realization, and this guard only
+    # reads its report; it does not add wording or relax Template checks.
+    tone_guard_report = _tone_guard_report_from_meta(composer_meta)
+    tone_guard_major_count = 0
+    try:
+        tone_guard_major_count = int(tone_guard_report.get("tone_guard_major_count") or 0)
+    except (TypeError, ValueError):
+        tone_guard_major_count = 0
+    if bool(tone_guard_report.get("release_blocker")) or tone_guard_major_count > 0:
+        reasons.append("tone_guard_major")
+        for reason in list(tone_guard_report.get("tone_guard_reasons") or tone_guard_report.get("blocker_reasons") or []):
+            reason_text = str(reason or "").strip()
+            if reason_text:
+                reasons.append(f"tone_guard:{reason_text}")
+
     reasons = list(dict.fromkeys(reasons))
     return TemplateEchoReport(
         passed=not reasons,
@@ -460,6 +618,13 @@ def guard_template_echo(
         limited_surface_repetition_score=round(limited_surface_score, 3),
         abstract_repetition_score=round(abstract_score, 3),
         abstract_phrase_repetition_score=round(abstract_score, 3),
+        surface_signature_row_count=int(surface_signature_stats.get("row_count") or 0),
+        surface_signature_repeat_count=int(surface_signature_stats.get("surface_signature_repeat_count") or 0),
+        same_ending_major_count=int(surface_signature_stats.get("same_ending_major_count") or 0),
+        surface_connector_repetition_count=int(surface_signature_stats.get("connector_repetition_major_count") or 0),
+        repeated_surface_signature_keys=list(surface_signature_stats.get("repeated_surface_signature_keys") or []),
+        repeated_surface_ending_keys=list(surface_signature_stats.get("repeated_ending_keys") or []),
+        repeated_surface_connector_keys=list(surface_signature_stats.get("repeated_connector_keys") or []),
         # Compatibility aliases for Phase 5 traces/tests.
         raw_quote_char_ratio=round(raw_quote_char_ratio, 3),
         matched_raw_quote_fragments=quote_hits[:6],

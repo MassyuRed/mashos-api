@@ -30,6 +30,17 @@ from emlis_ai_complete_sentence_planner import (
     build_complete_sentence_plan_v2,
     build_complete_sentence_binding_bundle_meta,
 )
+from emlis_ai_complete_tone_policy import (
+    COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+    COMPLETE_TONE_ENGINE_STAGE,
+    COMPLETE_TONE_ENGINE_VERSION,
+    COMPLETE_TONE_POLICY_VERSION,
+    CompleteTonePolicy,
+    build_complete_tone_guard_report,
+    build_complete_tone_policy,
+    build_complete_tone_policy_contract_meta,
+    coerce_complete_tone_policy,
+)
 from emlis_ai_limited_relation_taxonomy import (
     canonical_relation_type,
     normalize_relation_type,
@@ -41,6 +52,11 @@ COMPLETE_SURFACE_REALIZER_SERVICE_VERSION = COMPLETE_SURFACE_REALIZER_VERSION
 COMPLETE_SURFACE_REALIZER_SCHEMA_VERSION = "emlis.complete_surface_realization.v2"
 COMPLETE_SURFACE_LINE_SCHEMA_VERSION = "emlis.complete_surface_line.v2"
 COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION = "emlis.complete_surface_signature.v2"
+COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION = "emlis.complete_product_quality_surface_variation.v2"
+COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP = "Step3_Surface_variation_strengthening"
+COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_SCHEMA_VERSION = "emlis.complete_product_quality_surface_variation_report.v2"
+COMPLETE_SURFACE_VARIATION_POLICY_VERSION = "emlis.complete_surface_variation_policy.v2"
+COMPLETE_SURFACE_VARIATION_PROFILE_VERSION = "emlis.complete_surface_variation_profile.v2"
 COMPLETE_SURFACE_REALIZER_STAGE = "Step7_Surface_Realizer_2_0"
 COMPLETE_SURFACE_REALIZER_STEP = COMPLETE_SURFACE_REALIZER_STAGE
 COMPLETE_SURFACE_REALIZER_TARGET_STEP = COMPLETE_SURFACE_REALIZER_STAGE
@@ -171,6 +187,66 @@ CONNECTOR_BANK: dict[str, dict[str, tuple[str, str]]] = {
         "recovery": ("締めでは、", "closing_recovery"),
         "pressure": ("締めでは、", "closing_pressure"),
     },
+}
+
+# Product-quality Step3: connector candidates are still grammar parts, not
+# completed sentences.  They let the realizer avoid repeating the same transition
+# shape while staying inside the relation declared by the SentencePlan.
+CONNECTOR_VARIATION_BANK: dict[str, dict[str, tuple[tuple[str, str], ...]]] = {
+    "opening": {
+        "default": (("", "none"),),
+        "pressure": (("まず、", "opening_pressure_first"), ("はじめに、", "opening_pressure_begin")),
+        "recovery": (("はじめに、", "opening_recovery_first"), ("最初に、", "opening_recovery_begin")),
+    },
+    "core": {
+        "default": (("その中で、", "core_inside"), ("そこでは、", "core_there"), ("中心には、", "core_center")),
+        "pressure": (("その中で、", "core_inside_pressure"), ("その重さの中で、", "core_pressure_weight")),
+        "recovery": (("そこに、", "core_recovery_there"), ("戻る流れとして、", "core_recovery_flow")),
+        "contrast": (("その中で、", "core_inside_contrast"), ("もう一方では、", "core_contrast_other_side")),
+        "coexistence": (("その中で、", "core_inside_coexistence"), ("重なりとして、", "core_coexistence_overlap")),
+        "approach_avoidance": (("その線上で、", "core_approach_avoidance_line"), ("同じ場所に、", "core_approach_avoidance_place")),
+    },
+    "relation": {
+        "default": (("同時に、", "relation_same_time"), ("並んで、", "relation_parallel")),
+        "contrast": (("ただ、", "relation_contrast_but"), ("一方で、", "relation_contrast_other_side")),
+        "coexistence": (("同時に、", "relation_coexistence_same_time"), ("重なって、", "relation_coexistence_overlap")),
+        "pressure": (("その圧力の中で、", "relation_pressure_inside"), ("その重さの中で、", "relation_pressure_weight")),
+        "recovery": (("それでも、", "relation_recovery_after_load"), ("戻る流れとして、", "relation_recovery_flow")),
+        "approach_avoidance": (("近づきたい方と止まりたい方が、", "relation_approach_avoidance"), ("向かう動きと止まる動きが、", "relation_approach_avoidance_motion")),
+    },
+    "closing": {
+        "default": (("最後は、", "closing_default"), ("締めでは、", "closing_soft")),
+        "recovery": (("締めでは、", "closing_recovery"), ("最後は、", "closing_recovery_last")),
+        "pressure": (("締めでは、", "closing_pressure"), ("最後は、", "closing_pressure_last")),
+        "contrast": (("最後は、", "closing_contrast_last"), ("締めでは、", "closing_contrast_soft")),
+        "coexistence": (("最後は、", "closing_coexistence_last"), ("締めでは、", "closing_coexistence_soft")),
+        "approach_avoidance": (("最後は、", "closing_approach_avoidance_last"), ("締めでは、", "closing_approach_avoidance_soft")),
+    },
+}
+
+CONNECTOR_VARIATION_FALLBACKS: dict[str, tuple[tuple[str, str], ...]] = {
+    "opening": (
+        ("", "none"),
+        ("最初に、", "opening_initial"),
+        ("ここでは、", "opening_here"),
+    ),
+    "core": (
+        ("その中で、", "core_inside"),
+        ("続いて、", "core_continue"),
+        ("もう一つは、", "core_another"),
+        ("そこでは、", "core_there"),
+    ),
+    "relation": (
+        ("同時に、", "relation_same_time"),
+        ("ただ、", "relation_contrast_but"),
+        ("その一方で、", "relation_other_side"),
+        ("重なって、", "relation_overlap"),
+    ),
+    "closing": (
+        ("最後は、", "closing_default"),
+        ("締めでは、", "closing_wrap"),
+        ("残る形として、", "closing_residue"),
+    ),
 }
 
 DISTANCE_POLICY_KEYS = {
@@ -355,11 +431,47 @@ def _phrase_for_line(line: CompleteSentencePlanLine) -> tuple[str, str, Tuple[st
     return phrases[0], keys[0], tuple(keys)
 
 
-def _connector_for(line_role: str, relation_type: str, sequence_index: int) -> tuple[str, str]:
+def _connector_candidates(line_role: str, relation_type: str, sequence_index: int) -> tuple[tuple[str, str], ...]:
     if sequence_index <= 0 and line_role == "opening":
-        return "", "none"
-    bank = CONNECTOR_BANK.get(line_role) or CONNECTOR_BANK["core"]
-    return bank.get(relation_type) or bank.get(canonical_relation_type(relation_type)) or bank.get("default") or ("", "none")
+        return (("", "none"),)
+    role = _clean_token(line_role) or "core"
+    relation = _surface_relation(relation_type)
+    variation_bank = CONNECTOR_VARIATION_BANK.get(role) or CONNECTOR_VARIATION_BANK["core"]
+    legacy_bank = CONNECTOR_BANK.get(role) or CONNECTOR_BANK["core"]
+    candidates: list[tuple[str, str]] = []
+    variation_pairs = (
+        *(variation_bank.get(relation) or ()),
+        *(variation_bank.get(canonical_relation_type(relation)) or ()),
+        *(variation_bank.get("default") or ()),
+    )
+    legacy_pairs = (
+        legacy_bank.get(relation),
+        legacy_bank.get(canonical_relation_type(relation)),
+        legacy_bank.get("default"),
+        *(CONNECTOR_VARIATION_FALLBACKS.get(role) or ()),
+    )
+    for pair in (*variation_pairs, *legacy_pairs):
+        if not pair:
+            continue
+        connector, key = pair
+        row = (_clean(connector), _clean_token(key) or "none")
+        if row not in candidates:
+            candidates.append(row)
+    return tuple(candidates or (("", "none"),))
+
+
+def _connector_for(
+    line_role: str,
+    relation_type: str,
+    sequence_index: int,
+    used_connector_keys: Sequence[str] | None = None,
+) -> tuple[str, str]:
+    used = {key for key in (used_connector_keys or ()) if key and key != "none"}
+    candidates = _connector_candidates(line_role, relation_type, sequence_index)
+    for connector, key in candidates:
+        if key == "none" or key not in used:
+            return connector, key
+    return candidates[0]
 
 
 def _predicate_candidates(relation_type: str, line_role: str) -> tuple[tuple[str, str, str, str], ...]:
@@ -391,6 +503,16 @@ def _choose_predicate(*, relation_type: str, line_role: str, used_predicate_keys
     return candidates[0] if candidates else DEFAULT_PREDICATES[0]
 
 
+def _tone_constraint_for_line(tone_policy: CompleteTonePolicy | Mapping[str, Any] | None, line: CompleteSentencePlanLine, relation: str) -> dict[str, Any]:
+    policy = coerce_complete_tone_policy(tone_policy, coverage_group=getattr(line, 'coverage_group', '') if hasattr(line, 'coverage_group') else '')
+    constraint = policy.constraint_for(sentence_id=line.sentence_id, line_role=line.line_role, relation_type=relation)
+    return constraint.as_meta()
+
+
+def _tone_guard_keys(constraint: Mapping[str, Any]) -> Tuple[str, ...]:
+    return _dedupe(constraint.get('guard_keys'))
+
+
 def _truncate_sentence(sentence: str, max_chars: int) -> str:
     text = _clean(sentence)
     if not text:
@@ -402,7 +524,7 @@ def _truncate_sentence(sentence: str, max_chars: int) -> str:
     return text
 
 
-def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, role_phrase_keys: Sequence[str], connector_key: str, particle: str, predicate_key: str, ending_key: str, distance_policy_key: str, variation_key: str) -> dict[str, Any]:
+def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, role_phrase_keys: Sequence[str], connector_key: str, particle: str, predicate_key: str, ending_key: str, distance_policy_key: str, variation_key: str, tone_policy_key: str = "", temperature_key: str = "", tone_guard_keys: Sequence[str] | None = None, closing_policy_key: str = "", read_feeling_policy_key: str = "") -> dict[str, Any]:
     relation = _surface_relation(line.relation_type)
     return {
         "version": COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
@@ -419,12 +541,102 @@ def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, r
         "predicate_key": predicate_key,
         "ending_key": ending_key,
         "distance_policy_key": distance_policy_key,
+        "tone_policy_key": _clean_token(tone_policy_key) or distance_policy_key,
+        "temperature_key": _clean_token(temperature_key),
+        "tone_guard_keys": list(_dedupe(tone_guard_keys)),
+        "closing_policy_key": _clean_token(closing_policy_key),
+        "read_feeling_policy_key": _clean_token(read_feeling_policy_key),
+        "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+        "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
+        "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
         "variation_key": variation_key,
-        "signature": f"{line.line_role}:{relation}:{phrase_key}:{connector_key}:{particle}:{predicate_key}:{ending_key}:{distance_policy_key}",
+        "signature": f"{line.line_role}:{relation}:{phrase_key}:{connector_key}:{particle}:{predicate_key}:{ending_key}:{distance_policy_key}:{_clean_token(tone_policy_key) or distance_policy_key}",
+        "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
+        "surface_signature_for_template_guard": True,
         "completion_sentence_template_used": False,
         "role_completed_sentence_template_used": False,
         "input_specific_template_used": False,
         "raw_input_included": False,
+    }
+
+
+def _value_counts(values: Iterable[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for raw in values:
+        key = _clean(raw)
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _repeated_keys(values: Iterable[Any], *, min_count: int = 2, ignore: Iterable[str] | None = None) -> Tuple[str, ...]:
+    ignore_set = set(ignore or ())
+    counts = _value_counts(values)
+    return tuple(key for key, count in counts.items() if count >= min_count and key not in ignore_set)
+
+
+def _surface_variation_report_from_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    row_list = [dict(row) for row in rows if isinstance(row, Mapping)]
+    connector_keys = [_clean(row.get("connector_key")) for row in row_list if _clean(row.get("connector_key"))]
+    predicate_keys = [_clean(row.get("predicate_key")) for row in row_list if _clean(row.get("predicate_key"))]
+    ending_keys = [_clean(row.get("ending_key")) for row in row_list if _clean(row.get("ending_key"))]
+    signatures = [_clean(row.get("signature")) for row in row_list if _clean(row.get("signature"))]
+    repeated_connector_keys = _repeated_keys(connector_keys, min_count=3, ignore={"none"})
+    repeated_ending_keys = _repeated_keys(ending_keys, min_count=3)
+    repeated_signature_keys = _repeated_keys(signatures, min_count=2)
+    template_flags = [
+        "completion_sentence_template_used",
+        "role_completed_sentence_template_used",
+        "input_specific_template_used",
+        "fixed_sentence_template_used",
+    ]
+    flagged_template_rows = [
+        str(row.get("sentence_id") or index)
+        for index, row in enumerate(row_list, start=1)
+        if any(bool(row.get(flag)) for flag in template_flags)
+    ]
+    raw_rows = [
+        str(row.get("sentence_id") or index)
+        for index, row in enumerate(row_list, start=1)
+        if bool(row.get("raw_input_included") or row.get("raw_text_included"))
+    ]
+    blocker_reasons: list[str] = []
+    if repeated_ending_keys:
+        blocker_reasons.append("same_ending_major")
+    if repeated_signature_keys:
+        blocker_reasons.append("surface_signature_repeat")
+    if repeated_connector_keys:
+        blocker_reasons.append("surface_connector_repetition")
+    if flagged_template_rows:
+        blocker_reasons.append("surface_signature_template_flag")
+    if raw_rows:
+        blocker_reasons.append("surface_signature_raw_input_included")
+    return {
+        "version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_SCHEMA_VERSION,
+        "surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
+        "surface_variation_step": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP,
+        "surface_signature_version": COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
+        "surface_signature_count": len(signatures),
+        "surface_signature_repeat_count": len(repeated_signature_keys),
+        "repeated_surface_signature_keys": list(repeated_signature_keys),
+        "connector_keys": connector_keys,
+        "unique_connector_key_count": len(set(connector_keys)),
+        "repeated_connector_keys": list(repeated_connector_keys),
+        "connector_repetition_major_count": len(repeated_connector_keys),
+        "predicate_keys": predicate_keys,
+        "unique_predicate_key_count": len(set(predicate_keys)),
+        "ending_keys": ending_keys,
+        "unique_ending_key_count": len(set(ending_keys)),
+        "same_ending_major_count": len(repeated_ending_keys),
+        "repeated_ending_keys": list(repeated_ending_keys),
+        "completion_sentence_template_used": bool(flagged_template_rows),
+        "flagged_template_sentence_ids": flagged_template_rows,
+        "raw_input_included": bool(raw_rows),
+        "raw_input_sentence_ids": raw_rows,
+        "release_blocker": bool(blocker_reasons),
+        "blocker_reasons": blocker_reasons,
+        "passed": not blocker_reasons,
     }
 
 
@@ -436,10 +648,34 @@ def _forbidden_surface_hits(text: str) -> Tuple[str, ...]:
     return tuple(hits)
 
 
-def _realize_line(line: CompleteSentencePlanLine, *, sequence_index: int, used_predicate_keys: Sequence[str], used_ending_keys: Sequence[str]) -> "CompleteSurfaceLineV2":
+def _repeat_instance_count(values: Sequence[str], *, min_count: int = 2, ignore: Sequence[str] = ("", "none")) -> int:
+    return sum(max(0, values.count(key) - 1) for key in _repeated_keys(values, min_count=min_count, ignore=ignore))
+
+
+def _consecutive_repeat_count(values: Sequence[str], *, ignore: Sequence[str] = ("", "none")) -> int:
+    ignored = set(ignore)
+    count = 0
+    previous = ""
+    for value in values:
+        if value and value not in ignored and value == previous:
+            count += 1
+        previous = value
+    return count
+
+
+def _realize_line(
+    line: CompleteSentencePlanLine,
+    *,
+    sequence_index: int,
+    used_predicate_keys: Sequence[str],
+    used_ending_keys: Sequence[str],
+    used_connector_keys: Sequence[str] | None = None,
+    tone_policy: CompleteTonePolicy | Mapping[str, Any] | None = None,
+) -> "CompleteSurfaceLineV2":
     relation = _surface_relation(line.relation_type)
+    tone_constraint = _tone_constraint_for_line(tone_policy, line, relation)
     phrase, phrase_key, role_phrase_keys = _phrase_for_line(line)
-    connector, connector_key = _connector_for(line.line_role, relation, sequence_index)
+    connector, connector_key = _connector_for(line.line_role, relation, sequence_index, used_connector_keys=used_connector_keys)
     particle, predicate, predicate_key, ending_key = _choose_predicate(
         relation_type=relation,
         line_role=line.line_role,
@@ -455,7 +691,12 @@ def _realize_line(line: CompleteSentencePlanLine, *, sequence_index: int, used_p
         body = f"{connector}{phrase}{particle}{predicate}"
     max_chars = int(line.max_chars or 120)
     text = _truncate_sentence(body, max_chars)
-    distance_policy_key = DISTANCE_POLICY_KEYS.get(line.line_role, "observe_without_overclaim")
+    distance_policy_key = _clean_token(tone_constraint.get("distance_policy_key")) or DISTANCE_POLICY_KEYS.get(line.line_role, "observe_without_overclaim")
+    tone_policy_key = distance_policy_key
+    temperature_key = _clean_token(tone_constraint.get("temperature_key"))
+    closing_policy_key = _clean_token(tone_constraint.get("closing_policy_key"))
+    read_feeling_policy_key = _clean_token(tone_constraint.get("read_feeling_policy_key"))
+    tone_guard_keys = _tone_guard_keys(tone_constraint)
     variation_key = f"v{(sequence_index % 3) + 1}"
     signature = _surface_signature_row(
         line=line,
@@ -467,6 +708,11 @@ def _realize_line(line: CompleteSentencePlanLine, *, sequence_index: int, used_p
         ending_key=ending_key,
         distance_policy_key=distance_policy_key,
         variation_key=variation_key,
+        tone_policy_key=tone_policy_key,
+        temperature_key=temperature_key,
+        tone_guard_keys=tone_guard_keys,
+        closing_policy_key=closing_policy_key,
+        read_feeling_policy_key=read_feeling_policy_key,
     )
     return CompleteSurfaceLineV2(
         sentence_id=line.sentence_id,
@@ -483,6 +729,11 @@ def _realize_line(line: CompleteSentencePlanLine, *, sequence_index: int, used_p
         predicate_key=predicate_key,
         ending_key=ending_key,
         distance_policy_key=distance_policy_key,
+        tone_policy_key=tone_policy_key,
+        temperature_key=temperature_key,
+        tone_guard_keys=tone_guard_keys,
+        closing_policy_key=closing_policy_key,
+        read_feeling_policy_key=read_feeling_policy_key,
         variation_key=variation_key,
         surface_signature=signature,
         forbidden_surface_keys=line.forbidden_surface_keys,
@@ -493,6 +744,11 @@ def _realize_line(line: CompleteSentencePlanLine, *, sequence_index: int, used_p
             "surface_intent": line.surface_intent,
             "repair_policy": list(line.repair_policy),
             "surface_realizer_followed_plan": True,
+            "tone_constraint": tone_constraint,
+            "tone_policy_key": tone_policy_key,
+            "temperature_key": temperature_key,
+            "tone_guard_keys": list(tone_guard_keys),
+            "tone_meaning_added": False,
             "raw_input_included": False,
         },
     )
@@ -516,6 +772,11 @@ class CompleteSurfaceLineV2:
     predicate_key: str = ""
     ending_key: str = ""
     distance_policy_key: str = "observe_without_overclaim"
+    tone_policy_key: str = "observe_without_overclaim"
+    temperature_key: str = "steady_warm"
+    tone_guard_keys: Iterable[str] = dataclass_field(default_factory=tuple)
+    closing_policy_key: str = "none"
+    read_feeling_policy_key: str = "input_specific_structure_reflected"
     variation_key: str = "v1"
     surface_signature: Mapping[str, Any] = dataclass_field(default_factory=dict)
     forbidden_surface_keys: Iterable[str] = dataclass_field(default_factory=tuple)
@@ -539,6 +800,11 @@ class CompleteSurfaceLineV2:
         object.__setattr__(self, "predicate_key", _clean_token(self.predicate_key))
         object.__setattr__(self, "ending_key", _clean_token(self.ending_key))
         object.__setattr__(self, "distance_policy_key", _clean_token(self.distance_policy_key) or "observe_without_overclaim")
+        object.__setattr__(self, "tone_policy_key", _clean_token(self.tone_policy_key) or _clean_token(self.distance_policy_key) or "observe_without_overclaim")
+        object.__setattr__(self, "temperature_key", _clean_token(self.temperature_key) or "steady_warm")
+        object.__setattr__(self, "tone_guard_keys", _dedupe(self.tone_guard_keys))
+        object.__setattr__(self, "closing_policy_key", _clean_token(self.closing_policy_key) or "none")
+        object.__setattr__(self, "read_feeling_policy_key", _clean_token(self.read_feeling_policy_key) or "input_specific_structure_reflected")
         object.__setattr__(self, "variation_key", _clean_token(self.variation_key) or "v1")
         object.__setattr__(self, "surface_signature", _json_safe_mapping(self.surface_signature))
         object.__setattr__(self, "forbidden_surface_keys", _dedupe(self.forbidden_surface_keys))
@@ -574,6 +840,19 @@ class CompleteSurfaceLineV2:
         return not self.validation_errors
 
     def as_grounding_row(self) -> dict[str, Any]:
+        source_line = dict(self.source_sentence_plan_line)
+        def role_values(value: Any) -> list[Any]:
+            if value is None:
+                return []
+            if isinstance(value, (list, tuple, set)):
+                return list(value)
+            return [value]
+        phrase_roles = _dedupe(
+            list(self.role_phrase_keys)
+            + ([self.role_phrase_key] if self.role_phrase_key else [])
+            + role_values(source_line.get("must_include_roles"))
+            + role_values(source_line.get("phrase_unit_roles"))
+        )
         return {
             "version": self.schema_version,
             "sentence_id": self.sentence_id,
@@ -582,9 +861,21 @@ class CompleteSurfaceLineV2:
             "relation_type": self.relation_type,
             "used_evidence_span_ids": list(self.evidence_span_ids),
             "used_phrase_unit_ids": list(self.phrase_unit_ids),
+            "role_phrase_key": self.role_phrase_key,
+            "role_phrase_keys": list(self.role_phrase_keys),
+            "phrase_unit_roles": list(phrase_roles),
+            "source_sentence_plan_line": source_line,
             "surface_signature": dict(self.surface_signature),
+            "tone_policy_key": self.tone_policy_key,
+            "temperature_key": self.temperature_key,
+            "tone_guard_keys": list(self.tone_guard_keys),
+            "closing_policy_key": self.closing_policy_key,
+            "read_feeling_policy_key": self.read_feeling_policy_key,
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
             "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
             "target_step": "Step8_Binding_aware_Grounding",
+            "product_quality_grounding_ready": True,
             "completion_sentence_template_used": False,
             "raw_input_included": False,
         }
@@ -608,6 +899,15 @@ class CompleteSurfaceLineV2:
             "predicate_key": self.predicate_key,
             "ending_key": self.ending_key,
             "distance_policy_key": self.distance_policy_key,
+            "tone_policy_key": self.tone_policy_key,
+            "temperature_key": self.temperature_key,
+            "tone_guard_keys": list(self.tone_guard_keys),
+            "closing_policy_key": self.closing_policy_key,
+            "read_feeling_policy_key": self.read_feeling_policy_key,
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+            "tone_meaning_added": False,
             "variation_key": self.variation_key,
             "surface_signature": dict(self.surface_signature),
             "surface_text_present": bool(self.surface_text),
@@ -664,6 +964,11 @@ class CompleteSurfaceRealizationV2:
                         predicate_key=item.get("predicate_key") or "",
                         ending_key=item.get("ending_key") or "",
                         distance_policy_key=item.get("distance_policy_key") or "observe_without_overclaim",
+                        tone_policy_key=item.get("tone_policy_key") or item.get("distance_policy_key") or "observe_without_overclaim",
+                        temperature_key=item.get("temperature_key") or "steady_warm",
+                        tone_guard_keys=item.get("tone_guard_keys") or (),
+                        closing_policy_key=item.get("closing_policy_key") or "none",
+                        read_feeling_policy_key=item.get("read_feeling_policy_key") or "input_specific_structure_reflected",
                         variation_key=item.get("variation_key") or "v1",
                         surface_signature=item.get("surface_signature") or {},
                         forbidden_surface_keys=item.get("forbidden_surface_keys") or (),
@@ -717,6 +1022,61 @@ class CompleteSurfaceRealizationV2:
         return tuple(line.ending_key for line in self.surface_lines if line.ending_key)
 
     @property
+    def connector_keys(self) -> Tuple[str, ...]:
+        return tuple(line.connector_key for line in self.surface_lines if line.connector_key)
+
+    @property
+    def predicate_keys(self) -> Tuple[str, ...]:
+        return tuple(line.predicate_key for line in self.surface_lines if line.predicate_key)
+
+    @property
+    def surface_variation_report(self) -> dict[str, Any]:
+        return _surface_variation_report_from_rows([dict(line.surface_signature) for line in self.surface_lines])
+
+    @property
+    def same_ending_repeat_count(self) -> int:
+        counts = _value_counts(self.ending_keys)
+        return sum(max(0, count - 1) for count in counts.values() if count >= 2)
+
+    @property
+    def same_ending_consecutive_count(self) -> int:
+        endings = list(self.ending_keys)
+        return sum(1 for index in range(1, len(endings)) if endings[index] == endings[index - 1])
+
+    @property
+    def surface_signature_repeat_count(self) -> int:
+        return int(self.surface_variation_report.get("surface_signature_repeat_count") or 0)
+
+    @property
+    def surface_variation_profile(self) -> dict[str, Any]:
+        report = dict(self.surface_variation_report)
+        report.setdefault("version", COMPLETE_SURFACE_VARIATION_PROFILE_VERSION)
+        report.setdefault("policy_version", COMPLETE_SURFACE_VARIATION_POLICY_VERSION)
+        report.setdefault("source_step", COMPLETE_SURFACE_REALIZER_STAGE)
+        report.setdefault("surface_variation_guard_passed", bool(report.get("passed", True)))
+        report.setdefault("same_ending_repeat_count", self.same_ending_repeat_count)
+        report.setdefault("same_ending_consecutive_count", self.same_ending_consecutive_count)
+        report.setdefault("surface_signature_repeat_count", self.surface_signature_repeat_count)
+        report.setdefault("completion_sentence_template_used", False)
+        report.setdefault("role_completed_sentence_template_used", False)
+        report.setdefault("input_specific_template_used", False)
+        report.setdefault("raw_input_included", False)
+        return report
+
+    @property
+    def tone_policy_meta(self) -> dict[str, Any]:
+        item = self.meta.get("tone_policy") if isinstance(self.meta, Mapping) else None
+        return dict(item) if isinstance(item, Mapping) else {}
+
+    @property
+    def tone_guard_report(self) -> dict[str, Any]:
+        return build_complete_tone_guard_report(surface_realization=self, tone_policy=self.tone_policy_meta, comment_text=self.realized_text)
+
+    @property
+    def tone_guard_major_count(self) -> int:
+        return int(self.tone_guard_report.get("tone_guard_major_count") or 0)
+
+    @property
     def same_ending_major_count(self) -> int:
         counts: dict[str, int] = {}
         for key in self.ending_keys:
@@ -737,6 +1097,12 @@ class CompleteSurfaceRealizationV2:
                 errors.append(f"line_{index}:{reason}")
         if self.same_ending_major_count > 0:
             errors.append("same_ending_major_detected")
+        variation_report = self.surface_variation_report
+        for reason in list(variation_report.get("blocker_reasons") or []):
+            errors.append(str(reason))
+        tone_report = self.tone_guard_report
+        for reason in list(tone_report.get("blocker_reasons") or []):
+            errors.append(f"tone_guard:{reason}")
         source_plan = self.source_sentence_plan
         if isinstance(source_plan, CompleteSentencePlanV2):
             plan_sentence_ids = {line.sentence_id for line in source_plan.sentence_plans}
@@ -760,6 +1126,12 @@ class CompleteSurfaceRealizationV2:
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
             "relation_types": list(self.relation_types),
             "surface_signatures": list(self.surface_signatures),
+            "surface_variation_report": self.surface_variation_report,
+            "tone_policy": self.tone_policy_meta,
+            "tone_guard_report": self.tone_guard_report,
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+            "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
             "raw_input_included": False,
         }
 
@@ -809,6 +1181,16 @@ class CompleteSurfaceRealizationV2:
             "surface_signature_version": COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
             "surface_signatures": list(self.surface_signatures),
             "surface_signature_rows": [dict(line.surface_signature) for line in self.surface_lines],
+            "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
+            "product_quality_surface_variation_step": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP,
+            "product_quality_surface_variation": True,
+            "surface_variation_strengthened": True,
+            "surface_variation_report": self.surface_variation_report,
+            "connector_keys": list(self.connector_keys),
+            "unique_connector_key_count": len(set(self.connector_keys)),
+            "repeated_connector_keys": list(self.surface_variation_report.get("repeated_connector_keys") or []),
+            "predicate_keys": list(self.predicate_keys),
+            "unique_predicate_key_count": len(set(self.predicate_keys)),
             "same_ending_major_count": self.same_ending_major_count,
             "same_ending_guard_passed": self.same_ending_major_count == 0,
             "second_person_subject_omitted": all(line.subject_policy_key == "omit_second_person_subject" for line in self.surface_lines),
@@ -822,6 +1204,25 @@ class CompleteSurfaceRealizationV2:
             "ending_policy_enabled": True,
             "distance_policy_applied": True,
             "distance_policy_enabled": True,
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+            "tone_engine_added": True,
+            "tone_policy_added": True,
+            "tone_policy_applied": True,
+            "tone_policy": self.tone_policy_meta,
+            "tone_guard_report": self.tone_guard_report,
+            "tone_guard_major_count": self.tone_guard_major_count,
+            "tone_guard_passed": self.tone_guard_major_count == 0,
+            "over_empathy_guard_passed": bool(self.tone_guard_report.get("over_empathy_guard_passed", True)),
+            "diagnostic_tone_guard_passed": bool(self.tone_guard_report.get("diagnostic_tone_guard_passed", True)),
+            "advice_like_guard_passed": bool(self.tone_guard_report.get("advice_like_guard_passed", True)),
+            "generic_comfort_guard_passed": bool(self.tone_guard_report.get("generic_comfort_guard_passed", True)),
+            "temperature_policy_applied": True,
+            "closing_policy_applied": True,
+            "read_feeling_policy_applied": True,
+            "tone_is_surface_constraint_not_post_decoration": True,
+            "meaning_added_by_tone_policy": False,
             "variation_policy_applied": True,
             "variation_policy_enabled": True,
             "surface_signature_recorded": True,
@@ -833,6 +1234,8 @@ class CompleteSurfaceRealizationV2:
             "repeated_tail_keys": [key for key in dict.fromkeys(self.ending_keys) if self.ending_keys.count(key) >= 2],
             "same_ending_detected": len(set(self.ending_keys)) != len(self.ending_keys),
             "same_ending_major_detected": self.same_ending_major_count > 0,
+            "surface_signature_repeat_detected": self.surface_signature_repeat_count > 0,
+            "surface_variation_major_detected": not self.surface_variation_profile["surface_variation_guard_passed"],
             "surface_component_rows": [line.as_meta(include_surface_text=False) for line in self.surface_lines],
             "surface_component_row_count": len(self.surface_lines),
             "surface_lines": [line.as_meta(include_surface_text=include_realized_text) for line in self.surface_lines],
@@ -898,6 +1301,9 @@ def build_complete_surface_realizer_contract_meta() -> dict[str, Any]:
         "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
         "surface_realizer_2_0_added": True,
         "surface_realizer_added": True,
+        "product_quality_surface_variation_added": True,
+        "surface_variation_policy_version": COMPLETE_SURFACE_VARIATION_POLICY_VERSION,
+        "surface_variation_profile_version": COMPLETE_SURFACE_VARIATION_PROFILE_VERSION,
         "accepts_sentence_plan_2_0": True,
         "accepts_complete_sentence_plan_v2": True,
         "sentence_plan_must_be_followed": True,
@@ -919,12 +1325,34 @@ def build_complete_surface_realizer_contract_meta() -> dict[str, Any]:
         "ending_policy_enabled": True,
         "distance_policy_added": True,
         "distance_policy_enabled": True,
+        "tone_engine_added": True,
+        "tone_policy_added": True,
+        "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+        "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
+        "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+        "tone_policy_contract": build_complete_tone_policy_contract_meta(),
+        "temperature_policy_added": True,
+        "closing_policy_added": True,
+        "read_feeling_policy_added": True,
+        "over_empathy_guard_added": True,
+        "diagnostic_tone_guard_added": True,
+        "advice_like_guard_added": True,
+        "generic_comfort_guard_added": True,
+        "tone_is_surface_constraint_not_post_decoration": True,
+        "meaning_added_by_tone_policy": False,
         "variation_policy_added": True,
         "variation_policy_enabled": True,
         "surface_signature_added": True,
         "surface_signature_recorded": True,
         "surface_signature_enabled": True,
         "surface_signature_to_template_guard": True,
+        "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
+        "product_quality_surface_variation_step": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP,
+        "product_quality_surface_variation": True,
+        "surface_variation_strengthened": True,
+        "same_ending_guard_enabled": True,
+        "raw_echo_guard_material_exposed": True,
+        "surface_signature_repeat_guard_enabled": True,
         "surface_text_internal_only": True,
         "comment_text_generated": False,
         "comment_text_key_written": False,
@@ -969,6 +1397,7 @@ def build_complete_surface_realization_v2(
     phrase_units: Sequence[Any] | None = None,
     sentence_plan_seed: Mapping[str, Any] | None = None,
     coverage_group: str = "",
+    tone_policy: CompleteTonePolicy | Mapping[str, Any] | None = None,
     meta: Mapping[str, Any] | None = None,
     **planner_kwargs: Any,
 ) -> CompleteSurfaceRealizationV2:
@@ -986,6 +1415,7 @@ def build_complete_surface_realization_v2(
             coverage_group=coverage_group,
             **planner_kwargs,
         )
+    tone_policy_obj = coerce_complete_tone_policy(tone_policy, sentence_plan=source_plan, coverage_group=source_plan.coverage_group)
     if not source_plan.usable:
         return CompleteSurfaceRealizationV2(
             plan_id=source_plan.plan_id,
@@ -999,10 +1429,13 @@ def build_complete_surface_realization_v2(
                 "validation_errors": list(source_plan.validation_errors),
                 "reason": "sentence_plan_unusable",
                 "raw_input_included": False,
+                "tone_policy": tone_policy_obj.as_meta(),
+                "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
             },
         )
     used_predicate_keys: list[str] = []
     used_ending_keys: list[str] = []
+    used_connector_keys: list[str] = []
     surface_lines: list[CompleteSurfaceLineV2] = []
     for index, line in enumerate(source_plan.sentence_plans):
         surface_line = _realize_line(
@@ -1010,10 +1443,13 @@ def build_complete_surface_realization_v2(
             sequence_index=index,
             used_predicate_keys=used_predicate_keys,
             used_ending_keys=used_ending_keys,
+            used_connector_keys=used_connector_keys,
+            tone_policy=tone_policy_obj,
         )
         surface_lines.append(surface_line)
         used_predicate_keys.append(surface_line.predicate_key)
         used_ending_keys.append(surface_line.ending_key)
+        used_connector_keys.append(surface_line.connector_key)
     realization = CompleteSurfaceRealizationV2(
         plan_id=source_plan.plan_id,
         coverage_group=source_plan.coverage_group,
@@ -1031,6 +1467,9 @@ def build_complete_surface_realization_v2(
                 "sentence_budget": source_plan.sentence_budget,
                 "raw_input_included": False,
             },
+            "tone_policy": tone_policy_obj.as_meta(),
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
         },
     )
     return realization
@@ -1060,8 +1499,20 @@ def build_complete_surface_signature(realization: CompleteSurfaceRealizationV2 |
             "surface_signatures": signatures,
             "surface_signature_rows": rows,
             "ending_keys": ending_keys,
+            "surface_variation_profile": dict(realization.surface_variation_profile),
+            "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
+            "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
+            "tone_policy_applied": True,
+            "tone_guard_report": realization.tone_guard_report,
+            "tone_guard_major_count": realization.tone_guard_major_count,
+            "tone_guard_passed": realization.tone_guard_major_count == 0,
+            "same_ending_repeat_count": realization.same_ending_repeat_count,
+            "same_ending_consecutive_count": realization.same_ending_consecutive_count,
             "same_ending_major_count": realization.same_ending_major_count,
+            "surface_signature_repeat_count": realization.surface_signature_repeat_count,
             "same_ending_guard_passed": realization.same_ending_major_count == 0,
+            "surface_variation_guard_passed": realization.surface_variation_profile["surface_variation_guard_passed"],
             "completion_sentence_template_used": False,
             "raw_input_included": False,
         }
@@ -1072,6 +1523,10 @@ def build_complete_surface_signature(realization: CompleteSurfaceRealizationV2 |
             "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
             "signature_count": len(rows),
             "surface_signature_rows": _json_safe_value(rows),
+            "surface_variation_profile": _json_safe_value(realization.get("surface_variation_profile") or {}),
+            "same_ending_major_count": int(realization.get("same_ending_major_count") or 0),
+            "surface_signature_repeat_count": int(realization.get("surface_signature_repeat_count") or 0),
+            "surface_variation_guard_passed": bool(realization.get("surface_variation_guard_passed", True)),
             "completion_sentence_template_used": False,
             "raw_input_included": False,
         }
@@ -1101,12 +1556,69 @@ def build_complete_surface_realization_meta(*, include_realized_text: bool = Tru
     return build_complete_surface_realizer_meta(include_realized_text=include_realized_text, **kwargs)
 
 
+def build_complete_product_quality_surface_variation_report(
+    realization: CompleteSurfaceRealizationV2 | Mapping[str, Any] | None = None,
+    *,
+    sentence_plan: CompleteSentencePlanV2 | Mapping[str, Any] | None = None,
+    sentence_plan_seed: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Return the Step3 product-quality surface variation report.
+
+    The report is text-independent where possible. It verifies that Surface
+    Realizer produced sentence-plan-bound grammar parts, non-repeated endings,
+    connector variation, and surface signatures for Template/Echo Guard.  It
+    never writes public ``comment_text`` and never introduces fallback text.
+    """
+
+    if isinstance(realization, CompleteSurfaceRealizationV2):
+        target = realization
+    elif isinstance(realization, Mapping):
+        rows = realization.get("surface_signature_rows") or realization.get("surface_lines") or ()
+        return _surface_variation_report_from_rows([row for row in rows if isinstance(row, Mapping)])
+    else:
+        target = build_complete_surface_realization_v2(
+            sentence_plan=sentence_plan,
+            sentence_plan_seed=sentence_plan_seed,
+            **kwargs,
+        )
+    report = dict(target.surface_variation_report)
+    report.update(
+        {
+            "status": target.status,
+            "ready": target.ready,
+            "plan_id": target.plan_id,
+            "coverage_group": target.coverage_group,
+            "surface_line_count": len(target.surface_lines),
+            "used_evidence_span_ids": list(target.used_evidence_span_ids),
+            "used_phrase_unit_ids": list(target.used_phrase_unit_ids),
+            "relation_types": list(target.relation_types),
+            "surface_signatures": list(target.surface_signatures),
+            "completion_sentence_template_used": bool(report.get("completion_sentence_template_used", False)),
+            "fixed_sentence_template_used": False,
+            "role_completed_sentence_template_used": False,
+            "input_specific_template_used": False,
+            "raw_input_included": bool(report.get("raw_input_included", False)),
+            "comment_text_key_written": False,
+            "public_comment_text_assigned": False,
+            "display_gate_relaxed": False,
+            "grounding_gate_relaxed": False,
+            "template_gate_relaxed": False,
+        }
+    )
+    return report
+
+
 # Compatibility aliases for concise import names in future Step 8/9 work.
 CompleteSurfaceLine = CompleteSurfaceLineV2
 CompleteSurfaceRealization = CompleteSurfaceRealizationV2
 CompleteSurfaceRealizerResult = CompleteSurfaceRealizationV2
 
 __all__ = [
+    "build_complete_product_quality_surface_variation_report",
+    "COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION",
+    "COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP",
+    "COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_SCHEMA_VERSION",
     "COMPLETE_SURFACE_LINE_SCHEMA_VERSION",
     "COMPLETE_SURFACE_REALIZER_SCHEMA_VERSION",
     "COMPLETE_SURFACE_REALIZER_SERVICE_VERSION",
@@ -1115,6 +1627,8 @@ __all__ = [
     "COMPLETE_SURFACE_REALIZER_TARGET_STEP",
     "COMPLETE_SURFACE_REALIZER_VERSION",
     "COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION",
+    "COMPLETE_SURFACE_VARIATION_POLICY_VERSION",
+    "COMPLETE_SURFACE_VARIATION_PROFILE_VERSION",
     "CompleteSurfaceLine",
     "CompleteSurfaceLineV2",
     "CompleteSurfaceRealization",

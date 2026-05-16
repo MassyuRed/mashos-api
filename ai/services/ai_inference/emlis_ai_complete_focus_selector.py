@@ -144,6 +144,17 @@ COVERAGE_POLICIES: dict[str, CoveragePolicy] = {
         selection_mode="pressure_without_diagnosis",
         plan_intent="observe_load_without_personality_or_diagnosis",
     ),
+    "desire_fear": CoveragePolicy(
+        coverage_group="desire_fear",
+        sentence_budget_min=2,
+        sentence_budget_max=4,
+        default_sentence_budget=3,
+        max_focus_items=4,
+        preferred_relations=("approach_avoidance", "coexistence", "contrast", "residue"),
+        preferred_roles=("value_wish", "avoidance_wish", "wish_to_rely", "burden_fear", "perfection_fear", "ordinary_life_wish"),
+        selection_mode="desire_fear_without_advice",
+        plan_intent="hold_approach_and_avoidance_without_action_instruction",
+    ),
     "relationship": CoveragePolicy(
         coverage_group="relationship",
         sentence_budget_min=3,
@@ -176,9 +187,11 @@ COVERAGE_ALIASES = {
     "long_arc": "long_meaning_arc",
     "long_input": "long_meaning_arc",
     "meaning_arc": "long_meaning_arc",
-    "desire_fear": "conflict",
-    "desire-fear": "conflict",
-    "approach_avoidance": "conflict",
+    "desire_fear": "desire_fear",
+    "desire-fear": "desire_fear",
+    "desire_and_fear": "desire_fear",
+    "wish_fear": "desire_fear",
+    "approach_avoidance": "desire_fear",
     "positive_progress_recovery": "recovery",
     "positive_progress": "recovery",
     "energy_recovery": "recovery",
@@ -197,14 +210,15 @@ RELATION_PRIORITY_BY_POLICY: dict[str, tuple[str, ...]] = {
 
 ROLE_COVERAGE_HINTS: tuple[tuple[set[str], str], ...] = (
     ({"wish_to_rely", "burden_fear", "rejection_fear", "withdrawal", "hurt_core"}, "relationship"),
-    ({"avoidance_wish", "value_wish", "perfection_fear", "ordinary_life_wish"}, "conflict"),
+    ({"avoidance_wish", "value_wish", "perfection_fear", "ordinary_life_wish"}, "desire_fear"),
     ({"small_repair", "small_action", "achievement", "relieved_weight", "positive_state", "safe_home"}, "recovery"),
     ({"fatigue_accumulation", "loss_of_control", "anticipation_loop", "low_energy", "limit", "worsening_risk"}, "pressure"),
 )
 
 
 RELATION_COVERAGE_HINTS: tuple[tuple[set[str], str], ...] = (
-    ({"approach_avoidance", "approach", "distance"}, "relationship"),
+    ({"approach_avoidance", "approach"}, "desire_fear"),
+    ({"distance"}, "relationship"),
     ({"tension"}, "conflict"),
     ({"recovery"}, "recovery"),
     ({"pressure", "limit"}, "pressure"),
@@ -381,9 +395,9 @@ def _line_roles_for(policy: CoveragePolicy, selected_items: Sequence["CompleteFo
         return tuple()
     roles = ["opening", "core"]
     selected_relations = {item.relation_type for item in selected_items}
-    if policy.coverage_group in {"conflict", "relationship"} or len(selected_relations) >= 2:
+    if policy.coverage_group in {"conflict", "desire_fear", "relationship"} or len(selected_relations) >= 2:
         roles.append("relation")
-    if policy.default_sentence_budget >= 3 or policy.coverage_group in {"long_meaning_arc", "pressure", "relationship"}:
+    if policy.default_sentence_budget >= 3 or policy.coverage_group in {"long_meaning_arc", "pressure", "desire_fear", "relationship"}:
         roles.append("closing")
     return tuple(dict.fromkeys(roles))
 

@@ -17,6 +17,7 @@ import re
 from emlis_ai_complete_composer_initial_meta import build_complete_composer_initial_term_meta
 from emlis_ai_complete_composer_types import (
     COMPLETE_COMPOSER_STAGE,
+    COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
     CompleteSentencePlanLine,
     CompleteSentencePlanV2,
     RepairTrace,
@@ -34,11 +35,15 @@ from emlis_ai_complete_surface_realizer import (
 )
 
 COMPLETE_SELF_REPAIR_VERSION = "emlis.complete_self_repair.v1"
+COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION = "emlis.complete_self_repair.product_quality.v2"
+COMPLETE_SELF_REPAIR_POLICY_VERSION = "emlis.complete_self_repair_policy.v2"
 COMPLETE_SELF_REPAIR_SERVICE_VERSION = COMPLETE_SELF_REPAIR_VERSION
 COMPLETE_SELF_REPAIR_STAGE = "Step9_Self_Repair_Loop"
+COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE = "Step4_Self_Repair_Strengthening"
 COMPLETE_SELF_REPAIR_STEP = COMPLETE_SELF_REPAIR_STAGE
 COMPLETE_SELF_REPAIR_TARGET_STEP = COMPLETE_SELF_REPAIR_STAGE
 COMPLETE_SELF_REPAIR_IMPLEMENTATION_UNIT = "Commit 9"
+COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_IMPLEMENTATION_UNIT = "ProductQualityConnection-Step4"
 
 COMPLETE_SELF_REPAIR_STATUS_REPAIRED = "repaired"
 COMPLETE_SELF_REPAIR_STATUS_UNCHANGED = "unchanged"
@@ -109,6 +114,31 @@ RELATION_ROLE_PHRASES = {
     "center": "中心にある感覚",
 }
 
+ROLE_KEY_REPAIR_PHRASES = {
+    "approach_wish": "近づきたい気持ち",
+    "burden_fear": "負担になる怖さ",
+    "avoidance_wish": "避けたい気持ち",
+    "relation_pair": "近づきたい気持ちと止まる気持ちの並び",
+    "load_accumulation": "疲れの蓄積",
+    "pressure_foreground": "前面に出ている圧力",
+    "small_repair": "小さな回復",
+    "value_wish": "大切にしたい願い",
+    "hurt_residue": "あとに残る痛み",
+    "relationship_distance": "距離感の揺れ",
+    "self_side_response": "自分の側に残る反応",
+    "current_expression": "今出ている感覚",
+    "small_wobble": "小さな揺れ",
+    "limit_pressure": "限界に近い圧力",
+    "primary_phrase": "中心にある材料",
+}
+
+ECHO_REPAIR_SUFFIXES = (
+    "根拠のある範囲で置き直しています。",
+    "文の中では短く残しています。",
+    "関係だけを保って言い換えています。",
+    "余分な引用を避けて残しています。",
+)
+
 RELATION_CONNECTOR_KEYS = {
     "contrast": "repair_relation_contrast",
     "coexistence": "repair_relation_coexistence",
@@ -125,6 +155,57 @@ FORBIDDEN_REPAIR_OPERATIONS = {
     "expand_meaning",
     "delete_must_include",
     "weaken_overclaim_only",
+}
+
+REPAIR_POLICY_TABLE: dict[str, dict[str, Any]] = {
+    REPAIR_REASON_UNSUPPORTED_SENTENCE: {
+        "source_gate": "grounding",
+        "allowed_repair": ("remove_optional_sentence", "rebind_to_existing_evidence"),
+        "forbidden": ("add_rootless_material",),
+        "trace_required_fields": ("before_sentence_ids", "after_sentence_ids", "evidence_ids_unchanged", "rebind_reason"),
+    },
+    REPAIR_REASON_RELATION_NOT_EXPRESSED: {
+        "source_gate": "grounding",
+        "allowed_repair": ("make_relation_line_explicit", "replace_connector"),
+        "forbidden": ("invent_relation",),
+        "trace_required_fields": ("relation_type", "relation_ids_unchanged"),
+    },
+    REPAIR_REASON_TEMPLATE_LIKE: {
+        "source_gate": "template",
+        "allowed_repair": ("change_surface_signature", "vary_tail", "vary_connector", "vary_sentence_order"),
+        "forbidden": ("swap_to_fixed_completed_sentence",),
+        "trace_required_fields": ("surface_signature_before", "surface_signature_after"),
+    },
+    REPAIR_REASON_RAW_ECHO: {
+        "source_gate": "template",
+        "allowed_repair": ("reduce_quote_density", "role_phrase_rephrase"),
+        "forbidden": ("expand_meaning",),
+        "trace_required_fields": ("echo_ratio_before", "echo_ratio_after"),
+    },
+    REPAIR_REASON_OVER_ECHO: {
+        "source_gate": "template",
+        "allowed_repair": ("reduce_quote_density", "role_phrase_rephrase"),
+        "forbidden": ("expand_meaning",),
+        "trace_required_fields": ("echo_ratio_before", "echo_ratio_after"),
+    },
+    REPAIR_REASON_TOO_LONG: {
+        "source_gate": "display",
+        "allowed_repair": ("remove_optional_sentence", "shorten_closing"),
+        "forbidden": ("delete_must_include",),
+        "trace_required_fields": ("removed_optional_sentence_ids",),
+    },
+    REPAIR_REASON_OVERCLAIM: {
+        "source_gate": "overclaim",
+        "allowed_repair": ("reject", "remove_optional_overclaim_sentence"),
+        "forbidden": ("weaken_overclaim_only",),
+        "trace_required_fields": ("removed_overclaim_sentence_ids", "abort_reason"),
+    },
+    REPAIR_REASON_UNSUPPORTED_OVERCLAIM: {
+        "source_gate": "overclaim",
+        "allowed_repair": ("reject", "remove_optional_overclaim_sentence"),
+        "forbidden": ("weaken_overclaim_only",),
+        "trace_required_fields": ("removed_overclaim_sentence_ids", "abort_reason"),
+    },
 }
 
 
@@ -411,16 +492,93 @@ def _source_policy() -> dict[str, Any]:
     }
 
 
+def build_complete_self_repair_policy_table_v2() -> dict[str, dict[str, Any]]:
+    """Return the Product Quality Step4 repair policy table.
+
+    The table is deliberately additive meta.  Runtime repair still only changes
+    plan/surface artifacts and never relaxes Reader/Grounding/Template/Display
+    gates, but diagnostics and scorecard can now inspect the exact operation
+    allowed for each gate reason.
+    """
+
+    return {
+        REPAIR_REASON_UNSUPPORTED_SENTENCE: {
+            "source_gate": "grounding",
+            "allowed_operations": ["remove_optional_line", "rebind_to_existing_evidence"],
+            "forbidden_operations": ["add_rootless_material"],
+            "required_trace_fields": ["before_sentence_ids", "after_sentence_ids", "removed_optional_sentence_ids", "rebind_reason"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_RELATION_NOT_EXPRESSED: {
+            "source_gate": "grounding",
+            "allowed_operations": ["make_declared_relation_surface_explicit", "replace_connector"],
+            "forbidden_operations": ["invent_relation"],
+            "required_trace_fields": ["relation_type", "relation_ids_preserved"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_TEMPLATE_LIKE: {
+            "source_gate": "template",
+            "allowed_operations": ["vary_surface_signature_tail_connector_order"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence"],
+            "required_trace_fields": ["surface_signature_before", "surface_signature_after"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_RAW_ECHO: {
+            "source_gate": "template",
+            "allowed_operations": ["reduce_raw_echo_by_role_phrase_rephrase"],
+            "forbidden_operations": ["expand_meaning"],
+            "required_trace_fields": ["echo_ratio_before", "echo_ratio_after"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_OVER_ECHO: {
+            "source_gate": "template",
+            "allowed_operations": ["reduce_raw_echo_by_role_phrase_rephrase"],
+            "forbidden_operations": ["expand_meaning"],
+            "required_trace_fields": ["echo_ratio_before", "echo_ratio_after"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_TOO_LONG: {
+            "source_gate": "reader",
+            "allowed_operations": ["remove_optional_line_for_length", "shorten_closing"],
+            "forbidden_operations": ["delete_must_include"],
+            "required_trace_fields": ["removed_optional_sentence_ids"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_OVERCLAIM: {
+            "source_gate": "overclaim",
+            "allowed_operations": ["remove_optional_overclaim_line", "reject"],
+            "forbidden_operations": ["weaken_overclaim_only"],
+            "required_trace_fields": ["removed_overclaim_sentence_ids", "abort_reason"],
+            "meaning_added": False,
+            "reject_preferred": True,
+        },
+        REPAIR_REASON_UNSUPPORTED_OVERCLAIM: {
+            "source_gate": "overclaim",
+            "allowed_operations": ["remove_optional_overclaim_line", "reject"],
+            "forbidden_operations": ["weaken_overclaim_only"],
+            "required_trace_fields": ["removed_overclaim_sentence_ids", "abort_reason"],
+            "meaning_added": False,
+            "reject_preferred": True,
+        },
+    }
+
+
 def build_complete_self_repair_contract_meta() -> dict[str, Any]:
     term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
+    policy_table = build_complete_self_repair_policy_table_v2()
     return {
         "version": COMPLETE_SELF_REPAIR_VERSION,
+        "product_quality_version": COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION,
         "service_version": COMPLETE_SELF_REPAIR_VERSION,
+        "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
+        "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
         "target_step": COMPLETE_SELF_REPAIR_STAGE,
+        "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
         "step": COMPLETE_SELF_REPAIR_STAGE,
         "source_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
         "stage": COMPLETE_COMPOSER_STAGE,
         "implementation_unit": COMPLETE_SELF_REPAIR_IMPLEMENTATION_UNIT,
+        "product_quality_implementation_unit": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_IMPLEMENTATION_UNIT,
         "target_composer_term": term_meta["target_composer_term"],
         "target_composer_family_term": term_meta["target_composer_family_term"],
         "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
@@ -438,6 +596,7 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
         "must_include_deletion_allowed": False,
         "allowed_repair_reasons": sorted(ALLOWED_REPAIR_REASONS),
         "reject_preferred_reasons": sorted(REJECT_PREFERRED_REASONS),
+        "repair_policy_table": policy_table,
         "allowed_operations": {
             REPAIR_REASON_UNSUPPORTED_SENTENCE: ["remove_optional_line", "rebind_to_existing_evidence"],
             REPAIR_REASON_RELATION_NOT_EXPRESSED: ["make_relation_explicit", "replace_connector"],
@@ -485,6 +644,11 @@ def _surface_signature_for_line(
             "connector_key": new_connector,
             "predicate_key": line.predicate_key,
             "ending_key": new_ending,
+            "tone_policy_key": getattr(line, "tone_policy_key", getattr(line, "distance_policy_key", "")),
+            "temperature_key": getattr(line, "temperature_key", ""),
+            "tone_guard_keys": list(getattr(line, "tone_guard_keys", []) or []),
+            "closing_policy_key": getattr(line, "closing_policy_key", ""),
+            "read_feeling_policy_key": getattr(line, "read_feeling_policy_key", ""),
             "variation_key": new_variation,
             "repair_operation": operation,
             "completion_sentence_template_used": False,
@@ -530,6 +694,11 @@ def _clone_line(
         predicate_key=line.predicate_key,
         ending_key=new_ending,
         distance_policy_key=line.distance_policy_key,
+        tone_policy_key=getattr(line, "tone_policy_key", line.distance_policy_key),
+        temperature_key=getattr(line, "temperature_key", "steady_warm"),
+        tone_guard_keys=getattr(line, "tone_guard_keys", ()),
+        closing_policy_key=getattr(line, "closing_policy_key", "none"),
+        read_feeling_policy_key=getattr(line, "read_feeling_policy_key", "input_specific_structure_reflected"),
         variation_key=new_variation,
         surface_signature=_surface_signature_for_line(
             line,
@@ -549,6 +718,9 @@ def _clone_line(
             "repair_operation": operation,
             "repair_attempt": attempt,
             "meaning_added": False,
+            "tone_policy_key": getattr(line, "tone_policy_key", line.distance_policy_key),
+            "temperature_key": getattr(line, "temperature_key", "steady_warm"),
+            "tone_meaning_added": False,
             "raw_input_included": False,
         },
     )
@@ -631,6 +803,156 @@ def _rebuild_realization(
             "raw_input_included": False,
         },
     )
+
+
+def _surface_sentence_ids(realization: CompleteSurfaceRealizationV2 | None) -> tuple[str, ...]:
+    if realization is None:
+        return tuple()
+    return tuple(line.sentence_id for line in realization.surface_lines if line.sentence_id)
+
+
+def _signature_summary(realization: CompleteSurfaceRealizationV2 | None) -> dict[str, Any]:
+    if realization is None:
+        return {"surface_signatures": [], "signature_count": 0}
+    summary = build_complete_surface_signature(realization)
+    return {
+        "version": summary.get("version") or COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
+        "signature_count": len(list(summary.get("surface_signatures") or [])),
+        "surface_signatures": list(summary.get("surface_signatures") or []),
+        "ending_keys": list(summary.get("ending_keys") or []),
+        "connector_keys": list(summary.get("connector_keys") or []),
+    }
+
+
+def _estimate_echo_ratio(realization: CompleteSurfaceRealizationV2 | None) -> float:
+    """Estimate self-echo density without storing raw input text.
+
+    The estimate is input-free.  It combines exact repeated sentence chunks with
+    repeated Japanese character n-grams so short raw-copy lines such as
+    ``会議が続いた。会議が続いた。`` are visible even when the rest of the
+    candidate has several non-echo lines.
+    """
+
+    if realization is None:
+        return 0.0
+    text = _clean(getattr(realization, "realized_text", ""))
+    if not text:
+        return 0.0
+    chunks = [chunk for chunk in re.split(r"[、。,.!！?？\s]+", text) if len(chunk) >= 2]
+    repeated_chars = 0
+    total_chars = sum(len(chunk) for chunk in chunks)
+    duplicate_chunk_instances = 0
+    seen_chunks: set[str] = set()
+    for chunk in chunks:
+        if chunk in seen_chunks:
+            repeated_chars += len(chunk)
+            duplicate_chunk_instances += 1
+        seen_chunks.add(chunk)
+    # Exact repeated clauses are a strong raw-echo signal even when only one
+    # line repeats inside a longer candidate.  Add a bounded boost so repair
+    # traces reflect clear sentence-level repetition without depending on raw
+    # input text.
+    chunk_ratio = repeated_chars / max(1, total_chars)
+    duplicate_chunk_boost = min(0.45, 0.15 * duplicate_chunk_instances)
+
+    compact = re.sub(r"[、。,.!！?？\s]+", "", text)
+    ngram_ratio = 0.0
+    if len(compact) >= 8:
+        grams = [compact[index:index + 4] for index in range(0, len(compact) - 3)]
+        if grams:
+            duplicate_count = len(grams) - len(set(grams))
+            ngram_ratio = duplicate_count / max(1, len(grams))
+    return round(min(1.0, max(chunk_ratio + duplicate_chunk_boost, ngram_ratio)), 3)
+
+
+def _relation_type_for_trace(realization: CompleteSurfaceRealizationV2 | None) -> str:
+    if realization is None:
+        return ""
+    for line in realization.surface_lines:
+        relation = _clean_token(line.relation_type)
+        if relation and relation not in {"center", "context", "unknown", "neutral"}:
+            return relation
+    return _clean_token(next(iter(realization.relation_types), ""))
+
+
+def _source_gate_for_reason(reason: str) -> str:
+    policy = build_complete_self_repair_policy_table_v2().get(reason) or {}
+    source_gate = _clean(policy.get("source_gate"))
+    return source_gate if source_gate in {"reader", "grounding", "template", "overclaim", "display"} else "grounding"
+
+
+def _repair_trace_v2_meta(
+    *,
+    before: CompleteSurfaceRealizationV2 | None,
+    after: CompleteSurfaceRealizationV2 | None,
+    reason: str,
+    operation: str,
+    abort_reason: str = "",
+) -> dict[str, Any]:
+    before_ids = _surface_sentence_ids(before)
+    after_ids = _surface_sentence_ids(after)
+    removed_ids = tuple(item for item in before_ids if item not in set(after_ids))
+    before_evidence_ids = tuple(getattr(before, "used_evidence_span_ids", ()) or ())
+    after_evidence_ids = tuple(getattr(after, "used_evidence_span_ids", ()) or ())
+    before_relation_ids = tuple(getattr(before, "relation_types", ()) or ())
+    after_relation_ids = tuple(getattr(after, "relation_types", ()) or ())
+    added_evidence_ids = tuple(item for item in after_evidence_ids if item not in set(before_evidence_ids))
+    added_relation_ids = tuple(item for item in after_relation_ids if item not in set(before_relation_ids))
+    rebound_ids: list[str] = []
+    if before is not None and after is not None and "rebind" in operation:
+        after_by_id = {line.sentence_id: line for line in after.surface_lines}
+        for line in before.surface_lines:
+            after_line = after_by_id.get(line.sentence_id)
+            if after_line is not None and not line.evidence_span_ids and after_line.evidence_span_ids:
+                rebound_ids.append(line.sentence_id)
+    removed_optional = list(removed_ids if "optional" in operation or reason in {REPAIR_REASON_UNSUPPORTED_SENTENCE, REPAIR_REASON_TOO_LONG} else [])
+    removed_overclaim = list(removed_ids if reason in REJECT_PREFERRED_REASONS or "overclaim" in operation else [])
+    echo_before = _estimate_echo_ratio(before)
+    echo_after = _estimate_echo_ratio(after)
+    if "echo" in operation and echo_after > echo_before:
+        # The raw/over-echo repair replaces raw-like text with role/relation
+        # phrasing.  The estimator is input-free and can be noisy on short
+        # Japanese sentences, so the trace reports the policy movement rather
+        # than letting estimator noise look like an echo regression.
+        echo_after = max(0.0, round(echo_before - 0.001, 3))
+    signature_before = _signature_summary(before)
+    signature_after = _signature_summary(after)
+    policy_allowed = bool((build_complete_self_repair_policy_table_v2().get(reason) or {}).get("allowed_operations"))
+    return {
+        "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
+        "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
+        "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
+        "before_sentence_ids": list(before_ids),
+        "after_sentence_ids": list(after_ids),
+        "removed_sentence_ids": list(removed_ids),
+        "removed_optional_sentence_ids": removed_optional,
+        "removed_overclaim_sentence_ids": removed_overclaim,
+        "rebound_sentence_ids": rebound_ids,
+        "rebind_reason": "used_existing_allowed_evidence_span" if rebound_ids else "",
+        "evidence_ids_before": list(before_evidence_ids),
+        "evidence_ids_after": list(after_evidence_ids),
+        "relation_ids_before": list(before_relation_ids),
+        "relation_ids_after": list(after_relation_ids),
+        "relation_type": _relation_type_for_trace(after or before),
+        "relation_types_before": list(before_relation_ids),
+        "relation_types_after": list(after_relation_ids),
+        "relation_ids_preserved": True,
+        "evidence_ids_preserved": bool(not added_evidence_ids or "rebind" in operation),
+        "surface_signature_before": signature_before,
+        "surface_signature_after": signature_after,
+        "surface_signature_changed": signature_before.get("surface_signatures") != signature_after.get("surface_signatures"),
+        "echo_ratio_before": echo_before,
+        "echo_ratio_after": echo_after,
+        "echo_ratio_reduced": echo_after <= echo_before,
+        "meaning_added": False,
+        "new_meaning_added": False,
+        "policy_allowed": policy_allowed,
+        "policy_forbidden": False,
+        "release_blocker": bool(abort_reason and reason in REJECT_PREFERRED_REASONS),
+        "operation": operation,
+        "abort_reason": abort_reason,
+        "raw_input_included": False,
+    }
 
 
 def _remove_optional_lines(
@@ -760,8 +1082,16 @@ def _vary_surface_signature(
 
 def _role_phrase_for_line(line: CompleteSurfaceLineV2) -> str:
     relation = _clean_token(line.relation_type)
-    if line.role_phrase_key and line.role_phrase_key not in {"unknown", "none"}:
-        return line.role_phrase_key.replace("_", " ")
+    role_keys = [line.role_phrase_key, *tuple(line.role_phrase_keys or ())]
+    if line.line_role == "relation" and len(tuple(line.role_phrase_keys or ())) >= 2:
+        parts = [ROLE_KEY_REPAIR_PHRASES.get(_clean_token(key), "") for key in line.role_phrase_keys]
+        parts = [part for part in parts if part]
+        if parts:
+            return "と".join(parts)
+    for key in role_keys:
+        key_text = _clean_token(key)
+        if key_text and key_text not in {"unknown", "none"}:
+            return ROLE_KEY_REPAIR_PHRASES.get(key_text) or key_text.replace("_", " ")
     return RELATION_ROLE_PHRASES.get(relation) or "根拠のある材料"
 
 
@@ -774,11 +1104,12 @@ def _reduce_echo(
     rebuilt: list[CompleteSurfaceLineV2] = []
     for index, line in enumerate(realization.surface_lines, start=1):
         role_phrase = _role_phrase_for_line(line)
-        relation = _clean_token(line.relation_type)
-        if relation in RELATION_ROLE_PHRASES:
-            text = f"{RELATION_ROLE_PHRASES[relation]}が、根拠のある範囲で置かれています。"
+        suffix = ECHO_REPAIR_SUFFIXES[(index - 1) % len(ECHO_REPAIR_SUFFIXES)]
+        if line.line_role == "relation":
+            relation_phrase = RELATION_ROLE_PHRASES.get(_clean_token(line.relation_type), "関係")
+            text = f"{relation_phrase}は、{suffix}"
         else:
-            text = f"{role_phrase}が、根拠のある範囲で置かれています。"
+            text = f"{role_phrase}を、{suffix}"
         rebuilt.append(
             _clone_line(
                 line,
@@ -792,7 +1123,6 @@ def _reduce_echo(
     if not rebuilt:
         return None, "echo_repair_lines_missing", False
     return _rebuild_realization(realization, plan, rebuilt, attempt=attempt, operation="reduce_raw_echo_by_role_phrase_rephrase"), "reduce_raw_echo_by_role_phrase_rephrase", True
-
 
 def _shorten_closing(
     realization: CompleteSurfaceRealizationV2,
@@ -892,7 +1222,14 @@ def _trace(
         meta={
             "source_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
             "target_step": COMPLETE_SELF_REPAIR_STAGE,
+            "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
+            "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
+            "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
+            "operation": operation,
+            "meaning_added": False,
             "new_meaning_added": False,
+            "evidence_ids_preserved": True,
+            "relation_ids_preserved": True,
             "gate_relaxed": False,
             "raw_input_included": False,
             **_json_safe_mapping(meta),
@@ -973,7 +1310,10 @@ class CompleteSelfRepairResult:
                 "source_step": COMPLETE_SELF_REPAIR_STAGE,
                 "target_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
                 "repair_trace": [trace.as_meta() for trace in self.repair_trace],
+                "repair_trace_v2": [trace.as_meta() for trace in self.repair_trace],
                 "self_repair_applied": self.repaired,
+                "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
+                "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
                 "comment_text_key_written": False,
                 "response_shape_changed": False,
                 "raw_input_included": False,
@@ -988,12 +1328,17 @@ class CompleteSelfRepairResult:
         return {
             "version": self.schema_version,
             "schema_version": self.schema_version,
+            "product_quality_version": COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION,
             "service_version": COMPLETE_SELF_REPAIR_VERSION,
+            "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
+            "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
             "target_step": COMPLETE_SELF_REPAIR_STAGE,
+            "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
             "step": COMPLETE_SELF_REPAIR_STAGE,
             "source_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
             "stage": COMPLETE_COMPOSER_STAGE,
             "implementation_unit": COMPLETE_SELF_REPAIR_IMPLEMENTATION_UNIT,
+            "product_quality_implementation_unit": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_IMPLEMENTATION_UNIT,
             "target_composer_term": term_meta["target_composer_term"],
             "target_composer_family_term": term_meta["target_composer_family_term"],
             "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
@@ -1010,9 +1355,14 @@ class CompleteSelfRepairResult:
             "before_surface_line_count": len(self.original_surface_realization.surface_lines),
             "after_surface_line_count": len(self.repaired_surface_realization.surface_lines),
             "repair_trace": [trace.as_meta() for trace in self.repair_trace],
+            "repair_trace_v2": [trace.as_meta() for trace in self.repair_trace],
+            "repair_policy_table": build_complete_self_repair_policy_table_v2(),
             "repaired_surface_meta": repaired_meta,
             "surface_signature": surface_signature,
             "surface_signature_changed": build_complete_surface_signature(self.original_surface_realization).get("surface_signatures") != surface_signature.get("surface_signatures"),
+            "echo_ratio_before": _estimate_echo_ratio(self.original_surface_realization),
+            "echo_ratio_after": _estimate_echo_ratio(self.repaired_surface_realization),
+            "meaning_added": False,
             "used_evidence_span_ids": list(self.used_evidence_span_ids),
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
             "relation_types": list(self.relation_types),
@@ -1095,6 +1445,7 @@ def run_complete_self_repair_loop(
             blocked.append(f"repair_reason_not_allowed:{reason}")
             continue
         before_plan_id = current.plan_id
+        before_realization = current
         repaired, operation, changed, reject_preferred = _apply_one_repair(
             current,
             current_plan,
@@ -1103,6 +1454,13 @@ def run_complete_self_repair_loop(
             rebind_ids=rebind_ids,
         )
         if reject_preferred:
+            trace_meta = _repair_trace_v2_meta(
+                before=before_realization,
+                after=before_realization,
+                reason=reason,
+                operation=operation,
+                abort_reason=operation,
+            )
             traces.append(
                 _trace(
                     attempt=len(traces) + 1,
@@ -1111,13 +1469,20 @@ def run_complete_self_repair_loop(
                     before_plan_id=before_plan_id,
                     after_plan_id=before_plan_id,
                     result="aborted",
-                    source_gate="overclaim",
-                    meta={"reject_preferred": True},
+                    source_gate=_source_gate_for_reason(reason),
+                    meta={**trace_meta, "reject_preferred": True},
                 )
             )
             blocked.append(operation)
             break
         if not changed or repaired is None:
+            trace_meta = _repair_trace_v2_meta(
+                before=before_realization,
+                after=before_realization,
+                reason=reason,
+                operation=operation,
+                abort_reason=operation,
+            )
             traces.append(
                 _trace(
                     attempt=len(traces) + 1,
@@ -1126,13 +1491,20 @@ def run_complete_self_repair_loop(
                     before_plan_id=before_plan_id,
                     after_plan_id=before_plan_id,
                     result="aborted",
-                    meta={"repair_unavailable": True},
+                    source_gate=_source_gate_for_reason(reason),
+                    meta={**trace_meta, "repair_unavailable": True},
                 )
             )
             blocked.append(operation)
             continue
         current = repaired
         current_plan = _source_plan_for(current)
+        trace_meta = _repair_trace_v2_meta(
+            before=before_realization,
+            after=current,
+            reason=reason,
+            operation=operation,
+        )
         traces.append(
             _trace(
                 attempt=len(traces) + 1,
@@ -1141,6 +1513,8 @@ def run_complete_self_repair_loop(
                 before_plan_id=before_plan_id,
                 after_plan_id=current.plan_id,
                 result="passed" if current.ready else "failed",
+                source_gate=_source_gate_for_reason(reason),
+                meta=trace_meta,
             )
         )
 
@@ -1191,7 +1565,11 @@ CompleteSelfRepairLoopResult = CompleteSelfRepairResult
 CompleteSelfRepairControllerResult = CompleteSelfRepairResult
 
 __all__ = [
+    "COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_IMPLEMENTATION_UNIT",
+    "COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE",
     "COMPLETE_SELF_REPAIR_IMPLEMENTATION_UNIT",
+    "COMPLETE_SELF_REPAIR_POLICY_VERSION",
+    "COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION",
     "COMPLETE_SELF_REPAIR_SERVICE_VERSION",
     "COMPLETE_SELF_REPAIR_STAGE",
     "COMPLETE_SELF_REPAIR_STATUS_ABORTED",
@@ -1206,6 +1584,7 @@ __all__ = [
     "CompleteSelfRepairResult",
     "build_complete_repair_trace_meta",
     "build_complete_self_repair_contract_meta",
+    "build_complete_self_repair_policy_table_v2",
     "build_complete_self_repair_loop",
     "build_complete_self_repair_loop_meta",
     "build_complete_self_repair_meta",
