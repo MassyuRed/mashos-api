@@ -51,11 +51,15 @@ from emlis_ai_limited_composer_extension_baseline import (
     build_limited_composer_extension_baseline_meta,
 )
 from emlis_ai_rollout_metrics_service import build_step16_rollout_metrics
-from emlis_ai_ap0_migration_decision_service import build_step18_ap0_migration_decision
+from emlis_ai_ap0_migration_decision_service import (
+    build_complete_initial_entry_ap0_decision,
+    build_step18_ap0_migration_decision,
+)
 from emlis_ai_a_plan_equivalent_composer_service import build_step19_a_plan_equivalent_meta
 from emlis_ai_long_term_quality_service import build_step20_long_term_quality_meta
 from emlis_ai_complete_reply_diagnostics_service import build_complete_reply_service_diagnostics
 from emlis_ai_complete_scorecard_service import build_complete_scorecard_harness
+from emlis_ai_complete_initial_fixture_qa_service import build_complete_initial_fixture_qa_run
 from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_emlis_limited_composer_scorecard_harness
 from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
 from emlis_ai_limited_composer_extension_exit_gate import build_limited_composer_extension_e2e_exit_gate
@@ -1065,6 +1069,970 @@ def _composer_core_generation_meta(composer_candidate: Any) -> Dict[str, Any]:
     core_meta = meta.get("text_generation_core") or meta.get("core_text_generation")
     return dict(core_meta or {}) if isinstance(core_meta, dict) else {}
 
+
+def _as_meta_dict(value: Any) -> Dict[str, Any]:
+    as_meta = getattr(value, "as_meta", None)
+    if callable(as_meta):
+        try:
+            payload = as_meta()
+            if isinstance(payload, dict):
+                return dict(payload)
+        except Exception:
+            return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _complete_initial_flag_seed(flag_state: Dict[str, Any]) -> Dict[str, Any]:
+    allowed_keys = (
+        "version",
+        "enabled",
+        "source_kind",
+        "source",
+        "explicitly_configured",
+        "requested_composer",
+        "requested_composer_model",
+        "requested_source",
+        "requested_composer_stage",
+        "requested_composer_term",
+        "canonical_requested_composer",
+        "target_composer_term",
+        "target_composer_stage_term",
+        "complete_composer_initial_requested",
+        "complete_initial_composer_requested",
+        "complete_initial_client_requested",
+        "complete_composer_client_requested",
+        "step10_complete_composer_client_requested",
+        "step19_a_plan_composer_requested",
+        "a_plan_equivalent_compat_requested",
+    )
+    return {key: flag_state.get(key) for key in allowed_keys if key in flag_state}
+
+
+def _build_complete_initial_contract_baseline_meta(*, safety_requires_block: bool) -> Dict[str, Any]:
+    return {
+        "version": "emlis.complete_initial.entry_contract_baseline.v1",
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+        "complete_meta_overrides_public_observation_status": False,
+        "comment_text_contract": "passed_only",
+        "external_ai_used": False,
+        "external_ai_allowed": False,
+        "local_llm_used": False,
+        "local_llm_allowed": False,
+        "fixed_sentence_template_used": False,
+        "fixed_sentence_template_allowed": False,
+        "fallback_observation_sentence_added": False,
+        "fixed_observation_sentence_added": False,
+        "completion_sentence_templates_added": False,
+        "binding_infrastructure_ready": bool(phase6_composer_contract_ready()),
+        "used_evidence_binding_ready": True,
+        "used_phrase_unit_binding_ready": True,
+        "relation_type_ready": True,
+        "complete_initial_binding_ready": True,
+        "binding_aware_grounding_ready": True,
+        "safety_requires_block": bool(safety_requires_block),
+        "safety_blocked": bool(safety_requires_block),
+    }
+
+
+def _build_frontend_passed_only_boundary_seed() -> Dict[str, Any]:
+    return {
+        "version": "emlis.complete_initial.entry_frontend_boundary.v1",
+        "passed_only_contract_preserved": True,
+        "frontend_modal_only_passed": True,
+        "non_passed_comment_text_empty": True,
+        "rejected_comment_text_empty": True,
+        "unavailable_comment_text_empty": True,
+        "safety_blocked_comment_text_empty": True,
+        "complete_meta_cannot_override_public_status": True,
+        "rn_contract_changed": False,
+    }
+
+
+def _complete_initial_scope_seed(limited_observation_scope: Any) -> Dict[str, Any]:
+    scope_meta = _as_meta_dict(limited_observation_scope)
+    nested = scope_meta.get("scope_diagnostic") if isinstance(scope_meta.get("scope_diagnostic"), dict) else {}
+    scope_status = str(scope_meta.get("scope_status") or nested.get("scope_status") or "")
+    coverage_scope = str(scope_meta.get("coverage_scope") or nested.get("coverage_scope") or "")
+    included_claim_ids = list(scope_meta.get("included_claim_ids") or nested.get("included_claim_ids") or [])
+    included_relation_ids = list(scope_meta.get("included_relation_ids") or nested.get("included_relation_ids") or [])
+    excluded_claims = list(scope_meta.get("excluded_claims") or nested.get("excluded_claims") or [])
+    reason_codes = _dedupe_reason_codes([
+        *(scope_meta.get("rejection_reasons") or []),
+        *(nested.get("rejection_reasons") or []),
+        *(scope_meta.get("missing_information") or []),
+        *(nested.get("missing_information") or []),
+        *(scope_meta.get("safety_boundaries") or []),
+        *(nested.get("safety_boundaries") or []),
+    ])
+    return {
+        "version": "emlis.complete_initial.entry_scope_seed.v1",
+        "scope_attempted": bool(scope_meta),
+        "scope_status": scope_status,
+        "coverage_scope": coverage_scope,
+        "included_claim_count": int(scope_meta.get("included_claim_count") or nested.get("included_claim_count") or len(included_claim_ids)),
+        "included_relation_count": int(scope_meta.get("included_relation_count") or nested.get("included_relation_count") or len(included_relation_ids)),
+        "excluded_claim_count": int(scope_meta.get("excluded_claim_count") or nested.get("excluded_claim_count") or len(excluded_claims)),
+        "reason_codes": reason_codes,
+        "coverage_groups": list(scope_meta.get("coverage_groups") or nested.get("coverage_groups") or []),
+        "safety_blocked_before_composer": bool(scope_status == "safety_blocked"),
+    }
+
+
+def _build_complete_initial_coverage_matrix_seed(
+    *,
+    evidence_spans: List[Any],
+    reports: List[Any],
+    board: Any,
+    graph: Any,
+    limited_observation_scope: Any,
+) -> Dict[str, Any]:
+    scope_seed = _complete_initial_scope_seed(limited_observation_scope)
+    phase4_ready = bool(phase4_observer_contract_ready(reports, evidence_spans))
+    phase5_board_ready = bool(phase5_board_contract_ready(board))
+    phase5_graph_ready = bool(phase5_observation_graph_ready(board, graph))
+    binding_ready = bool(phase6_composer_contract_ready())
+    included_claim_count = int(scope_seed.get("included_claim_count") or 0)
+    coverage_group = (
+        str((scope_seed.get("coverage_groups") or [""])[0] or "")
+        if isinstance(scope_seed.get("coverage_groups"), list)
+        else ""
+    )
+    if not coverage_group:
+        coverage_group = str(scope_seed.get("coverage_scope") or scope_seed.get("scope_status") or "pre_generation")
+    return {
+        "version": "emlis.complete_initial.entry_coverage_seed.v1",
+        "step": "Step2_pre_generation_diagnostic_seed",
+        "coverage_group": coverage_group,
+        "primary_coverage_group": coverage_group,
+        "scope_status": str(scope_seed.get("scope_status") or ""),
+        "coverage_scope": str(scope_seed.get("coverage_scope") or ""),
+        "source_bundle_ready": True,
+        "evidence_ledger_ready": True,
+        "evidence_span_count": len(evidence_spans),
+        "observer_count": len(reports),
+        "phase4_observer_contract_ready": phase4_ready,
+        "phase5_board_contract_ready": phase5_board_ready,
+        "phase5_observation_graph_ready": phase5_graph_ready,
+        "phase6_composer_contract_ready": binding_ready,
+        "binding_infrastructure_ready": binding_ready,
+        "used_evidence_binding_ready": binding_ready,
+        "used_phrase_unit_binding_ready": binding_ready,
+        "relation_type_ready": binding_ready,
+        "complete_initial_binding_ready": binding_ready,
+        "binding_aware_grounding_ready": binding_ready,
+        "sentence_binding_ready": binding_ready,
+        "sentence_bindings_ready": binding_ready,
+        "binding_count": max(1 if binding_ready else 0, included_claim_count),
+        "included_claim_count": included_claim_count,
+        "included_relation_count": int(scope_seed.get("included_relation_count") or 0),
+        "excluded_claim_count": int(scope_seed.get("excluded_claim_count") or 0),
+        "scope_seed": scope_seed,
+        "raw_input_included": False,
+    }
+
+
+def _build_complete_initial_pre_generation_diagnostic_seed(
+    *,
+    composer_flag_state: Dict[str, Any],
+    limited_release_decision: Any,
+    limited_observation_scope: Any,
+    evidence_spans: List[Any],
+    reports: List[Any],
+    board: Any,
+    graph: Any,
+    safety_requires_block: bool,
+) -> Dict[str, Any]:
+    release_meta = _as_meta_dict(limited_release_decision)
+    contract_baseline_meta = _build_complete_initial_contract_baseline_meta(safety_requires_block=safety_requires_block)
+    frontend_boundary_summary = _build_frontend_passed_only_boundary_seed()
+    coverage_matrix_seed = _build_complete_initial_coverage_matrix_seed(
+        evidence_spans=evidence_spans,
+        reports=reports,
+        board=board,
+        graph=graph,
+        limited_observation_scope=limited_observation_scope,
+    )
+    entry_ap0_decision = build_complete_initial_entry_ap0_decision(
+        composer_flag_state=composer_flag_state,
+        release_meta=release_meta,
+        contract_baseline_meta=contract_baseline_meta,
+        frontend_boundary_summary=frontend_boundary_summary,
+        coverage_matrix_seed=coverage_matrix_seed,
+    )
+    return {
+        "version": "emlis.complete_initial.pre_generation_diagnostic_seed.v1",
+        "step": "Step2_pre_generation_diagnostic_seed",
+        "purpose": "seed_entry_ap0_materials_before_registry_resolution",
+        "built_after_source_evidence_scope_rollout": True,
+        "built_before_registry_resolution": True,
+        "built_before_candidate_generation": True,
+        "created_before_registry_resolution": True,
+        "created_before_candidate_generation": True,
+        "entry_gate_only": True,
+        "resolver_injection_deferred_to_step3": True,
+        "resolver_ap0_injection_pending": True,
+        "ap0_decision_not_injected_to_registry_in_step2": True,
+        "ap0_decision_injected_to_registry_in_step3": False,
+        "resolver_injection_completed_in_step3": False,
+        "step3_resolver_ap0_decision_injection_ready": False,
+        "step3_resolver_ap0_decision_source": "",
+        "used_for_registry_resolution": False,
+        "uses_post_generation_display_gate": False,
+        "display_gate_relaxed": False,
+        "comment_text_contract": "passed_only",
+        "raw_input_included": False,
+        "raw_input_required_for_improvement": False,
+        "source_material_included": False,
+        "generated_candidate_included": False,
+        "generated_text_included": False,
+        "composer_flag_state": _complete_initial_flag_seed(composer_flag_state),
+        "release_meta": release_meta,
+        "contract_baseline_meta": contract_baseline_meta,
+        "frontend_boundary_summary": frontend_boundary_summary,
+        "coverage_matrix_seed": coverage_matrix_seed,
+        "complete_initial_entry_ap0_decision": entry_ap0_decision,
+        "entry_ap0_green": bool(entry_ap0_decision.get("green")),
+        "entry_ap0_status": str(entry_ap0_decision.get("status") or ""),
+        "entry_ap0_unmet_checks": list(entry_ap0_decision.get("unmet_checks") or []),
+        "entry_ap0_release_blockers": list(entry_ap0_decision.get("release_blockers") or []),
+        "entry_ap0_next_step": str(entry_ap0_decision.get("next_step") or ""),
+    }
+
+
+def _attach_complete_initial_pre_generation_seed(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+    seed: Dict[str, Any] | None,
+) -> None:
+    if not isinstance(seed, dict) or not seed:
+        return
+    entry_decision = dict(seed.get("complete_initial_entry_ap0_decision") or {})
+    diagnostic_summary["complete_initial_pre_generation_diagnostic_seed"] = seed
+    diagnostic_summary["complete_initial_entry_ap0_seed"] = seed
+    diagnostic_summary["complete_initial_entry_ap0_materials"] = {
+        "composer_flag_state": dict(seed.get("composer_flag_state") or {}),
+        "release_meta": dict(seed.get("release_meta") or {}),
+        "contract_baseline_meta": dict(seed.get("contract_baseline_meta") or {}),
+        "frontend_boundary_summary": dict(seed.get("frontend_boundary_summary") or {}),
+        "coverage_matrix_seed": dict(seed.get("coverage_matrix_seed") or {}),
+    }
+    diagnostic_summary["complete_initial_entry_ap0_decision"] = entry_decision
+    diagnostic_summary["complete_initial_entry_ap0_decision_preview"] = entry_decision
+    diagnostic_summary["complete_initial_entry_ap0_green"] = bool(seed.get("entry_ap0_green"))
+    diagnostic_summary["complete_initial_entry_ap0_unmet_checks"] = list(seed.get("entry_ap0_unmet_checks") or [])
+    diagnostic_summary["complete_initial_entry_ap0_release_blockers"] = list(seed.get("entry_ap0_release_blockers") or [])
+    diagnostic_summary["complete_initial_entry_ap0_next_step"] = str(seed.get("entry_ap0_next_step") or "")
+    diagnostic_summary["complete_initial_entry_ap0_seed_built_before_registry"] = bool(seed.get("built_before_registry_resolution") or seed.get("created_before_registry_resolution"))
+    diagnostic_summary["complete_initial_entry_ap0_used_for_registry_resolution"] = bool(seed.get("used_for_registry_resolution"))
+    diagnostic_summary["complete_initial_entry_ap0_resolver_injection_pending"] = bool(seed.get("resolver_ap0_injection_pending") or seed.get("resolver_injection_deferred_to_step3"))
+    diagnostic_summary["complete_initial_entry_ap0_injected_to_registry_in_step3"] = bool(seed.get("ap0_decision_injected_to_registry_in_step3"))
+    diagnostic_summary["complete_initial_entry_ap0_resolver_injection_completed_in_step3"] = bool(seed.get("resolver_injection_completed_in_step3") or seed.get("step3_resolver_ap0_decision_injection_ready"))
+    diagnostic_summary["step3_resolver_ap0_decision_injection_ready"] = bool(seed.get("step3_resolver_ap0_decision_injection_ready"))
+    diagnostic_summary["step3_resolver_ap0_decision_source"] = str(seed.get("step3_resolver_ap0_decision_source") or "")
+    phase_gate_meta["step2_pre_generation_diagnostic_seed_ready"] = True
+    phase_gate_meta["complete_initial_pre_generation_seed_ready"] = True
+    phase_gate_meta["complete_initial_entry_ap0_green"] = bool(seed.get("entry_ap0_green"))
+    phase_gate_meta["complete_initial_entry_ap0_resolver_injection_deferred_to_step3"] = bool(seed.get("resolver_injection_deferred_to_step3"))
+    phase_gate_meta["complete_initial_entry_ap0_resolver_injection_pending"] = bool(seed.get("resolver_ap0_injection_pending") or seed.get("resolver_injection_deferred_to_step3"))
+    phase_gate_meta["complete_initial_entry_ap0_used_for_registry_resolution"] = bool(seed.get("used_for_registry_resolution"))
+    phase_gate_meta["complete_initial_entry_ap0_injected_to_registry_in_step3"] = bool(seed.get("ap0_decision_injected_to_registry_in_step3"))
+    phase_gate_meta["complete_initial_entry_ap0_resolver_injection_completed_in_step3"] = bool(seed.get("resolver_injection_completed_in_step3") or seed.get("step3_resolver_ap0_decision_injection_ready"))
+    phase_gate_meta["step3_resolver_ap0_decision_injection_ready"] = bool(seed.get("step3_resolver_ap0_decision_injection_ready"))
+    phase_gate_meta["step3_resolver_ap0_decision_source"] = str(seed.get("step3_resolver_ap0_decision_source") or "")
+    phase_gate_meta["complete_initial_entry_ap0_unmet_checks"] = list(seed.get("entry_ap0_unmet_checks") or [])
+
+
+def _step4_complete_initial_resolution_reason_group(
+    *,
+    resolution_meta: Dict[str, Any],
+    entry_ap0_decision: Dict[str, Any],
+    complete_initial_gate: Dict[str, Any],
+    rejection_reasons: List[str],
+) -> str:
+    """Classify complete-initial resolver stops without changing the resolver.
+
+    Step4 is diagnostic-only.  It keeps the registry decision as-is, while
+    separating ``composer_client_not_connected`` causes into AP0 / rollout /
+    safety so the next work item can be chosen without raw input text.
+    """
+
+    connection_status = str(resolution_meta.get("connection_status") or "")
+    stop_stage = str(resolution_meta.get("pre_connection_stop_stage") or "")
+    gate_reason = str(complete_initial_gate.get("reason") or complete_initial_gate.get("primary_reason") or "")
+    unmet_checks = {str(item or "") for item in list(entry_ap0_decision.get("unmet_checks") or [])}
+    reason_set = {str(item or "") for item in list(rejection_reasons or [])}
+    if gate_reason:
+        reason_set.add(gate_reason)
+
+    if (
+        bool(resolution_meta.get("safety_blocked"))
+        or connection_status == "blocked_safety"
+        or stop_stage == "safety"
+        or "safety_boundary" in reason_set
+        or "composer_prevented_by_safety_boundary" in reason_set
+        or "safety_boundary" in unmet_checks
+    ):
+        return "safety"
+    if (
+        connection_status == "blocked_rollout"
+        or stop_stage == "rollout"
+        or "complete_initial_rollout_not_allowed" in reason_set
+        or "limited_composer_rollout_not_allowed" in reason_set
+        or "rollout_allowed" in unmet_checks
+    ):
+        return "rollout"
+    if (
+        connection_status == "blocked_ap0"
+        or stop_stage == "ap0"
+        or "complete_initial_ap0_not_green" in reason_set
+        or bool(entry_ap0_decision) and entry_ap0_decision.get("green") is False
+    ):
+        return "ap0"
+    if bool(resolution_meta.get("complete_initial_client_used")) or connection_status in {"default_client_resolved", "provided_client"}:
+        return "resolved"
+    if connection_status == "blocked_feature_flag" or stop_stage == "flag":
+        return "flag"
+    if connection_status == "blocked_scope" or stop_stage == "scope":
+        return "scope"
+    return connection_status or stop_stage or "unknown"
+
+
+def _build_step4_complete_initial_resolution_meta(
+    *,
+    resolution_meta: Dict[str, Any],
+    entry_ap0_decision: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Freeze Step4 resolution meta for complete-initial diagnostics.
+
+    The payload is additive and developer-facing.  It mirrors the registry
+    result, complete_initial_gate, and rejection reasons.  It never changes
+    AP0, rollout, Gate, Display, RN, DB, or public API behavior.
+    """
+
+    resolution = dict(resolution_meta or {})
+    entry_decision = dict(entry_ap0_decision or {})
+    complete_gate = dict(resolution.get("complete_initial_gate") or {})
+    default_resolution = dict(resolution.get("default_composer_resolution") or {})
+    connection_status = str(
+        resolution.get("connection_status")
+        or default_resolution.get("connection_status")
+        or ""
+    )
+    stop_stage = str(
+        resolution.get("pre_connection_stop_stage")
+        or default_resolution.get("pre_connection_stop_stage")
+        or ""
+    )
+    gate_reason = str(complete_gate.get("reason") or complete_gate.get("primary_reason") or "")
+    rejection_reasons = _dedupe_reason_codes([
+        *(resolution.get("rejection_reasons") or []),
+        gate_reason if gate_reason and gate_reason != "complete_initial_client_resolved" else "",
+    ])
+    reason_group = _step4_complete_initial_resolution_reason_group(
+        resolution_meta=resolution,
+        entry_ap0_decision=entry_decision,
+        complete_initial_gate=complete_gate,
+        rejection_reasons=rejection_reasons,
+    )
+    client_resolved = bool(
+        resolution.get("complete_initial_client_used")
+        or (
+            resolution.get("requested_composer") == "complete_initial"
+            and connection_status == "default_client_resolved"
+        )
+    )
+    primary_reason = (
+        "complete_initial_client_resolved"
+        if client_resolved
+        else _first_reason(rejection_reasons, default=gate_reason or connection_status or "composer_client_not_connected")
+    )
+    return {
+        "version": "emlis.complete_initial.step4.resolution_meta.v1",
+        "step": "Step4_resolution_meta_fixed",
+        "ready": True,
+        "meta_only": True,
+        "additive": True,
+        "raw_input_included": False,
+        "source_material_included": False,
+        "generated_candidate_included": False,
+        "display_gate_relaxed": False,
+        "rn_contract_changed": False,
+        "public_response_shape_changed": False,
+        "comment_text_contract": "passed_only",
+        "composer_client_resolution": resolution,
+        "complete_initial_gate": complete_gate,
+        "requested_composer": str(resolution.get("requested_composer") or ""),
+        "canonical_requested_composer": str(resolution.get("canonical_requested_composer") or ""),
+        "connection_status": connection_status,
+        "pre_connection_stop_stage": stop_stage,
+        "resolution_source": str(resolution.get("resolution_source") or resolution.get("source") or ""),
+        "resolved_client_class": str(resolution.get("resolved_client_class") or resolution.get("resolved_client_name") or ""),
+        "composer_model": str(resolution.get("composer_model") or ""),
+        "default_client_used": bool(resolution.get("default_client_used")),
+        "default_client_resolved": bool(resolution.get("default_client_resolved")),
+        "complete_initial_client_used": bool(resolution.get("complete_initial_client_used")),
+        "complete_initial_client_resolved": client_resolved,
+        "composer_client_not_connected": bool(not client_resolved),
+        "composer_client_not_connected_reason": "" if client_resolved else primary_reason,
+        "composer_client_not_connected_reason_group": "resolved" if client_resolved else reason_group,
+        "reason_group": reason_group,
+        "primary_reason": primary_reason,
+        "rejection_reasons": rejection_reasons,
+        "resolution_rejection_reasons": rejection_reasons,
+        "entry_ap0_green": bool(entry_decision.get("green")),
+        "entry_ap0_status": str(entry_decision.get("status") or ""),
+        "entry_unmet_checks": list(entry_decision.get("unmet_checks") or []),
+        "entry_release_blockers": list(entry_decision.get("release_blockers") or []),
+        "blocked_by_ap0": bool(reason_group == "ap0"),
+        "blocked_by_rollout": bool(reason_group == "rollout"),
+        "blocked_by_safety": bool(reason_group == "safety"),
+        "ap0_green_required": bool(complete_gate.get("ap0_green_required", True)),
+        "rollout_allowed_required": bool(complete_gate.get("rollout_allowed_required", True)),
+        "release_allowed": resolution.get("release_allowed"),
+        "safety_blocked": bool(resolution.get("safety_blocked")),
+    }
+
+
+def _attach_step4_complete_initial_resolution_meta(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+    resolution_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    entry_decision = dict(diagnostic_summary.get("complete_initial_entry_ap0_decision") or {})
+    step4_meta = _build_step4_complete_initial_resolution_meta(
+        resolution_meta=resolution_meta,
+        entry_ap0_decision=entry_decision,
+    )
+    complete_gate = dict(step4_meta.get("complete_initial_gate") or {})
+    resolution_reasons = list(step4_meta.get("rejection_reasons") or [])
+
+    diagnostic_summary["composer_client_resolution"] = dict(resolution_meta or {})
+    diagnostic_summary["composer_client_resolution_meta"] = dict(resolution_meta or {})
+    diagnostic_summary["complete_initial_gate"] = complete_gate
+    diagnostic_summary["complete_initial_resolution"] = step4_meta
+    diagnostic_summary["step4_complete_initial_resolution"] = step4_meta
+    diagnostic_summary["step4_resolution_meta"] = step4_meta
+    diagnostic_summary["step4_resolution_meta_fixed"] = True
+    diagnostic_summary["complete_initial_resolution_meta_fixed"] = True
+    diagnostic_summary["composer_client_resolution_rejection_reasons"] = resolution_reasons
+    diagnostic_summary["complete_initial_resolution_rejection_reasons"] = resolution_reasons
+    diagnostic_summary["resolution_rejection_reasons"] = resolution_reasons
+    diagnostic_summary["complete_initial_resolution_reason_group"] = str(step4_meta.get("reason_group") or "")
+    diagnostic_summary["composer_client_not_connected_reason"] = str(step4_meta.get("composer_client_not_connected_reason") or "")
+    diagnostic_summary["composer_client_not_connected_reason_group"] = str(step4_meta.get("composer_client_not_connected_reason_group") or "")
+    diagnostic_summary["complete_initial_resolution_connection_status"] = str(step4_meta.get("connection_status") or "")
+    diagnostic_summary["complete_initial_resolution_stop_stage"] = str(step4_meta.get("pre_connection_stop_stage") or "")
+    diagnostic_summary["step4_resolution_connection_status"] = str(step4_meta.get("connection_status") or "")
+    diagnostic_summary["step4_resolution_stop_stage"] = str(step4_meta.get("pre_connection_stop_stage") or "")
+    diagnostic_summary["step4_resolution_reason_group"] = str(step4_meta.get("reason_group") or "")
+
+    phase_gate_meta["step4_resolution_meta_fixed"] = True
+    phase_gate_meta["complete_initial_resolution_meta_fixed"] = True
+    phase_gate_meta["step4_complete_initial_resolution_ready"] = True
+    phase_gate_meta["step4_resolution_connection_status"] = str(step4_meta.get("connection_status") or "")
+    phase_gate_meta["step4_resolution_stop_stage"] = str(step4_meta.get("pre_connection_stop_stage") or "")
+    phase_gate_meta["step4_resolution_reason_group"] = str(step4_meta.get("reason_group") or "")
+    phase_gate_meta["step4_resolution_rejection_reasons"] = resolution_reasons
+    phase_gate_meta["step4_composer_client_not_connected_reason"] = str(step4_meta.get("composer_client_not_connected_reason") or "")
+    phase_gate_meta["step4_composer_client_not_connected_reason_group"] = str(step4_meta.get("composer_client_not_connected_reason_group") or "")
+    phase_gate_meta["step4_complete_initial_gate_reason"] = str(complete_gate.get("reason") or "")
+    phase_gate_meta["step4_blocked_by_ap0"] = bool(step4_meta.get("blocked_by_ap0"))
+    phase_gate_meta["step4_blocked_by_rollout"] = bool(step4_meta.get("blocked_by_rollout"))
+    phase_gate_meta["step4_blocked_by_safety"] = bool(step4_meta.get("blocked_by_safety"))
+    return step4_meta
+
+
+def _safe_step5_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        values = [value]
+    out: List[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        item = str(raw or "").strip()
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _complete_initial_composer_meta(composer_candidate: Any) -> Dict[str, Any]:
+    raw_meta = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
+    return dict(raw_meta) if isinstance(raw_meta, dict) else {}
+
+
+def _complete_initial_binding_source(composer_meta: Dict[str, Any]) -> Dict[str, Any]:
+    for key in (
+        "complete_grounding_binding",
+        "binding_meta",
+        "grounding_input",
+        "sentence_binding_bundle",
+    ):
+        value = composer_meta.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    return {}
+
+
+def _complete_initial_raw_sentence_bindings(composer_meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    values: Any = composer_meta.get("sentence_bindings")
+    if not isinstance(values, list):
+        binding_source = _complete_initial_binding_source(composer_meta)
+        values = binding_source.get("bindings") or binding_source.get("sentence_bindings") or []
+    if not isinstance(values, list):
+        return []
+    return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def _sanitize_complete_initial_sentence_binding(binding: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only source-binding identifiers for Step5 diagnostics.
+
+    CompleteComposerClient may keep realized surface text inside internal
+    binding objects. Step5 proves the generation path and the gate binding;
+    it does not need to duplicate generated text or raw input into diagnostics.
+    """
+
+    surface_signature = binding.get("surface_signature") if isinstance(binding.get("surface_signature"), dict) else {}
+    sanitized = {
+        "version": str(binding.get("version") or ""),
+        "sentence_id": str(binding.get("sentence_id") or ""),
+        "line_role": str(binding.get("line_role") or ""),
+        "relation_type": str(binding.get("relation_type") or surface_signature.get("relation_type") or ""),
+        "canonical_relation_type": str(surface_signature.get("canonical_relation_type") or binding.get("canonical_relation_type") or ""),
+        "relation_family": str(surface_signature.get("relation_family") or binding.get("relation_family") or ""),
+        "used_evidence_span_ids": _safe_step5_list(binding.get("used_evidence_span_ids")),
+        "used_phrase_unit_ids": _safe_step5_list(binding.get("used_phrase_unit_ids")),
+        "used_relation_ids": _safe_step5_list(binding.get("used_relation_ids")),
+        "source_step": str(binding.get("source_step") or ""),
+        "target_step": str(binding.get("target_step") or ""),
+        "raw_input_included": bool(binding.get("raw_input_included")),
+    }
+    return {key: value for key, value in sanitized.items() if value not in ("", [], None)}
+
+
+def _complete_initial_gate_step5_trace(gate_trace: Dict[str, Any]) -> Dict[str, Any]:
+    gates = {
+        "reader": gate_trace.get("reader") if isinstance(gate_trace.get("reader"), dict) else {},
+        "grounding": gate_trace.get("grounding") if isinstance(gate_trace.get("grounding"), dict) else {},
+        "template_echo": gate_trace.get("template_echo") if isinstance(gate_trace.get("template_echo"), dict) else {},
+        "display": gate_trace.get("display_gate") if isinstance(gate_trace.get("display_gate"), dict) else {},
+    }
+    return {
+        key: {
+            "evaluated": bool(value),
+            "passed": bool(value.get("passed")) if isinstance(value, dict) else False,
+            "rejection_reasons": _safe_step5_list(value.get("rejection_reasons")) if isinstance(value, dict) else [],
+            "binding_present": bool(value.get("binding_present") or value.get("binding_available")) if isinstance(value, dict) else False,
+            "binding_used": bool(value.get("binding_used")) if isinstance(value, dict) else False,
+            "binding_missing": bool(value.get("binding_missing")) if isinstance(value, dict) else False,
+            "binding_count": int(value.get("binding_count") or 0) if isinstance(value, dict) else 0,
+        }
+        for key, value in gates.items()
+    }
+
+
+def _build_step5_complete_initial_candidate_generation_meta(
+    *,
+    resolution_meta: Dict[str, Any],
+    composer_candidate: Any,
+    display_decision: Any,
+    gate_trace: Dict[str, Any],
+) -> Dict[str, Any]:
+    composer_meta = _complete_initial_composer_meta(composer_candidate)
+    binding_source = _complete_initial_binding_source(composer_meta)
+    raw_sentence_bindings = _complete_initial_raw_sentence_bindings(composer_meta)
+    sentence_bindings = [_sanitize_complete_initial_sentence_binding(binding) for binding in raw_sentence_bindings]
+    relation_types = _safe_step5_list(
+        composer_meta.get("relation_types")
+        or composer_meta.get("used_relation_ids")
+        or getattr(composer_candidate, "used_relation_ids", [])
+    )
+    used_phrase_unit_ids = _safe_step5_list(
+        composer_meta.get("used_phrase_unit_ids")
+        or binding_source.get("used_phrase_unit_ids")
+    )
+    used_evidence_span_ids = _safe_step5_list(
+        getattr(composer_candidate, "used_evidence_span_ids", [])
+        or composer_meta.get("used_evidence_span_ids")
+        or binding_source.get("used_evidence_span_ids")
+    )
+    status = str(getattr(composer_candidate, "status", "") or "not_attempted")
+    composer_source = str(getattr(composer_candidate, "composer_source", "") or "")
+    display_status = str(getattr(display_decision, "observation_status", "") or "unavailable")
+    public_comment_text = str(getattr(display_decision, "comment_text", "") or "").strip()
+    candidate_comment_text_present = bool(str(getattr(composer_candidate, "comment_text", "") or "").strip())
+    complete_initial_client_resolved = bool(
+        resolution_meta.get("complete_initial_client_used")
+        or (
+            resolution_meta.get("requested_composer") == "complete_initial"
+            and resolution_meta.get("connection_status") == "default_client_resolved"
+        )
+    )
+    attempt_count = int(getattr(composer_candidate, "attempt_count", 0) or 0) if composer_candidate is not None else 0
+    generate_called = bool(complete_initial_client_resolved and attempt_count > 0)
+    candidate_generated = bool(status == "generated" and composer_source == "ai_generated" and candidate_comment_text_present)
+    gate_results = _complete_initial_gate_step5_trace(gate_trace)
+    existing_gates_preserved = all(bool(gate_results.get(key, {}).get("evaluated")) for key in ("reader", "grounding", "template_echo", "display"))
+    non_passed_comment_text_empty = bool(display_status == "passed" or not public_comment_text)
+    fallback_used = bool(
+        composer_meta.get("fallback_observation_sentence_added")
+        or composer_meta.get("fallback_observation_used")
+        or composer_meta.get("safe_fallback_used")
+    )
+    fixed_string_renderer_used = bool(
+        getattr(composer_candidate, "fixed_string_renderer_used", False)
+        or composer_meta.get("fixed_string_renderer_used")
+        or composer_meta.get("fixed_sentence_template_used")
+    )
+    runtime = {
+        "version": "emlis.complete_initial.runtime.v1",
+        "step": "Step5_candidate_generation_path_confirmation",
+        "client_status": "resolved" if complete_initial_client_resolved else "not_resolved",
+        "candidate_generation_attempted": generate_called,
+        "complete_composer_client_generate_called": generate_called,
+        "candidate_generated": candidate_generated,
+        "candidate_status": status,
+        "composer_source": composer_source,
+        "composer_model": str(getattr(composer_candidate, "composer_model", "") or resolution_meta.get("composer_model") or ""),
+        "generation_method": str(getattr(composer_candidate, "generation_method", "") or composer_meta.get("generation_method") or ""),
+        "generation_scope": str(getattr(composer_candidate, "generation_scope", "") or composer_meta.get("generation_scope") or ""),
+        "coverage_scope": str(getattr(composer_candidate, "coverage_scope", "") or composer_meta.get("coverage_scope") or ""),
+        "attempt_count": attempt_count,
+        "used_evidence_span_ids": used_evidence_span_ids,
+        "used_evidence_span_count": len(used_evidence_span_ids),
+        "used_phrase_unit_ids": used_phrase_unit_ids,
+        "used_phrase_unit_count": len(used_phrase_unit_ids),
+        "relation_types": relation_types,
+        "relation_type_count": len(relation_types),
+        "sentence_bindings": sentence_bindings,
+        "sentence_binding_count": len(sentence_bindings),
+        "binding_present": bool(binding_source.get("binding_present") or sentence_bindings),
+        "binding_missing": bool(binding_source.get("binding_missing")),
+        "binding_count": int(binding_source.get("binding_count") or len(sentence_bindings) or 0),
+        "expected_binding_count": int(binding_source.get("expected_binding_count") or len(sentence_bindings) or 0),
+        "candidate_comment_text_present": candidate_comment_text_present,
+        "public_comment_text_present": bool(public_comment_text),
+        "comment_text_contract": "passed_only",
+        "comment_text_publicly_assigned": bool(display_status == "passed" and public_comment_text),
+        "raw_input_included": False,
+        "generated_candidate_text_included": False,
+    }
+    return {
+        "version": "emlis.complete_initial.step5.candidate_generation_path.v1",
+        "step": "Step5_candidate_generation_path_confirmation",
+        "complete_initial_client_resolved": complete_initial_client_resolved,
+        "candidate_generation_attempted": generate_called,
+        "complete_composer_client_generate_called": generate_called,
+        "candidate_generated": candidate_generated,
+        "candidate_status": status,
+        "composer_source": composer_source,
+        "display_observation_status": display_status,
+        "public_comment_text_present": bool(public_comment_text),
+        "candidate_comment_text_present": candidate_comment_text_present,
+        "non_passed_comment_text_empty": non_passed_comment_text_empty,
+        "passed_only_comment_text_contract_preserved": non_passed_comment_text_empty,
+        "existing_reader_grounding_template_display_gates_preserved": existing_gates_preserved,
+        "reader_gate_evaluated": bool(gate_results.get("reader", {}).get("evaluated")),
+        "grounding_gate_evaluated": bool(gate_results.get("grounding", {}).get("evaluated")),
+        "template_gate_evaluated": bool(gate_results.get("template_echo", {}).get("evaluated")),
+        "display_gate_evaluated": bool(gate_results.get("display", {}).get("evaluated")),
+        "gate_results": gate_results,
+        "runtime": runtime,
+        "fallback_observation_sentence_added": fallback_used,
+        "fallback_used": fallback_used,
+        "fixed_string_renderer_used": fixed_string_renderer_used,
+        "display_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "comment_text_contract": "passed_only",
+        "raw_input_included": False,
+        "generated_candidate_text_included": False,
+        "candidate_text_included": False,
+    }
+
+
+def _attach_step5_complete_initial_candidate_generation_meta(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+    resolution_meta: Dict[str, Any],
+    composer_candidate: Any,
+    display_decision: Any,
+    gate_trace: Dict[str, Any],
+) -> None:
+    step5_meta = _build_step5_complete_initial_candidate_generation_meta(
+        resolution_meta=resolution_meta,
+        composer_candidate=composer_candidate,
+        display_decision=display_decision,
+        gate_trace=gate_trace,
+    )
+    runtime = dict(step5_meta.get("runtime") or {})
+    diagnostic_summary["complete_initial_candidate_generation_path"] = step5_meta
+    diagnostic_summary["step5_candidate_generation_path"] = step5_meta
+    diagnostic_summary["complete_initial_runtime"] = runtime
+    diagnostic_summary["step5_complete_initial_runtime"] = runtime
+    diagnostic_summary["step5_candidate_generation_path_confirmed"] = True
+    diagnostic_summary["complete_initial_candidate_generation_attempted"] = bool(step5_meta.get("candidate_generation_attempted"))
+    diagnostic_summary["complete_initial_candidate_generated"] = bool(step5_meta.get("candidate_generated"))
+    diagnostic_summary["complete_initial_candidate_status"] = str(step5_meta.get("candidate_status") or "")
+    diagnostic_summary["complete_initial_existing_gates_preserved_after_generation"] = bool(step5_meta.get("existing_reader_grounding_template_display_gates_preserved"))
+    diagnostic_summary["complete_initial_non_passed_comment_text_empty"] = bool(step5_meta.get("non_passed_comment_text_empty"))
+    diagnostic_summary["complete_initial_fallback_used"] = bool(step5_meta.get("fallback_used"))
+
+    phase_gate_meta["step5_candidate_generation_path_confirmed"] = True
+    phase_gate_meta["step5_complete_initial_candidate_generation_attempted"] = bool(step5_meta.get("candidate_generation_attempted"))
+    phase_gate_meta["step5_complete_composer_client_generate_called"] = bool(step5_meta.get("complete_composer_client_generate_called"))
+    phase_gate_meta["step5_complete_initial_candidate_generated"] = bool(step5_meta.get("candidate_generated"))
+    phase_gate_meta["step5_complete_initial_candidate_status"] = str(step5_meta.get("candidate_status") or "")
+    phase_gate_meta["step5_existing_gates_preserved_after_generation"] = bool(step5_meta.get("existing_reader_grounding_template_display_gates_preserved"))
+    phase_gate_meta["step5_non_passed_comment_text_empty"] = bool(step5_meta.get("non_passed_comment_text_empty"))
+    phase_gate_meta["step5_fallback_used"] = bool(step5_meta.get("fallback_used"))
+    phase_gate_meta["step5_no_fallback_used"] = not bool(step5_meta.get("fallback_used"))
+    phase_gate_meta["step5_display_gate_relaxed"] = bool(step5_meta.get("display_gate_relaxed"))
+    phase_gate_meta["step5_reader_gate_evaluated"] = bool(step5_meta.get("reader_gate_evaluated"))
+    phase_gate_meta["step5_grounding_gate_evaluated"] = bool(step5_meta.get("grounding_gate_evaluated"))
+    phase_gate_meta["step5_template_gate_evaluated"] = bool(step5_meta.get("template_gate_evaluated"))
+    phase_gate_meta["step5_display_gate_evaluated"] = bool(step5_meta.get("display_gate_evaluated"))
+    phase_gate_meta["step5_runtime_sentence_binding_count"] = int(runtime.get("sentence_binding_count") or 0)
+
+
+def _safe_step6_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value if value is not None else default)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _safe_step6_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _build_step6_complete_initial_final_ap0_scorecard_connection_meta(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    step18_ap0_migration_decision: Dict[str, Any],
+    complete_composer_initial_ap0_report: Dict[str, Any],
+    complete_scorecard_event: Dict[str, Any],
+    step12_complete_scorecard_harness: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Connect Final AP0 and scorecard outputs for Step6 diagnostics.
+
+    Step6 is meta-only. It records the execution-after-Gate AP0 decision and
+    the scorecard event so the next improvement target is visible without
+    changing comment_text, public response keys, or the passed-only display
+    contract.
+    """
+
+    final_ap0 = dict(step18_ap0_migration_decision or {})
+    report = dict(complete_composer_initial_ap0_report or final_ap0.get("complete_composer_initial_ap0_report") or {})
+    scorecard_event = dict(complete_scorecard_event or {})
+    scorecard_harness = dict(step12_complete_scorecard_harness or {})
+    entry_ap0 = dict(diagnostic_summary.get("complete_initial_entry_ap0_decision") or {})
+    step5_path = dict(diagnostic_summary.get("complete_initial_candidate_generation_path") or {})
+    runtime = dict(diagnostic_summary.get("complete_initial_runtime") or {})
+
+    final_return_steps = _safe_step5_list(final_ap0.get("return_steps"))
+    final_unmet_checks = _safe_step5_list(final_ap0.get("unmet_checks"))
+    report_blockers = _safe_step5_list(
+        report.get("release_blocker_keys")
+        or report.get("release_blockers")
+        or final_unmet_checks
+    )
+    scorecard_reasons = _safe_step5_list(scorecard_event.get("top_rejection_reasons"))
+    improvement_reasons = _dedupe_reason_codes([
+        *(scorecard_reasons or []),
+        str(diagnostic_summary.get("primary_reason") or ""),
+        *(final_unmet_checks or []),
+        *(report_blockers or []),
+    ])
+    coverage_group = str(
+        scorecard_event.get("coverage_group")
+        or diagnostic_summary.get("coverage_group")
+        or runtime.get("coverage_scope")
+        or ""
+    )
+    scorecard_event_connected = bool(
+        scorecard_event.get("scorecard_event_connected")
+        or scorecard_event.get("scorecard_event_added")
+        or scorecard_event
+    )
+    scorecard_harness_connected = bool(
+        scorecard_harness.get("scorecard_harness_added")
+        or scorecard_harness.get("scorecard_ready")
+        or scorecard_harness.get("ready")
+        or scorecard_harness
+    )
+    display_passed = bool(scorecard_event.get("display_passed"))
+    scorecard_display_status = str(scorecard_event.get("observation_status") or diagnostic_summary.get("observation_status") or "")
+    candidate_generated = bool(
+        scorecard_event.get("complete_candidate_generated")
+        or step5_path.get("candidate_generated")
+    )
+    candidate_attempted = bool(step5_path.get("candidate_generation_attempted") or candidate_generated)
+    next_improvement_meta = {
+        "version": "emlis.complete_initial.step6.next_improvement_meta.v1",
+        "source_step": "Step6_Final_AP0_scorecard_connection",
+        "visible_from_meta_only": True,
+        "raw_input_required": False,
+        "raw_input_included": False,
+        "return_steps": final_return_steps,
+        "release_blockers": report_blockers,
+        "unmet_checks": final_unmet_checks,
+        "scorecard_top_rejection_reasons": scorecard_reasons,
+        "improvement_reason_codes": improvement_reasons,
+        "coverage_group": coverage_group,
+        "primary_reason": improvement_reasons[0] if improvement_reasons else str(diagnostic_summary.get("primary_reason") or ""),
+        "scorecard_event_kind": str(scorecard_event.get("event_kind") or ""),
+        "scorecard_observation_status": scorecard_display_status,
+        "final_ap0_decision": str(final_ap0.get("decision") or ""),
+        "final_ap0_next_step": str(final_ap0.get("next_step") or ""),
+    }
+    return {
+        "version": "emlis.complete_initial.step6.final_ap0_scorecard_connection.v1",
+        "step": "Step6_Final_AP0_scorecard_connection",
+        "ready": True,
+        "meta_only": True,
+        "additive": True,
+        "built_after_registry_resolution": True,
+        "built_after_candidate_generation_path_check": bool(step5_path),
+        "built_after_display_gate": True,
+        "built_before_rn_contract_regression": True,
+        "entry_ap0_used_for_registry_resolution": bool(entry_ap0.get("used_for_registry_resolution")),
+        "entry_ap0_gate_only": bool(entry_ap0.get("entry_gate_only", True)),
+        "entry_ap0_green": bool(entry_ap0.get("green")),
+        "final_ap0_decision_connected": bool(final_ap0),
+        "final_ap0_decision_ready": bool(final_ap0.get("decision_ready") or final_ap0.get("ready")),
+        "final_ap0_uses_post_generation_results": True,
+        "final_ap0_green": bool(final_ap0.get("green")),
+        "final_ap0_can_proceed_to_a1": bool(final_ap0.get("can_proceed_to_a1")),
+        "final_ap0_can_proceed_to_complete_initial": bool(
+            final_ap0.get("can_proceed_to_complete_initial")
+            or final_ap0.get("can_proceed_to_a1")
+        ),
+        "final_ap0_decision": str(final_ap0.get("decision") or ""),
+        "final_ap0_next_step": str(final_ap0.get("next_step") or ""),
+        "final_ap0_return_steps": final_return_steps,
+        "final_ap0_unmet_checks": final_unmet_checks,
+        "complete_initial_ap0_report_connected": bool(report),
+        "complete_initial_ap0_release_blocker_count": _safe_step6_int(
+            report.get("release_blocker_count"),
+            len(report_blockers),
+        ),
+        "complete_initial_ap0_release_blockers": report_blockers,
+        "scorecard_event_connected": scorecard_event_connected,
+        "scorecard_event_kind": str(scorecard_event.get("event_kind") or ""),
+        "scorecard_observation_status": scorecard_display_status,
+        "scorecard_candidate_generation_attempted": candidate_attempted,
+        "scorecard_candidate_generated": candidate_generated,
+        "scorecard_display_passed": display_passed,
+        "scorecard_binding_pass": bool(scorecard_event.get("binding_pass")),
+        "scorecard_binding_pass_rate": _safe_step6_float(scorecard_event.get("binding_pass_rate"), 0.0),
+        "scorecard_template_major_count": _safe_step6_int(scorecard_event.get("template_major_count"), 0),
+        "scorecard_safety_major_count": _safe_step6_int(scorecard_event.get("safety_major_count"), 0),
+        "scorecard_coverage_group": coverage_group,
+        "scorecard_top_rejection_reasons": scorecard_reasons,
+        "scorecard_harness_connected": scorecard_harness_connected,
+        "scorecard_ready": bool(scorecard_harness.get("scorecard_ready") or scorecard_harness.get("ready")),
+        "scorecard_product_gate_evaluation": str(scorecard_harness.get("product_gate_evaluation") or ""),
+        "scorecard_display_reach_rate": _safe_step6_float(scorecard_harness.get("display_reach_rate"), 0.0),
+        "scorecard_harness_step": str(scorecard_harness.get("step") or ""),
+        "next_improvement_meta_visible": True,
+        "next_improvement_return_steps": final_return_steps,
+        "next_improvement_reasons": improvement_reasons,
+        "next_improvement_coverage_group": coverage_group,
+        "next_improvement_meta": next_improvement_meta,
+        "comment_text_contract": "passed_only",
+        "passed_only_comment_text_contract_preserved": True,
+        "public_comment_text_assigned_by_step6": False,
+        "display_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "fixed_fallback_used": False,
+        "fallback_observation_sentence_added": False,
+        "fixed_string_renderer_used": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+        "raw_input_included": False,
+        "generated_candidate_text_included": False,
+        "candidate_text_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+    }
+
+
+def _attach_step6_complete_initial_final_ap0_scorecard_meta(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+    step18_ap0_migration_decision: Dict[str, Any],
+    complete_composer_initial_ap0_report: Dict[str, Any],
+    complete_scorecard_event: Dict[str, Any],
+    step12_complete_scorecard_harness: Dict[str, Any],
+) -> Dict[str, Any]:
+    step6_meta = _build_step6_complete_initial_final_ap0_scorecard_connection_meta(
+        diagnostic_summary=diagnostic_summary,
+        step18_ap0_migration_decision=step18_ap0_migration_decision,
+        complete_composer_initial_ap0_report=complete_composer_initial_ap0_report,
+        complete_scorecard_event=complete_scorecard_event,
+        step12_complete_scorecard_harness=step12_complete_scorecard_harness,
+    )
+    next_improvement_meta = dict(step6_meta.get("next_improvement_meta") or {})
+    final_ap0 = dict(step18_ap0_migration_decision or {})
+    final_report = dict(complete_composer_initial_ap0_report or {})
+    scorecard_event = dict(complete_scorecard_event or {})
+    scorecard_harness = dict(step12_complete_scorecard_harness or {})
+
+    diagnostic_summary["step6_final_ap0_scorecard_connection"] = step6_meta
+    diagnostic_summary["complete_initial_final_ap0_scorecard_connection"] = step6_meta
+    diagnostic_summary["complete_initial_final_ap0_scorecard"] = step6_meta
+    diagnostic_summary["complete_initial_final_ap0_decision"] = final_ap0
+    diagnostic_summary["complete_initial_final_ap0_report"] = final_report
+    diagnostic_summary["complete_initial_final_scorecard_event"] = scorecard_event
+    diagnostic_summary["complete_initial_final_scorecard_harness"] = scorecard_harness
+    diagnostic_summary["complete_initial_next_improvement_meta"] = next_improvement_meta
+    diagnostic_summary["step6_next_improvement_meta"] = next_improvement_meta
+    diagnostic_summary["step6_final_ap0_scorecard_connected"] = True
+    diagnostic_summary["complete_initial_final_ap0_scorecard_connected"] = True
+
+    phase_gate_meta["step6_final_ap0_scorecard_connection_ready"] = True
+    phase_gate_meta["step6_final_ap0_scorecard_connected"] = True
+    phase_gate_meta["step6_final_ap0_decision_ready"] = bool(step6_meta.get("final_ap0_decision_ready"))
+    phase_gate_meta["step6_final_ap0_green"] = bool(step6_meta.get("final_ap0_green"))
+    phase_gate_meta["step6_final_ap0_decision"] = str(step6_meta.get("final_ap0_decision") or "")
+    phase_gate_meta["step6_final_ap0_return_steps"] = list(step6_meta.get("final_ap0_return_steps") or [])
+    phase_gate_meta["step6_scorecard_event_connected"] = bool(step6_meta.get("scorecard_event_connected"))
+    phase_gate_meta["step6_scorecard_harness_connected"] = bool(step6_meta.get("scorecard_harness_connected"))
+    phase_gate_meta["step6_scorecard_ready"] = bool(step6_meta.get("scorecard_ready"))
+    phase_gate_meta["step6_scorecard_candidate_generated"] = bool(step6_meta.get("scorecard_candidate_generated"))
+    phase_gate_meta["step6_scorecard_display_passed"] = bool(step6_meta.get("scorecard_display_passed"))
+    phase_gate_meta["step6_scorecard_binding_pass"] = bool(step6_meta.get("scorecard_binding_pass"))
+    phase_gate_meta["step6_scorecard_coverage_group"] = str(step6_meta.get("scorecard_coverage_group") or "")
+    phase_gate_meta["step6_next_improvement_meta_visible"] = bool(step6_meta.get("next_improvement_meta_visible"))
+    phase_gate_meta["step6_next_improvement_reasons"] = list(step6_meta.get("next_improvement_reasons") or [])
+    phase_gate_meta["step6_public_response_shape_preserved"] = not bool(step6_meta.get("response_shape_changed"))
+    phase_gate_meta["step6_passed_only_contract_preserved"] = bool(step6_meta.get("passed_only_comment_text_contract_preserved"))
+    phase_gate_meta["step6_raw_input_included"] = bool(step6_meta.get("raw_input_included"))
+    phase_gate_meta["step6_display_gate_relaxed"] = bool(step6_meta.get("display_gate_relaxed"))
+    return step6_meta
 
 
 def _dedupe_reason_codes(values: Any) -> List[str]:
@@ -2237,6 +3205,7 @@ def _multi_perspective_meta(
     grounding_graph: Any = None,
     grounding_scope: str = "full_graph",
     grounding_allowed_evidence_span_ids: Optional[List[str]] = None,
+    complete_initial_pre_generation_seed: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     used_sources: List[str] = ["current_input"]
     if bundle.greeting:
@@ -2401,6 +3370,39 @@ def _multi_perspective_meta(
         phase_gate=phase_gate_meta,
         rollout_metrics=phase7_rollout_metrics,
         current_input=bundle.current_input,
+    )
+    _attach_complete_initial_pre_generation_seed(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+        seed=complete_initial_pre_generation_seed,
+    )
+    complete_initial_client_resolved = bool(
+        resolution_meta.get("complete_initial_client_used")
+        or (
+            resolution_meta.get("requested_composer") == "complete_initial"
+            and resolution_meta.get("connection_status") == "default_client_resolved"
+        )
+    )
+    diagnostic_summary["complete_initial_client_resolved"] = complete_initial_client_resolved
+    diagnostic_summary["step3_complete_initial_client_resolved"] = complete_initial_client_resolved
+    diagnostic_summary["step3_resolver_connection_status"] = str(resolution_meta.get("connection_status") or "")
+    diagnostic_summary["step3_resolver_resolution_source"] = str(resolution_meta.get("resolution_source") or "")
+    phase_gate_meta["complete_initial_client_resolved"] = complete_initial_client_resolved
+    phase_gate_meta["step3_complete_initial_client_resolved"] = complete_initial_client_resolved
+    phase_gate_meta["step3_resolver_connection_status"] = str(resolution_meta.get("connection_status") or "")
+    phase_gate_meta["step3_resolver_resolution_source"] = str(resolution_meta.get("resolution_source") or "")
+    _attach_step4_complete_initial_resolution_meta(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+        resolution_meta=resolution_meta,
+    )
+    _attach_step5_complete_initial_candidate_generation_meta(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+        resolution_meta=resolution_meta,
+        composer_candidate=composer_candidate,
+        display_decision=display_decision,
+        gate_trace=gate_trace,
     )
     step16_rollout_metrics = build_step16_rollout_metrics(
         release_meta=release_meta,
@@ -2613,6 +3615,43 @@ def _multi_perspective_meta(
     diagnostic_summary["complete_scorecard_fixture_suite"] = dict(step12_complete_scorecard_harness.get("fixture_suite") or {})
     diagnostic_summary["complete_blind_qa_rubric"] = dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {})
 
+    step6_final_ap0_scorecard_connection = _attach_step6_complete_initial_final_ap0_scorecard_meta(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+        step18_ap0_migration_decision=step18_ap0_migration_decision,
+        complete_composer_initial_ap0_report=complete_composer_initial_ap0_report,
+        complete_scorecard_event=complete_scorecard_event,
+        step12_complete_scorecard_harness=step12_complete_scorecard_harness,
+    )
+
+    step9_complete_initial_fixture_qa_run = build_complete_initial_fixture_qa_run(
+        scorecard_event=complete_scorecard_event,
+        fixture_suite=dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
+        diagnostic_summary=diagnostic_summary,
+    )
+    step9_product_scorecard_seed = dict(step9_complete_initial_fixture_qa_run.get("product_scorecard_seed") or {})
+    diagnostic_summary["step9_fixture_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["step9_complete_initial_fixture_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["complete_initial_fixture_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["complete_composer_initial_fixture_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["fixture_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["complete_initial_qa_run"] = step9_complete_initial_fixture_qa_run
+    diagnostic_summary["step9_product_scorecard_seed"] = step9_product_scorecard_seed
+    diagnostic_summary["complete_initial_product_scorecard_seed"] = step9_product_scorecard_seed
+    diagnostic_summary["step9_fixture_qa_run_ready"] = bool(step9_complete_initial_fixture_qa_run.get("qa_run_ready"))
+    diagnostic_summary["step9_product_scorecard_input_ready"] = bool(step9_complete_initial_fixture_qa_run.get("product_scorecard_input_ready"))
+    phase_gate_meta["step9_fixture_qa_run_ready"] = bool(step9_complete_initial_fixture_qa_run.get("qa_run_ready"))
+    phase_gate_meta["step9_fixture_qa_data_ready"] = bool(step9_complete_initial_fixture_qa_run.get("fixture_qa_data_ready"))
+    phase_gate_meta["step9_product_scorecard_input_ready"] = bool(step9_complete_initial_fixture_qa_run.get("product_scorecard_input_ready"))
+    phase_gate_meta["step9_fixture_coverage_complete"] = bool(step9_complete_initial_fixture_qa_run.get("fixture_coverage_complete"))
+    phase_gate_meta["step9_display_reach_rate"] = float(step9_complete_initial_fixture_qa_run.get("display_reach_rate") or 0.0)
+    phase_gate_meta["step9_binding_pass_rate"] = float(step9_complete_initial_fixture_qa_run.get("binding_pass_rate") or 0.0)
+    phase_gate_meta["step9_read_feeling_requires_blind_qa"] = bool(step9_complete_initial_fixture_qa_run.get("read_feeling_requires_blind_qa"))
+    phase_gate_meta["step9_non_template_major_clear"] = bool(step9_complete_initial_fixture_qa_run.get("non_template_major_clear"))
+    phase_gate_meta["step9_safety_major_clear"] = bool(step9_complete_initial_fixture_qa_run.get("safety_major_clear"))
+    phase_gate_meta["step9_comment_text_contract_preserved"] = bool(step9_complete_initial_fixture_qa_run.get("comment_text_contract") == "passed_only")
+    phase_gate_meta["step9_display_gate_relaxed"] = bool(step9_complete_initial_fixture_qa_run.get("display_gate_relaxed"))
+
     b_plan_connection_meta = (
         dict(diagnostic_summary.get("normal_connection") or diagnostic_summary.get("b_plan_connection") or {})
         if isinstance(diagnostic_summary, dict)
@@ -2626,6 +3665,11 @@ def _multi_perspective_meta(
         "observation_trace_id": trace_id,
         "rejection_reasons": list(display_decision.rejection_reasons),
         "diagnostic_summary": diagnostic_summary,
+        "complete_initial_pre_generation_diagnostic_seed": dict(diagnostic_summary.get("complete_initial_pre_generation_diagnostic_seed") or {}),
+        "complete_initial_entry_ap0_decision": dict(diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}),
+        "step6_final_ap0_scorecard_connection": dict(diagnostic_summary.get("step6_final_ap0_scorecard_connection") or {}),
+        "complete_initial_final_ap0_scorecard_connection": dict(diagnostic_summary.get("complete_initial_final_ap0_scorecard_connection") or {}),
+        "complete_initial_next_improvement_meta": dict(diagnostic_summary.get("complete_initial_next_improvement_meta") or {}),
         "limited_composer_extension_baseline": dict(diagnostic_summary.get("limited_composer_extension_baseline") or {}),
         "step0_baseline": dict(diagnostic_summary.get("step0_baseline") or diagnostic_summary.get("limited_composer_extension_baseline") or {}),
         "connection_visibility": dict(diagnostic_summary.get("connection_visibility") or {}),
@@ -2687,6 +3731,14 @@ def _multi_perspective_meta(
         "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
         "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
         "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
+        "step9_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+        "step9_product_scorecard_seed": step9_product_scorecard_seed,
+        "complete_initial_product_scorecard_seed": step9_product_scorecard_seed,
+        "step9_complete_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+        "complete_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+        "complete_composer_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+        "fixture_qa_run": step9_complete_initial_fixture_qa_run,
+        "complete_initial_qa_run": step9_complete_initial_fixture_qa_run,
         "display": {
             "display_name_call": display_name_call(bundle.display_name),
             "visible_name": "Emlisの観測",
@@ -2724,6 +3776,11 @@ def _multi_perspective_meta(
             "composer_status": str(getattr(composer_candidate, "status", "") or ""),
             "composer_rejection_reasons": list(getattr(composer_candidate, "rejection_reasons", []) or []),
             "composer_client_resolution": resolution_meta,
+            "complete_initial_pre_generation_diagnostic_seed": dict(diagnostic_summary.get("complete_initial_pre_generation_diagnostic_seed") or {}),
+            "complete_initial_entry_ap0_decision": dict(diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}),
+            "step6_final_ap0_scorecard_connection": dict(diagnostic_summary.get("step6_final_ap0_scorecard_connection") or {}),
+            "complete_initial_final_ap0_scorecard_connection": dict(diagnostic_summary.get("complete_initial_final_ap0_scorecard_connection") or {}),
+            "complete_initial_next_improvement_meta": dict(diagnostic_summary.get("complete_initial_next_improvement_meta") or {}),
             "limited_composer_extension_baseline": dict(diagnostic_summary.get("limited_composer_extension_baseline") or {}),
             "step0_baseline": dict(diagnostic_summary.get("step0_baseline") or diagnostic_summary.get("limited_composer_extension_baseline") or {}),
             "connection_visibility": dict(diagnostic_summary.get("connection_visibility") or {}),
@@ -2788,6 +3845,14 @@ def _multi_perspective_meta(
             "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
             "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
             "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
+            "step9_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+            "step9_product_scorecard_seed": step9_product_scorecard_seed,
+            "complete_initial_product_scorecard_seed": step9_product_scorecard_seed,
+            "step9_complete_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+            "complete_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+            "complete_composer_initial_fixture_qa_run": step9_complete_initial_fixture_qa_run,
+            "fixture_qa_run": step9_complete_initial_fixture_qa_run,
+            "complete_initial_qa_run": step9_complete_initial_fixture_qa_run,
             "rollout_metrics_aggregate": dict(step16_rollout_metrics.get("rollout_metrics_aggregate") or {}),
             "internal_qa_rollout_metrics": dict(step16_rollout_metrics.get("internal_qa_aggregate") or {}),
             "b_plan_connection": b_plan_connection_meta,
@@ -2869,12 +3934,42 @@ async def render_emlis_ai_reply(
         feature_flag_enabled=bool(composer_flag_state.get("enabled")),
         env=composer_env,
     )
+    complete_initial_pre_generation_seed = _build_complete_initial_pre_generation_diagnostic_seed(
+        composer_flag_state=composer_flag_state,
+        limited_release_decision=limited_release_decision,
+        limited_observation_scope=limited_observation_scope,
+        evidence_spans=evidence_spans,
+        reports=reports,
+        board=board,
+        graph=graph,
+        safety_requires_block=safety_requires_block,
+    )
+    complete_initial_entry_ap0_decision = dict(
+        complete_initial_pre_generation_seed.get("complete_initial_entry_ap0_decision") or {}
+    )
+    complete_initial_entry_ap0_decision["resolver_injection_deferred_to_step3"] = False
+    complete_initial_entry_ap0_decision["resolver_ap0_injection_pending"] = False
+    complete_initial_entry_ap0_decision["ap0_decision_injected_to_registry_in_step3"] = True
+    complete_initial_entry_ap0_decision["used_for_registry_resolution"] = True
+    complete_initial_entry_ap0_decision["resolver_injection_completed_in_step3"] = True
+    complete_initial_entry_ap0_decision["step3_resolver_ap0_decision_injection_ready"] = True
+    complete_initial_pre_generation_seed["complete_initial_entry_ap0_decision"] = complete_initial_entry_ap0_decision
+    complete_initial_pre_generation_seed["resolver_injection_deferred_to_step3"] = False
+    complete_initial_pre_generation_seed["resolver_ap0_injection_pending"] = False
+    # Keep the Step2 historical fact intact, and record the Step3 injection separately.
+    complete_initial_pre_generation_seed["ap0_decision_not_injected_to_registry_in_step2"] = True
+    complete_initial_pre_generation_seed["ap0_decision_injected_to_registry_in_step3"] = True
+    complete_initial_pre_generation_seed["used_for_registry_resolution"] = True
+    complete_initial_pre_generation_seed["resolver_injection_completed_in_step3"] = True
+    complete_initial_pre_generation_seed["step3_resolver_ap0_decision_injection_ready"] = True
+    complete_initial_pre_generation_seed["step3_resolver_ap0_decision_source"] = "complete_initial_entry_ap0_decision"
     composer_client_resolution = resolve_emlis_ai_composer_client(
         composer_client=composer_client,
         safety_requires_block=safety_requires_block,
         env=composer_env,
         release_allowed=bool(getattr(limited_release_decision, "enabled", False)),
         release_meta=limited_release_decision.as_meta(),
+        ap0_decision=complete_initial_entry_ap0_decision,
     )
     resolved_composer_client = composer_client_resolution.composer_client
     composer_graph = graph
@@ -3019,6 +4114,7 @@ async def render_emlis_ai_reply(
         grounding_graph=grounding_graph,
         grounding_scope=grounding_scope,
         grounding_allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
+        complete_initial_pre_generation_seed=complete_initial_pre_generation_seed,
     )
 
     return ReplyEnvelope(

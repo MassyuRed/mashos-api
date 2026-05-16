@@ -14,6 +14,7 @@ from collections import Counter
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 from emlis_ai_complete_composer_initial_meta import (
+    COMPLETE_COMPOSER_INITIAL_ALIASES,
     attach_complete_composer_initial_ap0_report,
     build_complete_composer_initial_ap0_decision_report as _build_complete_composer_initial_ap0_decision_report,
 )
@@ -24,10 +25,28 @@ STEP18_STEP = "Step18_ap0_migration_decision"
 STEP18_DECISION_PROCEED = "proceed_to_step19_a1"
 STEP18_DECISION_RETURN = "return_to_b_plan_steps"
 STEP18_DECISION_HOLD = "hold_in_b_plan"
+COMPLETE_INITIAL_ENTRY_AP0_VERSION = "emlis.complete_initial.entry_ap0_decision.v1"
+COMPLETE_INITIAL_ENTRY_AP0_PHASE = "complete_initial_entry_ap0"
+COMPLETE_INITIAL_ENTRY_AP0_STEP = "Step1_entry_ap0_helper"
+COMPLETE_INITIAL_ENTRY_AP0_DECISION_PROCEED = "enter_complete_initial_entry_route"
+COMPLETE_INITIAL_ENTRY_AP0_DECISION_RETURN = "return_to_complete_initial_entry_prerequisites"
 
 DIAGNOSTIC_STAGES = {"flag", "rollout", "scope", "composer", "reader", "grounding", "template", "display"}
 ROLLOUT_STAGES = {"off", "internal", "tutorial", "limited_cases", "all"}
 UNKNOWN_REASON_CODES = {"", "unknown", "unclassified", "not_classified", "gate_not_classified", "composer_not_classified"}
+RAW_INPUT_META_KEYS = {
+    "raw_text",
+    "raw_input",
+    "input_text",
+    "user_input",
+    "current_input",
+    "memo",
+    "memo_text",
+    "memo_action",
+    "raw_user_text",
+    "original_text",
+    "source_text",
+}
 
 STEP18_REQUIRED_INPUT_AREAS = (
     "life",
@@ -63,6 +82,30 @@ STEP18_BLOCKING_CHECKS = (
     "template_avoidance",
     "display_boundary",
 )
+
+COMPLETE_INITIAL_ENTRY_AP0_CHECKS = (
+    "complete_initial_requested",
+    "rollout_allowed",
+    "public_contract_baseline",
+    "passed_only_display_boundary",
+    "no_external_or_local_llm",
+    "no_fixed_sentence_fallback",
+    "binding_infrastructure",
+    "safety_boundary",
+    "source_material_not_embedded",
+)
+
+_ENTRY_AP0_RETURN_STEPS: Dict[str, List[str]] = {
+    "complete_initial_requested": ["Step0_baseline_confirmation", "Step1_entry_ap0_helper"],
+    "rollout_allowed": ["Step16_rollout_metrics"],
+    "public_contract_baseline": ["Step07_scoped_grounding_frontend_passed_only", "Step10_complete_composer_client_contract"],
+    "passed_only_display_boundary": ["Step07_scoped_grounding_frontend_passed_only"],
+    "no_external_or_local_llm": ["Step10_complete_composer_client_contract"],
+    "no_fixed_sentence_fallback": ["Step13_surface_realizer", "Step14_guard_strengthening"],
+    "binding_infrastructure": ["Step02_root_material_binding", "Step03_sentence_binding"],
+    "safety_boundary": ["Step10_safety_boundary"],
+    "source_material_not_embedded": ["Step1_entry_ap0_helper"],
+}
 
 _CHECK_META: Dict[str, Dict[str, Any]] = {
     "startup_diagnostics": {
@@ -522,6 +565,348 @@ def _display_boundary_check(*, diagnostic_summary: Mapping[str, Any], frontend: 
     )
 
 
+def _truthy_any(source: Mapping[str, Any], *keys: str) -> bool:
+    return any(_bool(source.get(key)) for key in keys)
+
+
+def _falsey_boundary(source: Mapping[str, Any], *keys: str) -> bool:
+    return all(not _bool(source.get(key)) for key in keys)
+
+
+def _required_falsey_boundary(source: Mapping[str, Any], required_keys: Sequence[str], *optional_keys: str) -> bool:
+    return bool(source) and all(key in source and not _bool(source.get(key)) for key in required_keys) and _falsey_boundary(source, *optional_keys)
+
+
+def _entry_ap0_requested_complete_initial(flag_state: Mapping[str, Any]) -> bool:
+    requested = _clean(flag_state.get("requested_composer") or flag_state.get("requested_default_composer")).lower().replace("-", "_").replace(" ", "_")
+    canonical = _clean(flag_state.get("canonical_requested_composer") or flag_state.get("requested_composer_stage")).lower().replace("-", "_").replace(" ", "_")
+    aliases = {str(item).lower().replace("-", "_").replace(" ", "_") for item in COMPLETE_COMPOSER_INITIAL_ALIASES}
+    aliases.update({"complete_initial", "complete_composer_initial", "complete_initial_composer"})
+    return bool(
+        requested in aliases
+        or canonical == "complete_composer_initial"
+        or _bool(flag_state.get("complete_composer_initial_requested"))
+        or _bool(flag_state.get("complete_initial_composer_requested"))
+        or _bool(flag_state.get("complete_initial_runtime_alias_requested"))
+        or _bool(flag_state.get("complete_initial_client_requested"))
+        or _bool(flag_state.get("step10_complete_composer_client_requested"))
+    )
+
+
+def _entry_ap0_release_allowed(release_meta: Mapping[str, Any]) -> bool:
+    control = _mapping(release_meta.get("complete_initial_control")) or _mapping(release_meta.get("rollout_control"))
+    return bool(
+        _bool(release_meta.get("enabled"))
+        or _bool(release_meta.get("allowed"))
+        or _bool(release_meta.get("release_allowed"))
+        or _bool(release_meta.get("rollout_allowed"))
+        or _bool(release_meta.get("can_rollout_complete_initial"))
+        or _bool(control.get("enabled"))
+        or _bool(control.get("release_allowed"))
+        or _bool(control.get("rollout_allowed"))
+    )
+
+
+def _entry_ap0_binding_ready(*sources: Mapping[str, Any]) -> bool:
+    for source in sources:
+        if _truthy_any(
+            source,
+            "binding_infrastructure_ready",
+            "sentence_binding_ready",
+            "sentence_level_binding_ready",
+            "sentence_level_evidence_binding_ready",
+            "evidence_binding_ready",
+            "relation_binding_ready",
+            "used_evidence_binding_ready",
+            "used_phrase_unit_binding_ready",
+            "relation_type_ready",
+            "complete_initial_binding_ready",
+            "binding_aware_grounding_ready",
+            "sentence_bindings_ready",
+        ):
+            return True
+        if _int(source.get("binding_count")) > 0 or _int(source.get("sentence_binding_count")) > 0:
+            return True
+        bindings = source.get("sentence_bindings")
+        if isinstance(bindings, Sequence) and not isinstance(bindings, (str, bytes)) and len(bindings) > 0:
+            return True
+    return False
+
+
+def _entry_ap0_contains_source_material_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if _clean(key).lower() in RAW_INPUT_META_KEYS:
+                return True
+            if _entry_ap0_contains_source_material_key(item):
+                return True
+    elif isinstance(value, (list, tuple, set)):
+        return any(_entry_ap0_contains_source_material_key(item) for item in value)
+    return False
+
+
+def _entry_ap0_check_payload(check_key: str, green: bool, *, reason: str, evidence: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    return {
+        "check_key": check_key,
+        "phase": COMPLETE_INITIAL_ENTRY_AP0_PHASE,
+        "blocking": True,
+        "green": bool(green),
+        "status": "green" if green else "red",
+        "primary_reason": "green" if green else (reason or "not_ready"),
+        "reason": "green" if green else (reason or "not_ready"),
+        "return_steps": [] if green else list(_ENTRY_AP0_RETURN_STEPS.get(check_key) or []),
+        "evidence": dict(evidence or {}),
+    }
+
+
+def _entry_ap0_release_blocker(check: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "check_key": _clean(check.get("check_key")),
+        "reason": _clean(check.get("reason") or check.get("primary_reason")) or "not_ready",
+        "return_steps": _list(check.get("return_steps")),
+    }
+
+
+def build_complete_initial_entry_ap0_decision(
+    *,
+    composer_flag_state: Mapping[str, Any] | None = None,
+    release_meta: Mapping[str, Any] | None = None,
+    contract_baseline_meta: Mapping[str, Any] | None = None,
+    frontend_boundary_summary: Mapping[str, Any] | None = None,
+    coverage_matrix_seed: Mapping[str, Any] | None = None,
+    previous_scorecard_summary: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Build the pre-registry Entry AP0 decision for Complete Composer initial.
+
+    Entry AP0 is deliberately smaller than the Step18 full A-P0 decision.  It
+    only decides whether the current request may try to resolve the
+    ``CocolonCompleteComposerClient`` before candidate generation.  It never
+    looks at generated text, never writes user-facing ``comment_text``, and does
+    not copy raw input fields into the returned meta.
+    """
+
+    flag_state = _mapping(composer_flag_state)
+    release = _mapping(release_meta)
+    contract = _mapping(contract_baseline_meta)
+    frontend = _mapping(frontend_boundary_summary)
+    coverage_seed = _mapping(coverage_matrix_seed)
+    scorecard = _mapping(previous_scorecard_summary)
+
+    complete_requested = _entry_ap0_requested_complete_initial(flag_state)
+    rollout_allowed = _entry_ap0_release_allowed(release)
+    public_contract_green = bool(
+        _required_falsey_boundary(
+            contract,
+            ("response_shape_changed", "api_route_changed", "db_physical_name_changed"),
+            "public_response_key_change",
+            "public_response_key_changed",
+            "rn_visible_title_changed",
+            "visible_title_changed",
+        )
+        and not _bool(contract.get("complete_meta_overrides_public_observation_status"))
+    )
+    display_green = bool(
+        _truthy_any(frontend, "passed_only_contract_preserved", "frontend_modal_only_passed")
+        and (
+            _truthy_any(
+                frontend,
+                "non_passed_comment_text_empty",
+                "rejected_comment_text_empty",
+                "unavailable_comment_text_empty",
+                "safety_blocked_comment_text_empty",
+            )
+            or _clean(contract.get("comment_text_contract")) == "passed_only"
+        )
+    )
+    no_external_green = _required_falsey_boundary(
+        contract,
+        ("external_ai_used", "local_llm_used"),
+        "api_llm_used",
+        "remote_llm_used",
+        "llm_rental_used",
+        "external_ai_allowed",
+        "local_llm_allowed",
+    )
+    no_fixed_green = _required_falsey_boundary(
+        contract,
+        ("fixed_sentence_template_used", "fallback_observation_sentence_added"),
+        "fixed_sentence_template_allowed",
+        "fixed_observation_sentence_added",
+        "completion_sentence_templates_added",
+        "role_completed_sentence_template_used",
+        "sample_input_specific_branch_added",
+    )
+    binding_green = _entry_ap0_binding_ready(contract, coverage_seed, scorecard)
+    safety_green = bool(
+        not _bool(contract.get("safety_requires_block"))
+        and not _bool(release.get("safety_requires_block"))
+        and not _bool(contract.get("safety_blocked"))
+        and not _bool(release.get("safety_blocked"))
+        and not _bool(contract.get("safety_boundary_blocked"))
+        and not _bool(release.get("safety_boundary_blocked"))
+    )
+    source_material_green = not any(
+        _entry_ap0_contains_source_material_key(source)
+        for source in (flag_state, release, contract, frontend, coverage_seed, scorecard)
+    )
+
+    checks = [
+        _entry_ap0_check_payload(
+            "complete_initial_requested",
+            complete_requested,
+            reason="complete_initial_not_requested",
+            evidence={
+                "requested_composer": _clean(flag_state.get("requested_composer")),
+                "canonical_requested_composer": _clean(flag_state.get("canonical_requested_composer")),
+                "feature_flag_enabled": _bool(flag_state.get("enabled")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "rollout_allowed",
+            rollout_allowed,
+            reason="complete_initial_rollout_not_allowed",
+            evidence={
+                "release_enabled": _bool(release.get("enabled")),
+                "release_stage": _clean(release.get("stage") or release.get("rollout_stage")),
+                "release_reason_code": _clean(release.get("reason_code")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "public_contract_baseline",
+            public_contract_green,
+            reason="complete_initial_contract_boundary_changed",
+            evidence={
+                "response_shape_changed": _bool(contract.get("response_shape_changed")),
+                "public_response_key_change": _bool(contract.get("public_response_key_change")) or _bool(contract.get("public_response_key_changed")),
+                "api_route_changed": _bool(contract.get("api_route_changed")),
+                "db_physical_name_changed": _bool(contract.get("db_physical_name_changed")),
+                "rn_visible_title_changed": _bool(contract.get("rn_visible_title_changed")) or _bool(contract.get("visible_title_changed")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "passed_only_display_boundary",
+            display_green,
+            reason="passed_only_display_contract_incomplete",
+            evidence={
+                "passed_only_contract_preserved": _bool(frontend.get("passed_only_contract_preserved")),
+                "frontend_modal_only_passed": _bool(frontend.get("frontend_modal_only_passed")),
+                "comment_text_contract": _clean(contract.get("comment_text_contract")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "no_external_or_local_llm",
+            no_external_green,
+            reason="external_ai_or_local_llm_used",
+            evidence={
+                "external_ai_used": _bool(contract.get("external_ai_used")) or _bool(contract.get("api_llm_used")) or _bool(contract.get("remote_llm_used")),
+                "local_llm_used": _bool(contract.get("local_llm_used")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "no_fixed_sentence_fallback",
+            no_fixed_green,
+            reason="fixed_sentence_or_fallback_detected",
+            evidence={
+                "fixed_sentence_template_used": _bool(contract.get("fixed_sentence_template_used")),
+                "fallback_observation_sentence_added": _bool(contract.get("fallback_observation_sentence_added")),
+                "completion_sentence_templates_added": _bool(contract.get("completion_sentence_templates_added")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "binding_infrastructure",
+            binding_green,
+            reason="binding_infrastructure_not_ready",
+            evidence={
+                "binding_infrastructure_ready": bool(binding_green),
+                "coverage_group": _clean(coverage_seed.get("coverage_group") or coverage_seed.get("primary_coverage_group")),
+                "binding_count": max(_int(contract.get("binding_count")), _int(coverage_seed.get("binding_count")), _int(scorecard.get("binding_count"))),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "safety_boundary",
+            safety_green,
+            reason="safety_boundary_requires_block",
+            evidence={
+                "safety_requires_block": _bool(contract.get("safety_requires_block")) or _bool(release.get("safety_requires_block")),
+                "safety_blocked": _bool(contract.get("safety_blocked")) or _bool(release.get("safety_blocked")),
+            },
+        ),
+        _entry_ap0_check_payload(
+            "source_material_not_embedded",
+            source_material_green,
+            reason="source_material_key_detected",
+            evidence={
+                "source_material_key_detected": bool(not source_material_green),
+                "source_material_key_names_redacted": bool(not source_material_green),
+            },
+        ),
+    ]
+
+    unmet = [item for item in checks if not item.get("green")]
+    unmet_keys = [str(item["check_key"]) for item in unmet]
+    green_keys = [str(item["check_key"]) for item in checks if item.get("green")]
+    return_steps = _dedupe(step for item in unmet for step in _list(item.get("return_steps")))
+    release_blockers = [_entry_ap0_release_blocker(item) for item in unmet]
+    can_enter = not unmet
+    decision = COMPLETE_INITIAL_ENTRY_AP0_DECISION_PROCEED if can_enter else COMPLETE_INITIAL_ENTRY_AP0_DECISION_RETURN
+    next_step = "Step2_pre_generation_diagnostic_seed" if can_enter else (return_steps[0] if return_steps else COMPLETE_INITIAL_ENTRY_AP0_STEP)
+    check_results = {str(item["check_key"]): item for item in checks}
+
+    payload: Dict[str, Any] = {
+        "version": COMPLETE_INITIAL_ENTRY_AP0_VERSION,
+        "phase": COMPLETE_INITIAL_ENTRY_AP0_PHASE,
+        "step": COMPLETE_INITIAL_ENTRY_AP0_STEP,
+        "purpose": "pre_registry_entry_gate_for_complete_composer_initial",
+        "ready": True,
+        "decision_ready": True,
+        "green": bool(can_enter),
+        "status": "green" if can_enter else "red",
+        "can_proceed_to_a1": bool(can_enter),
+        "can_enter_step19": bool(can_enter),
+        "can_enter_complete_composer_initial": bool(can_enter),
+        "can_proceed_to_complete_initial": bool(can_enter),
+        "decision": decision,
+        "next_step": next_step,
+        "return_steps": return_steps,
+        "unmet_checks": unmet_keys,
+        "unmet_check_count": len(unmet_keys),
+        "green_checks": green_keys,
+        "green_check_count": len(green_keys),
+        "blocking_check_count": len(checks),
+        "check_order": list(COMPLETE_INITIAL_ENTRY_AP0_CHECKS),
+        "check_results": check_results,
+        "checks": checks,
+        "release_blockers": release_blockers,
+        "release_blocker_keys": [str(item.get("check_key") or "") for item in release_blockers],
+        "release_blocker_count": len(release_blockers),
+        "entry_gate_only": True,
+        "uses_post_generation_display_gate": False,
+        "display_gate_relaxed": False,
+        "comment_text_contract_preserved": bool(display_green),
+        "comment_text_contract": "passed_only",
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+        "fallback_observation_sentence_added": False,
+        "fixed_observation_sentence_added": False,
+        "fixed_sentence_template_used": False,
+        "raw_input_included": False,
+        "raw_input_required_for_improvement": False,
+        "evidence_summary": {
+            "requested_composer": _clean(flag_state.get("requested_composer")),
+            "canonical_requested_composer": _clean(flag_state.get("canonical_requested_composer")),
+            "release_stage": _clean(release.get("stage") or release.get("rollout_stage")),
+            "coverage_group": _clean(coverage_seed.get("coverage_group") or coverage_seed.get("primary_coverage_group")),
+            "binding_infrastructure_ready": bool(binding_green),
+        },
+    }
+    return attach_complete_composer_initial_ap0_report(payload)
+
+
 def build_step18_ap0_migration_decision(
     *,
     diagnostic_summary: Mapping[str, Any] | None = None,
@@ -641,6 +1026,12 @@ def build_emlis_ap0_migration_decision(**kwargs: Any) -> Dict[str, Any]:
 
 
 __all__ = [
+    "COMPLETE_INITIAL_ENTRY_AP0_CHECKS",
+    "COMPLETE_INITIAL_ENTRY_AP0_DECISION_PROCEED",
+    "COMPLETE_INITIAL_ENTRY_AP0_DECISION_RETURN",
+    "COMPLETE_INITIAL_ENTRY_AP0_PHASE",
+    "COMPLETE_INITIAL_ENTRY_AP0_STEP",
+    "COMPLETE_INITIAL_ENTRY_AP0_VERSION",
     "STEP18_BLOCKING_CHECKS",
     "STEP18_DECISION_HOLD",
     "STEP18_DECISION_PROCEED",
@@ -650,6 +1041,7 @@ __all__ = [
     "STEP18_REQUIRED_INPUT_AREAS",
     "STEP18_STEP",
     "STEP18_VERSION",
+    "build_complete_initial_entry_ap0_decision",
     "build_complete_composer_initial_ap0_decision_report",
     "build_emlis_ap0_migration_decision",
     "build_step18_ap0_decision_report",
