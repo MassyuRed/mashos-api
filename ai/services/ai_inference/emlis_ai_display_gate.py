@@ -26,10 +26,121 @@ _PHASE10_REQUIRED_RELEASE_CHECKS = (
     "phase10_unverified_phase_not_passed",
 )
 
+_STEP7_GATE_BINDING_TRACE_VERSION = "emlis.limited_composer_gate_binding_reflection.v1"
+_STEP7_GATE_BINDING_TARGET_STEP = "7_Gate_binding_reflection"
+
 
 def _dedupe(values: List[str]) -> List[str]:
     return list(dict.fromkeys(str(v) for v in values if str(v)))
 
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _binding_trace(binding_meta: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    binding = binding_meta if isinstance(binding_meta, Mapping) else {}
+    binding_required = bool(binding.get("binding_required") or binding.get("binding_expected"))
+    sentence_count = _safe_int(
+        binding.get("sentence_count")
+        or binding.get("expected_binding_count")
+        or binding.get("body_sentence_count")
+        or 0
+    )
+    expected_binding_count = _safe_int(binding.get("expected_binding_count") or sentence_count)
+    binding_count = _safe_int(binding.get("binding_count") or binding.get("sentence_binding_count") or 0)
+    binding_present = bool(binding.get("binding_present") or binding_count > 0)
+    binding_missing = bool(
+        binding.get("binding_missing")
+        or (binding_required and expected_binding_count and binding_count < expected_binding_count)
+    )
+    return {
+        "binding_used": bool(binding.get("binding_used")),
+        "binding_present": binding_present,
+        "binding_available": binding_present,
+        "binding_missing": binding_missing,
+        "binding_required": binding_required,
+        "binding_count": binding_count,
+        "sentence_count": sentence_count,
+        "expected_binding_count": expected_binding_count,
+        "binding_version": str(binding.get("binding_version") or binding.get("version") or ""),
+        "raw_text_included": False,
+        "raw_input_required_for_debug": False,
+    }
+
+
+def _gate_binding_fields(
+    binding_meta: Mapping[str, Any] | None,
+    *,
+    gate: str,
+    binding_used: bool | None = None,
+    binding_present: bool | None = None,
+    binding_missing: bool | None = None,
+    binding_count: int | None = None,
+    sentence_count: int | None = None,
+    expected_binding_count: int | None = None,
+    binding_version: str | None = None,
+    binding_supported_sentence_count: int | None = None,
+) -> Dict[str, Any]:
+    """Build Step 7 binding trace fields for a single gate.
+
+    This is diagnostic meta only; it does not include raw user input and it
+    does not relax the Display Gate.
+    """
+
+    fields = _binding_trace(binding_meta)
+    if binding_used is not None:
+        fields["binding_used"] = bool(binding_used)
+    if binding_present is not None:
+        fields["binding_present"] = bool(binding_present)
+    if binding_missing is not None:
+        fields["binding_missing"] = bool(binding_missing)
+    if binding_count is not None:
+        fields["binding_count"] = _safe_int(binding_count)
+    if sentence_count is not None:
+        fields["sentence_count"] = _safe_int(sentence_count)
+    if expected_binding_count is not None:
+        fields["expected_binding_count"] = _safe_int(expected_binding_count)
+    if binding_version:
+        fields["binding_version"] = str(binding_version)
+    fields["binding_available"] = bool(fields.get("binding_present") or fields.get("binding_count"))
+    if fields.get("binding_required") and fields.get("expected_binding_count"):
+        fields["binding_missing"] = bool(_safe_int(fields.get("binding_count")) < _safe_int(fields.get("expected_binding_count")))
+    fields["step7_gate_binding_reflection"] = {
+        "version": _STEP7_GATE_BINDING_TRACE_VERSION,
+        "target_step": _STEP7_GATE_BINDING_TARGET_STEP,
+        "gate": str(gate or ""),
+        "binding_trace_present": True,
+        "binding_used": bool(fields.get("binding_used")),
+        "binding_available": bool(fields.get("binding_available")),
+        "binding_present": bool(fields.get("binding_present")),
+        "binding_missing": bool(fields.get("binding_missing")),
+        "binding_required": bool(fields.get("binding_required")),
+        "binding_count": _safe_int(fields.get("binding_count")),
+        "expected_binding_count": _safe_int(fields.get("expected_binding_count")),
+        "sentence_count": _safe_int(fields.get("sentence_count")),
+        "binding_supported_sentence_count": _safe_int(binding_supported_sentence_count),
+        "binding_version": str(fields.get("binding_version") or ""),
+        "gate_threshold_relaxed": False,
+        "display_contract_relaxed": False,
+        "raw_text_included": False,
+        "raw_input_required_for_debug": False,
+    }
+    return fields
+
+
+def _display_binding_used_from_trace(gate_trace: Mapping[str, Any] | None, binding_meta: Mapping[str, Any] | None) -> bool:
+    trace = gate_trace if isinstance(gate_trace, Mapping) else {}
+    grounding = trace.get("grounding") if isinstance(trace.get("grounding"), Mapping) else {}
+    return bool(
+        (grounding or {}).get("binding_used")
+        or (grounding or {}).get("binding_supported_sentence_count")
+        or _binding_trace(binding_meta).get("binding_used")
+    )
 
 def _required_gate_trace_keys() -> tuple[str, ...]:
     return ("reader", "grounding", "template_echo", "generation_source", "safety", "phase_completion")
@@ -75,17 +186,28 @@ def _with_display_gate_trace(
     observation_status: str,
     rejection_reasons: List[str],
     comment_text: str,
+    binding_meta: Mapping[str, Any] | None = None,
+    binding_used_override: bool | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
+    binding_fields = _gate_binding_fields(
+        binding_meta,
+        gate="display",
+        binding_used=(
+            _display_binding_used_from_trace(out, binding_meta)
+            if binding_used_override is None
+            else bool(binding_used_override)
+        ),
+    )
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
         "comment_text_allowed": bool(observation_status == "passed" and str(comment_text or "").strip()),
         "comment_text_present": bool(str(comment_text or "").strip()),
         "rejection_reasons": list(rejection_reasons or []),
+        **binding_fields,
     }
     return out
-
 
 def build_emlis_gate_trace(
     *,
@@ -95,6 +217,7 @@ def build_emlis_gate_trace(
     safety_report: SafetyBoundaryReport | None = None,
     composer_source: str = "",
     phase_completion_ready: bool = True,
+    binding_meta: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Build a compact pass/fail trace for all EmlisAI judge gates.
 
@@ -104,6 +227,20 @@ def build_emlis_gate_trace(
 
     safety = safety_report or SafetyBoundaryReport()
     source = str(composer_source or "").strip()
+    reader_binding_fields = _gate_binding_fields(binding_meta, gate="reader", binding_used=False)
+    grounding_binding_fields = _gate_binding_fields(
+        binding_meta,
+        gate="grounding",
+        binding_used=bool(getattr(grounding_report, "binding_used", False)),
+        binding_present=bool(getattr(grounding_report, "binding_present", False)) or None,
+        binding_missing=bool(getattr(grounding_report, "binding_missing", False)) or None,
+        binding_count=int(getattr(grounding_report, "binding_count", 0) or 0) or None,
+        expected_binding_count=int(getattr(grounding_report, "expected_binding_count", 0) or 0) or None,
+        binding_version=str(getattr(grounding_report, "binding_version", "") or "") or None,
+        binding_supported_sentence_count=int(getattr(grounding_report, "binding_supported_sentence_count", 0) or 0),
+    )
+    template_binding_fields = _gate_binding_fields(binding_meta, gate="template_echo", binding_used=False)
+    generation_source_binding_fields = _gate_binding_fields(binding_meta, gate="generation_source", binding_used=False)
     source_reasons: List[str] = []
     if source != "ai_generated":
         source_reasons.append("composer_source_not_ai_generated")
@@ -122,6 +259,7 @@ def build_emlis_gate_trace(
             "conversational": bool(reader_report.conversational),
             "report_like": bool(reader_report.report_like),
             "confidence": float(reader_report.confidence or 0.0),
+            **reader_binding_fields,
         },
         "grounding": {
             "passed": bool(grounding_report.passed),
@@ -140,6 +278,10 @@ def build_emlis_gate_trace(
             "grounding_scope": str(getattr(grounding_report, "grounding_scope", "full_graph") or "full_graph"),
             "allowed_evidence_span_count": len(list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])),
             "ignored_evidence_span_count": len(list(getattr(grounding_report, "ignored_evidence_span_ids", []) or [])),
+            "binding_aware_grounding": bool(getattr(grounding_report, "binding_present", False)),
+            **grounding_binding_fields,
+            "binding_supported_sentence_count": int(getattr(grounding_report, "binding_supported_sentence_count", 0) or 0),
+            "step6_binding_aware_grounding": dict(getattr(grounding_report, "binding_diagnostics", {}) or {}),
             "step14_guard_rejection_reasons": _step14_reason_subset(list(grounding_report.rejection_reasons or [])),
             "step14_guard_strengthening": {
                 "version": "emlis.guard_strengthening.v1",
@@ -171,6 +313,7 @@ def build_emlis_gate_trace(
             "phase8_emotion_label_body_line_count": int(getattr(template_echo_report, "phase8_emotion_label_body_line_count", 0) or 0),
             "phase8_missing_must_keep_roles": list(getattr(template_echo_report, "phase8_missing_must_keep_roles", []) or []),
             "phase8_quality_rejection_reasons": list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or []),
+            **template_binding_fields,
             "step14_guard_rejection_reasons": _step14_reason_subset([
                 *list(template_echo_report.rejection_reasons or []),
                 *list(getattr(template_echo_report, "phase8_quality_rejection_reasons", []) or []),
@@ -189,6 +332,7 @@ def build_emlis_gate_trace(
             "passed": source == "ai_generated",
             "rejection_reasons": source_reasons,
             "composer_source": source,
+            **generation_source_binding_fields,
         },
         "safety": {
             "passed": not bool(safety.requires_block),
@@ -325,6 +469,7 @@ def decide_emlis_observation_display(
     trace_id: str = "",
     composer_source: str = "",
     phase_completion_ready: bool = True,
+    binding_meta: Mapping[str, Any] | None = None,
 ) -> DisplayDecision:
     """Final fail-closed decision for displaying Emlis observation text."""
 
@@ -338,7 +483,9 @@ def decide_emlis_observation_display(
         safety_report=safety,
         composer_source=source,
         phase_completion_ready=phase_completion_ready,
+        binding_meta=binding_meta,
     )
+    display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
     reasons: List[str] = []
 
     if safety.requires_block:
@@ -354,6 +501,8 @@ def decide_emlis_observation_display(
                 observation_status="safety_blocked",
                 rejection_reasons=deduped,
                 comment_text="",
+                binding_meta=binding_meta,
+                binding_used_override=display_binding_used,
             ),
         )
 
@@ -389,6 +538,8 @@ def decide_emlis_observation_display(
                 observation_status=status,
                 rejection_reasons=deduped,
                 comment_text="",
+                binding_meta=binding_meta,
+                binding_used_override=display_binding_used,
             ),
         )
 
@@ -402,6 +553,8 @@ def decide_emlis_observation_display(
             observation_status="passed",
             rejection_reasons=[],
             comment_text=text,
+            binding_meta=binding_meta,
+            binding_used_override=display_binding_used,
         ),
     )
 

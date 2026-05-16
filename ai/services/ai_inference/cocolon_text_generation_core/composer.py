@@ -86,6 +86,7 @@ class CoreTextComposer:
                 used_evidence_span_ids=candidate.used_evidence_span_ids,
                 phrase_units=payload.phrase_units,
                 used_phrase_unit_ids=candidate.used_phrase_unit_ids,
+                sentence_bindings=payload.sentence_bindings,
             ),
             guard_must_keep_coverage(
                 text,

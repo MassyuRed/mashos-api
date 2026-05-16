@@ -12,12 +12,13 @@ light colloquial softening, typo normalization, and role-neutral nominalization.
 import re
 from typing import Any, Iterable, List, Mapping, Sequence
 
+from emlis_ai_limited_sentence_quality_guard import judge_phrase_unit_material_quality
 from emlis_ai_types import EvidenceRef, ShapedUserPhrase, UserWordAnchor
 
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE = re.compile(r"[。！？!?\n\r]+")
 _SOFT_SPLIT_RE = re.compile(r"(?<=、)|(?<=,)|(?<=けど)|(?<=けれど)|(?<=でも)|(?<=のに)|(?<=から)|(?<=ので)")
-_UNFINISHED_CONNECTOR_RE = re.compile(r"(?:けど|けれど|でも|から|ので|のに|だって|ただ|それで)$")
+_UNFINISHED_CONNECTOR_RE = re.compile(r"(?:けどさ|だけどさ|でもさ|それだと|けれど|だけど|けど|でも|から|ので|のに|だって|ただ|それで)$")
 
 _ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("support_need", ("頼", "相談", "話", "助け", "支え")),
@@ -123,9 +124,17 @@ def shape_user_phrase(anchor: UserWordAnchor) -> ShapedUserPhrase:
     stripped, reasons = _strip_unfinished_connectors(raw)
     softened = _soften_colloquial(stripped or raw)
     role = _role_from_text(softened, str(getattr(anchor, "role", "other") or "other"))
-    usability = "safe" if softened and len(softened) >= 2 else "unsafe"
+    material_report = judge_phrase_unit_material_quality(
+        softened,
+        raw_text=raw,
+        role=role,
+        source_field=str(getattr(anchor, "source_field", "memo") or "memo"),
+    )
+    material_reasons = list(material_report.get("rejection_reasons") or [])
+    usability = "safe" if softened and len(softened) >= 2 and bool(material_report.get("passed")) else "unsafe"
     if reasons and len(softened) < 4:
         usability = "unsafe"
+    unsafe_reasons = list(dict.fromkeys([*reasons, *material_reasons]))
     return ShapedUserPhrase(
         anchor_key=str(getattr(anchor, "anchor_key", "") or ""),
         raw_text=raw,
@@ -135,10 +144,9 @@ def shape_user_phrase(anchor: UserWordAnchor) -> ShapedUserPhrase:
         role=role,
         source_field=str(getattr(anchor, "source_field", "memo") or "memo"),
         usability=usability,
-        unsafe_reasons=reasons if usability != "safe" else [],
+        unsafe_reasons=unsafe_reasons if usability != "safe" else [],
         evidence=list(getattr(anchor, "evidence", []) or []),
     )
-
 
 def _synthesized_anchor(text: str, *, role: str, source_field: str, index: int, evidence: EvidenceRef) -> UserWordAnchor:
     return UserWordAnchor(

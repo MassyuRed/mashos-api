@@ -13,6 +13,8 @@ Reader/Grounding/Template/Display gates, and passed-only ``comment_text``.
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Sequence
 
+from emlis_ai_complete_composer_initial_meta import build_complete_composer_initial_term_meta
+
 STEP19_VERSION = "emlis.step19_a_plan_equivalent_composer.v1"
 STEP19_PHASE = "A-1"
 STEP19_STEP = "Step19_a_plan_equivalent_composer"
@@ -238,6 +240,7 @@ def build_step19_a_plan_equivalent_rollout(
 
     can_switch = bool(not blockers)
     model_after = A_PLAN_EQUIVALENT_COMPOSER_MODEL if can_switch else model_before
+    term_meta = build_complete_composer_initial_term_meta()
 
     return {
         "version": STEP19_VERSION,
@@ -249,6 +252,14 @@ def build_step19_a_plan_equivalent_rollout(
         "ready": bool(can_switch),
         "green": bool(can_switch),
         "enabled": bool(can_switch),
+        "composer_term_meta": term_meta,
+        "canonical_composer_term": term_meta["canonical_composer_term"],
+        "target_composer_term": term_meta["target_composer_term"],
+        "target_composer_stage_term": term_meta["target_composer_stage_term"],
+        "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
+        "complete_initial_ready": bool(can_switch),
+        "can_rollout_complete_initial": bool(can_switch),
+        "complete_initial_composer_model": A_PLAN_EQUIVALENT_COMPOSER_MODEL,
         "applied": bool(can_switch),
         "can_rollout_a_plan_equivalent": bool(can_switch),
         "can_switch_composer_model": bool(can_switch),
@@ -326,6 +337,7 @@ def build_step19_a_plan_equivalent_rollout(
         "public_response_key_change": False,
         "piece_analysis_text_generation_started": False,
         "blocking_reasons": blockers,
+        "release_blockers": blockers,
         "primary_reason": "green" if can_switch else (blockers[0] if blockers else "not_ready"),
         "next_step": "Step20_long_term_quality" if can_switch else "Step18_ap0_migration_decision",
     }
@@ -369,6 +381,12 @@ def apply_step19_a_plan_equivalent_model(
         force_ap0_green=force_ap0_green,
         force_rollout_allowed=force_rollout_allowed,
     )
+    term_meta = build_complete_composer_initial_term_meta()
+    meta.setdefault("composer_term_meta", term_meta)
+    meta.setdefault("canonical_composer_term", term_meta["canonical_composer_term"])
+    meta.setdefault("target_composer_term", term_meta["target_composer_term"])
+    meta.setdefault("target_composer_stage_term", term_meta["target_composer_stage_term"])
+    meta.setdefault("complete_composer_initial_term", term_meta["complete_composer_initial_term"])
     if step19.get("applied"):
         previous = _clean(out.get("composer_model") or B_PLAN_COMPOSER_MODEL)
         out["composer_model"] = A_PLAN_EQUIVALENT_COMPOSER_MODEL
@@ -378,11 +396,15 @@ def apply_step19_a_plan_equivalent_model(
         meta["composer_model"] = A_PLAN_EQUIVALENT_COMPOSER_MODEL
         meta["a_plan_equivalent"] = True
         meta["a_plan_equivalent_composer"] = True
+        meta["complete_composer_initial"] = True
+        meta["complete_initial_composer"] = True
         _update_core_meta_models(meta, model=A_PLAN_EQUIVALENT_COMPOSER_MODEL)
     meta["step19_a_plan_equivalent_composer"] = step19
     meta["step19_a_plan_equivalent"] = step19
     meta["a_plan_equivalent_composer_rollout"] = step19
     meta["a1_composer_introduction"] = step19
+    meta["step19_complete_composer_initial"] = step19
+    meta["complete_composer_initial_rollout"] = step19
     out["composer_meta"] = meta
     return out
 

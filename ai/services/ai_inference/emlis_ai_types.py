@@ -676,14 +676,33 @@ class DiagnosticGateResult:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
     def as_meta(self) -> Dict[str, Any]:
-        return {
+        diagnostics = dict(self.diagnostics or {})
+        data = {
             "passed": bool(self.passed),
             "status": "passed" if self.passed else "failed",
             "primary_reason": self.primary_reason or ("passed" if self.passed else "gate_failed"),
             "rejection_reasons": list(self.rejection_reasons),
             "reason_category": self.reason_category or ("passed" if self.passed else "gate_general"),
-            "diagnostics": dict(self.diagnostics or {}),
+            "diagnostics": diagnostics,
         }
+        # Step 7 keeps binding visibility at the gate result level so the
+        # diagnostic summary can be read without drilling into gate-specific
+        # diagnostics. This is meta-only and does not change pass/fail behavior.
+        for key in (
+            "binding_used",
+            "binding_present",
+            "binding_available",
+            "binding_missing",
+            "binding_required",
+            "binding_count",
+            "sentence_count",
+            "expected_binding_count",
+            "binding_version",
+            "step7_gate_binding_reflection",
+        ):
+            if key in diagnostics:
+                data[key] = diagnostics[key]
+        return data
 
 
 @dataclass(frozen=True)
@@ -1189,6 +1208,21 @@ class GroundingSentenceClaim:
     evidence_span_ids: List[str] = field(default_factory=list)
     relation_supported: bool = False
     unsupported_reason: str = ""
+    # Step 6: binding-aware Grounding diagnostics. These fields describe
+    # generated sentence bindings only; they do not include raw user input and
+    # do not change the passed-only display contract.
+    binding_used: bool = False
+    binding_sentence_id: str = ""
+    binding_evidence_span_ids: List[str] = field(default_factory=list)
+    binding_phrase_unit_ids: List[str] = field(default_factory=list)
+    binding_relation_type: str = ""
+    declared_evidence_span_ids: List[str] = field(default_factory=list)
+    declared_phrase_unit_ids: List[str] = field(default_factory=list)
+    declared_relation_type: str = ""
+    grounding_support_source: str = ""
+    binding_support_reason: str = ""
+    used_phrase_unit_ids: List[str] = field(default_factory=list)
+    relation_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -1201,6 +1235,21 @@ class GroundingReport:
     grounding_scope: str = "full_graph"
     allowed_evidence_span_ids: List[str] = field(default_factory=list)
     ignored_evidence_span_ids: List[str] = field(default_factory=list)
+    # Step 6: meta-only binding-aware Grounding trace. Display remains
+    # fail-closed; this only records whether declared sentence binding was read.
+    binding_used: bool = False
+    binding_present: bool = False
+    binding_missing: bool = False
+    binding_count: int = 0
+    expected_binding_count: int = 0
+    binding_version: str = ""
+    relation_types: List[str] = field(default_factory=list)
+    binding_supported_sentence_count: int = 0
+    binding_diagnostics: Dict[str, Any] = field(default_factory=dict)
+    binding_aware_grounding: Dict[str, Any] = field(default_factory=dict)
+    binding_rejection_reasons: List[str] = field(default_factory=list)
+    declared_relation_types: List[str] = field(default_factory=list)
+    declared_phrase_unit_ids: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

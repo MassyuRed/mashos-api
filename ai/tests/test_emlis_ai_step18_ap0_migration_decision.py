@@ -8,6 +8,7 @@ from emlis_ai_ap0_migration_decision_service import (
     STEP18_REQUIRED_COVERAGE_GROUPS,
     STEP18_REQUIRED_INPUT_AREAS,
     STEP18_VERSION,
+    build_complete_composer_initial_ap0_decision_report,
     build_step18_ap0_migration_decision,
 )
 from emlis_ai_rollout_metrics_service import aggregate_emlis_rollout_metrics, build_emlis_rollout_metric_event
@@ -231,11 +232,28 @@ def test_step18_ap0_decision_green_when_step01_to_step17_materials_are_ready() -
     assert decision["next_step"] == "Step19_a_plan_equivalent_composer"
     assert decision["return_steps"] == []
     assert decision["unmet_checks"] == []
+    assert decision["release_blockers"] == []
+    assert decision["target_composer_term"] == "完全Composer初期版"
+    assert decision["can_proceed_to_complete_initial"] is True
+    assert decision["complete_composer_initial_ap0_report"]["can_proceed_to_complete_initial"] is True
+    assert decision["complete_composer_initial_ap0_report"]["compat_next_step"] == "Step19_a_plan_equivalent_composer"
     assert set(STEP18_REQUIRED_INPUT_AREAS).issubset(set(decision["check_results"]["step17_broad_fixtures"]["evidence"]["input_areas"]))
     assert decision["check_results"]["rollout_distribution"]["evidence"]["do_not_promote_from_passed_only"] is True
     assert decision["post_ap0_checks"][0]["status"] == "deferred"
     assert decision["external_ai_used"] is False
     assert decision["fallback_observation_sentence_added"] is False
+
+    report = build_complete_composer_initial_ap0_decision_report(
+        diagnostic_summary=summary,
+        rollout_metrics=metrics,
+        coverage_matrix=summary["coverage_matrix"],
+        broad_input_fixture_summary=_step17_summary(),
+        guard_test_summary=_guard_summary(),
+        frontend_boundary_summary=_frontend_summary(),
+    )
+    assert report["version"] == "emlis.complete_composer_initial.ap0_decision_report.v1"
+    assert report["release_blockers"] == []
+    assert report["target_composer_term"] == "完全Composer初期版"
 
 
 def test_step18_ap0_decision_returns_to_source_steps_when_unclassified_reason_is_major() -> None:
@@ -268,6 +286,9 @@ def test_step18_ap0_decision_returns_to_source_steps_when_unclassified_reason_is
     assert "step17_broad_fixtures" in decision["unmet_checks"]
     assert "Step01_diagnostic_summary" in decision["return_steps"]
     assert "Step17_broad_input_fixtures" in decision["return_steps"]
+    assert decision["release_blocker_count"] >= 2
+    assert any(item["check_key"] == "startup_diagnostics" for item in decision["release_blockers"])
+    assert decision["complete_composer_initial_ap0_report"]["release_blocker_count"] == decision["release_blocker_count"]
     assert decision["comment_text_contract_preserved"] is True
 
 
@@ -348,4 +369,6 @@ async def test_step18_runtime_meta_is_attached_without_changing_user_visible_con
     assert "step17_broad_fixtures" in decision["unmet_checks"]
     assert phase_gate["step18_ap0_migration_decision_ready"] is True
     assert phase_gate["step18_ap0_can_proceed_to_a1"] is False
+    assert phase_gate["complete_composer_initial_ap0_can_proceed"] is False
+    assert diagnostic["complete_composer_initial_ap0_report"] == reply.meta["complete_composer_initial_ap0_report"]
     assert reply.comment_text == "" or reply.meta["observation_status"] == "passed"

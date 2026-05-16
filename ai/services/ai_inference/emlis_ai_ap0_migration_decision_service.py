@@ -13,6 +13,11 @@ response keys.
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
+from emlis_ai_complete_composer_initial_meta import (
+    attach_complete_composer_initial_ap0_report,
+    build_complete_composer_initial_ap0_decision_report as _build_complete_composer_initial_ap0_decision_report,
+)
+
 STEP18_VERSION = "emlis.step18_ap0_migration_decision.v1"
 STEP18_PHASE = "A-P0"
 STEP18_STEP = "Step18_ap0_migration_decision"
@@ -570,7 +575,7 @@ def build_step18_ap0_migration_decision(
     green_keys = [item["check_key"] for item in checks if item.get("green")]
     unmet_keys = [item["check_key"] for item in unmet]
 
-    return {
+    decision_payload = {
         "version": STEP18_VERSION,
         "phase": STEP18_PHASE,
         "step": STEP18_STEP,
@@ -614,6 +619,20 @@ def build_step18_ap0_migration_decision(
             "frontend_summary_version": _clean(frontend.get("version")),
         },
     }
+    return attach_complete_composer_initial_ap0_report(decision_payload)
+
+
+def build_complete_composer_initial_ap0_decision_report(**kwargs: Any) -> Dict[str, Any]:
+    """Build the Commit-1 AP0 report from the existing Step18 decision inputs."""
+
+    decision = build_step18_ap0_migration_decision(**kwargs)
+    return _build_complete_composer_initial_ap0_decision_report(decision)
+
+
+def build_step18_ap0_decision_report(**kwargs: Any) -> Dict[str, Any]:
+    """Compatibility alias for AP0 report callers."""
+
+    return build_complete_composer_initial_ap0_decision_report(**kwargs)
 
 
 # Backward / ergonomic alias for tests and future callers.
@@ -631,6 +650,8 @@ __all__ = [
     "STEP18_REQUIRED_INPUT_AREAS",
     "STEP18_STEP",
     "STEP18_VERSION",
+    "build_complete_composer_initial_ap0_decision_report",
     "build_emlis_ap0_migration_decision",
+    "build_step18_ap0_decision_report",
     "build_step18_ap0_migration_decision",
 ]

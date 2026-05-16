@@ -13,6 +13,11 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 _COVERAGE_MATRIX_VERSION = "emlis.coverage_matrix.v1"
+_LIMITED_COMPOSER_SCORECARD_EVENT_VERSION = "emlis.limited_composer_scorecard_event.v1"
+_LIMITED_COMPOSER_SCORECARD_AGGREGATE_VERSION = "emlis.limited_composer_scorecard_aggregate.v1"
+_LIMITED_COMPOSER_SCORECARD_HARNESS_VERSION = "emlis.limited_composer_scorecard_harness.v1"
+_LIMITED_COMPOSER_SCORECARD_STEP = "9_scorecard_harness"
+_SCORECARD_STATUSES: Sequence[str] = ("passed", "rejected", "unavailable", "safety_blocked")
 
 
 @dataclass(frozen=True)
@@ -566,7 +571,351 @@ def build_emlis_coverage_matrix(
     }
 
 
+
+def _scorecard_mapping(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _scorecard_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return _dedupe(value)
+    return _dedupe([value])
+
+
+def _scorecard_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _scorecard_rate(numerator: int, denominator: int) -> float:
+    return (float(numerator) / float(denominator)) if denominator else 0.0
+
+
+def _scorecard_status(value: Any) -> str:
+    status = str(value or "").strip()
+    return status if status in _SCORECARD_STATUSES else "unavailable"
+
+
+def _scorecard_source(record: Any) -> Dict[str, Any]:
+    item = _scorecard_mapping(record)
+    for key in ("diagnostic_summary", "summary", "metric_event", "rollout_metric_event"):
+        nested = item.get(key)
+        if isinstance(nested, Mapping):
+            return dict(nested)
+    return item
+
+
+def _scorecard_matrix(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    return _scorecard_mapping(summary.get("coverage_matrix"))
+
+
+def _scorecard_coverage_groups(summary: Mapping[str, Any]) -> List[str]:
+    matrix = _scorecard_matrix(summary)
+    groups = _dedupe([
+        *_scorecard_list(summary.get("coverage_groups")),
+        *_scorecard_list(matrix.get("coverage_groups")),
+        *_scorecard_list(matrix.get("active_groups")),
+    ])
+    primary = (
+        str(summary.get("coverage_group") or "").strip()
+        or str(summary.get("coverage_primary_group") or "").strip()
+        or str(matrix.get("primary_coverage_group") or "").strip()
+    )
+    if primary and primary not in groups:
+        groups.insert(0, primary)
+    return groups or ["unclassified"]
+
+
+def _scorecard_reason_codes(summary: Mapping[str, Any], primary_reason: str) -> List[str]:
+    values: List[Any] = [primary_reason]
+    for key in (
+        "secondary_reasons",
+        "scope_rejection_reasons",
+        "composer_rejection_reasons",
+        "gate_rejection_reasons",
+        "coverage_unclassified_reasons",
+        "coverage_unmapped_reasons",
+    ):
+        values.extend(_scorecard_list(summary.get(key)))
+    extension = summary.get("step2_diagnostic_summary_extension")
+    if isinstance(extension, Mapping):
+        values.extend(_scorecard_list(extension.get("reason_codes")))
+    return _dedupe(values)
+
+
+def _scorecard_binding_meta(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    for key in ("binding_diagnostic", "binding_presence", "binding", "step2_diagnostic_summary_extension", "diagnostic_summary_extension", "diagnostic_summary_v2"):
+        value = summary.get(key)
+        if not isinstance(value, Mapping):
+            continue
+        nested = value.get("binding")
+        if isinstance(nested, Mapping):
+            return dict(nested)
+        return dict(value)
+    return {}
+
+
+def _scorecard_binding(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    binding = _scorecard_binding_meta(summary)
+    binding_count = max(_scorecard_int(summary.get("binding_count")), _scorecard_int(binding.get("binding_count")))
+    expected_count = max(_scorecard_int(summary.get("expected_binding_count")), _scorecard_int(binding.get("expected_binding_count")))
+    if expected_count <= 0:
+        expected_count = max(
+            _scorecard_int(summary.get("body_sentence_count")),
+            _scorecard_int(binding.get("body_sentence_count")),
+            _scorecard_int(summary.get("sentence_count")),
+            _scorecard_int(binding.get("sentence_count")),
+        )
+    binding_present = bool(summary.get("binding_present") or binding.get("binding_present") or binding_count > 0)
+    binding_required = bool(summary.get("binding_required") or summary.get("binding_expected") or binding.get("binding_required") or binding.get("binding_expected") or expected_count > 0)
+    missing_count = max(0, expected_count - binding_count)
+    binding_missing = bool(summary.get("binding_missing") or binding.get("binding_missing") or missing_count > 0)
+    relation_types = _dedupe([
+        *_scorecard_list(summary.get("relation_types")),
+        *_scorecard_list(binding.get("relation_types")),
+    ])
+    return {
+        "binding_required": binding_required,
+        "binding_expected": binding_required,
+        "binding_present": binding_present,
+        "binding_missing": binding_missing,
+        "binding_count": binding_count,
+        "expected_binding_count": expected_count,
+        "missing_binding_count": missing_count,
+        "relation_types": relation_types,
+        "binding_version": str(binding.get("binding_version") or binding.get("version") or summary.get("binding_version") or "").strip(),
+    }
+
+
+def _scorecard_event_from_summary(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    status = _scorecard_status(summary.get("observation_status"))
+    primary_reason = str(summary.get("primary_reason") or status).strip()
+    groups = _scorecard_coverage_groups(summary)
+    primary_group = groups[0] if groups else "unclassified"
+    binding = _scorecard_binding(summary)
+    expected_count = int(binding.get("expected_binding_count") or 0)
+    binding_count = int(binding.get("binding_count") or 0)
+    binding_numerator = min(binding_count, expected_count) if expected_count > 0 else 0
+    return {
+        "version": _LIMITED_COMPOSER_SCORECARD_EVENT_VERSION,
+        "phase": "limited_composer_extension",
+        "step": _LIMITED_COMPOSER_SCORECARD_STEP,
+        "purpose": "coverage_group_status_and_binding_coverage_scorecard_event",
+        "ready": bool(status and primary_reason and primary_group),
+        "metric_complete": bool(status and primary_reason and primary_group),
+        "observation_status": status,
+        "passed": status == "passed",
+        "rejected": status == "rejected",
+        "unavailable": status == "unavailable",
+        "safety_blocked": status == "safety_blocked",
+        "primary_reason": primary_reason,
+        "failed_stage": str(summary.get("failed_stage") or summary.get("stage") or "").strip(),
+        "coverage_group": primary_group,
+        "coverage_primary_group": primary_group,
+        "coverage_groups": groups,
+        "reason_codes": _scorecard_reason_codes(summary, primary_reason),
+        "composer_status": str(summary.get("composer_status") or "").strip(),
+        "composer_model": str(summary.get("composer_model") or "").strip(),
+        "binding": binding,
+        "binding_required": bool(binding.get("binding_required")),
+        "binding_present": bool(binding.get("binding_present")),
+        "binding_missing": bool(binding.get("binding_missing")),
+        "binding_count": binding_count,
+        "expected_binding_count": expected_count,
+        "missing_binding_count": int(binding.get("missing_binding_count") or 0),
+        "binding_coverage_numerator": binding_numerator,
+        "binding_coverage_denominator": expected_count,
+        "binding_coverage_rate": _scorecard_rate(binding_numerator, expected_count),
+        "relation_types": list(binding.get("relation_types") or []),
+        "raw_input_included": False,
+        "raw_text_included": False,
+    }
+
+
+def _scorecard_empty_bucket(group_key: str) -> Dict[str, Any]:
+    definition = _GROUP_BY_KEY.get(group_key)
+    return {
+        "coverage_group": group_key,
+        "label": definition.label if definition else group_key,
+        "record_count": 0,
+        "eligible_count": 0,
+        "passed": 0,
+        "passed_count": 0,
+        "rejected": 0,
+        "rejected_count": 0,
+        "unavailable": 0,
+        "unavailable_count": 0,
+        "safety_blocked": 0,
+        "safety_blocked_count": 0,
+        "status_counts": {status: 0 for status in _SCORECARD_STATUSES},
+        "primary_reason_counts": {},
+        "reason_counts": {},
+        "binding_expected_count": 0,
+        "binding_present_count": 0,
+        "binding_missing_count": 0,
+        "binding_sentence_expected_total": 0,
+        "binding_sentence_present_total": 0,
+        "binding_sentence_missing_total": 0,
+        "binding_present_rate": 0.0,
+        "binding_sentence_coverage_rate": 0.0,
+        "passed_rate": 0.0,
+        "relation_type_counts": {},
+    }
+
+
+def _increment_bucket_counter(bucket: Dict[str, Any], field: str, key: str, count: int = 1) -> None:
+    key = str(key or "").strip()
+    if not key:
+        return
+    values = dict(bucket.get(field) or {})
+    values[key] = int(values.get(key) or 0) + int(count)
+    bucket[field] = values
+
+
+def _merge_scorecard_event(bucket: Dict[str, Any], event: Mapping[str, Any]) -> None:
+    status = _scorecard_status(event.get("observation_status"))
+    bucket["record_count"] = int(bucket.get("record_count") or 0) + 1
+    if status in {"passed", "rejected", "unavailable"}:
+        bucket["eligible_count"] = int(bucket.get("eligible_count") or 0) + 1
+    counts = dict(bucket.get("status_counts") or {})
+    counts[status] = int(counts.get(status) or 0) + 1
+    bucket["status_counts"] = counts
+    bucket[status] = int(bucket.get(status) or 0) + 1
+    bucket[f"{status}_count"] = int(bucket.get(f"{status}_count") or 0) + 1
+    primary_reason = str(event.get("primary_reason") or status).strip()
+    _increment_bucket_counter(bucket, "primary_reason_counts", primary_reason)
+    for reason in _scorecard_list(event.get("reason_codes")):
+        _increment_bucket_counter(bucket, "reason_counts", reason)
+    expected_count = _scorecard_int(event.get("expected_binding_count"))
+    binding_count = _scorecard_int(event.get("binding_count"))
+    missing_count = _scorecard_int(event.get("missing_binding_count"))
+    if bool(event.get("binding_required")) or expected_count > 0:
+        bucket["binding_expected_count"] = int(bucket.get("binding_expected_count") or 0) + 1
+    if bool(event.get("binding_present")):
+        bucket["binding_present_count"] = int(bucket.get("binding_present_count") or 0) + 1
+    if bool(event.get("binding_missing")):
+        bucket["binding_missing_count"] = int(bucket.get("binding_missing_count") or 0) + 1
+    bucket["binding_sentence_expected_total"] = int(bucket.get("binding_sentence_expected_total") or 0) + expected_count
+    bucket["binding_sentence_present_total"] = int(bucket.get("binding_sentence_present_total") or 0) + binding_count
+    bucket["binding_sentence_missing_total"] = int(bucket.get("binding_sentence_missing_total") or 0) + missing_count
+    for relation_type in _scorecard_list(event.get("relation_types")):
+        _increment_bucket_counter(bucket, "relation_type_counts", relation_type)
+    bucket["passed_rate"] = _scorecard_rate(int(bucket.get("passed_count") or 0), int(bucket.get("eligible_count") or 0))
+    bucket["binding_present_rate"] = _scorecard_rate(int(bucket.get("binding_present_count") or 0), int(bucket.get("binding_expected_count") or 0))
+    bucket["binding_sentence_coverage_rate"] = _scorecard_rate(int(bucket.get("binding_sentence_present_total") or 0), int(bucket.get("binding_sentence_expected_total") or 0))
+
+
+def build_emlis_limited_composer_scorecard_event(*, diagnostic_summary: Mapping[str, Any] | None) -> Dict[str, Any]:
+    return _scorecard_event_from_summary(_scorecard_mapping(diagnostic_summary))
+
+
+def aggregate_emlis_limited_composer_scorecard_events(events: Sequence[Any] | Iterable[Any] | None = None) -> Dict[str, Any]:
+    normalized = [
+        dict(item) if isinstance(item, Mapping) and item.get("version") == _LIMITED_COMPOSER_SCORECARD_EVENT_VERSION else _scorecard_event_from_summary(_scorecard_source(item))
+        for item in list(events or [])
+    ]
+    totals = _scorecard_empty_bucket("all")
+    by_group: Dict[str, Dict[str, Any]] = {}
+    for event in normalized:
+        _merge_scorecard_event(totals, event)
+        for group in _scorecard_list(event.get("coverage_groups")) or [str(event.get("coverage_group") or "unclassified")]:
+            bucket = by_group.setdefault(group, _scorecard_empty_bucket(group))
+            _merge_scorecard_event(bucket, event)
+    rows = sorted(by_group.values(), key=lambda row: (-int(row.get("record_count") or 0), str(row.get("coverage_group") or "")))
+    groups_needing_attention = [
+        str(row.get("coverage_group") or "")
+        for row in rows
+        if int(row.get("rejected_count") or 0) or int(row.get("unavailable_count") or 0) or int(row.get("binding_missing_count") or 0)
+    ]
+    return {
+        "version": _LIMITED_COMPOSER_SCORECARD_AGGREGATE_VERSION,
+        "phase": "limited_composer_extension",
+        "step": _LIMITED_COMPOSER_SCORECARD_STEP,
+        "purpose": "aggregate_passed_rejected_unavailable_by_coverage_group_and_binding_coverage",
+        "ready": bool(normalized),
+        "scorecard_ready": bool(normalized),
+        "event_count": len(normalized),
+        "record_count": len(normalized),
+        "totals": totals,
+        "coverage_group_rows": rows,
+        "by_coverage_group": {str(row.get("coverage_group") or ""): dict(row) for row in rows},
+        "status_counts": dict(totals.get("status_counts") or {}),
+        "primary_reason_counts": dict(totals.get("primary_reason_counts") or {}),
+        "reason_counts": dict(totals.get("reason_counts") or {}),
+        "binding_coverage": {
+            "binding_expected_count": int(totals.get("binding_expected_count") or 0),
+            "binding_present_count": int(totals.get("binding_present_count") or 0),
+            "binding_missing_count": int(totals.get("binding_missing_count") or 0),
+            "binding_present_rate": float(totals.get("binding_present_rate") or 0.0),
+            "binding_sentence_expected_total": int(totals.get("binding_sentence_expected_total") or 0),
+            "binding_sentence_present_total": int(totals.get("binding_sentence_present_total") or 0),
+            "binding_sentence_missing_total": int(totals.get("binding_sentence_missing_total") or 0),
+            "binding_sentence_coverage_rate": float(totals.get("binding_sentence_coverage_rate") or 0.0),
+        },
+        "groups_needing_attention": groups_needing_attention,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+    }
+
+
+def build_emlis_limited_composer_scorecard_harness(*, diagnostic_summary: Mapping[str, Any] | None, records: Sequence[Any] | Iterable[Any] | None = None) -> Dict[str, Any]:
+    event = build_emlis_limited_composer_scorecard_event(diagnostic_summary=diagnostic_summary or {})
+    all_records: List[Any] = [event, *list(records or [])]
+    aggregate = aggregate_emlis_limited_composer_scorecard_events(all_records)
+    coverage_group = str(event.get("coverage_group") or "unclassified")
+    group_scorecard = dict((aggregate.get("by_coverage_group") or {}).get(coverage_group) or {})
+    return {
+        "version": _LIMITED_COMPOSER_SCORECARD_HARNESS_VERSION,
+        "phase": "limited_composer_extension",
+        "target_step": _LIMITED_COMPOSER_SCORECARD_STEP,
+        "step": _LIMITED_COMPOSER_SCORECARD_STEP,
+        "purpose": "coverage_group_status_and_binding_coverage_scorecard_harness",
+        "ready": bool(event.get("ready") and aggregate.get("ready")),
+        "scorecard_ready": bool(event.get("ready") and aggregate.get("ready")),
+        "event": event,
+        "scorecard_event": event,
+        "aggregate": aggregate,
+        "scorecard_aggregate": aggregate,
+        "coverage_group_scorecard": group_scorecard,
+        "coverage_group_status_scorecard": group_scorecard,
+        "coverage_group_rows": list(aggregate.get("coverage_group_rows") or []),
+        "by_coverage_group": dict(aggregate.get("by_coverage_group") or {}),
+        "coverage_group": coverage_group,
+        "coverage_groups": list(event.get("coverage_groups") or []),
+        "observation_status": str(event.get("observation_status") or ""),
+        "primary_reason": str(event.get("primary_reason") or ""),
+        "binding_coverage": dict(aggregate.get("binding_coverage") or {}),
+        "groups_needing_attention": list(aggregate.get("groups_needing_attention") or []),
+        "next_tasks_visible": True,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "input_specific_template_added": False,
+        "fixed_completed_sentence_template_added": False,
+    }
+
+
+build_limited_composer_scorecard_harness = build_emlis_limited_composer_scorecard_harness
+build_limited_composer_scorecard_event = build_emlis_limited_composer_scorecard_event
+aggregate_limited_composer_scorecard_events = aggregate_emlis_limited_composer_scorecard_events
+
+
 __all__ = [
     "COVERAGE_GROUP_ORDER",
+    "aggregate_emlis_limited_composer_scorecard_events",
+    "aggregate_limited_composer_scorecard_events",
     "build_emlis_coverage_matrix",
+    "build_emlis_limited_composer_scorecard_event",
+    "build_emlis_limited_composer_scorecard_harness",
+    "build_limited_composer_scorecard_event",
+    "build_limited_composer_scorecard_harness",
 ]

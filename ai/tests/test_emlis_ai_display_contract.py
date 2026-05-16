@@ -1,0 +1,308 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "ai_inference"))
+
+from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
+
+
+SAMPLE_MEMO = """
+ずっと家にいて、リラックスできて自分のことを優先して色々整えたりお家のことも出来るから嬉しいんだけど、ふっと気が抜けたときに現実と向き合うことがあるからその時にダメージでかい。
+今の生活不便だな、と。
+気をつけなきゃ行けないこと、全部無視して普通に生活したい。でもそうしたらもっと悪化する。
+そんなの分かってる。たまに逃げ出したくなる。
+"""
+
+PASSING_TEXT = (
+    "Mashさん、Emlisです。\n"
+    "リラックスできて自分のことを優先できる嬉しさと、現実と向き合うダメージが同じ場所で重なっています。\n"
+    "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
+)
+
+UNSUPPORTED_TEXT = (
+    "Mashさん、Emlisです。\n"
+    "世界のすべてが明日から完全に良くなります。"
+)
+
+_LIMITED_COMPOSER_ENV_KEYS = (
+    "COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED",
+    "COCOLON_EMLIS_AI_LIMITED_COMPOSER_ENABLED",
+    "EMLIS_AI_LIMITED_COMPOSER_ENABLED",
+    "COCOLON_LIMITED_COMPOSER_ENABLED",
+    "COCOLON_EMLIS_AI_DEFAULT_LIMITED_COMPOSER_ENABLED",
+    "EMLIS_AI_DEFAULT_LIMITED_COMPOSER_ENABLED",
+    "COCOLON_EMLIS_DEFAULT_COMPOSER",
+    "COCOLON_EMLIS_AI_DEFAULT_COMPOSER",
+    "EMLIS_AI_DEFAULT_COMPOSER",
+    "COCOLON_EMLIS_LIMITED_COMPOSER_ROLLOUT_STAGE",
+    "COCOLON_EMLIS_AI_LIMITED_COMPOSER_ROLLOUT_STAGE",
+    "EMLIS_AI_LIMITED_COMPOSER_ROLLOUT_STAGE",
+    "COCOLON_EMLIS_LIMITED_COMPOSER_ROLLOUT",
+    "EMLIS_AI_LIMITED_COMPOSER_ROLLOUT",
+    "COCOLON_EMLIS_LIMITED_COMPOSER_INTERNAL_USER_IDS",
+    "COCOLON_EMLIS_AI_LIMITED_COMPOSER_INTERNAL_USER_IDS",
+    "EMLIS_AI_LIMITED_COMPOSER_INTERNAL_USER_IDS",
+)
+
+
+def _clear_limited_composer_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in _LIMITED_COMPOSER_ENV_KEYS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def _input(memo: str = SAMPLE_MEMO) -> dict:
+    return {
+        "id": "step10-e2e-input",
+        "created_at": "2026-05-15T00:00:00Z",
+        "memo": memo,
+        "memo_action": "",
+        "emotion_details": [{"type": "自己理解", "strength": "medium"}],
+        "emotions": ["自己理解"],
+        "category": ["生活"],
+    }
+
+
+def _body_lines(text: str) -> list[str]:
+    return [line.strip() for line in str(text or "").splitlines()[1:] if line.strip()]
+
+
+class _BoundPassingComposer:
+    composer_model = "step10_e2e_bound_passing_composer.v1"
+
+    def generate(self, payload):
+        evidence_ids = [item["span_id"] for item in payload["evidence_spans"][:2]]
+        return {
+            "response_schema_version": "emlis.composer.response.v1",
+            "composer_source": "ai_generated",
+            "composer_model": self.composer_model,
+            "generation_method": "step10_e2e_test_composer",
+            "generation_scope": "scoped_graph_only",
+            "coverage_scope": "current_input_core",
+            "fixed_string_renderer_used": False,
+            "confidence": 0.91,
+            "comment_text": PASSING_TEXT,
+            "used_evidence_span_ids": evidence_ids,
+            "composer_meta": {
+                "profile_key": "mixed_positive_anxiety",
+                "sentence_binding_bundle": {
+                    "version": "emlis.sentence_binding_bundle.test.v1",
+                    "binding_version": "step10.test.binding.v1",
+                    "binding_count": 2,
+                    "coverage_scope": "current_input_core",
+                    "profile_key": "mixed_positive_anxiety",
+                    "relation_taxonomy_version": "step10.test.relation_taxonomy.v1",
+                    "bindings": [
+                        {
+                            "sentence_id": "s1",
+                            "text": "binding text must not be copied into diagnostic rows",
+                            "line_role": "coexistence",
+                            "relation_type": "coexistence",
+                            "used_evidence_span_ids": evidence_ids[:1],
+                            "used_phrase_unit_ids": ["pu_positive", "pu_impact"],
+                            "coverage_scope": "current_input_core",
+                            "must_include": True,
+                        },
+                        {
+                            "sentence_id": "s2",
+                            "text": "binding text must not be copied into diagnostic rows either",
+                            "line_role": "limit_escape",
+                            "relation_type": "approach_avoidance",
+                            "used_evidence_span_ids": evidence_ids[1:2],
+                            "used_phrase_unit_ids": ["pu_limit", "pu_escape"],
+                            "coverage_scope": "current_input_core",
+                            "must_include": True,
+                        },
+                    ],
+                },
+            },
+        }
+
+
+class _UnsupportedComposer:
+    composer_model = "step10_e2e_unsupported_composer.v1"
+
+    def generate(self, payload):
+        return {
+            "response_schema_version": "emlis.composer.response.v1",
+            "composer_source": "ai_generated",
+            "composer_model": self.composer_model,
+            "generation_method": "step10_e2e_test_composer",
+            "generation_scope": "scoped_graph_only",
+            "coverage_scope": "current_input_core",
+            "fixed_string_renderer_used": False,
+            "confidence": 0.91,
+            "comment_text": UNSUPPORTED_TEXT,
+            "used_evidence_span_ids": [item["span_id"] for item in payload["evidence_spans"][:1]],
+        }
+
+
+def _assert_step10_contract_attached(reply, *, expected_status: str) -> dict:
+    summary = reply.meta["diagnostic_summary"]
+    step10 = summary["step10_e2e_display_contract"]
+    display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+    phase_gate = reply.meta["multi_perspective"]["phase_gate"]
+
+    assert step10["version"] == "emlis.limited_composer_e2e_display_contract.v1"
+    assert step10["step"] == "10_E2E_test_fixed"
+    assert step10["contract_name"] == "input_feedback.comment_text_passed_only"
+    assert step10 == summary["limited_composer_e2e_display_contract"]
+    assert step10 == summary["e2e_display_contract"]
+    assert step10 == reply.meta["step10_e2e_display_contract"]
+    assert step10 == reply.meta["limited_composer_e2e_display_contract"]
+    assert step10 == reply.meta["e2e_display_contract"]
+    assert step10 == reply.meta["multi_perspective"]["step10_e2e_display_contract"]
+
+    assert step10["observation_status"] == expected_status
+    assert step10["contract_passed"] is True
+    assert step10["passed_only_contract_passed"] is True
+    assert step10["limited_extension_exit_gate_step10_passed"] is True
+    assert step10["release_blockers"] == []
+    assert step10["diagnostic_summary_present"] is True
+    assert step10["gate_results_present"] is True
+    assert step10["scorecard_harness_present"] is True
+    assert step10["raw_input_included"] is False
+    assert step10["raw_input_required_for_debug"] is False
+    assert step10["input_specific_template_added"] is False
+    assert step10["fixed_completion_template_added"] is False
+    assert step10["display_gate_relaxed"] is False
+    assert step10["reader_grounding_template_relaxed"] is False
+    assert step10["db_api_rename_performed"] is False
+    assert step10["response_key_rename_performed"] is False
+
+    assert phase_gate["step10_e2e_display_contract_ready"] is True
+    assert phase_gate["e2e_display_contract_ready"] is True
+    assert phase_gate["step10_e2e_release_blockers"] == []
+    assert phase_gate["step10_passed_only_contract"] == "input_feedback.comment_text_passed_only"
+    assert summary["observation_status"] == expected_status
+    assert display_trace["observation_status"] == expected_status
+    assert bool(reply.comment_text.strip()) is (expected_status == "passed")
+    assert summary["comment_text_allowed"] is (expected_status == "passed")
+    assert display_trace["comment_text_allowed"] is (expected_status == "passed")
+    assert summary["gate_results"]["display"]["diagnostics"]["comment_text_allowed"] is (expected_status == "passed")
+    assert reply.meta["fallback_used"] is False
+    assert reply.meta["multi_perspective"]["legacy_safe_fallback_used"] is False
+    assert reply.meta["multi_perspective"]["legacy_input_feedback_template_used"] is False
+
+    for gate_name in ("reader", "grounding", "template_echo", "display"):
+        gate = summary["gate_results"][gate_name]
+        assert isinstance(gate["passed"], bool)
+        assert isinstance(gate["rejection_reasons"], list)
+        assert isinstance(gate["primary_reason"], str)
+
+    return step10
+
+
+def test_step10_e2e_contract_marks_non_passed_text_exposure_as_blocker() -> None:
+    contract = build_limited_composer_e2e_display_contract(
+        observation_status="rejected",
+        comment_text="表示してはいけない本文",
+        diagnostic_summary={
+            "observation_status": "rejected",
+            "comment_text_allowed": False,
+            "gate_results": {"display": {"passed": False, "diagnostics": {"comment_text_allowed": False}}},
+        },
+    )
+
+    assert contract["contract_passed"] is False
+    assert "non_passed_comment_text_exposed" in contract["release_blockers"]
+    assert contract["raw_input_included"] is False
+    assert contract["display_gate_relaxed"] is False
+
+
+@pytest.mark.asyncio
+async def test_step10_e2e_passed_candidate_exposes_comment_text_only_after_display_gate(monkeypatch):
+    _clear_limited_composer_env(monkeypatch)
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    reply = await render_emlis_ai_reply(
+        user_id="step10-e2e-passed-user",
+        subscription_tier="free",
+        current_input=_input(),
+        display_name="Mash",
+        timezone_name="Asia/Tokyo",
+        composer_client=_BoundPassingComposer(),
+    )
+
+    step10 = _assert_step10_contract_attached(reply, expected_status="passed")
+    summary = reply.meta["diagnostic_summary"]
+    display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+
+    assert reply.comment_text == PASSING_TEXT
+    assert summary["primary_reason"] == "passed"
+    assert display_trace["passed"] is True
+    assert display_trace["comment_text_present"] is True
+    assert step10["comment_text_present"] is True
+    assert step10["comment_text_exposed"] is True
+    assert step10["display_gate_passed"] is True
+    assert step10["passed_comment_text_visible"] is True
+    assert step10["non_passed_comment_text_suppressed"] is False
+    assert step10["binding_present"] is True
+    assert step10["binding_missing"] is False
+    assert step10["binding_count"] == len(_body_lines(PASSING_TEXT))
+    assert step10["expected_binding_count"] == len(_body_lines(PASSING_TEXT))
+    assert step10["relation_taxonomy_present"] is True
+
+
+@pytest.mark.asyncio
+async def test_step10_e2e_rejected_candidate_never_exposes_generated_body(monkeypatch):
+    _clear_limited_composer_env(monkeypatch)
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    reply = await render_emlis_ai_reply(
+        user_id="step10-e2e-rejected-user",
+        subscription_tier="free",
+        current_input=_input(),
+        display_name="Mash",
+        timezone_name="Asia/Tokyo",
+        composer_client=_UnsupportedComposer(),
+    )
+
+    step10 = _assert_step10_contract_attached(reply, expected_status="rejected")
+    summary = reply.meta["diagnostic_summary"]
+    display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+
+    assert reply.comment_text == ""
+    assert display_trace["passed"] is False
+    assert display_trace["comment_text_present"] is False
+    assert step10["comment_text_present"] is False
+    assert step10["comment_text_exposed"] is False
+    assert step10["display_gate_passed"] is False
+    assert step10["passed_comment_text_visible"] is False
+    assert step10["non_passed_comment_text_suppressed"] is True
+    assert "unsupported_sentence" in summary["gate_results"]["grounding"]["rejection_reasons"]
+    assert "unsupported_sentence" in summary["secondary_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_step10_e2e_unavailable_pre_connection_never_exposes_comment_text(monkeypatch):
+    _clear_limited_composer_env(monkeypatch)
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    reply = await render_emlis_ai_reply(
+        user_id="step10-e2e-unavailable-user",
+        subscription_tier="free",
+        current_input=_input(),
+        display_name="Mash",
+        timezone_name="Asia/Tokyo",
+    )
+
+    step10 = _assert_step10_contract_attached(reply, expected_status="unavailable")
+    summary = reply.meta["diagnostic_summary"]
+    display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+
+    assert reply.comment_text == ""
+    assert summary["stage"] == "flag"
+    assert summary["primary_reason"] == "default_limited_composer_feature_disabled"
+    assert summary["connection_visibility"]["pre_connection_stop"] is True
+    assert summary["composer_connection_attempted"] is False
+    assert display_trace["passed"] is False
+    assert display_trace["comment_text_present"] is False
+    assert step10["comment_text_present"] is False
+    assert step10["comment_text_exposed"] is False
+    assert step10["display_gate_passed"] is False
+    assert step10["passed_comment_text_visible"] is False
+    assert step10["non_passed_comment_text_suppressed"] is True

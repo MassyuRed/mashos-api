@@ -6,7 +6,8 @@ from emlis_ai_composer_client_registry import (
     default_limited_composer_enabled,
     resolve_default_emlis_composer_client,
 )
-from emlis_ai_limited_composer_client import CocolonLimitedComposerClient
+from emlis_ai_limited_composer_client import CocolonAPlanEquivalentComposerClient, CocolonLimitedComposerClient
+from emlis_ai_complete_composer_client import CocolonCompleteComposerClient
 
 
 SAMPLE_MEMO = """
@@ -55,6 +56,49 @@ def test_default_limited_composer_registry_resolves_when_feature_flag_enabled(mo
     assert meta["default_client_used"] is True
     assert meta["source"] == "cocolon_limited_composer"
     assert meta["composer_model"] == "cocolon_limited_composer.v1"
+
+
+def test_default_registry_blocks_complete_initial_alias_until_ap0_and_rollout_are_green(monkeypatch):
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
+    monkeypatch.setenv("COCOLON_EMLIS_DEFAULT_COMPOSER", "complete_initial")
+
+    client, meta = resolve_default_emlis_composer_client(release_allowed=True)
+
+    assert client is None
+    assert meta["default_client_used"] is False
+    assert meta["connection_status"] == "blocked_ap0"
+    assert meta["pre_connection_stop_stage"] == "ap0"
+    assert meta["target_composer_term"] == "完全Composer初期版"
+    assert meta["feature_flag_state"]["requested_composer"] == "complete_initial"
+    assert meta["feature_flag_state"]["canonical_requested_composer"] == "complete_composer_initial"
+    assert meta["feature_flag_state"]["requested_composer_stage"] == "complete_composer_initial"
+    assert meta["feature_flag_state"]["complete_initial_composer_requested"] is True
+    assert meta["feature_flag_state"]["step10_complete_composer_client_requested"] is True
+    assert meta["default_composer_resolution"]["connection_status"] == "blocked_ap0"
+
+
+def test_default_registry_resolves_complete_initial_alias_when_ap0_and_rollout_are_green(monkeypatch):
+    _clear_flags(monkeypatch)
+    monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
+    monkeypatch.setenv("COCOLON_EMLIS_DEFAULT_COMPOSER", "complete_initial")
+
+    client, meta = resolve_default_emlis_composer_client(
+        release_allowed=True,
+        ap0_decision={"can_proceed_to_a1": True},
+    )
+
+    assert isinstance(client, CocolonCompleteComposerClient)
+    assert meta["default_client_used"] is True
+    assert meta["source"] == "cocolon_complete_composer_initial"
+    assert meta["composer_model"] == "cocolon_emlis_observation_composer.a1.v1"
+    assert meta["target_composer_term"] == "完全Composer初期版"
+    assert meta["feature_flag_state"]["requested_composer"] == "complete_initial"
+    assert meta["feature_flag_state"]["canonical_requested_composer"] == "complete_composer_initial"
+    assert meta["feature_flag_state"]["requested_composer_stage"] == "complete_composer_initial"
+    assert meta["feature_flag_state"]["complete_initial_composer_requested"] is True
+    assert meta["feature_flag_state"]["step10_complete_composer_client_requested"] is True
+    assert meta["default_composer_resolution"]["connection_status"] == "default_client_resolved"
 
 
 def test_default_limited_composer_registry_preserves_explicit_client(monkeypatch):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from emlis_ai_phrase_shaping_service import shape_user_phrases
+from emlis_ai_phrase_shaping_service import shape_user_phrase, shape_user_phrases
 from emlis_ai_types import EvidenceRef, UserWordAnchor
 
 
@@ -22,3 +22,13 @@ def test_phrase_shaping_removes_raw_unfinished_connector_and_colloquial_edges():
     assert any("イライラ" in item.phrase and "めっちゃ" not in item.phrase for item in shaped)
     assert not any("それだとこと" in item.phrase for item in shaped)
     assert not any("けどこと" in item.phrase for item in shaped)
+
+
+def test_step4_phrase_shaping_marks_material_stage_rejections():
+    evidence = EvidenceRef(kind="emotion", ref_id="emo-cur")
+    anchor = UserWordAnchor(anchor_key="bad1", text="普通に", role="current_expression", evidence=[evidence])
+
+    shaped = shape_user_phrase(anchor)
+
+    assert shaped.usability == "unsafe"
+    assert "unfinished_phrase" in shaped.unsafe_reasons

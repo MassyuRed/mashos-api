@@ -585,6 +585,180 @@ def detect_phase8_profile(evidence_spans: Sequence[Any] | None = None) -> str:
     return "unknown"
 
 
+
+
+# Step4 PhraseUnit material quality guard.
+# This is a material-stage filter, not a completed-sentence template.
+_STEP4_PHRASE_UNIT_MATERIAL_VERSION = "emlis.phrase_unit_material_quality.v1"
+_STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP = "4_PhraseUnit_material_improvement"
+_STEP4_MATERIAL_TRIM = " \t\r\n　、,。.!！?？『』\"'「」（）()[]【】"
+_STEP4_CONNECTOR_ONLY_COMPACT = {"けど", "けどさ", "けれど", "だけど", "だけどさ", "でも", "でもさ", "のに", "から", "ので", "なら", "すると", "したら", "それだと", "だと", "ただ", "それで", "普通に"}
+_STEP4_SAFE_NOMINAL_SUFFIXES = ("こと", "気持ち", "感覚", "怖さ", "しんどさ", "つらさ", "不安", "願い", "限界", "流れ", "状態")
+_STEP4_RESIDUAL_NOMINAL_COMPACT = {"普通こと", "普通にこと", "現実こと", "なんであこと", "考え始めこと", "それだとこと", "自分のことをこと", "けどこと", "けどさこと", "だけどこと", "だけどさこと", "でもこと", "でもさこと", "のにこと", "からこと"}
+_STEP4_UNFINISHED_SUFFIX_RE = re.compile(r"(?:なんであ|考え始め|現実と|自分のことを|普通に|それだと|だと|けどさ|だけどさ|でもさ|けど|けれど|だけど|でも|のに|から|ので|なら|すると|したら)$")
+_STEP4_ORPHAN_PARTICLE_RE = re.compile(r"[をがにはへでも]$")
+_STEP4_BROKEN_NOMINAL_RE = re.compile(r"(?:なんであこと|考え始めこと|現実こと|普通こと|普通にこと|それだとこと|自分のことをこと|けどこと|けどさこと|だけどこと|だけどさこと|でもこと|でもさこと|のにこと|からこと)$")
+_STEP4_BLOCKING_MATERIAL_FLAGS = {"empty_phrase_unit_material", "emotion_label_only", "connector_only_material", "residual_nominal_material", "unfinished_phrase", "orphan_particle", "broken_nominalized_fragment", "too_long_quote", "too_short_phrase_unit_material", "non_text_material_source"}
+
+
+def _step4_material_norm(value: Any) -> str:
+    return str(value or "").replace("\u3000", " ").strip(_STEP4_MATERIAL_TRIM)
+
+
+def _step4_label_compacts() -> set[str]:
+    return {_compact(label) for label in _EMOTION_LABELS}
+
+
+def _step4_add_material_reason(reasons: List[str], matched: List[str], reason: str, fragment: Any) -> None:
+    if reason and reason not in reasons:
+        reasons.append(reason)
+    item = _step4_material_norm(fragment)
+    if item and item not in matched:
+        matched.append(item)
+
+
+def phrase_unit_material_flags(
+    text: Any,
+    *,
+    raw_text: Any = "",
+    role: str = "",
+    detected_type: str = "",
+    source_field: str = "",
+    max_quote_chars: int = 64,
+) -> tuple[str, ...]:
+    """Return Step4 material-quality flags before SentencePlan."""
+    phrase = _step4_material_norm(text)
+    raw = _step4_material_norm(raw_text)
+    compact = _compact(phrase)
+    raw_compact = _compact(raw)
+    labels = _step4_label_compacts()
+    reasons: List[str] = []
+    matched: List[str] = []
+
+    if not compact:
+        _step4_add_material_reason(reasons, matched, "empty_phrase_unit_material", phrase or raw)
+    if compact in labels:
+        _step4_add_material_reason(reasons, matched, "emotion_label_only", phrase)
+    if compact and len(compact) < 3 and compact not in labels:
+        _step4_add_material_reason(reasons, matched, "too_short_phrase_unit_material", phrase)
+
+    # Judge the material that will actually be handed to SentencePlan.
+    # Raw source text can end with a connector because the evidence splitter cut it there;
+    # that must not block a safe compressed PhraseUnit such as "家で落ち着けること".
+    safe_suffix = compact.endswith(_STEP4_SAFE_NOMINAL_SUFFIXES)
+    if compact in _STEP4_CONNECTOR_ONLY_COMPACT:
+        _step4_add_material_reason(reasons, matched, "connector_only_material", phrase)
+        _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
+    if compact in _STEP4_RESIDUAL_NOMINAL_COMPACT:
+        _step4_add_material_reason(reasons, matched, "residual_nominal_material", phrase)
+        _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
+    if _STEP4_BROKEN_NOMINAL_RE.search(compact):
+        _step4_add_material_reason(reasons, matched, "broken_nominalized_fragment", phrase)
+        _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
+    if not safe_suffix and _STEP4_UNFINISHED_SUFFIX_RE.search(compact):
+        _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
+    if not safe_suffix and _STEP4_ORPHAN_PARTICLE_RE.search(compact):
+        _step4_add_material_reason(reasons, matched, "orphan_particle", phrase)
+
+    if compact and len(compact) > int(max_quote_chars or 64):
+        _step4_add_material_reason(reasons, matched, "too_long_quote", phrase)
+    if raw_compact and compact == raw_compact and len(compact) > 44:
+        _step4_add_material_reason(reasons, matched, "too_long_quote", phrase)
+    if str(detected_type or "").strip() in {"emotion"} or str(source_field or "").strip() in {"emotion_details", "emotions", "category"}:
+        _step4_add_material_reason(reasons, matched, "non_text_material_source", phrase or raw)
+
+    return tuple(dict.fromkeys(reasons))
+
+
+def phrase_unit_material_rejection_flags(flags: Iterable[Any]) -> tuple[str, ...]:
+    out: List[str] = []
+    for flag in flags or []:
+        item = str(flag or "").strip()
+        if item and item in _STEP4_BLOCKING_MATERIAL_FLAGS and item not in out:
+            out.append(item)
+    return tuple(out)
+
+
+def judge_phrase_unit_material_quality(
+    text: Any,
+    *,
+    raw_text: Any = "",
+    role: str = "",
+    detected_type: str = "",
+    source_field: str = "",
+    max_quote_chars: int = 64,
+) -> Dict[str, Any]:
+    flags = phrase_unit_material_flags(
+        text,
+        raw_text=raw_text,
+        role=role,
+        detected_type=detected_type,
+        source_field=source_field,
+        max_quote_chars=max_quote_chars,
+    )
+    rejection_reasons = phrase_unit_material_rejection_flags(flags)
+    return {
+        "version": _STEP4_PHRASE_UNIT_MATERIAL_VERSION,
+        "target_step": _STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP,
+        "step": _STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP,
+        "passed": not rejection_reasons,
+        "usable_material": not rejection_reasons,
+        "material_quality_passed": not rejection_reasons,
+        "material_stage_filter_enabled": True,
+        "material_stage_filtering_enabled": True,
+        "quality_flags": list(flags),
+        "rejection_reasons": list(rejection_reasons),
+        "unsafe_reasons": list(rejection_reasons),
+        "blocking_flags": list(rejection_reasons),
+        "matched_fragments": [],
+        "emotion_label_only": "emotion_label_only" in flags,
+        "emotion_label_only_blocked": "emotion_label_only" in rejection_reasons,
+        "unfinished_fragment": "unfinished_phrase" in flags,
+        "unfinished_fragment_blocked": "unfinished_phrase" in rejection_reasons,
+        "orphan_particle": "orphan_particle" in flags,
+        "orphan_particle_blocked": "orphan_particle" in rejection_reasons,
+        "too_long_quote": "too_long_quote" in flags,
+        "too_long_quote_blocked": "too_long_quote" in rejection_reasons,
+        "connector_only_material_blocked": "connector_only_material" in rejection_reasons,
+        "residual_nominal_material_blocked": "residual_nominal_material" in rejection_reasons,
+        "broken_nominalized_fragment_blocked": "broken_nominalized_fragment" in rejection_reasons,
+        "role": str(role or "").strip(),
+        "detected_type": str(detected_type or "").strip(),
+        "source_field": str(source_field or "").strip(),
+        "raw_text_included": False,
+        "raw_input_required_for_debug": False,
+        "input_specific_template_used": False,
+        "completion_sentence_templates_added": False,
+    }
+
+
+def evaluate_phrase_unit_material_quality(text: Any, **kwargs: Any) -> Dict[str, Any]:
+    return judge_phrase_unit_material_quality(text, **kwargs)
+
+
+def phase8_phrase_unit_material_quality_flags(text: Any, **kwargs: Any) -> tuple[str, ...]:
+    return phrase_unit_material_flags(text, **kwargs)
+
+
+def is_safe_phrase_unit_material(text: Any, **kwargs: Any) -> bool:
+    return bool(judge_phrase_unit_material_quality(text, **kwargs).get("passed"))
+
+
+def phrase_unit_material_quality_policy_meta() -> Dict[str, Any]:
+    return {
+        "version": _STEP4_PHRASE_UNIT_MATERIAL_VERSION,
+        "target_step": _STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP,
+        "step": _STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP,
+        "material_stage_filter_enabled": True,
+        "material_stage_filtering_enabled": True,
+        "unfinished_fragment_guarded": True,
+        "orphan_particle_guarded": True,
+        "emotion_label_single_guarded": True,
+        "too_long_quote_guarded": True,
+        "input_specific_template_used": False,
+        "completion_sentence_templates_added": False,
+    }
+
 def judge_limited_sentence_quality(
     *,
     comment_text: Any,
@@ -741,6 +915,7 @@ def judge_limited_sentence_quality(
         "shallow_text_evidence_count": len(_candidate_text_spans(evidence_spans, used_evidence_span_ids)),
     }
 
+
 def evaluate_limited_sentence_quality(*args: Any, **kwargs: Any) -> Dict[str, Any]:
     comment_text = kwargs.pop("comment_text", None)
     if args:
@@ -758,4 +933,11 @@ __all__ = [
     "phase8_role_meta",
     "judge_limited_sentence_quality",
     "evaluate_limited_sentence_quality",
+    "phrase_unit_material_flags",
+    "phase8_phrase_unit_material_quality_flags",
+    "phrase_unit_material_rejection_flags",
+    "judge_phrase_unit_material_quality",
+    "evaluate_phrase_unit_material_quality",
+    "is_safe_phrase_unit_material",
+    "phrase_unit_material_quality_policy_meta",
 ]

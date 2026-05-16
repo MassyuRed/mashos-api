@@ -33,6 +33,9 @@ from .policies import (
 _SPACE_RE = re.compile(r"\s+")
 _PUNCT_TRIM = " \t\r\n　、,。.!！?？『』\"'"
 
+SENTENCE_BINDING_VERSION = "emlis.sentence_binding.v1"
+SENTENCE_BINDING_BUNDLE_VERSION = "emlis.sentence_binding_bundle.v1"
+
 
 def _clean_text(value: object, *, limit: int = 0) -> str:
     text = _SPACE_RE.sub(" ", str(value or "").replace("\r", " ").replace("\n", " ")).strip(_PUNCT_TRIM)
@@ -231,6 +234,137 @@ class SentencePlan:
 
 
 @dataclass(frozen=True)
+class SentenceBinding:
+    """Sentence-level binding for a generated Composer sentence.
+
+    ``text`` is generated candidate text, not raw user input.  The ids keep the
+    sentence tied to EvidenceSpan / PhraseUnit / relation without relaxing the
+    existing display gate.
+    """
+
+    sentence_id: str
+    text: str
+    used_evidence_span_ids: Iterable[str] = field(default_factory=tuple)
+    used_phrase_unit_ids: Iterable[str] = field(default_factory=tuple)
+    relation_type: str = ""
+    line_role: str = ""
+    coverage_scope: str = DEFAULT_COVERAGE_SCOPE
+    must_include: bool = True
+    binding_version: str = SENTENCE_BINDING_VERSION
+    meta: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "sentence_id", _clean_token(self.sentence_id))
+        text = _SPACE_RE.sub(" ", str(self.text or "").replace("\r", " ").replace("\n", " ")).strip()
+        object.__setattr__(self, "text", text)
+        object.__setattr__(self, "used_evidence_span_ids", compact_tokens(self.used_evidence_span_ids))
+        object.__setattr__(self, "used_phrase_unit_ids", compact_tokens(self.used_phrase_unit_ids))
+        object.__setattr__(self, "relation_type", _clean_token(self.relation_type))
+        object.__setattr__(self, "line_role", _clean_token(self.line_role))
+        object.__setattr__(self, "coverage_scope", _clean_token(self.coverage_scope) or DEFAULT_COVERAGE_SCOPE)
+        object.__setattr__(self, "must_include", bool(self.must_include))
+        object.__setattr__(self, "binding_version", _clean_token(self.binding_version) or SENTENCE_BINDING_VERSION)
+        object.__setattr__(self, "meta", _json_safe_mapping(self.meta))
+
+    @property
+    def usable(self) -> bool:
+        return bool(
+            self.sentence_id
+            and self.text
+            and (self.used_evidence_span_ids or self.used_phrase_unit_ids or self.relation_type)
+        )
+
+    def as_meta(self, *, include_text: bool = True) -> dict[str, Any]:
+        data = {
+            "version": self.binding_version,
+            "binding_version": self.binding_version,
+            "sentence_id": self.sentence_id,
+            "line_role": self.line_role,
+            "relation_type": self.relation_type,
+            "used_evidence_span_ids": list(self.used_evidence_span_ids),
+            "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
+            "coverage_scope": self.coverage_scope,
+            "must_include": self.must_include,
+            "raw_input_included": False,
+            "meta": dict(self.meta),
+        }
+        if include_text:
+            data["text"] = self.text
+        return data
+
+
+@dataclass(frozen=True)
+class SentenceBindingBundle:
+    """Bundle of sentence-level bindings passed from Composer to Core/Gates."""
+
+    bindings: Iterable[SentenceBinding] = field(default_factory=tuple)
+    binding_version: str = SENTENCE_BINDING_VERSION
+    coverage_scope: str = DEFAULT_COVERAGE_SCOPE
+    profile_key: str = ""
+    relation_taxonomy_version: str = ""
+    bundle_version: str = SENTENCE_BINDING_BUNDLE_VERSION
+    meta: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        usable_bindings = tuple(binding for binding in tuple(self.bindings or ()) if getattr(binding, "usable", False))
+        object.__setattr__(self, "bindings", usable_bindings)
+        object.__setattr__(self, "binding_version", _clean_token(self.binding_version) or SENTENCE_BINDING_VERSION)
+        object.__setattr__(self, "coverage_scope", _clean_token(self.coverage_scope) or DEFAULT_COVERAGE_SCOPE)
+        object.__setattr__(self, "profile_key", _clean_token(self.profile_key))
+        object.__setattr__(self, "relation_taxonomy_version", _clean_token(self.relation_taxonomy_version))
+        object.__setattr__(self, "bundle_version", _clean_token(self.bundle_version) or SENTENCE_BINDING_BUNDLE_VERSION)
+        object.__setattr__(self, "meta", _json_safe_mapping(self.meta))
+
+    @property
+    def binding_count(self) -> int:
+        return len(tuple(self.bindings or ()))
+
+    @property
+    def relation_types(self) -> Tuple[str, ...]:
+        return compact_tokens(binding.relation_type for binding in self.bindings)
+
+    @property
+    def used_evidence_span_ids(self) -> Tuple[str, ...]:
+        return compact_tokens(item for binding in self.bindings for item in binding.used_evidence_span_ids)
+
+    @property
+    def used_phrase_unit_ids(self) -> Tuple[str, ...]:
+        return compact_tokens(item for binding in self.bindings for item in binding.used_phrase_unit_ids)
+
+    def as_meta(self, *, include_text: bool = True) -> dict[str, Any]:
+        rows = [binding.as_meta(include_text=include_text) for binding in self.bindings]
+        return {
+            "version": self.bundle_version,
+            "bundle_version": self.bundle_version,
+            "binding_version": self.binding_version,
+            "target_step": "3_SentenceBinding_type_addition",
+            "step": "3_SentenceBinding_type_addition",
+            "binding_stage": "sentence_binding_type_added",
+            "binding_count": len(rows),
+            "sentence_binding_count": len(rows),
+            "expected_binding_count": len(rows),
+            "binding_present": bool(rows),
+            "binding_missing": False,
+            "binding_required": bool(rows),
+            "binding_expected": bool(rows),
+            "coverage_scope": self.coverage_scope,
+            "profile_key": self.profile_key,
+            "relation_taxonomy_version": self.relation_taxonomy_version,
+            "relation_types": list(self.relation_types),
+            "used_evidence_span_ids": list(self.used_evidence_span_ids),
+            "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
+            "used_evidence_span_count": len(self.used_evidence_span_ids),
+            "used_phrase_unit_count": len(self.used_phrase_unit_ids),
+            "bindings": rows,
+            "sentence_bindings": rows,
+            "items": rows,
+            "raw_text_included": False,
+            "raw_input_required_for_debug": False,
+            "meta": dict(self.meta),
+        }
+
+
+@dataclass(frozen=True)
 class TextGenerationResult:
     """Common result envelope with fail-closed behavior."""
 
@@ -346,6 +480,7 @@ class CoreTextPayload:
     evidence_spans: Iterable[EvidenceSpanLike] = field(default_factory=tuple)
     phrase_units: Iterable[PhraseUnit] = field(default_factory=tuple)
     sentence_plans: Iterable[SentencePlan] = field(default_factory=tuple)
+    sentence_bindings: Iterable[SentenceBinding] = field(default_factory=tuple)
     tone_policy: Mapping[str, Any] = field(default_factory=dict)
     safety_policy: Mapping[str, Any] = field(default_factory=dict)
     must_keep_roles: Iterable[str] = field(default_factory=tuple)
@@ -359,6 +494,7 @@ class CoreTextPayload:
         object.__setattr__(self, "evidence_spans", tuple(self.evidence_spans or ()))
         object.__setattr__(self, "phrase_units", tuple(self.phrase_units or ()))
         object.__setattr__(self, "sentence_plans", tuple(self.sentence_plans or ()))
+        object.__setattr__(self, "sentence_bindings", tuple(self.sentence_bindings or ()))
         object.__setattr__(self, "tone_policy", _json_safe_mapping(self.tone_policy))
         object.__setattr__(self, "safety_policy", _json_safe_mapping(self.safety_policy))
         object.__setattr__(self, "must_keep_roles", compact_tokens(self.must_keep_roles))
@@ -422,6 +558,7 @@ class CoreTextPayload:
             "evidence_spans": [span.as_meta() for span in self.evidence_spans],
             "phrase_units": [unit.as_meta() for unit in self.phrase_units],
             "sentence_plans": [plan.as_meta() for plan in self.sentence_plans],
+            "sentence_bindings": [binding.as_meta() for binding in self.sentence_bindings],
             "tone_policy": dict(self.tone_policy),
             "safety_policy": dict(self.safety_policy),
             "must_keep_roles": list(self.must_keep_roles),

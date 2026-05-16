@@ -215,7 +215,7 @@ from .adapters.piece_composer_input_contract import (
     build_piece_core_text_payloads,
     empty_piece_composer_input_contract,
 )
-from .types import CoreTextPayload, EvidenceSpanLike, PhraseUnit, SentencePlan, SourceAnchor, TextGenerationResult
+from .types import CoreTextPayload, EvidenceSpanLike, PhraseUnit, SentenceBinding, SentenceBindingBundle, SentencePlan, SourceAnchor, TextGenerationResult
 
 __all__ = [
     "COVERAGE_SCOPE_ANALYSIS_RUNTIME",
@@ -389,6 +389,8 @@ __all__ = [
     "KNOWN_CORE_IDS",
     "PASSING_STATUSES",
     "PhraseUnit",
+    "SentenceBinding",
+    "SentenceBindingBundle",
     "SentencePlan",
     "SourceAnchor",
     "STATUS_GENERATED",

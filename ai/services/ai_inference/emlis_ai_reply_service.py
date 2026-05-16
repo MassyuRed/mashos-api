@@ -44,11 +44,21 @@ from emlis_ai_composer_client_registry import default_composer_flag_state, resol
 from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
 from emlis_ai_limited_observation_scope_service import build_limited_observation_scope, has_limited_scope_safety_boundary
 from emlis_ai_limited_release_service import build_phase7_rollout_metrics, evaluate_limited_composer_release
+from emlis_ai_limited_composer_extension_baseline import (
+    build_limited_composer_binding_presence_meta,
+    build_limited_composer_connection_visibility_meta,
+    build_limited_composer_diagnostic_summary_extension_meta,
+    build_limited_composer_extension_baseline_meta,
+)
 from emlis_ai_rollout_metrics_service import build_step16_rollout_metrics
 from emlis_ai_ap0_migration_decision_service import build_step18_ap0_migration_decision
 from emlis_ai_a_plan_equivalent_composer_service import build_step19_a_plan_equivalent_meta
 from emlis_ai_long_term_quality_service import build_step20_long_term_quality_meta
-from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix
+from emlis_ai_complete_reply_diagnostics_service import build_complete_reply_service_diagnostics
+from emlis_ai_complete_scorecard_service import build_complete_scorecard_harness
+from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_emlis_limited_composer_scorecard_harness
+from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
+from emlis_ai_limited_composer_extension_exit_gate import build_limited_composer_extension_e2e_exit_gate
 from emlis_ai_safety_boundary_service import build_emlis_safety_boundary_report
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
@@ -1136,6 +1146,16 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "conversational",
             "report_like",
             "confidence",
+            "binding_used",
+            "binding_present",
+            "binding_available",
+            "binding_missing",
+            "binding_required",
+            "binding_count",
+            "sentence_count",
+            "expected_binding_count",
+            "binding_version",
+            "step7_gate_binding_reflection",
         )
     elif gate_key == "grounding":
         keys = (
@@ -1145,6 +1165,18 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "grounding_scope",
             "allowed_evidence_span_count",
             "ignored_evidence_span_count",
+            "binding_aware_grounding",
+            "binding_present",
+            "binding_available",
+            "binding_used",
+            "binding_missing",
+            "binding_required",
+            "binding_count",
+            "expected_binding_count",
+            "binding_version",
+            "binding_supported_sentence_count",
+            "step6_binding_aware_grounding",
+            "step7_gate_binding_reflection",
             "step14_guard_rejection_reasons",
             "step14_guard_strengthening",
             "confidence",
@@ -1167,6 +1199,16 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "phase8_emotion_label_body_line_count",
             "phase8_missing_must_keep_roles",
             "phase8_quality_rejection_reasons",
+            "binding_used",
+            "binding_present",
+            "binding_available",
+            "binding_missing",
+            "binding_required",
+            "binding_count",
+            "sentence_count",
+            "expected_binding_count",
+            "binding_version",
+            "step7_gate_binding_reflection",
             "step14_guard_rejection_reasons",
             "step14_guard_strengthening",
         )
@@ -1175,6 +1217,16 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "observation_status",
             "comment_text_allowed",
             "comment_text_present",
+            "binding_used",
+            "binding_present",
+            "binding_available",
+            "binding_missing",
+            "binding_required",
+            "binding_count",
+            "sentence_count",
+            "expected_binding_count",
+            "binding_version",
+            "step7_gate_binding_reflection",
         )
     else:
         keys = ()
@@ -2074,6 +2126,21 @@ def _diagnostic_summary_meta(
         gate_results=gate_results,
     )
     summary_meta = summary.as_meta()
+    limited_composer_baseline = build_limited_composer_extension_baseline_meta()
+    connection_visibility = build_limited_composer_connection_visibility_meta(
+        resolution_meta=resolution_meta,
+        release_meta=release_meta,
+        scope_meta=scope_meta,
+        composer_candidate=composer_candidate,
+        gate_results=gate_results,
+        observation_status=observation_status,
+        composer_status=composer_status,
+    )
+    summary_meta["limited_composer_extension_baseline"] = limited_composer_baseline
+    summary_meta["step0_baseline"] = limited_composer_baseline
+    summary_meta["connection_visibility"] = connection_visibility
+    summary_meta["limited_composer_connection_visibility"] = connection_visibility
+    summary_meta["step1_connection_visibility"] = connection_visibility
     coverage_matrix = build_emlis_coverage_matrix(
         diagnostic_summary=summary_meta,
         current_input=current_input or {},
@@ -2084,6 +2151,68 @@ def _diagnostic_summary_meta(
     summary_meta["coverage_next_steps"] = list(coverage_matrix.get("next_steps") or [])
     summary_meta["coverage_unclassified_reasons"] = list(coverage_matrix.get("unclassified_reasons") or [])
     summary_meta["coverage_unmapped_reasons"] = list(coverage_matrix.get("unmapped_reason_codes") or coverage_matrix.get("unclassified_reasons") or [])
+    binding_presence = build_limited_composer_binding_presence_meta(
+        composer_candidate=composer_candidate,
+    )
+    step2_extension = build_limited_composer_diagnostic_summary_extension_meta(
+        diagnostic_summary=summary_meta,
+        coverage_matrix=coverage_matrix,
+        binding_presence=binding_presence,
+        gate_results=gate_results,
+    )
+    summary_meta["diagnostic_summary_extension"] = step2_extension
+    summary_meta["diagnostic_summary_v2"] = step2_extension
+    summary_meta["limited_composer_diagnostic_summary_extension"] = step2_extension
+    summary_meta["step2_diagnostic_summary_extension"] = step2_extension
+    summary_meta["failed_stage"] = str(step2_extension.get("failed_stage") or "")
+    summary_meta["coverage_group"] = str(step2_extension.get("coverage_group") or "")
+    summary_meta["binding_present"] = bool(step2_extension.get("binding_present"))
+    summary_meta["binding_missing"] = bool(step2_extension.get("binding_missing"))
+    summary_meta["binding_count"] = int(step2_extension.get("binding_count") or 0)
+    summary_meta["expected_binding_count"] = int(step2_extension.get("expected_binding_count") or 0)
+    summary_meta["binding_diagnostic"] = dict(step2_extension.get("binding") or step2_extension.get("binding_presence") or {})
+    for gate_name, gate in dict(summary_meta.get("gate_results") or {}).items():
+        if isinstance(gate, dict):
+            diagnostics = gate.get("diagnostics") if isinstance(gate.get("diagnostics"), dict) else {}
+            step7_trace = diagnostics.get("step7_gate_binding_reflection") if isinstance(diagnostics.get("step7_gate_binding_reflection"), dict) else {}
+            binding_present = bool(
+                gate.get("binding_present")
+                or diagnostics.get("binding_present")
+                or step7_trace.get("binding_present")
+                or step2_extension.get("binding_present")
+            )
+            binding_used = bool(
+                gate.get("binding_used")
+                or diagnostics.get("binding_used")
+                or step7_trace.get("binding_used")
+            )
+            binding_missing = bool(
+                gate.get("binding_missing")
+                or diagnostics.get("binding_missing")
+                or step7_trace.get("binding_missing")
+                or step2_extension.get("binding_missing")
+            )
+            binding_required = bool(
+                gate.get("binding_required")
+                or diagnostics.get("binding_required")
+                or step7_trace.get("binding_required")
+                or (step2_extension.get("binding") or {}).get("binding_expected")
+            )
+            binding_count = int(
+                gate.get("binding_count")
+                or diagnostics.get("binding_count")
+                or step7_trace.get("binding_count")
+                or step2_extension.get("binding_count")
+                or 0
+            )
+            gate["binding_used"] = binding_used
+            gate["binding_present"] = binding_present
+            gate["binding_available"] = binding_present
+            gate["binding_missing"] = binding_missing
+            gate["binding_required"] = binding_required
+            gate["binding_count"] = binding_count
+            if step7_trace:
+                gate["step7_gate_binding_reflection"] = dict(step7_trace)
     return summary_meta
 
 
@@ -2288,6 +2417,46 @@ def _multi_perspective_meta(
     phase_gate_meta["step16_rollout_composer_model"] = str(step16_rollout_metrics.get("composer_model") or "")
     diagnostic_summary["step16_rollout_metrics"] = step16_rollout_metrics
     diagnostic_summary["rollout_metrics"] = step16_rollout_metrics
+    step9_scorecard_harness = build_emlis_limited_composer_scorecard_harness(
+        diagnostic_summary=diagnostic_summary,
+    )
+    phase_gate_meta["step9_scorecard_harness_ready"] = bool(step9_scorecard_harness.get("ready"))
+    phase_gate_meta["limited_composer_scorecard_ready"] = bool(step9_scorecard_harness.get("scorecard_ready"))
+    phase_gate_meta["step9_scorecard_coverage_group"] = str(step9_scorecard_harness.get("coverage_group") or "")
+    phase_gate_meta["step9_scorecard_primary_reason"] = str(step9_scorecard_harness.get("primary_reason") or "")
+    phase_gate_meta["step9_scorecard_binding_missing"] = bool(step9_scorecard_harness.get("binding_missing"))
+    diagnostic_summary["step9_scorecard_harness"] = step9_scorecard_harness
+    diagnostic_summary["limited_composer_scorecard"] = step9_scorecard_harness
+    diagnostic_summary["limited_composer_scorecard_harness"] = step9_scorecard_harness
+    diagnostic_summary["scorecard_harness"] = step9_scorecard_harness
+    step10_e2e_display_contract = build_limited_composer_e2e_display_contract(
+        observation_status=getattr(display_decision, "observation_status", ""),
+        comment_text=getattr(display_decision, "comment_text", ""),
+        diagnostic_summary=diagnostic_summary,
+        gate_trace=gate_trace,
+    )
+    phase_gate_meta["step10_e2e_display_contract_ready"] = bool(step10_e2e_display_contract.get("contract_passed"))
+    phase_gate_meta["e2e_display_contract_ready"] = bool(step10_e2e_display_contract.get("contract_passed"))
+    phase_gate_meta["step10_e2e_release_blockers"] = list(step10_e2e_display_contract.get("release_blockers") or [])
+    phase_gate_meta["step10_passed_only_contract"] = str(step10_e2e_display_contract.get("contract_name") or "")
+    diagnostic_summary["step10_e2e_display_contract"] = step10_e2e_display_contract
+    diagnostic_summary["limited_composer_e2e_display_contract"] = step10_e2e_display_contract
+    diagnostic_summary["e2e_display_contract"] = step10_e2e_display_contract
+    step11_e2e_exit_gate = build_limited_composer_extension_e2e_exit_gate(
+        diagnostic_summary=diagnostic_summary,
+        step10_display_contract=step10_e2e_display_contract,
+        gate_trace=gate_trace,
+    )
+    phase_gate_meta["step11_e2e_exit_gate_ready"] = bool(step11_e2e_exit_gate.get("limited_extension_exit_gate_ready"))
+    phase_gate_meta["limited_composer_extension_exit_gate_ready"] = bool(step11_e2e_exit_gate.get("limited_extension_exit_gate_ready"))
+    phase_gate_meta["ready_for_complete_composer_initial"] = bool(step11_e2e_exit_gate.get("ready_for_complete_composer_initial"))
+    phase_gate_meta["step11_e2e_release_blockers"] = list(step11_e2e_exit_gate.get("release_blockers") or [])
+    phase_gate_meta["step11_e2e_contract_passed"] = bool(step11_e2e_exit_gate.get("contract_passed"))
+    phase_gate_meta["step11_previous_steps_missing"] = list(step11_e2e_exit_gate.get("previous_steps_missing") or [])
+    diagnostic_summary["step11_e2e_exit_gate"] = step11_e2e_exit_gate
+    diagnostic_summary["step11_e2e_test_fixed"] = step11_e2e_exit_gate
+    diagnostic_summary["limited_composer_extension_exit_gate"] = step11_e2e_exit_gate
+    diagnostic_summary["limited_composer_extension_exit_gate_e2e"] = step11_e2e_exit_gate
     step18_ap0_migration_decision = build_step18_ap0_migration_decision(
         diagnostic_summary=diagnostic_summary,
         rollout_metrics=step16_rollout_metrics,
@@ -2295,10 +2464,18 @@ def _multi_perspective_meta(
     )
     phase_gate_meta["step18_ap0_migration_decision_ready"] = bool(step18_ap0_migration_decision.get("decision_ready"))
     phase_gate_meta["step18_ap0_can_proceed_to_a1"] = bool(step18_ap0_migration_decision.get("can_proceed_to_a1"))
+    complete_composer_initial_ap0_report = step18_ap0_migration_decision.get("complete_composer_initial_ap0_report") or {}
+    if not isinstance(complete_composer_initial_ap0_report, dict):
+        complete_composer_initial_ap0_report = {}
+    phase_gate_meta["complete_composer_initial_ap0_can_proceed"] = bool(step18_ap0_migration_decision.get("can_proceed_to_complete_initial"))
+    phase_gate_meta["complete_composer_initial_ap0_report_version"] = str(complete_composer_initial_ap0_report.get("version") or "")
+    phase_gate_meta["complete_composer_initial_ap0_release_blocker_count"] = int(complete_composer_initial_ap0_report.get("release_blocker_count") or 0)
     phase_gate_meta["a_p0_migration_decision"] = str(step18_ap0_migration_decision.get("decision") or "")
     phase_gate_meta["a_p0_return_steps"] = list(step18_ap0_migration_decision.get("return_steps") or [])
     diagnostic_summary["step18_ap0_migration_decision"] = step18_ap0_migration_decision
     diagnostic_summary["a_p0_migration_decision"] = step18_ap0_migration_decision
+    diagnostic_summary["complete_composer_initial_ap0_report"] = complete_composer_initial_ap0_report
+    diagnostic_summary["ap0_decision_report"] = complete_composer_initial_ap0_report
 
     composer_candidate_payload = _jsonable(composer_candidate) if composer_candidate is not None else {}
     if not isinstance(composer_candidate_payload, dict):
@@ -2314,6 +2491,8 @@ def _multi_perspective_meta(
         ap0_decision=step18_ap0_migration_decision,
     )
     phase_gate_meta["step19_a_plan_equivalent_ready"] = bool(step19_a_plan_equivalent.get("ready"))
+    phase_gate_meta["step19_complete_composer_initial_ready"] = bool(step19_a_plan_equivalent.get("complete_initial_ready"))
+    phase_gate_meta["step19_complete_composer_initial_rollout_allowed"] = bool(step19_a_plan_equivalent.get("can_rollout_complete_initial"))
     phase_gate_meta["step19_a_plan_model"] = str(step19_a_plan_equivalent.get("composer_model") or "")
     phase_gate_meta["step19_a_plan_rollout_stage"] = str(step19_a_plan_equivalent.get("rollout_stage") or "")
     phase_gate_meta["step19_a_plan_rollout_allowed"] = bool(step19_a_plan_equivalent.get("rollout_allowed"))
@@ -2323,6 +2502,8 @@ def _multi_perspective_meta(
     phase_gate_meta["step19_passed_only_preserved"] = bool(step19_a_plan_equivalent.get("passed_only_preserved"))
     diagnostic_summary["step19_a_plan_equivalent"] = step19_a_plan_equivalent
     diagnostic_summary["step19_a_plan_equivalent_composer"] = step19_a_plan_equivalent
+    diagnostic_summary["step19_complete_composer_initial"] = step19_a_plan_equivalent
+    diagnostic_summary["complete_composer_initial_rollout"] = step19_a_plan_equivalent
     diagnostic_summary["a1_composer_introduction"] = step19_a_plan_equivalent
 
     current_evidence_span_ids = [
@@ -2366,6 +2547,72 @@ def _multi_perspective_meta(
     diagnostic_summary["step20_long_term_quality"] = step20_long_term_quality
     diagnostic_summary["a2_long_term_quality"] = step20_long_term_quality
     diagnostic_summary["long_term_quality"] = step20_long_term_quality
+
+    step11_complete_reply_diagnostics = build_complete_reply_service_diagnostics(
+        composer_candidate=composer_candidate,
+        display_decision=display_decision,
+        gate_trace=gate_trace,
+        resolution_meta=resolution_meta,
+        release_meta=release_meta,
+        diagnostic_summary=diagnostic_summary,
+        phase_gate=phase_gate_meta,
+        scorecard_harness=step9_scorecard_harness,
+    )
+    complete_scorecard_event = dict(step11_complete_reply_diagnostics.get("scorecard_event") or {})
+    complete_repair_trace = list(step11_complete_reply_diagnostics.get("complete_repair_trace") or [])
+    complete_runtime_meta = dict(step11_complete_reply_diagnostics.get("complete_runtime_meta") or {})
+    phase_gate_meta["step11_complete_reply_service_diagnostics_ready"] = bool(step11_complete_reply_diagnostics.get("complete_reply_service_diagnostics_added"))
+    phase_gate_meta["complete_reply_service_integrated"] = bool(step11_complete_reply_diagnostics.get("complete_reply_service_integrated"))
+    phase_gate_meta["complete_meta_connected"] = bool(step11_complete_reply_diagnostics.get("complete_meta_connected"))
+    phase_gate_meta["complete_scorecard_event_connected"] = bool(step11_complete_reply_diagnostics.get("scorecard_event_connected"))
+    phase_gate_meta["complete_repair_trace_connected"] = bool(step11_complete_reply_diagnostics.get("repair_trace_connected"))
+    phase_gate_meta["complete_repair_trace_count"] = int(step11_complete_reply_diagnostics.get("repair_trace_count") or 0)
+    phase_gate_meta["complete_comment_text_contract_preserved"] = bool(step11_complete_reply_diagnostics.get("comment_text_contract") == "passed_only")
+    phase_gate_meta["complete_response_shape_changed"] = bool(step11_complete_reply_diagnostics.get("response_shape_changed"))
+    phase_gate_meta["step11_reply_service_diagnostics_ready"] = bool(step11_complete_reply_diagnostics.get("complete_reply_service_diagnostics_added"))
+    phase_gate_meta["step11_complete_meta_connected"] = bool(step11_complete_reply_diagnostics.get("complete_meta_connected"))
+    phase_gate_meta["step11_repair_trace_connected"] = bool(step11_complete_reply_diagnostics.get("repair_trace_connected"))
+    phase_gate_meta["step11_scorecard_event_connected"] = bool(step11_complete_reply_diagnostics.get("scorecard_event_connected"))
+    phase_gate_meta["step11_response_shape_changed"] = bool(step11_complete_reply_diagnostics.get("response_shape_changed"))
+    phase_gate_meta["step11_public_response_key_change"] = bool(step11_complete_reply_diagnostics.get("public_response_key_change"))
+    diagnostic_summary["step11_complete_reply_diagnostics"] = step11_complete_reply_diagnostics
+    diagnostic_summary["step11_complete_reply_service_diagnostics"] = step11_complete_reply_diagnostics
+    diagnostic_summary["complete_reply_service_diagnostics"] = step11_complete_reply_diagnostics
+    diagnostic_summary["complete_composer_reply_diagnostics"] = step11_complete_reply_diagnostics
+    diagnostic_summary["complete_composer_initial_reply_diagnostics"] = step11_complete_reply_diagnostics
+    diagnostic_summary["complete_composer_initial_runtime"] = complete_runtime_meta
+    diagnostic_summary["complete_composer_initial_meta"] = complete_runtime_meta
+    diagnostic_summary["complete_composer_meta"] = complete_runtime_meta
+    diagnostic_summary["complete_repair_trace"] = complete_repair_trace
+    diagnostic_summary["complete_composer_repair_trace"] = complete_repair_trace
+    diagnostic_summary["complete_composer_initial_repair_trace"] = complete_repair_trace
+    diagnostic_summary["complete_scorecard_event"] = complete_scorecard_event
+    diagnostic_summary["complete_composer_scorecard_event"] = complete_scorecard_event
+    diagnostic_summary["complete_composer_initial_scorecard_event"] = complete_scorecard_event
+    diagnostic_summary["scorecard_event"] = complete_scorecard_event
+
+    step12_complete_scorecard_harness = build_complete_scorecard_harness(
+        scorecard_event=complete_scorecard_event,
+        diagnostic_summary=diagnostic_summary,
+    )
+    phase_gate_meta["step12_complete_scorecard_ready"] = bool(step12_complete_scorecard_harness.get("scorecard_ready"))
+    phase_gate_meta["complete_scorecard_harness_ready"] = bool(step12_complete_scorecard_harness.get("ready"))
+    phase_gate_meta["complete_scorecard_fixture_suite_ready"] = bool((step12_complete_scorecard_harness.get("fixture_suite") or {}).get("ready"))
+    phase_gate_meta["complete_scorecard_display_reach_rate"] = float(step12_complete_scorecard_harness.get("display_reach_rate") or 0.0)
+    phase_gate_meta["complete_scorecard_binding_pass_rate"] = float(step12_complete_scorecard_harness.get("binding_pass_rate") or 0.0)
+    phase_gate_meta["complete_scorecard_read_feeling_requires_blind_qa"] = bool(step12_complete_scorecard_harness.get("read_feeling_requires_blind_qa"))
+    phase_gate_meta["complete_scorecard_response_shape_changed"] = bool(step12_complete_scorecard_harness.get("response_shape_changed"))
+    phase_gate_meta["step12_product_gate_evaluation"] = str(step12_complete_scorecard_harness.get("product_gate_evaluation") or "")
+    diagnostic_summary["step12_complete_scorecard_harness"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_scorecard_harness"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_composer_scorecard_harness"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_composer_initial_scorecard_harness"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_scorecard"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_composer_scorecard"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_composer_initial_scorecard"] = step12_complete_scorecard_harness
+    diagnostic_summary["complete_scorecard_fixture_suite"] = dict(step12_complete_scorecard_harness.get("fixture_suite") or {})
+    diagnostic_summary["complete_blind_qa_rubric"] = dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {})
+
     b_plan_connection_meta = (
         dict(diagnostic_summary.get("normal_connection") or diagnostic_summary.get("b_plan_connection") or {})
         if isinstance(diagnostic_summary, dict)
@@ -2379,15 +2626,67 @@ def _multi_perspective_meta(
         "observation_trace_id": trace_id,
         "rejection_reasons": list(display_decision.rejection_reasons),
         "diagnostic_summary": diagnostic_summary,
+        "limited_composer_extension_baseline": dict(diagnostic_summary.get("limited_composer_extension_baseline") or {}),
+        "step0_baseline": dict(diagnostic_summary.get("step0_baseline") or diagnostic_summary.get("limited_composer_extension_baseline") or {}),
+        "connection_visibility": dict(diagnostic_summary.get("connection_visibility") or {}),
+        "limited_composer_connection_visibility": dict(diagnostic_summary.get("limited_composer_connection_visibility") or diagnostic_summary.get("connection_visibility") or {}),
+        "step1_connection_visibility": dict(diagnostic_summary.get("step1_connection_visibility") or diagnostic_summary.get("connection_visibility") or {}),
+        "diagnostic_summary_extension": dict(diagnostic_summary.get("diagnostic_summary_extension") or {}),
+        "diagnostic_summary_v2": dict(diagnostic_summary.get("diagnostic_summary_v2") or {}),
+        "limited_composer_diagnostic_summary_extension": dict(diagnostic_summary.get("limited_composer_diagnostic_summary_extension") or {}),
+        "step2_diagnostic_summary_extension": dict(diagnostic_summary.get("step2_diagnostic_summary_extension") or {}),
+        "binding_diagnostic": dict(diagnostic_summary.get("binding_diagnostic") or {}),
+        "coverage_group": str(diagnostic_summary.get("coverage_group") or ""),
+        "failed_stage": str(diagnostic_summary.get("failed_stage") or ""),
         "step16_rollout_metrics": step16_rollout_metrics,
+        "step9_scorecard_harness": step9_scorecard_harness,
+        "limited_composer_scorecard": step9_scorecard_harness,
+        "limited_composer_scorecard_harness": step9_scorecard_harness,
+        "scorecard_harness": step9_scorecard_harness,
+        "step10_e2e_display_contract": step10_e2e_display_contract,
+        "limited_composer_e2e_display_contract": step10_e2e_display_contract,
+        "e2e_display_contract": step10_e2e_display_contract,
+        "step11_e2e_exit_gate": step11_e2e_exit_gate,
+        "step11_e2e_test_fixed": step11_e2e_exit_gate,
+        "limited_composer_extension_exit_gate": step11_e2e_exit_gate,
+        "limited_composer_extension_exit_gate_e2e": step11_e2e_exit_gate,
         "step18_ap0_migration_decision": step18_ap0_migration_decision,
         "a_p0_migration_decision": step18_ap0_migration_decision,
+        "complete_composer_initial_ap0_report": complete_composer_initial_ap0_report,
+        "ap0_decision_report": complete_composer_initial_ap0_report,
         "step19_a_plan_equivalent": step19_a_plan_equivalent,
         "step19_a_plan_equivalent_composer": step19_a_plan_equivalent,
+        "step19_complete_composer_initial": step19_a_plan_equivalent,
+        "complete_composer_initial_rollout": step19_a_plan_equivalent,
         "a1_composer_introduction": step19_a_plan_equivalent,
         "step20_long_term_quality": step20_long_term_quality,
         "a2_long_term_quality": step20_long_term_quality,
         "long_term_quality": step20_long_term_quality,
+        "step11_complete_reply_diagnostics": step11_complete_reply_diagnostics,
+        "step11_complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
+        "complete_reply_diagnostics": step11_complete_reply_diagnostics,
+        "complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
+        "complete_composer_reply_diagnostics": step11_complete_reply_diagnostics,
+        "complete_composer_initial_reply_diagnostics": step11_complete_reply_diagnostics,
+        "complete_composer_initial_runtime": complete_runtime_meta,
+        "complete_composer_initial_meta": complete_runtime_meta,
+        "complete_composer_meta": complete_runtime_meta,
+        "complete_repair_trace": complete_repair_trace,
+        "complete_composer_repair_trace": complete_repair_trace,
+        "complete_composer_initial_repair_trace": complete_repair_trace,
+        "complete_scorecard_event": complete_scorecard_event,
+        "complete_composer_scorecard_event": complete_scorecard_event,
+        "complete_composer_initial_scorecard_event": complete_scorecard_event,
+        "scorecard_event": complete_scorecard_event,
+        "step12_complete_scorecard_harness": step12_complete_scorecard_harness,
+        "complete_scorecard_harness": step12_complete_scorecard_harness,
+        "complete_composer_scorecard_harness": step12_complete_scorecard_harness,
+        "complete_composer_initial_scorecard_harness": step12_complete_scorecard_harness,
+        "complete_scorecard": step12_complete_scorecard_harness,
+        "complete_composer_scorecard": step12_complete_scorecard_harness,
+        "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
+        "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
+        "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
         "display": {
             "display_name_call": display_name_call(bundle.display_name),
             "visible_name": "Emlisの観測",
@@ -2425,18 +2724,70 @@ def _multi_perspective_meta(
             "composer_status": str(getattr(composer_candidate, "status", "") or ""),
             "composer_rejection_reasons": list(getattr(composer_candidate, "rejection_reasons", []) or []),
             "composer_client_resolution": resolution_meta,
+            "limited_composer_extension_baseline": dict(diagnostic_summary.get("limited_composer_extension_baseline") or {}),
+            "step0_baseline": dict(diagnostic_summary.get("step0_baseline") or diagnostic_summary.get("limited_composer_extension_baseline") or {}),
+            "connection_visibility": dict(diagnostic_summary.get("connection_visibility") or {}),
+            "limited_composer_connection_visibility": dict(diagnostic_summary.get("limited_composer_connection_visibility") or diagnostic_summary.get("connection_visibility") or {}),
+            "step1_connection_visibility": dict(diagnostic_summary.get("step1_connection_visibility") or diagnostic_summary.get("connection_visibility") or {}),
+            "diagnostic_summary_extension": dict(diagnostic_summary.get("diagnostic_summary_extension") or {}),
+            "diagnostic_summary_v2": dict(diagnostic_summary.get("diagnostic_summary_v2") or {}),
+            "limited_composer_diagnostic_summary_extension": dict(diagnostic_summary.get("limited_composer_diagnostic_summary_extension") or {}),
+            "step2_diagnostic_summary_extension": dict(diagnostic_summary.get("step2_diagnostic_summary_extension") or {}),
+            "binding_diagnostic": dict(diagnostic_summary.get("binding_diagnostic") or {}),
+            "coverage_group": str(diagnostic_summary.get("coverage_group") or ""),
+            "failed_stage": str(diagnostic_summary.get("failed_stage") or ""),
             "limited_composer_release": release_meta,
             "phase7_rollout_metrics": phase7_rollout_metrics,
             "step16_rollout_metrics": step16_rollout_metrics,
             "rollout_metrics": step16_rollout_metrics,
+            "step9_scorecard_harness": step9_scorecard_harness,
+            "limited_composer_scorecard": step9_scorecard_harness,
+            "limited_composer_scorecard_harness": step9_scorecard_harness,
+            "scorecard_harness": step9_scorecard_harness,
+            "step10_e2e_display_contract": step10_e2e_display_contract,
+            "limited_composer_e2e_display_contract": step10_e2e_display_contract,
+            "e2e_display_contract": step10_e2e_display_contract,
+            "step11_e2e_exit_gate": step11_e2e_exit_gate,
+            "step11_e2e_test_fixed": step11_e2e_exit_gate,
+            "limited_composer_extension_exit_gate": step11_e2e_exit_gate,
+            "limited_composer_extension_exit_gate_e2e": step11_e2e_exit_gate,
             "step18_ap0_migration_decision": step18_ap0_migration_decision,
             "a_p0_migration_decision": step18_ap0_migration_decision,
+            "complete_composer_initial_ap0_report": complete_composer_initial_ap0_report,
+            "ap0_decision_report": complete_composer_initial_ap0_report,
             "step19_a_plan_equivalent": step19_a_plan_equivalent,
             "step19_a_plan_equivalent_composer": step19_a_plan_equivalent,
+            "step19_complete_composer_initial": step19_a_plan_equivalent,
+            "complete_composer_initial_rollout": step19_a_plan_equivalent,
             "a1_composer_introduction": step19_a_plan_equivalent,
             "step20_long_term_quality": step20_long_term_quality,
             "a2_long_term_quality": step20_long_term_quality,
             "long_term_quality": step20_long_term_quality,
+            "step11_complete_reply_diagnostics": step11_complete_reply_diagnostics,
+            "step11_complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
+            "complete_reply_diagnostics": step11_complete_reply_diagnostics,
+            "complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
+            "complete_composer_reply_diagnostics": step11_complete_reply_diagnostics,
+            "complete_composer_initial_reply_diagnostics": step11_complete_reply_diagnostics,
+            "complete_composer_initial_runtime": complete_runtime_meta,
+            "complete_composer_initial_meta": complete_runtime_meta,
+            "complete_composer_meta": complete_runtime_meta,
+            "complete_repair_trace": complete_repair_trace,
+            "complete_composer_repair_trace": complete_repair_trace,
+            "complete_composer_initial_repair_trace": complete_repair_trace,
+            "complete_scorecard_event": complete_scorecard_event,
+            "complete_composer_scorecard_event": complete_scorecard_event,
+            "complete_composer_initial_scorecard_event": complete_scorecard_event,
+            "scorecard_event": complete_scorecard_event,
+            "step12_complete_scorecard_harness": step12_complete_scorecard_harness,
+            "complete_scorecard_harness": step12_complete_scorecard_harness,
+            "complete_composer_scorecard_harness": step12_complete_scorecard_harness,
+            "complete_composer_initial_scorecard_harness": step12_complete_scorecard_harness,
+            "complete_scorecard": step12_complete_scorecard_harness,
+            "complete_composer_scorecard": step12_complete_scorecard_harness,
+            "complete_composer_initial_scorecard": step12_complete_scorecard_harness,
+            "complete_scorecard_fixture_suite": dict(step12_complete_scorecard_harness.get("fixture_suite") or {}),
+            "complete_blind_qa_rubric": dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {}),
             "rollout_metrics_aggregate": dict(step16_rollout_metrics.get("rollout_metrics_aggregate") or {}),
             "internal_qa_rollout_metrics": dict(step16_rollout_metrics.get("internal_qa_aggregate") or {}),
             "b_plan_connection": b_plan_connection_meta,
@@ -2556,6 +2907,9 @@ async def render_emlis_ai_reply(
         grounding_scope=grounding_scope,
     )
     template_echo_report = guard_template_echo(comment_text="", evidence_spans=evidence_spans, composer_source="unavailable")
+    initial_binding_meta = build_limited_composer_binding_presence_meta(
+        composer_candidate=None,
+    )
     display_decision = decide_emlis_observation_display(
         comment_text="",
         reader_report=reader_report,
@@ -2565,6 +2919,7 @@ async def render_emlis_ai_reply(
         trace_id=trace_id,
         composer_source="unavailable" if not safety_requires_block else "",
         phase_completion_ready=False,
+        binding_meta=initial_binding_meta,
     )
 
     max_attempts = 0 if safety_requires_block else (2 if resolved_composer_client is not None else 1)
@@ -2587,12 +2942,15 @@ async def render_emlis_ai_reply(
         comment_text = "" if safety_requires_block else str(composer_candidate.comment_text or "").strip()
         composer_source = "" if safety_requires_block else str(composer_candidate.composer_source or "")
         reader_report = judge_listener_readability(comment_text)
+        composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
         grounding_report = judge_grounding(
             comment_text=comment_text,
             graph=grounding_graph,
             evidence_spans=evidence_spans,
             allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
             grounding_scope=grounding_scope,
+            sentence_bindings=(composer_meta_for_grounding.get("sentence_bindings") if isinstance(composer_meta_for_grounding, dict) else None),
+            binding_meta=composer_meta_for_grounding if isinstance(composer_meta_for_grounding, dict) else None,
         )
         template_echo_report = guard_template_echo(
             comment_text=comment_text,
@@ -2619,6 +2977,9 @@ async def render_emlis_ai_reply(
                 composer_source=composer_source,
             )
         )
+        candidate_binding_presence = build_limited_composer_binding_presence_meta(
+            composer_candidate=composer_candidate,
+        )
         display_decision = decide_emlis_observation_display(
             comment_text=comment_text,
             reader_report=reader_report,
@@ -2628,6 +2989,7 @@ async def render_emlis_ai_reply(
             trace_id=trace_id,
             composer_source=composer_source,
             phase_completion_ready=phase7_ready,
+            binding_meta=candidate_binding_presence,
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break

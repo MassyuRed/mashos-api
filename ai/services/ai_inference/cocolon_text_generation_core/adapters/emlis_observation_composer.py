@@ -20,12 +20,51 @@ from cocolon_text_generation_core.stabilization import (
     build_core_stabilization_report,
     emlis_observation_output_contract,
 )
-from cocolon_text_generation_core.types import CoreTextPayload, PhraseUnit, SentencePlan, TextGenerationResult
+from cocolon_text_generation_core.types import CoreTextPayload, PhraseUnit, SentenceBinding, SentencePlan, TextGenerationResult
 
 ADAPTER_NAME = "emlis_observation_composer_adapter.v1"
 EMLIS_OBSERVATION_CORE_MODEL = "cocolon_text_generation_core.emlis_observation.v1"
 REJECTION_CORE_GATE_REJECTED = "emlis_observation_core_rejected"
 REJECTION_CORE_GATE_UNAVAILABLE = "emlis_observation_core_unavailable"
+STEP7_GATE_BINDING_REFLECTION_VERSION = "emlis.common_core_gate_binding_reflection.v1"
+
+
+def _core_guard_meta(result: TextGenerationResult, marker: str) -> Mapping[str, Any]:
+    result_meta = result.meta if isinstance(result.meta, Mapping) else {}
+    for item in result_meta.get("guard_results") or ():
+        if not isinstance(item, Mapping):
+            continue
+        guard_name = _clean(item.get("guard_name"))
+        if marker in guard_name:
+            meta = item.get("meta")
+            return meta if isinstance(meta, Mapping) else {}
+    return {}
+
+
+def _step7_core_binding_reflection_meta(payload: CoreTextPayload, result: TextGenerationResult) -> dict[str, Any]:
+    grounding_meta = _core_guard_meta(result, "grounding")
+    binding_count = len(tuple(payload.sentence_bindings or ()))
+    binding_used = bool(grounding_meta.get("binding_used"))
+    return {
+        "version": STEP7_GATE_BINDING_REFLECTION_VERSION,
+        "target_step": "7_Gate_binding_reflection",
+        "adapter_name": ADAPTER_NAME,
+        "core_id": payload.core_id,
+        "binding_present": bool(binding_count),
+        "binding_available": bool(binding_count),
+        "binding_used": binding_used,
+        "binding_count": binding_count,
+        "binding_supported_sentence_count": int(grounding_meta.get("binding_supported_sentence_count") or 0),
+        "relation_types": list(grounding_meta.get("relation_types") or []),
+        "reader_trace_binding_used": False,
+        "grounding_trace_binding_used": binding_used,
+        "template_trace_binding_used": False,
+        "display_trace_binding_used": binding_used,
+        "gate_threshold_relaxed": False,
+        "display_contract_relaxed": False,
+        "raw_text_included": False,
+        "raw_input_required_for_debug": False,
+    }
 
 
 def _mapping_get(value: Any, key: str, default: Any = None) -> Any:
@@ -192,6 +231,75 @@ def convert_emlis_sentence_plan(plan: Any, *, index: int, available_phrase_unit_
     )
 
 
+
+def _binding_items_from_meta(composer_meta: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    meta = composer_meta if isinstance(composer_meta, Mapping) else {}
+    candidates: list[Any] = []
+    bundle = meta.get("sentence_binding_bundle") or meta.get("binding_bundle") or meta.get("binding")
+    if isinstance(bundle, Mapping):
+        candidates.extend(_as_list(bundle.get("bindings") or bundle.get("sentence_bindings") or bundle.get("items")))
+    for key in ("sentence_bindings", "sentence_binding", "bindings"):
+        value = meta.get(key)
+        if isinstance(value, Mapping):
+            candidates.extend(_as_list(value.get("bindings") or value.get("sentence_bindings") or value.get("items")))
+        else:
+            candidates.extend(_as_list(value))
+    out: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(candidates, start=1):
+        if not isinstance(item, Mapping):
+            continue
+        sentence_id = _clean(item.get("sentence_id") or item.get("id") or f"s{index}")
+        if not sentence_id or sentence_id in seen:
+            continue
+        seen.add(sentence_id)
+        out.append(item)
+    return out
+
+
+def convert_emlis_sentence_binding(
+    item: Mapping[str, Any],
+    *,
+    available_phrase_unit_ids: set[str],
+    available_evidence_span_ids: set[str],
+) -> SentenceBinding | None:
+    phrase_ids = tuple(unit_id for unit_id in _tokens(item.get("used_phrase_unit_ids") or item.get("phrase_unit_ids")) if unit_id in available_phrase_unit_ids)
+    evidence_ids = tuple(span_id for span_id in _tokens(item.get("used_evidence_span_ids") or item.get("evidence_span_ids")) if span_id in available_evidence_span_ids)
+    sentence_id = _clean(item.get("sentence_id") or item.get("id"))
+    if not sentence_id or not phrase_ids or not evidence_ids:
+        return None
+    return SentenceBinding(
+        sentence_id=sentence_id,
+        text=_clean(item.get("text")),
+        used_evidence_span_ids=evidence_ids,
+        used_phrase_unit_ids=phrase_ids,
+        relation_type=_clean(item.get("relation_type") or item.get("relation")),
+        line_role=_clean(item.get("line_role") or item.get("role")),
+        coverage_scope=_clean(item.get("coverage_scope")),
+        must_include=bool(item.get("must_include", True)),
+        meta={"source_adapter": ADAPTER_NAME, "source_kind": "emlis_sentence_binding"},
+    )
+
+
+def convert_emlis_sentence_bindings(
+    composer_meta: Mapping[str, Any] | None,
+    *,
+    phrase_units: Sequence[PhraseUnit],
+    evidence_span_ids: Sequence[str],
+) -> tuple[SentenceBinding, ...]:
+    available_phrase_unit_ids = {unit.phrase_unit_id for unit in phrase_units if unit.phrase_unit_id}
+    available_evidence_span_ids = set(_tokens(evidence_span_ids))
+    converted: list[SentenceBinding] = []
+    for item in _binding_items_from_meta(composer_meta):
+        common = convert_emlis_sentence_binding(
+            item,
+            available_phrase_unit_ids=available_phrase_unit_ids,
+            available_evidence_span_ids=available_evidence_span_ids,
+        )
+        if common is not None and common.sentence_id not in {binding.sentence_id for binding in converted}:
+            converted.append(common)
+    return tuple(converted)
+
 def convert_emlis_sentence_plans(
     sentence_plans: Iterable[Any] | None,
     *,
@@ -241,6 +349,7 @@ def _candidate_meta(response: Mapping[str, Any] | None, composer_meta: Mapping[s
     else:
         meta["adapter_name"] = ADAPTER_NAME
     return meta
+
 
 
 def _common_candidate(
@@ -306,6 +415,16 @@ def build_emlis_observation_core_payload(
         phrase_units=common_phrases,
         used_phrase_unit_ids=common_used_phrase_ids,
     )
+    common_bindings = convert_emlis_sentence_bindings(
+        composer_meta,
+        phrase_units=common_phrases,
+        evidence_span_ids=tuple(used_ids),
+    )
+    relation_taxonomy = composer_meta.get("step5_relation_taxonomy") if isinstance(composer_meta, Mapping) else None
+    if not isinstance(relation_taxonomy, Mapping) and isinstance(composer_meta, Mapping):
+        relation_taxonomy = composer_meta.get("relation_taxonomy")
+    if not isinstance(relation_taxonomy, Mapping):
+        relation_taxonomy = {}
     candidate = _common_candidate(
         comment_text=comment_text,
         used_evidence_span_ids=tuple(used_ids),
@@ -321,6 +440,7 @@ def build_emlis_observation_core_payload(
         evidence_spans=common_evidence,
         phrase_units=common_phrases,
         sentence_plans=common_plans,
+        sentence_bindings=common_bindings,
         tone_policy={"core_id": CORE_ID_EMLIS, "voice_distance": "emlis_observation"},
         safety_policy={"core_id": CORE_ID_EMLIS, "strictness": "emlis_observation"},
         must_keep_roles=required_roles,
@@ -332,6 +452,10 @@ def build_emlis_observation_core_payload(
             "coverage_scope": coverage_scope,
             "evidence_adapter": evidence_result.as_meta(),
             "candidate": candidate.as_meta(),
+            "sentence_binding_count": len(common_bindings),
+            "sentence_bindings": [binding.as_meta(include_text=False) for binding in common_bindings],
+            "relation_taxonomy": dict(relation_taxonomy),
+            "step5_relation_taxonomy": dict(relation_taxonomy),
         },
     )
     return payload, candidate
@@ -367,6 +491,7 @@ class EmlisObservationCoreEvaluation:
             )
             if isinstance(raw_step19, Mapping):
                 step19_meta = dict(raw_step19)
+        step7_binding_reflection = _step7_core_binding_reflection_meta(self.payload, self.result)
         meta = {
             "adapter_name": self.adapter_name,
             "core_composer": CORE_TEXT_COMPOSER_NAME,
@@ -384,12 +509,20 @@ class EmlisObservationCoreEvaluation:
                 "evidence_span_count": len(self.payload.evidence_spans),
                 "phrase_unit_count": len(self.payload.phrase_units),
                 "sentence_plan_count": len(self.payload.sentence_plans),
+                "sentence_binding_count": len(self.payload.sentence_bindings),
                 "must_keep_roles": list(self.payload.must_keep_roles),
             },
+            "sentence_bindings": [binding.as_meta(include_text=False) for binding in self.payload.sentence_bindings],
+            "step7_gate_binding_reflection": step7_binding_reflection,
+            "gate_binding_reflection": step7_binding_reflection,
             "step15_common_core_stabilization": stabilization_report,
             "common_core_stabilization": stabilization_report,
             "result": self.result.as_meta(),
         }
+        relation_taxonomy = self.payload.meta.get("step5_relation_taxonomy") or self.payload.meta.get("relation_taxonomy")
+        if isinstance(relation_taxonomy, Mapping):
+            meta["relation_taxonomy"] = dict(relation_taxonomy)
+            meta["step5_relation_taxonomy"] = dict(relation_taxonomy)
         if step19_meta:
             meta["step19_a_plan_equivalent_composer"] = step19_meta
             meta["a1_composer_introduction"] = step19_meta
@@ -454,6 +587,8 @@ __all__ = [
     "build_emlis_observation_core_payload",
     "convert_emlis_phrase_unit",
     "convert_emlis_phrase_units",
+    "convert_emlis_sentence_binding",
+    "convert_emlis_sentence_bindings",
     "convert_emlis_sentence_plan",
     "convert_emlis_sentence_plans",
     "core_rejection_reason",

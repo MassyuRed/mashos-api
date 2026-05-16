@@ -26,6 +26,7 @@ from emlis_ai_composer_client_registry import default_composer_flag_state, resol
 from emlis_ai_conversation_composer_service import build_conversation_composer_payload
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_limited_composer_client import CocolonAPlanEquivalentComposerClient, CocolonLimitedComposerClient
+from emlis_ai_complete_composer_client import CocolonCompleteComposerClient
 from emlis_ai_limited_observation_scope_service import build_limited_observation_scope
 from emlis_ai_observation_integrator_service import integrate_perspective_board
 from emlis_ai_perspective_board import build_perspective_board
@@ -136,6 +137,9 @@ def _assert_promoted_contract(
     assert step19["phase"] == "A-1"
     assert step19["ready"] is True
     assert step19["can_switch_composer_model"] is True
+    assert step19["complete_initial_ready"] is True
+    assert step19["can_rollout_complete_initial"] is True
+    assert step19["target_composer_term"] == "完全Composer初期版"
     assert step19["composer_model_before"] == STEP19_BASE_COMPOSER_MODEL
     assert step19["composer_model_after"] == STEP19_A_PLAN_COMPOSER_MODEL
     assert step19["model_name_changed"] is True
@@ -250,6 +254,7 @@ def test_step19_meta_does_not_mark_ready_when_ap0_is_not_green() -> None:
     )
 
     assert meta["ready"] is False
+    assert meta["complete_initial_ready"] is False
     assert meta["can_switch_composer_model"] is False
     assert meta["composer_model_before"] == STEP19_BASE_COMPOSER_MODEL
     assert meta["composer_model_after"] == STEP19_BASE_COMPOSER_MODEL
@@ -263,6 +268,8 @@ def test_step19_registry_can_resolve_a_plan_equivalent_client_only_when_requeste
     }
     flag_state = default_composer_flag_state(env)
     assert flag_state["step19_a_plan_composer_requested"] is True
+    assert flag_state["complete_initial_composer_requested"] is True
+    assert flag_state["target_composer_term"] == "完全Composer初期版"
     assert flag_state["requested_composer_model"] == STEP19_A_PLAN_COMPOSER_MODEL
 
     resolution = resolve_emlis_ai_composer_client(
@@ -282,6 +289,20 @@ def test_step19_registry_can_resolve_a_plan_equivalent_client_only_when_requeste
     assert isinstance(limited_resolution.composer_client, CocolonLimitedComposerClient)
     assert not isinstance(limited_resolution.composer_client, CocolonAPlanEquivalentComposerClient)
     assert limited_resolution.composer_model == STEP19_BASE_COMPOSER_MODEL
+
+    complete_resolution = resolve_emlis_ai_composer_client(
+        env={"COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED": "true", "COCOLON_EMLIS_DEFAULT_COMPOSER": "complete_composer_initial"},
+        release_allowed=True,
+        release_meta=_release_meta(),
+        ap0_decision=_green_ap0(),
+    )
+    assert isinstance(complete_resolution.composer_client, CocolonCompleteComposerClient)
+    assert complete_resolution.flag_state["requested_composer"] == "complete_initial"
+    assert complete_resolution.flag_state["canonical_requested_composer"] == "complete_composer_initial"
+    assert complete_resolution.flag_state["requested_composer_stage"] == "complete_composer_initial"
+    assert complete_resolution.flag_state["complete_initial_composer_requested"] is True
+    assert complete_resolution.flag_state["step10_complete_composer_client_requested"] is True
+    assert complete_resolution.composer_model == "cocolon_emlis_observation_composer.a1.v1"
 
 
 @pytest.mark.asyncio
@@ -340,4 +361,7 @@ async def test_step19_runtime_meta_is_attached_after_step18_without_breaking_pas
     assert step19["passed_only_preserved"] is True
     assert "ap0_not_green" in step19["blocking_reasons"]
     assert phase_gate["step19_a_plan_equivalent_ready"] is False
+    assert phase_gate["step19_complete_composer_initial_ready"] is False
+    assert diagnostic["step19_complete_composer_initial"] == step19
+    assert reply.meta["step19_complete_composer_initial"] == step19
     assert reply.comment_text == "" or reply.meta["observation_status"] == "passed"
