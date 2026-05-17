@@ -46,6 +46,12 @@ from emlis_ai_limited_relation_taxonomy import (
     normalize_relation_type,
     relation_family,
 )
+from emlis_ai_relation_surface_contract import (
+    RELATION_SURFACE_CONTRACT_VERSION,
+    detect_relation_surface,
+    relation_marker_key,
+    relation_marker_meta,
+)
 
 COMPLETE_SURFACE_REALIZER_VERSION = "emlis.complete_surface_realizer.v2"
 COMPLETE_SURFACE_REALIZER_SERVICE_VERSION = COMPLETE_SURFACE_REALIZER_VERSION
@@ -61,6 +67,7 @@ COMPLETE_SURFACE_REALIZER_STAGE = "Step7_Surface_Realizer_2_0"
 COMPLETE_SURFACE_REALIZER_STEP = COMPLETE_SURFACE_REALIZER_STAGE
 COMPLETE_SURFACE_REALIZER_TARGET_STEP = COMPLETE_SURFACE_REALIZER_STAGE
 COMPLETE_SURFACE_REALIZER_IMPLEMENTATION_UNIT = "Commit 7"
+COMPLETE_SURFACE_RECOVERY_RELATION_LINE_ALIGNMENT_STEP = "Step4_Surface_recovery_relation_line_alignment"
 
 COMPLETE_SURFACE_STATUS_READY = "ready"
 COMPLETE_SURFACE_STATUS_UNAVAILABLE = "unavailable"
@@ -77,6 +84,22 @@ RAW_INPUT_META_KEYS = {
     "raw_user_text",
     "original_text",
     "source_text",
+}
+
+# Internal structural labels only.  They never come from raw input and are used
+# only to decide whether a planned recovery relation line may mention prior load.
+RECOVERY_PRIOR_LOAD_ROLE_KEYS = {
+    "fatigue_accumulation",
+    "load_accumulation",
+    "limit_pressure",
+    "pressure",
+    "burden_fear",
+    "hurt_core",
+    "hurt_residue",
+    "anticipation_loop",
+    "small_wobble",
+    "residue",
+    "pressure_or_load",
 }
 
 # Roles from Material/Relation/SentencePlan.  Values are noun fragments, not
@@ -524,8 +547,166 @@ def _truncate_sentence(sentence: str, max_chars: int) -> str:
     return text
 
 
-def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, role_phrase_keys: Sequence[str], connector_key: str, particle: str, predicate_key: str, ending_key: str, distance_policy_key: str, variation_key: str, tone_policy_key: str = "", temperature_key: str = "", tone_guard_keys: Sequence[str] | None = None, closing_policy_key: str = "", read_feeling_policy_key: str = "") -> dict[str, Any]:
+
+def _line_meta_flag(line: CompleteSentencePlanLine, key: str) -> bool:
+    meta = line.meta if isinstance(line.meta, Mapping) else {}
+    value = meta.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on", "present", "detected"}
+
+
+def _relation_surface_context_flags(line: CompleteSentencePlanLine, relation: str) -> dict[str, Any]:
+    roles = set(_meaning_roles(line))
+    meta = line.meta if isinstance(line.meta, Mapping) else {}
+    prior_load_present = (
+        canonical_relation_type(relation) == "recovery"
+        and (
+            bool(roles.intersection(RECOVERY_PRIOR_LOAD_ROLE_KEYS))
+            or _line_meta_flag(line, "prior_load_present")
+            or bool(meta.get("prior_load_hint"))
+            or bool(meta.get("prior_load_roles"))
+        )
+    )
+    return {
+        "prior_load_present": bool(prior_load_present),
+        "role_keys": sorted(roles),
+        "raw_input_included": False,
+    }
+
+
+def _relation_surface_alignment_for_line(
+    line: CompleteSentencePlanLine,
+    *,
+    relation: str,
+    text: str,
+) -> tuple[str, dict[str, Any]]:
+    """Align recovery relation lines with the shared surface contract.
+
+    This does not relax Reader.  It only rewrites an already-planned recovery
+    relation line to a relation cue that Reader and Self-Repair share.
+    """
+
+    base_signal = detect_relation_surface(text, expected_relation_types=(relation,))
+    if line.line_role != "relation" or canonical_relation_type(relation) != "recovery":
+        return text, {
+            "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+            "surface_recovery_relation_line_aligned": False,
+            "relation_surface_signal": base_signal,
+            "reader_relation_signal_detected": bool(base_signal.get("reader_relation_signal_detected")),
+            "reader_relation_signal_count": int(base_signal.get("reader_relation_signal_count") or base_signal.get("count") or 0),
+            "reader_relation_signal_keys": list(base_signal.get("reader_relation_signal_keys") or base_signal.get("keys") or []),
+            "raw_input_included": False,
+        }
+
+    context_flags = _relation_surface_context_flags(line, relation)
+    marker = relation_marker_meta(relation, context_flags=context_flags)
+    # Step4 aligns the Surface relation line itself with the same marker family
+    # Self-Repair uses.  This keeps Reader / Surface / Repair on one contract
+    # without relaxing the Gate and without creating a fallback observation.
+    aligned_text = _truncate_sentence(marker.get("relation_marker_phrase") or text, int(line.max_chars or 120))
+    marker_applied = aligned_text != text
+    signal = detect_relation_surface(aligned_text, expected_relation_types=(relation,))
+    marker_key = str(marker.get("relation_marker_key") or relation_marker_key(relation, context_flags=context_flags))
+    return aligned_text, {
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "surface_recovery_relation_line_aligned": True,
+        "surface_recovery_relation_alignment_step": COMPLETE_SURFACE_RECOVERY_RELATION_LINE_ALIGNMENT_STEP,
+        "surface_recovery_relation_marker_applied": marker_applied,
+        "surface_relation_marker_key": marker_key,
+        "relation_marker_key": marker_key,
+        "relation_surface_signal": signal,
+        "reader_relation_signal_detected": bool(signal.get("reader_relation_signal_detected") or signal.get("detected")),
+        "reader_relation_signal_count": int(signal.get("reader_relation_signal_count") or signal.get("count") or 0),
+        "reader_relation_signal_keys": list(signal.get("reader_relation_signal_keys") or signal.get("keys") or []),
+        "reader_relation_signal_relation_types": list(signal.get("reader_relation_signal_relation_types") or signal.get("relation_types") or []),
+        "expected_relation_types": list(signal.get("expected_relation_types") or [canonical_relation_type(relation)]),
+        "relation_surface_context_flags": context_flags,
+        "meaning_added": False,
+        "gate_relaxed": False,
+        "raw_input_included": False,
+    }
+
+
+def _surface_relation_contract_keys(relation_surface_meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = _json_safe_mapping(relation_surface_meta)
+    signal = meta.get("relation_surface_signal") if isinstance(meta.get("relation_surface_signal"), Mapping) else {}
+    marker_key = _clean_token(meta.get("surface_relation_marker_key") or meta.get("relation_marker_key"))
+    return {
+        "relation_surface_contract_version": meta.get("relation_surface_contract_version") or RELATION_SURFACE_CONTRACT_VERSION,
+        "surface_recovery_relation_line_aligned": bool(meta.get("surface_recovery_relation_line_aligned")),
+        "surface_recovery_relation_alignment_step": meta.get("surface_recovery_relation_alignment_step") or "",
+        "surface_recovery_relation_marker_applied": bool(meta.get("surface_recovery_relation_marker_applied")),
+        "surface_relation_marker_key": marker_key,
+        "relation_marker_key": marker_key,
+        "relation_surface_signal_detected": bool(signal.get("reader_relation_signal_detected") or signal.get("detected")),
+        "relation_surface_signal_count": int(signal.get("reader_relation_signal_count") or signal.get("count") or 0),
+        "relation_surface_signal_keys": list(signal.get("reader_relation_signal_keys") or signal.get("keys") or []),
+        "reader_relation_signal_detected": bool(meta.get("reader_relation_signal_detected") or signal.get("reader_relation_signal_detected") or signal.get("detected")),
+        "reader_relation_signal_count": int(meta.get("reader_relation_signal_count") or signal.get("reader_relation_signal_count") or signal.get("count") or 0),
+        "reader_relation_signal_keys": list(meta.get("reader_relation_signal_keys") or signal.get("reader_relation_signal_keys") or signal.get("keys") or []),
+        "expected_relation_types": list(meta.get("expected_relation_types") or signal.get("expected_relation_types") or []),
+        "meaning_added": False,
+        "gate_relaxed": False,
+        "raw_input_included": False,
+    }
+
+
+def _relation_surface_report_from_lines(lines: Sequence["CompleteSurfaceLineV2"] | None) -> dict[str, Any]:
+    marker_keys: list[str] = []
+    signal_keys: list[str] = []
+    relation_types: list[str] = []
+    aligned_sentence_ids: list[str] = []
+    signal_count = 0
+    signal_detected = False
+    for line in tuple(lines or ()):  # defensive for mapping-created test rows
+        meta = dict(line.meta) if isinstance(line.meta, Mapping) else {}
+        signature = dict(line.surface_signature) if isinstance(line.surface_signature, Mapping) else {}
+        if bool(meta.get("surface_recovery_relation_line_aligned") or signature.get("surface_recovery_relation_line_aligned")):
+            aligned_sentence_ids.append(line.sentence_id)
+        marker_key = _clean(meta.get("surface_relation_marker_key") or meta.get("relation_marker_key") or signature.get("surface_relation_marker_key") or signature.get("relation_marker_key"))
+        if marker_key:
+            marker_keys.append(marker_key)
+        signal = meta.get("relation_surface_signal") or signature.get("relation_surface_signal") or {}
+        if isinstance(signal, Mapping):
+            signal_detected = signal_detected or bool(signal.get("reader_relation_signal_detected") or signal.get("detected"))
+            try:
+                signal_count += int(signal.get("reader_relation_signal_count") or signal.get("count") or 0)
+            except (TypeError, ValueError):
+                signal_count += 0
+            signal_keys.extend(str(item) for item in signal.get("reader_relation_signal_keys") or signal.get("keys") or [])
+            relation_types.extend(str(item) for item in signal.get("reader_relation_signal_relation_types") or signal.get("relation_types") or [])
+        signal_keys.extend(str(item) for item in meta.get("reader_relation_signal_keys") or signature.get("reader_relation_signal_keys") or [])
+        relation_types.extend(str(item) for item in meta.get("reader_relation_signal_relation_types") or signature.get("reader_relation_signal_relation_types") or [])
+    marker_keys_tuple = _dedupe(marker_keys)
+    signal_keys_tuple = _dedupe(signal_keys)
+    relation_types_tuple = _dedupe(relation_types)
+    signal_detected = bool(signal_detected or signal_keys_tuple)
+    if signal_detected and signal_count <= 0:
+        signal_count = len(signal_keys_tuple)
+    return {
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "surface_recovery_relation_line_alignment_step": COMPLETE_SURFACE_RECOVERY_RELATION_LINE_ALIGNMENT_STEP,
+        "surface_recovery_relation_line_aligned": bool(aligned_sentence_ids),
+        "surface_recovery_relation_line_sentence_ids": list(_dedupe(aligned_sentence_ids)),
+        "surface_relation_marker_keys": list(marker_keys_tuple),
+        "surface_relation_marker_key": marker_keys_tuple[0] if marker_keys_tuple else "",
+        "reader_relation_signal_detected": signal_detected,
+        "reader_relation_signal_count": signal_count,
+        "reader_relation_signal_keys": list(signal_keys_tuple),
+        "reader_relation_signal_relation_types": list(relation_types_tuple),
+        "meaning_added": False,
+        "gate_relaxed": False,
+        "raw_input_included": False,
+    }
+
+def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, role_phrase_keys: Sequence[str], connector_key: str, particle: str, predicate_key: str, ending_key: str, distance_policy_key: str, variation_key: str, tone_policy_key: str = "", temperature_key: str = "", tone_guard_keys: Sequence[str] | None = None, closing_policy_key: str = "", read_feeling_policy_key: str = "", relation_surface_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
     relation = _surface_relation(line.relation_type)
+    relation_contract = _surface_relation_contract_keys(relation_surface_meta)
+    marker_key = _clean_token(relation_contract.get("surface_relation_marker_key") or relation_contract.get("relation_marker_key"))
+    signature_relation_suffix = f":{marker_key}" if marker_key else ""
     return {
         "version": COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
         "sentence_id": line.sentence_id,
@@ -546,11 +727,12 @@ def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, r
         "tone_guard_keys": list(_dedupe(tone_guard_keys)),
         "closing_policy_key": _clean_token(closing_policy_key),
         "read_feeling_policy_key": _clean_token(read_feeling_policy_key),
+        **relation_contract,
         "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
         "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
         "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
         "variation_key": variation_key,
-        "signature": f"{line.line_role}:{relation}:{phrase_key}:{connector_key}:{particle}:{predicate_key}:{ending_key}:{distance_policy_key}:{_clean_token(tone_policy_key) or distance_policy_key}",
+        "signature": f"{line.line_role}:{relation}:{phrase_key}:{connector_key}:{particle}:{predicate_key}:{ending_key}:{distance_policy_key}:{_clean_token(tone_policy_key) or distance_policy_key}{signature_relation_suffix}",
         "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
         "surface_signature_for_template_guard": True,
         "completion_sentence_template_used": False,
@@ -558,7 +740,6 @@ def _surface_signature_row(*, line: CompleteSentencePlanLine, phrase_key: str, r
         "input_specific_template_used": False,
         "raw_input_included": False,
     }
-
 
 def _value_counts(values: Iterable[Any]) -> dict[str, int]:
     counts: dict[str, int] = {}
@@ -682,15 +863,27 @@ def _realize_line(
         used_predicate_keys=used_predicate_keys,
         used_ending_keys=used_ending_keys,
     )
-    # Relation lines get the connector as the relationship carrier; other lines
-    # keep it as a sentence-to-sentence transition.  No second-person subject is
-    # introduced.
     if line.line_role == "relation" and connector_key == "relation_approach_avoidance":
         body = f"{connector}{phrase}{particle}{predicate}"
     else:
         body = f"{connector}{phrase}{particle}{predicate}"
     max_chars = int(line.max_chars or 120)
     text = _truncate_sentence(body, max_chars)
+    text, relation_surface_meta = _relation_surface_alignment_for_line(line, relation=relation, text=text)
+    if relation_surface_meta.get("surface_recovery_relation_line_aligned"):
+        marker_key = _clean_token(relation_surface_meta.get("surface_relation_marker_key") or relation_surface_meta.get("relation_marker_key"))
+        if marker_key == "recovery_load_bridge_v1":
+            connector_key = "relation_recovery_contract_load_bridge"
+            predicate_key = "recovery_load_bridge_contract"
+            phrase_key = "recovery_load_bridge"
+            role_phrase_keys = _dedupe(tuple(role_phrase_keys) + ("recovery_load_bridge",))
+        elif marker_key == "recovery_connected_flow_v1":
+            connector_key = "relation_recovery_contract_connected_flow"
+            predicate_key = "recovery_connected_flow_contract"
+            phrase_key = "recovery_connected_flow"
+            role_phrase_keys = _dedupe(tuple(role_phrase_keys) + ("recovery_connected_flow",))
+        particle = "が"
+        ending_key = "tsunagaru"
     distance_policy_key = _clean_token(tone_constraint.get("distance_policy_key")) or DISTANCE_POLICY_KEYS.get(line.line_role, "observe_without_overclaim")
     tone_policy_key = distance_policy_key
     temperature_key = _clean_token(tone_constraint.get("temperature_key"))
@@ -713,6 +906,7 @@ def _realize_line(
         tone_guard_keys=tone_guard_keys,
         closing_policy_key=closing_policy_key,
         read_feeling_policy_key=read_feeling_policy_key,
+        relation_surface_meta=relation_surface_meta,
     )
     return CompleteSurfaceLineV2(
         sentence_id=line.sentence_id,
@@ -744,6 +938,7 @@ def _realize_line(
             "surface_intent": line.surface_intent,
             "repair_policy": list(line.repair_policy),
             "surface_realizer_followed_plan": True,
+            **relation_surface_meta,
             "tone_constraint": tone_constraint,
             "tone_policy_key": tone_policy_key,
             "temperature_key": temperature_key,
@@ -853,6 +1048,11 @@ class CompleteSurfaceLineV2:
             + role_values(source_line.get("must_include_roles"))
             + role_values(source_line.get("phrase_unit_roles"))
         )
+        relation_contract = _surface_relation_contract_keys(self.meta)
+        if self.surface_signature:
+            signature_contract = _surface_relation_contract_keys(self.surface_signature)
+            if signature_contract.get("surface_recovery_relation_line_aligned"):
+                relation_contract = signature_contract
         return {
             "version": self.schema_version,
             "sentence_id": self.sentence_id,
@@ -866,6 +1066,14 @@ class CompleteSurfaceLineV2:
             "phrase_unit_roles": list(phrase_roles),
             "source_sentence_plan_line": source_line,
             "surface_signature": dict(self.surface_signature),
+            "relation_surface_contract_version": relation_contract["relation_surface_contract_version"],
+            "surface_recovery_relation_line_aligned": relation_contract["surface_recovery_relation_line_aligned"],
+            "surface_recovery_relation_alignment_step": relation_contract["surface_recovery_relation_alignment_step"],
+            "surface_relation_marker_key": relation_contract["surface_relation_marker_key"],
+            "relation_marker_key": relation_contract["relation_marker_key"],
+            "reader_relation_signal_detected": relation_contract["reader_relation_signal_detected"],
+            "reader_relation_signal_count": relation_contract["reader_relation_signal_count"],
+            "reader_relation_signal_keys": relation_contract["reader_relation_signal_keys"],
             "tone_policy_key": self.tone_policy_key,
             "temperature_key": self.temperature_key,
             "tone_guard_keys": list(self.tone_guard_keys),
@@ -910,6 +1118,14 @@ class CompleteSurfaceLineV2:
             "tone_meaning_added": False,
             "variation_key": self.variation_key,
             "surface_signature": dict(self.surface_signature),
+            "relation_surface_contract_version": self.surface_signature.get("relation_surface_contract_version") or self.meta.get("relation_surface_contract_version") or RELATION_SURFACE_CONTRACT_VERSION,
+            "surface_recovery_relation_line_aligned": bool(self.surface_signature.get("surface_recovery_relation_line_aligned") or self.meta.get("surface_recovery_relation_line_aligned")),
+            "surface_recovery_relation_alignment_step": self.surface_signature.get("surface_recovery_relation_alignment_step") or self.meta.get("surface_recovery_relation_alignment_step") or "",
+            "surface_relation_marker_key": self.surface_signature.get("surface_relation_marker_key") or self.meta.get("surface_relation_marker_key") or self.meta.get("relation_marker_key") or "",
+            "relation_marker_key": self.surface_signature.get("relation_marker_key") or self.meta.get("relation_marker_key") or "",
+            "reader_relation_signal_detected": bool(self.surface_signature.get("reader_relation_signal_detected") or self.meta.get("reader_relation_signal_detected")),
+            "reader_relation_signal_count": int(self.surface_signature.get("reader_relation_signal_count") or self.meta.get("reader_relation_signal_count") or 0),
+            "reader_relation_signal_keys": list(self.surface_signature.get("reader_relation_signal_keys") or self.meta.get("reader_relation_signal_keys") or []),
             "surface_text_present": bool(self.surface_text),
             "surface_text_length": len(self.surface_text),
             "forbidden_surface_keys": list(self.forbidden_surface_keys),
@@ -1114,6 +1330,7 @@ class CompleteSurfaceRealizationV2:
         return tuple(dict.fromkeys(errors))
 
     def as_grounding_input(self) -> dict[str, Any]:
+        relation_surface_report = _relation_surface_report_from_lines(self.surface_lines)
         return {
             "version": COMPLETE_SURFACE_REALIZER_SCHEMA_VERSION,
             "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
@@ -1127,6 +1344,16 @@ class CompleteSurfaceRealizationV2:
             "relation_types": list(self.relation_types),
             "surface_signatures": list(self.surface_signatures),
             "surface_variation_report": self.surface_variation_report,
+            "relation_surface_contract_version": relation_surface_report["relation_surface_contract_version"],
+            "surface_recovery_relation_line_alignment_step": relation_surface_report["surface_recovery_relation_line_alignment_step"],
+            "surface_recovery_relation_line_aligned": relation_surface_report["surface_recovery_relation_line_aligned"],
+            "surface_recovery_relation_line_sentence_ids": relation_surface_report["surface_recovery_relation_line_sentence_ids"],
+            "surface_relation_marker_keys": relation_surface_report["surface_relation_marker_keys"],
+            "reader_relation_signal_detected": relation_surface_report["reader_relation_signal_detected"],
+            "reader_relation_signal_count": relation_surface_report["reader_relation_signal_count"],
+            "reader_relation_signal_keys": relation_surface_report["reader_relation_signal_keys"],
+            "reader_relation_signal_relation_types": relation_surface_report["reader_relation_signal_relation_types"],
+            "relation_surface_report": relation_surface_report,
             "tone_policy": self.tone_policy_meta,
             "tone_guard_report": self.tone_guard_report,
             "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
@@ -1138,6 +1365,7 @@ class CompleteSurfaceRealizationV2:
     def as_meta(self, *, include_realized_text: bool = True) -> dict[str, Any]:
         term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
         source_binding = build_complete_sentence_binding_bundle_meta(self.source_sentence_plan) if isinstance(self.source_sentence_plan, CompleteSentencePlanV2) else {}
+        relation_surface_report = _relation_surface_report_from_lines(self.surface_lines)
         meta = {
             "version": self.schema_version,
             "schema_version": self.schema_version,
@@ -1186,6 +1414,16 @@ class CompleteSurfaceRealizationV2:
             "product_quality_surface_variation": True,
             "surface_variation_strengthened": True,
             "surface_variation_report": self.surface_variation_report,
+            "relation_surface_contract_version": relation_surface_report["relation_surface_contract_version"],
+            "surface_recovery_relation_line_alignment_step": relation_surface_report["surface_recovery_relation_line_alignment_step"],
+            "surface_recovery_relation_line_aligned": relation_surface_report["surface_recovery_relation_line_aligned"],
+            "surface_recovery_relation_line_sentence_ids": relation_surface_report["surface_recovery_relation_line_sentence_ids"],
+            "surface_relation_marker_keys": relation_surface_report["surface_relation_marker_keys"],
+            "reader_relation_signal_detected": relation_surface_report["reader_relation_signal_detected"],
+            "reader_relation_signal_count": relation_surface_report["reader_relation_signal_count"],
+            "reader_relation_signal_keys": relation_surface_report["reader_relation_signal_keys"],
+            "reader_relation_signal_relation_types": relation_surface_report["reader_relation_signal_relation_types"],
+            "relation_surface_report": relation_surface_report,
             "connector_keys": list(self.connector_keys),
             "unique_connector_key_count": len(set(self.connector_keys)),
             "repeated_connector_keys": list(self.surface_variation_report.get("repeated_connector_keys") or []),
@@ -1346,6 +1584,12 @@ def build_complete_surface_realizer_contract_meta() -> dict[str, Any]:
         "surface_signature_recorded": True,
         "surface_signature_enabled": True,
         "surface_signature_to_template_guard": True,
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "surface_recovery_relation_line_alignment_step": COMPLETE_SURFACE_RECOVERY_RELATION_LINE_ALIGNMENT_STEP,
+        "surface_recovery_relation_line_alignment_added": True,
+        "surface_recovery_relation_line_uses_contract": True,
+        "surface_recovery_relation_line_fixed_fallback": False,
+        "surface_recovery_relation_line_completion_template": False,
         "product_quality_surface_variation_version": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_VERSION,
         "product_quality_surface_variation_step": COMPLETE_PRODUCT_QUALITY_SURFACE_VARIATION_STEP,
         "product_quality_surface_variation": True,
@@ -1492,6 +1736,7 @@ def build_complete_surface_signature(realization: CompleteSurfaceRealizationV2 |
         rows = [dict(line.surface_signature) for line in realization.surface_lines]
         signatures = list(realization.surface_signatures)
         ending_keys = list(realization.ending_keys)
+        relation_surface_report = _relation_surface_report_from_lines(realization.surface_lines)
         return {
             "version": COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
             "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
@@ -1500,6 +1745,12 @@ def build_complete_surface_signature(realization: CompleteSurfaceRealizationV2 |
             "surface_signature_rows": rows,
             "ending_keys": ending_keys,
             "surface_variation_profile": dict(realization.surface_variation_profile),
+            "relation_surface_contract_version": relation_surface_report["relation_surface_contract_version"],
+            "surface_recovery_relation_line_aligned": relation_surface_report["surface_recovery_relation_line_aligned"],
+            "surface_relation_marker_keys": relation_surface_report["surface_relation_marker_keys"],
+            "reader_relation_signal_detected": relation_surface_report["reader_relation_signal_detected"],
+            "reader_relation_signal_keys": relation_surface_report["reader_relation_signal_keys"],
+            "relation_surface_report": relation_surface_report,
             "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
             "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
             "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
@@ -1524,6 +1775,8 @@ def build_complete_surface_signature(realization: CompleteSurfaceRealizationV2 |
             "signature_count": len(rows),
             "surface_signature_rows": _json_safe_value(rows),
             "surface_variation_profile": _json_safe_value(realization.get("surface_variation_profile") or {}),
+            "relation_surface_contract_version": realization.get("relation_surface_contract_version") or RELATION_SURFACE_CONTRACT_VERSION,
+            "surface_recovery_relation_line_aligned": bool(realization.get("surface_recovery_relation_line_aligned")),
             "same_ending_major_count": int(realization.get("same_ending_major_count") or 0),
             "surface_signature_repeat_count": int(realization.get("surface_signature_repeat_count") or 0),
             "surface_variation_guard_passed": bool(realization.get("surface_variation_guard_passed", True)),

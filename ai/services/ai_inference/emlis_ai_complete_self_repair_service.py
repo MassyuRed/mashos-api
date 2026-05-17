@@ -33,6 +33,12 @@ from emlis_ai_complete_surface_realizer import (
     build_complete_surface_realization_v2,
     build_complete_surface_signature,
 )
+from emlis_ai_relation_surface_contract import (
+    RELATION_SURFACE_CONTRACT_VERSION,
+    normalize_relation_surface_type,
+    relation_marker_meta,
+    relation_marker_phrase,
+)
 
 COMPLETE_SELF_REPAIR_VERSION = "emlis.complete_self_repair.v1"
 COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION = "emlis.complete_self_repair.product_quality.v2"
@@ -94,12 +100,12 @@ _TOKEN_RE = re.compile(r"[^0-9a-zA-Z_\-.]+")
 _TRIM = " \t\r\n　、,。.!！?？『』\"'「」（）()[]【】"
 
 RELATION_MARKER_PHRASES = {
-    "contrast": "別々の向きが並んでいることも残しています。",
+    "contrast": "別々の向きが片方だけに寄らず、同じ場所に並んでいます。",
     "coexistence": "同じ時間の中に重なっていることも残しています。",
-    "pressure": "圧力として前面に出ていることも残しています。",
-    "approach_avoidance": "近づく動きと止まる動きの両方が残っています。",
-    "recovery": "戻ってくる動きと前段の負荷の関係も残しています。",
-    "residue": "あとに残る余韻として置かれています。",
+    "pressure": "圧力として前面に出ていることも残っています。",
+    "approach_avoidance": "近づく動きと止まる動きの両方が同じ線上に残っています。",
+    "recovery": relation_marker_phrase("recovery", {"prior_load_present": True}),
+    "residue": "あとに残る余韻として、前の流れとつながっています。",
 }
 
 RELATION_ROLE_PHRASES = {
@@ -378,6 +384,147 @@ def _line_has_binding(line: CompleteSurfaceLineV2) -> bool:
     return bool(line.evidence_span_ids and line.phrase_unit_ids and line.relation_type)
 
 
+def _relation_context_flags_for_line(
+    line: CompleteSurfaceLineV2,
+    realization: CompleteSurfaceRealizationV2,
+    plan: CompleteSentencePlanV2,
+) -> dict[str, Any]:
+    """Build input-free context flags for relation marker selection.
+
+    The flags use only already-generated surface text and internal plan/surface
+    metadata. They never inspect raw user input. For recovery, prior load is
+    considered present only when surrounding generated material or binding meta
+    carries pressure, fatigue, burden, limit, hurt, residue, or load cues.
+    """
+
+    relation = normalize_relation_surface_type(line.relation_type)
+    load_markers = (
+        "load", "pressure", "fatigue", "burden", "weight", "limit",
+        "hurt", "residue", "prior", "pre", "stress", "tension",
+        "accumulation", "heavy", "重さ", "負荷", "圧力", "疲れ",
+        "痛み", "限界", "前段", "その前", "前の流れ",
+    )
+    values: list[str] = [
+        line.surface_text,
+        line.line_role,
+        line.role_phrase_key,
+        line.relation_type,
+        *list(line.role_phrase_keys or ()),
+        *list(getattr(realization, "relation_types", ()) or ()),
+    ]
+    source = line.source_sentence_plan_line if isinstance(line.source_sentence_plan_line, Mapping) else {}
+    for key in (
+        "must_include_roles", "optional_roles", "phrase_unit_roles",
+        "role", "roles", "relation_type", "coverage_group",
+    ):
+        item = source.get(key)
+        if isinstance(item, (list, tuple, set)):
+            values.extend(str(v) for v in item)
+        elif item is not None:
+            values.append(str(item))
+    if isinstance(getattr(line, "meta", None), Mapping):
+        values.extend(str(v) for k, v in line.meta.items() if k not in RAW_INPUT_META_KEYS and isinstance(v, (str, int, float, bool)))
+    if isinstance(getattr(realization, "meta", None), Mapping):
+        values.extend(str(v) for k, v in realization.meta.items() if k not in RAW_INPUT_META_KEYS and isinstance(v, (str, int, float, bool)))
+    if isinstance(getattr(plan, "meta", None), Mapping):
+        values.extend(str(v) for k, v in plan.meta.items() if k not in RAW_INPUT_META_KEYS and isinstance(v, (str, int, float, bool)))
+    for plan_line in plan.sentence_plans:
+        values.extend([plan_line.relation_type, plan_line.line_role, plan_line.surface_intent])
+        values.extend(str(v) for v in tuple(plan_line.must_include_roles or ()))
+        values.extend(str(v) for v in tuple(plan_line.optional_roles or ()))
+        if isinstance(plan_line.meta, Mapping):
+            values.extend(str(v) for k, v in plan_line.meta.items() if k not in RAW_INPUT_META_KEYS and isinstance(v, (str, int, float, bool)))
+    compact = " ".join(str(value or "") for value in values)
+    prior_load_present = bool(relation == "recovery" and any(marker in compact for marker in load_markers))
+    return {
+        "prior_load_present": prior_load_present,
+        "relation_type": relation,
+        "context_source": "complete_self_repair_generated_surface_and_meta",
+        "raw_input_included": False,
+    }
+
+
+def _relation_marker_line_meta(line: CompleteSurfaceLineV2) -> dict[str, Any]:
+    meta = _json_safe_mapping(line.meta)
+    keys = (
+        "relation_surface_contract_version",
+        "contract_version",
+        "self_repair_relation_marker_applied",
+        "self_repair_relation_marker_key",
+        "self_repair_relation_marker_phrase_present",
+        "self_repair_relation_marker_signal",
+        "self_repair_relation_marker_context",
+        "relation_marker_key",
+        "relation_marker_signal",
+    )
+    return {key: meta[key] for key in keys if key in meta}
+
+
+def _collect_relation_marker_meta(surface_lines: Sequence[CompleteSurfaceLineV2] | None) -> dict[str, Any]:
+    markers: list[dict[str, Any]] = []
+    marker_keys: list[str] = []
+    signal_keys: list[str] = []
+    relation_types: list[str] = []
+    signal_detected = False
+    signal_count = 0
+
+    for line in tuple(surface_lines or ()):  # defensive for tests/future mappings
+        marker_meta = _relation_marker_line_meta(line)
+        if not marker_meta:
+            continue
+        markers.append(marker_meta)
+        marker_key = marker_meta.get("self_repair_relation_marker_key") or marker_meta.get("relation_marker_key")
+        if marker_key:
+            marker_keys.append(str(marker_key))
+        signal = marker_meta.get("self_repair_relation_marker_signal") or marker_meta.get("relation_marker_signal") or {}
+        if isinstance(signal, Mapping):
+            signal_detected = signal_detected or bool(signal.get("reader_relation_signal_detected") or signal.get("detected"))
+            try:
+                signal_count += int(signal.get("reader_relation_signal_count") or signal.get("count") or 0)
+            except (TypeError, ValueError):
+                signal_count += 0
+            signal_keys.extend(str(item) for item in signal.get("reader_relation_signal_keys") or signal.get("keys") or [])
+            relation_types.extend(str(item) for item in signal.get("reader_relation_signal_relation_types") or signal.get("relation_types") or [])
+
+    marker_keys_tuple = _dedupe(marker_keys)
+    signal_keys_tuple = _dedupe(signal_keys)
+    relation_types_tuple = _dedupe(relation_types)
+    # Some older signal payloads only exposed keys, so keep them as a detected
+    # signal, but do not allow an empty key list to pass as relation evidence.
+    signal_detected = bool(signal_detected or signal_keys_tuple)
+    if signal_detected and signal_count <= 0:
+        signal_count = len(signal_keys_tuple)
+
+    signal_payload = {
+        "reader_relation_signal_detected": signal_detected,
+        "reader_relation_signal_count": signal_count,
+        "reader_relation_signal_keys": list(signal_keys_tuple),
+        "reader_relation_signal_relation_types": list(relation_types_tuple),
+    }
+    return {
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "self_repair_relation_marker_applied": bool(markers),
+        "self_repair_relation_marker_key": marker_keys_tuple[0] if marker_keys_tuple else "",
+        "self_repair_relation_marker_keys": list(marker_keys_tuple),
+        "self_repair_relation_marker_count": len(markers),
+        "self_repair_relation_marker_relation_type": relation_types_tuple[0] if relation_types_tuple else "",
+        "self_repair_relation_marker_signal_detected": signal_detected,
+        "self_repair_relation_marker_signal_count": signal_count,
+        "self_repair_relation_marker_signal_keys": list(signal_keys_tuple),
+        "self_repair_relation_marker_signal_relation_types": list(relation_types_tuple),
+        "self_repair_relation_signal_detected": signal_detected,
+        "self_repair_relation_signal_count": signal_count,
+        "self_repair_relation_signal_keys": list(signal_keys_tuple),
+        "self_repair_relation_signal_relation_types": list(relation_types_tuple),
+        "self_repair_relation_signal": signal_payload,
+        "self_repair_relation_marker_meaning_added": False,
+        "self_repair_relation_marker_gate_relaxed": False,
+        "self_repair_relation_marker_raw_input_included": False,
+        "self_repair_relation_markers": markers,
+        "raw_input_included": False,
+    }
+
+
 def _evidence_ids_from(value: Any) -> Tuple[str, ...]:
     if value is None:
         return tuple()
@@ -610,6 +757,8 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
         "forbidden_operations": sorted(FORBIDDEN_REPAIR_OPERATIONS),
         "repair_trace_required": True,
         "repair_trace_records_before_after_plan_id": True,
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "self_repair_relation_marker_contract_enabled": True,
         "evidence_ids_must_remain_bound": True,
         "relation_ids_must_remain_bound": True,
         **_contract_boundary(),
@@ -674,6 +823,8 @@ def _clone_line(
     relation_type: str | None = None,
     operation: str = "self_repair_adjustment",
     attempt: int = 1,
+    meta_updates: Mapping[str, Any] | None = None,
+    signature_updates: Mapping[str, Any] | None = None,
 ) -> CompleteSurfaceLineV2:
     new_connector = connector_key or line.connector_key
     new_ending = ending_key or line.ending_key
@@ -700,24 +851,30 @@ def _clone_line(
         closing_policy_key=getattr(line, "closing_policy_key", "none"),
         read_feeling_policy_key=getattr(line, "read_feeling_policy_key", "input_specific_structure_reflected"),
         variation_key=new_variation,
-        surface_signature=_surface_signature_for_line(
-            line,
-            operation=operation,
-            attempt=attempt,
-            connector_key=new_connector,
-            ending_key=new_ending,
-            variation_key=new_variation,
-        ),
+        surface_signature={
+            **_surface_signature_for_line(
+                line,
+                operation=operation,
+                attempt=attempt,
+                connector_key=new_connector,
+                ending_key=new_ending,
+                variation_key=new_variation,
+            ),
+            **_json_safe_mapping(signature_updates),
+        },
         forbidden_surface_keys=line.forbidden_surface_keys,
         source_sentence_plan_line=line.source_sentence_plan_line,
         meta={
             **_json_safe_mapping(line.meta),
+            **_json_safe_mapping(meta_updates),
             "source_step": COMPLETE_SURFACE_REALIZER_STAGE,
             "target_step": COMPLETE_SELF_REPAIR_STAGE,
             "self_repair_applied": True,
             "repair_operation": operation,
             "repair_attempt": attempt,
             "meaning_added": False,
+            "new_meaning_added": False,
+            "gate_relaxed": False,
             "tone_policy_key": getattr(line, "tone_policy_key", line.distance_policy_key),
             "temperature_key": getattr(line, "temperature_key", "steady_warm"),
             "tone_meaning_added": False,
@@ -799,6 +956,7 @@ def _rebuild_realization(
             "after_plan_id": plan.plan_id,
             "comment_text_key_written": False,
             "response_shape_changed": False,
+            "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
             "new_meaning_added": False,
             "raw_input_included": False,
         },
@@ -938,6 +1096,7 @@ def _repair_trace_v2_meta(
         "relation_types_after": list(after_relation_ids),
         "relation_ids_preserved": True,
         "evidence_ids_preserved": bool(not added_evidence_ids or "rebind" in operation),
+        **_collect_relation_marker_meta(tuple(getattr(after, "surface_lines", ()) or ())),
         "surface_signature_before": signature_before,
         "surface_signature_after": signature_after,
         "surface_signature_changed": signature_before.get("surface_signatures") != signature_after.get("surface_signatures"),
@@ -1026,21 +1185,48 @@ def _make_relation_explicit(
         if line.sentence_id != candidate_id:
             rebuilt.append(line)
             continue
-        relation = _clean_token(line.relation_type) or "center"
-        marker = RELATION_MARKER_PHRASES.get(relation) or "関係として同じ場所に置かれています。"
+        declared_relation = _clean_token(line.relation_type) or "center"
+        relation = normalize_relation_surface_type(declared_relation) or declared_relation
+        context_flags = _relation_context_flags_for_line(line, realization, plan)
+        marker_payload = relation_marker_meta(relation, context_flags=context_flags)
+        marker = _clean(marker_payload.get("relation_marker_phrase")) or relation_marker_phrase(relation, context_flags=context_flags)
+        marker_signal = marker_payload.get("relation_marker_signal") if isinstance(marker_payload, Mapping) else {}
+        marker_key = _clean(marker_payload.get("relation_marker_key")) if isinstance(marker_payload, Mapping) else ""
         text = _clean(line.surface_text)
         if marker.rstrip("。") in text:
             rebuilt.append(line)
             continue
         # Keep this a relation clarification, not a new claim: use the line's declared relation only.
         new_text = f"{text.rstrip('。')}。{marker}" if text else marker
+        relation_marker_updates = {
+            "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+            "contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+            "self_repair_relation_marker_applied": True,
+            "self_repair_relation_marker_key": marker_key,
+            "self_repair_relation_marker_phrase_present": bool(marker),
+            "self_repair_relation_marker_signal": _json_safe_mapping(marker_signal if isinstance(marker_signal, Mapping) else {}),
+            "self_repair_relation_marker_context": _json_safe_mapping(context_flags),
+            "self_repair_relation_marker_relation_type": relation,
+            "relation_marker_key": marker_key,
+            "relation_marker_signal": _json_safe_mapping(marker_signal if isinstance(marker_signal, Mapping) else {}),
+            "meaning_added": False,
+            "relation_ids_preserved": True,
+            "gate_relaxed": False,
+            "raw_input_included": False,
+        }
         rebuilt.append(
             _clone_line(
                 line,
                 surface_text=new_text,
-                connector_key=RELATION_CONNECTOR_KEYS.get(relation, "repair_relation_connector"),
+                connector_key=RELATION_CONNECTOR_KEYS.get(declared_relation, RELATION_CONNECTOR_KEYS.get(relation, "repair_relation_connector")),
                 operation="make_declared_relation_surface_explicit",
                 attempt=attempt,
+                meta_updates=relation_marker_updates,
+                signature_updates={
+                    "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+                    "self_repair_relation_marker_key": marker_key,
+                    "self_repair_relation_marker_applied": True,
+                },
             )
         )
         changed = True
@@ -1316,6 +1502,7 @@ class CompleteSelfRepairResult:
                 "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
                 "comment_text_key_written": False,
                 "response_shape_changed": False,
+                **_collect_relation_marker_meta(tuple(getattr(self.repaired_surface_realization, "surface_lines", ()) or ())),
                 "raw_input_included": False,
             }
         )
@@ -1356,6 +1543,7 @@ class CompleteSelfRepairResult:
             "after_surface_line_count": len(self.repaired_surface_realization.surface_lines),
             "repair_trace": [trace.as_meta() for trace in self.repair_trace],
             "repair_trace_v2": [trace.as_meta() for trace in self.repair_trace],
+            **_collect_relation_marker_meta(tuple(getattr(self.repaired_surface_realization, "surface_lines", ()) or ())),
             "repair_policy_table": build_complete_self_repair_policy_table_v2(),
             "repaired_surface_meta": repaired_meta,
             "surface_signature": surface_signature,

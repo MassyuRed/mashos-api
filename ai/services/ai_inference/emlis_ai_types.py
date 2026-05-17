@@ -702,6 +702,13 @@ class DiagnosticGateResult:
             "gate_binding_contract_version",
             "binding_support_source",
             "step7_gate_binding_reflection",
+            "relation_surface_contract_version",
+            "reader_relation_signal_detected",
+            "reader_relation_signal_count",
+            "reader_relation_signal_keys",
+            "reader_relation_signal_relation_types",
+            "expected_relation_types",
+            "reader_relation_signal_raw_input_included",
         ):
             if key in diagnostics:
                 data[key] = diagnostics[key]
@@ -1202,6 +1209,17 @@ class ListenerReaderReport:
     unclear_sentences: List[str] = field(default_factory=list)
     rejection_reasons: List[str] = field(default_factory=list)
     confidence: float = 0.0
+    # positive_recovery relation_not_expressed Step5: diagnostic-only
+    # relation-surface signal fields. They describe generated output only and
+    # do not alter the Reader Gate decision or public response shape.
+    relation_surface_contract_version: str = ""
+    reader_relation_signal_detected: bool = False
+    reader_relation_signal_count: int = 0
+    reader_relation_signal_keys: List[str] = field(default_factory=list)
+    reader_relation_signal_relation_types: List[str] = field(default_factory=list)
+    expected_relation_types: List[str] = field(default_factory=list)
+    reader_relation_signal_meta: Dict[str, Any] = field(default_factory=dict)
+    raw_input_included: bool = False
 
 
 @dataclass(frozen=True)

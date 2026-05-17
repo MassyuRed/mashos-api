@@ -8,8 +8,9 @@ can answer the question: can a listener understand what Emlis is saying?
 """
 
 import re
-from typing import Any, List
+from typing import Any, Iterable, List
 
+from emlis_ai_relation_surface_contract import detect_relation_surface
 from emlis_ai_types import ListenerReaderReport
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
@@ -22,7 +23,7 @@ _UNCLEAR_RE = re.compile(
 _REPORT_LIKE_RE = re.compile(r"(観測結果|判定|分析すると|構造としては|以下の|項目|レポート|結論として)")
 _RELATION_RE = re.compile(
     r"(同じ場所|同じ中|並んで|せめぎ合|重なって|一方|だけではなく|離れていない|簡単には|"
-    r"その二つ|二つの間|つながって|同時に|抱えて|混ざって|残って)"
+    r"その二つ|二つの間|つながって|同時に|抱えて|混ざって)"
 )
 _ADDRESSEE_RE = re.compile(r"(^[^\n]{0,32}さん、[^\n]{0,24}Emlisです。|^Emlisです。)")
 _LISTING_RE = re.compile(r"(.+もありました。?\s*){2,}|(.+も含まれていました。?\s*){2,}")
@@ -37,7 +38,10 @@ def _dedupe(values: List[str]) -> List[str]:
     return list(dict.fromkeys(values))
 
 
-def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
+def judge_listener_readability(
+    comment_text: Any,
+    expected_relation_types: Iterable[Any] | Any = (),
+) -> ListenerReaderReport:
     text = str(comment_text or "").strip()
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     sentences = _sentences(text)
@@ -69,7 +73,19 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
     if not addressee_clear:
         reasons.append("addressee_not_clear")
 
-    relation_count = sum(1 for sentence in sentences if _RELATION_RE.search(sentence))
+    relation_surface_signal = detect_relation_surface(
+        text,
+        expected_relation_types=expected_relation_types,
+    )
+    expected_relation_types_meta = relation_surface_signal.get("expected_relation_types") or []
+    # When a strict recovery relation is expected, legacy generic cues such as
+    # "同じ場所" are not enough.  Recovery must be detected by the shared
+    # relation surface contract so Reader does not pass on a broad word alone.
+    legacy_relation_count = 0 if "recovery" in expected_relation_types_meta else sum(
+        1 for sentence in sentences if _RELATION_RE.search(sentence)
+    )
+    relation_surface_count = int(relation_surface_signal.get("reader_relation_signal_count") or 0)
+    relation_count = legacy_relation_count + relation_surface_count
     if relation_count < 1 and len(sentences) >= 3:
         reasons.append("relation_not_expressed")
 
@@ -102,6 +118,22 @@ def judge_listener_readability(comment_text: Any) -> ListenerReaderReport:
         unclear_sentences=unclear,
         rejection_reasons=reasons,
         confidence=0.88 if not reasons else 0.42,
+        relation_surface_contract_version=str(
+            relation_surface_signal.get("relation_surface_contract_version")
+            or relation_surface_signal.get("contract_version")
+            or ""
+        ),
+        reader_relation_signal_detected=bool(relation_surface_signal.get("reader_relation_signal_detected")),
+        reader_relation_signal_count=int(relation_surface_signal.get("reader_relation_signal_count") or 0),
+        reader_relation_signal_keys=list(relation_surface_signal.get("reader_relation_signal_keys") or []),
+        reader_relation_signal_relation_types=list(
+            relation_surface_signal.get("reader_relation_signal_relation_types")
+            or relation_surface_signal.get("relation_types")
+            or []
+        ),
+        expected_relation_types=list(relation_surface_signal.get("expected_relation_types") or []),
+        reader_relation_signal_meta=dict(relation_surface_signal),
+        raw_input_included=False,
     )
 
 

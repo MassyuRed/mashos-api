@@ -57,7 +57,10 @@ from emlis_ai_ap0_migration_decision_service import (
 )
 from emlis_ai_a_plan_equivalent_composer_service import build_step19_a_plan_equivalent_meta
 from emlis_ai_long_term_quality_service import build_step20_long_term_quality_meta
-from emlis_ai_complete_reply_diagnostics_service import build_complete_reply_service_diagnostics
+from emlis_ai_complete_reply_diagnostics_service import (
+    build_complete_reply_service_diagnostics,
+    build_positive_recovery_relation_diagnostic,
+)
 from emlis_ai_complete_scorecard_service import build_complete_scorecard_harness
 from emlis_ai_complete_product_quality_scorecard_service import (
     build_complete_product_quality_blind_qa_rubric,
@@ -2129,6 +2132,13 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "conversational",
             "report_like",
             "confidence",
+            "relation_surface_contract_version",
+            "reader_relation_signal_detected",
+            "reader_relation_signal_count",
+            "reader_relation_signal_keys",
+            "reader_relation_signal_relation_types",
+            "expected_relation_types",
+            "reader_relation_signal_raw_input_included",
             "binding_used",
             "binding_present",
             "binding_available",
@@ -3610,6 +3620,11 @@ def _multi_perspective_meta(
     complete_scorecard_event = dict(step11_complete_reply_diagnostics.get("scorecard_event") or {})
     complete_repair_trace = list(step11_complete_reply_diagnostics.get("complete_repair_trace") or [])
     complete_runtime_meta = dict(step11_complete_reply_diagnostics.get("complete_runtime_meta") or {})
+    step5_relation_diagnostic = dict(
+        step11_complete_reply_diagnostics.get("positive_recovery_relation_diagnostic")
+        or step11_complete_reply_diagnostics.get("relation_surface_diagnostic")
+        or build_positive_recovery_relation_diagnostic(composer_candidate=composer_candidate, gate_trace=gate_trace)
+    )
     phase_gate_meta["step11_complete_reply_service_diagnostics_ready"] = bool(step11_complete_reply_diagnostics.get("complete_reply_service_diagnostics_added"))
     phase_gate_meta["complete_reply_service_integrated"] = bool(step11_complete_reply_diagnostics.get("complete_reply_service_integrated"))
     phase_gate_meta["complete_meta_connected"] = bool(step11_complete_reply_diagnostics.get("complete_meta_connected"))
@@ -3624,6 +3639,31 @@ def _multi_perspective_meta(
     phase_gate_meta["step11_scorecard_event_connected"] = bool(step11_complete_reply_diagnostics.get("scorecard_event_connected"))
     phase_gate_meta["step11_response_shape_changed"] = bool(step11_complete_reply_diagnostics.get("response_shape_changed"))
     phase_gate_meta["step11_public_response_key_change"] = bool(step11_complete_reply_diagnostics.get("public_response_key_change"))
+    phase_gate_meta["step5_relation_diagnostic_connected"] = bool(step5_relation_diagnostic.get("diagnostic_connected"))
+    phase_gate_meta["step5_reader_relation_signal_detected"] = bool(step5_relation_diagnostic.get("reader_relation_signal_detected"))
+    phase_gate_meta["step5_self_repair_relation_marker_applied"] = bool(step5_relation_diagnostic.get("self_repair_relation_marker_applied"))
+    phase_gate_meta["step5_relation_diagnostic_raw_input_included"] = bool(step5_relation_diagnostic.get("raw_input_included"))
+    diagnostic_summary["step5_relation_diagnostic"] = step5_relation_diagnostic
+    diagnostic_summary["positive_recovery_relation_diagnostic"] = step5_relation_diagnostic
+    diagnostic_summary["relation_surface_diagnostic"] = step5_relation_diagnostic
+    for _relation_key in (
+        "relation_surface_contract_version",
+        "reader_relation_signal_detected",
+        "reader_relation_signal_count",
+        "reader_relation_signal_keys",
+        "reader_relation_signal_relation_types",
+        "expected_relation_types",
+        "self_repair_relation_marker_applied",
+        "self_repair_relation_marker_key",
+        "self_repair_relation_marker_keys",
+        "self_repair_relation_marker_count",
+        "self_repair_relation_marker_signal_detected",
+        "self_repair_relation_marker_signal_keys",
+        "self_repair_relation_marker_meaning_added",
+        "self_repair_relation_marker_gate_relaxed",
+    ):
+        if _relation_key in step5_relation_diagnostic:
+            diagnostic_summary[_relation_key] = step5_relation_diagnostic[_relation_key]
     diagnostic_summary["step11_complete_reply_diagnostics"] = step11_complete_reply_diagnostics
     diagnostic_summary["step11_complete_reply_service_diagnostics"] = step11_complete_reply_diagnostics
     diagnostic_summary["complete_reply_service_diagnostics"] = step11_complete_reply_diagnostics
@@ -3827,6 +3867,9 @@ def _multi_perspective_meta(
         "complete_repair_trace": complete_repair_trace,
         "complete_composer_repair_trace": complete_repair_trace,
         "complete_composer_initial_repair_trace": complete_repair_trace,
+        "step5_relation_diagnostic": step5_relation_diagnostic,
+        "positive_recovery_relation_diagnostic": step5_relation_diagnostic,
+        "relation_surface_diagnostic": step5_relation_diagnostic,
         "complete_scorecard_event": complete_scorecard_event,
         "complete_composer_scorecard_event": complete_scorecard_event,
         "complete_composer_initial_scorecard_event": complete_scorecard_event,

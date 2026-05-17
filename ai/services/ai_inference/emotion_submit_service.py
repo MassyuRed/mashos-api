@@ -61,6 +61,91 @@ def _emlis_ai_reply_timeout_seconds() -> float:
     return max(0.5, min(10.0, raw))
 
 
+def _emlis_ai_observation_result_log_enabled() -> bool:
+    """Return whether temporary Emlis observation result logging is enabled.
+
+    Step7 keeps normal logs quiet by default. The log is diagnostic-only,
+    contains no raw input or public comment text, and can be enabled locally
+    while checking display reach regressions.
+    """
+    truthy = {"1", "true", "yes", "y", "on", "debug"}
+    for name in (
+        "EMLIS_AI_OBSERVATION_RESULT_LOG_ENABLED",
+        "COCOLON_EMLIS_OBSERVATION_RESULT_LOG_ENABLED",
+        "EMLIS_AI_OBSERVATION_DEBUG_LOG",
+        "EMLIS_AI_OBSERVATION_DEBUG_LOGS",
+    ):
+        raw = os.getenv(name)
+        if raw is not None and str(raw).strip().lower() in truthy:
+            return True
+    return False
+
+
+def _emlis_ai_observation_debug_logging_enabled() -> bool:
+    """Backward-compatible alias for Step7 debug log gating tests."""
+    return _emlis_ai_observation_result_log_enabled()
+
+
+def _extract_emlis_ai_diagnostic_summary(input_feedback_meta: Any) -> Dict[str, Any]:
+    """Extract diagnostic_summary from reply meta without reading raw input."""
+    if not isinstance(input_feedback_meta, dict):
+        return {}
+
+    raw_diagnostic_summary = input_feedback_meta.get("diagnostic_summary")
+    if isinstance(raw_diagnostic_summary, dict):
+        return raw_diagnostic_summary
+
+    multi_perspective_meta = input_feedback_meta.get("multi_perspective")
+    if isinstance(multi_perspective_meta, dict):
+        raw_diagnostic_summary = multi_perspective_meta.get("diagnostic_summary")
+        if isinstance(raw_diagnostic_summary, dict):
+            return raw_diagnostic_summary
+
+    return {}
+
+
+def _log_emlis_ai_observation_result(
+    *,
+    input_feedback_comment: str,
+    input_feedback_meta: Dict[str, Any],
+) -> None:
+    """Emit the temporary observation-result log only when explicitly enabled."""
+    if not _emlis_ai_observation_result_log_enabled():
+        return
+
+    diagnostic_summary = _extract_emlis_ai_diagnostic_summary(input_feedback_meta)
+    logger.info(
+        "emlis_observation_result comment_text_present=%s observation_status=%s "
+        "stage=%s primary_reason=%s coverage_group=%s",
+        bool(str(input_feedback_comment or "").strip()),
+        input_feedback_meta.get("observation_status")
+        if isinstance(input_feedback_meta, dict)
+        else "",
+        diagnostic_summary.get("stage") if isinstance(diagnostic_summary, dict) else "",
+        diagnostic_summary.get("primary_reason")
+        if isinstance(diagnostic_summary, dict)
+        else "",
+        diagnostic_summary.get("coverage_group")
+        if isinstance(diagnostic_summary, dict)
+        else "",
+    )
+
+
+def _log_emlis_ai_reply_failure(exc: Exception) -> None:
+    """Log fail-closed EmlisAI reply failures without exposing raw input.
+
+    The stack trace is kept behind the same opt-in debug flag because
+    timeout/error paths can be noisy during normal emotion submission traffic.
+    """
+    if _emlis_ai_observation_result_log_enabled():
+        logger.exception("emlis_ai_reply_failed")
+    else:
+        logger.warning(
+            "emlis_ai_reply_failed fail_closed=True reason=timeout_or_error error_type=%s",
+            type(exc).__name__,
+        )
+
+
 async def resolve_authenticated_user_id(
     *,
     authorization: Optional[str],
@@ -204,36 +289,12 @@ async def persist_emotion_submission(
         input_feedback_comment = str(reply.comment_text or "").strip()
         input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
 
-        diagnostic_summary: Dict[str, Any] = {}
-        if isinstance(input_feedback_meta, dict):
-            raw_diagnostic_summary = input_feedback_meta.get("diagnostic_summary")
-            if not isinstance(raw_diagnostic_summary, dict):
-                multi_perspective_meta = input_feedback_meta.get("multi_perspective")
-                raw_diagnostic_summary = (
-                    multi_perspective_meta.get("diagnostic_summary", {})
-                    if isinstance(multi_perspective_meta, dict)
-                    else {}
-                )
-            diagnostic_summary = (
-                raw_diagnostic_summary if isinstance(raw_diagnostic_summary, dict) else {}
-            )
-
-        logger.info(
-            "emlis_observation_result comment_text_present=%s observation_status=%s stage=%s primary_reason=%s coverage_group=%s",
-            bool(input_feedback_comment),
-            input_feedback_meta.get("observation_status")
-            if isinstance(input_feedback_meta, dict)
-            else "",
-            diagnostic_summary.get("stage") if isinstance(diagnostic_summary, dict) else "",
-            diagnostic_summary.get("primary_reason")
-            if isinstance(diagnostic_summary, dict)
-            else "",
-            diagnostic_summary.get("coverage_group")
-            if isinstance(diagnostic_summary, dict)
-            else "",
+        _log_emlis_ai_observation_result(
+            input_feedback_comment=input_feedback_comment,
+            input_feedback_meta=input_feedback_meta,
         )
-    except Exception:
-        logger.exception("emlis_ai_reply_failed")
+    except Exception as exc:
+        _log_emlis_ai_reply_failure(exc)
         # Fail-closed: do not fall back to a fixed Emlis observation sentence.
         # The saved emotion remains successful, but Emlisの観測 is not shown.
         input_feedback_comment = ""

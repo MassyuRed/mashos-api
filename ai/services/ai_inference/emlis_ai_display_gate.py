@@ -309,6 +309,16 @@ def build_emlis_gate_trace(
     safety = safety_report or SafetyBoundaryReport()
     source = str(composer_source or "").strip()
     reader_binding_fields = _gate_binding_fields(binding_meta, gate="reader", binding_used=False)
+    reader_relation_signal_fields = {
+        "relation_surface_contract_version": str(getattr(reader_report, "relation_surface_contract_version", "") or ""),
+        "reader_relation_signal_detected": bool(getattr(reader_report, "reader_relation_signal_detected", False)),
+        "reader_relation_signal_count": int(getattr(reader_report, "reader_relation_signal_count", 0) or 0),
+        "reader_relation_signal_keys": list(getattr(reader_report, "reader_relation_signal_keys", []) or []),
+        "reader_relation_signal_relation_types": list(getattr(reader_report, "reader_relation_signal_relation_types", []) or []),
+        "expected_relation_types": list(getattr(reader_report, "expected_relation_types", []) or []),
+        "reader_relation_signal_meta": dict(getattr(reader_report, "reader_relation_signal_meta", {}) or {}),
+        "reader_relation_signal_raw_input_included": bool(getattr(reader_report, "raw_input_included", False)),
+    }
     grounding_binding_fields = _gate_binding_fields(
         binding_meta,
         gate="grounding",
@@ -341,6 +351,7 @@ def build_emlis_gate_trace(
             "conversational": bool(reader_report.conversational),
             "report_like": bool(reader_report.report_like),
             "confidence": float(reader_report.confidence or 0.0),
+            **reader_relation_signal_fields,
             **reader_binding_fields,
         },
         "grounding": {

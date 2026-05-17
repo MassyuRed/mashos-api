@@ -18,6 +18,7 @@ from emlis_ai_complete_composer_initial_meta import (
     build_complete_composer_initial_term_meta,
 )
 from emlis_ai_complete_composer_types import COMPLETE_COMPOSER_GENERATION_METHOD
+from emlis_ai_relation_surface_contract import RELATION_SURFACE_CONTRACT_VERSION
 
 COMPLETE_REPLY_DIAGNOSTICS_VERSION = "emlis.complete_reply_service_diagnostics.v1"
 COMPLETE_SCORECARD_EVENT_VERSION = "emlis.complete_scorecard_event.v1"
@@ -79,6 +80,32 @@ _SAFE_META_KEYS = (
     "sentence_binding_bundle",
     "surface_realizer",
     "surface_signature",
+    "relation_surface_contract_version",
+    "relation_surface_report",
+    "reader_relation_signal_detected",
+    "reader_relation_signal_count",
+    "reader_relation_signal_keys",
+    "reader_relation_signal_relation_types",
+    "expected_relation_types",
+    "surface_recovery_relation_line_aligned",
+    "surface_relation_marker_key",
+    "surface_relation_marker_keys",
+    "relation_marker_key",
+    "self_repair_relation_marker_applied",
+    "self_repair_relation_marker_key",
+    "self_repair_relation_marker_keys",
+    "self_repair_relation_marker_count",
+    "self_repair_relation_marker_relation_type",
+    "self_repair_relation_marker_signal_detected",
+    "self_repair_relation_marker_signal_count",
+    "self_repair_relation_marker_signal_keys",
+    "self_repair_relation_marker_signal_relation_types",
+    "self_repair_relation_signal_detected",
+    "self_repair_relation_signal_count",
+    "self_repair_relation_signal_keys",
+    "self_repair_relation_signal_relation_types",
+    "self_repair_relation_marker_meaning_added",
+    "self_repair_relation_marker_gate_relaxed",
     "tone_engine_version",
     "product_quality_tone_engine_version",
     "tone_policy",
@@ -449,6 +476,261 @@ def _repair_trace_v2_summary(repair_trace: list[Any], self_repair: Mapping[str, 
     }
 
 
+
+RELATION_DIAGNOSTIC_VERSION = "emlis.positive_recovery_relation_diagnostic.v1"
+RELATION_DIAGNOSTIC_STEP = "Step5_diagnostic_connection"
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _bool_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> bool:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in keys:
+            if key in source:
+                return bool(source.get(key))
+    return False
+
+
+def _int_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> int:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in keys:
+            if key in source and source.get(key) is not None:
+                return _safe_int(source.get(key), 0)
+    return 0
+
+
+def _list_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> list[str]:
+    values: list[Any] = []
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in keys:
+            if key not in source:
+                continue
+            item = source.get(key)
+            if isinstance(item, Mapping):
+                continue
+            if isinstance(item, (list, tuple, set)):
+                values.extend(item)
+            elif item is not None and not isinstance(item, bool):
+                values.append(item)
+    return _dedupe(values)
+
+
+def _first_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> str:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in keys:
+            item = _clean(source.get(key))
+            if item:
+                return item
+    return ""
+
+
+def _relation_report_sources(runtime_meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    sources: list[Mapping[str, Any]] = [_mapping_or_empty(runtime_meta)]
+    for key in ("surface_realizer", "surface_signature", "grounding_input", "complete_grounding_binding", "binding_meta"):
+        item = runtime_meta.get(key)
+        if isinstance(item, Mapping):
+            sources.append(item)
+            nested = item.get("relation_surface_report")
+            if isinstance(nested, Mapping):
+                sources.append(nested)
+    for key in ("self_repair", "self_repair_report_v2", "product_quality_self_repair"):
+        item = runtime_meta.get(key)
+        if isinstance(item, Mapping):
+            sources.append(item)
+            for nested_key in (
+                "self_repair_relation_signal",
+                "self_repair_relation_marker_signal",
+                "relation_marker_signal",
+                "relation_surface_report",
+            ):
+                nested = item.get(nested_key)
+                if isinstance(nested, Mapping):
+                    sources.append(nested)
+    for key in ("repair_trace_v2", "repair_trace", "complete_repair_trace"):
+        rows = runtime_meta.get(key)
+        if isinstance(rows, (list, tuple, set)):
+            for row in rows:
+                if isinstance(row, Mapping):
+                    sources.append(row)
+                    for nested_key in (
+                        "self_repair_relation_signal",
+                        "self_repair_relation_marker_signal",
+                        "relation_marker_signal",
+                    ):
+                        nested = row.get(nested_key)
+                        if isinstance(nested, Mapping):
+                            sources.append(nested)
+    return sources
+
+
+def _reader_gate_sources(gate_trace: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    reader_gate = gate_trace.get("reader") if isinstance(gate_trace, Mapping) else {}
+    sources: list[Mapping[str, Any]] = []
+    if isinstance(reader_gate, Mapping):
+        sources.append(reader_gate)
+        for key in ("diagnostics", "reader_relation_signal_meta"):
+            nested = reader_gate.get(key)
+            if isinstance(nested, Mapping):
+                sources.append(nested)
+    return sources
+
+
+def build_positive_recovery_relation_diagnostic(
+    *,
+    composer_candidate: Any = None,
+    gate_trace: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build Step5 relation-surface diagnostic meta without raw input text.
+
+    The output is additive and diagnostic-only. It does not change Reader,
+    Display, or public ``input_feedback.comment_text`` behavior.
+    """
+
+    runtime_meta = extract_complete_composer_runtime_meta(composer_candidate)
+    reader_sources = _reader_gate_sources(gate_trace)
+    runtime_sources = _relation_report_sources(runtime_meta)
+    all_sources = [*reader_sources, *runtime_sources]
+    reader_signal_detected = _bool_from_sources(
+        reader_sources,
+        "reader_relation_signal_detected",
+        "detected",
+    )
+    reader_signal_count = _int_from_sources(
+        reader_sources,
+        "reader_relation_signal_count",
+        "count",
+    )
+    reader_signal_keys = _list_from_sources(
+        reader_sources,
+        "reader_relation_signal_keys",
+        "keys",
+        "recovery_relation_signal_keys",
+        "generic_relation_signal_keys",
+    )
+    reader_signal_relation_types = _list_from_sources(
+        reader_sources,
+        "reader_relation_signal_relation_types",
+        "reader_relation_signal_relation_types",
+        "reader_relation_signal_relation_types",
+        "relation_types",
+    )
+    if not reader_signal_detected:
+        # In some service-only tests the Reader gate is not built; fall back to
+        # generated surface/self-repair meta while keeping the source visible.
+        reader_signal_detected = _bool_from_sources(runtime_sources, "reader_relation_signal_detected", "detected")
+        reader_signal_count = _int_from_sources(runtime_sources, "reader_relation_signal_count", "count")
+        reader_signal_keys = _list_from_sources(runtime_sources, "reader_relation_signal_keys", "keys")
+        reader_signal_relation_types = _list_from_sources(runtime_sources, "reader_relation_signal_relation_types", "relation_types")
+
+    marker_keys = _list_from_sources(
+        runtime_sources,
+        "self_repair_relation_marker_keys",
+        "self_repair_relation_marker_key",
+        "surface_relation_marker_keys",
+        "surface_relation_marker_key",
+        "relation_marker_key",
+    )
+    marker_signal_keys = _list_from_sources(
+        runtime_sources,
+        "self_repair_relation_marker_signal_keys",
+        "self_repair_relation_signal_keys",
+        "reader_relation_signal_keys",
+        "keys",
+    )
+    marker_relation_types = _list_from_sources(
+        runtime_sources,
+        "self_repair_relation_marker_signal_relation_types",
+        "self_repair_relation_signal_relation_types",
+        "reader_relation_signal_relation_types",
+        "relation_types",
+    )
+    marker_applied = bool(
+        _bool_from_sources(runtime_sources, "self_repair_relation_marker_applied")
+        or bool(marker_keys)
+    )
+    marker_count = _int_from_sources(runtime_sources, "self_repair_relation_marker_count")
+    if marker_applied and marker_count <= 0:
+        marker_count = len(marker_keys) or 1
+
+    reader_gate = gate_trace.get("reader") if isinstance(gate_trace, Mapping) else {}
+    reader_rejection_reasons = _dedupe(reader_gate.get("rejection_reasons") if isinstance(reader_gate, Mapping) else [])
+    expected_relation_types = _list_from_sources(
+        all_sources,
+        "expected_relation_types",
+        "reader_relation_signal_relation_types",
+        "relation_types",
+    )
+    if not expected_relation_types:
+        expected_relation_types = _dedupe(runtime_meta.get("relation_types") or runtime_meta.get("used_relation_ids") or [])
+
+    relation_surface_contract_version = (
+        _first_from_sources(all_sources, "relation_surface_contract_version", "contract_version")
+        or RELATION_SURFACE_CONTRACT_VERSION
+    )
+    surface_marker_keys = _list_from_sources(
+        runtime_sources,
+        "surface_relation_marker_keys",
+        "surface_relation_marker_key",
+        "relation_marker_key",
+    )
+    surface_recovery_aligned = _bool_from_sources(runtime_sources, "surface_recovery_relation_line_aligned")
+    diagnostic = {
+        "version": RELATION_DIAGNOSTIC_VERSION,
+        "target_step": RELATION_DIAGNOSTIC_STEP,
+        "step": RELATION_DIAGNOSTIC_STEP,
+        "diagnostic_connected": True,
+        "relation_surface_contract_version": relation_surface_contract_version,
+        "reader_relation_signal_detected": bool(reader_signal_detected),
+        "reader_relation_signal_count": int(reader_signal_count or 0),
+        "reader_relation_signal_keys": list(reader_signal_keys),
+        "reader_relation_signal_relation_types": list(reader_signal_relation_types),
+        "expected_relation_types": list(expected_relation_types),
+        "reader_gate_relation_not_expressed": "relation_not_expressed" in reader_rejection_reasons,
+        "reader_rejection_reasons": list(reader_rejection_reasons),
+        "surface_recovery_relation_line_aligned": bool(surface_recovery_aligned),
+        "surface_relation_marker_key": surface_marker_keys[0] if surface_marker_keys else "",
+        "surface_relation_marker_keys": list(surface_marker_keys),
+        "self_repair_relation_marker_applied": bool(marker_applied),
+        "self_repair_relation_marker_key": marker_keys[0] if marker_keys else "",
+        "self_repair_relation_marker_keys": list(marker_keys),
+        "self_repair_relation_marker_count": int(marker_count or 0),
+        "self_repair_relation_marker_signal_detected": bool(
+            _bool_from_sources(runtime_sources, "self_repair_relation_marker_signal_detected", "self_repair_relation_signal_detected", "reader_relation_signal_detected", "detected")
+            or bool(marker_signal_keys)
+        ),
+        "self_repair_relation_marker_signal_count": int(
+            _int_from_sources(runtime_sources, "self_repair_relation_marker_signal_count", "self_repair_relation_signal_count", "reader_relation_signal_count", "count")
+            or len(marker_signal_keys)
+        ),
+        "self_repair_relation_marker_signal_keys": list(marker_signal_keys),
+        "self_repair_relation_marker_signal_relation_types": list(marker_relation_types),
+        "self_repair_relation_marker_meaning_added": bool(_bool_from_sources(runtime_sources, "self_repair_relation_marker_meaning_added", "meaning_added", "new_meaning_added")),
+        "self_repair_relation_marker_gate_relaxed": bool(_bool_from_sources(runtime_sources, "self_repair_relation_marker_gate_relaxed", "gate_relaxed")),
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+        "reader_gate_relaxed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+    }
+    return diagnostic
+
+
 def build_complete_reply_diagnostics_contract_meta() -> dict[str, Any]:
     term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
     return {
@@ -684,6 +966,10 @@ def build_complete_reply_service_diagnostics(
         resolution_meta=resolution_meta,
         diagnostic_summary=diagnostic_summary,
     )
+    relation_diagnostic = build_positive_recovery_relation_diagnostic(
+        composer_candidate=composer_candidate,
+        gate_trace=gate_trace,
+    )
     repair_trace_source = runtime_meta.get("repair_trace_v2") or runtime_meta.get("repair_trace")
     repair_trace = _as_list(repair_trace_source) if isinstance(repair_trace_source, (list, tuple, set)) else []
     self_repair = runtime_meta.get("self_repair_report_v2") if isinstance(runtime_meta.get("self_repair_report_v2"), Mapping) else runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
@@ -736,6 +1022,23 @@ def build_complete_reply_service_diagnostics(
         "complete_composer_initial_meta": runtime_meta,
         "complete_repair_trace": repair_trace,
         "repair_trace": repair_trace,
+        "positive_recovery_relation_diagnostic": relation_diagnostic,
+        "relation_surface_diagnostic": relation_diagnostic,
+        "step5_relation_diagnostic": relation_diagnostic,
+        "relation_surface_contract_version": relation_diagnostic["relation_surface_contract_version"],
+        "reader_relation_signal_detected": relation_diagnostic["reader_relation_signal_detected"],
+        "reader_relation_signal_count": relation_diagnostic["reader_relation_signal_count"],
+        "reader_relation_signal_keys": relation_diagnostic["reader_relation_signal_keys"],
+        "reader_relation_signal_relation_types": relation_diagnostic["reader_relation_signal_relation_types"],
+        "expected_relation_types": relation_diagnostic["expected_relation_types"],
+        "self_repair_relation_marker_applied": relation_diagnostic["self_repair_relation_marker_applied"],
+        "self_repair_relation_marker_key": relation_diagnostic["self_repair_relation_marker_key"],
+        "self_repair_relation_marker_keys": relation_diagnostic["self_repair_relation_marker_keys"],
+        "self_repair_relation_marker_count": relation_diagnostic["self_repair_relation_marker_count"],
+        "self_repair_relation_marker_signal_detected": relation_diagnostic["self_repair_relation_marker_signal_detected"],
+        "self_repair_relation_marker_signal_keys": relation_diagnostic["self_repair_relation_marker_signal_keys"],
+        "self_repair_relation_marker_meaning_added": relation_diagnostic["self_repair_relation_marker_meaning_added"],
+        "self_repair_relation_marker_gate_relaxed": relation_diagnostic["self_repair_relation_marker_gate_relaxed"],
         "repair_trace_v2_summary": repair_trace_v2,
         "repair_trace_v2_count": repair_trace_v2["repair_trace_v2_count"],
         "repair_meaning_added_count": repair_trace_v2["repair_meaning_added_count"],
@@ -798,6 +1101,34 @@ def attach_complete_reply_service_diagnostics(
     diagnostic_summary["complete_composer_scorecard_event"] = scorecard_event
     diagnostic_summary["scorecard_event"] = scorecard_event
 
+    relation_diagnostic = dict(
+        diagnostics.get("positive_recovery_relation_diagnostic")
+        or diagnostics.get("relation_surface_diagnostic")
+        or {}
+    )
+    if relation_diagnostic:
+        diagnostic_summary["step5_relation_diagnostic"] = relation_diagnostic
+        diagnostic_summary["positive_recovery_relation_diagnostic"] = relation_diagnostic
+        diagnostic_summary["relation_surface_diagnostic"] = relation_diagnostic
+        for key in (
+            "relation_surface_contract_version",
+            "reader_relation_signal_detected",
+            "reader_relation_signal_count",
+            "reader_relation_signal_keys",
+            "reader_relation_signal_relation_types",
+            "expected_relation_types",
+            "self_repair_relation_marker_applied",
+            "self_repair_relation_marker_key",
+            "self_repair_relation_marker_keys",
+            "self_repair_relation_marker_count",
+            "self_repair_relation_marker_signal_detected",
+            "self_repair_relation_marker_signal_keys",
+            "self_repair_relation_marker_meaning_added",
+            "self_repair_relation_marker_gate_relaxed",
+        ):
+            if key in relation_diagnostic:
+                diagnostic_summary[key] = relation_diagnostic[key]
+
     phase_gate["step11_reply_service_diagnostics_ready"] = bool(diagnostics.get("complete_reply_service_diagnostics_added"))
     phase_gate["step11_complete_meta_connected"] = bool(diagnostics.get("complete_meta_connected"))
     phase_gate["step11_repair_trace_connected"] = bool(diagnostics.get("repair_trace_connected"))
@@ -805,6 +1136,11 @@ def attach_complete_reply_service_diagnostics(
     phase_gate["step11_passed_only_preserved"] = bool(diagnostics.get("passed_only_preserved"))
     phase_gate["step11_response_shape_changed"] = bool(diagnostics.get("response_shape_changed"))
     phase_gate["step11_public_response_key_change"] = bool(diagnostics.get("public_response_key_change"))
+    if relation_diagnostic:
+        phase_gate["step5_relation_diagnostic_connected"] = bool(relation_diagnostic.get("diagnostic_connected"))
+        phase_gate["step5_reader_relation_signal_detected"] = bool(relation_diagnostic.get("reader_relation_signal_detected"))
+        phase_gate["step5_self_repair_relation_marker_applied"] = bool(relation_diagnostic.get("self_repair_relation_marker_applied"))
+        phase_gate["step5_relation_diagnostic_raw_input_included"] = bool(relation_diagnostic.get("raw_input_included"))
 
 
 __all__ = [
@@ -817,5 +1153,6 @@ __all__ = [
     "build_complete_reply_diagnostics_contract_meta",
     "build_complete_reply_service_diagnostics",
     "build_complete_scorecard_event",
+    "build_positive_recovery_relation_diagnostic",
     "extract_complete_composer_runtime_meta",
 ]
