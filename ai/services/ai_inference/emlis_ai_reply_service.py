@@ -91,6 +91,7 @@ _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
 
 _COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION = "emlis.complete_product_quality_connection.v1"
 _BINDING_DECISION_GATES = {"grounding", "display"}
+_OBSERVATION_DIAGNOSTIC_LOCKDOWN_REPLY_META_VERSION = "emlis.observation_diagnostic_lockdown.reply_meta.v1"
 
 
 _EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
@@ -1092,6 +1093,228 @@ def _as_meta_dict(value: Any) -> Dict[str, Any]:
         except Exception:
             return {}
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _candidate_meta_value(composer_candidate: Any, key: str, default: Any = "") -> Any:
+    if isinstance(composer_candidate, dict):
+        return composer_candidate.get(key, default)
+    return getattr(composer_candidate, key, default)
+
+
+def _composer_candidate_meta_dict(composer_candidate: Any) -> Dict[str, Any]:
+    meta = _candidate_meta_value(composer_candidate, "composer_meta", {})
+    return dict(meta or {}) if isinstance(meta, dict) else {}
+
+
+def _step3_int(value: Any, default: int = 0) -> int:
+    try:
+        if isinstance(value, bool):
+            return int(value)
+        return int(value)
+    except Exception:
+        return default
+
+
+def _build_observation_diagnostic_lockdown_reply_meta(
+    *,
+    trace_id: str,
+    display_decision: Any,
+    composer_candidate: Any,
+    diagnostic_summary: Dict[str, Any],
+    complete_reply_diagnostics: Dict[str, Any],
+    complete_scorecard_event: Dict[str, Any],
+    complete_repair_trace: List[Any],
+) -> Dict[str, Any]:
+    """Build Step3 additive reply meta for submit-level diagnostics.
+
+    This meta intentionally contains only ids, counts, booleans, status values,
+    and reason codes.  It does not add public response keys, does not relax any
+    gate, and does not copy raw input or public comment text.
+    """
+
+    candidate_meta = _composer_candidate_meta_dict(composer_candidate)
+    runtime_meta = dict(
+        complete_reply_diagnostics.get("complete_runtime_meta")
+        or complete_reply_diagnostics.get("complete_composer_initial_meta")
+        or complete_reply_diagnostics.get("complete_composer_meta")
+        or {}
+    ) if isinstance(complete_reply_diagnostics, dict) else {}
+    self_repair = dict(complete_reply_diagnostics.get("self_repair") or {}) if isinstance(complete_reply_diagnostics.get("self_repair"), dict) else {}
+    display_rejection_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
+    composer_status = str(
+        _candidate_meta_value(composer_candidate, "status", "")
+        or complete_reply_diagnostics.get("composer_status")
+        or complete_scorecard_event.get("composer_status")
+        or diagnostic_summary.get("composer_status")
+        or ""
+    )
+    composer_source = str(
+        _candidate_meta_value(composer_candidate, "composer_source", "")
+        or complete_reply_diagnostics.get("composer_source")
+        or complete_scorecard_event.get("composer_source")
+        or diagnostic_summary.get("composer_source")
+        or ""
+    )
+    candidate_generated = bool(
+        complete_reply_diagnostics.get("complete_candidate_generated")
+        or complete_scorecard_event.get("complete_candidate_generated")
+        or (composer_status == "generated" and composer_source == "ai_generated")
+    )
+    candidate_seen = bool(
+        complete_reply_diagnostics.get("complete_candidate_seen")
+        or complete_scorecard_event.get("complete_candidate_seen")
+        or composer_status
+        or candidate_generated
+    )
+    candidate_displayed = bool(
+        complete_reply_diagnostics.get("complete_candidate_displayed")
+        or complete_scorecard_event.get("complete_candidate_displayed")
+        or (str(getattr(display_decision, "observation_status", "") or "") == "passed" and candidate_seen)
+    )
+    used_evidence_span_ids = _dedupe_reason_codes(
+        _candidate_meta_value(composer_candidate, "used_evidence_span_ids", [])
+        or candidate_meta.get("used_evidence_span_ids")
+        or runtime_meta.get("used_evidence_span_ids")
+    )
+    used_phrase_unit_ids = _dedupe_reason_codes(
+        candidate_meta.get("used_phrase_unit_ids")
+        or runtime_meta.get("used_phrase_unit_ids")
+        or complete_reply_diagnostics.get("used_phrase_unit_ids")
+        or complete_scorecard_event.get("used_phrase_unit_ids")
+    )
+    relation_types = _dedupe_reason_codes(
+        _candidate_meta_value(composer_candidate, "used_relation_ids", [])
+        or candidate_meta.get("used_relation_ids")
+        or candidate_meta.get("relation_types")
+        or runtime_meta.get("used_relation_ids")
+        or runtime_meta.get("relation_types")
+        or complete_reply_diagnostics.get("relation_types")
+        or complete_scorecard_event.get("relation_types")
+    )
+    repair_trace_count = _step3_int(
+        complete_reply_diagnostics.get("repair_trace_count"),
+        len(complete_repair_trace or []),
+    )
+    repair_aborted_count = _step3_int(
+        complete_reply_diagnostics.get("repair_aborted_count")
+        or self_repair.get("repair_aborted_count")
+        or self_repair.get("aborted_count"),
+        0,
+    )
+    repair_abort_reasons = _dedupe_reason_codes(
+        complete_reply_diagnostics.get("repair_abort_reasons")
+        or self_repair.get("repair_abort_reasons")
+        or self_repair.get("abort_reasons")
+    )
+    repair_attempted = bool(
+        complete_reply_diagnostics.get("repair_attempted")
+        or repair_trace_count
+        or self_repair.get("repair_attempted")
+        or self_repair.get("attempted")
+    )
+    self_repair_status = str(
+        self_repair.get("status")
+        or ("aborted" if repair_aborted_count else "attempted" if repair_attempted else "not_attempted")
+    )
+
+    return {
+        "version": _OBSERVATION_DIAGNOSTIC_LOCKDOWN_REPLY_META_VERSION,
+        "ready": True,
+        "source": "reply_meta_step3",
+        "trace_id": str(trace_id or ""),
+        "observation_status": str(getattr(display_decision, "observation_status", "") or ""),
+        "comment_text_length": len(str(getattr(display_decision, "comment_text", "") or "").strip()),
+        "candidate_seen": candidate_seen,
+        "candidate_generated": candidate_generated,
+        "candidate_generated_before_display_gate": candidate_generated,
+        "candidate_displayed": candidate_displayed,
+        "candidate_status": composer_status,
+        "candidate_source": composer_source,
+        "composer_status": composer_status,
+        "composer_source": composer_source,
+        "display_rejection_reasons": display_rejection_reasons,
+        "used_evidence_span_count": len(used_evidence_span_ids),
+        "used_phrase_unit_count": len(used_phrase_unit_ids),
+        "used_relation_count": len(relation_types),
+        "used_phrase_unit_ids": used_phrase_unit_ids,
+        "relation_types": relation_types,
+        "repair_attempted": repair_attempted,
+        "self_repair_status": self_repair_status,
+        "repair_trace_count": repair_trace_count,
+        "repair_aborted_count": repair_aborted_count,
+        "repair_abort_reasons": repair_abort_reasons,
+        "gate_results_present": bool(diagnostic_summary.get("gate_results")),
+        "gate_results_extractable": bool(diagnostic_summary.get("gate_results")),
+        "repair_extractable": bool(
+            repair_attempted
+            or repair_trace_count
+            or repair_aborted_count
+            or repair_abort_reasons
+            or self_repair
+            or complete_repair_trace
+        ),
+        "complete_reply_service_diagnostics_present": bool(complete_reply_diagnostics),
+        "complete_reply_service_diagnostics_extractable": bool(complete_reply_diagnostics),
+        "scorecard_event_present": bool(complete_scorecard_event),
+        "scorecard_event_extractable": bool(complete_scorecard_event),
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+    }
+
+
+def _attach_observation_diagnostic_lockdown_reply_meta(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+    lockdown_meta: Dict[str, Any],
+) -> None:
+    """Attach Step3 diagnostic-lockdown aliases into existing meta only."""
+
+    diagnostic_summary["observation_diagnostic_lockdown_ready"] = True
+    diagnostic_summary["step3_observation_diagnostic_lockdown_ready"] = True
+    diagnostic_summary["observation_diagnostic_lockdown_meta"] = lockdown_meta
+    diagnostic_summary["observation_diagnostic_lockdown"] = lockdown_meta
+    diagnostic_summary["gate_results_extractable_for_observation_diagnostic"] = bool(
+        lockdown_meta.get("gate_results_extractable") or lockdown_meta.get("gate_results_present")
+    )
+    diagnostic_summary["repair_extractable_for_observation_diagnostic"] = bool(lockdown_meta.get("repair_extractable"))
+    diagnostic_summary["candidate_seen_before_display_gate"] = bool(lockdown_meta.get("candidate_seen"))
+    diagnostic_summary["complete_candidate_seen_before_display_gate"] = bool(lockdown_meta.get("candidate_seen"))
+    diagnostic_summary["candidate_status_before_display_gate"] = str(lockdown_meta.get("candidate_status") or "")
+    diagnostic_summary["candidate_source_before_display_gate"] = str(lockdown_meta.get("candidate_source") or "")
+    diagnostic_summary["candidate_generated_before_display_gate"] = bool(lockdown_meta.get("candidate_generated_before_display_gate"))
+    diagnostic_summary["complete_candidate_generated_before_display_gate"] = bool(lockdown_meta.get("candidate_generated_before_display_gate"))
+    diagnostic_summary["complete_candidate_seen"] = bool(lockdown_meta.get("candidate_seen"))
+    diagnostic_summary["complete_candidate_generated"] = bool(lockdown_meta.get("candidate_generated"))
+    diagnostic_summary["complete_candidate_displayed"] = bool(lockdown_meta.get("candidate_displayed"))
+    diagnostic_summary["complete_candidate_status"] = str(lockdown_meta.get("candidate_status") or "")
+    diagnostic_summary["complete_candidate_source"] = str(lockdown_meta.get("candidate_source") or "")
+    diagnostic_summary["display_rejection_reasons"] = _dedupe_reason_codes(lockdown_meta.get("display_rejection_reasons") or [])
+    diagnostic_summary["used_phrase_unit_ids"] = _dedupe_reason_codes(lockdown_meta.get("used_phrase_unit_ids") or [])
+    diagnostic_summary["relation_types"] = _dedupe_reason_codes(lockdown_meta.get("relation_types") or [])
+    diagnostic_summary["used_phrase_unit_count"] = _step3_int(lockdown_meta.get("used_phrase_unit_count"), 0)
+    diagnostic_summary["used_relation_count"] = _step3_int(lockdown_meta.get("used_relation_count"), 0)
+    diagnostic_summary["self_repair_status"] = str(lockdown_meta.get("self_repair_status") or "")
+    diagnostic_summary["repair_trace_count"] = _step3_int(lockdown_meta.get("repair_trace_count"), 0)
+    diagnostic_summary["repair_aborted_count"] = _step3_int(lockdown_meta.get("repair_aborted_count"), 0)
+    diagnostic_summary["repair_abort_reasons"] = _dedupe_reason_codes(lockdown_meta.get("repair_abort_reasons") or [])
+
+    phase_gate_meta["step3_observation_diagnostic_lockdown_ready"] = True
+    phase_gate_meta["observation_diagnostic_lockdown_ready"] = True
+    phase_gate_meta["step3_candidate_generated_before_display_gate"] = bool(lockdown_meta.get("candidate_generated_before_display_gate"))
+    phase_gate_meta["candidate_generated_before_display_gate"] = bool(lockdown_meta.get("candidate_generated_before_display_gate"))
+    phase_gate_meta["gate_results_extractable_for_observation_diagnostic"] = bool(
+        lockdown_meta.get("gate_results_extractable") or lockdown_meta.get("gate_results_present")
+    )
+    phase_gate_meta["repair_extractable_for_observation_diagnostic"] = bool(lockdown_meta.get("repair_extractable"))
+    phase_gate_meta["step3_observation_diagnostic_lockdown_response_shape_changed"] = False
+    phase_gate_meta["step3_observation_diagnostic_lockdown_raw_input_included"] = False
+    phase_gate_meta["step3_observation_diagnostic_lockdown_comment_text_included"] = False
 
 
 def _complete_initial_flag_seed(flag_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -3680,6 +3903,21 @@ def _multi_perspective_meta(
     diagnostic_summary["complete_composer_initial_scorecard_event"] = complete_scorecard_event
     diagnostic_summary["scorecard_event"] = complete_scorecard_event
 
+    observation_diagnostic_lockdown_meta = _build_observation_diagnostic_lockdown_reply_meta(
+        trace_id=trace_id,
+        display_decision=display_decision,
+        composer_candidate=composer_candidate,
+        diagnostic_summary=diagnostic_summary,
+        complete_reply_diagnostics=step11_complete_reply_diagnostics,
+        complete_scorecard_event=complete_scorecard_event,
+        complete_repair_trace=complete_repair_trace,
+    )
+    _attach_observation_diagnostic_lockdown_reply_meta(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+        lockdown_meta=observation_diagnostic_lockdown_meta,
+    )
+
     step12_complete_scorecard_harness = build_complete_scorecard_harness(
         scorecard_event=complete_scorecard_event,
         diagnostic_summary=diagnostic_summary,
@@ -3800,6 +4038,7 @@ def _multi_perspective_meta(
     phase_gate_meta["step7_product_quality_response_shape_changed"] = bool(step7_product_quality_release_ladder.get("response_shape_changed"))
     phase_gate_meta["step7_product_quality_display_gate_relaxed"] = bool(step7_product_quality_release_ladder.get("display_gate_relaxed"))
     phase_gate_meta["step7_product_quality_raw_input_included"] = bool(step7_product_quality_release_ladder.get("raw_input_included"))
+
 
     b_plan_connection_meta = (
         dict(diagnostic_summary.get("normal_connection") or diagnostic_summary.get("b_plan_connection") or {})

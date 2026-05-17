@@ -192,7 +192,17 @@ async def test_step11_runtime_meta_is_attached_without_breaking_passed_only_cont
     assert step11["response_shape_changed"] is False
     assert reply.meta["complete_composer_initial_scorecard_event"] == step11["scorecard_event"]
     assert diagnostic["complete_composer_initial_scorecard_event"] == step11["scorecard_event"]
+    assert diagnostic["observation_diagnostic_lockdown_ready"] is True
+    assert diagnostic["step3_observation_diagnostic_lockdown_ready"] is True
+    assert diagnostic["candidate_generated_before_display_gate"] == step11["complete_candidate_generated"]
+    assert diagnostic["complete_candidate_generated_before_display_gate"] == step11["complete_candidate_generated"]
+    assert diagnostic["observation_diagnostic_lockdown_meta"]["ready"] is True
+    assert diagnostic["observation_diagnostic_lockdown_meta"]["trace_id"] == reply.meta["observation_trace_id"]
+    assert diagnostic["observation_diagnostic_lockdown_meta"]["candidate_generated_before_display_gate"] == step11["complete_candidate_generated"]
+    assert diagnostic["observation_diagnostic_lockdown_meta"]["raw_input_included"] is False
+    assert diagnostic["observation_diagnostic_lockdown_meta"]["comment_text_included"] is False
     assert phase_gate["step11_complete_reply_service_diagnostics_ready"] is True
+    assert phase_gate["step3_observation_diagnostic_lockdown_ready"] is True
     assert phase_gate["complete_scorecard_event_connected"] is True
     assert phase_gate["complete_response_shape_changed"] is False
     assert reply.comment_text == "" or reply.meta["observation_status"] == "passed"

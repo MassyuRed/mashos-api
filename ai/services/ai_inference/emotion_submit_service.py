@@ -38,6 +38,10 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _start_post_submit_background_tasks,
 )
+from emlis_ai_observation_diagnostic_lockdown import (
+    build_observation_diagnostic_lockdown,
+    dump_observation_diagnostic,
+)
 from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
@@ -86,6 +90,25 @@ def _emlis_ai_observation_debug_logging_enabled() -> bool:
     return _emlis_ai_observation_result_log_enabled()
 
 
+def _emlis_ai_observation_diagnostic_lockdown_log_enabled() -> bool:
+    """Return whether submit-level structured observation diagnostics are enabled.
+
+    The lockdown log is opt-in, meta-only, and additive.  The legacy Step7
+    debug flags also enable it so local diagnosis can use one switch, while the
+    new explicit flags allow this structured log without the old free-form
+    ``emlis_observation_result`` line.
+    """
+    truthy = {"1", "true", "yes", "y", "on", "debug"}
+    for name in (
+        "EMLIS_AI_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED",
+        "COCOLON_EMLIS_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED",
+    ):
+        raw = os.getenv(name)
+        if raw is not None and str(raw).strip().lower() in truthy:
+            return True
+    return _emlis_ai_observation_result_log_enabled()
+
+
 def _extract_emlis_ai_diagnostic_summary(input_feedback_meta: Any) -> Dict[str, Any]:
     """Extract diagnostic_summary from reply meta without reading raw input."""
     if not isinstance(input_feedback_meta, dict):
@@ -129,6 +152,41 @@ def _log_emlis_ai_observation_result(
         if isinstance(diagnostic_summary, dict)
         else "",
     )
+
+
+def _log_emlis_ai_observation_diagnostic_lockdown(
+    *,
+    input_feedback_comment: str,
+    input_feedback_meta: Dict[str, Any],
+    emotion_log_id: str,
+    created_at: str,
+) -> None:
+    """Emit the Step2 submit-level structured diagnostic line.
+
+    This is a diagnostic-only side effect.  It must never block emotion submit
+    persistence and must never expose raw input or public comment text.
+    """
+    if not _emlis_ai_observation_diagnostic_lockdown_log_enabled():
+        return
+
+    try:
+        lockdown = build_observation_diagnostic_lockdown(
+            input_feedback_comment=input_feedback_comment,
+            input_feedback_meta=(
+                input_feedback_meta if isinstance(input_feedback_meta, dict) else {}
+            ),
+            emotion_log_id=str(emotion_log_id or ""),
+            created_at=str(created_at or ""),
+        )
+        logger.info(
+            "emlis_observation_diagnostic_lockdown %s",
+            dump_observation_diagnostic(lockdown),
+        )
+    except Exception as exc:
+        logger.warning(
+            "emlis_observation_diagnostic_lockdown_failed error_type=%s",
+            type(exc).__name__,
+        )
 
 
 def _log_emlis_ai_reply_failure(exc: Exception) -> None:
@@ -313,6 +371,15 @@ async def persist_emotion_submission(
             "used_memory_layers": ["canonical_history"],
             "fallback_used": False,
         }
+
+    _log_emlis_ai_observation_diagnostic_lockdown(
+        input_feedback_comment=input_feedback_comment,
+        input_feedback_meta=input_feedback_meta,
+        emotion_log_id=str(inserted.get("id") or ""),
+        created_at=str(
+            inserted.get("created_at", effective_created_at) or effective_created_at
+        ),
+    )
 
     return {
         "inserted": inserted,

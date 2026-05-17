@@ -780,6 +780,7 @@ def build_complete_scorecard_event(
     candidate_seen = bool(_is_complete_candidate(composer_candidate))
     composer_status = _clean(_candidate_attr(composer_candidate, "status", ""))
     composer_source = _clean(_candidate_attr(composer_candidate, "composer_source", ""))
+    candidate_generated = bool(composer_status == "generated" and composer_source == "ai_generated")
     used_evidence = _dedupe(_candidate_attr(composer_candidate, "used_evidence_span_ids", []) or runtime_meta.get("used_evidence_span_ids") or [])
     used_phrase = _dedupe(runtime_meta.get("used_phrase_unit_ids") or [])
     used_relations = _dedupe(_candidate_attr(composer_candidate, "used_relation_ids", []) or runtime_meta.get("used_relation_ids") or runtime_meta.get("relation_types") or [])
@@ -848,7 +849,11 @@ def build_complete_scorecard_event(
         "scorecard_event_connected": True,
         "scorecard_event_only": True,
         "complete_candidate_seen": candidate_seen,
-        "complete_candidate_generated": bool(composer_status == "generated" and composer_source == "ai_generated"),
+        "complete_candidate_generated": candidate_generated,
+        "candidate_generated_before_display_gate": candidate_generated,
+        "complete_candidate_generated_before_display_gate": candidate_generated,
+        "candidate_seen_before_display_gate": candidate_seen,
+        "complete_candidate_seen_before_display_gate": candidate_seen,
         "complete_candidate_displayed": bool(display_passed and candidate_seen),
         "eligible_count": 1 if candidate_seen else 0,
         "passed_display_count": 1 if display_passed and candidate_seen else 0,
@@ -992,6 +997,7 @@ def build_complete_reply_service_diagnostics(
     }
     composer_status = _clean(_candidate_attr(composer_candidate, "status", ""))
     composer_source = _clean(_candidate_attr(composer_candidate, "composer_source", ""))
+    candidate_generated = bool(composer_status == "generated" and composer_source == "ai_generated")
     observation_status = _clean(_candidate_attr(display_decision, "observation_status", ""))
     return {
         **contract,
@@ -1003,7 +1009,11 @@ def build_complete_reply_service_diagnostics(
         "complete_reply_service_integrated": True,
         "complete_meta_connected": bool(runtime_meta),
         "complete_candidate_seen": candidate_seen,
-        "complete_candidate_generated": bool(composer_status == "generated" and composer_source == "ai_generated"),
+        "complete_candidate_generated": candidate_generated,
+        "candidate_generated_before_display_gate": candidate_generated,
+        "complete_candidate_generated_before_display_gate": candidate_generated,
+        "candidate_seen_before_display_gate": candidate_seen,
+        "complete_candidate_seen_before_display_gate": candidate_seen,
         "complete_candidate_displayed": bool(observation_status == "passed" and candidate_seen),
         "composer_status": composer_status,
         "composer_source": composer_source,
