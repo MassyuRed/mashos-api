@@ -4,11 +4,12 @@ from __future__ import annotations
 """Top-level orchestration for EmlisAI reply rendering."""
 
 from copy import deepcopy
+import inspect
 from dataclasses import asdict, is_dataclass
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 from uuid import uuid4
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
@@ -77,6 +78,8 @@ from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_p
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
 from emlis_ai_listener_reader_judge import judge_listener_readability
+from emlis_ai_limited_relation_taxonomy import allowed_relation_types, canonical_relation_type
+from emlis_ai_relation_surface_contract import normalize_relation_surface_type
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_template_echo_guard import guard_template_echo
 from emlis_ai_display_gate import GATE_BINDING_CONTRACT_VERSION, build_emlis_gate_trace, build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
@@ -208,6 +211,176 @@ def _evidence_ids_from_observation_graph(graph: Any) -> List[str]:
             add(getattr(claim, "evidence_span_ids", []) or [])
     for edge in list(getattr(graph, "core_tensions", []) or []):
         add(getattr(edge, "evidence_span_ids", []) or [])
+    return out
+
+
+_EXPECTED_RELATION_TYPE_ALLOWED = frozenset(
+    {
+        *allowed_relation_types(),
+        "generic",
+        "recovery",
+        "positive_recovery",
+        "recovering",
+        "small_recovery",
+        "contrast",
+        "coexistence",
+        "pressure",
+        "approach_avoidance",
+        "residue",
+        "limit",
+        "context",
+        "center",
+        "conflict",
+        "relationship",
+        "desire_fear",
+        "long_meaning_arc",
+    }
+)
+_EXPECTED_RELATION_EDGE_ID_RE = re.compile(r"(?:^|[._-])(?:e|edge|rel|relation)?\d+$")
+
+# Retry only when the previous failure reason can actually be consumed by the
+# selected Composer.  Display-phase reasons such as ``phase_not_complete`` are
+# not Composer repair inputs; sending them into the next attempt can make the
+# complete self-repair loop abort and overwrite a valid generated candidate with
+# an unavailable one.
+_COMPLETE_COMPOSER_RETRY_REASONS = frozenset(
+    {
+        "relation_not_expressed",
+        "unsupported_sentence",
+        "template_like",
+        "raw_echo",
+        "over_echo",
+        "too_long",
+        "overclaim",
+        "unsupported_overclaim",
+    }
+)
+_LIMITED_READER_RETRY_REASONS = frozenset({"addressee_not_clear", "relation_not_expressed"})
+
+
+def _as_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _iter_relation_values(value: Any) -> Iterable[Any]:
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes)):
+        return (value,)
+    if isinstance(value, Mapping):
+        return ()
+    if isinstance(value, Iterable):
+        return value
+    return (value,)
+
+
+def _normalize_expected_relation_type_for_reader(value: Any) -> str:
+    raw = re.sub(r"[^0-9a-zA-Z_\-.]+", "_", str(value or "").strip().lower()).strip("_")
+    if not raw or raw in {"unknown", "none", "null"}:
+        return ""
+    # Edge ids such as conflict.e1 are graph-local ids, not Reader surface
+    # relation types.  Passing them into Reader would mix routing ids with the
+    # relation surface contract.
+    if _EXPECTED_RELATION_EDGE_ID_RE.search(raw):
+        return ""
+    if raw.startswith(("edge_", "edge-", "relation_", "relation-", "rel_", "rel-")) and any(ch.isdigit() for ch in raw):
+        return ""
+
+    canonical = str(canonical_relation_type(raw) or raw).strip().lower()
+    normalized = str(normalize_relation_surface_type(canonical or raw) or "").strip().lower()
+    if normalized in {"", "unknown", "none", "null"}:
+        return ""
+    if raw in _EXPECTED_RELATION_TYPE_ALLOWED or canonical in _EXPECTED_RELATION_TYPE_ALLOWED or normalized in _EXPECTED_RELATION_TYPE_ALLOWED:
+        return normalized
+    return ""
+
+
+def _expected_relation_types_for_reader(composer_candidate: Any) -> List[str]:
+    """Extract Reader surface relation types from Composer candidate meta.
+
+    The Reader must receive relation surface types, not graph edge ids.  Keep the
+    extraction ordered from the strongest binding source to weaker supplemental
+    metadata, and drop ids such as ``conflict.e1``.
+    """
+
+    meta = _as_mapping(getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {})
+    out: List[str] = []
+
+    def add_one(value: Any) -> None:
+        relation_type = _normalize_expected_relation_type_for_reader(value)
+        if relation_type and relation_type not in out:
+            out.append(relation_type)
+
+    def add_many(values: Any) -> None:
+        for item in _iter_relation_values(values):
+            add_one(item)
+
+    # 1. sentence_binding_bundle.relation_types
+    for bundle_key in ("sentence_binding_bundle", "binding_bundle", "binding"):
+        bundle = _as_mapping(meta.get(bundle_key))
+        add_many(bundle.get("relation_types"))
+
+    # 2. sentence_bindings[*].relation_type
+    sentence_bindings: List[Any] = []
+    for bundle_key in ("sentence_binding_bundle", "binding_bundle", "binding"):
+        bundle = _as_mapping(meta.get(bundle_key))
+        for value in _iter_relation_values(bundle.get("bindings")):
+            sentence_bindings.append(value)
+    for value in _iter_relation_values(meta.get("sentence_bindings")):
+        sentence_bindings.append(value)
+    for binding in sentence_bindings:
+        if isinstance(binding, Mapping):
+            add_one(binding.get("relation_type") or binding.get("canonical_relation_type"))
+        else:
+            add_one(getattr(binding, "relation_type", "") or getattr(binding, "canonical_relation_type", ""))
+
+    # 3. composer_meta.relation_types
+    add_many(meta.get("relation_types"))
+    add_many(meta.get("canonical_relation_types"))
+
+    # 4. used_relation_ids are supplemental only; graph edge ids are excluded.
+    add_many(meta.get("used_relation_ids"))
+    add_many(getattr(composer_candidate, "used_relation_ids", []) if composer_candidate is not None else [])
+    return out
+
+
+def _reader_accepts_expected_relation_types() -> bool:
+    try:
+        signature = inspect.signature(judge_listener_readability)
+    except (TypeError, ValueError):
+        return True
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.name == "expected_relation_types":
+            return True
+    return False
+
+
+def _judge_listener_readability_for_reply(comment_text: Any, composer_candidate: Any) -> Any:
+    expected_relation_types = _expected_relation_types_for_reader(composer_candidate)
+    if _reader_accepts_expected_relation_types():
+        return judge_listener_readability(
+            comment_text,
+            expected_relation_types=expected_relation_types,
+        )
+    return judge_listener_readability(comment_text)
+
+
+def _composer_retry_reason_allowlist(composer_client: Any) -> frozenset[str]:
+    class_name = type(composer_client).__name__ if composer_client is not None else ""
+    if class_name == "CocolonCompleteComposerClient":
+        return _COMPLETE_COMPOSER_RETRY_REASONS
+    return _LIMITED_READER_RETRY_REASONS
+
+
+def _regeneration_reasons_for_retry(rejection_reasons: Iterable[Any], composer_client: Any) -> List[str]:
+    allowed = _composer_retry_reason_allowlist(composer_client)
+    out: List[str] = []
+    for raw in list(rejection_reasons or []):
+        reason = str(raw or "").strip()
+        if reason and reason in allowed and reason not in out:
+            out.append(reason)
     return out
 
 
@@ -1140,6 +1313,18 @@ def _build_observation_diagnostic_lockdown_reply_meta(
         or {}
     ) if isinstance(complete_reply_diagnostics, dict) else {}
     self_repair = dict(complete_reply_diagnostics.get("self_repair") or {}) if isinstance(complete_reply_diagnostics.get("self_repair"), dict) else {}
+    limited_reader_repair_diagnostic = (
+        dict(complete_reply_diagnostics.get("limited_reader_repair_diagnostic") or {})
+        if isinstance(complete_reply_diagnostics.get("limited_reader_repair_diagnostic"), dict)
+        else {}
+    )
+    limited_reader_repair = (
+        dict(complete_reply_diagnostics.get("limited_reader_repair") or {})
+        if isinstance(complete_reply_diagnostics.get("limited_reader_repair"), dict)
+        else dict(limited_reader_repair_diagnostic.get("limited_reader_repair") or {})
+        if isinstance(limited_reader_repair_diagnostic.get("limited_reader_repair"), dict)
+        else {}
+    )
     display_rejection_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
     composer_status = str(
         _candidate_meta_value(composer_candidate, "status", "")
@@ -1206,15 +1391,18 @@ def _build_observation_diagnostic_lockdown_reply_meta(
         or self_repair.get("repair_abort_reasons")
         or self_repair.get("abort_reasons")
     )
+    limited_repair_attempted = bool(limited_reader_repair_diagnostic.get("attempted") or limited_reader_repair.get("attempted"))
+    limited_repair_applied = bool(limited_reader_repair_diagnostic.get("applied") or limited_reader_repair.get("applied"))
     repair_attempted = bool(
         complete_reply_diagnostics.get("repair_attempted")
         or repair_trace_count
         or self_repair.get("repair_attempted")
         or self_repair.get("attempted")
+        or limited_repair_attempted
     )
     self_repair_status = str(
         self_repair.get("status")
-        or ("aborted" if repair_aborted_count else "attempted" if repair_attempted else "not_attempted")
+        or ("aborted" if repair_aborted_count else "limited_reader_repair_applied" if limited_repair_applied else "limited_reader_repair_attempted" if limited_repair_attempted else "attempted" if repair_attempted else "not_attempted")
     )
 
     return {
@@ -1238,6 +1426,16 @@ def _build_observation_diagnostic_lockdown_reply_meta(
         "used_relation_count": len(relation_types),
         "used_phrase_unit_ids": used_phrase_unit_ids,
         "relation_types": relation_types,
+        "limited_reader_repair": limited_reader_repair,
+        "limited_reader_repair_attempted": bool(limited_reader_repair_diagnostic.get("attempted") or limited_reader_repair.get("attempted")),
+        "limited_reader_repair_applied": bool(limited_reader_repair_diagnostic.get("applied") or limited_reader_repair.get("applied")),
+        "limited_reader_repair_operations": _dedupe_reason_codes(limited_reader_repair_diagnostic.get("operations") or limited_reader_repair.get("operations") or []),
+        "limited_reader_repair_relation_marker_key": str(limited_reader_repair_diagnostic.get("relation_marker_key") or limited_reader_repair.get("relation_marker_key") or ""),
+        "limited_reader_repair_relation_marker_signal_keys": _dedupe_reason_codes(limited_reader_repair_diagnostic.get("relation_marker_signal_keys") or limited_reader_repair.get("relation_marker_signal_keys") or []),
+        "limited_reader_repair_relation_type": str(limited_reader_repair_diagnostic.get("relation_type") or limited_reader_repair.get("relation_type") or ""),
+        "limited_reader_repair_meaning_added": bool(limited_reader_repair_diagnostic.get("meaning_added") or limited_reader_repair.get("meaning_added")),
+        "limited_reader_repair_gate_relaxed": bool(limited_reader_repair_diagnostic.get("gate_relaxed") or limited_reader_repair.get("gate_relaxed")),
+        "limited_reader_repair_raw_input_included": False,
         "repair_attempted": repair_attempted,
         "self_repair_status": self_repair_status,
         "repair_trace_count": repair_trace_count,
@@ -1252,6 +1450,7 @@ def _build_observation_diagnostic_lockdown_reply_meta(
             or repair_abort_reasons
             or self_repair
             or complete_repair_trace
+            or limited_reader_repair
         ),
         "complete_reply_service_diagnostics_present": bool(complete_reply_diagnostics),
         "complete_reply_service_diagnostics_extractable": bool(complete_reply_diagnostics),
@@ -1297,6 +1496,16 @@ def _attach_observation_diagnostic_lockdown_reply_meta(
     diagnostic_summary["display_rejection_reasons"] = _dedupe_reason_codes(lockdown_meta.get("display_rejection_reasons") or [])
     diagnostic_summary["used_phrase_unit_ids"] = _dedupe_reason_codes(lockdown_meta.get("used_phrase_unit_ids") or [])
     diagnostic_summary["relation_types"] = _dedupe_reason_codes(lockdown_meta.get("relation_types") or [])
+    diagnostic_summary["limited_reader_repair"] = dict(lockdown_meta.get("limited_reader_repair") or {}) if isinstance(lockdown_meta.get("limited_reader_repair"), dict) else {}
+    diagnostic_summary["limited_reader_repair_attempted"] = bool(lockdown_meta.get("limited_reader_repair_attempted"))
+    diagnostic_summary["limited_reader_repair_applied"] = bool(lockdown_meta.get("limited_reader_repair_applied"))
+    diagnostic_summary["limited_reader_repair_operations"] = _dedupe_reason_codes(lockdown_meta.get("limited_reader_repair_operations") or [])
+    diagnostic_summary["limited_reader_repair_relation_marker_key"] = str(lockdown_meta.get("limited_reader_repair_relation_marker_key") or "")
+    diagnostic_summary["limited_reader_repair_relation_marker_signal_keys"] = _dedupe_reason_codes(lockdown_meta.get("limited_reader_repair_relation_marker_signal_keys") or [])
+    diagnostic_summary["limited_reader_repair_relation_type"] = str(lockdown_meta.get("limited_reader_repair_relation_type") or "")
+    diagnostic_summary["limited_reader_repair_meaning_added"] = bool(lockdown_meta.get("limited_reader_repair_meaning_added"))
+    diagnostic_summary["limited_reader_repair_gate_relaxed"] = bool(lockdown_meta.get("limited_reader_repair_gate_relaxed"))
+    diagnostic_summary["limited_reader_repair_raw_input_included"] = False
     diagnostic_summary["used_phrase_unit_count"] = _step3_int(lockdown_meta.get("used_phrase_unit_count"), 0)
     diagnostic_summary["used_relation_count"] = _step3_int(lockdown_meta.get("used_relation_count"), 0)
     diagnostic_summary["self_repair_status"] = str(lockdown_meta.get("self_repair_status") or "")
@@ -1312,6 +1521,9 @@ def _attach_observation_diagnostic_lockdown_reply_meta(
         lockdown_meta.get("gate_results_extractable") or lockdown_meta.get("gate_results_present")
     )
     phase_gate_meta["repair_extractable_for_observation_diagnostic"] = bool(lockdown_meta.get("repair_extractable"))
+    phase_gate_meta["step7_limited_reader_repair_attempted"] = bool(lockdown_meta.get("limited_reader_repair_attempted"))
+    phase_gate_meta["step7_limited_reader_repair_applied"] = bool(lockdown_meta.get("limited_reader_repair_applied"))
+    phase_gate_meta["step7_limited_reader_repair_raw_input_included"] = False
     phase_gate_meta["step3_observation_diagnostic_lockdown_response_shape_changed"] = False
     phase_gate_meta["step3_observation_diagnostic_lockdown_raw_input_included"] = False
     phase_gate_meta["step3_observation_diagnostic_lockdown_comment_text_included"] = False
@@ -3866,6 +4078,9 @@ def _multi_perspective_meta(
     phase_gate_meta["step5_reader_relation_signal_detected"] = bool(step5_relation_diagnostic.get("reader_relation_signal_detected"))
     phase_gate_meta["step5_self_repair_relation_marker_applied"] = bool(step5_relation_diagnostic.get("self_repair_relation_marker_applied"))
     phase_gate_meta["step5_relation_diagnostic_raw_input_included"] = bool(step5_relation_diagnostic.get("raw_input_included"))
+    phase_gate_meta["step7_limited_reader_repair_attempted"] = bool(step5_relation_diagnostic.get("limited_reader_repair_attempted"))
+    phase_gate_meta["step7_limited_reader_repair_applied"] = bool(step5_relation_diagnostic.get("limited_reader_repair_applied"))
+    phase_gate_meta["step7_limited_reader_repair_raw_input_included"] = bool(step5_relation_diagnostic.get("limited_reader_repair_raw_input_included"))
     diagnostic_summary["step5_relation_diagnostic"] = step5_relation_diagnostic
     diagnostic_summary["positive_recovery_relation_diagnostic"] = step5_relation_diagnostic
     diagnostic_summary["relation_surface_diagnostic"] = step5_relation_diagnostic
@@ -3884,6 +4099,17 @@ def _multi_perspective_meta(
         "self_repair_relation_marker_signal_keys",
         "self_repair_relation_marker_meaning_added",
         "self_repair_relation_marker_gate_relaxed",
+        "limited_reader_repair_attempted",
+        "limited_reader_repair_applied",
+        "limited_reader_repair_requires_repair",
+        "limited_reader_repair_operations",
+        "limited_reader_repair_relation_marker_key",
+        "limited_reader_repair_relation_marker_signal_detected",
+        "limited_reader_repair_relation_marker_signal_keys",
+        "limited_reader_repair_relation_type",
+        "limited_reader_repair_meaning_added",
+        "limited_reader_repair_gate_relaxed",
+        "limited_reader_repair_raw_input_included",
     ):
         if _relation_key in step5_relation_diagnostic:
             diagnostic_summary[_relation_key] = step5_relation_diagnostic[_relation_key]
@@ -4433,7 +4659,12 @@ async def render_emlis_ai_reply(
         binding_meta=initial_binding_meta,
     )
 
-    max_attempts = 0 if safety_requires_block else (2 if resolved_composer_client is not None else 1)
+    complete_initial_default_client = bool(
+        getattr(composer_client_resolution, "default_client_used", False)
+        and resolved_composer_client is not None
+        and resolved_composer_client.__class__.__name__ == "CocolonCompleteComposerClient"
+    )
+    max_attempts = 0 if safety_requires_block else (1 if complete_initial_default_client else 2 if resolved_composer_client is not None else 1)
     regeneration_reasons: List[str] = []
     for attempt in range(1, max_attempts + 1):
         composer_candidate = compose_emlis_conversation_candidate(
@@ -4452,7 +4683,7 @@ async def render_emlis_ai_reply(
         )
         comment_text = "" if safety_requires_block else str(composer_candidate.comment_text or "").strip()
         composer_source = "" if safety_requires_block else str(composer_candidate.composer_source or "")
-        reader_report = judge_listener_readability(comment_text)
+        reader_report = _judge_listener_readability_for_reply(comment_text, composer_candidate)
         composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
         grounding_report = judge_grounding(
             comment_text=comment_text,
@@ -4506,7 +4737,13 @@ async def render_emlis_ai_reply(
             break
         if resolved_composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
             break
-        regeneration_reasons = list(display_decision.rejection_reasons or [])
+        next_regeneration_reasons = _regeneration_reasons_for_retry(
+            display_decision.rejection_reasons or [],
+            resolved_composer_client,
+        )
+        if not next_regeneration_reasons:
+            break
+        regeneration_reasons = next_regeneration_reasons
 
     # No fixed fallback. The display gate is fail-closed.
     final_text = str(display_decision.comment_text or "").strip()

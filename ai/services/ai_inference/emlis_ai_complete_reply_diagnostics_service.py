@@ -51,6 +51,8 @@ _TEXT_PAYLOAD_KEYS = {
     "reply_text",
     "summary_of_output",
     "matched_raw_quote_fragments",
+    "relation_marker_phrase",
+    "marker_phrase",
 }
 
 _SAFE_META_KEYS = (
@@ -125,6 +127,16 @@ _SAFE_META_KEYS = (
     "self_repair",
     "self_repair_report_v2",
     "product_quality_self_repair",
+    "limited_reader_repair",
+    "limited_reader_repair_step3",
+    "limited_reader_repair_step4",
+    "limited_reader_repair_step5",
+    "limited_reader_repair_diagnostic",
+    "limited_reader_repair_attempted",
+    "limited_reader_repair_applied",
+    "limited_reader_repair_relation_marker_key",
+    "limited_reader_repair_relation_marker_signal_keys",
+    "limited_reader_repair_relation_type",
     "repair_trace",
     "repair_trace_v2",
     "complete_composer_candidate",
@@ -479,6 +491,7 @@ def _repair_trace_v2_summary(repair_trace: list[Any], self_repair: Mapping[str, 
 
 RELATION_DIAGNOSTIC_VERSION = "emlis.positive_recovery_relation_diagnostic.v1"
 RELATION_DIAGNOSTIC_STEP = "Step5_diagnostic_connection"
+LIMITED_READER_REPAIR_DIAGNOSTIC_VERSION = "emlis.limited_reader_repair_diagnostic.v1"
 
 
 def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
@@ -534,8 +547,146 @@ def _first_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> str
     return ""
 
 
+_LIMITED_READER_REPAIR_SOURCE_KEYS = (
+    "limited_reader_repair",
+    "limited_reader_repair_step3",
+    "limited_reader_repair_step4",
+    "limited_reader_repair_step5",
+)
+
+_LIMITED_READER_REPAIR_SAFE_KEYS = (
+    "version",
+    "target_step",
+    "attempted",
+    "applied",
+    "previous_rejection_reasons",
+    "reader_rejection_reasons",
+    "repair_required_reasons",
+    "requires_limited_reader_repair",
+    "addressee_repair_required",
+    "relation_surface_repair_required",
+    "addressee_repaired",
+    "relation_surface_repaired",
+    "addressee_repair_step",
+    "relation_surface_repair_step",
+    "relation_type",
+    "relation_marker_key",
+    "relation_marker_signal_detected",
+    "relation_marker_signal_keys",
+    "relation_marker_signal_relation_types",
+    "relation_surface_contract_version",
+    "operations",
+    "pending_operations",
+    "reason_source",
+    "comment_text_changed",
+    "meaning_added",
+    "gate_relaxed",
+    "raw_input_included",
+    "complete_client_self_repair_touched",
+    "coverage_scope",
+    "profile_key",
+)
+
+
+def _limited_reader_repair_sources(runtime_meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Return limited/A1 reader-repair meta sources without raw text."""
+
+    sources: list[Mapping[str, Any]] = []
+    if not isinstance(runtime_meta, Mapping):
+        return sources
+    for key in _LIMITED_READER_REPAIR_SOURCE_KEYS:
+        item = runtime_meta.get(key)
+        if isinstance(item, Mapping):
+            sources.append(item)
+    diagnostic = runtime_meta.get("composer_diagnostic")
+    if isinstance(diagnostic, Mapping):
+        item = diagnostic.get("limited_reader_repair")
+        if isinstance(item, Mapping):
+            sources.append(item)
+    return sources
+
+
+def _safe_limited_reader_repair_meta(runtime_meta: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract whitelisted limited repair meta for diagnostics only.
+
+    The adapter meta is useful for diagnosing Reader repair, but the structured
+    diagnostic must never include comment text, raw input, or marker phrases.
+    """
+
+    merged: dict[str, Any] = {}
+    for source in _limited_reader_repair_sources(runtime_meta):
+        merged.update(dict(source))
+    if not merged:
+        return {}
+
+    safe: dict[str, Any] = {}
+    for key in _LIMITED_READER_REPAIR_SAFE_KEYS:
+        if key not in merged:
+            continue
+        safe_item = _json_safe(merged.get(key))
+        if safe_item is not None:
+            safe[key] = safe_item
+    safe.setdefault("version", "limited_reader_repair.v1")
+    safe["attempted"] = bool(safe.get("attempted"))
+    safe["applied"] = bool(safe.get("applied"))
+    safe["meaning_added"] = bool(safe.get("meaning_added"))
+    safe["gate_relaxed"] = bool(safe.get("gate_relaxed"))
+    safe["raw_input_included"] = False
+    safe["comment_text_included"] = False
+    return safe
+
+
+def _build_limited_reader_repair_diagnostic(runtime_meta: Mapping[str, Any]) -> dict[str, Any]:
+    repair_meta = _safe_limited_reader_repair_meta(runtime_meta)
+    if not repair_meta:
+        return {}
+
+    relation_marker_key = _clean(repair_meta.get("relation_marker_key"))
+    relation_marker_signal_keys = _dedupe(repair_meta.get("relation_marker_signal_keys"))
+    relation_marker_signal_relation_types = _dedupe(
+        repair_meta.get("relation_marker_signal_relation_types") or repair_meta.get("relation_type")
+    )
+    relation_type = _clean(repair_meta.get("relation_type"))
+    if relation_type and relation_type not in relation_marker_signal_relation_types:
+        relation_marker_signal_relation_types.insert(0, relation_type)
+
+    return {
+        "version": LIMITED_READER_REPAIR_DIAGNOSTIC_VERSION,
+        "target_step": "Step7_limited_reader_repair_diagnostic_meta",
+        "diagnostic_connected": True,
+        "attempted": bool(repair_meta.get("attempted")),
+        "applied": bool(repair_meta.get("applied")),
+        "requires_limited_reader_repair": bool(repair_meta.get("requires_limited_reader_repair")),
+        "previous_rejection_reasons": _dedupe(repair_meta.get("previous_rejection_reasons")),
+        "reader_rejection_reasons": _dedupe(repair_meta.get("reader_rejection_reasons")),
+        "operations": _dedupe(repair_meta.get("operations")),
+        "pending_operations": _dedupe(repair_meta.get("pending_operations")),
+        "addressee_repaired": bool(repair_meta.get("addressee_repaired")),
+        "relation_surface_repaired": bool(repair_meta.get("relation_surface_repaired")),
+        "relation_marker_key": relation_marker_key,
+        "relation_marker_signal_detected": bool(repair_meta.get("relation_marker_signal_detected")) or bool(relation_marker_signal_keys),
+        "relation_marker_signal_keys": list(relation_marker_signal_keys),
+        "relation_marker_signal_relation_types": list(relation_marker_signal_relation_types),
+        "relation_type": relation_type,
+        "relation_surface_contract_version": _clean(repair_meta.get("relation_surface_contract_version")),
+        "comment_text_changed": bool(repair_meta.get("comment_text_changed")),
+        "meaning_added": bool(repair_meta.get("meaning_added")),
+        "gate_relaxed": bool(repair_meta.get("gate_relaxed")),
+        "complete_client_self_repair_touched": bool(repair_meta.get("complete_client_self_repair_touched")),
+        "limited_reader_repair": repair_meta,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+    }
+
+
 def _relation_report_sources(runtime_meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     sources: list[Mapping[str, Any]] = [_mapping_or_empty(runtime_meta)]
+    sources.extend(_limited_reader_repair_sources(runtime_meta))
     for key in ("surface_realizer", "surface_signature", "grounding_input", "complete_grounding_binding", "binding_meta"):
         item = runtime_meta.get(key)
         if isinstance(item, Mapping):
@@ -597,6 +748,7 @@ def build_positive_recovery_relation_diagnostic(
     """
 
     runtime_meta = extract_complete_composer_runtime_meta(composer_candidate)
+    limited_reader_repair_diagnostic = _build_limited_reader_repair_diagnostic(runtime_meta)
     reader_sources = _reader_gate_sources(gate_trace)
     runtime_sources = _relation_report_sources(runtime_meta)
     all_sources = [*reader_sources, *runtime_sources]
@@ -697,6 +849,19 @@ def build_positive_recovery_relation_diagnostic(
         "expected_relation_types": list(expected_relation_types),
         "reader_gate_relation_not_expressed": "relation_not_expressed" in reader_rejection_reasons,
         "reader_rejection_reasons": list(reader_rejection_reasons),
+        "limited_reader_repair_diagnostic": limited_reader_repair_diagnostic,
+        "limited_reader_repair": dict(limited_reader_repair_diagnostic.get("limited_reader_repair") or {}),
+        "limited_reader_repair_attempted": bool(limited_reader_repair_diagnostic.get("attempted")),
+        "limited_reader_repair_applied": bool(limited_reader_repair_diagnostic.get("applied")),
+        "limited_reader_repair_requires_repair": bool(limited_reader_repair_diagnostic.get("requires_limited_reader_repair")),
+        "limited_reader_repair_operations": list(limited_reader_repair_diagnostic.get("operations") or []),
+        "limited_reader_repair_relation_marker_key": _clean(limited_reader_repair_diagnostic.get("relation_marker_key")),
+        "limited_reader_repair_relation_marker_signal_detected": bool(limited_reader_repair_diagnostic.get("relation_marker_signal_detected")),
+        "limited_reader_repair_relation_marker_signal_keys": list(limited_reader_repair_diagnostic.get("relation_marker_signal_keys") or []),
+        "limited_reader_repair_relation_type": _clean(limited_reader_repair_diagnostic.get("relation_type")),
+        "limited_reader_repair_meaning_added": bool(limited_reader_repair_diagnostic.get("meaning_added")),
+        "limited_reader_repair_gate_relaxed": bool(limited_reader_repair_diagnostic.get("gate_relaxed")),
+        "limited_reader_repair_raw_input_included": False,
         "surface_recovery_relation_line_aligned": bool(surface_recovery_aligned),
         "surface_relation_marker_key": surface_marker_keys[0] if surface_marker_keys else "",
         "surface_relation_marker_keys": list(surface_marker_keys),
@@ -762,6 +927,7 @@ def build_complete_reply_diagnostics_contract_meta() -> dict[str, Any]:
         "local_llm_allowed": False,
         "fixed_sentence_template_allowed": False,
         "raw_input_included": False,
+        "comment_text_included": False,
         "raw_input_required_for_improvement": False,
     }
 
@@ -975,6 +1141,8 @@ def build_complete_reply_service_diagnostics(
         composer_candidate=composer_candidate,
         gate_trace=gate_trace,
     )
+    limited_reader_repair_diagnostic = dict(relation_diagnostic.get("limited_reader_repair_diagnostic") or {})
+    limited_reader_repair = dict(limited_reader_repair_diagnostic.get("limited_reader_repair") or {})
     repair_trace_source = runtime_meta.get("repair_trace_v2") or runtime_meta.get("repair_trace")
     repair_trace = _as_list(repair_trace_source) if isinstance(repair_trace_source, (list, tuple, set)) else []
     self_repair = runtime_meta.get("self_repair_report_v2") if isinstance(runtime_meta.get("self_repair_report_v2"), Mapping) else runtime_meta.get("self_repair") if isinstance(runtime_meta.get("self_repair"), Mapping) else {}
@@ -992,6 +1160,7 @@ def build_complete_reply_service_diagnostics(
         "surface_realizer": isinstance(runtime_meta.get("surface_realizer"), Mapping),
         "grounding_input": bool(grounding_input),
         "self_repair": isinstance(self_repair, Mapping) and bool(self_repair),
+        "limited_reader_repair": bool(limited_reader_repair),
         "repair_trace": bool(repair_trace),
         "scorecard_event": True,
     }
@@ -1035,6 +1204,19 @@ def build_complete_reply_service_diagnostics(
         "positive_recovery_relation_diagnostic": relation_diagnostic,
         "relation_surface_diagnostic": relation_diagnostic,
         "step5_relation_diagnostic": relation_diagnostic,
+        "limited_reader_repair_diagnostic": limited_reader_repair_diagnostic,
+        "limited_reader_repair": limited_reader_repair,
+        "limited_reader_repair_attempted": bool(limited_reader_repair_diagnostic.get("attempted")),
+        "limited_reader_repair_applied": bool(limited_reader_repair_diagnostic.get("applied")),
+        "limited_reader_repair_requires_repair": bool(limited_reader_repair_diagnostic.get("requires_limited_reader_repair")),
+        "limited_reader_repair_operations": list(limited_reader_repair_diagnostic.get("operations") or []),
+        "limited_reader_repair_relation_marker_key": _clean(limited_reader_repair_diagnostic.get("relation_marker_key")),
+        "limited_reader_repair_relation_marker_signal_detected": bool(limited_reader_repair_diagnostic.get("relation_marker_signal_detected")),
+        "limited_reader_repair_relation_marker_signal_keys": list(limited_reader_repair_diagnostic.get("relation_marker_signal_keys") or []),
+        "limited_reader_repair_relation_type": _clean(limited_reader_repair_diagnostic.get("relation_type")),
+        "limited_reader_repair_meaning_added": bool(limited_reader_repair_diagnostic.get("meaning_added")),
+        "limited_reader_repair_gate_relaxed": bool(limited_reader_repair_diagnostic.get("gate_relaxed")),
+        "limited_reader_repair_raw_input_included": False,
         "relation_surface_contract_version": relation_diagnostic["relation_surface_contract_version"],
         "reader_relation_signal_detected": relation_diagnostic["reader_relation_signal_detected"],
         "reader_relation_signal_count": relation_diagnostic["reader_relation_signal_count"],
@@ -1135,6 +1317,17 @@ def attach_complete_reply_service_diagnostics(
             "self_repair_relation_marker_signal_keys",
             "self_repair_relation_marker_meaning_added",
             "self_repair_relation_marker_gate_relaxed",
+            "limited_reader_repair_attempted",
+            "limited_reader_repair_applied",
+            "limited_reader_repair_requires_repair",
+            "limited_reader_repair_operations",
+            "limited_reader_repair_relation_marker_key",
+            "limited_reader_repair_relation_marker_signal_detected",
+            "limited_reader_repair_relation_marker_signal_keys",
+            "limited_reader_repair_relation_type",
+            "limited_reader_repair_meaning_added",
+            "limited_reader_repair_gate_relaxed",
+            "limited_reader_repair_raw_input_included",
         ):
             if key in relation_diagnostic:
                 diagnostic_summary[key] = relation_diagnostic[key]
@@ -1151,6 +1344,9 @@ def attach_complete_reply_service_diagnostics(
         phase_gate["step5_reader_relation_signal_detected"] = bool(relation_diagnostic.get("reader_relation_signal_detected"))
         phase_gate["step5_self_repair_relation_marker_applied"] = bool(relation_diagnostic.get("self_repair_relation_marker_applied"))
         phase_gate["step5_relation_diagnostic_raw_input_included"] = bool(relation_diagnostic.get("raw_input_included"))
+        phase_gate["step7_limited_reader_repair_attempted"] = bool(relation_diagnostic.get("limited_reader_repair_attempted"))
+        phase_gate["step7_limited_reader_repair_applied"] = bool(relation_diagnostic.get("limited_reader_repair_applied"))
+        phase_gate["step7_limited_reader_repair_raw_input_included"] = bool(relation_diagnostic.get("limited_reader_repair_raw_input_included"))
 
 
 __all__ = [
@@ -1159,6 +1355,7 @@ __all__ = [
     "COMPLETE_REPLY_DIAGNOSTICS_STEP",
     "COMPLETE_REPLY_DIAGNOSTICS_VERSION",
     "COMPLETE_SCORECARD_EVENT_VERSION",
+    "LIMITED_READER_REPAIR_DIAGNOSTIC_VERSION",
     "attach_complete_reply_service_diagnostics",
     "build_complete_reply_diagnostics_contract_meta",
     "build_complete_reply_service_diagnostics",

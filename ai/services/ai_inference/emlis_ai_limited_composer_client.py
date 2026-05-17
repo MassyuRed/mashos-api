@@ -35,6 +35,11 @@ from emlis_ai_limited_surface_realizer import (
     build_surface_stabilization_meta,
     choose_limited_surface_parts,
 )
+from emlis_ai_relation_surface_contract import (
+    detect_relation_surface,
+    normalize_relation_surface_type,
+    relation_marker_meta,
+)
 from cocolon_text_generation_core.adapters.emlis_observation_composer import (
     attach_core_evaluation_meta,
     core_rejection_reason,
@@ -55,16 +60,27 @@ _ALLOWED_SOURCE = "ai_generated"
 _UNAVAILABLE_SOURCE = "unavailable"
 _MIN_BODY_LINES = 2
 _MAX_BODY_LINES = 4
+_LIMITED_READER_REPAIR_VERSION = "limited_reader_repair.v1"
+_LIMITED_READER_REPAIR_TARGET_STEP = "Step3_previous_rejection_reasons"
+_LIMITED_READER_REPAIR_STEP4_TARGET = "Step4_addressee_repair"
+_LIMITED_READER_REPAIR_STEP5_TARGET = "Step5_relation_surface_marker_repair"
+_READER_REJECTION_REASONS_FOR_LIMITED_REPAIR = frozenset({"addressee_not_clear", "relation_not_expressed"})
+_EDGE_ID_LIKE_RE = re.compile(r"^[a-z][0-9a-z_-]*\.[a-z0-9_-]+$", re.IGNORECASE)
 
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_END_RE = re.compile(r"[。！？!?]+$")
+_HONORIFIC_SUFFIXES = ("さん", "様", "くん", "君", "ちゃん", "氏")
+_HONORIFIC_SUFFIX_RE = r"(?:さん|様|くん|君|ちゃん|氏)"
+_EMLIS_INTRO_RE = r"Emlis[ \u3000]?です。"
+_LIMITED_VALID_ADDRESSEE_RE = re.compile(
+    rf"^(?:[^\n]{{0,32}}{_HONORIFIC_SUFFIX_RE}、[^\n]{{0,24}}{_EMLIS_INTRO_RE}|{_EMLIS_INTRO_RE})$"
+)
 _PUNCT_TRIM = " 　、,。.!！?？『』\"'"
 _EMOTION_LABELS = {"喜び", "悲しみ", "怒り", "不安", "平穏", "自己理解", "恐れ", "焦り"}
 _TEXT_SOURCE_FIELDS = {"memo", "memo_action", "text", "free_text"}
 _SKIP_SOURCE_FIELDS = {"emotion_details", "emotions", "category"}
 _SKIP_DETECTED_TYPES = {"emotion"}
 _GROUP_KEYS = ("pressure_sources", "limit_signals", "self_awareness", "value_or_strength_signals")
-
 _FORBIDDEN_SURFACES = (
     "そこには",
     "もありました",
@@ -425,6 +441,12 @@ class CocolonLimitedComposerClient:
             used_unit_ids=used_unit_ids,
             required_roles=profile.required_roles,
             extra_meta=composer_meta,
+        )
+        _attach_limited_reader_repair_step3_meta(
+            composer_meta,
+            payload=payload,
+            coverage_scope=profile.coverage_scope or coverage_scope,
+            profile_key=profile_key,
         )
         response = {
             "schema_version": _RESPONSE_SCHEMA_VERSION,
@@ -2285,6 +2307,12 @@ def _generate_current_input_core_candidate(
         required_roles=(),
         extra_meta=composer_meta,
     )
+    _attach_limited_reader_repair_step3_meta(
+        composer_meta,
+        payload=payload,
+        coverage_scope="current_input_core",
+        profile_key=profile_key,
+    )
     response = {
         "schema_version": _RESPONSE_SCHEMA_VERSION,
         "response_schema_version": _RESPONSE_SCHEMA_VERSION,
@@ -2326,6 +2354,15 @@ def _core_checked_response(
     coverage_scope: str,
     profile_key: str,
 ) -> Mapping[str, Any]:
+    response = _apply_limited_reader_repair_if_needed(
+        response=response,
+        payload=payload,
+        phrase_units=phrase_units,
+        sentence_plans=sentence_plans,
+        used_unit_ids=used_unit_ids,
+        coverage_scope=coverage_scope,
+        profile_key=profile_key,
+    )
     evaluation = evaluate_emlis_observation_candidate(
         composer_payload=payload,
         evidence_items=evidence_items,
@@ -2884,6 +2921,684 @@ def _matched_forbidden_surfaces(*, payload: Mapping[str, Any], text: str) -> Lis
     return [surface for surface in patterns if surface and surface in text]
 
 
+
+
+def _previous_rejection_reasons(payload: Any) -> Tuple[str, ...]:
+    """Read prior display/Reader rejection reasons from limited Composer payload.
+
+    Step3 only classifies whether the limited/A1 path should enter the future
+    reader repair adapter. It does not relax gates or add any text.
+    """
+
+    if not isinstance(payload, Mapping):
+        return tuple()
+    contract = payload.get("composition_contract")
+    if not isinstance(contract, Mapping):
+        return tuple()
+    values = contract.get("previous_rejection_reasons")
+    if values is None:
+        return tuple()
+    if isinstance(values, str):
+        iterable: Iterable[Any] = (values,)
+    elif isinstance(values, Mapping):
+        return tuple()
+    else:
+        try:
+            iterable = tuple(values)  # type: ignore[arg-type]
+        except TypeError:
+            iterable = (values,)
+
+    reasons: List[str] = []
+    for item in iterable:
+        reason = str(item or "").strip()
+        if reason and reason not in reasons:
+            reasons.append(reason)
+    return tuple(reasons)
+
+
+def _requires_limited_reader_repair(reasons: Iterable[Any] | Any) -> bool:
+    """Return true only for Reader-surface reasons handled by limited repair."""
+
+    if reasons is None:
+        return False
+    if isinstance(reasons, str):
+        iterable: Iterable[Any] = (reasons,)
+    elif isinstance(reasons, Mapping):
+        return False
+    else:
+        try:
+            iterable = tuple(reasons)  # type: ignore[arg-type]
+        except TypeError:
+            iterable = (reasons,)
+    return any(str(reason or "").strip() in _READER_REJECTION_REASONS_FOR_LIMITED_REPAIR for reason in iterable)
+
+
+def _limited_reader_repair_step3_meta(
+    payload: Mapping[str, Any],
+    *,
+    coverage_scope: str = "",
+    profile_key: str = "",
+) -> Dict[str, Any]:
+    previous_reasons = _previous_rejection_reasons(payload)
+    reader_reasons = _dedupe(
+        reason
+        for reason in previous_reasons
+        if reason in _READER_REJECTION_REASONS_FOR_LIMITED_REPAIR
+    )
+    if not reader_reasons:
+        return {}
+    pending_operations: List[str] = []
+    if "addressee_not_clear" in reader_reasons:
+        pending_operations.append("addressee_repair_pending_step4")
+    if "relation_not_expressed" in reader_reasons:
+        pending_operations.append("relation_surface_repair_pending_step5")
+    return {
+        "version": _LIMITED_READER_REPAIR_VERSION,
+        "target_step": _LIMITED_READER_REPAIR_TARGET_STEP,
+        "attempted": True,
+        "applied": False,
+        "previous_rejection_reasons": list(previous_reasons),
+        "reader_rejection_reasons": reader_reasons,
+        "repair_required_reasons": reader_reasons,
+        "requires_limited_reader_repair": True,
+        "addressee_repair_required": "addressee_not_clear" in reader_reasons,
+        "relation_surface_repair_required": "relation_not_expressed" in reader_reasons,
+        "operations": [],
+        "pending_operations": pending_operations,
+        "reason_source": "composition_contract.previous_rejection_reasons",
+        "complete_client_self_repair_touched": False,
+        "comment_text_changed": False,
+        "meaning_added": False,
+        "gate_relaxed": False,
+        "raw_input_included": False,
+        "coverage_scope": str(coverage_scope or "").strip(),
+        "profile_key": str(profile_key or "").strip(),
+    }
+
+
+def _attach_limited_reader_repair_step3_meta(
+    composer_meta: Dict[str, Any],
+    *,
+    payload: Mapping[str, Any],
+    coverage_scope: str,
+    profile_key: str,
+) -> None:
+    repair_meta = _limited_reader_repair_step3_meta(
+        payload,
+        coverage_scope=coverage_scope,
+        profile_key=profile_key,
+    )
+    if not repair_meta:
+        return
+    composer_meta["limited_reader_repair"] = repair_meta
+    composer_meta["limited_reader_repair_step3"] = repair_meta
+    diagnostic = composer_meta.get("composer_diagnostic")
+    if isinstance(diagnostic, dict):
+        diagnostic["limited_reader_repair"] = repair_meta
+
+
+def _is_valid_limited_addressee_line(value: Any) -> bool:
+    return bool(_LIMITED_VALID_ADDRESSEE_RE.match(str(value or "").strip()))
+
+
+def _call_with_honorific(value: Any) -> str:
+    text = _clean(value, limit=28)
+    if not text:
+        return ""
+    if text.endswith(_HONORIFIC_SUFFIXES):
+        return text
+    return f"{text}さん"
+
+
+def _canonical_addressee_greeting(payload: Mapping[str, Any]) -> str:
+    """Build a Reader-compatible greeting without adding observation meaning."""
+
+    addressee = payload.get("addressee") if isinstance(payload.get("addressee"), Mapping) else {}
+    existing = _greeting(payload)
+    if _is_valid_limited_addressee_line(existing):
+        return existing
+
+    call = _call_with_honorific(addressee.get("display_name_call"))
+    if not call:
+        call = _call_with_honorific(addressee.get("display_name"))
+    if call:
+        return _finish(f"{call}、Emlisです")
+    return "Emlisです。"
+
+
+def _replace_first_non_empty_line(text: Any, replacement: str) -> Tuple[str, bool]:
+    original = str(text or "")
+    lines = original.splitlines()
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        if _is_valid_limited_addressee_line(line):
+            return original, False
+        lines[index] = replacement
+        return "\n".join(lines), True
+    # Step4 is a greeting-line repair, not an alternate generator.  If the
+    # candidate has no non-empty line, leave it to the normal fail-closed gates.
+    return original, False
+
+
+def _apply_limited_addressee_repair_if_needed(
+    *,
+    response: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    coverage_scope: str,
+    profile_key: str,
+) -> Mapping[str, Any]:
+    """Apply Step4 minimal addressee repair for limited/A1 Reader retries.
+
+    This is intentionally limited to the Reader reason ``addressee_not_clear``.
+    It changes only the first non-empty greeting line and then leaves the normal
+    core/Reader/Grounding/Display gates to decide the result.
+    """
+
+    previous_reasons = _previous_rejection_reasons(payload)
+    if "addressee_not_clear" not in previous_reasons:
+        return response
+
+    repaired_greeting = _canonical_addressee_greeting(payload)
+    comment_text = str(response.get("comment_text") or "")
+    repaired_text, changed = _replace_first_non_empty_line(comment_text, repaired_greeting)
+
+    original_meta = response.get("composer_meta") if isinstance(response.get("composer_meta"), Mapping) else {}
+    composer_meta: Dict[str, Any] = dict(original_meta)
+    repair_meta = dict(composer_meta.get("limited_reader_repair") or {})
+    if not repair_meta:
+        repair_meta = _limited_reader_repair_step3_meta(
+            payload,
+            coverage_scope=coverage_scope,
+            profile_key=profile_key,
+        )
+    if not repair_meta:
+        return response
+
+    operations = list(repair_meta.get("operations") or [])
+    pending_operations = [
+        op
+        for op in list(repair_meta.get("pending_operations") or [])
+        if op != "addressee_repair_pending_step4"
+    ]
+    if changed and "addressee_line_replaced" not in operations:
+        operations.append("addressee_line_replaced")
+
+    repair_meta.update(
+        {
+            "target_step": _LIMITED_READER_REPAIR_STEP4_TARGET if changed else repair_meta.get("target_step", _LIMITED_READER_REPAIR_TARGET_STEP),
+            "attempted": True,
+            "applied": bool(repair_meta.get("applied")) or changed,
+            "addressee_repaired": changed,
+            "addressee_repair_step": _LIMITED_READER_REPAIR_STEP4_TARGET,
+            "addressee_repair_greeting_source": "greeting_policy",
+            "operations": operations,
+            "pending_operations": pending_operations,
+            "comment_text_changed": bool(repair_meta.get("comment_text_changed")) or changed,
+            "meaning_added": False,
+            "gate_relaxed": False,
+            "raw_input_included": False,
+            "complete_client_self_repair_touched": False,
+            "coverage_scope": str(coverage_scope or repair_meta.get("coverage_scope") or "").strip(),
+            "profile_key": str(profile_key or repair_meta.get("profile_key") or "").strip(),
+        }
+    )
+
+    composer_meta["limited_reader_repair"] = repair_meta
+    composer_meta["limited_reader_repair_step4"] = repair_meta
+    if "limited_reader_repair_step3" in composer_meta:
+        composer_meta["limited_reader_repair_step3"] = repair_meta
+    diagnostic = composer_meta.get("composer_diagnostic")
+    if isinstance(diagnostic, dict):
+        diagnostic = dict(diagnostic)
+        diagnostic["limited_reader_repair"] = repair_meta
+        composer_meta["composer_diagnostic"] = diagnostic
+
+    repaired_response = dict(response)
+    repaired_response["composer_meta"] = composer_meta
+    if changed:
+        repaired_response["comment_text"] = repaired_text
+    return repaired_response
+
+
+
+def _as_sequence(value: Any) -> Tuple[Any, ...]:
+    if value is None:
+        return tuple()
+    if isinstance(value, (str, bytes)):
+        return (value,)
+    if isinstance(value, Mapping):
+        return tuple()
+    try:
+        return tuple(value)  # type: ignore[arg-type]
+    except TypeError:
+        return (value,)
+
+
+def _looks_like_edge_id(value: Any) -> bool:
+    token = str(value or "").strip()
+    return bool(token and _EDGE_ID_LIKE_RE.match(token))
+
+
+def _safe_relation_surface_type(value: Any) -> str:
+    token = str(value or "").strip()
+    if not token or _looks_like_edge_id(token):
+        return ""
+    relation = normalize_relation_surface_type(token)
+    if not relation or relation == "unknown" or _looks_like_edge_id(relation):
+        return ""
+    return relation
+
+
+def _binding_rows_for_repair(response: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+    rows: List[Mapping[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(item: Any) -> None:
+        if not isinstance(item, Mapping):
+            return
+        sentence_id = str(item.get("sentence_id") or item.get("id") or "").strip()
+        text_key = str(item.get("text") or "").strip()
+        relation_key = str(item.get("relation_type") or item.get("relation") or "").strip()
+        key = sentence_id or f"{text_key}|{relation_key}|{len(rows)}"
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(item)
+
+    bundle = response.get("sentence_binding_bundle")
+    if isinstance(bundle, Mapping):
+        for item in list(bundle.get("bindings") or bundle.get("sentence_bindings") or bundle.get("items") or []):
+            add(item)
+
+    meta = response.get("composer_meta") if isinstance(response.get("composer_meta"), Mapping) else {}
+    if isinstance(meta, Mapping):
+        meta_bundle = meta.get("sentence_binding_bundle") or meta.get("binding_bundle") or meta.get("binding")
+        if isinstance(meta_bundle, Mapping):
+            for item in list(meta_bundle.get("bindings") or meta_bundle.get("sentence_bindings") or meta_bundle.get("items") or []):
+                add(item)
+        for item in list(meta.get("sentence_bindings") or []):
+            add(item)
+    return rows
+
+
+def _relation_type_candidates_for_repair(response: Mapping[str, Any]) -> List[str]:
+    candidates: List[str] = []
+
+    def add(value: Any) -> None:
+        relation = _safe_relation_surface_type(value)
+        if relation and relation not in candidates:
+            candidates.append(relation)
+
+    for row in _binding_rows_for_repair(response):
+        add(row.get("relation_type") or row.get("relation"))
+        meta = row.get("meta") if isinstance(row.get("meta"), Mapping) else {}
+        if isinstance(meta, Mapping):
+            add(meta.get("canonical_relation_type"))
+
+    bundle = response.get("sentence_binding_bundle")
+    if isinstance(bundle, Mapping):
+        for value in _as_sequence(bundle.get("relation_types")):
+            add(value)
+        taxonomy = bundle.get("relation_taxonomy") if isinstance(bundle.get("relation_taxonomy"), Mapping) else {}
+        for value in _as_sequence(taxonomy.get("canonical_relation_types") if isinstance(taxonomy, Mapping) else ()):
+            add(value)
+
+    meta = response.get("composer_meta") if isinstance(response.get("composer_meta"), Mapping) else {}
+    if isinstance(meta, Mapping):
+        for key in ("relation_types", "canonical_relation_types", "used_relation_ids"):
+            for value in _as_sequence(meta.get(key)):
+                add(value)
+        for key in ("sentence_binding_bundle", "binding_bundle", "binding", "relation_taxonomy", "step5_relation_taxonomy"):
+            nested = meta.get(key)
+            if not isinstance(nested, Mapping):
+                continue
+            for value in _as_sequence(nested.get("relation_types")):
+                add(value)
+            for value in _as_sequence(nested.get("canonical_relation_types")):
+                add(value)
+
+    for value in _as_sequence(response.get("used_relation_ids")):
+        add(value)
+    return candidates
+
+
+def _relation_type_for_surface_repair(response: Mapping[str, Any]) -> str:
+    candidates = _relation_type_candidates_for_repair(response)
+    for preferred in ("recovery", "contrast", "coexistence", "approach_avoidance", "pressure", "residue"):
+        if preferred in candidates:
+            return preferred
+    for relation in candidates:
+        if relation not in {"sequence", "continuation", "candidate_used_phrase_unit", "center", "surface"}:
+            return relation
+    if candidates:
+        return candidates[0]
+    return "coexistence"
+
+
+def _relation_context_flags_for_repair(response: Mapping[str, Any], *, relation_type: str) -> Dict[str, Any]:
+    text = str(response.get("comment_text") or "")
+    flags = {
+        "prior_load_present": bool(re.search(r"前|重さ|負荷|圧力|疲れ|不安|戻", text)),
+        "raw_input_included": False,
+    }
+    if relation_type == "recovery":
+        flags["prior_load_present"] = True
+    return flags
+
+
+def _append_relation_marker_text(comment_text: Any, marker_phrase: Any) -> Tuple[str, bool]:
+    text = str(comment_text or "").strip()
+    marker = _finish(marker_phrase)
+    if not text or not marker:
+        return text, False
+    if marker in text:
+        return text, False
+    return f"{text}\n{marker}", True
+
+
+def _relation_marker_binding_row(
+    *,
+    marker_phrase: str,
+    relation_type: str,
+    response: Mapping[str, Any],
+    coverage_scope: str,
+) -> Dict[str, Any]:
+    rows = _binding_rows_for_repair(response)
+    existing_ids = [str(row.get("sentence_id") or "").strip() for row in rows]
+    sentence_id = f"s{len(rows) + 1}"
+    while sentence_id in existing_ids:
+        sentence_id = f"s{len(existing_ids) + 1}"
+        existing_ids.append(sentence_id)
+
+    evidence_ids = _dedupe(str(item or "").strip() for item in list(response.get("used_evidence_span_ids") or []))
+    phrase_ids = _dedupe(str(item or "").strip() for item in list(response.get("used_phrase_unit_ids") or []))
+    if not evidence_ids:
+        for row in rows:
+            for item in list(row.get("used_evidence_span_ids") or row.get("evidence_span_ids") or []):
+                if str(item or "").strip() not in evidence_ids:
+                    evidence_ids.append(str(item or "").strip())
+    if not phrase_ids:
+        for row in rows:
+            for item in list(row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or []):
+                if str(item or "").strip() not in phrase_ids:
+                    phrase_ids.append(str(item or "").strip())
+
+    return {
+        "version": _STEP3_SENTENCE_BINDING_VERSION,
+        "binding_version": _STEP3_SENTENCE_BINDING_VERSION,
+        "sentence_id": sentence_id,
+        "text": marker_phrase,
+        "used_evidence_span_ids": evidence_ids,
+        "used_phrase_unit_ids": phrase_ids,
+        "relation_type": relation_type,
+        "line_role": "relation_surface_marker",
+        "coverage_scope": str(coverage_scope or response.get("coverage_scope") or "partial_observation").strip(),
+        "must_include": False,
+        "raw_input_included": False,
+        "meta": {
+            "source": "limited_reader_repair_relation_surface_marker",
+            "relation_taxonomy_version": _STEP5_RELATION_TAXONOMY_VERSION,
+            "canonical_relation_type": canonical_relation_type(relation_type),
+            "relation_family": relation_family(relation_type),
+            "raw_input_included": False,
+            "meaning_added": False,
+            "gate_relaxed": False,
+        },
+    }
+
+
+def _with_relation_marker_binding(
+    *,
+    response: Mapping[str, Any],
+    composer_meta: Dict[str, Any],
+    marker_phrase: str,
+    relation_type: str,
+    coverage_scope: str,
+    profile_key: str,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    marker_row = _relation_marker_binding_row(
+        marker_phrase=marker_phrase,
+        relation_type=relation_type,
+        response=response,
+        coverage_scope=coverage_scope,
+    )
+    rows = [dict(row) for row in _binding_rows_for_repair(response)]
+    if marker_row["text"] not in {str(row.get("text") or "") for row in rows}:
+        rows.append(marker_row)
+
+    relation_types = _dedupe(
+        [
+            *(str(row.get("relation_type") or row.get("relation") or "").strip() for row in rows),
+            *list(composer_meta.get("relation_types") or []),
+            relation_type,
+        ]
+    )
+    used_evidence_ids = _dedupe(
+        item
+        for row in rows
+        for item in list(row.get("used_evidence_span_ids") or row.get("evidence_span_ids") or [])
+    )
+    used_phrase_ids = _dedupe(
+        item
+        for row in rows
+        for item in list(row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or [])
+    )
+
+    original_bundle = response.get("sentence_binding_bundle")
+    bundle: Dict[str, Any] = dict(original_bundle) if isinstance(original_bundle, Mapping) else {}
+    bundle.update(
+        {
+            "binding_count": len(rows),
+            "sentence_binding_count": len(rows),
+            "expected_binding_count": len(rows),
+            "binding_present": bool(rows),
+            "binding_missing": False,
+            "binding_required": bool(rows),
+            "binding_expected": bool(rows),
+            "coverage_scope": str(coverage_scope or bundle.get("coverage_scope") or "partial_observation").strip(),
+            "profile_key": str(profile_key or bundle.get("profile_key") or "").strip(),
+            "relation_types": relation_types,
+            "used_evidence_span_ids": used_evidence_ids,
+            "used_phrase_unit_ids": used_phrase_ids,
+            "used_evidence_span_count": len(used_evidence_ids),
+            "used_phrase_unit_count": len(used_phrase_ids),
+            "bindings": rows,
+            "sentence_bindings": rows,
+            "items": rows,
+            "raw_text_included": False,
+            "raw_input_required_for_debug": False,
+        }
+    )
+    bundle["relation_marker_binding_added"] = True
+    bundle["relation_marker_sentence_id"] = marker_row["sentence_id"]
+
+    taxonomy = dict(bundle.get("relation_taxonomy") or bundle.get("step5_relation_taxonomy") or {})
+    if taxonomy:
+        taxonomy["relation_marker_binding_added"] = True
+        taxonomy["relation_marker_relation_type"] = relation_type
+        taxonomy["relation_types"] = _dedupe([*list(taxonomy.get("relation_types") or []), relation_type])
+        taxonomy["canonical_relation_types"] = _dedupe([*list(taxonomy.get("canonical_relation_types") or []), canonical_relation_type(relation_type)])
+        taxonomy["raw_text_included"] = False
+        taxonomy["raw_input_required_for_debug"] = False
+        bundle["relation_taxonomy"] = taxonomy
+        bundle["step5_relation_taxonomy"] = taxonomy
+        bundle["limited_composer_relation_taxonomy"] = taxonomy
+    else:
+        taxonomy = {}
+
+    composer_meta["sentence_binding_bundle"] = bundle
+    composer_meta["binding_bundle"] = bundle
+    composer_meta["binding"] = bundle
+    composer_meta["sentence_bindings"] = rows
+    composer_meta["binding_count"] = len(rows)
+    composer_meta["sentence_binding_count"] = len(rows)
+    composer_meta["expected_binding_count"] = len(rows)
+    composer_meta["binding_present"] = bool(rows)
+    composer_meta["binding_missing"] = False
+    composer_meta["relation_types"] = relation_types
+    composer_meta["relation_count"] = len(relation_types)
+    composer_meta["used_phrase_unit_ids"] = used_phrase_ids
+    composer_meta["used_phrase_unit_count"] = len(used_phrase_ids)
+    if taxonomy:
+        composer_meta["relation_taxonomy"] = taxonomy
+        composer_meta["step5_relation_taxonomy"] = taxonomy
+        composer_meta["limited_composer_relation_taxonomy"] = taxonomy
+        composer_meta["canonical_relation_types"] = list(taxonomy.get("canonical_relation_types") or [])
+        composer_meta["relation_families"] = list(taxonomy.get("relation_families") or composer_meta.get("relation_families") or [])
+    step3 = dict(composer_meta.get("step3_sentence_binding_type") or {})
+    if step3:
+        step3.update(
+            {
+                "binding_count": len(rows),
+                "sentence_binding_count": len(rows),
+                "expected_binding_count": len(rows),
+                "binding_count_matches_body": True,
+                "binding_missing": False,
+                "relation_types": relation_types,
+                "used_phrase_unit_count": len(used_phrase_ids),
+                "used_evidence_span_count": len(used_evidence_ids),
+                "raw_text_included": False,
+                "raw_input_required_for_debug": False,
+            }
+        )
+        composer_meta["step3_sentence_binding_type"] = step3
+        composer_meta["sentence_binding_type"] = step3
+        composer_meta["limited_composer_sentence_binding_type"] = step3
+    return bundle, composer_meta
+
+
+def _apply_limited_relation_surface_repair_if_needed(
+    *,
+    response: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    coverage_scope: str,
+    profile_key: str,
+) -> Mapping[str, Any]:
+    """Apply Step5 relation marker repair for limited/A1 Reader retries.
+
+    This runs only when the prior Reader reason includes
+    ``relation_not_expressed``.  It uses the shared relation surface contract,
+    appends one marker sentence, updates sentence bindings for grounding, and
+    keeps all gates fail-closed.
+    """
+
+    previous_reasons = _previous_rejection_reasons(payload)
+    if "relation_not_expressed" not in previous_reasons:
+        return response
+
+    comment_text = str(response.get("comment_text") or "").strip()
+    if not comment_text:
+        return response
+
+    original_meta = response.get("composer_meta") if isinstance(response.get("composer_meta"), Mapping) else {}
+    composer_meta: Dict[str, Any] = dict(original_meta)
+    repair_meta = dict(composer_meta.get("limited_reader_repair") or {})
+    if not repair_meta:
+        repair_meta = _limited_reader_repair_step3_meta(
+            payload,
+            coverage_scope=coverage_scope,
+            profile_key=profile_key,
+        )
+    if not repair_meta:
+        return response
+
+    relation_type = _relation_type_for_surface_repair(response)
+    context_flags = _relation_context_flags_for_repair(response, relation_type=relation_type)
+    marker_meta = relation_marker_meta(relation_type, context_flags=context_flags)
+    marker_phrase = _finish(marker_meta.get("relation_marker_phrase"))
+    repaired_text, changed = _append_relation_marker_text(comment_text, marker_phrase)
+    marker_signal = detect_relation_surface(marker_phrase, expected_relation_types=(relation_type,))
+
+    operations = list(repair_meta.get("operations") or [])
+    pending_operations = [
+        op
+        for op in list(repair_meta.get("pending_operations") or [])
+        if op != "relation_surface_repair_pending_step5"
+    ]
+    if changed and "relation_marker_appended" not in operations:
+        operations.append("relation_marker_appended")
+
+    repair_meta.update(
+        {
+            "target_step": _LIMITED_READER_REPAIR_STEP5_TARGET if changed else repair_meta.get("target_step", _LIMITED_READER_REPAIR_TARGET_STEP),
+            "attempted": True,
+            "applied": bool(repair_meta.get("applied")) or changed,
+            "relation_surface_repaired": changed,
+            "relation_surface_repair_step": _LIMITED_READER_REPAIR_STEP5_TARGET,
+            "relation_type": relation_type,
+            "relation_marker_key": marker_meta.get("relation_marker_key"),
+            "relation_marker_signal_detected": bool(marker_signal.get("reader_relation_signal_detected")),
+            "relation_marker_signal_keys": list(marker_signal.get("reader_relation_signal_keys") or []),
+            "relation_surface_contract_version": marker_meta.get("relation_surface_contract_version") or marker_meta.get("contract_version"),
+            "operations": operations,
+            "pending_operations": pending_operations,
+            "comment_text_changed": bool(repair_meta.get("comment_text_changed")) or changed,
+            "meaning_added": False,
+            "gate_relaxed": False,
+            "raw_input_included": False,
+            "complete_client_self_repair_touched": False,
+            "coverage_scope": str(coverage_scope or repair_meta.get("coverage_scope") or "").strip(),
+            "profile_key": str(profile_key or repair_meta.get("profile_key") or "").strip(),
+        }
+    )
+
+    repaired_response: Dict[str, Any] = dict(response)
+    if changed:
+        repaired_response["comment_text"] = repaired_text
+        bundle, composer_meta = _with_relation_marker_binding(
+            response=repaired_response,
+            composer_meta=composer_meta,
+            marker_phrase=marker_phrase,
+            relation_type=relation_type,
+            coverage_scope=coverage_scope,
+            profile_key=profile_key,
+        )
+        repaired_response["sentence_binding_bundle"] = bundle
+
+    composer_meta["limited_reader_repair"] = repair_meta
+    composer_meta["limited_reader_repair_step5"] = repair_meta
+    if "limited_reader_repair_step3" in composer_meta:
+        composer_meta["limited_reader_repair_step3"] = repair_meta
+    if "limited_reader_repair_step4" in composer_meta:
+        composer_meta["limited_reader_repair_step4"] = repair_meta
+    diagnostic = composer_meta.get("composer_diagnostic")
+    if isinstance(diagnostic, dict):
+        diagnostic = dict(diagnostic)
+        diagnostic["limited_reader_repair"] = repair_meta
+        composer_meta["composer_diagnostic"] = diagnostic
+    repaired_response["composer_meta"] = composer_meta
+    return repaired_response
+
+
+def _apply_limited_reader_repair_if_needed(
+    *,
+    response: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    phrase_units: Sequence[EmlisPhraseUnit],
+    sentence_plans: Sequence[SentencePlan],
+    used_unit_ids: Sequence[str],
+    coverage_scope: str,
+    profile_key: str,
+) -> Mapping[str, Any]:
+    # Step4 and Step5 are intentionally independent no-op-by-default repairs.
+    # Unused arguments are kept in this adapter signature so the Step6 hook can
+    # pass the same structural context without widening RN/API contracts.
+    _ = (phrase_units, sentence_plans, used_unit_ids)
+    repaired = _apply_limited_addressee_repair_if_needed(
+        response=response,
+        payload=payload,
+        coverage_scope=coverage_scope,
+        profile_key=profile_key,
+    )
+    return _apply_limited_relation_surface_repair_if_needed(
+        response=repaired,
+        payload=payload,
+        coverage_scope=coverage_scope,
+        profile_key=profile_key,
+    )
+
+
 def _coverage_scope(graph: Mapping[str, Any]) -> str:
     if list(graph.get("core_tensions") or []) or any(list(graph.get(key) or []) for key in _GROUP_KEYS):
         return "partial_observation"
@@ -2949,5 +3664,8 @@ __all__ = [
     "EmlisPhraseUnit",
     "ObservationProfile",
     "SentencePlan",
+    "_previous_rejection_reasons",
+    "_requires_limited_reader_repair",
+    "_apply_limited_relation_surface_repair_if_needed",
     "audit_limited_composer_contract",
 ]

@@ -47,7 +47,7 @@ from emlis_ai_complete_grounding_service import (
     build_complete_grounding_report_meta,
     judge_complete_product_quality_grounding,
 )
-from emlis_ai_complete_self_repair_service import run_complete_self_repair_loop
+from emlis_ai_complete_self_repair_service import ALLOWED_REPAIR_REASONS, run_complete_self_repair_loop
 from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph, RelationEdge
 
 COMPLETE_COMPOSER_CLIENT_VERSION = "emlis.complete_composer_client.v1"
@@ -379,6 +379,19 @@ def _report_reasons(report: Any) -> Tuple[str, ...]:
         reasons.extend(_dedupe(diagnostics.get("repair_targets")))
     return tuple(dict.fromkeys(reason for reason in reasons if reason))
 
+
+def _complete_self_repair_reasons(reasons: Iterable[Any]) -> Tuple[str, ...]:
+    """Keep Complete self-repair handoff limited to reasons it can repair.
+
+    Reader-only public display reasons such as ``addressee_not_clear`` and
+    ``too_short_for_observation`` must remain visible to the outer gates, but
+    they should not abort the Complete candidate generator before the existing
+    Reader/Grounding/Template/Display gates can evaluate the candidate.
+    """
+
+    allowed = set(ALLOWED_REPAIR_REASONS)
+    return tuple(dict.fromkeys(reason for reason in _dedupe(reasons) if reason in allowed))
+
 def build_complete_composer_client_contract_meta() -> dict[str, Any]:
     term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
     return {
@@ -677,7 +690,8 @@ class CocolonCompleteComposerClient:
 
         repair_result = None
         final_realization: CompleteSurfaceRealizationV2 = surface_realization
-        repair_reasons = tuple(dict.fromkeys(list(previous_gate_reasons) + list(_report_reasons(initial_grounding_report))))
+        observed_repair_reasons = tuple(dict.fromkeys(list(previous_gate_reasons) + list(_report_reasons(initial_grounding_report))))
+        repair_reasons = _complete_self_repair_reasons(observed_repair_reasons)
         if repair_reasons:
             repair_result = run_complete_self_repair_loop(
                 surface_realization=surface_realization,
@@ -685,7 +699,12 @@ class CocolonCompleteComposerClient:
                 gate_reasons=repair_reasons,
                 evidence_spans=evidence_span_objects,
                 allowed_evidence_span_ids=[span.span_id for span in evidence_span_objects],
-                meta={"source": "complete_composer_client", "previous_gate_reasons": list(previous_gate_reasons)},
+                meta={
+                    "source": "complete_composer_client",
+                    "previous_gate_reasons": list(previous_gate_reasons),
+                    "observed_repair_reasons": list(observed_repair_reasons),
+                    "self_repair_handoff_reasons": list(repair_reasons),
+                },
             )
             if repair_result.ready and not repair_result.aborted:
                 final_realization = repair_result.repaired_surface_realization
