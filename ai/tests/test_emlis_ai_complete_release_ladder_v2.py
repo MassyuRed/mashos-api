@@ -155,3 +155,28 @@ def test_step7_blocks_product_gate_when_gate_is_relaxed_or_fixed_fallback_is_pre
     assert ladder["stop_conditions"]["raw_input_dependency"] is True
     assert ladder["release_judgment"]["release_allowed"] is False
     _assert_meta_only(ladder)
+
+
+
+def test_step7_release_ladder_does_not_count_coverage_group_missing_as_required_coverage() -> None:
+    scorecard = build_complete_product_quality_scorecard(
+        scorecard_events=[
+            {**_event(group), "coverage_group": group}
+            for group in COMPLETE_COVERAGE_GROUP_ORDER[:-1]
+        ]
+        + [{**_event(""), "coverage_group": ""}],
+        blind_qa_reviews=[_green_blind_review(group) for group in COMPLETE_COVERAGE_GROUP_ORDER],
+    )
+    ladder = build_complete_product_quality_release_ladder(
+        product_quality_scorecard=scorecard,
+        diagnostic_summary={"gate_binding_contract_version": "emlis.gate_binding_contract.v2"},
+    )
+
+    assert scorecard["coverage_group_missing_count"] == 1
+    assert "relationship" in scorecard["missing_coverage_groups"]
+    assert ladder["metrics"]["coverage_group_count"] == len(COMPLETE_COVERAGE_GROUP_ORDER) - 1
+    assert ladder["metrics"]["coverage_group_missing_count"] == 1
+    assert ladder["metrics"]["required_coverage_complete"] is False
+    assert "coverage_group_missing" in ladder["stage_evaluations"]["broader_beta"]["blockers"]
+    assert "product_gate_coverage_groups_incomplete" in ladder["stage_evaluations"]["product_gate"]["blockers"]
+    assert ladder["product_gate_ready"] is False

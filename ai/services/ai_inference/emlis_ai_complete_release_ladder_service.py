@@ -200,26 +200,41 @@ def _count_marker_hits(reasons: Sequence[str], markers: Sequence[str]) -> int:
 
 def _coverage_groups_from_scorecard(scorecard: Mapping[str, Any]) -> list[str]:
     groups: list[str] = []
-    for key in ("by_coverage_group",):
-        by_group = scorecard.get(key)
-        if isinstance(by_group, Mapping):
-            for group, row in by_group.items():
-                if _safe_int(_safe_mapping(row).get("eligible_count"), 0) > 0 or _safe_int(_safe_mapping(row).get("event_count"), 0) > 0:
-                    groups.append(_clean(group))
-    for key in ("coverage_group_rows",):
-        rows = scorecard.get(key)
-        if isinstance(rows, list):
-            for row in rows:
-                data = _safe_mapping(row)
-                if _safe_int(data.get("eligible_count"), 0) > 0 or _safe_int(data.get("event_count"), 0) > 0:
-                    groups.append(_clean(data.get("coverage_group")))
+
+    for key in ("observed_coverage_groups", "coverage_groups"):
+        for group in _dedupe(scorecard.get(key)):
+            if group in COMPLETE_COVERAGE_GROUP_ORDER:
+                groups.append(group)
+
+    by_group = scorecard.get("by_coverage_group")
+    if isinstance(by_group, Mapping):
+        for group, row in by_group.items():
+            normalized_group = _clean(group)
+            if normalized_group not in COMPLETE_COVERAGE_GROUP_ORDER:
+                continue
+            row_data = _safe_mapping(row)
+            if _safe_int(row_data.get("eligible_count"), 0) > 0 or _safe_int(row_data.get("event_count"), 0) > 0:
+                groups.append(normalized_group)
+
+    rows = scorecard.get("coverage_group_rows")
+    if isinstance(rows, list):
+        for row in rows:
+            data = _safe_mapping(row)
+            group = _clean(data.get("coverage_group"))
+            if group not in COMPLETE_COVERAGE_GROUP_ORDER:
+                continue
+            if _safe_int(data.get("eligible_count"), 0) > 0 or _safe_int(data.get("event_count"), 0) > 0:
+                groups.append(group)
+
     machine = _safe_mapping(scorecard.get("machine_metrics"))
     if machine:
         groups.extend(_coverage_groups_from_scorecard(machine))
+
     if not groups:
         group = _clean(scorecard.get("coverage_group"))
-        if group:
+        if group in COMPLETE_COVERAGE_GROUP_ORDER:
             groups.append(group)
+
     ordered: list[str] = []
     seen: set[str] = set()
     for group in groups:
@@ -227,6 +242,28 @@ def _coverage_groups_from_scorecard(scorecard: Mapping[str, Any]) -> list[str]:
             seen.add(group)
             ordered.append(group)
     return ordered
+
+
+def _coverage_group_missing_count_from_scorecard(scorecard: Mapping[str, Any]) -> int:
+    machine = _safe_mapping(scorecard.get("machine_metrics"))
+    explicit = _safe_int(scorecard.get("coverage_group_missing_count"), -1)
+    if explicit >= 0:
+        return explicit
+    explicit = _safe_int(machine.get("coverage_group_missing_count"), -1)
+    if explicit >= 0:
+        return explicit
+    by_group = _safe_mapping(scorecard.get("by_coverage_group")) or _safe_mapping(machine.get("by_coverage_group"))
+    missing_row = _safe_mapping(by_group.get("coverage_group_missing"))
+    return _safe_int(missing_row.get("event_count"), 0)
+
+
+def _missing_coverage_groups_from_scorecard(scorecard: Mapping[str, Any], observed_groups: Sequence[str]) -> list[str]:
+    machine = _safe_mapping(scorecard.get("machine_metrics"))
+    explicit = _dedupe(scorecard.get("missing_coverage_groups")) or _dedupe(machine.get("missing_coverage_groups"))
+    if explicit:
+        return [group for group in explicit if group in COMPLETE_COVERAGE_GROUP_ORDER]
+    observed = set(observed_groups)
+    return [group for group in COMPLETE_COVERAGE_GROUP_ORDER if group not in observed]
 
 
 def _required_coverage_complete(groups: Sequence[str]) -> bool:
@@ -330,7 +367,13 @@ def build_complete_product_quality_release_ladder(
     passed_display_count = _safe_int(scorecard.get("passed_display_count"), _safe_int(machine.get("passed_display_count"), 0))
     coverage_groups = _coverage_groups_from_scorecard(scorecard)
     coverage_group_count = len(coverage_groups)
-    required_coverage_complete = _required_coverage_complete(coverage_groups)
+    missing_coverage_groups = _missing_coverage_groups_from_scorecard(scorecard, coverage_groups)
+    coverage_group_missing_count = _coverage_group_missing_count_from_scorecard(scorecard)
+    required_coverage_complete = (
+        _required_coverage_complete(coverage_groups)
+        and not missing_coverage_groups
+        and coverage_group_missing_count == 0
+    )
     blind_qa_ready = bool(scorecard.get("blind_qa_ready") or blind.get("blind_qa_ready"))
     machine_metrics_ready = bool(scorecard.get("machine_metrics_ready") or machine.get("machine_metrics_ready"))
     scorecard_ready = bool(scorecard.get("product_quality_scorecard_ready") or scorecard.get("scorecard_ready") or scorecard.get("ready"))
@@ -411,6 +454,10 @@ def build_complete_product_quality_release_ladder(
     broader_blockers = list(limited_blockers)
     if coverage_group_count < COMPLETE_RELEASE_LADDER_BROADER_MIN_COVERAGE_GROUPS or not required_coverage_complete:
         broader_blockers.append("major_coverage_groups_incomplete")
+    if coverage_group_missing_count > 0:
+        broader_blockers.append("coverage_group_missing")
+    if missing_coverage_groups:
+        broader_blockers.append("required_coverage_groups_missing")
     if not blind_qa_ready:
         broader_blockers.append("blind_qa_missing")
     if read_feeling_score < COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET:
@@ -424,6 +471,8 @@ def build_complete_product_quality_release_ladder(
     product_blockers = list(broader_blockers)
     if coverage_group_count < COMPLETE_RELEASE_LADDER_PRODUCT_MIN_COVERAGE_GROUPS or not required_coverage_complete:
         product_blockers.append("product_gate_coverage_groups_incomplete")
+    if coverage_group_missing_count > 0 and "coverage_group_missing" not in product_blockers:
+        product_blockers.append("coverage_group_missing")
     if display_reach_rate < COMPLETE_PRODUCT_GATE_DISPLAY_TARGET:
         product_blockers.append("display_reach_rate_below_product_gate_target")
     if binding_pass_rate < COMPLETE_PRODUCT_QUALITY_BINDING_TARGET:
@@ -479,6 +528,8 @@ def build_complete_product_quality_release_ladder(
             criteria={
                 "coverage_group_count": coverage_group_count,
                 "required_coverage_complete": required_coverage_complete,
+                "missing_coverage_groups": list(missing_coverage_groups),
+                "coverage_group_missing_count": coverage_group_missing_count,
                 "blind_qa_ready": blind_qa_ready,
                 "read_feeling_score": None if read_feeling_score < 0 else read_feeling_score,
                 "read_feeling_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET,
@@ -493,6 +544,8 @@ def build_complete_product_quality_release_ladder(
             criteria={
                 "coverage_group_count": coverage_group_count,
                 "required_coverage_complete": required_coverage_complete,
+                "missing_coverage_groups": list(missing_coverage_groups),
+                "coverage_group_missing_count": coverage_group_missing_count,
                 "display_reach_rate": display_reach_rate,
                 "display_target": COMPLETE_PRODUCT_GATE_DISPLAY_TARGET,
                 "binding_pass_rate": binding_pass_rate,
@@ -545,6 +598,9 @@ def build_complete_product_quality_release_ladder(
             "reason_coverage_rate": reason_coverage_rate,
             "coverage_group_count": coverage_group_count,
             "coverage_groups": list(coverage_groups),
+            "required_coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+            "missing_coverage_groups": list(missing_coverage_groups),
+            "coverage_group_missing_count": coverage_group_missing_count,
             "required_coverage_complete": required_coverage_complete,
             "blind_qa_ready": blind_qa_ready,
             "machine_metrics_ready": machine_metrics_ready,

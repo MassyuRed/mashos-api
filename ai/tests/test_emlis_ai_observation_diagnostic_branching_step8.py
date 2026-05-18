@@ -124,6 +124,7 @@ def test_step8_branch_table_covers_all_expected_classifications() -> None:
         "passed_backend_frontend_hidden",
         "passed_displayed",
         "unclassified_non_display",
+        "unknown_diagnostic_missing",
     }
 
     assert expected.issubset(set(known_observation_branch_classifications()))
@@ -239,3 +240,15 @@ def test_step8_attach_rejects_forbidden_payload_keys() -> None:
                 "commentText": _SECRET_COMMENT,
             }
         )
+
+
+def test_step8_unknown_diagnostic_missing_requires_capture_enrichment_before_repair() -> None:
+    branch = resolve_observation_diagnostic_next_branch({"classification": "unknown_diagnostic_missing"})
+
+    assert branch["target_layer"] == "diagnostic"
+    assert branch["ready_for_cause_repair"] is False
+    assert branch["repair_allowed"] is False
+    assert branch["requires_diagnostic_enrichment"] is True
+    assert branch["branch_locked"] is False
+    assert "diagnostic" in branch["target_area"]
+    assert "RN表示条件" in branch["do_not_touch"]

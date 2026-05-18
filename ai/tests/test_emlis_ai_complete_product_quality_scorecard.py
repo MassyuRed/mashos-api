@@ -132,3 +132,26 @@ def test_step6_product_quality_scorecard_requires_rejection_reason_coverage() ->
     assert scorecard["reason_coverage_rate"] == 0.0
     assert "reason_coverage_missing" in scorecard["release_blockers"]
     assert scorecard["product_gate_reached"] is False
+
+
+def test_step6_machine_metrics_do_not_fill_read_feeling_score_without_blind_qa() -> None:
+    event = {
+        **_event("short_daily"),
+        "read_feeling_score": 1.0,
+    }
+    scorecard = build_complete_product_quality_scorecard(
+        scorecard_events=[event],
+        blind_qa_reviews=[],
+    )
+
+    assert scorecard["blind_qa_required"] is True
+    assert scorecard["read_feeling_requires_blind_qa"] is True
+    assert scorecard["blind_qa_ready"] is False
+    assert scorecard["read_feeling_score"] is None
+    assert scorecard["read_feeling_source"] == "blind_qa_required_not_evaluated"
+    assert scorecard["machine_metrics"]["read_feeling_score"] is None
+    assert scorecard["machine_metrics_used_for_read_feeling"] is False
+    assert scorecard["read_feeling_auto_filled_from_machine_metrics"] is False
+    assert "blind_qa_missing" in scorecard["release_blockers"]
+    assert scorecard["product_gate_ready"] is False
+    assert scorecard["public_response_key_change"] is False

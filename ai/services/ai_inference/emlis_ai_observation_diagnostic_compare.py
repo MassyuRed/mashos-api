@@ -21,6 +21,13 @@ from emlis_ai_observation_diagnostic_branching import (
 BACKEND_LOG_PREFIX = "emlis_observation_diagnostic_lockdown "
 FRONTEND_LOG_PREFIX = "emlis_observation_frontend_result "
 COMPARISON_VERSION = "emlis.observation_diagnostic_comparison.v1"
+DIAGNOSTIC_CAPTURE_STATUS_CAPTURED = "captured"
+DIAGNOSTIC_LOG_MISSING_OR_NOT_CAPTURED = "diagnostic_log_missing_or_not_captured"
+BACKEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED = "backend_diagnostic_missing_or_not_captured"
+FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED = "frontend_diagnostic_missing_or_not_captured"
+JOIN_SEMANTICS_VERSION = "emlis.backend_frontend_join_semantics.v1"
+FRONTEND_MODAL_NOT_OPENED = "frontend_modal_not_opened"
+BACKEND_PUBLIC_PASSED_FRONTEND_UNCONFIRMED = "backend_public_passed_frontend_unconfirmed"
 
 _FORBIDDEN_TEXT_PAYLOAD_KEYS = {
     "raw_input", "rawInput", "input", "input_text", "inputText",
@@ -40,6 +47,7 @@ _CLASSIFICATION_TO_LAYER = {
     "passed_backend_frontend_hidden": "frontend",
     "passed_displayed": "passed",
     "unclassified_non_display": "unclassified",
+    "unknown_diagnostic_missing": "diagnostic",
 }
 _NEXT_STEP = {
     "backend_exception_or_timeout": "timeout / error / dependency",
@@ -52,6 +60,7 @@ _NEXT_STEP = {
     "passed_backend_frontend_hidden": "RN input_feedback receive / status reading / modal condition",
     "passed_displayed": "scorecard / coverage suite / blind QA",
     "unclassified_non_display": "diagnostic schema enrichment before repair",
+    "unknown_diagnostic_missing": "diagnostic schema enrichment before repair",
 }
 _FIELD_DIFF_LAYERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pre_connection", ("pre_connection_status", "pre_connection_stop_stage")),
@@ -60,8 +69,9 @@ _FIELD_DIFF_LAYERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("grounding", ("grounding", "grounding_reason")),
     ("template", ("template", "template_reason")),
     ("display", ("display", "display_reason")),
-    ("backend_public_result", ("backend_status", "backend_len")),
-    ("frontend", ("rn_status", "rn_len", "modal_opened")),
+    ("backend_public_result", ("backend_status", "backend_len", "backend_public_passed")),
+    ("frontend", ("rn_status", "rn_len", "modal_opened", "frontend_join_status")),
+    ("display_confirmation", ("display_confirmed", "measurement_classification", "scorecard_passed_display_count")),
 )
 
 
@@ -222,6 +232,282 @@ def _classification(record: Mapping[str, Any]) -> str:
     return _clean(record.get("classification")) or classify_observation_diagnostic(record)
 
 
+def _backend_public_passed_from_values(status: Any, length: Any) -> bool:
+    """Return the Step2 backend-public-pass boolean.
+
+    ProductGate measurement intentionally separates backend public pass from
+    confirmed RN display.  A backend pass requires the public status to be
+    ``passed`` and the public comment length to be non-zero.  This helper does
+    not inspect the comment body.
+    """
+
+    return _clean(status) == "passed" and _to_int(length) > 0
+
+
+def _frontend_public_passed_from_values(status: Any, length: Any) -> bool:
+    return _clean(status) == "passed" and _to_int(length) > 0
+
+
+def _display_confirmed_from_values(*, backend_public_passed: bool, frontend_joined: bool, modal_opened: Any) -> bool:
+    return bool(backend_public_passed and frontend_joined and _to_bool(modal_opened))
+
+
+def _measurement_classification_for_join(row: Mapping[str, Any], base_classification: str) -> str:
+    """Return the Step2 measurement classification for counting semantics.
+
+    The existing diagnostic classifier may still return ``passed_displayed`` for
+    a backend-only pass.  Step2 keeps that base classification available but
+    adds a measurement classification so scorecard adapters can count only
+    ``display_confirmed`` rows as displayed.
+    """
+
+    if row.get("display_confirmed") is True:
+        return "passed_displayed"
+    if row.get("backend_public_passed") is True and row.get("frontend_joined") is not True:
+        return BACKEND_PUBLIC_PASSED_FRONTEND_UNCONFIRMED
+    if row.get("backend_public_passed") is True and row.get("frontend_joined") is True and row.get("modal_opened") is False:
+        return "passed_backend_frontend_hidden"
+    return _clean(base_classification) or "unclassified_non_display"
+
+
+def build_backend_frontend_join_semantics(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Build Step2 backend/frontend join semantics for one joined row.
+
+    This is the counting contract used by ProductGate measurement: backend
+    ``passed`` + non-empty text is not the same as RN display confirmation.
+    ``scorecard_passed_display_count`` is 1 only when ``display_confirmed`` is
+    true.  The function is meta-only and never accepts raw input/comment text
+    payload keys.
+    """
+
+    _assert_meta_only(row, source="join_semantics_row")
+    frontend_joined = row.get("frontend_joined") is True
+    backend_public_passed = _backend_public_passed_from_values(
+        row.get("backend_status"),
+        row.get("backend_len"),
+    )
+    frontend_public_passed = _frontend_public_passed_from_values(
+        row.get("rn_status"),
+        row.get("rn_len"),
+    )
+    display_confirmed = _display_confirmed_from_values(
+        backend_public_passed=backend_public_passed,
+        frontend_joined=frontend_joined,
+        modal_opened=row.get("modal_opened"),
+    )
+    blockers: list[str] = []
+    if backend_public_passed and not frontend_joined:
+        blockers.append(FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED)
+    elif backend_public_passed and frontend_joined and row.get("modal_opened") is False:
+        blockers.append(FRONTEND_MODAL_NOT_OPENED)
+    semantics = {
+        "version": JOIN_SEMANTICS_VERSION,
+        "source": "emlis_observation_step2_backend_frontend_join_semantics",
+        "backend_public_passed": backend_public_passed,
+        "frontend_public_passed": frontend_public_passed,
+        "frontend_joined": frontend_joined,
+        "frontend_join_status": _row_frontend_join_status(row),
+        "display_confirmed": display_confirmed,
+        "display_counting_rule": "display_confirmed_requires_backend_public_pass_and_frontend_modal_opened",
+        "scorecard_passed_display_count": 1 if display_confirmed else 0,
+        "product_gate_display_counted": display_confirmed,
+        "display_count_blockers": blockers,
+        "measurement_classification": "",
+        "raw_input_included": False,
+        "comment_text_included": False,
+    }
+    semantics["measurement_classification"] = _measurement_classification_for_join(
+        {**dict(row), **semantics},
+        _classification(row),
+    )
+    _assert_meta_only(semantics, source="join_semantics")
+    return semantics
+
+
+def build_backend_frontend_join_semantics_summary(rows: Sequence[Mapping[str, Any]] | None) -> dict[str, Any]:
+    """Summarize Step2 display counting semantics for joined rows."""
+
+    normalized: list[dict[str, Any]] = []
+    for source_row in rows or []:
+        row = dict(source_row)
+        _assert_meta_only(row, source="join_semantics_summary_row")
+        if "backend_public_passed" not in row or "display_confirmed" not in row:
+            semantics = build_backend_frontend_join_semantics(row)
+            row["backend_public_passed"] = semantics["backend_public_passed"]
+            row["frontend_public_passed"] = semantics["frontend_public_passed"]
+            row["display_confirmed"] = semantics["display_confirmed"]
+            row["scorecard_passed_display_count"] = semantics["scorecard_passed_display_count"]
+            row["measurement_classification"] = semantics["measurement_classification"]
+        normalized.append(row)
+    backend_public_passed_count = sum(1 for row in normalized if row.get("backend_public_passed") is True)
+    display_confirmed_count = sum(1 for row in normalized if row.get("display_confirmed") is True)
+    frontend_unconfirmed_count = sum(
+        1
+        for row in normalized
+        if row.get("backend_public_passed") is True and row.get("frontend_joined") is not True
+    )
+    frontend_hidden_count = sum(
+        1
+        for row in normalized
+        if row.get("backend_public_passed") is True and row.get("frontend_joined") is True and row.get("modal_opened") is False
+    )
+    blockers: list[str] = []
+    if frontend_unconfirmed_count:
+        blockers.append(FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED)
+    if frontend_hidden_count:
+        blockers.append(FRONTEND_MODAL_NOT_OPENED)
+    summary = {
+        "version": JOIN_SEMANTICS_VERSION,
+        "source": "emlis_observation_step2_backend_frontend_join_semantics_summary",
+        "row_count": len(normalized),
+        "backend_public_passed_count": backend_public_passed_count,
+        "display_confirmed_count": display_confirmed_count,
+        "scorecard_passed_display_count": display_confirmed_count,
+        "backend_public_passed_frontend_unconfirmed_count": frontend_unconfirmed_count,
+        "passed_backend_frontend_hidden_count": frontend_hidden_count,
+        "display_counting_rule": "display_confirmed_only",
+        "display_reach_rate_overestimation_guard": True,
+        "join_semantics_blockers": blockers,
+        "raw_input_included": False,
+        "comment_text_included": False,
+    }
+    _assert_meta_only(summary, source="join_semantics_summary")
+    return summary
+
+
+def _row_frontend_join_status(row: Mapping[str, Any]) -> str:
+    if row.get("frontend_joined") is True:
+        return "joined"
+    trace_id = _clean(row.get("trace_id"))
+    emotion_log_id = _clean(row.get("emotion_log_id"))
+    if not trace_id and not emotion_log_id:
+        return "join_key_missing"
+    if not trace_id:
+        return "trace_id_missing"
+    if not emotion_log_id:
+        return "emotion_log_id_missing"
+    return "missing"
+
+
+def _capture_status_for_joined_row(row: Mapping[str, Any]) -> str:
+    if row.get("frontend_joined") is True:
+        return DIAGNOSTIC_CAPTURE_STATUS_CAPTURED
+    return FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED
+
+
+def build_observation_diagnostic_capture_summary(
+    backend_records: Sequence[Mapping[str, Any]] | None = None,
+    frontend_records: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    rows: Sequence[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Summarize whether backend/RN diagnostic lines were captured.
+
+    This is Step1-only measurement metadata.  A missing diagnostic line is not
+    treated as Reader/Grounding/Template/RN cause evidence; it is routed back to
+    diagnostic enrichment.
+    """
+
+    backend_count = len(backend_records or [])
+    frontend_count = len(frontend_records or [])
+    joined_rows = [dict(row) for row in rows or []]
+    joined_frontend_count = sum(1 for row in joined_rows if row.get("frontend_joined") is True)
+    unjoined_backend_count = max(0, backend_count - joined_frontend_count)
+    join_semantics_summary = build_backend_frontend_join_semantics_summary(joined_rows)
+
+    backend_status = (
+        DIAGNOSTIC_CAPTURE_STATUS_CAPTURED
+        if backend_count > 0
+        else BACKEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED
+    )
+    frontend_status = (
+        DIAGNOSTIC_CAPTURE_STATUS_CAPTURED
+        if frontend_count > 0 and unjoined_backend_count == 0
+        else FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED
+    )
+    blockers: list[str] = []
+    if backend_status != DIAGNOSTIC_CAPTURE_STATUS_CAPTURED:
+        blockers.append(BACKEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED)
+    if frontend_status != DIAGNOSTIC_CAPTURE_STATUS_CAPTURED:
+        blockers.append(FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED)
+
+    diagnostic_capture_status = (
+        DIAGNOSTIC_CAPTURE_STATUS_CAPTURED
+        if not blockers
+        else DIAGNOSTIC_LOG_MISSING_OR_NOT_CAPTURED
+    )
+    summary = {
+        "version": COMPARISON_VERSION,
+        "source": "emlis_observation_step1_diagnostic_capture_status",
+        "diagnostic_capture_status": diagnostic_capture_status,
+        "backend_diagnostic_capture_status": backend_status,
+        "frontend_diagnostic_capture_status": frontend_status,
+        "backend_diagnostic_count": backend_count,
+        "frontend_diagnostic_count": frontend_count,
+        "joined_frontend_count": joined_frontend_count,
+        "unjoined_backend_count": unjoined_backend_count,
+        "join_semantics_summary": join_semantics_summary,
+        "backend_public_passed_count": join_semantics_summary["backend_public_passed_count"],
+        "display_confirmed_count": join_semantics_summary["display_confirmed_count"],
+        "scorecard_passed_display_count": join_semantics_summary["scorecard_passed_display_count"],
+        "backend_public_passed_frontend_unconfirmed_count": join_semantics_summary["backend_public_passed_frontend_unconfirmed_count"],
+        "passed_backend_frontend_hidden_count": join_semantics_summary["passed_backend_frontend_hidden_count"],
+        "capture_blockers": blockers,
+        "requires_diagnostic_enrichment": bool(blockers),
+        "classification": "unknown_diagnostic_missing" if blockers else "",
+        "raw_input_included": False,
+        "comment_text_included": False,
+    }
+    _assert_meta_only(summary, source="capture_summary")
+    return summary
+
+
+def _capture_summary_requires_gap_report(summary: Mapping[str, Any]) -> bool:
+    return bool(summary.get("requires_diagnostic_enrichment"))
+
+
+def build_observation_diagnostic_capture_status_report(
+    *,
+    capture_summary: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]] | None = None,
+    left_label: str = "11:35",
+    right_label: str = "11:36",
+) -> dict[str, Any]:
+    """Build a fail-closed Step1 report for missing diagnostic capture."""
+
+    summary = dict(capture_summary or {})
+    _assert_meta_only(summary, source="capture_summary")
+    classification = "unknown_diagnostic_missing"
+    join_semantics_summary = _safe_mapping(summary.get("join_semantics_summary")) or build_backend_frontend_join_semantics_summary(rows)
+    report = {
+        "version": COMPARISON_VERSION,
+        "source": "emlis_observation_step1_diagnostic_capture_status",
+        "left_label": _clean(left_label),
+        "right_label": _clean(right_label),
+        "rows": [dict(row) for row in rows or []],
+        "capture_summary": summary,
+        "join_semantics_summary": join_semantics_summary,
+        "diagnostic_capture_status": _clean(summary.get("diagnostic_capture_status")) or DIAGNOSTIC_LOG_MISSING_OR_NOT_CAPTURED,
+        "capture_blockers": list(summary.get("capture_blockers") or []),
+        "first_divergence_layer": "diagnostic",
+        "first_difference_layer": "diagnostic",
+        "first_differing_fields": None,
+        "all_differing_fields": [],
+        "next_action_classification": classification,
+        "next_action_layer": "diagnostic",
+        "next_action_target": _NEXT_STEP[classification],
+        "next_step": _NEXT_STEP[classification] + " の修正",
+        "raw_input_included": False,
+        "comment_text_included": False,
+    }
+    report = attach_observation_diagnostic_next_branch(report)
+    report["ready_for_cause_repair"] = False
+    report["requires_diagnostic_enrichment"] = True
+    report["repair_allowed"] = False
+    _assert_meta_only(report, source="capture_status_report")
+    return report
+
+
 def summarize_observation_diagnostic_row(backend_record: Mapping[str, Any], *, frontend_record: Mapping[str, Any] | None = None, label: str = "") -> dict[str, Any]:
     _assert_meta_only(backend_record, source="backend")
     frontend = _safe_mapping(frontend_record)
@@ -249,8 +535,12 @@ def summarize_observation_diagnostic_row(backend_record: Mapping[str, Any], *, f
         "backend_comment_text_present": _to_bool(backend_record.get("comment_text_present")),
         "rn_status": _clean(frontend.get("observation_status")),
         "rn_len": _to_int(frontend.get("comment_text_length")) if frontend else None,
-        "modal_opened": frontend.get("modal_opened") if frontend else None,
+        "modal_opened": _to_bool(frontend.get("modal_opened")) if frontend else None,
         "frontend_joined": bool(frontend),
+        "frontend_join_status": "joined" if frontend else "missing",
+        "backend_diagnostic_capture_status": DIAGNOSTIC_CAPTURE_STATUS_CAPTURED,
+        "frontend_diagnostic_capture_status": DIAGNOSTIC_CAPTURE_STATUS_CAPTURED if frontend else FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED,
+        "diagnostic_capture_status": DIAGNOSTIC_CAPTURE_STATUS_CAPTURED if frontend else FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED,
         "frontend": _frontend_projection(frontend) if frontend else {},
         "stage": _clean(backend_record.get("stage")),
         "primary_reason": _clean(backend_record.get("primary_reason")),
@@ -281,6 +571,18 @@ def summarize_observation_diagnostic_row(backend_record: Mapping[str, Any], *, f
         "raw_input_included": False,
         "comment_text_included": False,
     }
+    row["frontend_join_status"] = _row_frontend_join_status(row)
+    row["diagnostic_capture_status"] = _capture_status_for_joined_row(row)
+    join_semantics = build_backend_frontend_join_semantics(row)
+    row["backend_public_passed"] = join_semantics["backend_public_passed"]
+    row["frontend_public_passed"] = join_semantics["frontend_public_passed"]
+    row["display_confirmed"] = join_semantics["display_confirmed"]
+    row["display_counting_rule"] = join_semantics["display_counting_rule"]
+    row["scorecard_passed_display_count"] = join_semantics["scorecard_passed_display_count"]
+    row["product_gate_display_counted"] = join_semantics["product_gate_display_counted"]
+    row["display_count_blockers"] = list(join_semantics["display_count_blockers"])
+    row["measurement_classification"] = join_semantics["measurement_classification"]
+    row["join_semantics"] = join_semantics
     _assert_meta_only(row, source="comparison_row")
     return row
 
@@ -338,12 +640,14 @@ def build_observation_diagnostic_comparison(left_row: Mapping[str, Any], right_r
     non_displayed = _first_non_displayed_row(rows)
     classification = _classification(non_displayed or left)
     field_differences = _field_differences(left, right)
+    join_semantics_summary = build_backend_frontend_join_semantics_summary(rows)
     report = {
         "version": COMPARISON_VERSION,
         "source": "emlis_observation_step7_11_35_11_36_comparison",
         "left_label": _clean(left_label),
         "right_label": _clean(right_label),
         "rows": rows,
+        "join_semantics_summary": join_semantics_summary,
         "first_divergence_layer": first_divergence_layer,
         "first_difference_layer": first_divergence_layer,
         "first_differing_fields": field_differences[0] if field_differences else None,
@@ -391,8 +695,22 @@ def select_observation_comparison_pair(rows: Sequence[Mapping[str, Any]], *, lef
 def build_comparison_from_log_lines(lines: Iterable[str], *, left_label: str = "11:35", right_label: str = "11:36", left_trace_id: str = "", right_trace_id: str = "", left_emotion_log_id: str = "", right_emotion_log_id: str = "") -> dict[str, Any]:
     parsed = parse_observation_diagnostic_logs(lines)
     rows = join_backend_frontend_diagnostics(parsed["backend"], parsed["frontend"])
+    capture_summary = build_observation_diagnostic_capture_summary(parsed["backend"], parsed["frontend"], rows=rows)
+    if _capture_summary_requires_gap_report(capture_summary):
+        return build_observation_diagnostic_capture_status_report(
+            capture_summary=capture_summary,
+            rows=rows,
+            left_label=left_label,
+            right_label=right_label,
+        )
     left, right = select_observation_comparison_pair(rows, left_trace_id=left_trace_id, right_trace_id=right_trace_id, left_emotion_log_id=left_emotion_log_id, right_emotion_log_id=right_emotion_log_id)
-    return build_observation_diagnostic_comparison(left, right, left_label=left_label, right_label=right_label)
+    report = build_observation_diagnostic_comparison(left, right, left_label=left_label, right_label=right_label)
+    report["capture_summary"] = capture_summary
+    report["join_semantics_summary"] = capture_summary["join_semantics_summary"]
+    report["diagnostic_capture_status"] = capture_summary["diagnostic_capture_status"]
+    report["capture_blockers"] = list(capture_summary.get("capture_blockers") or [])
+    _assert_meta_only(report, source="comparison")
+    return report
 
 
 def dump_observation_diagnostic_comparison(report: Mapping[str, Any]) -> str:
@@ -421,10 +739,28 @@ def format_observation_diagnostic_comparison_markdown(report: Mapping[str, Any])
         f"ready_for_cause_repair: {cell(report.get('ready_for_cause_repair'))}",
         f"touch_files: {cell(', '.join(branch.get('touch_files', [])) if isinstance(branch.get('touch_files'), list) else '')}",
         f"do_not_touch: {cell(', '.join(branch.get('do_not_touch', [])) if isinstance(branch.get('do_not_touch'), list) else '')}",
+    ]
+    capture_summary = _safe_mapping(report.get("capture_summary"))
+    if capture_summary:
+        lines.extend([
+            f"diagnostic_capture_status: {cell(capture_summary.get('diagnostic_capture_status'))}",
+            f"backend_diagnostic_capture_status: {cell(capture_summary.get('backend_diagnostic_capture_status'))}",
+            f"frontend_diagnostic_capture_status: {cell(capture_summary.get('frontend_diagnostic_capture_status'))}",
+            f"capture_blockers: {cell(', '.join(capture_summary.get('capture_blockers', [])) if isinstance(capture_summary.get('capture_blockers'), list) else '')}",
+        ])
+    join_semantics_summary = _safe_mapping(report.get("join_semantics_summary") or capture_summary.get("join_semantics_summary"))
+    if join_semantics_summary:
+        lines.extend([
+            f"backend_public_passed_count: {cell(join_semantics_summary.get('backend_public_passed_count'))}",
+            f"display_confirmed_count: {cell(join_semantics_summary.get('display_confirmed_count'))}",
+            f"scorecard_passed_display_count: {cell(join_semantics_summary.get('scorecard_passed_display_count'))}",
+            f"display_counting_rule: {cell(join_semantics_summary.get('display_counting_rule'))}",
+        ])
+    lines.extend([
         "",
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] * len(headers)) + " |",
-    ]
+    ])
     for row in rows:
         candidate = "true" if row.get("candidate_generated") else "false"
         modal = "" if row.get("modal_opened") is None else "true" if row.get("modal_opened") else "false"
@@ -460,8 +796,14 @@ def dump_observation_comparison(report: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "BACKEND_LOG_PREFIX", "COMPARISON_VERSION", "FRONTEND_LOG_PREFIX",
-    "build_comparison_from_log_lines", "build_observation_diagnostic_comparison",
+    "BACKEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED", "BACKEND_LOG_PREFIX", "COMPARISON_VERSION",
+    "DIAGNOSTIC_CAPTURE_STATUS_CAPTURED", "DIAGNOSTIC_LOG_MISSING_OR_NOT_CAPTURED",
+    "FRONTEND_DIAGNOSTIC_MISSING_OR_NOT_CAPTURED", "FRONTEND_LOG_PREFIX",
+    "JOIN_SEMANTICS_VERSION", "FRONTEND_MODAL_NOT_OPENED",
+    "BACKEND_PUBLIC_PASSED_FRONTEND_UNCONFIRMED",
+    "build_backend_frontend_join_semantics", "build_backend_frontend_join_semantics_summary",
+    "build_comparison_from_log_lines", "build_observation_diagnostic_capture_status_report",
+    "build_observation_diagnostic_capture_summary", "build_observation_diagnostic_comparison",
     "determine_first_divergence_layer", "dump_observation_diagnostic_comparison",
     "format_observation_diagnostic_comparison_markdown", "join_backend_frontend_diagnostics",
     "parse_observation_diagnostic_log_line", "parse_observation_diagnostic_logs",

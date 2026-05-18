@@ -9,8 +9,13 @@ ladder step.  It does not write ``comment_text``, relax gates, or change public
 response/API/DB/RN contracts.
 """
 
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import Any, Iterable, Mapping, Sequence
+
+from emlis_ai_complete_scorecard_service import (
+    COMPLETE_COVERAGE_GROUP_ORDER,
+    _normalize_coverage_group,
+)
 
 COMPLETE_PRODUCT_QUALITY_SCORECARD_VERSION = "emlis.complete_product_quality_scorecard.v1"
 COMPLETE_PRODUCT_QUALITY_SCORECARD_STAGE = "Step6_Scorecard_Blind_QA"
@@ -22,6 +27,8 @@ COMPLETE_PRODUCT_QUALITY_BLIND_QA_REVIEW_VERSION = "emlis.complete_product_quali
 COMPLETE_PRODUCT_QUALITY_BLIND_QA_AGGREGATE_VERSION = "emlis.complete_product_quality_blind_qa_aggregate.v1"
 COMPLETE_PRODUCT_QUALITY_MACHINE_METRICS_VERSION = "emlis.complete_product_quality_machine_metrics.v1"
 COMPLETE_PRODUCT_QUALITY_TARGETS_VERSION = "emlis.complete_product_quality_targets.v1"
+COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_AGGREGATION_VERSION = "emlis.complete_product_quality_coverage_group_aggregation.v1"
+COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING = "coverage_group_missing"
 
 COMPLETE_PRODUCT_QUALITY_CONNECTION_DISPLAY_TARGET = 0.80
 COMPLETE_PRODUCT_GATE_DISPLAY_TARGET = 0.90
@@ -180,6 +187,51 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _event_relation_types(event: Mapping[str, Any]) -> list[str]:
+    relations: list[str] = []
+    for key in (
+        "relation_types",
+        "expected_relation_types",
+        "used_relation_ids",
+        "used_relation_types",
+        "relation_type",
+    ):
+        relations.extend(_dedupe(event.get(key)))
+    return _dedupe(relations)
+
+
+def _normalize_product_quality_coverage_group(event: Mapping[str, Any]) -> str:
+    raw = _clean(event.get("coverage_group"))
+    raw_lower = raw.lower()
+    if raw_lower in {"", "unclassified", "unknown", "missing", "none", "null", COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING}:
+        return COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING
+    normalized = _normalize_coverage_group(raw, relation_types=_event_relation_types(event))
+    return normalized or COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING
+
+
+def _empty_coverage_group_row(group: str) -> dict[str, Any]:
+    return {
+        "coverage_group": group,
+        "event_count": 0,
+        "eligible_count": 0,
+        "candidate_generated_count": 0,
+        "passed_display_count": 0,
+        "rejected_count": 0,
+        "unavailable_count": 0,
+        "safety_blocked_count": 0,
+        "binding_supported_sentence_count": 0,
+        "expected_binding_count": 0,
+        "repair_attempt_count": 0,
+        "repair_success_count": 0,
+        "template_major_count": 0,
+        "safety_major_count": 0,
+        "reason_required_count": 0,
+        "reason_covered_count": 0,
+        "reason_counter": Counter(),
+        "top_rejection_reasons": [],
+    }
+
+
 
 def _strip_forbidden_serialized_payload_key_names(value: Any) -> Any:
     if isinstance(value, Mapping):
@@ -282,15 +334,25 @@ def _normalize_product_quality_event(record: Any) -> dict[str, Any]:
     if not event:
         return {}
 
-    coverage_group = _clean(event.get("coverage_group")) or "short_daily"
+    coverage_group = _normalize_product_quality_coverage_group(event)
     observation_status = _clean(event.get("observation_status")).lower()
     eligible_count = _safe_int(event.get("eligible_count"), 0)
     if eligible_count <= 0 and (observation_status or event.get("complete_candidate_seen") or event.get("complete_candidate_generated")):
         eligible_count = 1
 
-    passed_display_count = _safe_int(event.get("passed_display_count"), 0)
-    if passed_display_count <= 0 and observation_status == "passed":
+    # Step3 ProductGate measurement events may keep backend observation_status=passed
+    # while display_confirmed=false.  Respect explicit display counting fields
+    # so backend-only passes are not over-counted as confirmed RN display.
+    if "scorecard_passed_display_count" in event:
+        passed_display_count = _safe_int(event.get("scorecard_passed_display_count"), 0)
+    elif "passed_display_count" in event:
+        passed_display_count = _safe_int(event.get("passed_display_count"), 0)
+    elif event.get("display_confirmed") is True:
         passed_display_count = 1 if eligible_count else 0
+    elif observation_status == "passed":
+        passed_display_count = 1 if eligible_count else 0
+    else:
+        passed_display_count = 0
 
     rejected_count = _safe_int(event.get("rejected_count"), 0)
     unavailable_count = _safe_int(event.get("unavailable_count"), 0)
@@ -444,16 +506,27 @@ def normalize_complete_product_quality_blind_qa_review(review: Mapping[str, Any]
         "review_id": _clean(data.get("review_id")) or _clean(data.get("id")),
         "fixture_set_id": _clean(data.get("fixture_set_id")),
         "coverage_group": _clean(data.get("coverage_group")),
+        "candidate_id": _clean(data.get("candidate_id")) or _clean(data.get("row_id")) or _clean(data.get("trace_id")) or _clean(data.get("emotion_log_id")),
+        "row_id": _clean(data.get("row_id")),
+        "trace_id": _clean(data.get("trace_id")),
+        "emotion_log_id": _clean(data.get("emotion_log_id")),
+        "public_passed": data.get("public_passed") if "public_passed" in data else None,
         "dimension_scores": dimension_scores,
         "dimension_verdicts": dimension_verdicts,
         "score": score,
         "read_feeling_score": read_score,
+        "read_feeling_source": "blind_qa_review_rating",
+        "ratings_only_payload": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
         "green_count": green_count,
         "yellow_count": yellow_count,
         "red_count": red_count,
         "read_feeling_pass": bool(read_score is not None and read_score >= COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET),
         "passed": bool(score is not None and read_score is not None and read_score >= COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET and red_count == 0),
         "machine_metrics_separated": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
@@ -483,6 +556,7 @@ def aggregate_complete_product_quality_blind_qa_reviews(
         "read_feeling_pass_count": read_pass_count,
         "red_review_count": red_review_count,
         "read_feeling_score": read_feeling_score,
+        "read_feeling_source": "blind_qa_review_ratings" if normalized else "not_evaluated",
         "overall_score": _avg(overall_scores),
         "dimension_scores": dimension_scores,
         "reviews": normalized,
@@ -490,6 +564,8 @@ def aggregate_complete_product_quality_blind_qa_reviews(
         "read_feeling_product_gate_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_PRODUCT_TARGET,
         "read_feeling_pass_rate": _rate(read_pass_count, review_count),
         "machine_metrics_separated": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
@@ -558,50 +634,70 @@ def _aggregate_machine_metrics(events: Sequence[Mapping[str, Any]]) -> dict[str,
         "reason_covered_count": 0,
     }
     reason_counter: Counter[str] = Counter()
-    group_rows: dict[str, dict[str, Any]] = defaultdict(lambda: {
-        "coverage_group": "",
-        "event_count": 0,
-        "eligible_count": 0,
-        "passed_display_count": 0,
-        "rejected_count": 0,
-        "unavailable_count": 0,
-        "safety_blocked_count": 0,
-        "binding_supported_sentence_count": 0,
-        "expected_binding_count": 0,
-        "template_major_count": 0,
-        "safety_major_count": 0,
-        "reason_required_count": 0,
-        "reason_covered_count": 0,
-    })
+    group_rows: dict[str, dict[str, Any]] = {
+        group: _empty_coverage_group_row(group) for group in COMPLETE_COVERAGE_GROUP_ORDER
+    }
     for event in events:
-        group = _clean(event.get("coverage_group")) or "short_daily"
+        group = _normalize_product_quality_coverage_group(event)
+        if group not in group_rows:
+            group_rows[group] = _empty_coverage_group_row(group)
         row = group_rows[group]
-        row["coverage_group"] = group
         row["event_count"] += 1
         for key in totals:
             value = _safe_int(event.get(key), 0)
             totals[key] += value
             row[key] = _safe_int(row.get(key), 0) + value
+        row_reason_counter = row.get("reason_counter")
+        if not isinstance(row_reason_counter, Counter):
+            row_reason_counter = Counter(_safe_mapping(row_reason_counter))
+            row["reason_counter"] = row_reason_counter
         for reason, count in _safe_mapping(event.get("reason_counter")).items():
-            reason_counter[str(reason)] += _safe_int(count, 0)
+            normalized_reason = str(reason)
+            normalized_count = _safe_int(count, 0)
+            reason_counter[normalized_reason] += normalized_count
+            row_reason_counter[normalized_reason] += normalized_count
 
     display_reach_rate = _rate(totals["passed_display_count"], totals["eligible_count"])
     binding_pass_rate = _rate(totals["binding_supported_sentence_count"], totals["expected_binding_count"])
     repair_success_rate = _rate(totals["repair_success_count"], totals["repair_attempt_count"])
     reason_coverage_rate = 1.0 if totals["reason_required_count"] <= 0 else _rate(totals["reason_covered_count"], totals["reason_required_count"])
+
+    def sort_key(group: str) -> tuple[int, str]:
+        if group in COMPLETE_COVERAGE_GROUP_ORDER:
+            return (COMPLETE_COVERAGE_GROUP_ORDER.index(group), group)
+        if group == COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING:
+            return (len(COMPLETE_COVERAGE_GROUP_ORDER), group)
+        return (len(COMPLETE_COVERAGE_GROUP_ORDER) + 1, group)
+
     rows: list[dict[str, Any]] = []
-    for group, row in sorted(group_rows.items()):
-        row = dict(row)
+    for group in sorted(group_rows, key=sort_key):
+        row = dict(group_rows[group])
+        row_counter = row.get("reason_counter")
+        if not isinstance(row_counter, Counter):
+            row_counter = Counter(_safe_mapping(row_counter))
         row["display_reach_rate"] = _rate(row.get("passed_display_count"), row.get("eligible_count"))
         row["binding_pass_rate"] = _rate(row.get("binding_supported_sentence_count"), row.get("expected_binding_count"))
+        row["repair_success_rate"] = _rate(row.get("repair_success_count"), row.get("repair_attempt_count"))
         row["reason_coverage_rate"] = 1.0 if _safe_int(row.get("reason_required_count"), 0) <= 0 else _rate(row.get("reason_covered_count"), row.get("reason_required_count"))
+        row["reason_counter"] = dict(row_counter)
+        row["top_rejection_reasons"] = [reason for reason, _ in row_counter.most_common(8)]
         rows.append(row)
 
+    by_coverage_group = {str(row.get("coverage_group")): dict(row) for row in rows}
+    observed_coverage_groups = [
+        group for group in COMPLETE_COVERAGE_GROUP_ORDER
+        if _safe_int(by_coverage_group.get(group, {}).get("event_count"), 0) > 0
+        or _safe_int(by_coverage_group.get(group, {}).get("eligible_count"), 0) > 0
+    ]
+    missing_coverage_groups = [group for group in COMPLETE_COVERAGE_GROUP_ORDER if group not in observed_coverage_groups]
+    coverage_group_missing_count = _safe_int(by_coverage_group.get(COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING, {}).get("event_count"), 0)
     top_rejection_reasons = [reason for reason, _ in reason_counter.most_common(8)]
     return {
         "version": COMPLETE_PRODUCT_QUALITY_MACHINE_METRICS_VERSION,
+        "coverage_group_aggregation_version": COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_AGGREGATION_VERSION,
         "target_step": COMPLETE_PRODUCT_QUALITY_SCORECARD_STEP,
         "machine_metrics_ready": bool(events),
+        "coverage_group_aggregation_ready": True,
         "event_count": len(events),
         "record_count": len(events),
         **totals,
@@ -611,15 +707,23 @@ def _aggregate_machine_metrics(events: Sequence[Mapping[str, Any]]) -> dict[str,
         "reason_coverage_rate": reason_coverage_rate,
         "top_rejection_reasons": top_rejection_reasons,
         "coverage_group_rows": rows,
-        "by_coverage_group": {str(row.get("coverage_group")): dict(row) for row in rows},
+        "by_coverage_group": by_coverage_group,
+        "required_coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+        "observed_coverage_groups": observed_coverage_groups,
+        "missing_coverage_groups": missing_coverage_groups,
+        "coverage_group_count": len(observed_coverage_groups),
+        "coverage_group_missing_count": coverage_group_missing_count,
+        "coverage_group_missing_blocker": coverage_group_missing_count > 0,
         "machine_metrics_separated_from_blind_qa": True,
         "machine_metrics_only": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_requires_blind_qa": True,
+        "read_feeling_auto_filled_from_machine_metrics": False,
         "read_feeling_score": None,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
     }
-
 
 
 def build_complete_product_quality_scorecard_event_schema() -> dict[str, Any]:
@@ -648,6 +752,8 @@ def build_complete_product_quality_scorecard_event_schema() -> dict[str, Any]:
         "required_fields": list(fields.keys()),
         "machine_metrics_separated_from_blind_qa": True,
         "machine_metrics_and_blind_qa_separated": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_requires_blind_qa": True,
         "read_feeling_source": "blind_qa",
         "comment_text_contract": "passed_only",
         "raw_input_included": False,
@@ -683,6 +789,8 @@ def build_complete_product_quality_scorecard(
     read_feeling_score = blind_qa.get("read_feeling_score")
     template_major_count = _safe_int(machine.get("template_major_count"), 0)
     safety_major_count = _safe_int(machine.get("safety_major_count"), 0)
+    missing_coverage_groups = list(machine.get("missing_coverage_groups") or [])
+    coverage_group_missing_count = _safe_int(machine.get("coverage_group_missing_count"), 0)
 
     threshold_checks = {
         "display_reach_rate_connection": display_reach_rate >= COMPLETE_PRODUCT_QUALITY_CONNECTION_DISPLAY_TARGET,
@@ -693,6 +801,8 @@ def build_complete_product_quality_scorecard(
         "template_major_count_zero": template_major_count == 0,
         "safety_major_count_zero": safety_major_count == 0,
         "reason_coverage_rate": reason_coverage_rate >= COMPLETE_PRODUCT_QUALITY_REASON_COVERAGE_TARGET,
+        "coverage_group_aggregation_ready": bool(machine.get("coverage_group_aggregation_ready")),
+        "required_coverage_groups_complete": not missing_coverage_groups and coverage_group_missing_count == 0,
     }
 
     release_blockers: list[str] = []
@@ -711,11 +821,15 @@ def build_complete_product_quality_scorecard(
         release_blockers.append("template_major_detected")
     if safety_major_count > 0:
         release_blockers.append("safety_major_detected")
+    if coverage_group_missing_count > 0:
+        release_blockers.append("coverage_group_missing")
+    if missing_coverage_groups:
+        release_blockers.append("coverage_groups_incomplete")
     if blind_qa.get("blind_qa_ready") and not threshold_checks["read_feeling_score_connection"]:
         release_blockers.append("read_feeling_score_below_connection_target")
 
     product_gate_thresholds_met = all(threshold_checks.values()) and bool(events) and bool(blind_qa.get("blind_qa_ready"))
-    read_feeling_source = "blind_qa" if blind_qa.get("blind_qa_ready") else "not_evaluated"
+    read_feeling_source = "blind_qa" if blind_qa.get("blind_qa_ready") else "blind_qa_required_not_evaluated"
 
     return _strip_forbidden_serialized_payload_key_names({
         "version": COMPLETE_PRODUCT_QUALITY_SCORECARD_VERSION,
@@ -733,6 +847,8 @@ def build_complete_product_quality_scorecard(
         "blind_qa_ready": bool(blind_qa.get("blind_qa_ready")),
         "read_feeling_requires_blind_qa": True,
         "machine_metrics_separated_from_blind_qa": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
         "machine_metrics": machine,
         "blind_qa_metrics": blind_qa,
         "blind_qa_rubric": rubric,
@@ -755,6 +871,13 @@ def build_complete_product_quality_scorecard(
         "top_rejection_reasons": list(machine.get("top_rejection_reasons") or []),
         "coverage_group_rows": list(machine.get("coverage_group_rows") or []),
         "by_coverage_group": dict(machine.get("by_coverage_group") or {}),
+        "coverage_group_aggregation_ready": bool(machine.get("coverage_group_aggregation_ready")),
+        "required_coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+        "observed_coverage_groups": list(machine.get("observed_coverage_groups") or []),
+        "missing_coverage_groups": missing_coverage_groups,
+        "coverage_group_count": int(machine.get("coverage_group_count") or 0),
+        "coverage_group_missing_count": coverage_group_missing_count,
+        "coverage_group_missing_blocker": coverage_group_missing_count > 0,
         "threshold_checks": threshold_checks,
         "targets": {
             "version": COMPLETE_PRODUCT_QUALITY_TARGETS_VERSION,
@@ -764,6 +887,8 @@ def build_complete_product_quality_scorecard(
             "connection_read_feeling_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET,
             "product_gate_read_feeling_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_PRODUCT_TARGET,
             "reason_coverage_rate": COMPLETE_PRODUCT_QUALITY_REASON_COVERAGE_TARGET,
+            "required_coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
+            "coverage_group_missing_count": 0,
             "template_major_count": 0,
             "safety_major_count": 0,
         },
