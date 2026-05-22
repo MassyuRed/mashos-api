@@ -12,12 +12,20 @@ from dataclasses import dataclass
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
+from emlis_ai_runtime_surface_coverage_baseline import (
+    RUNTIME_SURFACE_COVERAGE_BASELINE_STEP,
+    RUNTIME_SURFACE_COVERAGE_GROUP_MISSING,
+    RUNTIME_SURFACE_COVERAGE_GROUP_ORDER,
+    build_runtime_surface_coverage_matrix_contract,
+)
+
 _COVERAGE_MATRIX_VERSION = "emlis.coverage_matrix.v1"
 _LIMITED_COMPOSER_SCORECARD_EVENT_VERSION = "emlis.limited_composer_scorecard_event.v1"
 _LIMITED_COMPOSER_SCORECARD_AGGREGATE_VERSION = "emlis.limited_composer_scorecard_aggregate.v1"
 _LIMITED_COMPOSER_SCORECARD_HARNESS_VERSION = "emlis.limited_composer_scorecard_harness.v1"
 _LIMITED_COMPOSER_SCORECARD_STEP = "9_scorecard_harness"
 _SCORECARD_STATUSES: Sequence[str] = ("passed", "rejected", "unavailable", "safety_blocked")
+_RUNTIME_SURFACE_COVERAGE_MATRIX_CONTRACT_STEP = RUNTIME_SURFACE_COVERAGE_BASELINE_STEP
 
 
 @dataclass(frozen=True)
@@ -911,6 +919,10 @@ aggregate_limited_composer_scorecard_events = aggregate_emlis_limited_composer_s
 
 __all__ = [
     "COVERAGE_GROUP_ORDER",
+    "RUNTIME_SURFACE_COVERAGE_GROUP_ORDER",
+    "RUNTIME_SURFACE_COVERAGE_GROUP_MISSING",
+    "RUNTIME_SURFACE_COVERAGE_BASELINE_STEP",
+    "build_runtime_surface_coverage_matrix_contract",
     "aggregate_emlis_limited_composer_scorecard_events",
     "aggregate_limited_composer_scorecard_events",
     "build_emlis_coverage_matrix",

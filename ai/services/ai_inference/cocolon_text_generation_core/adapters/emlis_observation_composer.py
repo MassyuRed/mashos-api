@@ -425,6 +425,11 @@ def build_emlis_observation_core_payload(
         relation_taxonomy = composer_meta.get("relation_taxonomy")
     if not isinstance(relation_taxonomy, Mapping):
         relation_taxonomy = {}
+    structure_material = composer_meta.get("observation_structure_material") if isinstance(composer_meta, Mapping) else None
+    if not isinstance(structure_material, Mapping) and isinstance(composer_payload, Mapping):
+        structure_material = composer_payload.get("observation_structure_material")
+    if not isinstance(structure_material, Mapping):
+        structure_material = {}
     candidate = _common_candidate(
         comment_text=comment_text,
         used_evidence_span_ids=tuple(used_ids),
@@ -456,6 +461,10 @@ def build_emlis_observation_core_payload(
             "sentence_bindings": [binding.as_meta(include_text=False) for binding in common_bindings],
             "relation_taxonomy": dict(relation_taxonomy),
             "step5_relation_taxonomy": dict(relation_taxonomy),
+            "observation_structure_material": dict(structure_material),
+            "observation_structure_dictionary_connected": bool(structure_material),
+            "dictionary_is_observation_material_only": True,
+            "dictionary_returns_completed_reply": False,
         },
     )
     return payload, candidate

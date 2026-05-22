@@ -21,6 +21,10 @@ from emlis_ai_complete_focus_selector import (
     CompleteCoveragePlan,
     build_complete_coverage_plan,
 )
+from emlis_ai_observation_material_connector import (
+    OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+    observation_material_connector_forward_meta,
+)
 from emlis_ai_limited_relation_taxonomy import (
     allowed_relation_types,
     build_limited_relation_taxonomy_meta,
@@ -165,6 +169,25 @@ def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
             continue
         out[key_text] = _json_safe_value(item)
     return out
+
+
+
+def _observation_forward_meta(value: Any) -> dict[str, Any]:
+    return observation_material_connector_forward_meta(value)
+
+
+def _row_observation_meta(row: Mapping[str, Any]) -> dict[str, Any]:
+    return _observation_forward_meta(row) or _observation_forward_meta(row.get("meta") if isinstance(row, Mapping) else None)
+
+
+def _is_low_information_observation(meta: Mapping[str, Any] | None) -> bool:
+    if not isinstance(meta, Mapping):
+        return False
+    return (
+        _clean(meta.get("observation_reply_kind")) == OBSERVATION_REPLY_KIND_LOW_INFORMATION
+        or bool(meta.get("low_information_known_scope_only"))
+        or bool(meta.get("known_scope_only"))
+    )
 
 
 def _safe_int(value: Any, *, default: int = 0, minimum: int = 0, maximum: int = 999) -> int:
@@ -313,7 +336,7 @@ class CompleteRelationGraphNode:
         return not self.validation_errors
 
     def as_sentence_plan_focus(self) -> dict[str, Any]:
-        return {
+        seed = {
             "node_id": self.node_id,
             "material_id": self.material_id,
             "phrase_unit_id": self.phrase_unit_id,
@@ -329,6 +352,8 @@ class CompleteRelationGraphNode:
             "relation_pre_generation_constraint": True,
             "raw_input_included": False,
         }
+        seed.update(_observation_forward_meta(self.meta))
+        return seed
 
     def as_meta(self) -> dict[str, Any]:
         return {
@@ -343,6 +368,7 @@ class CompleteRelationGraphNode:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            **_observation_forward_meta(self.meta),
             "relation_known": self.relation_known,
             "focus_rank": self.focus_rank,
             "focus_role": self.focus_role,
@@ -428,6 +454,7 @@ class CompleteRelationGraphEdge:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            **_observation_forward_meta(self.meta),
             "relation_known": self.relation_known,
             "source_relation_type": self.source_relation_type,
             "target_relation_type": self.target_relation_type,
@@ -464,7 +491,7 @@ def _coerce_node(value: CompleteRelationGraphNode | Mapping[str, Any], *, index:
         source_anchor_present=bool(row.get("source_anchor_present") or row.get("evidence_span_id")),
         selection_reasons=row.get("selection_reasons") or (),
         source=row.get("source") or "focus_selector",
-        meta=row.get("meta") or {},
+        meta={**(row.get("meta") or {}), **_row_observation_meta(row)},
     )
 
 
@@ -638,6 +665,7 @@ class CompleteObservationGraphV2:
                     "must_include": bool(node.must_keep or rank == 1),
                     "relation_pre_generation_constraint": True,
                     "relation_from_observation_graph_v2": True,
+                    **_observation_forward_meta(node.meta),
                     "raw_input_included": False,
                 }
             )
@@ -653,6 +681,7 @@ class CompleteObservationGraphV2:
             "relation_types": list(self.relation_types),
             "canonical_relation_types": list(self.canonical_relation_types),
             "relation_families": list(self.relation_families),
+            **_observation_forward_meta(self.meta),
             "used_evidence_span_ids": list(self.used_evidence_span_ids),
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
             "relation_rows": rows,
@@ -683,6 +712,7 @@ class CompleteObservationGraphV2:
             "relation_types": list(self.relation_types),
             "canonical_relation_types": list(self.canonical_relation_types),
             "relation_families": list(self.relation_families),
+            **_observation_forward_meta(self.meta),
             "relation_surface_policies": list(self.relation_surface_policies),
             "relation_type_pre_generation_constraint": True,
             "summarize_all_materials": False,
@@ -734,6 +764,7 @@ class CompleteObservationGraphV2:
             "used_evidence_span_ids": list(self.used_evidence_span_ids),
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
             "role_types": list(self.role_types),
+            **_observation_forward_meta(self.meta),
             "graph_nodes": [node.as_meta() for node in self.relation_nodes],
             "optional_graph_nodes": [node.as_meta() for node in self.optional_nodes],
             "relation_edges": [edge.as_meta() for edge in self.relation_edges],
@@ -805,6 +836,11 @@ def build_complete_relation_graph_contract_meta() -> dict[str, Any]:
         "complete_composer_initial_term": term_meta.get("complete_composer_initial_term"),
         "relation_graph_bridge_added": True,
         "observation_graph_2_0_bridge_added": True,
+        "observation_material_connector_supported": True,
+        "observation_reply_kind_preserved_in_relation_meta": True,
+        "internal_question_ids_preserved_in_relation_meta": True,
+        "eligible_deep_relation_allowed": True,
+        "low_information_relation_confidence_limited": True,
         "existing_relation_taxonomy_bridged": True,
         "accepts_complete_focus_selector_output": True,
         "accepts_complete_material_service_output": True,
@@ -905,6 +941,13 @@ def build_complete_relation_graph(
             coverage_group=coverage_group,
         )
     rows, optional_rows, group, budget, required_roles, source_meta, requested_group = _coverage_plan_rows(plan)
+    connector_meta = _observation_forward_meta(source_meta)
+    if not connector_meta:
+        for row in list(rows) + list(optional_rows):
+            if isinstance(row, Mapping):
+                connector_meta.update(_row_observation_meta(row))
+            else:
+                connector_meta.update(_observation_forward_meta(getattr(row, "meta", None)))
     nodes = _build_nodes_from_rows(rows, start_index=1)
     optional_nodes = _build_nodes_from_rows(optional_rows, start_index=len(nodes) + 1)
     edges = _edges_for_nodes(nodes)
@@ -917,7 +960,7 @@ def build_complete_relation_graph(
         required_line_roles=required_roles or ("opening", "core", "relation"),
         requested_coverage_group=requested_group or coverage_group,
         source_coverage_plan_meta=source_meta,
-        meta={**build_complete_relation_graph_contract_meta(), **_json_safe_mapping(meta)},
+        meta={**build_complete_relation_graph_contract_meta(), **_json_safe_mapping(meta), **connector_meta},
     )
 
 

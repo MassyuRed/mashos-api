@@ -23,6 +23,13 @@ from emlis_ai_complete_composer_types import (
     RepairTrace,
 )
 from emlis_ai_complete_grounding_binding import COMPLETE_BINDING_AWARE_GROUNDING_STAGE
+from emlis_ai_runtime_surface_self_repair import (
+    RUNTIME_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION,
+    RUNTIME_SURFACE_AWARE_SELF_REPAIR_STEP,
+    RUNTIME_SURFACE_AWARE_SELF_REPAIR_VERSION,
+    build_surface_aware_self_repair_request,
+    derive_surface_aware_repair_reasons,
+)
 from emlis_ai_complete_surface_realizer import (
     COMPLETE_SURFACE_REALIZER_STAGE,
     COMPLETE_SURFACE_SIGNATURE_SCHEMA_VERSION,
@@ -42,6 +49,9 @@ from emlis_ai_relation_surface_contract import (
 
 COMPLETE_SELF_REPAIR_VERSION = "emlis.complete_self_repair.v1"
 COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION = "emlis.complete_self_repair.product_quality.v2"
+COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION = RUNTIME_SURFACE_AWARE_SELF_REPAIR_VERSION
+COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP = RUNTIME_SURFACE_AWARE_SELF_REPAIR_STEP
+COMPLETE_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION = RUNTIME_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION
 COMPLETE_SELF_REPAIR_POLICY_VERSION = "emlis.complete_self_repair_policy.v2"
 COMPLETE_SELF_REPAIR_SERVICE_VERSION = COMPLETE_SELF_REPAIR_VERSION
 COMPLETE_SELF_REPAIR_STAGE = "Step9_Self_Repair_Loop"
@@ -66,6 +76,7 @@ REPAIR_REASON_OVER_ECHO = "over_echo"
 REPAIR_REASON_TOO_LONG = "too_long"
 REPAIR_REASON_OVERCLAIM = "overclaim"
 REPAIR_REASON_UNSUPPORTED_OVERCLAIM = "unsupported_overclaim"
+REPAIR_REASON_MALFORMED_NOMINALIZATION = "malformed_nominalization"
 
 ALLOWED_REPAIR_REASONS = {
     REPAIR_REASON_UNSUPPORTED_SENTENCE,
@@ -76,6 +87,7 @@ ALLOWED_REPAIR_REASONS = {
     REPAIR_REASON_TOO_LONG,
     REPAIR_REASON_OVERCLAIM,
     REPAIR_REASON_UNSUPPORTED_OVERCLAIM,
+    REPAIR_REASON_MALFORMED_NOMINALIZATION,
 }
 
 REJECT_PREFERRED_REASONS = {REPAIR_REASON_OVERCLAIM, REPAIR_REASON_UNSUPPORTED_OVERCLAIM}
@@ -139,10 +151,10 @@ ROLE_KEY_REPAIR_PHRASES = {
 }
 
 ECHO_REPAIR_SUFFIXES = (
-    "根拠のある範囲で置き直しています。",
-    "文の中では短く残しています。",
+    "根拠のある範囲で置き直しました。",
+    "文の中では短く残します。",
     "関係だけを保って言い換えています。",
-    "余分な引用を避けて残しています。",
+    "余分な引用を避けて残しました。",
 )
 
 RELATION_CONNECTOR_KEYS = {
@@ -193,6 +205,12 @@ REPAIR_POLICY_TABLE: dict[str, dict[str, Any]] = {
         "allowed_repair": ("reduce_quote_density", "role_phrase_rephrase"),
         "forbidden": ("expand_meaning",),
         "trace_required_fields": ("echo_ratio_before", "echo_ratio_after"),
+    },
+    REPAIR_REASON_MALFORMED_NOMINALIZATION: {
+        "source_gate": "template",
+        "allowed_repair": ("remove_optional_malformed_sentence", "defer_malformed_must_keep"),
+        "forbidden": ("add_rootless_material", "complete_unsupported_grammar"),
+        "trace_required_fields": ("before_sentence_ids", "after_sentence_ids", "removed_optional_sentence_ids", "abort_reason"),
     },
     REPAIR_REASON_TOO_LONG: {
         "source_gate": "display",
@@ -562,7 +580,49 @@ def _normalize_reason(value: Any) -> str:
         "surface_too_long": REPAIR_REASON_TOO_LONG,
         "same_ending_major_detected": REPAIR_REASON_TEMPLATE_LIKE,
         "fixed_template_like": REPAIR_REASON_TEMPLATE_LIKE,
+        "template_major": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_template_major": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_template_major_detected": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_signature_repeat": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_signature_repeat_detected": REPAIR_REASON_TEMPLATE_LIKE,
+        "connector_repeat": REPAIR_REASON_TEMPLATE_LIKE,
+        "connector_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_connector_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "predicate_family_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "ending_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "same_ending_family": REPAIR_REASON_TEMPLATE_LIKE,
+        "generic_center_phrase": REPAIR_REASON_TEMPLATE_LIKE,
+        "raw_echo_risk": REPAIR_REASON_RAW_ECHO,
+        "malformed_nominalization": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "malformed_nominalization_risk": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "surface_grammar_warning": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "grammar_warning": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "phrase_unit_grammar": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "stem_koto_hanareru": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "particle_leftover": REPAIR_REASON_UNSUPPORTED_SENTENCE,
+        "unfinished_phrase": REPAIR_REASON_UNSUPPORTED_SENTENCE,
         "unsupported_overclaim": REPAIR_REASON_UNSUPPORTED_OVERCLAIM,
+        "surface_template_major": REPAIR_REASON_TEMPLATE_LIKE,
+        "template_major": REPAIR_REASON_TEMPLATE_LIKE,
+        "generic_center_phrase": REPAIR_REASON_TEMPLATE_LIKE,
+        "center_phrase": REPAIR_REASON_TEMPLATE_LIKE,
+        "same_connector_run": REPAIR_REASON_TEMPLATE_LIKE,
+        "connector_repeat": REPAIR_REASON_TEMPLATE_LIKE,
+        "connector_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "connector_family_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+        "same_ending_family": REPAIR_REASON_TEMPLATE_LIKE,
+        "observation_predicate_stack": REPAIR_REASON_TEMPLATE_LIKE,
+        "surface_signature_repeat": REPAIR_REASON_TEMPLATE_LIKE,
+        "raw_echo_risk": REPAIR_REASON_RAW_ECHO,
+        "grammar_warning": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "surface_grammar_warning": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "grammar_major": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "malformed_nominalization": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "malformed_nominalization_risk": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "stem_koto_hanareru": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "malformed_nominalization_missing_ru": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "malformed_nominalization_particle_before_koto": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        "malformed_nominalization_auxiliary_fragment": REPAIR_REASON_MALFORMED_NOMINALIZATION,
     }
     return aliases.get(reason, reason)
 
@@ -593,6 +653,17 @@ def _reasons_from_gate_input(gate_reasons: Any = None, grounding_report: Any = N
     if isinstance(meta, Mapping):
         for key in ("gate_reasons", "repair_targets", "rejection_reasons"):
             reasons.extend(_normalize_reason(raw) for raw in _dedupe(meta.get(key)))
+        surface_signature = meta.get("surface_quality_signature") or meta.get("step2_surface_quality_signature")
+        if isinstance(surface_signature, Mapping) or isinstance(meta.get("surface_aware_self_repair_request"), Mapping):
+            reasons.extend(
+                _normalize_reason(raw)
+                for raw in derive_surface_aware_repair_reasons(
+                    surface_quality_signature=surface_signature if isinstance(surface_signature, Mapping) else None,
+                    gate_reasons=gate_reasons,
+                    gate_results=gate_results,
+                    meta=meta,
+                )
+            )
     return tuple(reason for reason in _dedupe(reasons) if reason)
 
 
@@ -606,6 +677,7 @@ def _operation_for(reason: str) -> str:
         REPAIR_REASON_TOO_LONG: "remove_optional_or_shorten_closing",
         REPAIR_REASON_OVERCLAIM: "reject_or_remove_overclaim_optional_line",
         REPAIR_REASON_UNSUPPORTED_OVERCLAIM: "reject_or_remove_overclaim_optional_line",
+        REPAIR_REASON_MALFORMED_NOMINALIZATION: "remove_optional_malformed_sentence_or_fail_closed",
     }.get(reason, "aborted_unknown_repair_reason")
 
 
@@ -684,6 +756,14 @@ def build_complete_self_repair_policy_table_v2() -> dict[str, dict[str, Any]]:
             "required_trace_fields": ["echo_ratio_before", "echo_ratio_after"],
             "meaning_added": False,
         },
+        REPAIR_REASON_MALFORMED_NOMINALIZATION: {
+            "source_gate": "template",
+            "allowed_operations": ["remove_optional_malformed_sentence", "fail_closed_on_malformed_must_keep"],
+            "forbidden_operations": ["add_rootless_material", "complete_unsupported_grammar", "delete_must_include"],
+            "required_trace_fields": ["before_sentence_ids", "after_sentence_ids", "removed_optional_sentence_ids", "abort_reason"],
+            "meaning_added": False,
+            "fail_closed_on_must_keep": True,
+        },
         REPAIR_REASON_TOO_LONG: {
             "source_gate": "reader",
             "allowed_operations": ["remove_optional_line_for_length", "shorten_closing"],
@@ -721,6 +801,8 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
         "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
         "target_step": COMPLETE_SELF_REPAIR_STAGE,
         "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
+        "surface_aware_self_repair_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION,
+        "surface_aware_self_repair_step": COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP,
         "step": COMPLETE_SELF_REPAIR_STAGE,
         "source_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
         "stage": COMPLETE_COMPOSER_STAGE,
@@ -730,6 +812,11 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
         "target_composer_family_term": term_meta["target_composer_family_term"],
         "complete_composer_initial_term": term_meta["complete_composer_initial_term"],
         "self_repair_loop_added": True,
+        "surface_aware_self_repair_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION,
+        "surface_aware_self_repair_step": COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP,
+        "surface_aware_self_repair_policy_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION,
+        "step10_surface_aware_self_repair_ready": True,
+        "surface_aware_repair_reason_handoff_ready": True,
         "self_repair_enabled": True,
         "max_repair_attempts": MAX_SELF_REPAIR_ATTEMPTS,
         "gate_relaxation_allowed": False,
@@ -750,6 +837,7 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
             REPAIR_REASON_TEMPLATE_LIKE: ["vary_tail", "vary_connector", "vary_surface_signature"],
             REPAIR_REASON_RAW_ECHO: ["reduce_quote_density", "role_phrase_rephrase"],
             REPAIR_REASON_OVER_ECHO: ["reduce_quote_density", "role_phrase_rephrase"],
+            REPAIR_REASON_MALFORMED_NOMINALIZATION: ["remove_optional_malformed_sentence", "fail_closed_on_malformed_must_keep"],
             REPAIR_REASON_TOO_LONG: ["remove_optional_line", "shorten_closing"],
             REPAIR_REASON_OVERCLAIM: ["reject", "remove_optional_overclaim_line"],
             REPAIR_REASON_UNSUPPORTED_OVERCLAIM: ["reject", "remove_optional_overclaim_line"],
@@ -1331,6 +1419,46 @@ def _shorten_closing(
     return _rebuild_realization(realization, plan, rebuilt, attempt=attempt, operation="shorten_closing"), "shorten_closing", True
 
 
+
+_MALFORMED_NOMINALIZATION_RE = re.compile(
+    r"(?:離れこと|(?:離れ|分かれ|外れ|崩れ|揺れ|流れ|逃げ|戻れ|向かえ|変われ|整え|貯め|決め|始め)こと|(?:を|が|は|に|で|へ|から|まで|より)こと|(?:なっ|し|い|見え|残っ|重なっ)こと(?:も|が|は|に|$))"
+)
+
+
+def _remove_optional_malformed_line(
+    realization: CompleteSurfaceRealizationV2,
+    plan: CompleteSentencePlanV2,
+    *,
+    attempt: int,
+) -> tuple[CompleteSurfaceRealizationV2 | None, str, bool]:
+    """Drop only optional malformed surface rows; must_keep rows fail closed."""
+
+    plan_map = _line_plan_map(plan)
+    blocked_must_keep = False
+    for line in realization.surface_lines:
+        if not _MALFORMED_NOMINALIZATION_RE.search(line.surface_text):
+            continue
+        plan_line = plan_map.get(line.sentence_id)
+        if _is_must_include(plan_line, line):
+            blocked_must_keep = True
+            continue
+        if not _is_optional(plan_line, line):
+            blocked_must_keep = True
+            continue
+        kept = [item for item in realization.surface_lines if item.sentence_id != line.sentence_id]
+        if len(kept) >= 2:
+            return _rebuild_realization(
+                realization,
+                plan,
+                kept,
+                attempt=attempt,
+                operation="remove_optional_malformed_sentence",
+            ), "remove_optional_malformed_sentence", True
+    if blocked_must_keep:
+        return None, "fail_closed_on_malformed_must_keep", False
+    return None, "malformed_nominalization_line_unavailable", False
+
+
 def _remove_optional_overclaim_line(
     realization: CompleteSurfaceRealizationV2,
     plan: CompleteSentencePlanV2,
@@ -1371,6 +1499,9 @@ def _apply_one_repair(
     if reason in ECHO_REASONS:
         repaired, op, changed = _reduce_echo(realization, plan, attempt=attempt)
         return repaired, op, changed, False
+    if reason == REPAIR_REASON_MALFORMED_NOMINALIZATION:
+        repaired, op, changed = _remove_optional_malformed_line(realization, plan, attempt=attempt)
+        return repaired, op, changed, False
     if reason == REPAIR_REASON_TOO_LONG:
         repaired, op, changed = _remove_optional_lines(realization, plan, attempt=attempt, reason=reason)
         if changed:
@@ -1409,6 +1540,8 @@ def _trace(
             "source_step": COMPLETE_BINDING_AWARE_GROUNDING_STAGE,
             "target_step": COMPLETE_SELF_REPAIR_STAGE,
             "product_quality_step": COMPLETE_PRODUCT_QUALITY_SELF_REPAIR_STAGE,
+            "surface_aware_self_repair_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION,
+            "surface_aware_self_repair_step": COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP,
             "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
             "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
             "operation": operation,
@@ -1516,6 +1649,12 @@ class CompleteSelfRepairResult:
             "version": self.schema_version,
             "schema_version": self.schema_version,
             "product_quality_version": COMPLETE_SELF_REPAIR_PRODUCT_QUALITY_VERSION,
+            "surface_aware_self_repair_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION,
+            "surface_aware_self_repair_step": COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP,
+            "step10_surface_aware_self_repair_ready": True,
+            "surface_aware_repair_reasons": list(self.meta.get("surface_aware_repair_reasons") or self.meta.get("gate_reasons_for_self_repair") or []),
+            "surface_aware_repair_attempted": bool(self.meta.get("surface_aware_repair_reasons") or self.meta.get("gate_reasons_for_self_repair")) or any(t.reason_code in {REPAIR_REASON_TEMPLATE_LIKE, REPAIR_REASON_RAW_ECHO, REPAIR_REASON_MALFORMED_NOMINALIZATION} for t in self.repair_trace),
+            "surface_aware_repair_fail_closed": self.aborted,
             "service_version": COMPLETE_SELF_REPAIR_VERSION,
             "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
             "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
@@ -1606,7 +1745,16 @@ def run_complete_self_repair_loop(
         )
 
     plan = _source_plan_for(original)
-    reasons = _reasons_from_gate_input(gate_reasons, grounding_report, gate_results, meta)
+    meta_map = _json_safe_mapping(meta)
+    surface_signature_meta = meta_map.get("surface_quality_signature") or meta_map.get("step2_surface_quality_signature")
+    surface_aware_request = build_surface_aware_self_repair_request(
+        surface_quality_signature=surface_signature_meta if isinstance(surface_signature_meta, Mapping) else None,
+        gate_reasons=gate_reasons,
+        gate_results=gate_results,
+        meta=meta_map,
+        max_attempts=max_attempts,
+    )
+    reasons = _reasons_from_gate_input(gate_reasons, grounding_report, gate_results, {**meta_map, "surface_aware_self_repair_request": surface_aware_request})
     if not reasons:
         return CompleteSelfRepairResult(
             original_surface_realization=original,
@@ -1615,10 +1763,11 @@ def run_complete_self_repair_loop(
             gate_reasons=(),
             status=COMPLETE_SELF_REPAIR_STATUS_UNCHANGED,
             rejection_reasons=(),
-            meta={**build_complete_self_repair_contract_meta(), **_json_safe_mapping(meta), "reason": "no_repair_target"},
+            meta={**build_complete_self_repair_contract_meta(), **meta_map, "surface_aware_self_repair_request": surface_aware_request, "reason": "no_repair_target"},
         )
 
-    attempts_allowed = max(0, min(MAX_SELF_REPAIR_ATTEMPTS, int(max_attempts or MAX_SELF_REPAIR_ATTEMPTS)))
+    attempts_source = MAX_SELF_REPAIR_ATTEMPTS if max_attempts is None else max_attempts
+    attempts_allowed = max(0, min(MAX_SELF_REPAIR_ATTEMPTS, int(attempts_source)))
     current = original
     current_plan = plan
     traces: list[RepairTrace] = []
@@ -1722,7 +1871,12 @@ def run_complete_self_repair_loop(
         rejection_reasons=tuple(blocked),
         meta={
             **build_complete_self_repair_contract_meta(),
-            **_json_safe_mapping(meta),
+            **meta_map,
+            "surface_aware_self_repair_request": surface_aware_request,
+            "step10_surface_aware_self_repair_request": surface_aware_request,
+            "surface_aware_repair_reasons": list(surface_aware_request.get("surface_aware_repair_reasons") or []),
+            "gate_reasons_for_self_repair": list(surface_aware_request.get("gate_reasons_for_self_repair") or []),
+            "surface_aware_repair_fail_closed": status == COMPLETE_SELF_REPAIR_STATUS_ABORTED,
             "allowed_rebind_evidence_span_ids": list(rebind_ids),
             "blocked_reasons": list(blocked),
         },
@@ -1767,6 +1921,9 @@ __all__ = [
     "COMPLETE_SELF_REPAIR_STEP",
     "COMPLETE_SELF_REPAIR_TARGET_STEP",
     "COMPLETE_SELF_REPAIR_VERSION",
+    "COMPLETE_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION",
+    "COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP",
+    "COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION",
     "CompleteSelfRepairControllerResult",
     "CompleteSelfRepairLoopResult",
     "CompleteSelfRepairResult",
@@ -1777,5 +1934,6 @@ __all__ = [
     "build_complete_self_repair_loop_meta",
     "build_complete_self_repair_meta",
     "build_complete_self_repair_result",
+    "REPAIR_REASON_MALFORMED_NOMINALIZATION",
     "run_complete_self_repair_loop",
 ]

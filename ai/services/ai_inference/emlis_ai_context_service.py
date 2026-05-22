@@ -13,6 +13,7 @@ from emlis_ai_readers import (
     get_myweb_home_summary_for_emlis_ai,
 )
 from emlis_ai_greeting_state_store import decide_greeting_for_user
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_types import DerivedUserModel, EmlisAICapabilityConfig, SourceBundle
 from emlis_ai_user_model_store import load_emlis_ai_user_model_for_user
 from emotion_history_search_service import (
@@ -196,6 +197,7 @@ async def build_emlis_ai_source_bundle(
     load_derived_model: Optional[bool] = None,
 ) -> SourceBundle:
     now_utc = now_utc or datetime.now(timezone.utc)
+    current_input = normalize_emlis_current_input(current_input)
 
     # Display name and timezone are independent reads. Collect them in parallel
     # so the /emotion/submit synchronous reply path is not lengthened by

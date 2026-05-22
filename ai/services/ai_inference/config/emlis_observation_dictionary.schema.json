@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocolon.local/schemas/emlis_observation_dictionary.v1.json",
+  "title": "EmlisAI Observation Dictionary V1",
+  "description": "Material dictionary contract for EmlisAI observation replies. Entries are phrase materials or forbidden signatures, not completed reply templates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dictionary_version",
+    "contract_step",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "emlis.observation_dictionary.v1"
+    },
+    "dictionary_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_step": {
+      "const": "Step5_Observation_Dictionary_Schema"
+    },
+    "description": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ObservationDictionaryEntryV1"
+      }
+    }
+  },
+  "$defs": {
+    "ReplyKind": {
+      "enum": [
+        "eligible_observation",
+        "low_information_observation"
+      ]
+    },
+    "Category": {
+      "enum": [
+        "receive_phrase",
+        "arrangement_connector",
+        "relation_phrase",
+        "humility_marker",
+        "unknown_slot_marker",
+        "question_ending",
+        "known_scope_phrase",
+        "burden_phrase",
+        "forbidden_template_signature"
+      ]
+    },
+    "EvidenceRole": {
+      "enum": [
+        "state",
+        "target",
+        "wish",
+        "blockage",
+        "contrast",
+        "repetition",
+        "self_awareness",
+        "relation",
+        "unknown_slot",
+        "current_input",
+        "none"
+      ]
+    },
+    "ObservationDictionaryEntryV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "category",
+        "surface",
+        "allowed_reply_kinds",
+        "requires_evidence_role",
+        "must_not_be_complete_sentence",
+        "template_signature_weight"
+      ],
+      "properties": {
+        "entry_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$",
+          "minLength": 3
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_reply_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ReplyKind"
+          }
+        },
+        "requires_evidence_role": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/EvidenceRole"
+          }
+        },
+        "must_not_be_complete_sentence": {
+          "type": "boolean"
+        },
+        "template_signature_weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unknown_slots": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "positive_material": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

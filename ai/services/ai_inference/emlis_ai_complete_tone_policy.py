@@ -17,14 +17,26 @@ from typing import Any, Iterable, Mapping, Sequence, Tuple
 from emlis_ai_complete_composer_initial_meta import build_complete_composer_initial_term_meta
 from emlis_ai_complete_composer_types import CompleteSentencePlanLine, CompleteSentencePlanV2
 from emlis_ai_limited_relation_taxonomy import canonical_relation_type, normalize_relation_type, relation_family
+from emlis_ai_runtime_surface_tone_engine_2_1 import (
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_POLICY_VERSION,
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_REPORT_VERSION,
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_STEP,
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
+    build_runtime_surface_tone_engine_2_1_policy_meta,
+    build_runtime_surface_tone_engine_2_1_report,
+    normalize_tone_engine_2_1_to_scorecard_event,
+)
 
-COMPLETE_TONE_ENGINE_VERSION = "emlis.complete_tone_engine.v1"
-COMPLETE_TONE_POLICY_VERSION = "emlis.complete_tone_policy.v1"
-COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION = "emlis.complete_product_quality_tone_engine.v1"
-COMPLETE_TONE_GUARD_REPORT_VERSION = "emlis.complete_tone_guard_report.v1"
-COMPLETE_TONE_ENGINE_STAGE = "Step5_Tone_Engine"
+COMPLETE_TONE_ENGINE_2_1_VERSION = RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION
+COMPLETE_TONE_POLICY_2_1_VERSION = RUNTIME_SURFACE_TONE_ENGINE_2_1_POLICY_VERSION
+COMPLETE_TONE_GUARD_REPORT_2_1_VERSION = RUNTIME_SURFACE_TONE_ENGINE_2_1_REPORT_VERSION
+COMPLETE_TONE_ENGINE_VERSION = COMPLETE_TONE_ENGINE_2_1_VERSION
+COMPLETE_TONE_POLICY_VERSION = COMPLETE_TONE_POLICY_2_1_VERSION
+COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION = "emlis.complete_product_quality_tone_engine.v2_1"
+COMPLETE_TONE_GUARD_REPORT_VERSION = COMPLETE_TONE_GUARD_REPORT_2_1_VERSION
+COMPLETE_TONE_ENGINE_STAGE = RUNTIME_SURFACE_TONE_ENGINE_2_1_STEP
 COMPLETE_TONE_ENGINE_STEP = COMPLETE_TONE_ENGINE_STAGE
-COMPLETE_TONE_ENGINE_IMPLEMENTATION_UNIT = "Step5_Tone_Engine"
+COMPLETE_TONE_ENGINE_IMPLEMENTATION_UNIT = RUNTIME_SURFACE_TONE_ENGINE_2_1_STEP
 
 RAW_INPUT_META_KEYS = {
     "raw_text",
@@ -440,6 +452,9 @@ class CompleteTonePolicy:
         return {
             "version": self.version,
             "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+            "tone_engine_2_1_version": COMPLETE_TONE_ENGINE_2_1_VERSION,
+            "tone_engine_2_1_policy_version": COMPLETE_TONE_POLICY_2_1_VERSION,
+            "step9_tone_engine_2_1_ready": True,
             "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
             "target_step": COMPLETE_TONE_ENGINE_STAGE,
             "step": COMPLETE_TONE_ENGINE_STAGE,
@@ -465,6 +480,26 @@ class CompleteTonePolicy:
             "line_constraint_count": len(tuple(self.line_constraints)),
             "line_constraints": [line.as_meta() for line in self.line_constraints],
             "guard_keys": list(self.guard_keys),
+            "tone_engine_2_1_policy": build_runtime_surface_tone_engine_2_1_policy_meta(
+                coverage_group=self.coverage_group,
+                relation_types=self.relation_types,
+                meta={"source": "complete_tone_policy.as_meta"},
+            ),
+            "tone_engine_2_1_is_surface_constraint": True,
+            "tone_engine_2_1_is_not_post_gate_decoration": True,
+            "blind_qa_required_for_tone_completion": True,
+            "tone_completion_requires_blind_qa": True,
+            "machine_metrics_used_for_read_feeling": False,
+            "read_feeling_auto_filled_from_machine_metrics": False,
+            "read_feeling_auto_estimation_allowed": False,
+            "ending_family_policy_enabled": True,
+            "personality_claim_guard_enabled": True,
+            "generic_generalization_guard_enabled": True,
+            "tone_engine_2_1_relaxes_gate": False,
+            "tone_engine_2_1_uses_fixture_strings": False,
+            "fixed_sentence_template_added_by_tone": False,
+            "input_specific_tone_branch_added": False,
+            "meaning_added_by_tone_engine_2_1": False,
             "raw_input_included": False,
             "raw_text_included": False,
             "comment_text_key_written": False,
@@ -490,6 +525,11 @@ def build_complete_tone_policy_contract_meta() -> dict[str, Any]:
         **CompleteTonePolicy().as_meta(),
         "tone_engine_added": True,
         "tone_policy_added": True,
+        "tone_engine_2_1_added": True,
+        "tone_engine_2_1_ready": True,
+        "step9_tone_engine_2_1_ready": True,
+        "tone_engine_2_1_version": COMPLETE_TONE_ENGINE_2_1_VERSION,
+        "tone_engine_2_1_policy_version": COMPLETE_TONE_POLICY_2_1_VERSION,
         "product_quality_step": COMPLETE_TONE_ENGINE_STAGE,
         "distance_policy_added": True,
         "temperature_policy_added": True,
@@ -500,8 +540,28 @@ def build_complete_tone_policy_contract_meta() -> dict[str, Any]:
         "over_empathy_guard_added": True,
         "flat_generic_guard_added": True,
         "surface_realizer_constraint": True,
+        "observation_surface_tone_policy_supported": True,
+        "observation_roles_supported_by_tone_policy": True,
+        "low_info_question_only_guard_added": True,
+        "empathy_only_without_state_verbalization_guard_added": True,
+        "unsupported_current_event_assertion_guard_added": True,
+        "tone_policy_not_post_decoration_for_observation_reply": True,
+        "tone_engine_2_1_policy": build_runtime_surface_tone_engine_2_1_policy_meta(meta={"source": "contract_meta"}),
+        "blind_qa_required_for_tone_completion": True,
+        "tone_completion_requires_blind_qa": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
+        "read_feeling_auto_estimation_allowed": False,
+        "ending_family_policy_added": True,
+        "personality_claim_guard_added": True,
+        "generic_generalization_guard_added": True,
         "post_gate_decoration": False,
         "fixed_comfort_sentence_added": False,
+        "fixed_sentence_template_added_by_tone": False,
+        "input_specific_tone_branch_added": False,
+        "meaning_added_by_tone_engine_2_1": False,
+        "tone_engine_2_1_relaxes_gate": False,
+        "tone_engine_2_1_uses_fixture_strings": False,
     }
 
 
@@ -645,9 +705,20 @@ def build_complete_tone_guard_report(
         reason = _clean_token(hit.get("reason"))
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
     blocker_reasons = list(reason_counts.keys())
+    tone_engine_2_1_report = build_runtime_surface_tone_engine_2_1_report(
+        comment_text=comment_text,
+        surface_realization=surface_realization,
+        tone_policy=policy.as_meta(),
+        composer_meta=composer_meta,
+    )
+    tone_engine_2_1_event = normalize_tone_engine_2_1_to_scorecard_event(tone_engine_2_1_report)
+    blocker_reasons = list(dict.fromkeys([*blocker_reasons, *list(tone_engine_2_1_event.get("tone_guard_reasons") or [])]))
+    tone_guard_major_count = max(len(hits), int(tone_engine_2_1_event.get("tone_guard_major_count") or 0))
     return {
         "version": COMPLETE_TONE_GUARD_REPORT_VERSION,
         "tone_engine_version": COMPLETE_TONE_ENGINE_VERSION,
+        "tone_engine_2_1_version": COMPLETE_TONE_ENGINE_2_1_VERSION,
+        "tone_engine_2_1_policy_version": COMPLETE_TONE_POLICY_2_1_VERSION,
         "tone_policy_version": COMPLETE_TONE_POLICY_VERSION,
         "product_quality_tone_engine_version": COMPLETE_PRODUCT_QUALITY_TONE_ENGINE_VERSION,
         "target_step": COMPLETE_TONE_ENGINE_STAGE,
@@ -657,26 +728,48 @@ def build_complete_tone_guard_report(
         "tone_policy_applied": True,
         "line_count": len(rows),
         "guarded_sentence_ids": [row.get("sentence_id") for row in rows if row.get("sentence_id")],
-        "tone_guard_major_count": len(hits),
+        "tone_guard_major_count": tone_guard_major_count,
         "tone_guard_hit_count": len(hits),
+        "tone_engine_2_1_major_count": int(tone_engine_2_1_event.get("tone_engine_2_1_major_count") or 0),
+        "tone_safety_major_count": int(tone_engine_2_1_event.get("tone_safety_major_count") or 0),
+        "tone_distance_major_count": int(tone_engine_2_1_event.get("tone_distance_major_count") or 0),
+        "tone_naturalness_major_count": int(tone_engine_2_1_event.get("tone_naturalness_major_count") or 0),
+        "tone_read_feeling_machine_warning_count": int(tone_engine_2_1_event.get("tone_read_feeling_machine_warning_count") or 0),
         "tone_guard_hits": hits,
         "tone_guard_reasons": blocker_reasons,
+        "tone_engine_2_1_reasons": list(tone_engine_2_1_event.get("tone_engine_2_1_reasons") or []),
         "tone_reason_counts": reason_counts,
         "too_close_count": reason_counts.get("too_close", 0),
         "cold_tone_count": reason_counts.get("cold_tone", 0),
         "over_empathy_count": reason_counts.get("over_empathy", 0),
         "diagnostic_tone_count": reason_counts.get("diagnostic_tone", 0),
         "advice_like_count": reason_counts.get("advice_like", 0),
-        "generic_comfort_count": reason_counts.get("generic_comfort", 0),
+        "generic_comfort_count": max(reason_counts.get("generic_comfort", 0), int(tone_engine_2_1_report.get("generic_comfort_count") or 0)),
+        "generic_generalization_count": int(tone_engine_2_1_report.get("generic_generalization_count") or 0),
+        "personality_claim_count": int(tone_engine_2_1_report.get("personality_claim_count") or 0),
+        "action_instruction_count": int(tone_engine_2_1_report.get("action_instruction_count") or 0),
+        "cause_overclaim_count": int(tone_engine_2_1_report.get("cause_overclaim_count") or 0),
+        "ending_family_repetition_major_count": int(tone_engine_2_1_report.get("ending_family_repetition_major_count") or 0),
+        "same_ending_family_run_max": int(tone_engine_2_1_report.get("same_ending_family_run_max") or 0),
         "too_close_guard_passed": reason_counts.get("too_close", 0) == 0,
         "cold_tone_guard_passed": reason_counts.get("cold_tone", 0) == 0,
         "over_empathy_guard_passed": reason_counts.get("over_empathy", 0) == 0,
         "diagnostic_tone_guard_passed": reason_counts.get("diagnostic_tone", 0) == 0,
         "advice_like_guard_passed": reason_counts.get("advice_like", 0) == 0,
         "generic_comfort_guard_passed": reason_counts.get("generic_comfort", 0) == 0,
-        "passed": not bool(hits),
-        "release_blocker": bool(hits),
+        "passed": not bool(blocker_reasons) and tone_guard_major_count == 0,
+        "release_blocker": bool(blocker_reasons) or tone_guard_major_count > 0,
         "blocker_reasons": blocker_reasons,
+        "tone_engine_2_1_report": tone_engine_2_1_report,
+        "step9_tone_engine_2_1_report": tone_engine_2_1_report,
+        "tone_engine_2_1_scorecard_event": tone_engine_2_1_event,
+        "tone_engine_2_1_ready": True,
+        "step9_tone_engine_2_1_ready": True,
+        "tone_completion_requires_blind_qa": True,
+        "read_feeling_requires_blind_qa": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
+        "read_feeling_score": None,
         "meaning_added": False,
         "meaning_added_by_tone_policy": False,
         "post_gate_decoration": False,
@@ -701,8 +794,11 @@ __all__ = [
     "COMPLETE_TONE_ENGINE_STAGE",
     "COMPLETE_TONE_ENGINE_STEP",
     "COMPLETE_TONE_ENGINE_VERSION",
+    "COMPLETE_TONE_ENGINE_2_1_VERSION",
     "COMPLETE_TONE_GUARD_REPORT_VERSION",
+    "COMPLETE_TONE_GUARD_REPORT_2_1_VERSION",
     "COMPLETE_TONE_POLICY_VERSION",
+    "COMPLETE_TONE_POLICY_2_1_VERSION",
     "CompleteToneLineConstraint",
     "CompleteTonePolicy",
     "build_complete_tone_guard_report",

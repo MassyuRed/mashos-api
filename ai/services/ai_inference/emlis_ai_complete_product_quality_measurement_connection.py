@@ -10,10 +10,13 @@ coverage-group aggregation without relaxing public API/RN/DB/Gate contracts.
 Step6 exposes meta-only Blind QA candidates and keeps read-feeling scores
 separate from machine metrics.  Step7 routes the next action from diagnostic
 classification, top rejection reasons, and release blockers before any
-cause-repair branch is selected.  Step10 fixes the Exit Gate as measurement
-connection completion only: it never declares Product Gate achieved and never
-applies public release.  It is meta-only: raw input bodies and public
-comment_text bodies are rejected.
+cause-repair branch is selected. RuntimeSurfaceQuality Step5 resolves the
+actual next layer from runtime source, binding, grammar, surface, and Blind QA
+signals. Step10 fixes the ProductGate measurement Exit Gate as measurement connection
+completion only. RuntimeSurfaceQuality Step12 adds a separate Exit Gate
+handoff that preserves next branch, release blockers, coverage gaps, and QA
+gaps without declaring Product Gate achieved or applying public release. It is
+meta-only: raw input bodies and public comment_text bodies are rejected.
 """
 
 import json
@@ -25,15 +28,77 @@ from emlis_ai_complete_product_quality_scorecard_service import (
     COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_AGGREGATION_VERSION,
     COMPLETE_PRODUCT_QUALITY_COVERAGE_GROUP_MISSING,
     COMPLETE_PRODUCT_QUALITY_SCORECARD_EVENT_SCHEMA_VERSION,
+    COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_STEP,
+    COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
     build_complete_product_quality_scorecard,
 )
+from emlis_ai_observation_scorecard_blind_qa import (
+    OBSERVATION_SCORECARD_BLIND_QA_STEP,
+    OBSERVATION_SCORECARD_BLIND_QA_VERSION,
+    extract_observation_reply_meta,
+)
 from emlis_ai_complete_scorecard_service import COMPLETE_COVERAGE_GROUP_ORDER
+from emlis_ai_complete_surface_quality_branching import (
+    RUNTIME_SURFACE_QUALITY_BRANCHING_STEP,
+    RUNTIME_SURFACE_QUALITY_BRANCHING_VERSION,
+    assert_runtime_surface_quality_branch_meta_only,
+    resolve_runtime_surface_quality_branch,
+)
+from emlis_ai_complete_surface_quality_signature import (
+    SURFACE_QUALITY_SIGNATURE_VERSION,
+    assert_surface_quality_signature_meta_only,
+    normalize_surface_signature_to_scorecard_event,
+)
 from emlis_ai_complete_release_ladder_service import (
     build_complete_product_quality_release_ladder,
+)
+from emlis_ai_phrase_unit_grammar_normalizer import (
+    PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+    PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+    collect_phrase_unit_grammar_warning_codes,
+    summarize_phrase_unit_grammar_normalizer,
 )
 from emlis_ai_observation_diagnostic_branching import (
     known_observation_branch_classifications,
     resolve_observation_diagnostic_next_branch,
+)
+from emlis_ai_runtime_surface_source_lock import (
+    RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
+    assert_runtime_surface_source_lock_meta_only,
+    build_runtime_surface_source_lock,
+)
+from emlis_ai_runtime_surface_coverage_baseline import (
+    RUNTIME_SURFACE_COVERAGE_BASELINE_STEP,
+    RUNTIME_SURFACE_COVERAGE_BASELINE_VERSION,
+)
+from emlis_ai_runtime_surface_complete_activation_branch import (
+    RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_STEP,
+    RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_VERSION,
+    assert_runtime_surface_complete_activation_branch_meta_only,
+    build_runtime_surface_complete_activation_branch,
+)
+from emlis_ai_runtime_surface_tone_engine_2_1 import (
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_STEP,
+    normalize_tone_engine_2_1_to_scorecard_event,
+)
+from emlis_ai_runtime_surface_self_repair import (
+    RUNTIME_SURFACE_SELF_REPAIR_STEP,
+    RUNTIME_SURFACE_SELF_REPAIR_VERSION,
+    build_runtime_surface_self_repair_measurement_summary,
+    build_surface_aware_self_repair_request,
+    normalize_runtime_surface_self_repair_to_scorecard_event,
+)
+from emlis_ai_runtime_surface_blind_qa_long_run import (
+    RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP,
+    RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION,
+    build_runtime_surface_blind_qa_long_run_summary,
+)
+from emlis_ai_runtime_surface_exit_gate import (
+    RUNTIME_SURFACE_EXIT_GATE_STEP,
+    RUNTIME_SURFACE_EXIT_GATE_VERSION,
+    assert_runtime_surface_exit_gate_meta_only,
+    build_runtime_surface_quality_exit_gate_summary,
 )
 
 COMPLETE_PRODUCT_QUALITY_MEASUREMENT_CONNECTION_VERSION = (
@@ -51,6 +116,26 @@ COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COVERAGE_GROUP_STEP = (
 COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_STEP = (
     "Step6_Blind_QA_separation"
 )
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_SURFACE_METRICS_STEP = (
+    "RuntimeSurfaceQuality.Step3_Scorecard_Surface_Metrics_Connection"
+)
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COVERAGE_RUNTIME_BASELINE_STEP = (
+    "RuntimeSurfaceQuality.Step4_Coverage_Runtime_Baseline"
+)
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BRANCH_RESOLVER_STEP = (
+    RUNTIME_SURFACE_QUALITY_BRANCHING_STEP
+)
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_COMPLETE_ACTIVATION_STEP = (
+    RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_STEP
+)
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_TONE_ENGINE_2_1_STEP = RUNTIME_SURFACE_TONE_ENGINE_2_1_STEP
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_SELF_REPAIR_STEP = RUNTIME_SURFACE_SELF_REPAIR_STEP
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP = RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_STEP = RUNTIME_SURFACE_EXIT_GATE_STEP
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_VERSION = RUNTIME_SURFACE_EXIT_GATE_VERSION
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COMPLETE_RUNTIME_ACTIVATION_STEP = (
+    RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_STEP
+)
 COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_SEPARATION_STEP = (
     COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_STEP
 )
@@ -58,6 +143,7 @@ COMPLETE_PRODUCT_QUALITY_MEASUREMENT_NEXT_ACTION_ROUTING_STEP = (
     "Step7_next_action_routing"
 )
 COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_STEP = "Step10_Exit_Gate"
+COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION = RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION
 COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_REQUIRED_FIXTURE_CLASSES = (
     "diagnostic_missing",
     "backend_rejected",
@@ -133,7 +219,11 @@ _RELEASE_BLOCKER_CLASSIFICATION_HINTS = {
     "unsupported_sentence": "candidate_generated_but_grounding_rejected",
     "grounding:unsupported_sentence": "candidate_generated_but_grounding_rejected",
     "template_major_detected": "candidate_generated_but_template_rejected",
+    "surface_template_major_detected": "candidate_generated_but_template_rejected",
     "template_major": "candidate_generated_but_template_rejected",
+    "surface_signature_repeat_detected": "candidate_generated_but_template_rejected",
+    "surface_connector_repetition": "candidate_generated_but_template_rejected",
+    "surface_grammar_warning": "candidate_generated_but_template_rejected",
     "raw_echo": "candidate_generated_but_template_rejected",
     "same_ending": "candidate_generated_but_template_rejected",
     "fixed_sentence": "candidate_generated_but_template_rejected",
@@ -160,7 +250,17 @@ _DIAGNOSTIC_CAPTURE_BLOCKERS = {
 _MEASURED_SURFACE_OR_TONE_REASON_MARKERS = {
     "candidate_generated_but_template_rejected",
     "template_major_detected",
+    "surface_template_major_detected",
     "template_major",
+    "surface_signature_repeat_detected",
+    "surface_connector_repetition",
+    "surface_grammar_warning",
+    "tone_guard_major_detected",
+    "tone_guard_major",
+    "tone_engine_2_1_major",
+    "tone_distance_major",
+    "tone_safety_major",
+    "tone_naturalness_major",
     "raw_echo",
     "same_ending",
     "fixed_sentence",
@@ -239,6 +339,23 @@ def _contains_forbidden_text_payload_key(value: Any) -> bool:
     return False
 
 
+
+
+def _strip_measurement_text_payload_keys(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _strip_measurement_text_payload_keys(item)
+            for key, item in value.items()
+            if _clean(key) not in _FORBIDDEN_TEXT_PAYLOAD_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_measurement_text_payload_keys(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_measurement_text_payload_keys(item) for item in value)
+    if isinstance(value, set):
+        return {_strip_measurement_text_payload_keys(item) for item in value}
+    return value
+
 def assert_product_quality_measurement_connection_meta_only(
     value: Mapping[str, Any],
     *,
@@ -248,7 +365,12 @@ def assert_product_quality_measurement_connection_meta_only(
 
     if _contains_forbidden_text_payload_key(value):
         raise ProductQualityMeasurementConnectionError(f"{source} contains a forbidden text payload key")
-    if value.get("raw_input_included") is True or value.get("raw_text_included") is True or value.get("comment_text_included") is True:
+    if (
+        value.get("raw_input_included") is True
+        or value.get("raw_text_included") is True
+        or value.get("comment_text_included") is True
+        or value.get("comment_text_body_included") is True
+    ):
         raise ProductQualityMeasurementConnectionError(f"{source} marks raw input or comment text as included")
 
 
@@ -439,6 +561,150 @@ def _count_from_any(row: Mapping[str, Any], *keys: str) -> int:
     return 0
 
 
+def _surface_quality_signature_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    existing = _safe_mapping(
+        row.get("surface_quality_signature")
+        or row.get("step2_surface_quality_signature")
+        or row.get("surface_signature")
+    )
+    if existing:
+        assert_surface_quality_signature_meta_only(existing, source="measurement_surface_quality_signature")
+        return existing
+    lock = _safe_mapping(row.get("runtime_surface_source_lock") or row.get("step1_runtime_surface_source_lock"))
+    lock_signature_id = _clean(lock.get("surface_signature_id") or row.get("surface_signature_id"))
+    if lock_signature_id:
+        signature = {
+            "schema_version": SURFACE_QUALITY_SIGNATURE_VERSION,
+            "version": SURFACE_QUALITY_SIGNATURE_VERSION,
+            "source_step": "Step2_Surface_Signature_Measurement",
+            "step": "Step2_Surface_Signature_Measurement",
+            "source": "surface_quality_signature_reference",
+            "surface_quality_signature_ready": False,
+            "surface_signature_id": lock_signature_id,
+            "surface_signature_family_key": _clean(row.get("surface_signature_family_key")),
+            "line_count": 0,
+            "body_sentence_count": 0,
+            "line_role_sequence": [],
+            "connector_key_sequence": [],
+            "predicate_key_sequence": [],
+            "ending_key_sequence": [],
+            "relation_marker_key_sequence": [],
+            "generic_center_phrase_count": 0,
+            "same_connector_run_max": 0,
+            "same_predicate_family_count": 0,
+            "same_ending_family_count": 0,
+            "malformed_nominalization_risk": False,
+            "raw_echo_risk": False,
+            "grammar_warning_codes": [],
+            "grammar_warning_count": 0,
+            "template_major": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_included": False,
+            "comment_text_body_included": False,
+        }
+        assert_surface_quality_signature_meta_only(signature, source="measurement_surface_quality_signature_reference")
+        return signature
+    return {}
+
+
+def _phrase_unit_grammar_meta_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    candidates: list[Any] = []
+    for key in (
+        "phrase_unit_grammar_normalizer",
+        "phrase_unit_grammar_normalizer_report",
+        "complete_material_service",
+        "material_service",
+        "complete_material_bundle",
+        "material_bundle",
+        "runtime_meta",
+        "complete_runtime_meta",
+    ):
+        value = row.get(key)
+        if value:
+            candidates.append(value)
+    codes = collect_phrase_unit_grammar_warning_codes(candidates)
+    summary = summarize_phrase_unit_grammar_normalizer(candidates) if candidates else summarize_phrase_unit_grammar_normalizer(())
+    return {
+        "version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "schema_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "source_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "phrase_unit_grammar_normalizer_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "step8_phrase_unit_grammar_normalizer_connected": bool(candidates),
+        "grammar_warning_codes": list(codes),
+        "surface_grammar_warning_codes": list(codes),
+        "grammar_warning_count": len(codes),
+        "surface_grammar_warning_count": len(codes),
+        "summary": summary,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "unsupported_completion_added": False,
+        "meaning_added": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "gate_relaxed": False,
+        "public_release_applied": False,
+        "product_gate_achieved": False,
+    }
+
+
+def _runtime_surface_source_lock_from_row(
+    row: Mapping[str, Any],
+    *,
+    backend_status: str,
+    backend_public_passed: bool,
+    display_confirmed: bool,
+) -> dict[str, Any]:
+    existing_lock = _safe_mapping(row.get("runtime_surface_source_lock") or row.get("step1_runtime_surface_source_lock"))
+    surface_quality_signature = _surface_quality_signature_from_row(row)
+    runtime_meta = _safe_mapping(
+        row.get("runtime_meta")
+        or row.get("complete_runtime_meta")
+        or row.get("complete_composer_meta")
+        or row.get("composer_meta")
+        or existing_lock
+    )
+    resolution_meta = _safe_mapping(
+        row.get("resolution_meta")
+        or row.get("composer_client_resolution")
+        or row.get("registry_resolution")
+        or existing_lock
+    )
+    diagnostic_meta = dict(row)
+    diagnostic_meta.pop("runtime_surface_source_lock", None)
+    diagnostic_meta.pop("step1_runtime_surface_source_lock", None)
+    lock = build_runtime_surface_source_lock(
+        trace_id=row.get("trace_id"),
+        emotion_log_id=row.get("emotion_log_id"),
+        observation_status=backend_status,
+        backend_comment_text_present=backend_public_passed,
+        backend_comment_text_length=_count_from_any(row, "backend_comment_text_length", "backend_len", "rn_len"),
+        display_confirmed=display_confirmed,
+        display_confirmed_source="frontend_joined" if row.get("frontend_joined") is True else "frontend_unconfirmed",
+        coverage_group=row.get("coverage_group"),
+        resolution_meta=resolution_meta,
+        runtime_meta=runtime_meta,
+        diagnostic_meta=diagnostic_meta,
+        display_meta={
+            "observation_status": backend_status,
+            "display_confirmed": display_confirmed,
+            "trace_id": row.get("trace_id"),
+            "emotion_log_id": row.get("emotion_log_id"),
+        },
+        surface_signature_id=(
+            surface_quality_signature.get("surface_signature_id")
+            or existing_lock.get("surface_signature_id")
+            or row.get("surface_signature_id")
+        ),
+    )
+    assert_runtime_surface_source_lock_meta_only(lock, source="measurement_runtime_surface_source_lock")
+    return lock
+
+
 def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -> dict[str, Any]:
     """Convert one joined diagnostic row into a ProductQualityScorecard event.
 
@@ -464,6 +730,94 @@ def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -
     repair_success = _repair_success(source_row)
     reasons = _collect_reason_values(source_row, display_confirmed=display_confirmed)
     reason_counter = Counter(reasons)
+    observation_reply_meta = extract_observation_reply_meta(source_row)
+    observation_reply_kind = _clean(observation_reply_meta.get("observation_reply_kind") or source_row.get("observation_reply_kind"))
+    eligibility_status = _clean(observation_reply_meta.get("eligibility_status") or source_row.get("eligibility_status") or source_row.get("status"))
+    unknown_slots = list(observation_reply_meta.get("unknown_slots") or source_row.get("unknown_slots") or [])
+    sentence_plan_observation_roles = list(
+        observation_reply_meta.get("sentence_plan_observation_roles")
+        or source_row.get("sentence_plan_observation_roles")
+        or source_row.get("observation_roles")
+        or []
+    )
+    facts_used = list(observation_reply_meta.get("facts_used") or source_row.get("facts_used") or [])
+    runtime_surface_source_lock = _runtime_surface_source_lock_from_row(
+        source_row,
+        backend_status=backend_status,
+        backend_public_passed=backend_public_passed,
+        display_confirmed=display_confirmed,
+    )
+    surface_quality_signature = _surface_quality_signature_from_row(source_row)
+    if surface_quality_signature:
+        assert_surface_quality_signature_meta_only(surface_quality_signature, source="measurement_event_surface_quality_signature")
+    surface_signature_event = normalize_surface_signature_to_scorecard_event(surface_quality_signature)
+    phrase_unit_grammar_event = _phrase_unit_grammar_meta_from_row(source_row)
+    merged_grammar_warning_codes = list(dict.fromkeys([
+        *(surface_signature_event.get("surface_grammar_warning_codes") or surface_signature_event.get("grammar_warning_codes") or []),
+        *(phrase_unit_grammar_event.get("grammar_warning_codes") or []),
+    ]))
+    if merged_grammar_warning_codes:
+        surface_signature_event = dict(surface_signature_event)
+        surface_signature_event["surface_grammar_warning_codes"] = merged_grammar_warning_codes
+        surface_signature_event["grammar_warning_codes"] = merged_grammar_warning_codes
+        surface_signature_event["surface_grammar_warning_count"] = len(merged_grammar_warning_codes)
+        surface_signature_event["grammar_warning_count"] = len(merged_grammar_warning_codes)
+        surface_signature_event["phrase_unit_grammar_warning_codes"] = list(phrase_unit_grammar_event.get("grammar_warning_codes") or [])
+        surface_signature_event["phrase_unit_grammar_normalizer_version"] = PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION
+        surface_signature_event["step8_phrase_unit_grammar_normalizer_connected"] = bool(phrase_unit_grammar_event.get("step8_phrase_unit_grammar_normalizer_connected"))
+    surface_template_major_count = 1 if surface_signature_event.get("surface_template_major") or surface_signature_event.get("template_major") else 0
+    surface_grammar_warning_count = _to_int(
+        surface_signature_event.get("surface_grammar_warning_count", surface_signature_event.get("grammar_warning_count")),
+        0,
+    )
+    legacy_tone_report = _safe_mapping(source_row.get("tone_guard_report"))
+    nested_tone_report = legacy_tone_report.get("tone_engine_2_1_report") or legacy_tone_report.get("step9_tone_engine_2_1_report")
+    tone_engine_2_1_report = (
+        _safe_mapping(source_row.get("tone_engine_2_1_report"))
+        or _safe_mapping(source_row.get("step9_tone_engine_2_1_report"))
+        or _safe_mapping(nested_tone_report)
+        or legacy_tone_report
+    )
+    tone_engine_2_1_event = normalize_tone_engine_2_1_to_scorecard_event(tone_engine_2_1_report or source_row)
+    surface_aware_self_repair_report = (
+        _safe_mapping(source_row.get("runtime_surface_self_repair"))
+        or _safe_mapping(source_row.get("surface_aware_self_repair_report"))
+        or _safe_mapping(source_row.get("step10_surface_aware_self_repair"))
+    )
+    surface_repair_attempt_count = _to_int(
+        surface_aware_self_repair_report.get("runtime_surface_self_repair_attempt_count",
+            surface_aware_self_repair_report.get("surface_aware_self_repair_attempt_count",
+                surface_aware_self_repair_report.get("repair_attempt_count", source_row.get("runtime_surface_self_repair_attempt_count", source_row.get("repair_attempt_count"))))
+        ),
+        0,
+    )
+    surface_repair_success_count = _to_int(
+        surface_aware_self_repair_report.get("runtime_surface_self_repair_success_count",
+            surface_aware_self_repair_report.get("surface_aware_self_repair_success_count",
+                surface_aware_self_repair_report.get("repair_success_count", source_row.get("runtime_surface_self_repair_success_count", source_row.get("repair_success_count"))))
+        ),
+        0,
+    )
+    # Measurement rows are scorecard events, not per-attempt logs.  Preserve the
+    # fact that Step10 repair happened without multiplying one row into multiple
+    # attempt counts.
+    surface_repair_attempt_count = 1 if surface_repair_attempt_count > 0 else 0
+    surface_repair_success_count = 1 if surface_repair_success_count > 0 else 0
+    surface_aware_self_repair_request = build_surface_aware_self_repair_request(
+        surface_quality_signature=surface_quality_signature,
+        gate_reasons=reasons,
+        gate_results={**source_row, **surface_signature_event, **phrase_unit_grammar_event, **tone_engine_2_1_event},
+        max_attempts=_to_int(source_row.get("max_repair_attempts"), 2) or 2,
+    )
+    surface_aware_self_repair_event = normalize_runtime_surface_self_repair_to_scorecard_event({
+        **surface_aware_self_repair_request,
+        **surface_aware_self_repair_report,
+        "repair_attempt_count": max(1 if repair_attempted else 0, surface_repair_attempt_count),
+        "repair_success_count": max(1 if repair_attempted and repair_success else 0, surface_repair_success_count),
+        "surface_aware_repair_attempted": bool(repair_attempted),
+        "surface_aware_self_repair_success": bool(repair_attempted and repair_success),
+        "surface_aware_repair_fail_closed": False,
+    })
 
     event = {
         "version": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_CONNECTION_VERSION,
@@ -490,6 +844,28 @@ def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -
         "safety_blocked_count": 1 if eligible and backend_status == "safety_blocked" else 0,
         "observation_status": backend_status,
         "backend_observation_status": backend_status,
+        "observation_scorecard_blind_qa_version": OBSERVATION_SCORECARD_BLIND_QA_VERSION,
+        "observation_scorecard_blind_qa_step": OBSERVATION_SCORECARD_BLIND_QA_STEP,
+        "observation_reply_meta": observation_reply_meta,
+        "observation_reply_kind": observation_reply_kind,
+        "eligibility_status": eligibility_status,
+        "expected_observation_reply_kind": _clean(source_row.get("expected_observation_reply_kind") or source_row.get("expected_reply_kind")),
+        "expected_eligibility_status": _clean(source_row.get("expected_eligibility_status") or source_row.get("expected_status")),
+        "eligible_for_full_observation": bool(observation_reply_meta.get("eligible_for_full_observation") is True or source_row.get("eligible_for_full_observation") is True),
+        "question_required": bool(observation_reply_meta.get("question_required") is True or source_row.get("question_required") is True),
+        "unknown_slots": unknown_slots,
+        "sentence_plan_observation_roles": sentence_plan_observation_roles,
+        "user_fact_grounding_mode": _clean(observation_reply_meta.get("user_fact_grounding_mode") or source_row.get("user_fact_grounding_mode")),
+        "user_fact_allowed": bool(observation_reply_meta.get("user_fact_allowed") is True or source_row.get("user_fact_allowed") is True),
+        "user_fact_may_hint": bool(observation_reply_meta.get("user_fact_may_hint") is True or source_row.get("user_fact_may_hint") is True),
+        "user_fact_may_promote_to_eligible": bool(source_row.get("user_fact_may_promote_to_eligible") is True),
+        "facts_used": facts_used,
+        "plan": _clean(observation_reply_meta.get("plan") or source_row.get("plan") or source_row.get("subscription_tier")),
+        "free_user_fact_violation": bool(source_row.get("free_user_fact_violation") is True),
+        "overclaim_count": _to_int(source_row.get("overclaim_count"), 0),
+        "template_skeleton_repeat_count": _to_int(source_row.get("template_skeleton_repeat_count"), 0),
+        "surface_signature_family_key": _clean(source_row.get("surface_signature_family_key") or source_row.get("template_skeleton_key") or source_row.get("surface_skeleton_id")),
+        "template_skeleton_key": _clean(source_row.get("template_skeleton_key") or source_row.get("surface_signature_family_key") or source_row.get("surface_skeleton_id")),
         "classification": classification,
         "measurement_classification": measurement_classification,
         "diagnostic_capture_status": diagnostic_capture_status,
@@ -499,6 +875,50 @@ def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -
         "frontend_public_passed": source_row.get("frontend_public_passed") is True,
         "modal_opened": source_row.get("modal_opened") if source_row.get("modal_opened") is None else _to_bool(source_row.get("modal_opened")),
         "display_confirmed": display_confirmed,
+        "runtime_surface_source_lock_version": RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
+        "runtime_surface_source_lock_ready": True,
+        "runtime_surface_source_locked": True,
+        "runtime_surface_source_lock": runtime_surface_source_lock,
+        "step1_runtime_surface_source_lock": runtime_surface_source_lock,
+        "runtime_composer_source": runtime_surface_source_lock.get("composer_source"),
+        "composer_requested": runtime_surface_source_lock.get("composer_requested"),
+        "composer_resolved": runtime_surface_source_lock.get("composer_resolved"),
+        "runtime_composer_model": runtime_surface_source_lock.get("composer_model"),
+        "runtime_surface_source_complete_initial_client_used": bool(runtime_surface_source_lock.get("complete_initial_client_used")),
+        "runtime_surface_source_limited_reader_repair_applied": bool(runtime_surface_source_lock.get("limited_reader_repair_applied")),
+        "sentence_plan_version": runtime_surface_source_lock.get("sentence_plan_version"),
+        "surface_realizer_version": runtime_surface_source_lock.get("surface_realizer_version"),
+        "tone_policy_version": runtime_surface_source_lock.get("tone_policy_version"),
+        "self_repair_version": runtime_surface_source_lock.get("self_repair_version"),
+        "runtime_surface_source_lock_surface_signature_id": runtime_surface_source_lock.get("surface_signature_id"),
+        "surface_quality_signature_version": SURFACE_QUALITY_SIGNATURE_VERSION,
+        "surface_scorecard_metrics_version": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
+        "surface_scorecard_metrics_step": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_STEP,
+        "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "phrase_unit_grammar_normalizer_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "step8_phrase_unit_grammar_normalizer_connected": bool(phrase_unit_grammar_event.get("step8_phrase_unit_grammar_normalizer_connected")),
+        "phrase_unit_grammar_normalizer": phrase_unit_grammar_event,
+        "phrase_unit_grammar_warning_codes": list(phrase_unit_grammar_event.get("grammar_warning_codes") or []),
+        "step3_scorecard_surface_metrics_event_ready": bool(surface_signature_event.get("surface_quality_signature_ready")),
+        "surface_quality_signature": surface_quality_signature,
+        "step2_surface_quality_signature": surface_quality_signature,
+        **surface_signature_event,
+        "surface_template_major_count": surface_template_major_count,
+        "surface_grammar_warning_codes": merged_grammar_warning_codes,
+        "grammar_warning_codes": merged_grammar_warning_codes,
+        "surface_grammar_warning_count": surface_grammar_warning_count,
+        "grammar_warning_count": surface_grammar_warning_count,
+        "tone_engine_2_1_version": RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
+        "tone_engine_2_1_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_TONE_ENGINE_2_1_STEP,
+        "step9_tone_engine_2_1_connected": True,
+        "tone_engine_2_1_report": tone_engine_2_1_report,
+        "step9_tone_engine_2_1_report": tone_engine_2_1_report,
+        **tone_engine_2_1_event,
+        "runtime_surface_self_repair_version": RUNTIME_SURFACE_SELF_REPAIR_VERSION,
+        "runtime_surface_self_repair_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_SELF_REPAIR_STEP,
+        "surface_aware_self_repair_request": surface_aware_self_repair_request,
+        "step10_surface_aware_self_repair_request": surface_aware_self_repair_request,
+        **surface_aware_self_repair_event,
         "display_counting_rule": _clean(source_row.get("display_counting_rule")) or "display_confirmed_only",
         "display_count_blockers": _display_count_blockers(source_row),
         "product_gate_display_counted": bool(eligible and display_confirmed),
@@ -514,12 +934,12 @@ def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -
             "binding_count",
             "sentence_count",
         ),
-        "repair_attempt_count": 1 if repair_attempted else 0,
-        "repair_success_count": 1 if repair_attempted and repair_success else 0,
+        "repair_attempt_count": max(1 if repair_attempted else 0, _to_int(surface_aware_self_repair_event.get("repair_attempt_count"), 0)),
+        "repair_success_count": max(1 if repair_attempted and repair_success else 0, _to_int(surface_aware_self_repair_event.get("repair_success_count"), 0)),
         "repair_attempted": repair_attempted,
         "repair_success": repair_success,
-        "template_major_count": _to_int(source_row.get("template_major_count"), 0),
-        "safety_major_count": _to_int(source_row.get("safety_major_count"), 0),
+        "template_major_count": max(_to_int(source_row.get("template_major_count"), 0), surface_template_major_count),
+        "safety_major_count": _to_int(source_row.get("safety_major_count"), 0) + _to_int(tone_engine_2_1_event.get("tone_safety_major_count"), 0),
         "top_rejection_reasons": reasons[:8],
         "reason_counter": dict(reason_counter),
         "machine_metrics_separated_from_blind_qa": True,
@@ -528,6 +948,7 @@ def normalize_observation_row_to_product_quality_event(row: Mapping[str, Any]) -
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
+        "comment_text_body_included": False,
         "response_shape_changed": False,
         "public_response_key_change": False,
         "api_route_changed": False,
@@ -555,6 +976,7 @@ def dump_product_quality_measurement_scorecard_event(event: Mapping[str, Any]) -
     data["raw_input_included"] = False
     data["raw_text_included"] = False
     data["comment_text_included"] = False
+    data["comment_text_body_included"] = False
     assert_product_quality_measurement_connection_meta_only(data, source="scorecard_event")
     return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -564,6 +986,7 @@ def dump_product_quality_measurement_connection_payload(payload: Mapping[str, An
     data["raw_input_included"] = False
     data["raw_text_included"] = False
     data["comment_text_included"] = False
+    data["comment_text_body_included"] = False
     assert_product_quality_measurement_connection_meta_only(data, source="measurement_connection_payload")
     return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -818,7 +1241,8 @@ def assert_product_quality_measurement_blind_qa_reviews_meta_only(
     reviews: Sequence[Mapping[str, Any]] | Iterable[Mapping[str, Any]] | None,
 ) -> None:
     for index, review in enumerate(list(reviews or [])):
-        assert_product_quality_measurement_connection_meta_only(dict(review or {}), source=f"blind_qa_review[{index}]")
+        cleaned_review = _strip_measurement_text_payload_keys(dict(review or {}))
+        assert_product_quality_measurement_connection_meta_only(cleaned_review, source=f"blind_qa_review[{index}]")
 
 
 def _build_blind_qa_separation_summary(
@@ -882,6 +1306,10 @@ def _collect_release_blockers(
     blockers: list[str] = []
     blockers.extend(_dedupe(capture_summary.get("capture_blockers")))
     blockers.extend(_dedupe(scorecard.get("release_blockers")))
+    if _to_int(scorecard.get("surface_template_major_count"), 0) > 0:
+        blockers.append("surface_template_major_detected")
+    if _to_int(scorecard.get("surface_signature_repeat_count"), 0) > 0:
+        blockers.append("surface_signature_repeat_detected")
     if _to_int(scorecard.get("coverage_group_missing_count"), 0) > 0:
         blockers.append("coverage_group_missing")
     if _dedupe(scorecard.get("missing_coverage_groups")):
@@ -1158,6 +1586,35 @@ def _build_measurement_next_action_branch(
 
 
 
+def _build_runtime_surface_quality_branch(
+    *,
+    report_seed: Mapping[str, Any],
+) -> dict[str, Any]:
+    branch = resolve_runtime_surface_quality_branch(report_seed)
+    assert_runtime_surface_quality_branch_meta_only(branch, source="runtime_surface_quality_branch")
+    return branch
+
+
+
+
+def _build_runtime_surface_complete_activation_branch(
+    *,
+    runtime_surface_quality_branch: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+    report_seed: Mapping[str, Any],
+) -> dict[str, Any]:
+    branch = build_runtime_surface_complete_activation_branch(
+        runtime_surface_quality_branch=runtime_surface_quality_branch,
+        scorecard_events=events,
+        rows=rows,
+        diagnostic_meta=report_seed,
+    )
+    assert_runtime_surface_complete_activation_branch_meta_only(
+        branch, source="runtime_surface_complete_activation_branch"
+    )
+    return branch
+
 def _measurement_public_contract_unchanged(report: Mapping[str, Any]) -> bool:
     """Return true when Step10 did not mutate public API/RN/DB/Gate contracts."""
 
@@ -1234,6 +1691,16 @@ def build_complete_product_quality_measurement_exit_gate_summary(report: Mapping
     scorecard = _safe_mapping(data.get("scorecard") or data.get("product_quality_scorecard"))
     release_ladder = _safe_mapping(data.get("release_ladder"))
     next_branch = _safe_mapping(data.get("next_action_branch") or data.get("next_branch"))
+    runtime_surface_branch = _safe_mapping(
+        data.get("runtime_surface_quality_branch")
+        or data.get("runtime_surface_quality_branch_resolver")
+        or data.get("step5_runtime_surface_quality_branch")
+    )
+    runtime_surface_activation_branch = _safe_mapping(
+        data.get("runtime_surface_complete_activation_branch")
+        or data.get("step6_runtime_surface_complete_activation_branch")
+        or data.get("complete_runtime_activation_branch")
+    )
     observed_fixture_classes = _observed_exit_gate_fixture_classes(events)
     required_fixture_classes = list(COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_REQUIRED_FIXTURE_CLASSES)
     missing_fixture_classes = [item for item in required_fixture_classes if item not in set(observed_fixture_classes)]
@@ -1279,6 +1746,16 @@ def build_complete_product_quality_measurement_exit_gate_summary(report: Mapping
         and next_branch.get("measurement_next_action_routing_ready") is True
         and bool(_clean(next_branch.get("classification")))
     )
+    runtime_surface_branch_resolver_connected = bool(
+        data.get("step5_runtime_surface_quality_branch_resolver_ready") is True
+        and runtime_surface_branch.get("runtime_surface_quality_branch_resolver_ready") is True
+        and bool(_clean(runtime_surface_branch.get("target_layer")))
+    )
+    runtime_surface_complete_activation_connected = bool(
+        data.get("step6_runtime_surface_complete_activation_branch_ready") is True
+        and runtime_surface_activation_branch.get("runtime_surface_complete_activation_branch_ready") is True
+        and bool(_clean(runtime_surface_activation_branch.get("activation_status")))
+    )
     public_contract_unchanged = _measurement_public_contract_unchanged(data)
     product_release_closed = bool(
         data.get("product_gate_ready") is False
@@ -1304,6 +1781,12 @@ def build_complete_product_quality_measurement_exit_gate_summary(report: Mapping
         "aggregate_scorecard_connected": aggregate_scorecard_connected,
         "release_ladder_connected": release_ladder_connected,
         "next_action_routing_connected": next_action_routing_connected,
+        "runtime_surface_quality_branch_resolver_connected": runtime_surface_branch_resolver_connected,
+        "step5_runtime_surface_quality_branch_resolver_connected": runtime_surface_branch_resolver_connected,
+        "runtime_surface_complete_activation_branch_connected": runtime_surface_complete_activation_connected,
+        "step6_runtime_surface_complete_activation_branch_connected": runtime_surface_complete_activation_connected,
+        "runtime_surface_quality_next_layer": runtime_surface_branch.get("target_layer"),
+        "runtime_surface_quality_next_step": runtime_surface_branch.get("next_work_unit"),
         "display_counting_rule_locked": display_counting_rule_locked,
         "public_contract_unchanged": public_contract_unchanged,
         "product_release_closed": product_release_closed,
@@ -1360,6 +1843,14 @@ def build_complete_product_quality_measurement_exit_gate_summary(report: Mapping
         "classification_counter": next_branch.get("classification_counter") or {},
         "next_action_classification": next_branch.get("classification"),
         "next_action_layer": next_branch.get("target_layer"),
+        "runtime_surface_quality_branch": runtime_surface_branch,
+        "runtime_surface_complete_activation_branch": runtime_surface_activation_branch,
+        "runtime_surface_complete_activation_branch_connected": runtime_surface_complete_activation_connected,
+        "step6_runtime_surface_complete_activation_branch_connected": runtime_surface_complete_activation_connected,
+        "runtime_surface_complete_activation_status": runtime_surface_activation_branch.get("activation_status"),
+        "runtime_surface_quality_next_layer": runtime_surface_branch.get("target_layer"),
+        "runtime_surface_quality_next_step": runtime_surface_branch.get("next_work_unit"),
+        "runtime_surface_quality_selected_reason": runtime_surface_branch.get("selected_reason"),
         "top_rejection_reasons": _dedupe(_scorecard_top_rejection_reasons(scorecard) + _event_top_rejection_reasons(events)),
         "release_blockers": _dedupe(data.get("release_blockers")),
         "required_fixture_classes": required_fixture_classes,
@@ -1425,7 +1916,10 @@ def build_complete_product_quality_measurement_connection(
     for row in normalized_rows:
         assert_product_quality_measurement_connection_meta_only(row, source="measurement_connection_row")
     clean_run_id = _clean(run_id)
-    blind_qa_review_records = list(blind_qa_reviews or [])
+    blind_qa_review_records = [
+        _strip_measurement_text_payload_keys(dict(review or {}))
+        for review in list(blind_qa_reviews or [])
+    ]
     assert_product_quality_measurement_blind_qa_reviews_meta_only(blind_qa_review_records)
     events = normalize_observation_rows_to_product_quality_events(normalized_rows)
     blind_qa_input_candidates = build_complete_product_quality_blind_qa_input_candidates(events)
@@ -1434,6 +1928,7 @@ def build_complete_product_quality_measurement_connection(
         scorecard_events=events,
         blind_qa_reviews=blind_qa_review_records,
     )
+    coverage_runtime_baseline = _safe_mapping(scorecard.get("coverage_runtime_baseline"))
     release_ladder = build_complete_product_quality_release_ladder(
         product_quality_scorecard=scorecard,
         diagnostic_summary=capture_summary,
@@ -1448,11 +1943,20 @@ def build_complete_product_quality_measurement_connection(
         scorecard=scorecard,
         run_id=clean_run_id,
     )
+    runtime_surface_blind_qa_long_run_summary = build_runtime_surface_blind_qa_long_run_summary(
+        events=events,
+        blind_qa_reviews=blind_qa_review_records,
+        run_id=clean_run_id,
+    )
     release_blockers = _collect_release_blockers(
         capture_summary=capture_summary,
         scorecard=scorecard,
         release_ladder=release_ladder,
     )
+    # Step11 QA / Long-run blockers stay in the Step11 report.  They are not
+    # merged into the existing ProductGateMeasurement release_blockers here,
+    # because this step prepares candidate material and does not change public
+    # release judgment.
     next_action_branch = _build_measurement_next_action_branch(
         capture_summary=capture_summary,
         events=events,
@@ -1461,6 +1965,39 @@ def build_complete_product_quality_measurement_connection(
         run_id=clean_run_id,
     )
     next_action_routing_summary = _safe_mapping(next_action_branch.get("routing_summary"))
+    runtime_surface_quality_branch_seed = {
+        "run_id": clean_run_id,
+        "scorecard_events": events,
+        "capture_summary": capture_summary,
+        "scorecard": scorecard,
+        "product_quality_scorecard": scorecard,
+        "coverage_runtime_baseline": coverage_runtime_baseline,
+        "release_ladder": release_ladder,
+        "coverage_group_summary": coverage_group_summary,
+        "blind_qa_separation_summary": blind_qa_separation_summary,
+        "runtime_surface_blind_qa_long_run_summary": runtime_surface_blind_qa_long_run_summary,
+        "release_blockers": release_blockers,
+        "next_action_branch": next_action_branch,
+        "next_action_routing_summary": next_action_routing_summary,
+        "event_count": len(events),
+        "row_count": len(normalized_rows),
+        "runtime_branching_uses_fixture_strings": False,
+        "fixture_text_used_for_runtime_branching": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+    }
+    runtime_surface_quality_branch = _build_runtime_surface_quality_branch(
+        report_seed=runtime_surface_quality_branch_seed
+    )
+    runtime_surface_complete_activation_branch = _build_runtime_surface_complete_activation_branch(
+        runtime_surface_quality_branch=runtime_surface_quality_branch,
+        rows=normalized_rows,
+        events=events,
+        report_seed=runtime_surface_quality_branch_seed,
+    )
+    runtime_surface_self_repair_summary = build_runtime_surface_self_repair_measurement_summary(events=events)
     report = {
         "version": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_CONNECTION_VERSION,
         "measurement_connection_version": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_CONNECTION_VERSION,
@@ -1468,9 +2005,11 @@ def build_complete_product_quality_measurement_connection(
         "source_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUN_BUILDER_STEP,
         "step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUN_BUILDER_STEP,
         "measurement_latest_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_STEP,
+        "runtime_surface_quality_latest_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_STEP,
         "blind_qa_separation_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_STEP,
         "next_action_routing_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_NEXT_ACTION_ROUTING_STEP,
         "exit_gate_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_STEP,
+        "runtime_surface_exit_gate_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_STEP,
         "run_id": clean_run_id,
         "measurement_run_builder_ready": True,
         "measurement_report_ready": True,
@@ -1485,6 +2024,95 @@ def build_complete_product_quality_measurement_connection(
         "join_semantics_summary": capture_summary.get("join_semantics_summary"),
         "scorecard": scorecard,
         "product_quality_scorecard": scorecard,
+        "observation_scorecard_blind_qa_version": scorecard.get("observation_scorecard_blind_qa_version"),
+        "observation_scorecard_blind_qa_step": scorecard.get("observation_scorecard_blind_qa_step"),
+        "step12_observation_scorecard_blind_qa_ready": scorecard.get("step12_observation_scorecard_blind_qa_ready"),
+        "observation_scorecard_blind_qa": scorecard.get("observation_scorecard_blind_qa"),
+        "step12_observation_scorecard": scorecard.get("step12_observation_scorecard"),
+        "observation_always_display_rate": scorecard.get("observation_always_display_rate"),
+        "observation_eligible_observation_rate": scorecard.get("observation_eligible_observation_rate"),
+        "observation_low_info_observation_rate": scorecard.get("observation_low_info_observation_rate"),
+        "observation_false_eligible_rate": scorecard.get("observation_false_eligible_rate"),
+        "observation_free_user_fact_violation_count": scorecard.get("observation_free_user_fact_violation_count"),
+        "observation_overclaim_count": scorecard.get("observation_overclaim_count"),
+        "observation_template_skeleton_repeat_rate": scorecard.get("observation_template_skeleton_repeat_rate"),
+        "observation_read_feeling_score": scorecard.get("observation_read_feeling_score"),
+        "observation_machine_metrics_used_for_read_feeling": False,
+        "surface_metrics_version": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
+        "surface_metrics_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_SURFACE_METRICS_STEP,
+        "surface_metrics_ready": bool(scorecard.get("surface_metrics_ready")),
+        "step3_scorecard_surface_metrics_connected": bool(scorecard.get("step3_scorecard_surface_metrics_connected")),
+        "surface_metrics": dict(scorecard.get("surface_metrics") or {}),
+        "surface_signature_repeat_rate": scorecard.get("surface_signature_repeat_rate", 0.0),
+        "connector_repetition_rate": scorecard.get("connector_repetition_rate", 0.0),
+        "grammar_warning_rate": scorecard.get("grammar_warning_rate", 0.0),
+        "coverage_surface_diversity_rate": scorecard.get("coverage_surface_diversity_rate", 0.0),
+        "tone_engine_2_1_version": RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
+        "tone_engine_2_1_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_TONE_ENGINE_2_1_STEP,
+        "step9_tone_engine_2_1_connected": True,
+        "tone_guard_major_count": scorecard.get("tone_guard_major_count", 0),
+        "tone_engine_2_1_major_count": scorecard.get("tone_engine_2_1_major_count", 0),
+        "tone_safety_major_count": scorecard.get("tone_safety_major_count", 0),
+        "tone_distance_major_count": scorecard.get("tone_distance_major_count", 0),
+        "tone_naturalness_major_count": scorecard.get("tone_naturalness_major_count", 0),
+        "tone_completion_requires_blind_qa": True,
+        "machine_metrics_used_for_read_feeling": False,
+        "read_feeling_auto_filled_from_machine_metrics": False,
+        "coverage_runtime_baseline_version": RUNTIME_SURFACE_COVERAGE_BASELINE_VERSION,
+        "coverage_runtime_baseline_step": RUNTIME_SURFACE_COVERAGE_BASELINE_STEP,
+        "measurement_coverage_runtime_baseline_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COVERAGE_RUNTIME_BASELINE_STEP,
+        "coverage_runtime_baseline_ready": bool(coverage_runtime_baseline.get("coverage_runtime_baseline_ready")),
+        "step4_coverage_runtime_baseline_ready": bool(coverage_runtime_baseline.get("step4_coverage_runtime_baseline_ready")),
+        "coverage_runtime_baseline": coverage_runtime_baseline,
+        "coverage_runtime_baseline_rows": list(coverage_runtime_baseline.get("coverage_group_rows") or []),
+        "coverage_runtime_baseline_by_group": dict(coverage_runtime_baseline.get("by_coverage_group") or {}),
+        "coverage_runtime_baseline_groups_needing_attention": list(coverage_runtime_baseline.get("groups_needing_attention") or []),
+        "runtime_surface_quality_branching_version": RUNTIME_SURFACE_QUALITY_BRANCHING_VERSION,
+        "runtime_surface_quality_branching_step": RUNTIME_SURFACE_QUALITY_BRANCHING_STEP,
+        "measurement_runtime_surface_quality_branch_resolver_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BRANCH_RESOLVER_STEP,
+        "step5_runtime_surface_quality_branch_resolver_ready": runtime_surface_quality_branch.get("runtime_surface_quality_branch_resolver_ready"),
+        "runtime_surface_quality_branch_resolver_ready": runtime_surface_quality_branch.get("runtime_surface_quality_branch_resolver_ready"),
+        "runtime_surface_quality_branch_ready": runtime_surface_quality_branch.get("runtime_surface_quality_branch_ready"),
+        "runtime_surface_quality_branch": runtime_surface_quality_branch,
+        "runtime_surface_quality_branch_resolver": runtime_surface_quality_branch,
+        "step5_runtime_surface_quality_branch": runtime_surface_quality_branch,
+        "runtime_surface_quality_next_layer": runtime_surface_quality_branch.get("target_layer"),
+        "runtime_surface_quality_target_layer": runtime_surface_quality_branch.get("target_layer"),
+        "runtime_surface_quality_target_area": runtime_surface_quality_branch.get("target_area"),
+        "runtime_surface_quality_next_step": runtime_surface_quality_branch.get("next_work_unit"),
+        "runtime_surface_quality_selected_reason": runtime_surface_quality_branch.get("selected_reason"),
+        "runtime_surface_quality_repair_allowed": runtime_surface_quality_branch.get("repair_allowed"),
+        "runtime_surface_quality_branch_priority": runtime_surface_quality_branch.get("branch_priority") or runtime_surface_quality_branch.get("priority"),
+        "runtime_surface_complete_activation_branch_version": RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_VERSION,
+        "runtime_surface_complete_activation_branch_step": RUNTIME_SURFACE_COMPLETE_ACTIVATION_BRANCH_STEP,
+        "measurement_runtime_surface_complete_activation_branch_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_COMPLETE_ACTIVATION_STEP,
+        "step6_runtime_surface_complete_activation_branch_ready": runtime_surface_complete_activation_branch.get("step6_complete_runtime_activation_branch_ready"),
+        "runtime_surface_complete_activation_branch_ready": runtime_surface_complete_activation_branch.get("runtime_surface_complete_activation_branch_ready"),
+        "complete_runtime_activation_branch_ready": runtime_surface_complete_activation_branch.get("complete_runtime_activation_branch_ready"),
+        "runtime_surface_complete_activation_branch": runtime_surface_complete_activation_branch,
+        "step6_runtime_surface_complete_activation_branch": runtime_surface_complete_activation_branch,
+        "complete_runtime_activation_branch": runtime_surface_complete_activation_branch,
+        "runtime_surface_complete_activation_status": runtime_surface_complete_activation_branch.get("activation_status"),
+        "runtime_surface_complete_initial_resolved": runtime_surface_complete_activation_branch.get("complete_initial_resolved"),
+        "runtime_surface_complete_initial_source_lock_aligned": runtime_surface_complete_activation_branch.get("complete_initial_source_lock_aligned"),
+        "runtime_surface_complete_initial_resolution_safe_to_measure": runtime_surface_complete_activation_branch.get("complete_initial_resolution_safe_to_measure"),
+        "runtime_surface_entry_ap0_or_rollout_required_before_surface_repair": runtime_surface_complete_activation_branch.get("entry_ap0_or_rollout_required_before_surface_repair"),
+        "runtime_surface_repair_deferred_until_complete_runtime_measurable": runtime_surface_complete_activation_branch.get("surface_repair_deferred_until_complete_runtime_measurable"),
+        "runtime_surface_self_repair_version": RUNTIME_SURFACE_SELF_REPAIR_VERSION,
+        "runtime_surface_self_repair_step": RUNTIME_SURFACE_SELF_REPAIR_STEP,
+        "measurement_runtime_surface_self_repair_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_SELF_REPAIR_STEP,
+        "runtime_surface_self_repair_summary": runtime_surface_self_repair_summary,
+        "step10_surface_aware_self_repair_summary": runtime_surface_self_repair_summary,
+        "runtime_surface_self_repair_ready": bool(runtime_surface_self_repair_summary.get("runtime_surface_self_repair_ready")),
+        "step10_surface_aware_self_repair_ready": bool(runtime_surface_self_repair_summary.get("step10_surface_aware_self_repair_ready")),
+        "step10_surface_aware_self_repair_connected": True,
+        "runtime_surface_self_repair_attempt_count": runtime_surface_self_repair_summary.get("runtime_surface_self_repair_attempt_count", 0),
+        "runtime_surface_self_repair_success_count": runtime_surface_self_repair_summary.get("runtime_surface_self_repair_success_count", 0),
+        "runtime_surface_self_repair_aborted_count": runtime_surface_self_repair_summary.get("runtime_surface_self_repair_aborted_count", 0),
+        "runtime_surface_self_repair_policy_violation_count": runtime_surface_self_repair_summary.get("runtime_surface_self_repair_policy_violation_count", 0),
+        "runtime_surface_self_repair_meaning_added_count": runtime_surface_self_repair_summary.get("runtime_surface_self_repair_meaning_added_count", 0),
+        "runtime_branching_uses_fixture_strings": False,
+        "fixture_text_used_for_runtime_branching": False,
         "release_ladder": release_ladder,
         "coverage_group_summary": coverage_group_summary,
         "coverage_group_aggregation_ready": coverage_group_summary.get("coverage_group_aggregation_ready"),
@@ -1505,6 +2133,20 @@ def build_complete_product_quality_measurement_connection(
         "blind_qa_missing": blind_qa_separation_summary.get("blind_qa_missing"),
         "blind_qa_input_candidates": blind_qa_input_candidates,
         "blind_qa_candidate_summary": blind_qa_separation_summary,
+        "runtime_surface_blind_qa_long_run_version": RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION,
+        "runtime_surface_blind_qa_long_run_step": COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP,
+        "step11_blind_qa_long_run_ready": runtime_surface_blind_qa_long_run_summary.get("step11_blind_qa_long_run_ready"),
+        "runtime_surface_blind_qa_long_run_ready": runtime_surface_blind_qa_long_run_summary.get("runtime_surface_blind_qa_long_run_ready"),
+        "runtime_surface_blind_qa_long_run_summary": runtime_surface_blind_qa_long_run_summary,
+        "step11_blind_qa_long_run_summary": runtime_surface_blind_qa_long_run_summary,
+        "long_run_signature_diversity": runtime_surface_blind_qa_long_run_summary.get("long_run_signature_diversity"),
+        "long_run_surface_signature_diversity_ready": runtime_surface_blind_qa_long_run_summary.get("long_run_surface_signature_diversity_ready"),
+        "long_run_surface_signature_diversity_rate": runtime_surface_blind_qa_long_run_summary.get("long_run_surface_signature_diversity_rate"),
+        "long_run_surface_signature_repeat_rate": runtime_surface_blind_qa_long_run_summary.get("long_run_surface_signature_repeat_rate"),
+        "long_run_surface_signature_repeat_detected": runtime_surface_blind_qa_long_run_summary.get("long_run_surface_signature_repeat_detected"),
+        "long_run_groups_needing_attention": runtime_surface_blind_qa_long_run_summary.get("long_run_groups_needing_attention"),
+        "step11_qa_gaps": runtime_surface_blind_qa_long_run_summary.get("qa_gaps"),
+        "step11_release_blockers": runtime_surface_blind_qa_long_run_summary.get("release_blockers"),
         "blind_qa_candidate_count": blind_qa_separation_summary.get("blind_qa_candidate_count", 0),
         "blind_qa_public_passed_candidate_count": blind_qa_separation_summary.get("public_passed_candidate_count", 0),
         "blind_qa_review_count": blind_qa_separation_summary.get("blind_qa_review_count", 0),
@@ -1517,10 +2159,16 @@ def build_complete_product_quality_measurement_connection(
         "observed_coverage_groups": coverage_group_summary.get("observed_coverage_groups"),
         "missing_coverage_groups": coverage_group_summary.get("missing_coverage_groups"),
         "coverage_group_missing_count": coverage_group_summary.get("coverage_group_missing_count", 0),
+        "coverage_runtime_baseline_missing_groups": coverage_runtime_baseline.get("missing_coverage_groups"),
+        "coverage_runtime_baseline_group_missing_count": coverage_runtime_baseline.get("coverage_group_missing_count", 0),
+        "coverage_runtime_baseline_release_blockers": coverage_runtime_baseline.get("release_blockers", []),
         "release_blockers": release_blockers,
         "next_action_branch": next_action_branch,
         "next_branch": next_action_branch,
         "next_action_routing_summary": next_action_routing_summary,
+        "runtime_surface_quality_branch_resolver_connected": True,
+        "runtime_surface_quality_branch_fixture_text_used": runtime_surface_quality_branch.get("fixture_text_used_for_runtime_branching"),
+        "runtime_surface_quality_branch_uses_fixture_strings": runtime_surface_quality_branch.get("runtime_branching_uses_fixture_strings"),
         "next_action_routing_ready": next_action_branch.get("measurement_next_action_routing_ready"),
         "next_action_routing_basis": next_action_branch.get("routing_basis"),
         "next_action_selected_release_blocker": next_action_branch.get("selected_release_blocker"),
@@ -1532,6 +2180,7 @@ def build_complete_product_quality_measurement_connection(
         "next_action_layer": next_action_branch.get("target_layer"),
         "next_action_target": next_action_branch.get("target_area"),
         "next_step": next_action_branch.get("next_work_unit"),
+        "next_step_from_runtime_surface_quality_branch": runtime_surface_quality_branch.get("next_work_unit"),
         "display_confirmed_count": capture_summary.get("display_confirmed_count", 0),
         "scorecard_passed_display_count": capture_summary.get("scorecard_passed_display_count", 0),
         "eligible_count": scorecard.get("eligible_count", 0),
@@ -1587,9 +2236,41 @@ def build_complete_product_quality_measurement_connection(
             "exit_gate_observed_fixture_classes": exit_gate_summary.get("observed_fixture_classes"),
             "exit_gate_missing_fixture_classes": exit_gate_summary.get("missing_fixture_classes"),
             "exit_gate_required_fixture_classes": exit_gate_summary.get("required_fixture_classes"),
+            "runtime_surface_quality_branch_resolver_connected": exit_gate_summary.get("runtime_surface_quality_branch_resolver_connected"),
+            "step5_runtime_surface_quality_branch_resolver_connected": exit_gate_summary.get("step5_runtime_surface_quality_branch_resolver_connected"),
+            "runtime_surface_complete_activation_branch_connected": exit_gate_summary.get("runtime_surface_complete_activation_branch_connected"),
+            "step6_runtime_surface_complete_activation_branch_connected": exit_gate_summary.get("step6_runtime_surface_complete_activation_branch_connected"),
             "exit_gate_blockers": exit_gate_summary.get("exit_gate_blockers"),
             "release_judgment": exit_gate_summary.get("release_judgment"),
             "measurement_connection_complete_not_product_gate_achieved": exit_gate_summary.get("measurement_connection_complete_not_product_gate_achieved"),
+            "product_gate_ready": False,
+            "product_gate_reached": False,
+            "product_gate_achieved": False,
+            "product_gate_public_release_applied": False,
+            "public_release_applied": False,
+            "product_quality_released": False,
+        }
+    )
+    runtime_surface_exit_gate = build_runtime_surface_quality_exit_gate_summary(report)
+    assert_runtime_surface_exit_gate_meta_only(runtime_surface_exit_gate, source="runtime_surface_quality_exit_gate")
+    report.update(
+        {
+            "runtime_surface_quality_exit_gate": runtime_surface_exit_gate,
+            "step12_runtime_surface_quality_exit_gate": runtime_surface_exit_gate,
+            "runtime_surface_exit_gate_summary": runtime_surface_exit_gate,
+            "runtime_surface_quality_exit_gate_version": RUNTIME_SURFACE_EXIT_GATE_VERSION,
+            "runtime_surface_quality_exit_gate_step": RUNTIME_SURFACE_EXIT_GATE_STEP,
+            "runtime_surface_quality_latest_step": RUNTIME_SURFACE_EXIT_GATE_STEP,
+            "runtime_surface_quality_exit_gate_ready": runtime_surface_exit_gate.get("runtime_surface_quality_exit_gate_ready"),
+            "runtime_surface_quality_exit_gate_completed": runtime_surface_exit_gate.get("runtime_surface_quality_exit_gate_completed"),
+            "step12_exit_gate_ready": runtime_surface_exit_gate.get("step12_exit_gate_ready"),
+            "step12_exit_gate_completed": runtime_surface_exit_gate.get("step12_exit_gate_completed"),
+            "runtime_surface_quality_next_branch": runtime_surface_exit_gate.get("next_branch"),
+            "runtime_surface_quality_handoff_blockers": runtime_surface_exit_gate.get("runtime_surface_quality_handoff_blockers"),
+            "runtime_surface_quality_coverage_gaps": runtime_surface_exit_gate.get("coverage_gaps"),
+            "runtime_surface_quality_qa_gaps": runtime_surface_exit_gate.get("qa_gaps"),
+            "runtime_surface_quality_exit_gate_blockers": runtime_surface_exit_gate.get("runtime_surface_quality_exit_gate_blockers"),
+            "runtime_surface_quality_release_judgment": runtime_surface_exit_gate.get("release_judgment"),
             "product_gate_ready": False,
             "product_gate_reached": False,
             "product_gate_achieved": False,
@@ -1618,7 +2299,9 @@ dump_product_quality_measurement_event = dump_product_quality_measurement_scorec
 build_product_quality_measurement_connection = build_complete_product_quality_measurement_connection
 build_product_quality_measurement_next_action_routing_summary = build_complete_product_quality_measurement_next_action_routing_summary
 build_product_quality_measurement_exit_gate_summary = build_complete_product_quality_measurement_exit_gate_summary
+build_runtime_surface_measurement_exit_gate_summary = build_runtime_surface_quality_exit_gate_summary
 build_complete_product_quality_measurement_connection_report = build_complete_product_quality_measurement_connection
+build_complete_product_quality_measurement_report = build_complete_product_quality_measurement_connection
 dump_complete_product_quality_measurement_connection_report = dump_complete_product_quality_measurement_connection
 
 
@@ -1628,6 +2311,13 @@ __all__ = [
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUN_BUILDER_STEP",
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COVERAGE_GROUP_STEP",
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_SURFACE_METRICS_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COVERAGE_RUNTIME_BASELINE_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_BRANCH_RESOLVER_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_COMPLETE_ACTIVATION_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_STEP",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_RUNTIME_SURFACE_EXIT_GATE_VERSION",
+    "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_COMPLETE_RUNTIME_ACTIVATION_STEP",
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_BLIND_QA_SEPARATION_STEP",
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_NEXT_ACTION_ROUTING_STEP",
     "COMPLETE_PRODUCT_QUALITY_MEASUREMENT_EXIT_GATE_STEP",
@@ -1647,7 +2337,10 @@ __all__ = [
     "build_product_quality_measurement_next_action_routing_summary",
     "build_complete_product_quality_measurement_exit_gate_summary",
     "build_product_quality_measurement_exit_gate_summary",
+    "build_runtime_surface_measurement_exit_gate_summary",
+    "build_runtime_surface_quality_exit_gate_summary",
     "build_complete_product_quality_measurement_connection_report",
+    "build_complete_product_quality_measurement_report",
     "dump_complete_product_quality_measurement_connection",
     "dump_complete_product_quality_measurement_connection_report",
     "dump_product_quality_measurement_scorecard_event",

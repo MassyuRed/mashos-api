@@ -1,0 +1,691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocolon.local/schemas/emlis_observation_structure_dictionary.v1.json",
+  "title": "EmlisAI Observation Structure Dictionary V1",
+  "description": "Implementation schema for the Emlis observation structure dictionary. This dictionary describes input-bundle meaning, relation candidates, internal questions, allowed/forbidden inference, and surface policy material; it is not a completed reply template dictionary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dictionary_id",
+    "dictionary_version",
+    "contract_step",
+    "base_dictionary",
+    "status",
+    "purpose",
+    "non_goals",
+    "input_bundle_policy",
+    "global_policies",
+    "relations",
+    "entries",
+    "contract_boundaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "emlis.observation_structure_dictionary.v1"
+    },
+    "dictionary_id": {
+      "const": "emlis_observation_structure_dictionary"
+    },
+    "dictionary_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_step": {
+      "const": "Phase2_Observation_Structure_Dictionary_Schema"
+    },
+    "base_dictionary": {
+      "const": "cocolon_foundation_structure_dictionary"
+    },
+    "status": {
+      "const": "implementation_schema_phase2"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "non_goals": {
+      "$ref": "#/$defs/NonEmptyUniqueStringArray"
+    },
+    "input_bundle_policy": {
+      "$ref": "#/$defs/InputBundlePolicy"
+    },
+    "global_policies": {
+      "$ref": "#/$defs/GlobalPolicies"
+    },
+    "relations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Relation"
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Entry"
+      }
+    },
+    "contract_boundaries": {
+      "$ref": "#/$defs/ContractBoundaries"
+    },
+    "implementation_notes": {
+      "$ref": "#/$defs/NonEmptyUniqueStringArray"
+    }
+  },
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "minLength": 3
+    },
+    "NonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "NonEmptyUniqueStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/NonEmptyString"
+      }
+    },
+    "CurrentInputField": {
+      "enum": [
+        "memo",
+        "memo_action",
+        "emotion_details",
+        "emotions",
+        "category",
+        "created_at",
+        "id"
+      ]
+    },
+    "AnswerSource": {
+      "enum": [
+        "memo",
+        "memo_action",
+        "emotion_details",
+        "emotions",
+        "category",
+        "created_at",
+        "current_input_explicit_fields",
+        "current_input_direct_relations",
+        "connected_user_facts",
+        "dictionary_candidates"
+      ]
+    },
+    "SourcePriority": {
+      "enum": [
+        "current_input_explicit_fields",
+        "current_input_direct_relations",
+        "connected_user_facts",
+        "dictionary_candidates",
+        "general_knowledge_not_primary"
+      ]
+    },
+    "InputBundlePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_current_input_fields",
+        "normalized_field_mapping",
+        "field_meanings",
+        "source_priority"
+      ],
+      "properties": {
+        "required_current_input_fields": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/CurrentInputField"
+          }
+        },
+        "normalized_field_mapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "thought_text",
+            "action_text",
+            "emotions",
+            "emotion_strength_summary",
+            "categories",
+            "selected_at",
+            "source_record_id"
+          ],
+          "properties": {
+            "thought_text": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "action_text": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "emotions": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "emotion_strength_summary": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "categories": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "selected_at": {
+              "$ref": "#/$defs/FieldMapping"
+            },
+            "source_record_id": {
+              "$ref": "#/$defs/FieldMapping"
+            }
+          }
+        },
+        "field_meanings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "emotion_strength",
+            "category",
+            "created_at"
+          ],
+          "properties": {
+            "memo": {
+              "$ref": "#/$defs/NonEmptyString"
+            },
+            "memo_action": {
+              "$ref": "#/$defs/NonEmptyString"
+            },
+            "emotion_details": {
+              "$ref": "#/$defs/NonEmptyString"
+            },
+            "emotion_strength": {
+              "$ref": "#/$defs/NonEmptyString"
+            },
+            "category": {
+              "$ref": "#/$defs/NonEmptyString"
+            },
+            "created_at": {
+              "$ref": "#/$defs/NonEmptyString"
+            }
+          }
+        },
+        "source_priority": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/SourcePriority"
+          }
+        }
+      }
+    },
+    "FieldMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_field",
+        "meaning"
+      ],
+      "properties": {
+        "source_field": {
+          "$ref": "#/$defs/CurrentInputField"
+        },
+        "fallback_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/CurrentInputField"
+          }
+        },
+        "meaning": {
+          "$ref": "#/$defs/NonEmptyString"
+        }
+      }
+    },
+    "GlobalPolicies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "emotion_policy",
+        "category_policy",
+        "thought_action_policy",
+        "state_text_gap_policy",
+        "low_information_policy",
+        "user_agency_prompt_policy",
+        "surface_policy"
+      ],
+      "properties": {
+        "emotion_policy": {
+          "$ref": "#/$defs/EmotionPolicy"
+        },
+        "category_policy": {
+          "$ref": "#/$defs/CategoryPolicy"
+        },
+        "thought_action_policy": {
+          "$ref": "#/$defs/ThoughtActionPolicy"
+        },
+        "state_text_gap_policy": {
+          "$ref": "#/$defs/StateTextGapPolicy"
+        },
+        "low_information_policy": {
+          "$ref": "#/$defs/LowInformationPolicy"
+        },
+        "user_agency_prompt_policy": {
+          "$ref": "#/$defs/UserAgencyPromptPolicy"
+        },
+        "surface_policy": {
+          "$ref": "#/$defs/GlobalSurfacePolicy"
+        }
+      }
+    },
+    "EmotionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_emotion_is_state_premise",
+        "multiple_emotions_read_as_center_and_surrounding",
+        "emotion_nesting_allowed",
+        "emotion_strength_affects_state_weight_only",
+        "emotion_strength_must_not_create_cause",
+        "self_insight_is_not_ordinary_emotion"
+      ],
+      "properties": {
+        "selected_emotion_is_state_premise": {
+          "const": true
+        },
+        "multiple_emotions_read_as_center_and_surrounding": {
+          "const": true
+        },
+        "emotion_nesting_allowed": {
+          "const": true
+        },
+        "emotion_strength_affects_state_weight_only": {
+          "const": true
+        },
+        "emotion_strength_must_not_create_cause": {
+          "const": true
+        },
+        "self_insight_is_not_ordinary_emotion": {
+          "const": true
+        }
+      }
+    },
+    "CategoryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category_is_topic_direction_not_cause",
+        "multiple_categories_default_relation",
+        "category_overlap_requires_textual_evidence"
+      ],
+      "properties": {
+        "category_is_topic_direction_not_cause": {
+          "const": true
+        },
+        "multiple_categories_default_relation": {
+          "const": "category_parallel"
+        },
+        "category_overlap_requires_textual_evidence": {
+          "const": true
+        }
+      }
+    },
+    "ThoughtActionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memo_is_self_world_event",
+        "memo_action_is_real_world_event",
+        "explicit_discrepancy_should_be_observed",
+        "surface_order_default"
+      ],
+      "properties": {
+        "memo_is_self_world_event": {
+          "const": true
+        },
+        "memo_action_is_real_world_event": {
+          "const": true
+        },
+        "explicit_discrepancy_should_be_observed": {
+          "const": true
+        },
+        "surface_order_default": {
+          "enum": [
+            "real_world_fact_to_inner_state_to_human_accompaniment"
+          ]
+        }
+      }
+    },
+    "StateTextGapPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_words",
+        "default_surface_strength",
+        "strong_surface_requires",
+        "strong_surface_must_not_be_low_grounding"
+      ],
+      "properties": {
+        "gap_words": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "default_surface_strength": {
+          "enum": [
+            "soft"
+          ]
+        },
+        "strong_surface_requires": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "strong_surface_must_not_be_low_grounding": {
+          "const": true
+        }
+      }
+    },
+    "LowInformationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "short_text_is_not_always_low_information",
+        "must_state_known_scope",
+        "must_not_fill_unknown_event",
+        "prompt_relation"
+      ],
+      "properties": {
+        "short_text_is_not_always_low_information": {
+          "const": true
+        },
+        "must_state_known_scope": {
+          "const": true
+        },
+        "must_not_fill_unknown_event": {
+          "const": true
+        },
+        "prompt_relation": {
+          "const": "user_agency_prompt"
+        }
+      }
+    },
+    "UserAgencyPromptPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preferred_verbs",
+        "avoid_verbs",
+        "must_preserve_user_agency"
+      ],
+      "properties": {
+        "preferred_verbs": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "avoid_verbs": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "must_preserve_user_agency": {
+          "const": true
+        }
+      }
+    },
+    "GlobalSurfacePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dictionary_is_not_completed_reply_template",
+        "composer_owns_final_order",
+        "surface_realizer_owns_final_japanese",
+        "must_not_return_entry_text_directly"
+      ],
+      "properties": {
+        "dictionary_is_not_completed_reply_template": {
+          "const": true
+        },
+        "composer_owns_final_order": {
+          "const": true
+        },
+        "surface_realizer_owns_final_japanese": {
+          "const": true
+        },
+        "must_not_return_entry_text_directly": {
+          "const": true
+        }
+      }
+    },
+    "Relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation_id",
+        "definition",
+        "evidence_requirements",
+        "allowed_inference",
+        "forbidden_inference",
+        "surface_policy"
+      ],
+      "properties": {
+        "relation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "definition": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "evidence_requirements": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "allowed_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "forbidden_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "surface_policy": {
+          "$ref": "#/$defs/RelationSurfacePolicy"
+        }
+      }
+    },
+    "RelationSurfacePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_strength",
+        "must_use_humility_marker",
+        "must_not_return_directly"
+      ],
+      "properties": {
+        "default_strength": {
+          "enum": [
+            "soft",
+            "medium",
+            "strong_when_high_grounding"
+          ]
+        },
+        "must_use_humility_marker": {
+          "type": "boolean"
+        },
+        "must_not_return_directly": {
+          "const": true
+        },
+        "notes": {
+          "$ref": "#/$defs/NonEmptyString"
+        }
+      }
+    },
+    "Entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "entry_type",
+        "relation_candidates",
+        "observation_questions",
+        "allowed_inference",
+        "forbidden_inference"
+      ],
+      "properties": {
+        "entry_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "entry_type": {
+          "enum": [
+            "input_word",
+            "state_text_gap_word",
+            "special_emotion_mode",
+            "emotion_relation",
+            "category_relation",
+            "thought_action_relation",
+            "prompt_policy"
+          ]
+        },
+        "input_words": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "base_structure_terms": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "relation_candidates": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "observation_questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ObservationQuestion"
+          }
+        },
+        "allowed_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "forbidden_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "low_information_boundary": {
+          "$ref": "#/$defs/LowInformationBoundary"
+        },
+        "surface_policy": {
+          "$ref": "#/$defs/EntrySurfacePolicy"
+        }
+      }
+    },
+    "ObservationQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question",
+        "answer_sources",
+        "allowed_inference",
+        "forbidden_inference"
+      ],
+      "properties": {
+        "question": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "answer_sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/AnswerSource"
+          }
+        },
+        "allowed_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "forbidden_inference": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        }
+      }
+    },
+    "LowInformationBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "known_scope",
+        "unknown_scope",
+        "must_not_infer",
+        "prompt_policy"
+      ],
+      "properties": {
+        "known_scope": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "unknown_scope": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "must_not_infer": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "prompt_policy": {
+          "const": "user_agency_prompt"
+        }
+      }
+    },
+    "EntrySurfacePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_direction",
+        "must_not_return_directly"
+      ],
+      "properties": {
+        "default_direction": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "receive_direction": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "strong_hand_direction": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "strong_hand_requires": {
+          "$ref": "#/$defs/NonEmptyUniqueStringArray"
+        },
+        "must_not_return_directly": {
+          "const": true
+        }
+      }
+    },
+    "ContractBoundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_route_changed",
+        "request_key_changed",
+        "response_key_changed",
+        "db_physical_name_changed",
+        "rn_visible_contract_changed",
+        "display_gate_relaxed",
+        "raw_text_added_to_public_metadata",
+        "existing_surface_dictionary_modified"
+      ],
+      "properties": {
+        "public_route_changed": {
+          "const": false
+        },
+        "request_key_changed": {
+          "const": false
+        },
+        "response_key_changed": {
+          "const": false
+        },
+        "db_physical_name_changed": {
+          "const": false
+        },
+        "rn_visible_contract_changed": {
+          "const": false
+        },
+        "display_gate_relaxed": {
+          "const": false
+        },
+        "raw_text_added_to_public_metadata": {
+          "const": false
+        },
+        "existing_surface_dictionary_modified": {
+          "const": false
+        }
+      }
+    }
+  }
+}

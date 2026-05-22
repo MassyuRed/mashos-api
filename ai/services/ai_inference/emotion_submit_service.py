@@ -38,6 +38,7 @@ from api_emotion_submit import (
     _resolve_user_id_from_token,
     _start_post_submit_background_tasks,
 )
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_observation_diagnostic_lockdown import (
     build_observation_diagnostic_lockdown,
     dump_observation_diagnostic,
@@ -313,7 +314,11 @@ async def persist_emotion_submission(
         f"{inserted.get('id') or ''}|{inserted.get('created_at', effective_created_at) or effective_created_at}"
     )
 
-    current_input = {
+    # Phase 1: keep the legacy current_input keys stable while normalizing them
+    # into EmlisAI's internal input-bundle shape (memo/thought, memo_action/action,
+    # selected emotions, categories, selected_at/source id).  This is an internal
+    # boundary only; /emotion/submit request/response and DB write paths stay the same.
+    current_input = normalize_emlis_current_input({
         "id": inserted.get("id"),
         "created_at": inserted.get("created_at", effective_created_at),
         "emotions": normalized["emotions_tags"],
@@ -323,7 +328,7 @@ async def persist_emotion_submission(
         "category": normalized["category"],
         "is_secret": bool(is_secret),
         "selection_seed": input_feedback_seed,
-    }
+    })
 
     input_feedback_comment = ""
     input_feedback_meta: Dict[str, Any] = {}

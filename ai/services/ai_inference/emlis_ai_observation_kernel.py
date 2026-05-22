@@ -16,6 +16,11 @@ from typing import List, Optional
 from emlis_ai_display_gate import build_phase10_release_readiness, decide_emlis_observation_display, phase7_judge_contract_ready, phase8_display_gate_contract_ready
 from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
+from emlis_ai_observation_structure_material_service import (
+    build_observation_structure_material,
+    observation_structure_material_forward_meta,
+    observation_structure_material_gate_report,
+)
 from emlis_ai_grounding_judge import judge_grounding
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_integrator_contract_ready, validate_observation_graph
@@ -131,6 +136,12 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
     labels = _selected_labels(kernel_input.world_model, bundle)
     center = _center_label(labels, kernel_input.world_model)
     evidence_spans = build_evidence_ledger(bundle.current_input)
+    observation_structure_material = build_observation_structure_material(
+        current_input=bundle.current_input,
+        evidence_ledger=evidence_spans,
+    )
+    observation_structure_meta = observation_structure_material_forward_meta(observation_structure_material)
+    observation_structure_gate_report = observation_structure_material_gate_report(observation_structure_material)
     reports = run_perspective_observers(evidence_spans)
     board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
     graph = integrate_perspective_board(board=board, display_name=bundle.display_name)
@@ -147,6 +158,7 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         greeting_text="",
         composer_client=None,
         trace_id="legacy-kernel-adapter",
+        observation_structure_material=observation_structure_material,
     )
     candidate_text = str(composer_candidate.comment_text or "").strip()
     reader = judge_listener_readability(candidate_text)
@@ -176,6 +188,7 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
         trace_id="legacy-kernel-adapter",
         composer_source=composer_source,
         phase_completion_ready=phase7_contract_ready,
+        observation_structure_gate_report=observation_structure_gate_report,
     )
     final_text = decision.comment_text if decision.observation_status == "passed" else ""
     reply_lines = _reply_lines_from_text(final_text, current_ref)
@@ -257,6 +270,10 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
                 "composer_candidate_available": composer_candidate_available,
                 "composer_status": str(composer_candidate.status or ""),
                 "display_gate_status": decision.observation_status,
+                "observation_structure_dictionary_connected": True,
+                "observation_structure_gate_ready": True,
+                "observation_structure_composer_connected": True,
+                "observation_structure_material_ready": bool(observation_structure_meta.get("structure_dictionary_material_ready")),
                 "comment_text_allowed": bool(phase8_ready and decision.observation_status == "passed" and final_text),
                 "board_validation_issues": validate_perspective_board(board),
                 "graph_validation_issues": validate_observation_graph(graph, board),
@@ -270,6 +287,8 @@ def run_emlis_ai_observation_kernel(*, kernel_input: ObservationKernelInput) -> 
             "reader_reasons": reader.rejection_reasons,
             "grounding_reasons": grounding.rejection_reasons,
             "template_reasons": template_echo.rejection_reasons,
+            "emlis_observation_structure_dictionary": observation_structure_meta,
+            "observation_structure_gate": observation_structure_gate_report,
         },
     )
 

@@ -24,8 +24,27 @@ from emlis_ai_limited_sentence_quality_guard import (
     phase8_role_meta,
     phase8_roles_for_text,
 )
+from emlis_ai_phrase_unit_grammar_normalizer import (
+    DEFER as PHRASE_UNIT_GRAMMAR_DEFER,
+    DROP as PHRASE_UNIT_GRAMMAR_DROP,
+    KEEP as PHRASE_UNIT_GRAMMAR_KEEP,
+    REPHRASE as PHRASE_UNIT_GRAMMAR_REPHRASE,
+    PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+    PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+    build_phrase_unit_grammar_normalizer_contract_meta,
+    collect_phrase_unit_grammar_warning_codes,
+    normalize_phrase_unit_grammar,
+    phrase_unit_grammar_normalizer_report_meta,
+    summarize_phrase_unit_grammar_normalizer,
+)
 
-COMPLETE_MATERIAL_SERVICE_VERSION = "emlis.complete_material_service.v1"
+from emlis_ai_observation_material_connector import (
+    build_material_focus_relation_connector,
+    observation_material_connector_forward_meta,
+)
+
+COMPLETE_MATERIAL_SERVICE_VERSION = "emlis.complete_material_service.v1_step8"
+COMPLETE_MATERIAL_SERVICE_BASE_VERSION = "emlis.complete_material_service.v1"
 COMPLETE_MATERIAL_UNIT_SCHEMA_VERSION = "emlis.complete_material_unit.v1"
 COMPLETE_MATERIAL_REJECTION_SCHEMA_VERSION = "emlis.complete_material_rejection.v1"
 COMPLETE_MATERIAL_BUNDLE_SCHEMA_VERSION = "emlis.complete_material_bundle.v1"
@@ -33,7 +52,12 @@ COMPLETE_MATERIAL_STAGE = "Step3_Material_service"
 COMPLETE_MATERIAL_SERVICE_STEP = COMPLETE_MATERIAL_STAGE
 COMPLETE_MATERIAL_TARGET_STEP = COMPLETE_MATERIAL_STAGE
 COMPLETE_MATERIAL_SERVICE_TARGET_STEP = COMPLETE_MATERIAL_STAGE
-COMPLETE_MATERIAL_IMPLEMENTATION_UNIT = "Commit 3"
+COMPLETE_MATERIAL_IMPLEMENTATION_UNIT = "Commit 3 + RuntimeSurfaceQuality Step8"
+COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION = PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION
+COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP = PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP
+PHRASE_GRAMMAR_DEFER = PHRASE_UNIT_GRAMMAR_DEFER
+PHRASE_GRAMMAR_DROP = PHRASE_UNIT_GRAMMAR_DROP
+PHRASE_GRAMMAR_REPHRASE = PHRASE_UNIT_GRAMMAR_REPHRASE
 
 COMPLETE_MATERIAL_STATUS_READY = "ready"
 COMPLETE_MATERIAL_STATUS_UNAVAILABLE = "unavailable"
@@ -66,6 +90,15 @@ BLOCKING_MATERIAL_FLAGS = {
     "too_long_quote",
     "too_short_phrase_unit_material",
     "non_text_material_source",
+    "phrase_unit_grammar_dropped",
+    "phrase_unit_grammar_deferred",
+    "must_keep_deferred_not_dropped",
+    "malformed_nominalization_missing_ru",
+    "stem_koto_hanareru",
+    "malformed_nominalization_particle_before_koto",
+    "orphan_particle_tail",
+    "unfinished_phrase_tail",
+    "raw_fragment_centering_risk",
 }
 
 _SPACE_RE = re.compile(r"\s+")
@@ -205,6 +238,18 @@ def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
             continue
         out[key_text] = _json_safe_value(item)
     return out
+
+
+
+def _observation_forward_meta(value: Any) -> dict[str, Any]:
+    return observation_material_connector_forward_meta(value)
+
+
+def _merge_observation_meta(*values: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for value in values:
+        merged.update(_observation_forward_meta(value))
+    return merged
 
 
 def _safe_int(value: Any, default: int = -1) -> int:
@@ -360,6 +405,62 @@ def _material_quality(phrase: str, *, raw_text: str, role: str, detected_type: s
     return dict(report), tuple(dict.fromkeys(reasons))
 
 
+def _normalize_material_grammar(
+    phrase: str,
+    *,
+    role: str,
+    must_keep: bool,
+    source: str,
+) -> tuple[str, dict[str, Any], tuple[str, ...]]:
+    result = normalize_phrase_unit_grammar(
+        phrase,
+        role=role,
+        must_keep=must_keep,
+    )
+    grammar_meta = result.as_meta()
+    reasons: list[str] = []
+    if result.action == PHRASE_UNIT_GRAMMAR_DROP:
+        reasons.append("phrase_unit_grammar_dropped")
+        reasons.extend(result.warning_codes)
+    elif result.action == PHRASE_UNIT_GRAMMAR_DEFER:
+        reasons.append("phrase_unit_grammar_deferred")
+        reasons.extend(result.warning_codes)
+    normalized = result.normalized_text if result.usable else phrase
+    return normalized, grammar_meta, tuple(dict.fromkeys(reasons))
+
+
+def _grammar_codes_from_meta(meta: Mapping[str, Any] | None) -> tuple[str, ...]:
+    return collect_phrase_unit_grammar_warning_codes(meta or {})
+
+
+def _grammar_meta_fields(grammar_meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    safe = _json_safe_mapping(grammar_meta)
+    codes = list(_grammar_codes_from_meta(safe))
+    action = _clean(safe.get("phrase_unit_grammar_action")) or PHRASE_UNIT_GRAMMAR_KEEP
+    return {
+        "phrase_unit_grammar_normalizer": safe,
+        "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "phrase_unit_grammar_normalizer_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "step8_phrase_unit_grammar_normalizer_connected": True,
+        "step8_phrase_unit_grammar_normalizer_ready": True,
+        "phrase_unit_grammar_action": action,
+        "phrase_unit_grammar_rephrased": action == PHRASE_UNIT_GRAMMAR_REPHRASE,
+        "phrase_unit_grammar_dropped": action == PHRASE_UNIT_GRAMMAR_DROP,
+        "phrase_unit_grammar_deferred": action == PHRASE_UNIT_GRAMMAR_DEFER,
+        "grammar_warning_codes": codes,
+        "surface_grammar_warning_codes": codes,
+        "grammar_warning_count": len(codes),
+        "surface_grammar_warning_count": len(codes),
+        "malformed_nominalization_risk": any("nominalization" in code or "stem_koto" in code for code in codes),
+        "must_keep_dropped": False,
+        "must_keep_preserved": True,
+        "unsupported_completion_added": False,
+        "meaning_added": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
 @dataclass(frozen=True)
 class CompleteMaterialUnit:
     material_id: str
@@ -446,7 +547,7 @@ class CompleteMaterialUnit:
         return not self.validation_errors
 
     def as_focus_seed(self) -> dict[str, Any]:
-        return {
+        seed = {
             "material_id": self.material_id,
             "phrase_unit_id": self.phrase_unit_id,
             "evidence_span_id": self.evidence_span_id,
@@ -459,6 +560,8 @@ class CompleteMaterialUnit:
             "relation_family": self.relation_family,
             "raw_input_included": False,
         }
+        seed.update(_observation_forward_meta(self.meta))
+        return seed
 
     def as_sentence_plan_seed(self) -> dict[str, Any]:
         return self.as_focus_seed()
@@ -488,8 +591,24 @@ class CompleteMaterialUnit:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            **_observation_forward_meta(self.meta),
             "source_anchor": dict(self.source_anchor),
             "quality_flags": list(self.quality_flags),
+            "phrase_unit_grammar_normalizer_version": self.meta.get("phrase_unit_grammar_normalizer_version") or PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+            "phrase_unit_grammar_normalizer_step": self.meta.get("phrase_unit_grammar_normalizer_step") or PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+            "step8_phrase_unit_grammar_normalizer_connected": bool(self.meta.get("step8_phrase_unit_grammar_normalizer_connected", True)),
+            "phrase_unit_grammar_action": self.meta.get("phrase_unit_grammar_action") or PHRASE_UNIT_GRAMMAR_KEEP,
+            "phrase_unit_grammar_rephrased": bool(self.meta.get("phrase_unit_grammar_rephrased")),
+            "phrase_unit_grammar_dropped": False,
+            "phrase_unit_grammar_deferred": False,
+            "phrase_unit_grammar_normalizer": dict(self.meta.get("phrase_unit_grammar_normalizer") or {}),
+            "grammar_warning_codes": list(self.meta.get("grammar_warning_codes") or []),
+            "surface_grammar_warning_codes": list(self.meta.get("surface_grammar_warning_codes") or self.meta.get("grammar_warning_codes") or []),
+            "grammar_warning_count": int(self.meta.get("grammar_warning_count") or len(self.meta.get("grammar_warning_codes") or [])),
+            "surface_grammar_warning_count": int(self.meta.get("surface_grammar_warning_count") or len(self.meta.get("surface_grammar_warning_codes") or self.meta.get("grammar_warning_codes") or [])),
+            "must_keep_preserved": bool(self.meta.get("must_keep_preserved", self.must_keep)),
+            "unsupported_completion_added": False,
+            "meaning_added": False,
             "usable": self.usable,
             "validation_errors": list(self.validation_errors),
             "completion_sentence_template": False,
@@ -540,6 +659,21 @@ class CompleteMaterialRejection:
             "rejection_reasons": list(self.reason_codes),
             "reason_codes": list(self.reason_codes),
             "quality_flags": list(self.quality_flags),
+            "phrase_unit_grammar_normalizer_version": self.meta.get("phrase_unit_grammar_normalizer_version") or PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+            "phrase_unit_grammar_normalizer_step": self.meta.get("phrase_unit_grammar_normalizer_step") or PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+            "step8_phrase_unit_grammar_normalizer_connected": bool(self.meta.get("step8_phrase_unit_grammar_normalizer_connected")),
+            "phrase_unit_grammar_action": self.meta.get("phrase_unit_grammar_action") or (PHRASE_UNIT_GRAMMAR_DEFER if self.meta.get("phrase_unit_grammar_deferred") else PHRASE_UNIT_GRAMMAR_DROP),
+            "phrase_unit_grammar_dropped": bool(self.meta.get("phrase_unit_grammar_dropped")),
+            "phrase_unit_grammar_deferred": bool(self.meta.get("phrase_unit_grammar_deferred")),
+            "phrase_unit_grammar_normalizer": dict(self.meta.get("phrase_unit_grammar_normalizer") or {}),
+            "grammar_warning_codes": list(self.meta.get("grammar_warning_codes") or []),
+            "surface_grammar_warning_codes": list(self.meta.get("surface_grammar_warning_codes") or self.meta.get("grammar_warning_codes") or []),
+            "grammar_warning_count": int(self.meta.get("grammar_warning_count") or len(self.meta.get("grammar_warning_codes") or [])),
+            "surface_grammar_warning_count": int(self.meta.get("surface_grammar_warning_count") or len(self.meta.get("surface_grammar_warning_codes") or self.meta.get("grammar_warning_codes") or [])),
+            "must_keep_preserved": bool(self.meta.get("must_keep_preserved")),
+            "must_keep_dropped": False,
+            "unsupported_completion_added": False,
+            "meaning_added": False,
             "raw_text_included": False,
             "raw_input_included": False,
             "meta": dict(self.meta),
@@ -565,7 +699,7 @@ class CompleteMaterialBundle:
             if isinstance(row, CompleteMaterialRejection):
                 rejected.append(row)
             elif isinstance(row, Mapping):
-                rejected.append(CompleteMaterialRejection(reason_codes=row.get("reason_codes") or row.get("rejection_reasons") or (), evidence_span_id=row.get("evidence_span_id") or "", phrase_unit_id=row.get("phrase_unit_id") or "", role=row.get("role") or "", relation_type=row.get("relation_type") or "", source_anchor=row.get("source_anchor") or {}, quality_flags=row.get("quality_flags") or (), source=row.get("source") or "material_service"))
+                rejected.append(CompleteMaterialRejection(reason_codes=row.get("reason_codes") or row.get("rejection_reasons") or (), evidence_span_id=row.get("evidence_span_id") or "", phrase_unit_id=row.get("phrase_unit_id") or "", role=row.get("role") or "", relation_type=row.get("relation_type") or "", source_anchor=row.get("source_anchor") or {}, quality_flags=row.get("quality_flags") or (), source=row.get("source") or "material_service", meta=row.get("meta") or {}))
         object.__setattr__(self, "materials", materials)
         object.__setattr__(self, "rejected_rows", tuple(rejected))
         object.__setattr__(self, "coverage_group", _clean(self.coverage_group) or "complete_initial_materials")
@@ -656,6 +790,27 @@ class CompleteMaterialBundle:
             errors.append("complete_materials_missing")
         return tuple(dict.fromkeys(errors))
 
+    @property
+    def phrase_unit_grammar_reports(self) -> Tuple[dict[str, Any], ...]:
+        reports: list[dict[str, Any]] = []
+        for item in self.materials:
+            meta = item.meta.get("phrase_unit_grammar_normalizer") if isinstance(item.meta, Mapping) else None
+            if meta:
+                reports.append(dict(meta))
+        for row in self.rejected_rows:
+            meta = row.meta.get("phrase_unit_grammar_normalizer") if isinstance(row.meta, Mapping) else None
+            if meta:
+                reports.append(dict(meta))
+        return tuple(reports)
+
+    @property
+    def grammar_warning_codes(self) -> Tuple[str, ...]:
+        return _grammar_codes_from_meta({"rows": list(self.phrase_unit_grammar_reports)})
+
+    @property
+    def phrase_unit_grammar_summary(self) -> dict[str, Any]:
+        return summarize_phrase_unit_grammar_normalizer(list(self.phrase_unit_grammar_reports))
+
     def as_focus_selector_input(self) -> dict[str, Any]:
         return {
             "version": COMPLETE_MATERIAL_BUNDLE_SCHEMA_VERSION,
@@ -667,6 +822,11 @@ class CompleteMaterialBundle:
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
             "relation_types": list(self.relation_types),
             "role_types": list(self.role_types),
+            **_observation_forward_meta(self.meta),
+            "grammar_warning_codes": list(self.grammar_warning_codes),
+            "surface_grammar_warning_codes": list(self.grammar_warning_codes),
+            "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+            "phrase_unit_grammar_normalizer_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
             "raw_input_included": False,
             "response_shape_changed": False,
         }
@@ -678,6 +838,16 @@ class CompleteMaterialBundle:
         return self.as_focus_selector_input()
 
     def as_meta(self) -> dict[str, Any]:
+        row_metas = [item.as_meta() for item in self.usable_materials]
+        rejected_metas = [row.as_meta() for row in self.rejected_rows] + [item.as_meta() for item in self.materials if not item.usable]
+        grammar_reports = [
+            row.get("phrase_unit_grammar_normalizer")
+            for row in [*row_metas, *rejected_metas]
+            if isinstance(row, Mapping) and isinstance(row.get("phrase_unit_grammar_normalizer"), Mapping)
+        ]
+        grammar_summary = summarize_phrase_unit_grammar_normalizer(grammar_reports)
+        grammar_codes = collect_phrase_unit_grammar_warning_codes(grammar_summary, self.meta)
+        grammar_counts = _step8_counts_from_rows([*row_metas, *rejected_metas])
         return {
             "version": self.schema_version,
             "schema_version": self.schema_version,
@@ -701,6 +871,28 @@ class CompleteMaterialBundle:
             "orphan_particle_excluded": True,
             "rootless_material_excluded": True,
             "unsafe_overclaim_material_excluded": True,
+            "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+            "phrase_unit_grammar_normalizer_connected": True,
+            "step8_phrase_unit_grammar_normalizer_ready": True,
+            "step8_phrase_unit_grammar_normalizer_connected": True,
+            "phrase_unit_grammar_normalizer": grammar_summary,
+            "phrase_unit_grammar_normalizer_report": grammar_summary,
+            "grammar_warning_codes": list(grammar_codes),
+            "surface_grammar_warning_codes": list(grammar_codes),
+            "phrase_unit_grammar_warning_codes": list(grammar_codes),
+            "grammar_warning_count": len(grammar_codes),
+            "surface_grammar_warning_count": len(grammar_codes),
+            "phrase_unit_grammar_warning_count": len(grammar_codes),
+            "grammar_warning_major": bool(grammar_codes) and (grammar_counts.get("drop", 0) > 0 or grammar_counts.get("defer", 0) > 0),
+            "phrase_unit_grammar_rephrase_count": grammar_counts.get("rephrase", 0),
+            "phrase_unit_grammar_drop_count": grammar_counts.get("drop", 0),
+            "phrase_unit_grammar_defer_count": grammar_counts.get("defer", 0),
+            "must_keep_deferred_count": sum(1 for row in rejected_metas if row.get("phrase_unit_grammar_action") == PHRASE_GRAMMAR_DEFER),
+            "must_keep_dropped": False,
+            "unsupported_completion_added": False,
+            "unsupported_completion_added_by_phrase_unit_grammar": False,
+            "meaning_added_by_phrase_unit_grammar": False,
+            "meaning_added_by_phrase_unit_grammar_normalizer": False,
             "completion_sentence_templates_added": False,
             "fixed_sentence_template_added": False,
             "fixed_sentence_template_allowed": False,
@@ -716,6 +908,8 @@ class CompleteMaterialBundle:
             "rn_visible_title_changed": False,
             "comment_text_generated": False,
             "comment_text_contract": "passed_only",
+            "comment_text_included": False,
+            "comment_text_body_included": False,
             "coverage_group": self.coverage_group,
             "candidate_material_count": len(self.materials) + len(self.rejected_rows),
             "accepted_material_count": len(self.usable_materials),
@@ -729,19 +923,21 @@ class CompleteMaterialBundle:
             "relation_families": list(_dedupe(relation_family(item) for item in self.relation_types)),
             "role_types": list(self.role_types),
             "role_keys": list(self.role_keys),
+            **_observation_forward_meta(self.meta),
             "all_materials_usable": bool(self.usable_materials) and self.rejected_count == 0,
             "usable": self.usable,
             "validation_errors": list(self.validation_errors),
             "blocked_reasons": self.rejection_reason_counts,
             "blocked_reason_keys": list(self.rejection_reason_counts.keys()),
-            "rows": [item.as_meta() for item in self.usable_materials],
-            "materials": [item.as_meta() for item in self.usable_materials],
-            "rejected_rows": [row.as_meta() for row in self.rejected_rows] + [item.as_meta() for item in self.materials if not item.usable],
+            "rows": row_metas,
+            "materials": row_metas,
+            "rejected_rows": rejected_metas,
             "rejection_reason_counts": self.rejection_reason_counts,
             "focus_selector_input": self.as_focus_selector_input(),
             "material_text_included": False,
             "raw_text_included": False,
             "raw_input_included": False,
+            "comment_text_body_included": False,
             "raw_input_required_for_debug": False,
             "raw_input_required_for_improvement": False,
             "contract_boundary": {
@@ -773,7 +969,26 @@ def build_complete_material_service_contract_meta() -> dict[str, Any]:
         "target_composer_family_term": term_meta.get("target_composer_family_term"),
         "complete_composer_initial_term": term_meta.get("complete_composer_initial_term"),
         "material_service_added": True,
+        "observation_material_connector_supported": True,
+        "observation_reply_kind_preserved_in_material_meta": True,
+        "unknown_slots_preserved_in_material_meta": True,
+        "user_fact_grounding_mode_preserved_in_material_meta": True,
+        "internal_question_ids_preserved_in_material_meta": True,
         "runtime_client_connected": False,
+        "base_version": COMPLETE_MATERIAL_SERVICE_BASE_VERSION,
+        "phrase_unit_grammar_normalizer_version": COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "phrase_unit_grammar_normalizer_step": COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "phrase_unit_grammar_normalizer_connected": True,
+        "step8_phrase_unit_grammar_normalizer_ready": True,
+        "step8_phrase_unit_grammar_normalizer_connected": True,
+        "runs_phrase_unit_grammar_before_sentence_plan": True,
+        "runs_phrase_unit_grammar_before_surface_realizer": True,
+        "grammar_warning_codes_connected": True,
+        "phrase_unit_drop_rephrase_defer_supported": True,
+        "must_keep_deferred_not_dropped": True,
+        "runs_before_sentence_plan": True,
+        "runs_before_surface_realizer": True,
+        "phrase_unit_grammar_normalizer_contract": build_phrase_unit_grammar_normalizer_contract_meta(),
         "material_stage_filter_enabled": True,
         "material_stage_filtering_enabled": True,
         "sentence_plan_pre_filter_enabled": True,
@@ -794,8 +1009,18 @@ def build_complete_material_service_contract_meta() -> dict[str, Any]:
         "filters_rootless_material": True,
         "rejects_ungrounded_material": True,
         "rejects_diagnosis_personality_and_advice": True,
+        "step8_phrase_unit_grammar_normalizer_connected": True,
+        "step8_phrase_unit_grammar_normalizer_ready": True,
+        "phrase_unit_grammar_normalizer_version": PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION,
+        "phrase_unit_grammar_normalizer_step": PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP,
+        "rejects_malformed_nominalization": True,
+        "rejects_or_defers_unfinished_phrase_unit": True,
+        "unsupported_completion_added_by_phrase_unit_grammar": False,
+        "meaning_added_by_phrase_unit_grammar": False,
         "comment_text_generated": False,
         "comment_text_contract": "passed_only",
+        "comment_text_included": False,
+        "comment_text_body_included": False,
         "external_ai_used": False,
         "external_ai_allowed": False,
         "local_llm_used": False,
@@ -810,7 +1035,27 @@ def build_complete_material_service_contract_meta() -> dict[str, Any]:
         "rn_visible_title_changed": False,
         "raw_input_included": False,
         "raw_input_required_for_improvement": False,
+        "unsupported_completion_added": False,
+        "meaning_added_by_phrase_unit_grammar_normalizer": False,
+        "must_keep_dropped": False,
     }
+
+
+def _step8_counts_from_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    counts = {
+        PHRASE_UNIT_GRAMMAR_KEEP: 0,
+        PHRASE_UNIT_GRAMMAR_REPHRASE: 0,
+        PHRASE_UNIT_GRAMMAR_DROP: 0,
+        PHRASE_UNIT_GRAMMAR_DEFER: 0,
+    }
+    for row in rows:
+        meta = row.get("phrase_unit_grammar_normalizer") if isinstance(row, Mapping) else None
+        if not isinstance(meta, Mapping):
+            meta = row.get("meta") if isinstance(row, Mapping) else {}
+        action = _clean((meta or {}).get("phrase_unit_grammar_action") or (row or {}).get("phrase_unit_grammar_action"))
+        if action in counts:
+            counts[action] += 1
+    return counts
 
 
 def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping[str, Mapping[str, Any]]) -> tuple[CompleteMaterialUnit | None, CompleteMaterialRejection | None]:
@@ -823,10 +1068,24 @@ def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping
     source = _source_field(evidence) if evidence else _clean(row.get("source_field")) or "memo"
     detected = _detected_type(evidence) if evidence else _clean(row.get("detected_type")) or "event"
     raw_for_quality = _span_raw_text(evidence) if evidence else ""
+    polarity = _clean(row.get("polarity"))
+    must_keep = bool(row.get("must_keep"))
+    if not polarity or row.get("must_keep") is None:
+        polarity_default, must_keep_default = phase8_role_meta(role)
+        polarity = polarity or polarity_default
+        must_keep = must_keep or must_keep_default
+    material_text, grammar_meta, grammar_reasons = _normalize_material_grammar(
+        material_text,
+        role=role,
+        must_keep=must_keep,
+        source="phrase_unit",
+    )
     quality_report, quality_reasons = _material_quality(material_text, raw_text=raw_for_quality or material_text, role=role, detected_type=detected, source_field=source)
     relation = _relation_for_material(role, row.get("relation_type"))
     anchor = _source_anchor(span_id=evidence_span_id, span=evidence if evidence else None)
+    grammar_fields = _grammar_meta_fields(grammar_meta)
     reasons = list(quality_reasons)
+    reasons.extend(grammar_reasons)
     if not material_text:
         reasons.append("material_text_missing")
     if not role:
@@ -840,6 +1099,7 @@ def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping
         reasons.append("source_anchor_missing")
     reasons.extend(_safety_reasons(raw_for_quality))
     reasons = list(dict.fromkeys(reasons))
+    quality_flags = list(_dedupe([*(quality_report.get("quality_flags") or ()), *(row.get("quality_flags") or ()), *grammar_fields.get("grammar_warning_codes", [])]))
     if reasons:
         return None, CompleteMaterialRejection(
             reason_codes=reasons,
@@ -848,15 +1108,10 @@ def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping
             role=role,
             relation_type=relation,
             source_anchor=anchor,
-            quality_flags=quality_report.get("quality_flags") or (),
+            quality_flags=quality_flags,
             source="phrase_unit",
+            meta={**grammar_fields, "material_source": "phrase_unit", "must_keep_preserved": bool(must_keep and "phrase_unit_grammar_dropped" not in grammar_reasons), "must_keep_deferred": "phrase_unit_grammar_deferred" in grammar_reasons},
         )
-    polarity = _clean(row.get("polarity"))
-    must_keep = bool(row.get("must_keep"))
-    if not polarity or row.get("must_keep") is None:
-        polarity_default, must_keep_default = phase8_role_meta(role)
-        polarity = polarity or polarity_default
-        must_keep = must_keep or must_keep_default
     return CompleteMaterialUnit(
         material_id=f"cm{index}",
         phrase_unit_id=phrase_unit_id,
@@ -867,8 +1122,8 @@ def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping
         must_keep=must_keep,
         relation_type=relation,
         source_anchor=anchor,
-        quality_flags=quality_report.get("quality_flags") or row.get("quality_flags") or (),
-        meta={"material_source": "phrase_unit"},
+        quality_flags=quality_flags,
+        meta={**grammar_fields, "material_source": "phrase_unit", "must_keep_preserved": True},
     ), None
 
 
@@ -890,17 +1145,26 @@ def _materials_from_evidence_span(span: Any, *, start_index: int) -> tuple[list[
     for offset, role in enumerate(roles, start=0):
         index = start_index + offset
         phrase = _material_phrase_for_role(raw, role)
+        polarity, must_keep = phase8_role_meta(role)
+        phrase, grammar_meta, grammar_reasons = _normalize_material_grammar(
+            phrase,
+            role=role,
+            must_keep=must_keep,
+            source="evidence_span",
+        )
         quality_report, quality_reasons = _material_quality(phrase, raw_text=raw, role=role, detected_type=detected, source_field=source)
         relation = _relation_for_material(role)
+        grammar_fields = _grammar_meta_fields(grammar_meta)
         reasons = list(quality_reasons)
+        reasons.extend(grammar_reasons)
         if not phrase:
             reasons.append("material_text_missing")
         if not relation:
             reasons.append("relation_type_missing")
+        quality_flags = list(_dedupe([*(quality_report.get("quality_flags") or ()), *grammar_fields.get("grammar_warning_codes", [])]))
         if reasons:
-            rejected.append(CompleteMaterialRejection(reason_codes=reasons, evidence_span_id=span_id, phrase_unit_id=f"cpu{index}", role=role, relation_type=relation, source_anchor=anchor, quality_flags=quality_report.get("quality_flags") or (), source="evidence_span"))
+            rejected.append(CompleteMaterialRejection(reason_codes=list(dict.fromkeys(reasons)), evidence_span_id=span_id, phrase_unit_id=f"cpu{index}", role=role, relation_type=relation, source_anchor=anchor, quality_flags=quality_flags, source="evidence_span", meta={**grammar_fields, "material_source": "evidence_span", "must_keep_preserved": bool(must_keep and "phrase_unit_grammar_dropped" not in grammar_reasons), "must_keep_deferred": "phrase_unit_grammar_deferred" in grammar_reasons}))
             continue
-        polarity, must_keep = phase8_role_meta(role)
         materials.append(
             CompleteMaterialUnit(
                 material_id=f"cm{index}",
@@ -912,17 +1176,57 @@ def _materials_from_evidence_span(span: Any, *, start_index: int) -> tuple[list[
                 must_keep=must_keep,
                 relation_type=relation,
                 source_anchor=anchor,
-                quality_flags=quality_report.get("quality_flags") or (),
-                meta={"material_source": "evidence_span"},
+                quality_flags=quality_flags,
+                meta={**grammar_fields, "material_source": "evidence_span", "must_keep_preserved": True},
             )
         )
     return materials, rejected
 
-
-def build_complete_material_bundle(*, evidence_spans: Sequence[Any] | None = None, phrase_units: Sequence[Any] | None = None, coverage_group: str = "complete_initial_materials", meta: Mapping[str, Any] | None = None, relation_candidates: Sequence[Any] | None = None) -> CompleteMaterialBundle:
+def build_complete_material_bundle(
+    *,
+    evidence_spans: Sequence[Any] | None = None,
+    phrase_units: Sequence[Any] | None = None,
+    coverage_group: str = "complete_initial_materials",
+    meta: Mapping[str, Any] | None = None,
+    relation_candidates: Sequence[Any] | None = None,
+    observation_connector: Any = None,
+    eligibility_decision: Any = None,
+    user_fact_grounding_decision: Any = None,
+    internal_question_set: Any = None,
+    current_input: Any = None,
+    subscription_tier: Any = None,
+    capability: Any = None,
+    user_facts: Any = None,
+    source_bundle: Any = None,
+    evidence_ledger: Any = None,
+    observation_graph: Any = None,
+) -> CompleteMaterialBundle:
     """Build a sanitized material bundle from EvidenceSpan and PhraseUnit rows."""
     evidence_rows = [_as_mapping(item) for item in list(evidence_spans or ())]
     evidence_by_id = {_span_id(item): item for item in evidence_rows if _span_id(item)}
+    connector_source = observation_connector
+    if connector_source is None and (
+        eligibility_decision is not None
+        or user_fact_grounding_decision is not None
+        or internal_question_set is not None
+        or current_input is not None
+        or subscription_tier is not None
+        or capability is not None
+        or user_facts is not None
+    ):
+        connector_source = build_material_focus_relation_connector(
+            current_input=current_input,
+            eligibility_decision=eligibility_decision,
+            user_fact_grounding_decision=user_fact_grounding_decision,
+            internal_question_set=internal_question_set,
+            subscription_tier=subscription_tier,
+            capability=capability,
+            user_facts=user_facts,
+            source_bundle=source_bundle,
+            evidence_ledger=evidence_ledger,
+            observation_graph=observation_graph,
+        )
+    connector_meta = _observation_forward_meta(connector_source)
     materials: list[CompleteMaterialUnit] = []
     rejected: list[CompleteMaterialRejection] = []
     if phrase_units:
@@ -939,11 +1243,30 @@ def build_complete_material_bundle(*, evidence_spans: Sequence[Any] | None = Non
             materials.extend(span_materials)
             rejected.extend(span_rejected)
             next_index += max(1, len(span_materials) + len(span_rejected))
+    if connector_meta:
+        materials = [
+            CompleteMaterialUnit(
+                material_id=item.material_id,
+                phrase_unit_id=item.phrase_unit_id,
+                evidence_span_id=item.evidence_span_id,
+                material_text=item.material_text,
+                role=item.role,
+                polarity=item.polarity,
+                must_keep=item.must_keep,
+                relation_type=item.relation_type,
+                source_anchor=item.source_anchor,
+                quality_flags=item.quality_flags,
+                rejection_reasons=item.rejection_reasons,
+                meta={**dict(item.meta), **connector_meta},
+                schema_version=item.schema_version,
+            )
+            for item in materials
+        ]
     return CompleteMaterialBundle(
         materials=tuple(materials),
         rejected_rows=tuple(rejected),
         coverage_group=coverage_group,
-        meta={**build_complete_material_service_contract_meta(), **_json_safe_mapping(meta)},
+        meta={**build_complete_material_service_contract_meta(), **_json_safe_mapping(meta), **connector_meta},
     )
 
 
@@ -987,8 +1310,11 @@ build_complete_material_bundle = build_complete_material_bundle
 
 __all__ = [
     "BLOCKING_MATERIAL_FLAGS",
+    "COMPLETE_MATERIAL_SERVICE_BASE_VERSION",
     "COMPLETE_MATERIAL_BUNDLE_SCHEMA_VERSION",
     "COMPLETE_MATERIAL_IMPLEMENTATION_UNIT",
+    "COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_STEP",
+    "COMPLETE_MATERIAL_PHRASE_UNIT_GRAMMAR_NORMALIZER_VERSION",
     "COMPLETE_MATERIAL_REJECTION_SCHEMA_VERSION",
     "COMPLETE_MATERIAL_SERVICE_STEP",
     "COMPLETE_MATERIAL_SERVICE_TARGET_STEP",

@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
 from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
 from emlis_ai_style_profile_service import build_style_profile
@@ -41,6 +42,11 @@ from emlis_ai_user_model_store import (
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
+from emlis_ai_observation_structure_material_service import (
+    build_observation_structure_material,
+    observation_structure_material_forward_meta,
+    observation_structure_material_gate_report,
+)
 from emlis_ai_composer_client_registry import default_composer_flag_state, resolve_emlis_ai_composer_client
 from emlis_ai_conversation_composer_service import compose_emlis_conversation_candidate, phase6_composer_contract_ready
 from emlis_ai_limited_observation_scope_service import build_limited_observation_scope, has_limited_scope_safety_boundary
@@ -69,6 +75,7 @@ from emlis_ai_complete_product_quality_scorecard_service import (
     build_complete_product_quality_scorecard_event_schema,
 )
 from emlis_ai_complete_release_ladder_service import build_complete_product_quality_release_ladder
+from emlis_ai_runtime_surface_complete_activation_branch import build_runtime_surface_complete_activation_branch
 from emlis_ai_complete_initial_fixture_qa_service import build_complete_initial_fixture_qa_run
 from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_emlis_limited_composer_scorecard_harness
 from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
@@ -77,6 +84,7 @@ from emlis_ai_safety_boundary_service import build_emlis_safety_boundary_report
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
+from emlis_ai_observation_display_repair_integration import attach_observation_display_repair_meta, integrate_observation_display_repair
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_limited_relation_taxonomy import allowed_relation_types, canonical_relation_type
 from emlis_ai_relation_surface_contract import normalize_relation_surface_type
@@ -95,6 +103,12 @@ _NEGATIVE_EMOTIONS = {"不安", "悲しみ", "怒り", "恐れ", "焦り"}
 _COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION = "emlis.complete_product_quality_connection.v1"
 _BINDING_DECISION_GATES = {"grounding", "display"}
 _OBSERVATION_DIAGNOSTIC_LOCKDOWN_REPLY_META_VERSION = "emlis.observation_diagnostic_lockdown.reply_meta.v1"
+_STEP10_PHASE7_ROLLOUT_REJECTION_REASONS = {
+    "limited_composer_rollout_not_allowed",
+    "limited_composer_rollout_off",
+    "complete_initial_rollout_not_allowed",
+}
+_STEP10_PHASE7_ROLLOUT_REASON_CODES = {"rollout_stage_off", "rollout_stage_not_matched"}
 
 
 _EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
@@ -1266,6 +1280,77 @@ def _as_meta_dict(value: Any) -> Dict[str, Any]:
         except Exception:
             return {}
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _step10_runtime_scope_blocked(meta: Mapping[str, Any], reasons: List[str]) -> bool:
+    reason_code = str(meta.get("reason_code") or "").strip()
+    return bool(
+        str(meta.get("connection_status") or "").strip() == "blocked_scope"
+        or str(meta.get("pre_connection_stop_stage") or "").strip() == "scope"
+        or str(meta.get("cohort") or "").strip() == "blocked_scope"
+        or reason_code.startswith("scope_")
+        or "limited_composer_scope_not_allowed" in reasons
+        or any(str(reason or "").startswith("scope_") for reason in reasons)
+    )
+
+
+def _step10_repair_runtime_block_reason(
+    *,
+    composer_client_resolution: Any = None,
+    limited_release_decision: Any = None,
+) -> str:
+    """Return the reply-service runtime block that Step10 repair must not override.
+
+    This is a second guard behind the repair integration helper.  It only closes
+    Phase7 rollout / pre-connection rollout stops; ordinary unavailable paths
+    and feature-flag-disabled paths still flow to the repair integration, where
+    the low-information eligibility check decides whether they may be repaired.
+    """
+
+    resolution_meta = _as_meta_dict(composer_client_resolution)
+    release_meta = _as_meta_dict(limited_release_decision)
+    gate_metas: List[Dict[str, Any]] = []
+    for key in ("release_gate", "phase7_rollout_gate"):
+        gate = resolution_meta.get(key)
+        if isinstance(gate, Mapping):
+            gate_metas.append(dict(gate))
+
+    resolution_reasons = _dedupe_reason_codes(resolution_meta.get("rejection_reasons") or [])
+    release_reasons = _dedupe_reason_codes(release_meta.get("rejection_reasons") or [])
+    gate_reasons: List[str] = []
+    for gate_meta in gate_metas:
+        gate_reasons.extend(_dedupe_reason_codes(gate_meta.get("rejection_reasons") or []))
+    reasons = _dedupe_reason_codes([*resolution_reasons, *release_reasons, *gate_reasons])
+
+    if (
+        _step10_runtime_scope_blocked(resolution_meta, resolution_reasons)
+        or _step10_runtime_scope_blocked(release_meta, release_reasons)
+        or any(
+            _step10_runtime_scope_blocked(
+                gate_meta,
+                _dedupe_reason_codes(gate_meta.get("rejection_reasons") or []),
+            )
+            for gate_meta in gate_metas
+        )
+    ):
+        return ""
+
+    connection_status = str(resolution_meta.get("connection_status") or "").strip()
+    stop_stage = str(resolution_meta.get("pre_connection_stop_stage") or "").strip()
+    reason_codes = _dedupe_reason_codes(
+        [
+            release_meta.get("reason_code"),
+            *(gate_meta.get("reason_code") for gate_meta in gate_metas),
+        ]
+    )
+
+    if connection_status == "blocked_rollout" or stop_stage == "rollout":
+        return "step10_blocked_by_phase7_rollout"
+    if set(reasons).intersection(_STEP10_PHASE7_ROLLOUT_REJECTION_REASONS):
+        return "step10_blocked_by_phase7_rollout"
+    if set(reason_codes).intersection(_STEP10_PHASE7_ROLLOUT_REASON_CODES):
+        return "step10_blocked_by_phase7_rollout"
+    return ""
 
 
 def _candidate_meta_value(composer_candidate: Any, key: str, default: Any = "") -> Any:
@@ -4055,6 +4140,116 @@ def _multi_perspective_meta(
     complete_scorecard_event = dict(step11_complete_reply_diagnostics.get("scorecard_event") or {})
     complete_repair_trace = list(step11_complete_reply_diagnostics.get("complete_repair_trace") or [])
     complete_runtime_meta = dict(step11_complete_reply_diagnostics.get("complete_runtime_meta") or {})
+    runtime_surface_source_lock = dict(
+        step11_complete_reply_diagnostics.get("runtime_surface_source_lock")
+        or step11_complete_reply_diagnostics.get("step1_runtime_surface_source_lock")
+        or complete_scorecard_event.get("runtime_surface_source_lock")
+        or {}
+    )
+    surface_quality_signature = dict(
+        step11_complete_reply_diagnostics.get("surface_quality_signature")
+        or step11_complete_reply_diagnostics.get("step2_surface_quality_signature")
+        or complete_scorecard_event.get("surface_quality_signature")
+        or complete_scorecard_event.get("step2_surface_quality_signature")
+        or {}
+    )
+    step6_runtime_surface_complete_activation_branch = build_runtime_surface_complete_activation_branch(
+        runtime_surface_quality_branch={
+            "target_layer": "complete_runtime_activation"
+            if str(runtime_surface_source_lock.get("composer_source") or "") not in {"complete_initial", "complete_composer_initial"}
+            else "not_complete_runtime_activation",
+            "selected_reason": "reply_service_runtime_source_check",
+        },
+        runtime_surface_source_lock=runtime_surface_source_lock,
+        composer_client_resolution={
+            "requested_composer": resolution_meta.get("requested_composer"),
+            "canonical_requested_composer": resolution_meta.get("canonical_requested_composer"),
+            "connection_status": resolution_meta.get("connection_status"),
+            "resolution_source": resolution_meta.get("resolution_source") or resolution_meta.get("source"),
+            "resolved_client_class": resolution_meta.get("resolved_client_class") or resolution_meta.get("resolved_client_name"),
+            "composer_model": resolution_meta.get("composer_model"),
+            "complete_initial_requested": bool(
+                resolution_meta.get("complete_initial_requested")
+                or resolution_meta.get("complete_composer_initial_requested")
+                or resolution_meta.get("complete_initial_client_requested")
+            ),
+            "complete_initial_client_used": bool(
+                resolution_meta.get("complete_initial_client_used")
+                or resolution_meta.get("complete_composer_client_used")
+            ),
+            "default_client_used": bool(resolution_meta.get("default_client_used")),
+            "release_allowed": resolution_meta.get("release_allowed"),
+            "complete_initial_gate": dict(resolution_meta.get("complete_initial_gate") or {}),
+            "default_composer_resolution": dict(resolution_meta.get("default_composer_resolution") or {}),
+        },
+        complete_initial_entry_ap0_decision={
+            "phase": str((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("phase") or "complete_initial_entry_ap0"),
+            "green": bool((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("green")),
+            "can_proceed_to_a1": bool((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("can_proceed_to_a1")),
+            "can_proceed_to_complete_initial": bool((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("can_proceed_to_complete_initial")),
+            "unmet_checks": list((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("unmet_checks") or []),
+            "release_blocker_keys": list((diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}).get("release_blocker_keys") or []),
+        },
+        release_meta={
+            "release_allowed": release_meta.get("release_allowed") if isinstance(release_meta, dict) else None,
+            "rollout_allowed": release_meta.get("rollout_allowed") if isinstance(release_meta, dict) else None,
+            "enabled": release_meta.get("enabled") if isinstance(release_meta, dict) else None,
+            "stage": release_meta.get("stage") if isinstance(release_meta, dict) else "",
+        },
+    )
+    if runtime_surface_source_lock:
+        diagnostic_summary["runtime_surface_source_lock"] = runtime_surface_source_lock
+        diagnostic_summary["step1_runtime_surface_source_lock"] = runtime_surface_source_lock
+        diagnostic_summary["runtime_surface_source_lock_ready"] = bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready"))
+        diagnostic_summary["runtime_surface_source_locked"] = bool(runtime_surface_source_lock.get("runtime_surface_source_locked"))
+        diagnostic_summary["runtime_composer_source"] = runtime_surface_source_lock.get("composer_source")
+        diagnostic_summary["composer_requested"] = runtime_surface_source_lock.get("composer_requested")
+        diagnostic_summary["composer_resolved"] = runtime_surface_source_lock.get("composer_resolved")
+        diagnostic_summary["runtime_composer_model"] = runtime_surface_source_lock.get("composer_model")
+        diagnostic_summary["runtime_surface_source_complete_initial_client_used"] = bool(runtime_surface_source_lock.get("complete_initial_client_used"))
+        diagnostic_summary["runtime_surface_source_limited_reader_repair_applied"] = bool(runtime_surface_source_lock.get("limited_reader_repair_applied"))
+        diagnostic_summary["sentence_plan_version"] = runtime_surface_source_lock.get("sentence_plan_version")
+        diagnostic_summary["surface_realizer_version"] = runtime_surface_source_lock.get("surface_realizer_version")
+        diagnostic_summary["tone_policy_version"] = runtime_surface_source_lock.get("tone_policy_version")
+        diagnostic_summary["self_repair_version"] = runtime_surface_source_lock.get("self_repair_version")
+        diagnostic_summary["comment_text_body_included"] = False
+    diagnostic_summary["runtime_surface_complete_activation_branch"] = step6_runtime_surface_complete_activation_branch
+    diagnostic_summary["step6_runtime_surface_complete_activation_branch"] = step6_runtime_surface_complete_activation_branch
+    diagnostic_summary["runtime_surface_complete_activation_branch_ready"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("runtime_surface_complete_activation_branch_ready")
+    )
+    diagnostic_summary["step6_runtime_surface_complete_activation_branch_ready"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("step6_complete_runtime_activation_branch_ready")
+    )
+    diagnostic_summary["runtime_surface_complete_activation_status"] = step6_runtime_surface_complete_activation_branch.get("activation_status")
+    diagnostic_summary["runtime_surface_complete_initial_resolved"] = bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_resolved"))
+    diagnostic_summary["runtime_surface_complete_initial_source_lock_aligned"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("complete_initial_source_lock_aligned")
+    )
+    diagnostic_summary["runtime_surface_complete_initial_resolution_safe_to_measure"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("complete_initial_resolution_safe_to_measure")
+    )
+    diagnostic_summary["runtime_surface_repair_deferred_until_complete_runtime_measurable"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("surface_repair_deferred_until_complete_runtime_measurable")
+    )
+    if surface_quality_signature:
+        diagnostic_summary["surface_quality_signature"] = surface_quality_signature
+        diagnostic_summary["step2_surface_quality_signature"] = surface_quality_signature
+        diagnostic_summary["surface_quality_signature_version"] = str(
+            surface_quality_signature.get("schema_version")
+            or surface_quality_signature.get("version")
+            or complete_scorecard_event.get("surface_quality_signature_version")
+            or ""
+        )
+        diagnostic_summary["step2_surface_quality_signature_ready"] = bool(
+            complete_scorecard_event.get("step2_surface_quality_signature_ready")
+            or surface_quality_signature.get("surface_quality_signature_ready")
+        )
+        diagnostic_summary["surface_signature_id"] = surface_quality_signature.get("surface_signature_id")
+        diagnostic_summary["surface_signature_family_key"] = surface_quality_signature.get("surface_signature_family_key")
+        diagnostic_summary["surface_template_major"] = bool(surface_quality_signature.get("template_major"))
+        diagnostic_summary["surface_grammar_warning_codes"] = list(surface_quality_signature.get("grammar_warning_codes") or [])
+        diagnostic_summary["surface_grammar_warning_count"] = int(surface_quality_signature.get("grammar_warning_count") or 0)
     step5_relation_diagnostic = dict(
         step11_complete_reply_diagnostics.get("positive_recovery_relation_diagnostic")
         or step11_complete_reply_diagnostics.get("relation_surface_diagnostic")
@@ -4072,6 +4267,27 @@ def _multi_perspective_meta(
     phase_gate_meta["step11_complete_meta_connected"] = bool(step11_complete_reply_diagnostics.get("complete_meta_connected"))
     phase_gate_meta["step11_repair_trace_connected"] = bool(step11_complete_reply_diagnostics.get("repair_trace_connected"))
     phase_gate_meta["step11_scorecard_event_connected"] = bool(step11_complete_reply_diagnostics.get("scorecard_event_connected"))
+    phase_gate_meta["step1_runtime_surface_source_lock_ready"] = bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready"))
+    phase_gate_meta["runtime_surface_source_lock_ready"] = bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready"))
+    phase_gate_meta["runtime_composer_source"] = runtime_surface_source_lock.get("composer_source", "")
+    phase_gate_meta["step2_surface_quality_signature_ready"] = bool(surface_quality_signature)
+    phase_gate_meta["surface_quality_signature_ready"] = bool(surface_quality_signature)
+    phase_gate_meta["surface_template_major"] = bool(surface_quality_signature.get("template_major")) if surface_quality_signature else False
+    phase_gate_meta["step6_runtime_surface_complete_activation_branch_ready"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("step6_complete_runtime_activation_branch_ready")
+    )
+    phase_gate_meta["runtime_surface_complete_activation_branch_ready"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("runtime_surface_complete_activation_branch_ready")
+    )
+    phase_gate_meta["runtime_surface_complete_activation_status"] = str(
+        step6_runtime_surface_complete_activation_branch.get("activation_status") or ""
+    )
+    phase_gate_meta["runtime_surface_complete_initial_resolved"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("complete_initial_resolved")
+    )
+    phase_gate_meta["runtime_surface_repair_deferred_until_complete_runtime_measurable"] = bool(
+        step6_runtime_surface_complete_activation_branch.get("surface_repair_deferred_until_complete_runtime_measurable")
+    )
     phase_gate_meta["step11_response_shape_changed"] = bool(step11_complete_reply_diagnostics.get("response_shape_changed"))
     phase_gate_meta["step11_public_response_key_change"] = bool(step11_complete_reply_diagnostics.get("public_response_key_change"))
     phase_gate_meta["step5_relation_diagnostic_connected"] = bool(step5_relation_diagnostic.get("diagnostic_connected"))
@@ -4279,6 +4495,44 @@ def _multi_perspective_meta(
         "observation_trace_id": trace_id,
         "rejection_reasons": list(display_decision.rejection_reasons),
         "diagnostic_summary": diagnostic_summary,
+        "runtime_surface_source_lock": runtime_surface_source_lock,
+        "step1_runtime_surface_source_lock": runtime_surface_source_lock,
+        "runtime_surface_source_lock_ready": bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready")),
+        "runtime_surface_source_locked": bool(runtime_surface_source_lock.get("runtime_surface_source_locked")),
+        "runtime_composer_source": runtime_surface_source_lock.get("composer_source"),
+        "composer_requested": runtime_surface_source_lock.get("composer_requested"),
+        "composer_resolved": runtime_surface_source_lock.get("composer_resolved"),
+        "runtime_composer_model": runtime_surface_source_lock.get("composer_model"),
+        "runtime_surface_source_complete_initial_client_used": bool(runtime_surface_source_lock.get("complete_initial_client_used")),
+        "runtime_surface_source_limited_reader_repair_applied": bool(runtime_surface_source_lock.get("limited_reader_repair_applied")),
+        "sentence_plan_version": runtime_surface_source_lock.get("sentence_plan_version"),
+        "surface_realizer_version": runtime_surface_source_lock.get("surface_realizer_version"),
+        "tone_policy_version": runtime_surface_source_lock.get("tone_policy_version"),
+        "self_repair_version": runtime_surface_source_lock.get("self_repair_version"),
+        "runtime_surface_complete_activation_branch": step6_runtime_surface_complete_activation_branch,
+        "step6_runtime_surface_complete_activation_branch": step6_runtime_surface_complete_activation_branch,
+        "runtime_surface_complete_activation_branch_ready": bool(step6_runtime_surface_complete_activation_branch.get("runtime_surface_complete_activation_branch_ready")),
+        "step6_runtime_surface_complete_activation_branch_ready": bool(step6_runtime_surface_complete_activation_branch.get("step6_complete_runtime_activation_branch_ready")),
+        "runtime_surface_complete_activation_status": step6_runtime_surface_complete_activation_branch.get("activation_status"),
+        "runtime_surface_complete_initial_resolved": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_resolved")),
+        "runtime_surface_complete_initial_source_lock_aligned": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_source_lock_aligned")),
+        "runtime_surface_complete_initial_resolution_safe_to_measure": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_resolution_safe_to_measure")),
+        "runtime_surface_repair_deferred_until_complete_runtime_measurable": bool(step6_runtime_surface_complete_activation_branch.get("surface_repair_deferred_until_complete_runtime_measurable")),
+        "surface_quality_signature": surface_quality_signature,
+        "step2_surface_quality_signature": surface_quality_signature,
+        "surface_quality_signature_version": str(
+            surface_quality_signature.get("schema_version")
+            or surface_quality_signature.get("version")
+            or complete_scorecard_event.get("surface_quality_signature_version")
+            or ""
+        ),
+        "step2_surface_quality_signature_ready": bool(surface_quality_signature),
+        "surface_signature_id": surface_quality_signature.get("surface_signature_id"),
+        "surface_signature_family_key": surface_quality_signature.get("surface_signature_family_key"),
+        "surface_template_major": bool(surface_quality_signature.get("template_major")) if surface_quality_signature else False,
+        "surface_grammar_warning_codes": list(surface_quality_signature.get("grammar_warning_codes") or []),
+        "surface_grammar_warning_count": int(surface_quality_signature.get("grammar_warning_count") or 0) if surface_quality_signature else 0,
+        "comment_text_body_included": False,
         "complete_initial_pre_generation_diagnostic_seed": dict(diagnostic_summary.get("complete_initial_pre_generation_diagnostic_seed") or {}),
         "complete_initial_entry_ap0_decision": dict(diagnostic_summary.get("complete_initial_entry_ap0_decision") or {}),
         "step6_final_ap0_scorecard_connection": dict(diagnostic_summary.get("step6_final_ap0_scorecard_connection") or {}),
@@ -4455,6 +4709,30 @@ def _multi_perspective_meta(
             "complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
             "complete_composer_reply_diagnostics": step11_complete_reply_diagnostics,
             "complete_composer_initial_reply_diagnostics": step11_complete_reply_diagnostics,
+            "runtime_surface_source_lock": runtime_surface_source_lock,
+            "step1_runtime_surface_source_lock": runtime_surface_source_lock,
+            "runtime_surface_source_lock_ready": bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready")),
+            "runtime_surface_source_locked": bool(runtime_surface_source_lock.get("runtime_surface_source_locked")),
+            "runtime_composer_source": runtime_surface_source_lock.get("composer_source"),
+            "composer_requested": runtime_surface_source_lock.get("composer_requested"),
+            "composer_resolved": runtime_surface_source_lock.get("composer_resolved"),
+            "runtime_composer_model": runtime_surface_source_lock.get("composer_model"),
+            "runtime_surface_source_complete_initial_client_used": bool(runtime_surface_source_lock.get("complete_initial_client_used")),
+            "runtime_surface_source_limited_reader_repair_applied": bool(runtime_surface_source_lock.get("limited_reader_repair_applied")),
+            "sentence_plan_version": runtime_surface_source_lock.get("sentence_plan_version"),
+            "surface_realizer_version": runtime_surface_source_lock.get("surface_realizer_version"),
+            "tone_policy_version": runtime_surface_source_lock.get("tone_policy_version"),
+            "self_repair_version": runtime_surface_source_lock.get("self_repair_version"),
+            "runtime_surface_complete_activation_branch": step6_runtime_surface_complete_activation_branch,
+            "step6_runtime_surface_complete_activation_branch": step6_runtime_surface_complete_activation_branch,
+            "runtime_surface_complete_activation_branch_ready": bool(step6_runtime_surface_complete_activation_branch.get("runtime_surface_complete_activation_branch_ready")),
+            "step6_runtime_surface_complete_activation_branch_ready": bool(step6_runtime_surface_complete_activation_branch.get("step6_complete_runtime_activation_branch_ready")),
+            "runtime_surface_complete_activation_status": step6_runtime_surface_complete_activation_branch.get("activation_status"),
+            "runtime_surface_complete_initial_resolved": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_resolved")),
+            "runtime_surface_complete_initial_source_lock_aligned": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_source_lock_aligned")),
+            "runtime_surface_complete_initial_resolution_safe_to_measure": bool(step6_runtime_surface_complete_activation_branch.get("complete_initial_resolution_safe_to_measure")),
+            "runtime_surface_repair_deferred_until_complete_runtime_measurable": bool(step6_runtime_surface_complete_activation_branch.get("surface_repair_deferred_until_complete_runtime_measurable")),
+            "comment_text_body_included": False,
             "complete_composer_initial_runtime": complete_runtime_meta,
             "complete_composer_initial_meta": complete_runtime_meta,
             "complete_composer_meta": complete_runtime_meta,
@@ -4543,6 +4821,9 @@ async def render_emlis_ai_reply(
 
     trace_id = f"emlisobs-{uuid4().hex[:16]}"
     capability = resolve_emlis_ai_capability_for_tier(subscription_tier)
+    # Phase 1 internal normalization: callers may still pass the legacy dict,
+    # but the EmlisAI pipeline reads a stable current-input bundle shape.
+    current_input = normalize_emlis_current_input(current_input)
     bundle = await build_emlis_ai_source_bundle(
         user_id=user_id,
         current_input=current_input,
@@ -4552,6 +4833,12 @@ async def render_emlis_ai_reply(
     )
 
     evidence_spans = build_evidence_ledger(current_input)
+    observation_structure_material = build_observation_structure_material(
+        current_input=current_input,
+        evidence_ledger=evidence_spans,
+    )
+    observation_structure_meta = observation_structure_material_forward_meta(observation_structure_material)
+    observation_structure_gate_report = observation_structure_material_gate_report(observation_structure_material)
     reports = run_perspective_observers(evidence_spans)
     board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
     graph = integrate_perspective_board(board=board, display_name=bundle.display_name or display_name)
@@ -4657,6 +4944,7 @@ async def render_emlis_ai_reply(
         composer_source="unavailable" if not safety_requires_block else "",
         phase_completion_ready=False,
         binding_meta=initial_binding_meta,
+        observation_structure_gate_report=observation_structure_gate_report,
     )
 
     complete_initial_default_client = bool(
@@ -4680,6 +4968,7 @@ async def render_emlis_ai_reply(
             attempt_count=attempt,
             rejection_reasons=regeneration_reasons,
             limited_observation_scope=limited_observation_scope,
+            observation_structure_material=observation_structure_material,
         )
         comment_text = "" if safety_requires_block else str(composer_candidate.comment_text or "").strip()
         composer_source = "" if safety_requires_block else str(composer_candidate.composer_source or "")
@@ -4732,6 +5021,7 @@ async def render_emlis_ai_reply(
             composer_source=composer_source,
             phase_completion_ready=phase7_ready,
             binding_meta=candidate_binding_presence,
+            observation_structure_gate_report=observation_structure_gate_report,
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break
@@ -4744,6 +5034,56 @@ async def render_emlis_ai_reply(
         if not next_regeneration_reasons:
             break
         regeneration_reasons = next_regeneration_reasons
+
+    # Step 10: low-information display/repair integration.  This does not
+    # loosen Display Gate and does not expose non-passed text.  It only routes
+    # inputs that Step 2 classifies as low_information into the dedicated
+    # low-information observation branch, then re-runs the existing passed-only
+    # Display Gate with branch-specific reader/grounding/template reports.
+    complete_initial_default_requested = str(
+        composer_env.get("COCOLON_EMLIS_DEFAULT_COMPOSER")
+        or composer_env.get("COCOLON_EMLIS_AI_DEFAULT_COMPOSER")
+        or composer_env.get("EMLIS_AI_DEFAULT_COMPOSER")
+        or ""
+    ).strip().lower() == "complete_initial"
+    step10_repair_block_reason = ""
+    if complete_initial_default_requested:
+        step10_repair_block_reason = "complete_initial_runtime_contract_owns_display_failure"
+    runtime_repair_block_reason = _step10_repair_runtime_block_reason(
+        composer_client_resolution=composer_client_resolution,
+        limited_release_decision=limited_release_decision,
+    )
+    if runtime_repair_block_reason:
+        step10_repair_block_reason = runtime_repair_block_reason
+    observation_display_repair_result = integrate_observation_display_repair(
+        current_input=current_input,
+        subscription_tier=subscription_tier,
+        capability=capability,
+        source_bundle=bundle,
+        evidence_ledger=evidence_spans,
+        observation_graph=graph,
+        composer_client_resolution=composer_client_resolution,
+        safety_report=safety_report,
+        trace_id=trace_id,
+        original_display_decision=display_decision,
+        original_reader_report=reader_report,
+        original_grounding_report=grounding_report,
+        original_template_echo_report=template_echo_report,
+        original_composer_source=composer_source,
+        original_composer_candidate=composer_candidate,
+        repair_allowed=not bool(step10_repair_block_reason),
+        repair_block_reason=step10_repair_block_reason,
+    )
+    if observation_display_repair_result.applied:
+        display_decision = observation_display_repair_result.display_decision
+        reader_report = observation_display_repair_result.reader_report
+        grounding_report = observation_display_repair_result.grounding_report
+        template_echo_report = observation_display_repair_result.template_echo_report
+        composer_source = observation_display_repair_result.composer_source
+        composer_candidate = observation_display_repair_result.composer_candidate
+        grounding_graph = graph
+        grounding_scope = "low_information_known_scope"
+        grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
     # No fixed fallback. The display gate is fail-closed.
     final_text = str(display_decision.comment_text or "").strip()
@@ -4769,6 +5109,23 @@ async def render_emlis_ai_reply(
         grounding_allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
         complete_initial_pre_generation_seed=complete_initial_pre_generation_seed,
     )
+    meta = attach_observation_display_repair_meta(meta, observation_display_repair_result)
+    meta["emlis_observation_structure_dictionary"] = observation_structure_meta
+    meta["observation_structure_gate"] = observation_structure_gate_report
+    if isinstance(meta.get("phase_gate"), dict):
+        meta["phase_gate"].update(
+            {
+                "observation_structure_dictionary_connected": True,
+                "observation_structure_gate_ready": True,
+                "observation_structure_gate_passed": bool(observation_structure_gate_report.get("passed", True)),
+                "observation_structure_composer_connected": True,
+                "observation_structure_material_ready": bool(observation_structure_meta.get("structure_dictionary_material_ready")),
+                "observation_structure_dictionary_generated_comment_text": False,
+            }
+        )
+    if isinstance(meta.get("diagnostic_summary"), dict):
+        meta["diagnostic_summary"]["emlis_observation_structure_dictionary"] = observation_structure_meta
+        meta["diagnostic_summary"]["observation_structure_gate"] = observation_structure_gate_report
 
     return ReplyEnvelope(
         comment_text=final_text,

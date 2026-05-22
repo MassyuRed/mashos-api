@@ -68,6 +68,126 @@ def _scope_for(payload):
     return scope
 
 
+def _assert_step10_rollout_block_meta_consistent(reply) -> None:
+    step10 = reply.meta.get("step10_observation_display_repair_integration") or {}
+    multi = reply.meta.get("multi_perspective") or {}
+    diagnostic = reply.meta.get("diagnostic_summary") or {}
+    phase_gate = multi.get("phase_gate") or {}
+
+    assert reply.comment_text == ""
+    assert reply.meta["observation_status"] == "unavailable"
+    assert diagnostic["observation_status"] == "unavailable"
+    assert diagnostic["comment_text_allowed"] is False
+    display_trace = multi["gate_trace"]["display_gate"]
+    assert display_trace["comment_text_present"] is False
+    assert display_trace["comment_text_allowed"] is False
+    assert step10 == reply.meta.get("observation_display_repair_integration")
+    assert step10 == diagnostic["step10_observation_display_repair_integration"]
+    assert step10 == diagnostic["observation_display_repair_integration"]
+    assert step10 == multi["step10_observation_display_repair_integration"]
+    assert step10 == multi["observation_display_repair_integration"]
+
+    assert step10["applied"] is False
+    assert step10["low_information_repair_applied"] is False
+    assert step10["original_observation_status"] == "unavailable"
+    assert step10["final_observation_status"] == "unavailable"
+    assert step10["observation_status"] == "unavailable"
+    assert step10["public_observation_status"] == "unavailable"
+    assert step10["comment_text_present"] is False
+    assert step10["comment_text_allowed"] is False
+
+    blocked_reasons = step10["blocked_reasons"]
+    assert "step10_blocked_by_phase7_rollout" in blocked_reasons
+    assert "composer_resolution_blocked_rollout" in blocked_reasons
+    assert "composer_resolution_pre_connection_rollout_stop" in blocked_reasons
+    assert "limited_composer_rollout_not_allowed" in blocked_reasons
+    assert "phase7_rollout_gate_blocked" in blocked_reasons
+
+    for unchanged_contract_key in (
+        "public_status_extended",
+        "observation_status_enum_extended",
+        "rn_visible_contract_changed",
+        "api_route_changed",
+        "db_physical_name_changed",
+        "response_shape_changed",
+        "display_gate_relaxed",
+        "reader_gate_relaxed",
+        "grounding_gate_relaxed",
+        "template_gate_relaxed",
+        "gate_relaxed",
+    ):
+        assert step10[unchanged_contract_key] is False
+
+    for forbidden_runtime_key in (
+        "fixed_fallback_used",
+        "legacy_safe_fallback_used",
+        "external_ai_used",
+        "local_llm_used",
+        "legacy_input_feedback_template_used",
+    ):
+        assert step10[forbidden_runtime_key] is False
+    assert step10["raw_input_included"] is False
+    assert step10["raw_text_included"] is False
+
+    assert phase_gate["step10_observation_display_repair_integration_ready"] is True
+    assert phase_gate["step10_low_information_display_repair_applied"] is False
+    assert phase_gate["step10_display_gate_relaxed"] is False
+    assert phase_gate["step10_public_status_extended"] is False
+
+
+def test_step10_reply_service_runtime_block_reason_only_blocks_rollout() -> None:
+    from emlis_ai_reply_service import _step10_repair_runtime_block_reason
+
+    assert (
+        _step10_repair_runtime_block_reason(
+            composer_client_resolution={
+                "connection_status": "blocked_rollout",
+                "pre_connection_stop_stage": "rollout",
+                "rejection_reasons": ["limited_composer_rollout_not_allowed"],
+            },
+            limited_release_decision={
+                "enabled": False,
+                "reason_code": "rollout_stage_not_matched",
+                "rejection_reasons": ["limited_composer_rollout_not_allowed"],
+            },
+        )
+        == "step10_blocked_by_phase7_rollout"
+    )
+
+    assert (
+        _step10_repair_runtime_block_reason(
+            composer_client_resolution={
+                "connection_status": "blocked_feature_flag",
+                "pre_connection_stop_stage": "flag",
+                "rejection_reasons": ["default_limited_composer_feature_disabled"],
+            },
+            limited_release_decision={
+                "enabled": False,
+                "reason_code": "feature_flag_disabled",
+                "rejection_reasons": ["default_limited_composer_feature_disabled"],
+            },
+        )
+        == ""
+    )
+
+    assert (
+        _step10_repair_runtime_block_reason(
+            composer_client_resolution={
+                "connection_status": "blocked_scope",
+                "pre_connection_stop_stage": "scope",
+                "rejection_reasons": ["limited_composer_scope_not_allowed", "scope_not_eligible"],
+            },
+            limited_release_decision={
+                "enabled": False,
+                "cohort": "blocked_scope",
+                "reason_code": "scope_limited_case_not_eligible",
+                "rejection_reasons": ["limited_composer_scope_not_allowed", "scope_not_eligible"],
+            },
+        )
+        == ""
+    )
+
+
 def test_phase7_default_stage_allows_scope_eligible_limited_cases(monkeypatch):
     _clear_phase7_env(monkeypatch)
     scope = _scope_for(_current_input())
@@ -120,6 +240,8 @@ async def test_phase7_internal_stage_blocks_non_allowlisted_default_client(monke
     assert client_meta["release_allowed"] is False
     assert metrics["attempted"] is False
     assert reply.comment_text == ""
+
+    _assert_step10_rollout_block_meta_consistent(reply)
 
 
 @pytest.mark.asyncio

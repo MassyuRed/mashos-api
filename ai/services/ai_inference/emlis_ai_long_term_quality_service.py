@@ -652,11 +652,327 @@ def attach_step20_long_term_quality_meta(
     return out
 
 
+
+def build_runtime_surface_step11_long_run_quality_meta(
+    *,
+    events: Sequence[Mapping[str, Any]] | Iterable[Mapping[str, Any]] | None,
+    blind_qa_reviews: Sequence[Mapping[str, Any]] | Iterable[Mapping[str, Any]] | None = None,
+    run_id: str = "",
+) -> Dict[str, Any]:
+    """Build Step11 Runtime Surface long-run QA meta from signature records.
+
+    This wrapper keeps the existing Step20 A-2 text-similarity contract intact
+    while exposing the Runtime Surface Quality Step11 check that works from
+    row id / coverage / classification / surface-signature meta only.
+    """
+
+    from emlis_ai_runtime_surface_blind_qa_long_run import (
+        build_runtime_surface_blind_qa_long_run_summary,
+    )
+
+    return build_runtime_surface_blind_qa_long_run_summary(
+        events=events,
+        blind_qa_reviews=blind_qa_reviews,
+        run_id=run_id,
+    )
+
 def build_emlis_step20_long_term_quality(**kwargs: Any) -> Dict[str, Any]:
     return build_step20_long_term_quality_meta(**kwargs)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Runtime Surface Quality Step11 - meta-only long-run signature measurement
+# ---------------------------------------------------------------------------
+
+RUNTIME_SURFACE_LONG_RUN_SIGNATURE_VERSION = "emlis.runtime_surface_long_run_signature.v1"
+RUNTIME_SURFACE_LONG_RUN_SIGNATURE_STEP = "Step11_Blind_QA_Long_run"
+RUNTIME_SURFACE_LONG_RUN_SIGNATURE_REPEAT_TARGET = 0.0
+
+_STEP11_FORBIDDEN_TEXT_PAYLOAD_KEYS = {
+    "raw_input",
+    "rawInput",
+    "raw_text",
+    "rawText",
+    "source_text",
+    "sourceText",
+    "input",
+    "input_text",
+    "inputText",
+    "memo",
+    "memo_text",
+    "memoText",
+    "current_input",
+    "currentInput",
+    "comment_text",
+    "commentText",
+    "public_comment_text",
+    "candidate_comment_text",
+    "reply_text",
+    "replyText",
+    "surface_text",
+    "realized_text",
+    "body",
+    "text",
+}
+
+
+def _step11_contains_forbidden_text_payload_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if str(key) in _STEP11_FORBIDDEN_TEXT_PAYLOAD_KEYS:
+                return True
+            if _step11_contains_forbidden_text_payload_key(item):
+                return True
+        return False
+    if isinstance(value, (list, tuple, set)):
+        return any(_step11_contains_forbidden_text_payload_key(item) for item in value)
+    return False
+
+
+def assert_runtime_surface_long_run_signature_meta_only(
+    value: Mapping[str, Any],
+    *,
+    source: str = "runtime_surface_long_run_signature",
+) -> None:
+    """Reject raw input / public observation text in Step11 long-run reports."""
+
+    if _step11_contains_forbidden_text_payload_key(value):
+        raise ValueError(f"{source} must stay meta-only and must not include text payload keys")
+    for flag in (
+        "raw_input_included",
+        "raw_text_included",
+        "comment_text_included",
+        "comment_text_body_included",
+        "public_response_key_change",
+        "api_route_changed",
+        "db_physical_name_changed",
+        "rn_visible_contract_changed",
+        "display_gate_relaxed",
+        "grounding_gate_relaxed",
+        "template_gate_relaxed",
+        "reader_gate_relaxed",
+        "gate_relaxed",
+        "product_gate_achieved",
+        "product_gate_reached",
+        "product_gate_public_release_applied",
+        "public_release_applied",
+    ):
+        if value.get(flag) is True:
+            raise ValueError(f"{source} violates fixed contract: {flag}=true")
+
+
+def _step11_event_mapping(value: Any) -> Dict[str, Any]:
+    if isinstance(value, Mapping):
+        return {str(k): v for k, v in value.items()}
+    if is_dataclass(value):
+        return asdict(value)
+    return {}
+
+
+def _step11_event_id(event: Mapping[str, Any], index: int) -> str:
+    return (
+        _clean(event.get("row_id"))
+        or _clean(event.get("candidate_id"))
+        or _clean(event.get("trace_id"))
+        or _clean(event.get("emotion_log_id"))
+        or f"signature-event-{index}"
+    )
+
+
+def _step11_coverage_group(event: Mapping[str, Any]) -> str:
+    raw = _clean(event.get("coverage_group"))
+    if not raw or raw.lower() in {"unknown", "unclassified", "missing", "none", "null"}:
+        return "coverage_group_missing"
+    return raw
+
+
+def _step11_signature_family_key(event: Mapping[str, Any]) -> str:
+    nested = event.get("surface_quality_signature")
+    nested_map = dict(nested) if isinstance(nested, Mapping) else {}
+    return (
+        _clean(event.get("surface_signature_family_key"))
+        or _clean(event.get("signature_family_key"))
+        or _clean(nested_map.get("surface_signature_family_key"))
+        or _clean(nested_map.get("signature_family_key"))
+        or _clean(event.get("surface_signature_id"))
+        or _clean(nested_map.get("surface_signature_id"))
+    )
+
+
+def _step11_signature_sample(raw: Any, index: int, *, source: str) -> Dict[str, Any]:
+    event = _step11_event_mapping(raw)
+    assert_runtime_surface_long_run_signature_meta_only(event, source=f"{source}[{index}]")
+    family_key = _step11_signature_family_key(event)
+    signature_id = _clean(event.get("surface_signature_id")) or family_key
+    return {
+        "sample_id": _step11_event_id(event, index),
+        "sample_source": source,
+        "coverage_group": _step11_coverage_group(event),
+        "surface_signature_id": signature_id,
+        "surface_signature_family_key": family_key,
+        "composer_source": _clean(event.get("composer_source") or event.get("runtime_composer_source")),
+        "classification": _clean(event.get("measurement_classification") or event.get("classification")),
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def build_runtime_surface_long_run_signature_report(
+    *,
+    events: Sequence[Mapping[str, Any]] | Iterable[Mapping[str, Any]] | None = None,
+    previous_signature_records: Sequence[Mapping[str, Any]] | Iterable[Mapping[str, Any]] | None = None,
+    required_coverage_groups: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    """Measure same-coverage surface-signature repetition without text bodies.
+
+    Step11 does not compare observation text.  It uses the meta-only
+    ``surface_signature_family_key`` produced by Step2/Step3 and optional prior
+    signature rows.  This makes long-run diversity visible without logging raw
+    input or public ``comment_text`` bodies.
+    """
+
+    current_samples = [
+        _step11_signature_sample(event, index, source="current_event")
+        for index, event in enumerate(list(events or []), start=1)
+    ]
+    previous_samples = [
+        _step11_signature_sample(event, index, source="previous_signature_record")
+        for index, event in enumerate(list(previous_signature_records or []), start=1)
+    ]
+    groups = list(required_coverage_groups or [])
+    if not groups:
+        # Keep this function independent from complete scorecard imports to avoid
+        # dependency cycles.  These are the Runtime Surface Quality coverage groups.
+        groups = [
+            "short_daily",
+            "long_meaning_arc",
+            "conflict",
+            "recovery",
+            "pressure",
+            "desire_fear",
+            "relationship",
+        ]
+
+    current_by_group: Dict[str, List[Dict[str, Any]]] = {}
+    previous_by_group: Dict[str, List[Dict[str, Any]]] = {}
+    for sample in current_samples:
+        current_by_group.setdefault(sample["coverage_group"], []).append(sample)
+    for sample in previous_samples:
+        previous_by_group.setdefault(sample["coverage_group"], []).append(sample)
+
+    rows: List[Dict[str, Any]] = []
+    repeated_pairs: List[Dict[str, Any]] = []
+    current_signature_count = 0
+    repeat_count = 0
+    for group in [*groups, "coverage_group_missing"]:
+        current = current_by_group.get(group, [])
+        previous = previous_by_group.get(group, [])
+        current_keys = [sample["surface_signature_family_key"] for sample in current if sample.get("surface_signature_family_key")]
+        previous_keys = [sample["surface_signature_family_key"] for sample in previous if sample.get("surface_signature_family_key")]
+        key_counts: Dict[str, int] = {}
+        for key in current_keys:
+            key_counts[key] = key_counts.get(key, 0) + 1
+        within_current_repeat_count = sum(max(0, count - 1) for count in key_counts.values())
+        previous_key_set = set(previous_keys)
+        previous_repeat_count = sum(1 for key in current_keys if key in previous_key_set)
+        group_repeat_count = within_current_repeat_count + previous_repeat_count
+        for sample in current:
+            key = sample.get("surface_signature_family_key")
+            if not key:
+                continue
+            if key_counts.get(key, 0) > 1 or key in previous_key_set:
+                repeated_pairs.append(
+                    {
+                        "coverage_group": group,
+                        "sample_id": sample.get("sample_id"),
+                        "surface_signature_family_key": key,
+                        "repeated_against": "previous_or_current_same_coverage_signature",
+                    }
+                )
+        current_signature_count += len(current_keys)
+        repeat_count += group_repeat_count
+        rows.append(
+            {
+                "coverage_group": group,
+                "current_signature_count": len(current_keys),
+                "previous_signature_count": len(previous_keys),
+                "unique_current_signature_count": len(set(current_keys)),
+                "within_current_repeat_count": within_current_repeat_count,
+                "previous_repeat_count": previous_repeat_count,
+                "surface_signature_repeat_count": group_repeat_count,
+                "surface_signature_repeat_rate": round(group_repeat_count / len(current_keys), 4) if current_keys else 0.0,
+                "coverage_surface_diversity_rate": round(len(set(current_keys)) / len(current_keys), 4) if current_keys else 0.0,
+                "long_run_sample_available": bool(previous_keys or len(current_keys) >= 2),
+                "passed": bool(current_keys and group_repeat_count == 0 and (previous_keys or len(current_keys) >= 2)),
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            }
+        )
+
+    sample_available = bool(previous_samples or current_signature_count >= 2)
+    signature_sample_available = current_signature_count > 0
+    repeat_rate = round(repeat_count / current_signature_count, 4) if current_signature_count else 0.0
+    blockers: List[str] = []
+    if not signature_sample_available:
+        blockers.append("long_run_surface_signature_sample_missing")
+    if not sample_available:
+        blockers.append("long_run_previous_or_multi_sample_missing")
+    if repeat_count > 0:
+        blockers.append("long_run_surface_signature_repeat")
+    ready = bool(signature_sample_available and sample_available and repeat_count == 0)
+    report = {
+        "version": RUNTIME_SURFACE_LONG_RUN_SIGNATURE_VERSION,
+        "source_step": RUNTIME_SURFACE_LONG_RUN_SIGNATURE_STEP,
+        "step": RUNTIME_SURFACE_LONG_RUN_SIGNATURE_STEP,
+        "long_run_signature_measurement_ready": ready,
+        "long_run_ready": ready,
+        "runtime_surface_long_run_ready": ready,
+        "current_signature_sample_count": current_signature_count,
+        "previous_signature_sample_count": len([sample for sample in previous_samples if sample.get("surface_signature_family_key")]),
+        "long_run_sample_available": sample_available,
+        "signature_sample_available": signature_sample_available,
+        "surface_signature_repeat_count": repeat_count,
+        "surface_signature_repeat_rate": repeat_rate,
+        "surface_signature_repeat_target": RUNTIME_SURFACE_LONG_RUN_SIGNATURE_REPEAT_TARGET,
+        "coverage_rows": rows,
+        "by_coverage_group": {row["coverage_group"]: dict(row) for row in rows},
+        "repeated_signature_pairs": repeated_pairs,
+        "long_run_release_blockers": blockers,
+        "release_blockers": blockers,
+        "product_gate_candidate_blockers": blockers,
+        "product_gate_candidate_long_run_pass": ready,
+        "product_gate_ready": False,
+        "product_gate_reached": False,
+        "product_gate_achieved": False,
+        "product_gate_public_release_applied": False,
+        "public_release_applied": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "gate_relaxed": False,
+    }
+    assert_runtime_surface_long_run_signature_meta_only(report)
+    return report
+
 __all__ = [
+    "build_runtime_surface_long_run_signature_report",
+    "assert_runtime_surface_long_run_signature_meta_only",
+    "RUNTIME_SURFACE_LONG_RUN_SIGNATURE_VERSION",
+    "RUNTIME_SURFACE_LONG_RUN_SIGNATURE_STEP",
     "STEP20_PHASE",
     "STEP20_PURPOSE",
     "STEP20_REQUIRED_CHECKS",
@@ -664,6 +980,7 @@ __all__ = [
     "STEP20_STEP",
     "STEP20_VERSION",
     "attach_step20_long_term_quality_meta",
+    "build_runtime_surface_step11_long_run_quality_meta",
     "build_emlis_step20_long_term_quality",
     "build_step20_long_term_quality_meta",
 ]

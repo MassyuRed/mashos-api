@@ -213,7 +213,7 @@ def relation_marker_phrase(relation_type: Any, context_flags: Mapping[str, Any] 
     if relation == "contrast":
         return "別々の向きが片方だけに寄らず、同じ場所に並んでいます。"
     if relation == "coexistence":
-        return "同じ時間の中に重なっていることも残っています。"
+        return "片方だけに減らさず、重なりとして並んで残っています。"
     if relation == "pressure":
         return "圧力として前面に出ていることも残っています。"
     if relation == "approach_avoidance":

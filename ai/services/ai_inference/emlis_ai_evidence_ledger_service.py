@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from emlis_ai_types import EvidenceSpan
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
 
 _SPACE_RE = re.compile(r"\s+")
 _TEXT_BOUNDARY_RE = re.compile(r"[\n\r。.!！?？；;]+")
@@ -201,7 +202,7 @@ def build_evidence_ledger(current_input: Dict[str, Any] | None) -> List[Evidence
     remains the source of truth.
     """
 
-    data: Dict[str, Any] = current_input if isinstance(current_input, dict) else {}
+    data: Dict[str, Any] = normalize_emlis_current_input(current_input) if current_input is not None else {}
     selected_emotions = _selected_emotion_labels(data)
     spans: List[EvidenceSpan] = []
 
@@ -272,7 +273,7 @@ def source_text_for_span(current_input: Dict[str, Any] | None, span: EvidenceSpa
     and later grounding layers; it does not infer or rewrite content.
     """
 
-    data: Dict[str, Any] = current_input if isinstance(current_input, dict) else {}
+    data: Dict[str, Any] = normalize_emlis_current_input(current_input) if current_input is not None else {}
     field = str(getattr(span, "source_field", "") or "")
     if field in _STRUCTURED_TEXT_FIELDS and int(getattr(span, "start_index", -1) or -1) >= 0:
         source = str(data.get(field) or "")

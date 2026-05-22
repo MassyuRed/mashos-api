@@ -410,6 +410,41 @@ def _tone_guard_report_from_meta(composer_meta: Mapping[str, Any] | None) -> dic
     return {}
 
 
+def _observation_surface_reports_from_meta(composer_meta: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Return Step9 observation surface reports from composer meta.
+
+    The guard consumes these reports as diagnostics only.  It does not generate
+    or repair text and it does not change public response contracts.
+    """
+
+    reports: dict[str, dict[str, Any]] = {}
+    if not isinstance(composer_meta, Mapping):
+        return reports
+
+    def add_report(name: str, value: Any) -> None:
+        if isinstance(value, Mapping) and value:
+            reports[name] = dict(value)
+
+    add_report("template", composer_meta.get("observation_surface_template_report"))
+    add_report("tone", composer_meta.get("observation_surface_tone_report"))
+    add_report("template", composer_meta.get("template_report") if "observation_surface" in str(composer_meta.get("template_report", {})) else reports.get("template"))
+    add_report("tone", composer_meta.get("tone_report") if "observation_surface" in str(composer_meta.get("tone_report", {})) else reports.get("tone"))
+
+    for nested_key in (
+        "observation_surface_realizer",
+        "observation_surface_realization",
+        "surface_realizer",
+        "surface_realization",
+        "complete_initial_runtime",
+    ):
+        nested = composer_meta.get(nested_key)
+        if not isinstance(nested, Mapping):
+            continue
+        add_report("template", nested.get("observation_surface_template_report") or nested.get("template_report"))
+        add_report("tone", nested.get("observation_surface_tone_report") or nested.get("tone_report"))
+    return reports
+
+
 def _limited_surface_repetition_score(signatures: Sequence[str]) -> float:
     if not signatures:
         return 0.0
@@ -604,6 +639,25 @@ def guard_template_echo(
             reason_text = str(reason or "").strip()
             if reason_text:
                 reasons.append(f"tone_guard:{reason_text}")
+
+    # Step9 Observation Surface Realizer/Tone diagnostics are consumed as a
+    # fail-closed signal.  The Template/Echo Guard still does not generate,
+    # repair, or relax any public Display Gate contract.
+    observation_surface_reports = _observation_surface_reports_from_meta(composer_meta)
+    observation_template_report = observation_surface_reports.get("template", {})
+    if bool(observation_template_report.get("release_blocker")):
+        reasons.append("observation_surface_template_guard")
+        for reason in list(observation_template_report.get("template_guard_reasons") or observation_template_report.get("blocker_reasons") or []):
+            reason_text = str(reason or "").strip()
+            if reason_text:
+                reasons.append(f"observation_surface_template:{reason_text}")
+    observation_tone_report = observation_surface_reports.get("tone", {})
+    if bool(observation_tone_report.get("release_blocker")):
+        reasons.append("observation_surface_tone_guard")
+        for reason in list(observation_tone_report.get("tone_guard_reasons") or observation_tone_report.get("blocker_reasons") or []):
+            reason_text = str(reason or "").strip()
+            if reason_text:
+                reasons.append(f"observation_surface_tone:{reason_text}")
 
     reasons = list(dict.fromkeys(reasons))
     return TemplateEchoReport(

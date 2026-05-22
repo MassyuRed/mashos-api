@@ -29,6 +29,12 @@ from emlis_ai_complete_relation_graph_service import (
     build_complete_relation_graph,
     relation_surface_policy,
 )
+from emlis_ai_observation_sentence_plan_roles import (
+    OBSERVATION_SENTENCE_PLAN_ROLES_STEP,
+    annotate_observation_sentence_plan_lines,
+    build_observation_sentence_plan_roles_contract_meta,
+    build_observation_sentence_plan_roles_meta,
+)
 from emlis_ai_limited_relation_taxonomy import (
     canonical_relation_type,
     normalize_relation_type,
@@ -583,16 +589,31 @@ def _merge_node_ids(nodes: Iterable[_PlanNode], attr: str) -> Tuple[str, ...]:
 
 def _relation_line_nodes(nodes: Sequence[_PlanNode], primary: _PlanNode | None, core: _PlanNode | None) -> Tuple[_PlanNode, ...]:
     selected: list[_PlanNode] = []
-    for node in (primary, core):
+
+    def add(node: _PlanNode | None) -> None:
         if node is not None and node not in selected:
             selected.append(node)
-    for node in nodes:
-        if node not in selected and node.relation_type in MAJOR_RELATION_LINE_TYPES:
-            selected.append(node)
-        if len(selected) >= 2:
-            break
+
+    # Step7 anti-template: when a relation line is needed, make the relation
+    # line actually bind to the major relation material first.  The old order
+    # could turn a relation line into another center/core sentence, which then
+    # encouraged the repeated "同じ時間の中" style backbone downstream.
+    relation_nodes = [node for node in nodes if node.relation_type in MAJOR_RELATION_LINE_TYPES]
+    for node in relation_nodes[:2]:
+        add(node)
+    if selected:
+        add(primary)
+        add(core)
+    else:
+        add(primary)
+        add(core)
+        for node in nodes:
+            if node.relation_type in MAJOR_RELATION_LINE_TYPES:
+                add(node)
+            if len(selected) >= 2:
+                break
     if not selected and nodes:
-        selected.append(nodes[0])
+        add(nodes[0])
     return tuple(selected[:3])
 
 
@@ -825,6 +846,16 @@ def build_complete_sentence_planner_contract_meta() -> dict[str, Any]:
         "raw_text_included": False,
         "raw_input_included": False,
         "raw_input_required_for_improvement": False,
+        "observation_sentence_plan_roles_supported": True,
+        "observation_sentence_plan_roles_step": OBSERVATION_SENTENCE_PLAN_ROLES_STEP,
+        "sentence_plan_observation_roles_added": True,
+        "existing_line_role_preserved": True,
+        "observation_roles_meta_only": True,
+        "short_eligible_role_merge_allowed": True,
+        "low_info_question_role_required": True,
+        "public_line_role_enum_extended": False,
+        "line_role_public_enum_extended": False,
+        "observation_sentence_plan_roles_contract": build_observation_sentence_plan_roles_contract_meta(),
     }
 
 
@@ -843,8 +874,20 @@ def _planner_meta_for_plan(
     line_roles = tuple(_dedupe(line.line_role for line in plan.sentence_plans))
     relation_line_present = "relation" in line_roles
     status = COMPLETE_SENTENCE_PLAN_STATUS_READY if plan.usable else COMPLETE_SENTENCE_PLAN_STATUS_UNAVAILABLE
+    observation_role_meta = build_observation_sentence_plan_roles_meta(
+        lines=plan.sentence_plans,
+        observation_context=plan.meta,
+        coverage_group=coverage_group,
+    )
+    observation_role_meta_for_planner = {
+        key: value
+        for key, value in observation_role_meta.items()
+        if key not in {"version", "schema_version", "source_step", "step", "target_step", "coverage_group", "status", "ready"}
+    }
     return {
         **contract,
+        **observation_role_meta_for_planner,
+        "observation_sentence_plan_roles_meta": observation_role_meta,
         "status": status,
         "ready": plan.usable,
         "schema_version": COMPLETE_SENTENCE_PLAN_SCHEMA_VERSION,
@@ -983,6 +1026,22 @@ def build_complete_sentence_plan_v2(
     required_roles = tuple(_dedupe(seed.get("required_line_roles") or ())) or ("opening", "core", "relation")
     plan_id = f"complete_sentence_plan_v2_{source_group}"
     lines = _build_lines(plan_id=plan_id, coverage_group=source_group, budget=budget, nodes=nodes, required_line_roles=required_roles)
+    observation_role_context = _json_safe_mapping({**source_graph_meta, **seed, **_json_safe_mapping(meta)})
+    lines = annotate_observation_sentence_plan_lines(
+        lines,
+        observation_context=observation_role_context,
+        coverage_group=source_group,
+    )
+    observation_role_meta = build_observation_sentence_plan_roles_meta(
+        lines=lines,
+        observation_context=observation_role_context,
+        coverage_group=source_group,
+    )
+    observation_role_meta_for_plan = {
+        key: value
+        for key, value in observation_role_meta.items()
+        if key not in {"version", "schema_version", "source_step", "step", "target_step", "coverage_group", "status", "ready"}
+    }
     # Build the plan first so its own validation can be included in planner meta.
     base_meta = {
         **build_complete_sentence_planner_contract_meta(),
@@ -1000,6 +1059,8 @@ def build_complete_sentence_plan_v2(
             "raw_input_included": False,
         },
         "rejected_rows": [row.as_meta() for row in rejected],
+        **observation_role_meta_for_plan,
+        "observation_sentence_plan_roles_meta": observation_role_meta,
     }
     plan = CompleteSentencePlanV2(
         plan_id=plan_id,
@@ -1191,4 +1252,5 @@ __all__ = [
     "build_complete_sentence_planner_meta",
     "complete_sentence_plan_lines",
     "plan_complete_sentences",
+    "OBSERVATION_SENTENCE_PLAN_ROLES_STEP",
 ]

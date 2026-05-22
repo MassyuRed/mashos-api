@@ -42,6 +42,7 @@ COMPLETE_PRODUCT_GATE_DISPLAY_TARGET = 0.90
 COMPLETE_BINDING_TARGET_RATE = 0.98
 COMPLETE_READ_FEELING_INITIAL_TARGET = 0.80
 COMPLETE_READ_FEELING_PRODUCT_TARGET = 0.90
+COMPLETE_SCORECARD_COVERAGE_GROUP_MISSING = "coverage_group_missing"
 
 COMPLETE_COVERAGE_GROUP_ORDER: Sequence[str] = (
     "short_daily",
@@ -361,15 +362,23 @@ def _source_event(record: Any) -> dict[str, Any]:
 
 def _normalize_coverage_group(group: Any, relation_types: Sequence[str] | None = None) -> str:
     raw = _clean(group)
-    if raw in COMPLETE_COVERAGE_GROUP_ORDER:
-        return raw
-    if raw in _COVERAGE_GROUP_ALIASES:
-        return _COVERAGE_GROUP_ALIASES[raw]
-    for relation in _dedupe(relation_types):
-        mapped = _RELATION_TO_COVERAGE_GROUP.get(relation)
+    raw_lower = raw.lower()
+    relations = _dedupe(relation_types)
+    if raw_lower in COMPLETE_COVERAGE_GROUP_ORDER:
+        return raw_lower
+    if raw_lower in {"", "unclassified", "unknown", "missing", "none", "null", COMPLETE_SCORECARD_COVERAGE_GROUP_MISSING}:
+        for relation in relations:
+            mapped = _RELATION_TO_COVERAGE_GROUP.get(str(relation).lower())
+            if mapped:
+                return mapped
+        return COMPLETE_SCORECARD_COVERAGE_GROUP_MISSING
+    if raw_lower in _COVERAGE_GROUP_ALIASES:
+        return _COVERAGE_GROUP_ALIASES[raw_lower]
+    for relation in relations:
+        mapped = _RELATION_TO_COVERAGE_GROUP.get(str(relation).lower())
         if mapped:
             return mapped
-    return "short_daily" if not raw else raw
+    return raw_lower
 
 
 def _event_relation_types(event: Mapping[str, Any]) -> list[str]:
@@ -405,6 +414,9 @@ def build_complete_scorecard_contract_meta() -> dict[str, Any]:
         "coverage_groups": list(COMPLETE_COVERAGE_GROUP_ORDER),
         "coverage_taxonomy": {key: {nested_key: _dedupe(nested_value) for nested_key, nested_value in value.items()} for key, value in _COVERAGE_TAXONOMY.items()},
         "coverage_groups_supported": list(COMPLETE_COVERAGE_GROUP_ORDER),
+        "coverage_group_missing_key": COMPLETE_SCORECARD_COVERAGE_GROUP_MISSING,
+        "missing_group_falls_back_to_short_daily": False,
+        "coverage_runtime_baseline_step": "Step4_Coverage_Runtime_Baseline",
         "initial_display_target_range": [COMPLETE_INITIAL_DISPLAY_TARGET_MIN, COMPLETE_INITIAL_DISPLAY_TARGET_MAX],
         "product_gate_display_target": COMPLETE_PRODUCT_GATE_DISPLAY_TARGET,
         "binding_target_rate": COMPLETE_BINDING_TARGET_RATE,
@@ -1086,6 +1098,7 @@ aggregate_complete_scorecard = aggregate_complete_scorecard_events
 
 __all__ = [
     "COMPLETE_COVERAGE_GROUP_ORDER",
+    "COMPLETE_SCORECARD_COVERAGE_GROUP_MISSING",
     "COMPLETE_SCORECARD_COVERAGE_GROUPS",
     "COMPLETE_SCORECARD_REQUIRED_COVERAGE_GROUPS",
     "COMPLETE_FIXTURE_SUITE_VERSION",

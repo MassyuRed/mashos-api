@@ -1,0 +1,1596 @@
+{
+  "schema_version": "emlis.observation_structure_dictionary.v1",
+  "dictionary_id": "emlis_observation_structure_dictionary",
+  "dictionary_version": "emlis.observation_structure_dictionary.action_conversion_unformed_self_insight.2026-05-22",
+  "contract_step": "Phase2_Observation_Structure_Dictionary_Schema",
+  "base_dictionary": "cocolon_foundation_structure_dictionary",
+  "status": "implementation_schema_phase2",
+  "purpose": "EmlisAIが入力の束を根拠に、ユーザーの状態を観測するための専用構造辞書。入力語・入力束・関係・内部問い・allowed/forbidden inference・surface policy を持つ。",
+  "non_goals": [
+    "完成返答文テンプレ集",
+    "一般共感文集",
+    "人格診断",
+    "原因決め打ち",
+    "Piece生成辞書",
+    "分析レポート辞書"
+  ],
+  "input_bundle_policy": {
+    "required_current_input_fields": [
+      "memo",
+      "memo_action",
+      "emotion_details",
+      "category"
+    ],
+    "normalized_field_mapping": {
+      "thought_text": {
+        "source_field": "memo",
+        "meaning": "自己世界の出来事。内側で起きた解釈・反応・思考。"
+      },
+      "action_text": {
+        "source_field": "memo_action",
+        "meaning": "実世界の出来事。実際に起きたこと・したこと。"
+      },
+      "emotions": {
+        "source_field": "emotion_details",
+        "fallback_fields": [
+          "emotions"
+        ],
+        "meaning": "ユーザーが選んだ状態の前提。"
+      },
+      "emotion_strength_summary": {
+        "source_field": "emotion_details",
+        "meaning": "状態の重さ。原因断定には使わない。"
+      },
+      "categories": {
+        "source_field": "category",
+        "meaning": "話題の方向。原因ではない。"
+      },
+      "selected_at": {
+        "source_field": "created_at",
+        "meaning": "今回入力の時点情報。時間推移判断には使わない。"
+      },
+      "source_record_id": {
+        "source_field": "id",
+        "meaning": "現在入力の保存レコードID。public contract renameには使わない。"
+      }
+    },
+    "field_meanings": {
+      "memo": "自己世界の出来事。内側で起きた解釈・反応・思考。",
+      "memo_action": "実世界の出来事。実際に起きたこと・したこと。",
+      "emotion_details": "ユーザーが選んだ状態の前提。",
+      "emotion_strength": "状態の重さ。原因断定には使わない。",
+      "category": "話題の方向。原因ではない。",
+      "created_at": "今回入力の時点情報。時間推移判断は別領域。"
+    },
+    "source_priority": [
+      "current_input_explicit_fields",
+      "current_input_direct_relations",
+      "connected_user_facts",
+      "dictionary_candidates",
+      "general_knowledge_not_primary"
+    ]
+  },
+  "global_policies": {
+    "emotion_policy": {
+      "selected_emotion_is_state_premise": true,
+      "multiple_emotions_read_as_center_and_surrounding": true,
+      "emotion_nesting_allowed": true,
+      "emotion_strength_affects_state_weight_only": true,
+      "emotion_strength_must_not_create_cause": true,
+      "self_insight_is_not_ordinary_emotion": true
+    },
+    "category_policy": {
+      "category_is_topic_direction_not_cause": true,
+      "multiple_categories_default_relation": "category_parallel",
+      "category_overlap_requires_textual_evidence": true
+    },
+    "thought_action_policy": {
+      "memo_is_self_world_event": true,
+      "memo_action_is_real_world_event": true,
+      "explicit_discrepancy_should_be_observed": true,
+      "surface_order_default": "real_world_fact_to_inner_state_to_human_accompaniment"
+    },
+    "state_text_gap_policy": {
+      "gap_words": [
+        "大丈夫",
+        "平気",
+        "なんでもない",
+        "大したことない",
+        "大丈夫なはず",
+        "まあいいか"
+      ],
+      "default_surface_strength": "soft",
+      "strong_surface_requires": [
+        "emotion_strength_strong",
+        "clear_gap_word",
+        "supporting_memo_or_action_evidence"
+      ],
+      "strong_surface_must_not_be_low_grounding": true
+    },
+    "low_information_policy": {
+      "short_text_is_not_always_low_information": true,
+      "must_state_known_scope": true,
+      "must_not_fill_unknown_event": true,
+      "prompt_relation": "user_agency_prompt"
+    },
+    "user_agency_prompt_policy": {
+      "preferred_verbs": [
+        "残してください",
+        "残しても大丈夫です",
+        "残せるところだけ残してください"
+      ],
+      "avoid_verbs": [
+        "教えてください",
+        "話してください",
+        "相談してください",
+        "説明してください"
+      ],
+      "must_preserve_user_agency": true
+    },
+    "surface_policy": {
+      "dictionary_is_not_completed_reply_template": true,
+      "composer_owns_final_order": true,
+      "surface_realizer_owns_final_japanese": true,
+      "must_not_return_entry_text_directly": true
+    }
+  },
+  "relations": [
+    {
+      "relation_id": "desire_stagnation",
+      "definition": "変えたい・進みたい願望と、変化できない現実の停滞を候補として読む関係。",
+      "evidence_requirements": [
+        "願望語と停止語が同じ入力束内にある",
+        "原因は本文根拠がある時だけ扱う"
+      ],
+      "allowed_inference": [
+        "願望と現状の差がある",
+        "変化の止まりが負荷になっている可能性を弱く扱う"
+      ],
+      "forbidden_inference": [
+        "環境や人間関係が原因と決める",
+        "継続期間を低根拠で足す"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "load_accumulation",
+      "definition": "負荷が一回性ではなく蓄積している可能性を候補として読む関係。",
+      "evidence_requirements": [
+        "疲労・消耗・反復・継続語、または過去事実との明示接続がある"
+      ],
+      "allowed_inference": [
+        "負荷が残っている",
+        "反復根拠がある場合のみ蓄積として弱く扱う"
+      ],
+      "forbidden_inference": [
+        "根拠なしに長く続いていると断定する",
+        "疲れやすい性格にする"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "action_blocked",
+      "definition": "行動したいが動けない、または動く条件が整っていない状態を候補として読む関係。",
+      "evidence_requirements": [
+        "行動願望と停止・不能語が同じ入力束内にある"
+      ],
+      "allowed_inference": [
+        "行動と実行の間に距離がある",
+        "停止条件がある可能性を扱う"
+      ],
+      "forbidden_inference": [
+        "怠惰・弱さとして人格化する",
+        "努力不足と決める"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "pressure_gap",
+      "definition": "現状と期待・願望・責任の差が圧力として残っている可能性を候補として読む関係。",
+      "evidence_requirements": [
+        "期待・責任・現状差を示す語が入力束内にある"
+      ],
+      "allowed_inference": [
+        "差分が圧力に近い状態として残っている可能性"
+      ],
+      "forbidden_inference": [
+        "誰からの圧力かを勝手に足す",
+        "社会的評価を補完する"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "repetition",
+      "definition": "同じ思考・状況・試行が繰り返されている可能性を候補として読む関係。",
+      "evidence_requirements": [
+        "繰り返し語、継続語、または現在入力に接続できる過去ユーザー事実がある"
+      ],
+      "allowed_inference": [
+        "同じ構造が繰り返されている可能性",
+        "過去事実がある場合だけ継続として扱う"
+      ],
+      "forbidden_inference": [
+        "過去事実なしに続いていると強く言う",
+        "反応パターンを人格化する"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "priority_pressure",
+      "definition": "対象が大きく扱われ続けることで負荷が出ている可能性を候補として読む関係。",
+      "evidence_requirements": [
+        "対象語と負荷語が現在入力で直接つながる"
+      ],
+      "allowed_inference": [
+        "その対象が入力内で大きく扱われている可能性"
+      ],
+      "forbidden_inference": [
+        "重要視していると断定する",
+        "執着などの心理語へ寄せる"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "low_information_weight",
+      "definition": "詳細は少ないが、重さや限界感だけは入力束から見えている状態。",
+      "evidence_requirements": [
+        "短文でも感情・強度・カテゴリ・入力語から状態の重さが見える",
+        "出来事・対象・原因は未確定として残す"
+      ],
+      "allowed_inference": [
+        "見えている状態の重さだけを扱う",
+        "未知の出来事を明示してユーザー主導で促す"
+      ],
+      "forbidden_inference": [
+        "職場・人間関係・過去の傷を補完する",
+        "質問だけで終わる"
+      ],
+      "surface_policy": {
+        "default_strength": "medium",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "state_text_gap",
+      "definition": "選択された感情状態と、本文に置いた言葉が乖離している状態。",
+      "evidence_requirements": [
+        "感情選択と本文の語が同じ入力束内にある",
+        "強表現は感情strongと補助根拠がある時だけ使う"
+      ],
+      "allowed_inference": [
+        "感情状態と本文の間に差がある",
+        "その言葉を置いていること自体を観測する"
+      ],
+      "forbidden_inference": [
+        "本当の感情を決め打ちする",
+        "嘘をついていると扱う",
+        "自分に言い聞かせていると低根拠で断定する"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "emotion_nesting",
+      "definition": "強い感情の箱の中に、別の感情が混ざっている状態。",
+      "evidence_requirements": [
+        "複数感情が同じ入力に選択されている",
+        "中心と周辺は強度と順序から弱く扱う"
+      ],
+      "allowed_inference": [
+        "中心感情と周辺感情が同じ入力内にある",
+        "感情の混ざりを弱く表現する"
+      ],
+      "forbidden_inference": [
+        "本当の感情を断定する",
+        "防衛などの心理診断語にする",
+        "感情を割合で表示する"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "thought_action_discrepancy",
+      "definition": "実世界の行動と、自己世界の思考・感情がズレている状態。",
+      "evidence_requirements": [
+        "memo_actionとmemoの両方に明示された差がある"
+      ],
+      "allowed_inference": [
+        "外側の行動と内側の状態の差を観測する",
+        "情報が明確なら踏み込んだ状態言語化を行う"
+      ],
+      "forbidden_inference": [
+        "ズレがない入力にズレを作る",
+        "我慢する性格などに人格化する"
+      ],
+      "surface_policy": {
+        "default_strength": "strong_when_high_grounding",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "category_parallel",
+      "definition": "複数カテゴリを、本文根拠なしでは並列の話題方向として受け取る関係。",
+      "evidence_requirements": [
+        "複数カテゴリがある",
+        "本文内にカテゴリ間の因果根拠がない"
+      ],
+      "allowed_inference": [
+        "複数カテゴリの両方に関係する話題方向として扱う"
+      ],
+      "forbidden_inference": [
+        "片方を原因にする",
+        "カテゴリだけで影響関係を作る"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "category_overlap",
+      "definition": "本文根拠により、複数カテゴリが重なっていると読める状態。",
+      "evidence_requirements": [
+        "複数カテゴリがある",
+        "memoまたはmemo_actionにカテゴリ同士をつなぐ具体根拠がある"
+      ],
+      "allowed_inference": [
+        "仕事の中の人間関係、仕事の負荷が健康不安に出るなどを根拠ありで読む"
+      ],
+      "forbidden_inference": [
+        "複数カテゴリだけで因果関係を作る"
+      ],
+      "surface_policy": {
+        "default_strength": "medium",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "self_insight_discovery",
+      "definition": "自己理解が、感情ではなく気づき・発見として出ている状態。",
+      "evidence_requirements": [
+        "自己理解が選択されている",
+        "memo内に気づき・選び方・反応・構造への記述がある"
+      ],
+      "allowed_inference": [
+        "気づきの記録として扱う",
+        "自分の選び方や反応に気づいた状態として扱う"
+      ],
+      "forbidden_inference": [
+        "普通の悲しみ・不安として扱う",
+        "性格診断にする",
+        "あなたはこういう人と断定する"
+      ],
+      "surface_policy": {
+        "default_strength": "medium",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "user_agency_prompt",
+      "definition": "追加情報を促すが、主導権をユーザーに残す関係。",
+      "evidence_requirements": [
+        "低情報または未知スロットがある",
+        "追加情報が必須ではない形で促す"
+      ],
+      "allowed_inference": [
+        "今のペースを尊重した追加入力の促し",
+        "残せるところだけ残す方向の促し"
+      ],
+      "forbidden_inference": [
+        "説明責任を押しつける",
+        "相談してくださいと誘導する",
+        "教えてください中心にする"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": false,
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "relation_id": "unexpressed_output_stop",
+      "definition": "出したい出力があるが、言葉化または相手へ渡る直前で止まった状態を候補として読む関係。",
+      "evidence_requirements": [
+        "memo または memo_action に、言えなかった・伝えられなかった・飲み込んだ等の明示語がある",
+        "出したい内容・相手・場のいずれかが入力束に見えている場合だけ踏み込む",
+        "明示語だけの場合は、未出力の事実候補に留める"
+      ],
+      "allowed_inference": [
+        "出したいものが外へ出る前で止まった可能性",
+        "未出力として残っている可能性",
+        "入力束に根拠がある場合の内外のズレ"
+      ],
+      "forbidden_inference": [
+        "弱さ・臆病さ・コミュニケーション能力不足への人格化",
+        "本当は何を言いたかったかの補完",
+        "相手が怖かった・相手が悪い等の原因決め打ち",
+        "言うべきだったという行動指示"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true,
+        "notes": "未出力の可能性を扱い、内容や原因は補完しない。"
+      }
+    },
+    {
+      "relation_id": "self_shape_alignment",
+      "definition": "自分の形や出力を、場・相手・状況に合わせて変形して出した状態を候補として読む関係。",
+      "evidence_requirements": [
+        "memo または memo_action に、合わせた・合わせてしまった・空気を読んだ・場に合わせた等の明示語がある",
+        "場・相手・状況の根拠が入力束にある場合だけ対象を扱う",
+        "明示語だけの場合は、自分の形を寄せた可能性に留める"
+      ],
+      "allowed_inference": [
+        "自分の出力を場や相手へ寄せた可能性",
+        "外側に出した形と内側の形に距離がある可能性",
+        "合わせた行動が履歴として残っている可能性"
+      ],
+      "forbidden_inference": [
+        "八方美人・迎合的・主体性がない等の人格化",
+        "相手や場が支配的だったと断定",
+        "合わせることを良い/悪いと評価",
+        "本音の内容を補完"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true,
+        "notes": "合わせた行動を、自己形状の一時変換として扱う。評価語にしない。"
+      }
+    },
+    {
+      "relation_id": "action_conversion_history",
+      "definition": "したい出力は選択肢の上位に残っているが、実際には別の行動へ変換し、その変換後の行動が履歴として格納された状態を候補として読む関係。",
+      "evidence_requirements": [
+        "memo または memo_action に、我慢した・耐えた・抑えた・言わなかった等の明示語がある",
+        "したい出力と実際の行動の両方が見える場合だけ差分を扱う",
+        "片方だけの場合は、行動変換があった可能性に留める"
+      ],
+      "allowed_inference": [
+        "したい出力とは別の行動を選んだ可能性",
+        "変換後の行動がユーザーの履歴として残っている可能性",
+        "入力根拠がある場合の納得・未完了・疲労などの閉じ方候補"
+      ],
+      "forbidden_inference": [
+        "本当は何をしたかったかを補完",
+        "相手のため・優しさ・自己犠牲と決め打ち",
+        "我慢できる人・我慢しがちな人等の人格傾向化",
+        "納得できていない、決定権を失った等の閉じ方を根拠なしに確定"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true,
+        "notes": "我慢を単なる耐性ではなく、行動変換後の履歴として扱う。"
+      }
+    },
+    {
+      "relation_id": "conversion_history_closure",
+      "definition": "行動変換後の履歴が、納得・未完了・自己否定・関係維持・未来目的・疲労などのどの形で扱われているかを、入力根拠に応じて弱く読む関係。",
+      "evidence_requirements": [
+        "action_conversion_history の根拠がある",
+        "納得・引っかかり・またやった・仕方ない・相手や場・将来・疲れ等の閉じ方の跡が入力束にある",
+        "閉じ方は複数同時に成立し得るため、単一判定にしない"
+      ],
+      "allowed_inference": [
+        "納得として閉じている可能性",
+        "未完了で残っている可能性",
+        "自己評価へ落ちている可能性",
+        "関係維持や未来目的として意味づけている可能性",
+        "意味は通っていても変換疲労が残る可能性"
+      ],
+      "forbidden_inference": [
+        "閉じ方を一つに決める",
+        "納得/未完了/自己否定などを根拠なしに断定",
+        "我慢の正しさを評価",
+        "ユーザーの意味づけをAI側で完了させる"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true,
+        "notes": "閉じ方は候補として扱う。ユーザーの意味づけの決定権を奪わない。"
+      }
+    },
+    {
+      "relation_id": "unformed_self_insight",
+      "definition": "内側で反応や疑問は起きているが、まだ整合性のある言葉や自己理解の形へ並びきっていない状態を候補として読む関係。",
+      "evidence_requirements": [
+        "memo に、わからない・どうしたらいいかわからない・何が嫌なのかもわからない・しっくりこない・なんでこうなるんだろう等の明示語がある",
+        "感情・カテゴリ・行動内容と接続できる場合だけ、反応の方向を扱う",
+        "出来事・原因・対象が不足する場合は low_information と併用し、原因補完しない"
+      ],
+      "allowed_inference": [
+        "形になる前の自己理解の入口",
+        "反応はあるが、まだ言葉として並びきっていない可能性",
+        "対象の出力内容に整合性を感じられない疑問の可能性"
+      ],
+      "forbidden_inference": [
+        "単なる情報不足として片付ける",
+        "混乱・迷走などの診断語へ寄せる",
+        "本当の感情や原因を当てる",
+        "答えを急がせる質問だけで終わる"
+      ],
+      "surface_policy": {
+        "default_strength": "soft",
+        "must_use_humility_marker": true,
+        "must_not_return_directly": true,
+        "notes": "low information と分け、未形化の自己理解として扱える場合だけ扱う。"
+      }
+    }
+  ],
+  "entries": [
+    {
+      "entry_id": "word_muri",
+      "entry_type": "input_word",
+      "input_words": [
+        "無理",
+        "もう無理",
+        "しんどい",
+        "限界"
+      ],
+      "base_structure_terms": [
+        "限界感",
+        "処理不能",
+        "言語化前の重さ"
+      ],
+      "relation_candidates": [
+        "low_information_weight",
+        "load_accumulation",
+        "action_blocked"
+      ],
+      "observation_questions": [
+        {
+          "question": "何が無理なのかは入力束から見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "カテゴリに関することで無理に近い状態",
+            "感情が強ければ状態の重さが強い",
+            "詳細がない場合は出来事未確定として扱う"
+          ],
+          "forbidden_inference": [
+            "仕事量が原因",
+            "人間関係が原因",
+            "続いていたと断定",
+            "ユーザーが弱いと人格化"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "状態の重さ",
+        "カテゴリ方向",
+        "詳細未確定の明示"
+      ],
+      "forbidden_inference": [
+        "原因決め打ち",
+        "人格化",
+        "継続断定"
+      ],
+      "low_information_boundary": {
+        "known_scope": [
+          "無理という言葉で残している",
+          "カテゴリと感情強度から状態の重さが見える"
+        ],
+        "unknown_scope": [
+          "何が起きたか",
+          "誰が関係しているか",
+          "一回性か継続か"
+        ],
+        "must_not_infer": [
+          "仕事量",
+          "人間関係",
+          "評価",
+          "過去からの継続"
+        ],
+        "prompt_policy": "user_agency_prompt"
+      },
+      "surface_policy": {
+        "default_direction": "見えている状態だけを受け取り、出来事が未確定ならユーザー主導で残してもらう方向。",
+        "receive_direction": "その言葉で残したこと自体を受け取る。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_tired",
+      "entry_type": "input_word",
+      "input_words": [
+        "疲れた",
+        "しんどい",
+        "消耗した"
+      ],
+      "base_structure_terms": [
+        "負荷",
+        "反復",
+        "消耗",
+        "対象への意識の残り"
+      ],
+      "relation_candidates": [
+        "load_accumulation",
+        "repetition",
+        "priority_pressure"
+      ],
+      "observation_questions": [
+        {
+          "question": "何に負荷がかかっているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details",
+            "connected_user_facts"
+          ],
+          "allowed_inference": [
+            "負荷がある",
+            "入力内に対象があれば、その対象に意識が向き続けている可能性",
+            "反復根拠があれば蓄積として扱う"
+          ],
+          "forbidden_inference": [
+            "疲れやすい性格",
+            "職場が原因",
+            "人間関係が原因",
+            "過去から続いていると低根拠で断定"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "負荷",
+        "消耗",
+        "反復根拠がある場合の蓄積候補"
+      ],
+      "forbidden_inference": [
+        "疲れやすい性格",
+        "原因補完",
+        "継続断定"
+      ],
+      "surface_policy": {
+        "default_direction": "感情・カテゴリ・行動内容と接続して負荷を読む方向。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "gap_word_daijoubu",
+      "entry_type": "state_text_gap_word",
+      "input_words": [
+        "大丈夫",
+        "平気",
+        "なんでもない",
+        "大したことない",
+        "大丈夫なはず",
+        "まあいいか"
+      ],
+      "base_structure_terms": [
+        "言葉と状態の乖離",
+        "状態を置く言葉",
+        "抑え込み候補"
+      ],
+      "relation_candidates": [
+        "state_text_gap"
+      ],
+      "observation_questions": [
+        {
+          "question": "どんな感情状態で、この言葉が置かれているか",
+          "answer_sources": [
+            "emotion_details",
+            "category",
+            "memo",
+            "memo_action"
+          ],
+          "allowed_inference": [
+            "感情が強い中で該当語を置いている",
+            "言葉と状態の間に乖離がある可能性"
+          ],
+          "forbidden_inference": [
+            "本当は大丈夫ではないと断定する",
+            "嘘をついていると扱う",
+            "原因を補完する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "状態と言葉の差を扱う",
+        "言葉も感情も同時に受け取る"
+      ],
+      "forbidden_inference": [
+        "嘘扱い",
+        "本当の感情断定",
+        "原因補完",
+        "低根拠の自分に言い聞かせ断定"
+      ],
+      "surface_policy": {
+        "default_direction": "感情が強い中で、それでも該当語を置こうとしている方向で読む。",
+        "receive_direction": "その言葉も、その中にある感情も受け取る方向。",
+        "strong_hand_direction": "自分に言い聞かせている方向は高根拠時だけ扱う。",
+        "strong_hand_requires": [
+          "emotion_strength_strong",
+          "clear_gap_word",
+          "supporting_memo_or_action_evidence"
+        ],
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_change_want",
+      "entry_type": "input_word",
+      "input_words": [
+        "変えたい",
+        "変わりたい",
+        "進みたい",
+        "やり直したい"
+      ],
+      "base_structure_terms": [
+        "願望",
+        "現状との差分",
+        "対象への優先度"
+      ],
+      "relation_candidates": [
+        "desire_stagnation",
+        "pressure_gap",
+        "priority_pressure"
+      ],
+      "observation_questions": [
+        {
+          "question": "何を変えたいのか、入力束から対象は見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "変化願望がある",
+            "対象が明示されていればその対象への差分を扱う"
+          ],
+          "forbidden_inference": [
+            "変われない原因を補完する",
+            "意志が弱いと人格化する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "願望",
+        "現状との差分",
+        "対象が明示された場合の優先度候補"
+      ],
+      "forbidden_inference": [
+        "原因補完",
+        "人格化",
+        "成功失敗の予測"
+      ],
+      "surface_policy": {
+        "default_direction": "変化願望と現状差分を扱い、原因は本文根拠がある時だけ扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_change_blocked",
+      "entry_type": "input_word",
+      "input_words": [
+        "変えられない",
+        "変われない",
+        "どうにもならない",
+        "動けない"
+      ],
+      "base_structure_terms": [
+        "停滞",
+        "行動不能",
+        "制約",
+        "継続する差分"
+      ],
+      "relation_candidates": [
+        "desire_stagnation",
+        "action_blocked",
+        "pressure_gap"
+      ],
+      "observation_questions": [
+        {
+          "question": "何が止まっているのか、停止条件は入力束から見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "行動や変化が止まっている状態",
+            "制約が明示されていれば制約として扱う"
+          ],
+          "forbidden_inference": [
+            "環境のせいと決める",
+            "本人の弱さにする"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "停滞",
+        "停止条件の候補",
+        "願望との差分"
+      ],
+      "forbidden_inference": [
+        "原因決め打ち",
+        "怠惰・弱さへの人格化"
+      ],
+      "surface_policy": {
+        "default_direction": "変化願望との差分や停止条件を、根拠範囲内で弱く読む。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_scary",
+      "entry_type": "input_word",
+      "input_words": [
+        "怖い",
+        "こわい",
+        "不安",
+        "失敗しそう"
+      ],
+      "base_structure_terms": [
+        "回避",
+        "損失予測",
+        "不確実性",
+        "失敗回避"
+      ],
+      "relation_candidates": [
+        "pressure_gap",
+        "action_blocked",
+        "low_information_weight"
+      ],
+      "observation_questions": [
+        {
+          "question": "何が怖いのか、対象は入力束から見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "怖さや不安がある",
+            "対象が明示されていれば対象との関係を扱う"
+          ],
+          "forbidden_inference": [
+            "対象を補完する",
+            "未来結果を予測する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "不確実性",
+        "損失予測の可能性",
+        "対象が明示された場合の怖さ"
+      ],
+      "forbidden_inference": [
+        "対象補完",
+        "未来断定",
+        "危険予測"
+      ],
+      "surface_policy": {
+        "default_direction": "対象がなければ対象を補完せず、不安や怖さの状態だけを扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_action_blocked",
+      "entry_type": "input_word",
+      "input_words": [
+        "行動できない",
+        "動けない",
+        "できない",
+        "踏み出せない"
+      ],
+      "base_structure_terms": [
+        "願望と実行の分離",
+        "圧力",
+        "停止条件"
+      ],
+      "relation_candidates": [
+        "action_blocked",
+        "pressure_gap",
+        "desire_stagnation"
+      ],
+      "observation_questions": [
+        {
+          "question": "行動したい対象と止まっている条件は見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "行動と実行の間に距離がある",
+            "条件が見えていれば停止条件として扱う"
+          ],
+          "forbidden_inference": [
+            "怠惰とする",
+            "本気ではないと断定する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "願望と実行の分離",
+        "停止条件の候補"
+      ],
+      "forbidden_inference": [
+        "怠惰化",
+        "弱さへの人格化",
+        "意志の不足"
+      ],
+      "surface_policy": {
+        "default_direction": "行動できなさを人格ではなく、実行との距離として扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_need_change",
+      "entry_type": "input_word",
+      "input_words": [
+        "このままじゃいけない",
+        "このままではだめ",
+        "このままは嫌",
+        "変えないと"
+      ],
+      "base_structure_terms": [
+        "現状否定",
+        "危機感",
+        "変化要求"
+      ],
+      "relation_candidates": [
+        "desire_stagnation",
+        "pressure_gap",
+        "self_insight_discovery"
+      ],
+      "observation_questions": [
+        {
+          "question": "どんな現状否定や気づきが入力束にあるか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "現状への違和感",
+            "自己理解や行動内容と接続できる場合の気づき"
+          ],
+          "forbidden_inference": [
+            "危機の内容を補完する",
+            "すぐ変えるべきと指示する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "現状否定",
+        "変化要求",
+        "気づきとの接続候補"
+      ],
+      "forbidden_inference": [
+        "危機内容の補完",
+        "行動指示"
+      ],
+      "surface_policy": {
+        "default_direction": "自己理解や行動内容がある場合だけ、気づきから行動への接続を読む。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_not_working",
+      "entry_type": "input_word",
+      "input_words": [
+        "うまくいかない",
+        "うまくできない",
+        "失敗した",
+        "空回り"
+      ],
+      "base_structure_terms": [
+        "試行と結果のずれ",
+        "反復失敗",
+        "自己評価低下の入口"
+      ],
+      "relation_candidates": [
+        "repetition",
+        "pressure_gap",
+        "low_information_weight"
+      ],
+      "observation_questions": [
+        {
+          "question": "何がうまくいっていないか、試行と結果は見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category",
+            "emotion_details",
+            "connected_user_facts"
+          ],
+          "allowed_inference": [
+            "試行と結果のずれ",
+            "反復根拠がある場合だけ繰り返しとして扱う"
+          ],
+          "forbidden_inference": [
+            "能力不足と断定する",
+            "自己評価低下へ飛躍する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "試行と結果のずれ",
+        "反復根拠がある場合の繰り返し候補"
+      ],
+      "forbidden_inference": [
+        "能力断定",
+        "人格化",
+        "自己評価への飛躍"
+      ],
+      "surface_policy": {
+        "default_direction": "試行と結果のずれだけを扱い、自己評価に飛躍しない。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "self_insight",
+      "entry_type": "special_emotion_mode",
+      "input_words": [
+        "自己理解"
+      ],
+      "base_structure_terms": [
+        "気づき",
+        "発見",
+        "自己構造の説明"
+      ],
+      "relation_candidates": [
+        "self_insight_discovery"
+      ],
+      "observation_questions": [
+        {
+          "question": "ユーザーは自分のどんな選び方・反応・構造に気づいているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "category"
+          ],
+          "allowed_inference": [
+            "気づきの記録として扱う",
+            "自分の構造を見つけた状態として扱う"
+          ],
+          "forbidden_inference": [
+            "普通の悲しみ・不安として扱う",
+            "性格診断にする",
+            "あなたはこういう人と断定する"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "気づきの記録",
+        "選び方や反応への発見"
+      ],
+      "forbidden_inference": [
+        "通常感情への置換",
+        "性格診断",
+        "人格断定"
+      ],
+      "surface_policy": {
+        "default_direction": "悲しみ・不安ではなく、気づき・発見として扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "emotion_nesting",
+      "entry_type": "emotion_relation",
+      "base_structure_terms": [
+        "中心感情",
+        "周辺感情",
+        "感情の内包"
+      ],
+      "relation_candidates": [
+        "emotion_nesting"
+      ],
+      "observation_questions": [
+        {
+          "question": "複数感情のうち、中心と周辺として弱く読めるものはあるか",
+          "answer_sources": [
+            "emotion_details",
+            "memo",
+            "memo_action",
+            "category"
+          ],
+          "allowed_inference": [
+            "強い感情の中に別の感情が混ざっている可能性",
+            "中心と周辺を弱く表現する"
+          ],
+          "forbidden_inference": [
+            "本当の感情断定",
+            "心理診断",
+            "割合表示"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "感情の混ざり",
+        "中心と周辺の弱い観測"
+      ],
+      "forbidden_inference": [
+        "本当の感情断定",
+        "防衛解釈",
+        "割合表示"
+      ],
+      "surface_policy": {
+        "default_direction": "複数感情を横並びでなく、中心と周辺の可能性として弱く読む。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "thought_action_discrepancy",
+      "entry_type": "thought_action_relation",
+      "base_structure_terms": [
+        "実世界の行動",
+        "自己世界の思考",
+        "内外のズレ"
+      ],
+      "relation_candidates": [
+        "thought_action_discrepancy"
+      ],
+      "observation_questions": [
+        {
+          "question": "行動内容と思考内容の間に明確なズレがあるか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "category"
+          ],
+          "allowed_inference": [
+            "外側で行ったことと内側で感じたことのズレ",
+            "明確なら踏み込む"
+          ],
+          "forbidden_inference": [
+            "ズレがない入力にズレを作る",
+            "我慢する性格として扱う"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "明示された内外のズレ",
+        "高根拠時の踏み込み"
+      ],
+      "forbidden_inference": [
+        "ズレの創作",
+        "性格化"
+      ],
+      "surface_policy": {
+        "default_direction": "実世界の出来事を押さえてから自己世界の状態へ入る。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "category_parallel_overlap",
+      "entry_type": "category_relation",
+      "base_structure_terms": [
+        "並列カテゴリ",
+        "カテゴリ重なり",
+        "話題方向"
+      ],
+      "relation_candidates": [
+        "category_parallel",
+        "category_overlap"
+      ],
+      "observation_questions": [
+        {
+          "question": "複数カテゴリは並列か、本文根拠により重なりとして読めるか",
+          "answer_sources": [
+            "category",
+            "memo",
+            "memo_action",
+            "emotion_details"
+          ],
+          "allowed_inference": [
+            "本文根拠なしでは並列",
+            "本文根拠があれば重なり"
+          ],
+          "forbidden_inference": [
+            "複数カテゴリだけで因果関係を作る",
+            "片方を原因にする"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "複数カテゴリの並列",
+        "本文根拠がある時だけ重なり"
+      ],
+      "forbidden_inference": [
+        "カテゴリだけの因果化",
+        "原因決め打ち"
+      ],
+      "surface_policy": {
+        "default_direction": "まず並列で受け取り、本文根拠がある時だけ重なりとして扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "user_agency_prompt",
+      "entry_type": "prompt_policy",
+      "base_structure_terms": [
+        "ユーザー主導",
+        "残す促し",
+        "説明責任を押しつけない"
+      ],
+      "relation_candidates": [
+        "user_agency_prompt"
+      ],
+      "observation_questions": [
+        {
+          "question": "未知スロットがある時、追加情報を義務化せず促せているか",
+          "answer_sources": [
+            "current_input_explicit_fields",
+            "current_input_direct_relations"
+          ],
+          "allowed_inference": [
+            "残せるところだけ残す方向",
+            "今のペースを尊重する方向"
+          ],
+          "forbidden_inference": [
+            "教えてください中心",
+            "相談してくださいへの誘導",
+            "説明責任の押しつけ"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "ユーザー主導の促し",
+        "残す行為としての促し"
+      ],
+      "forbidden_inference": [
+        "説明責任の押しつけ",
+        "相談AI化",
+        "強い質問だけで終わる"
+      ],
+      "surface_policy": {
+        "default_direction": "残してください寄りで、今のペースを尊重する。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_could_not_say",
+      "entry_type": "input_word",
+      "input_words": [
+        "言えなかった",
+        "言えない",
+        "伝えられなかった",
+        "飲み込んだ",
+        "言葉にできなかった"
+      ],
+      "base_structure_terms": [
+        "未出力",
+        "言語化直前の停止",
+        "相手へ渡る前の停止"
+      ],
+      "relation_candidates": [
+        "unexpressed_output_stop",
+        "thought_action_discrepancy",
+        "low_information_weight"
+      ],
+      "observation_questions": [
+        {
+          "question": "出したいもの、渡す相手、止まった場所は入力束から見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "category"
+          ],
+          "allowed_inference": [
+            "外へ出る前に止まった可能性",
+            "入力根拠がある場合の内外のズレ",
+            "詳細がない場合の未出力の明示"
+          ],
+          "forbidden_inference": [
+            "本音内容の補完",
+            "相手原因の決め打ち",
+            "弱さへの人格化"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "未出力の可能性",
+        "止まった場所の候補",
+        "内外のズレの候補"
+      ],
+      "forbidden_inference": [
+        "本音補完",
+        "原因決め打ち",
+        "人格化"
+      ],
+      "low_information_boundary": {
+        "known_scope": [
+          "言えなかった/飲み込んだという言葉で残している",
+          "何かが外へ出る前に止まった可能性"
+        ],
+        "unknown_scope": [
+          "何を言いたかったか",
+          "誰に対して止まったか",
+          "なぜ止まったか"
+        ],
+        "must_not_infer": [
+          "本当の内容",
+          "相手の反応",
+          "ユーザーの弱さ"
+        ],
+        "prompt_policy": "user_agency_prompt"
+      },
+      "surface_policy": {
+        "default_direction": "未出力として残っている可能性を扱い、内容や原因は補完しない。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_aligned_to_context",
+      "entry_type": "input_word",
+      "input_words": [
+        "合わせた",
+        "合わせてしまった",
+        "空気を読んだ",
+        "場に合わせた",
+        "相手に合わせた"
+      ],
+      "base_structure_terms": [
+        "自己形状の一時変換",
+        "場への適応",
+        "外側に出す形の変更"
+      ],
+      "relation_candidates": [
+        "self_shape_alignment",
+        "thought_action_discrepancy",
+        "priority_pressure"
+      ],
+      "observation_questions": [
+        {
+          "question": "自分の形を何に合わせたのか、内側の形と外側の行動は見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "category"
+          ],
+          "allowed_inference": [
+            "自分の出力を場や相手へ寄せた可能性",
+            "行動内容と思考内容のズレがある場合の形の変換",
+            "負荷が明示される場合の変換疲労候補"
+          ],
+          "forbidden_inference": [
+            "迎合的な性格",
+            "主体性がないと断定",
+            "相手や場の支配を断定"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "自己形状の一時変換",
+        "外側に出す形の変更",
+        "内外のズレ候補"
+      ],
+      "forbidden_inference": [
+        "人格化",
+        "評価語化",
+        "相手原因の断定"
+      ],
+      "surface_policy": {
+        "default_direction": "合わせたことを評価せず、自分の形を場や相手へ寄せた可能性として扱う。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_gaman",
+      "entry_type": "input_word",
+      "input_words": [
+        "我慢した",
+        "我慢してる",
+        "我慢していた",
+        "耐えた",
+        "抑えた",
+        "言わずにいた"
+      ],
+      "base_structure_terms": [
+        "したい出力",
+        "別行動への変換",
+        "変換後の行動履歴",
+        "意味づけの閉じ方"
+      ],
+      "relation_candidates": [
+        "action_conversion_history",
+        "conversion_history_closure",
+        "load_accumulation",
+        "thought_action_discrepancy"
+      ],
+      "observation_questions": [
+        {
+          "question": "したい出力と実際の行動の差分は入力束から見えているか",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "category",
+            "connected_user_facts"
+          ],
+          "allowed_inference": [
+            "したい出力とは別の行動へ変換した可能性",
+            "変換後の行動が履歴として残っている可能性",
+            "根拠がある場合の閉じ方候補"
+          ],
+          "forbidden_inference": [
+            "本当は何をしたかったかの補完",
+            "優しさ・自己犠牲・相手のためと決め打ち",
+            "我慢しがちな人という人格化"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "行動変換",
+        "変換後の履歴化",
+        "閉じ方の候補"
+      ],
+      "forbidden_inference": [
+        "したい出力の補完",
+        "動機の決め打ち",
+        "人格化",
+        "閉じ方の確定"
+      ],
+      "low_information_boundary": {
+        "known_scope": [
+          "我慢という言葉で行動変換を残している",
+          "変換後の行動が履歴化している可能性"
+        ],
+        "unknown_scope": [
+          "本来したかった出力",
+          "なぜ変換したか",
+          "どう納得したか",
+          "誰のためだったか"
+        ],
+        "must_not_infer": [
+          "自己犠牲",
+          "優しさ",
+          "関係維持",
+          "未完了感"
+        ],
+        "prompt_policy": "user_agency_prompt"
+      },
+      "surface_policy": {
+        "default_direction": "我慢を耐性ではなく、したい出力とは別の行動へ変換した履歴として扱う。",
+        "strong_hand_requires": [
+          "memo と memo_action の両方に差分根拠がある",
+          "閉じ方を示す語が入力束にある"
+        ],
+        "strong_hand_direction": "閉じ方は複数候補として弱く扱い、ユーザーの意味づけを奪わない。",
+        "must_not_return_directly": true
+      }
+    },
+    {
+      "entry_id": "word_wakaranai",
+      "entry_type": "input_word",
+      "input_words": [
+        "わからない",
+        "どうしたらいいかわからない",
+        "何が嫌なのかわからない",
+        "なんでこうなるんだろう",
+        "しっくりこない",
+        "違和感がある"
+      ],
+      "base_structure_terms": [
+        "未形化の自己理解",
+        "整合性未成立",
+        "反応の言語化前"
+      ],
+      "relation_candidates": [
+        "unformed_self_insight",
+        "low_information_weight",
+        "self_insight_discovery"
+      ],
+      "observation_questions": [
+        {
+          "question": "反応はあるが、まだ言葉や整合性として並びきっていない状態か",
+          "answer_sources": [
+            "memo",
+            "memo_action",
+            "emotion_details",
+            "category"
+          ],
+          "allowed_inference": [
+            "形になる前の自己理解の入口",
+            "疑問や違和感として残っている可能性",
+            "低情報と併用する場合も、原因補完しない"
+          ],
+          "forbidden_inference": [
+            "単なる情報不足にする",
+            "混乱や迷走と診断する",
+            "本当の感情・原因を当てる"
+          ]
+        }
+      ],
+      "allowed_inference": [
+        "未形化の自己理解",
+        "整合性がまだ取れていない状態",
+        "違和感や疑問の入口"
+      ],
+      "forbidden_inference": [
+        "情報不足への単純化",
+        "診断化",
+        "感情・原因補完"
+      ],
+      "low_information_boundary": {
+        "known_scope": [
+          "わからない/しっくりこないという形で反応を残している",
+          "まだ言葉として並びきっていない可能性"
+        ],
+        "unknown_scope": [
+          "何が原因か",
+          "本当の感情は何か",
+          "どうすればよいか"
+        ],
+        "must_not_infer": [
+          "混乱",
+          "答えの方向",
+          "原因人物や出来事"
+        ],
+        "prompt_policy": "user_agency_prompt"
+      },
+      "surface_policy": {
+        "default_direction": "低情報として片付けず、反応がまだ自己理解の形へ並びきっていない入口として扱う。",
+        "must_not_return_directly": true
+      }
+    }
+  ],
+  "contract_boundaries": {
+    "public_route_changed": false,
+    "request_key_changed": false,
+    "response_key_changed": false,
+    "db_physical_name_changed": false,
+    "rn_visible_contract_changed": false,
+    "display_gate_relaxed": false,
+    "raw_text_added_to_public_metadata": false,
+    "existing_surface_dictionary_modified": false
+  },
+  "implementation_notes": [
+    "Phase 2 は json/schema の作成までであり、loader・validator接続は Phase 3 で扱う。",
+    "現行 emlis_observation_dictionary.v1.json は表面素材・guard signature 系辞書として残す。",
+    "この辞書は input bundle / relation / inference chain 系の構造材料であり、完成文を直接返さない。",
+    "ActionConversion / UnformedSelfInsight update: 言えなかった・合わせた・我慢した・わからないの観測材料を既存schema互換で追加。"
+  ]
+}

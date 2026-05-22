@@ -119,6 +119,69 @@ def _evidence_payload(span: EvidenceSpan) -> Dict[str, Any]:
 
 
 
+def _structure_material_payload(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    try:
+        from emlis_ai_observation_structure_material_service import observation_structure_material_composer_payload
+
+        payload = observation_structure_material_composer_payload(value)
+        return dict(payload) if isinstance(payload, Mapping) else {}
+    except Exception:
+        pass
+    if isinstance(value, Mapping):
+        return dict(value)
+    as_payload = getattr(value, "composer_payload", None)
+    if callable(as_payload):
+        payload = as_payload()
+        return dict(payload) if isinstance(payload, Mapping) else {}
+    as_meta = getattr(value, "as_meta", None)
+    if callable(as_meta):
+        payload = as_meta()
+        return dict(payload) if isinstance(payload, Mapping) else {}
+    return {}
+
+
+
+def _merge_structure_material_meta(candidate_meta: Mapping[str, Any] | None, payload: Mapping[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = dict(candidate_meta or {})
+    structure_material = payload.get("observation_structure_dictionary") or payload.get("observation_structure_material")
+    if isinstance(structure_material, Mapping) and structure_material:
+        out.setdefault("observation_structure_material", dict(structure_material))
+        out.setdefault("observation_structure_dictionary", dict(structure_material))
+        out["observation_structure_dictionary_connected"] = True
+        out["structure_dictionary_material_ready"] = True
+        out["dictionary_is_observation_material_only"] = True
+        out["dictionary_returns_completed_reply"] = False
+        out["dictionary_must_not_generate_completed_sentence"] = True
+        out["comment_text_generated_from_dictionary"] = False
+    return out
+
+
+
+
+def _structure_connection_payload(observation_structure_connection: object = None) -> Dict[str, Any]:
+    if observation_structure_connection is None:
+        return {}
+    if isinstance(observation_structure_connection, Mapping):
+        return _jsonable(dict(observation_structure_connection))
+    as_payload = getattr(observation_structure_connection, "as_composer_payload", None)
+    if callable(as_payload):
+        try:
+            payload = as_payload()
+            return _jsonable(dict(payload)) if isinstance(payload, Mapping) else {}
+        except Exception:
+            return {}
+    as_meta = getattr(observation_structure_connection, "as_meta", None)
+    if callable(as_meta):
+        try:
+            meta = as_meta()
+            return _jsonable(dict(meta)) if isinstance(meta, Mapping) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def build_conversation_composer_payload(
     *,
     graph: ObservationGraph,
@@ -129,11 +192,16 @@ def build_conversation_composer_payload(
     attempt_count: int = 1,
     rejection_reasons: Sequence[str] | None = None,
     limited_observation_scope: object = None,
+    observation_structure_connection: object = None,
+    observation_structure_material: object = None,
 ) -> Dict[str, Any]:
     """Build the structured request sent to the Composer AI.
 
     The payload contains graph/evidence/constraints only.  It deliberately does
     not include example replies, fixed closing sentences, or surface templates.
+    Phase 4 may attach the Emlis observation structure dictionary as material
+    and Gate constraints, but the dictionary is still forbidden from returning
+    completed observation text directly.
     """
 
     scope_meta: Dict[str, Any] = {}
@@ -148,8 +216,11 @@ def build_conversation_composer_payload(
             except Exception:
                 scope_meta = {}
 
+    structure_payload = _structure_connection_payload(observation_structure_connection)
+    if not structure_payload:
+        structure_payload = _structure_material_payload(observation_structure_material)
     addressee = graph.addressee_notes
-    return {
+    payload: Dict[str, Any] = {
         "schema_version": _REQUEST_SCHEMA_VERSION,
         "trace_id": str(trace_id or ""),
         "attempt_count": int(attempt_count or 1),
@@ -202,11 +273,30 @@ def build_conversation_composer_payload(
                 "fixed_string_renderer_used",
                 "used_claim_ids",
                 "used_relation_ids",
+                "composer_meta",
             ],
         },
     }
-
-
+    if structure_payload:
+        payload["observation_structure_dictionary"] = structure_payload
+        payload["observation_structure_material"] = structure_payload
+        payload["structure_dictionary_gate_constraints"] = dict(
+            structure_payload.get("gate_policy") or structure_payload.get("gate_constraints") or {}
+        )
+        payload["composition_contract"]["use_observation_structure_dictionary_as_material_only"] = True
+        payload["composition_contract"]["do_not_return_dictionary_surface_policy_directly"] = True
+        payload["composition_contract"]["dictionary_must_not_generate_completed_sentence"] = True
+        payload["composition_contract"]["category_is_topic_direction_not_cause"] = bool(
+            (structure_payload.get("gate_policy") or {}).get("category_is_topic_direction_not_cause", True)
+        )
+        payload["composition_contract"]["emotion_strength_must_not_create_cause"] = bool(
+            (structure_payload.get("gate_policy") or {}).get("emotion_strength_must_not_create_cause", True)
+        )
+        payload["composition_contract"]["structure_dictionary_gate_constraints_required"] = True
+        payload["composition_contract"]["structure_dictionary_selected_relation_ids"] = list(
+            structure_payload.get("selected_relation_ids") or []
+        )
+    return payload
 
 def _extract_text_from_response(response: Mapping[str, Any] | str) -> str:
     if isinstance(response, str):
@@ -273,6 +363,8 @@ def _normalize_ai_response(
             confidence = float(response.get("confidence") or 0.0)
         except (TypeError, ValueError):
             confidence = 0.0
+
+    composer_meta = _merge_structure_material_meta(composer_meta, payload)
 
     text = _extract_text_from_response(response)
     if not text:
@@ -355,6 +447,8 @@ def compose_emlis_conversation_candidate(
     attempt_count: int = 1,
     rejection_reasons: Sequence[str] | None = None,
     limited_observation_scope: object = None,
+    observation_structure_connection: object = None,
+    observation_structure_material: object = None,
 ) -> ConversationComposerCandidate:
     """Ask the Composer AI for a candidate and validate the response shape.
 
@@ -371,6 +465,8 @@ def compose_emlis_conversation_candidate(
         attempt_count=attempt_count,
         rejection_reasons=rejection_reasons,
         limited_observation_scope=limited_observation_scope,
+        observation_structure_connection=observation_structure_connection,
+        observation_structure_material=observation_structure_material,
     )
     if composer_client is None:
         return ConversationComposerCandidate(
@@ -380,6 +476,7 @@ def compose_emlis_conversation_candidate(
             attempt_count=attempt_count,
             rejection_reasons=["composer_client_not_connected"],
             request_schema_version=_REQUEST_SCHEMA_VERSION,
+            composer_meta=_merge_structure_material_meta({}, payload),
         )
     try:
         response = composer_client.generate(payload)
@@ -391,6 +488,7 @@ def compose_emlis_conversation_candidate(
             attempt_count=attempt_count,
             rejection_reasons=["composer_client_error"],
             request_schema_version=_REQUEST_SCHEMA_VERSION,
+            composer_meta=_merge_structure_material_meta({}, payload),
         )
     if inspect.isawaitable(response):
         return ConversationComposerCandidate(
@@ -400,6 +498,7 @@ def compose_emlis_conversation_candidate(
             attempt_count=attempt_count,
             rejection_reasons=["composer_client_returned_awaitable_in_sync_path"],
             request_schema_version=_REQUEST_SCHEMA_VERSION,
+            composer_meta=_merge_structure_material_meta({}, payload),
         )
     return _normalize_ai_response(
         response=response,
@@ -420,6 +519,8 @@ def compose_emlis_conversation(
     composer_client: ConversationComposerClient | None = None,
     trace_id: str = "",
     limited_observation_scope: object = None,
+    observation_structure_connection: object = None,
+    observation_structure_material: object = None,
 ) -> str:
     """Backward-compatible text accessor for tests and legacy adapters."""
 
@@ -431,6 +532,8 @@ def compose_emlis_conversation(
         composer_client=composer_client,
         trace_id=trace_id,
         limited_observation_scope=limited_observation_scope,
+        observation_structure_connection=observation_structure_connection,
+        observation_structure_material=observation_structure_material,
     )
     return candidate.comment_text if candidate.composer_source == "ai_generated" else ""
 

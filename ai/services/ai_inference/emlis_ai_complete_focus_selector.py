@@ -26,6 +26,11 @@ from emlis_ai_limited_relation_taxonomy import (
     relation_family,
 )
 
+from emlis_ai_observation_material_connector import (
+    OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+    observation_material_connector_forward_meta,
+)
+
 COMPLETE_FOCUS_SELECTOR_VERSION = "emlis.complete_focus_selector.v1"
 COMPLETE_COVERAGE_PLAN_SCHEMA_VERSION = "emlis.complete_coverage_plan.v1"
 COMPLETE_FOCUS_ITEM_SCHEMA_VERSION = "emlis.complete_focus_item.v1"
@@ -299,6 +304,34 @@ def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+
+def _observation_forward_meta(value: Any) -> dict[str, Any]:
+    return observation_material_connector_forward_meta(value)
+
+
+def _row_observation_meta(row: Mapping[str, Any]) -> dict[str, Any]:
+    return _observation_forward_meta(row) or _observation_forward_meta(row.get("meta") if isinstance(row, Mapping) else None)
+
+
+def _rows_observation_meta(rows: Sequence[Mapping[str, Any]] | None, *meta_sources: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for source in meta_sources:
+        merged.update(_observation_forward_meta(source))
+    for row in rows or ():
+        merged.update(_row_observation_meta(row))
+    return merged
+
+
+def _is_low_information_observation(meta: Mapping[str, Any] | None) -> bool:
+    if not isinstance(meta, Mapping):
+        return False
+    return (
+        _clean(meta.get("observation_reply_kind")) == OBSERVATION_REPLY_KIND_LOW_INFORMATION
+        or bool(meta.get("low_information_known_scope_only"))
+        or bool(meta.get("known_scope_only"))
+    )
+
+
 def _source_anchor_present(value: Any) -> bool:
     row = _as_mapping(value)
     anchor = row.get("source_anchor") or {}
@@ -507,7 +540,7 @@ class CompleteFocusItem:
         return not self.validation_errors
 
     def as_sentence_plan_focus(self) -> dict[str, Any]:
-        return {
+        seed = {
             "material_id": self.material_id,
             "phrase_unit_id": self.phrase_unit_id,
             "evidence_span_id": self.evidence_span_id,
@@ -515,11 +548,14 @@ class CompleteFocusItem:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            **_observation_forward_meta(self.meta),
             "focus_rank": self.focus_rank,
             "focus_role": self.focus_role,
             "must_keep": self.must_keep,
             "raw_input_included": False,
         }
+        seed.update(_observation_forward_meta(self.meta))
+        return seed
 
     def as_meta(self) -> dict[str, Any]:
         return {
@@ -533,6 +569,7 @@ class CompleteFocusItem:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            **_observation_forward_meta(self.meta),
             "focus_rank": self.focus_rank,
             "focus_role": self.focus_role,
             "must_keep": self.must_keep,
@@ -740,6 +777,7 @@ class CompleteCoveragePlan:
             "relation_types": list(self.relation_types),
             "canonical_relation_types": list(self.canonical_relation_types),
             "relation_families": list(self.relation_families),
+            **_observation_forward_meta(self.meta),
             "required_line_roles": list(self.required_line_roles),
             "summarize_all_materials": False,
             "raw_input_included": False,
@@ -779,6 +817,7 @@ class CompleteCoveragePlan:
             "sentence_budget_min": self.sentence_budget_min,
             "sentence_budget_max": self.sentence_budget_max,
             "relation_density": self.relation_density,
+            **_observation_forward_meta(self.meta),
             "required_line_roles": list(self.required_line_roles),
             "summarize_all_materials": False,
             "full_summary_mode": False,
@@ -849,6 +888,11 @@ def build_complete_focus_selector_contract_meta() -> dict[str, Any]:
         "complete_composer_initial_term": term_meta.get("complete_composer_initial_term"),
         "focus_selector_added": True,
         "coverage_plan_added": True,
+        "observation_material_connector_supported": True,
+        "observation_reply_kind_preserved_in_focus_meta": True,
+        "low_information_known_scope_only_supported": True,
+        "central_target_selection_blocked_for_low_information": True,
+        "internal_question_ids_preserved_in_focus_meta": True,
         "runtime_client_connected": False,
         "accepts_complete_material_service_output": True,
         "material_service_required": True,
@@ -884,6 +928,8 @@ def build_complete_focus_selector_contract_meta() -> dict[str, Any]:
 
 
 def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePolicy) -> tuple[list[CompleteFocusItem], list[CompleteFocusItem], list[CompleteFocusRejection]]:
+    connector_meta = _rows_observation_meta(rows)
+    low_information = _is_low_information_observation(connector_meta)
     rejected: list[CompleteFocusRejection] = []
     valid_rows: list[tuple[int, Mapping[str, Any]]] = []
     for index, row in enumerate(rows, start=1):
@@ -918,10 +964,14 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
 
     ranked = sorted(valid_rows, key=lambda item: _score_row(policy, item[1], item[0]), reverse=True)
     limit = _safe_focus_limit(policy, len(valid_rows))
+    if low_information:
+        # Step 6: low-information observations must keep only the known scope.
+        # This prevents FocusSelector from inventing a central target from weak input.
+        limit = min(limit, 1)
     selected_pairs = ranked[:limit]
 
     # For relation-heavy coverage, preserve at least two different relation types when available.
-    if policy.coverage_group in {"conflict", "relationship", "recovery", "pressure", "long_meaning_arc"} and limit >= 2:
+    if (not low_information) and policy.coverage_group in {"conflict", "relationship", "recovery", "pressure", "long_meaning_arc"} and limit >= 2:
         selected_relations = {_material_relation(row) for _idx, row in selected_pairs}
         for pair in ranked[limit:]:
             relation = _material_relation(pair[1])
@@ -936,6 +986,7 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
     for rank, (index, row) in enumerate(selected_pairs, start=1):
         relation = _material_relation(row)
         role = _clean(row.get("role"))
+        row_connector = _row_observation_meta(row) or connector_meta
         selected.append(
             CompleteFocusItem(
                 material_id=_clean(row.get("material_id") or f"cm{index}"),
@@ -944,12 +995,12 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
                 role=role,
                 relation_type=relation,
                 focus_rank=rank,
-                focus_role="primary" if rank == 1 else ("support" if relation in policy.support_relations else "relation" if relation in policy.required_relations else "support"),
+                focus_role="known_scope" if low_information else ("primary" if rank == 1 else ("support" if relation in policy.support_relations else "relation" if relation in policy.required_relations else "support")),
                 polarity=_clean(row.get("polarity")) or "neutral",
                 must_keep=bool(row.get("must_keep")) or rank == 1,
                 source_anchor_present=_source_anchor_present(row),
-                selection_reasons=_selection_reason(policy, row, rank),
-                meta={"source_index": index, "coverage_group": policy.coverage_group},
+                selection_reasons=tuple(dict.fromkeys([*_selection_reason(policy, row, rank), *(["low_information_known_scope_only", "central_target_selection_blocked"] if low_information else [])])),
+                meta={"source_index": index, "coverage_group": policy.coverage_group, **row_connector},
             )
         )
     optional_rank = len(selected) + 1
@@ -958,6 +1009,7 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
             continue
         relation = _material_relation(row)
         role = _clean(row.get("role"))
+        row_connector = _row_observation_meta(row) or connector_meta
         optional.append(
             CompleteFocusItem(
                 material_id=_clean(row.get("material_id") or f"cm{index}"),
@@ -966,12 +1018,12 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
                 role=role,
                 relation_type=relation,
                 focus_rank=optional_rank,
-                focus_role="optional",
+                focus_role="optional_known_scope" if low_information else "optional",
                 polarity=_clean(row.get("polarity")) or "neutral",
                 must_keep=bool(row.get("must_keep")),
                 source_anchor_present=_source_anchor_present(row),
-                selection_reasons=("optional_material_deferred",),
-                meta={"source_index": index, "coverage_group": policy.coverage_group},
+                selection_reasons=tuple(dict.fromkeys(["optional_material_deferred", *(["low_information_extra_material_not_used_as_center"] if low_information else [])])),
+                meta={"source_index": index, "coverage_group": policy.coverage_group, **row_connector},
             )
         )
         optional_rank += 1
@@ -1004,8 +1056,11 @@ def build_complete_coverage_plan(
     else:
         rows = []
 
+    connector_meta = _rows_observation_meta(rows, source_meta, meta)
     effective_requested = requested_group or _normalize_coverage_group(inferred_source_group)
     group = _infer_coverage_group(rows, effective_requested)
+    if _is_low_information_observation(connector_meta):
+        group = "short_daily"
     policy = _policy_for_group(group)
     selected, optional, rejected = _focus_items_for_rows(rows, policy)
     relation_count = len(_dedupe(item.relation_type for item in selected))
@@ -1022,7 +1077,7 @@ def build_complete_coverage_plan(
         policy=policy,
         material_count=len(rows),
         source_material_meta=source_meta,
-        meta={**build_complete_focus_selector_contract_meta(), **_json_safe_mapping(meta)},
+        meta={**build_complete_focus_selector_contract_meta(), **_json_safe_mapping(meta), **connector_meta},
     )
 
 

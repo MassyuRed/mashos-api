@@ -13,6 +13,13 @@ import re
 from typing import Any, Iterable, List, Mapping, Sequence
 
 from emlis_ai_limited_sentence_quality_guard import judge_phrase_unit_material_quality
+from emlis_ai_phrase_unit_grammar_normalizer import (
+    DEFER as PHRASE_UNIT_GRAMMAR_DEFER,
+    DROP as PHRASE_UNIT_GRAMMAR_DROP,
+    REPHRASE as PHRASE_UNIT_GRAMMAR_REPHRASE,
+    normalize_phrase_unit_grammar,
+    phrase_unit_grammar_normalizer_report_meta,
+)
 from emlis_ai_types import EvidenceRef, ShapedUserPhrase, UserWordAnchor
 
 _SPACE_RE = re.compile(r"\s+")
@@ -77,6 +84,10 @@ def _soften_colloquial(text: str) -> str:
         out = out.replace(before, after)
     out = re.sub(r"時ある", "時がある", out)
     out = re.sub(r"ことある", "ことがある", out)
+    # Preserve the safe meaning of colloquial negatives without leaving a
+    # broken nominal/connector tail such as 「もらえないんから」.
+    out = re.sub(r"もらえないん(?:だから|から|だもん|だ)$", "もらえない", out)
+    out = re.sub(r"(.{1,60})んから$", r"\1", out)
     out = re.sub(r"(.{1,60})だから$", r"\1で", out)
     out = re.sub(r"(.{1,60})けど$", r"\1気持ちがありながら", out)
     return _clean(out)
@@ -108,6 +119,14 @@ def _sentence_fragment(phrase: str, role: str) -> str:
     return phrase
 
 
+def _grammar_normalized_fragment(phrase: str, *, role: str, source: str) -> tuple[str, dict[str, Any]]:
+    result = normalize_phrase_unit_grammar(phrase, role=role, must_keep=False, source=source)
+    meta = phrase_unit_grammar_normalizer_report_meta(result)
+    if result.usable and result.normalized_text:
+        return result.normalized_text, meta
+    return phrase, meta
+
+
 def _nominal_for_role(phrase: str, role: str) -> str:
     fragment = _sentence_fragment(phrase, role)
     if not fragment:
@@ -115,7 +134,8 @@ def _nominal_for_role(phrase: str, role: str) -> str:
     if fragment.endswith(("気持ち", "感覚", "願い", "不安", "怖さ", "状態", "こと")):
         return fragment
     if role in {"self_suppression", "self_protection", "support_need", "effort_direction"}:
-        return f"{fragment}こと"
+        nominal, _grammar_meta = _grammar_normalized_fragment(f"{fragment}こと", role=role, source="phrase_shaping_nominal")
+        return nominal
     return f"{fragment}気持ち"
 
 
@@ -124,6 +144,9 @@ def shape_user_phrase(anchor: UserWordAnchor) -> ShapedUserPhrase:
     stripped, reasons = _strip_unfinished_connectors(raw)
     softened = _soften_colloquial(stripped or raw)
     role = _role_from_text(softened, str(getattr(anchor, "role", "other") or "other"))
+    softened, grammar_meta = _grammar_normalized_fragment(softened, role=role, source="phrase_shaping")
+    grammar_action = str(grammar_meta.get("phrase_unit_grammar_action") or "")
+    grammar_warning_codes = list(grammar_meta.get("grammar_warning_codes") or [])
     material_report = judge_phrase_unit_material_quality(
         softened,
         raw_text=raw,
@@ -132,9 +155,11 @@ def shape_user_phrase(anchor: UserWordAnchor) -> ShapedUserPhrase:
     )
     material_reasons = list(material_report.get("rejection_reasons") or [])
     usability = "safe" if softened and len(softened) >= 2 and bool(material_report.get("passed")) else "unsafe"
+    if grammar_action in {PHRASE_UNIT_GRAMMAR_DROP, PHRASE_UNIT_GRAMMAR_DEFER}:
+        usability = "unsafe"
     if reasons and len(softened) < 4:
         usability = "unsafe"
-    unsafe_reasons = list(dict.fromkeys([*reasons, *material_reasons]))
+    unsafe_reasons = list(dict.fromkeys([*reasons, *material_reasons, *grammar_warning_codes]))
     return ShapedUserPhrase(
         anchor_key=str(getattr(anchor, "anchor_key", "") or ""),
         raw_text=raw,

@@ -19,6 +19,20 @@ from emlis_ai_complete_composer_initial_meta import (
 )
 from emlis_ai_complete_composer_types import COMPLETE_COMPOSER_GENERATION_METHOD
 from emlis_ai_relation_surface_contract import RELATION_SURFACE_CONTRACT_VERSION
+from emlis_ai_complete_surface_quality_signature import (
+    SURFACE_QUALITY_SIGNATURE_VERSION,
+    assert_surface_quality_signature_meta_only,
+    build_surface_quality_signature,
+    normalize_surface_signature_to_scorecard_event,
+)
+from emlis_ai_runtime_surface_source_lock import (
+    RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
+    build_runtime_surface_source_lock,
+)
+from emlis_ai_runtime_surface_tone_engine_2_1 import (
+    RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
+    normalize_tone_engine_2_1_to_scorecard_event,
+)
 
 COMPLETE_REPLY_DIAGNOSTICS_VERSION = "emlis.complete_reply_service_diagnostics.v1"
 COMPLETE_SCORECARD_EVENT_VERSION = "emlis.complete_scorecard_event.v1"
@@ -82,6 +96,15 @@ _SAFE_META_KEYS = (
     "sentence_binding_bundle",
     "surface_realizer",
     "surface_signature",
+    "surface_quality_signature",
+    "step2_surface_quality_signature",
+    "surface_quality_signature_version",
+    "step2_surface_quality_signature_ready",
+    "surface_signature_id",
+    "surface_signature_family_key",
+    "surface_template_major",
+    "surface_grammar_warning_codes",
+    "surface_grammar_warning_count",
     "relation_surface_contract_version",
     "relation_surface_report",
     "reader_relation_signal_detected",
@@ -157,6 +180,31 @@ _SAFE_META_KEYS = (
     "api_route_changed",
     "db_physical_name_changed",
     "rn_visible_title_changed",
+    "runtime_surface_source_lock",
+    "step1_runtime_surface_source_lock",
+    "runtime_surface_source_lock_version",
+    "runtime_surface_source_lock_ready",
+    "runtime_surface_source_locked",
+    "runtime_composer_source",
+    "composer_requested",
+    "composer_resolved",
+    "runtime_composer_model",
+    "runtime_surface_source_complete_initial_client_used",
+    "runtime_surface_source_limited_reader_repair_applied",
+    "sentence_plan_version",
+    "surface_realizer_version",
+    "tone_policy_version",
+    "self_repair_version",
+    "surface_quality_signature",
+    "step2_surface_quality_signature",
+    "surface_quality_signature_version",
+    "step2_surface_quality_signature_ready",
+    "surface_signature_id",
+    "surface_signature_family_key",
+    "surface_template_major",
+    "surface_grammar_warning_codes",
+    "surface_grammar_warning_count",
+    "comment_text_body_included",
     "raw_input_included",
 )
 
@@ -358,19 +406,22 @@ def _surface_variation_report_from_meta(meta: Mapping[str, Any]) -> Mapping[str,
 def _tone_guard_report_from_meta(meta: Mapping[str, Any]) -> Mapping[str, Any]:
     """Read Step5 Tone Engine diagnostics from sanitized Complete meta."""
 
-    item = meta.get("tone_guard_report")
-    if isinstance(item, Mapping):
-        return item
+    for key in ("tone_engine_2_1_report", "step9_tone_engine_2_1_report", "tone_guard_report"):
+        item = meta.get(key)
+        if isinstance(item, Mapping):
+            return item
     surface = meta.get("surface_realizer")
     if isinstance(surface, Mapping):
-        item = surface.get("tone_guard_report")
-        if isinstance(item, Mapping):
-            return item
+        for key in ("tone_engine_2_1_report", "step9_tone_engine_2_1_report", "tone_guard_report"):
+            item = surface.get(key)
+            if isinstance(item, Mapping):
+                return item
     signature = meta.get("surface_signature")
     if isinstance(signature, Mapping):
-        item = signature.get("tone_guard_report")
-        if isinstance(item, Mapping):
-            return item
+        for key in ("tone_engine_2_1_report", "step9_tone_engine_2_1_report", "tone_guard_report"):
+            item = signature.get(key)
+            if isinstance(item, Mapping):
+                return item
     tone_policy = meta.get("tone_policy")
     if isinstance(tone_policy, Mapping):
         return {
@@ -957,9 +1008,45 @@ def build_complete_scorecard_event(
     grounding_report = _final_grounding_report_from_meta(runtime_meta)
     product_grounding = _product_quality_grounding_report_from_meta(grounding_report)
     surface_variation = _surface_variation_report_from_meta(runtime_meta)
+    display_comment_text = _candidate_attr(display_decision, "comment_text", "")
+    surface_quality_signature = build_surface_quality_signature(
+        comment_text=display_comment_text,
+        sentence_bindings=(
+            runtime_meta.get("sentence_bindings")
+            or runtime_meta.get("sentence_binding_bundle")
+            or runtime_meta.get("grounding_input")
+        ),
+        relation_meta=(
+            runtime_meta.get("relation_surface_report")
+            if isinstance(runtime_meta.get("relation_surface_report"), Mapping)
+            else runtime_meta.get("relation_graph")
+            if isinstance(runtime_meta.get("relation_graph"), Mapping)
+            else {}
+        ),
+        phrase_unit_grammar_meta=(
+            runtime_meta.get("phrase_unit_grammar_normalizer")
+            if isinstance(runtime_meta.get("phrase_unit_grammar_normalizer"), Mapping)
+            else runtime_meta.get("complete_material_service")
+            if isinstance(runtime_meta.get("complete_material_service"), Mapping)
+            else runtime_meta.get("material_service")
+            if isinstance(runtime_meta.get("material_service"), Mapping)
+            else {}
+        ),
+    )
+    assert_surface_quality_signature_meta_only(surface_quality_signature)
+    surface_signature_event = normalize_surface_signature_to_scorecard_event(surface_quality_signature)
     tone_guard_report = _tone_guard_report_from_meta(runtime_meta)
-    tone_guard_major_count = _safe_int(tone_guard_report.get("tone_guard_major_count"), 0)
-    tone_guard_reasons = _dedupe(tone_guard_report.get("tone_guard_reasons") or tone_guard_report.get("blocker_reasons"))
+    nested_tone_report = tone_guard_report.get("tone_engine_2_1_report") or tone_guard_report.get("step9_tone_engine_2_1_report")
+    if isinstance(nested_tone_report, Mapping):
+        tone_engine_2_1_report = nested_tone_report
+    else:
+        tone_engine_2_1_report = tone_guard_report
+    tone_engine_2_1_event = normalize_tone_engine_2_1_to_scorecard_event(tone_engine_2_1_report)
+    tone_guard_major_count = max(_safe_int(tone_guard_report.get("tone_guard_major_count"), 0), _safe_int(tone_engine_2_1_event.get("tone_guard_major_count"), 0))
+    tone_guard_reasons = _dedupe([
+        *list(tone_guard_report.get("tone_guard_reasons") or tone_guard_report.get("blocker_reasons") or []),
+        *list(tone_engine_2_1_event.get("tone_guard_reasons") or []),
+    ])
     surface_same_ending_major_count = _safe_int(surface_variation.get("same_ending_major_count"), 0)
     surface_signature_repeat_count = _safe_int(surface_variation.get("surface_signature_repeat_count"), 0)
     surface_connector_repetition_count = _safe_int(surface_variation.get("connector_repetition_major_count") or surface_variation.get("surface_connector_repetition_count"), 0)
@@ -1005,6 +1092,23 @@ def build_complete_scorecard_event(
     )
     template_major_count = _count_reason_markers(gate_reasons, _TEMPLATE_REASON_MARKERS) + surface_variation_major_count
     safety_major_count = _count_reason_markers(gate_reasons, _SAFETY_REASON_MARKERS) + (1 if observation_status == "safety_blocked" else 0) + tone_guard_major_count
+    runtime_surface_source_lock = build_runtime_surface_source_lock(
+        trace_id=summary.get("trace_id") or _candidate_attr(display_decision, "trace_id", ""),
+        emotion_log_id=summary.get("emotion_log_id") or _candidate_attr(display_decision, "emotion_log_id", ""),
+        observation_status=observation_status,
+        backend_comment_text_present=display_passed,
+        backend_comment_text_length=len(_clean(display_comment_text)),
+        comment_text=display_comment_text,
+        display_confirmed=display_passed,
+        display_confirmed_source="backend_display_gate",
+        coverage_group=runtime_meta.get("coverage_group") or runtime_meta.get("coverage_scope") or summary.get("coverage_group"),
+        composer_candidate=composer_candidate,
+        resolution_meta=resolution_meta,
+        runtime_meta=runtime_meta,
+        diagnostic_meta=summary,
+        display_meta={"observation_status": observation_status, "display_confirmed": display_passed},
+        surface_signature_id=surface_quality_signature.get("surface_signature_id"),
+    )
     return {
         "version": COMPLETE_SCORECARD_EVENT_VERSION,
         "target_step": "Step12_Scorecard_fixture_extension",
@@ -1058,23 +1162,52 @@ def build_complete_scorecard_event(
         "surface_variation_major_count": surface_variation_major_count,
         "surface_variation_passed": bool(surface_variation.get("passed", True)) and surface_variation_major_count == 0,
         "surface_variation_report": _safe_mapping(surface_variation),
-        "tone_engine_version": _clean(tone_guard_report.get("tone_engine_version")),
+        "surface_quality_signature_version": SURFACE_QUALITY_SIGNATURE_VERSION,
+        "surface_quality_signature_ready": True,
+        "step2_surface_quality_signature_ready": True,
+        "step2_surface_signature_measured": True,
+        "surface_quality_signature": surface_quality_signature,
+        "step2_surface_quality_signature": surface_quality_signature,
+        **surface_signature_event,
+        "surface_signature_template_major_count": 1 if surface_quality_signature.get("template_major") else 0,
+        "surface_signature_grammar_warning_count": int(surface_quality_signature.get("grammar_warning_count") or 0),
+        "tone_engine_version": _clean(tone_guard_report.get("tone_engine_version") or tone_engine_2_1_event.get("tone_engine_2_1_version")),
+        "tone_engine_2_1_version": _clean(tone_engine_2_1_event.get("tone_engine_2_1_version") or RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION),
         "product_quality_tone_engine_version": _clean(tone_guard_report.get("product_quality_tone_engine_version")),
         "tone_policy_applied": bool(runtime_meta.get("tone_policy_applied") or runtime_meta.get("tone_policy")),
         "tone_guard_report": _safe_mapping(tone_guard_report),
+        "tone_engine_2_1_report": _safe_mapping(tone_engine_2_1_report),
+        "step9_tone_engine_2_1_report": _safe_mapping(tone_engine_2_1_report),
+        **tone_engine_2_1_event,
         "tone_guard_major_count": tone_guard_major_count,
         "tone_guard_passed": bool(tone_guard_report.get("passed", tone_guard_major_count == 0)) and tone_guard_major_count == 0,
         "tone_guard_reasons": list(tone_guard_reasons),
-        "tone_over_empathy_count": _safe_int(tone_guard_report.get("over_empathy_count"), 0),
-        "tone_diagnostic_count": _safe_int(tone_guard_report.get("diagnostic_tone_count"), 0),
-        "tone_advice_count": _safe_int(tone_guard_report.get("advice_like_count"), 0),
-        "tone_generic_count": _safe_int(tone_guard_report.get("generic_comfort_count"), 0),
-        "tone_meaning_added": bool(runtime_meta.get("tone_meaning_added") or tone_guard_report.get("meaning_added") or tone_guard_report.get("meaning_added_by_tone_policy")),
+        "tone_over_empathy_count": max(_safe_int(tone_guard_report.get("over_empathy_count"), 0), _safe_int(tone_engine_2_1_event.get("tone_over_empathy_count"), 0)),
+        "tone_diagnostic_count": max(_safe_int(tone_guard_report.get("diagnostic_tone_count"), 0), _safe_int(tone_engine_2_1_event.get("tone_diagnostic_count"), 0)),
+        "tone_advice_count": max(_safe_int(tone_guard_report.get("advice_like_count"), 0), _safe_int(tone_engine_2_1_event.get("tone_advice_count"), 0)),
+        "tone_generic_count": max(_safe_int(tone_guard_report.get("generic_comfort_count"), 0), _safe_int(tone_engine_2_1_event.get("tone_generic_count"), 0)),
+        "tone_meaning_added": bool(runtime_meta.get("tone_meaning_added") or tone_guard_report.get("meaning_added") or tone_guard_report.get("meaning_added_by_tone_policy") or tone_engine_2_1_event.get("tone_meaning_added")),
         "safety_major_count": safety_major_count,
         "read_feeling_score": None,
         "top_rejection_reasons": list(dict.fromkeys([*gate_reasons[:5], *tone_guard_reasons[:3]])),
         "observation_status": observation_status,
         "display_passed": display_passed,
+        "runtime_surface_source_lock_version": RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
+        "runtime_surface_source_lock_ready": True,
+        "runtime_surface_source_locked": True,
+        "runtime_surface_source_lock": runtime_surface_source_lock,
+        "step1_runtime_surface_source_lock": runtime_surface_source_lock,
+        "runtime_composer_source": runtime_surface_source_lock.get("composer_source"),
+        "composer_requested": runtime_surface_source_lock.get("composer_requested"),
+        "composer_resolved": runtime_surface_source_lock.get("composer_resolved"),
+        "runtime_composer_model": runtime_surface_source_lock.get("composer_model"),
+        "runtime_surface_source_complete_initial_client_used": bool(runtime_surface_source_lock.get("complete_initial_client_used")),
+        "runtime_surface_source_limited_reader_repair_applied": bool(runtime_surface_source_lock.get("limited_reader_repair_applied")),
+        "sentence_plan_version": runtime_surface_source_lock.get("sentence_plan_version"),
+        "surface_realizer_version": runtime_surface_source_lock.get("surface_realizer_version"),
+        "tone_policy_version": runtime_surface_source_lock.get("tone_policy_version"),
+        "self_repair_version": runtime_surface_source_lock.get("self_repair_version"),
+        "comment_text_body_included": False,
         "composer_source": composer_source,
         "composer_status": composer_status,
         "composer_model": _clean(_candidate_attr(composer_candidate, "composer_model", "") or runtime_meta.get("composer_model")),
@@ -1137,6 +1270,14 @@ def build_complete_reply_service_diagnostics(
         resolution_meta=resolution_meta,
         diagnostic_summary=diagnostic_summary,
     )
+    runtime_surface_source_lock = dict(scorecard_event.get("runtime_surface_source_lock") or {})
+    surface_quality_signature = dict(
+        scorecard_event.get("surface_quality_signature")
+        or scorecard_event.get("step2_surface_quality_signature")
+        or {}
+    )
+    if surface_quality_signature:
+        assert_surface_quality_signature_meta_only(surface_quality_signature)
     relation_diagnostic = build_positive_recovery_relation_diagnostic(
         composer_candidate=composer_candidate,
         gate_trace=gate_trace,
@@ -1162,6 +1303,8 @@ def build_complete_reply_service_diagnostics(
         "self_repair": isinstance(self_repair, Mapping) and bool(self_repair),
         "limited_reader_repair": bool(limited_reader_repair),
         "repair_trace": bool(repair_trace),
+        "runtime_surface_source_lock": bool(runtime_surface_source_lock),
+        "surface_quality_signature": bool(surface_quality_signature),
         "scorecard_event": True,
     }
     composer_status = _clean(_candidate_attr(composer_candidate, "status", ""))
@@ -1191,6 +1334,30 @@ def build_complete_reply_service_diagnostics(
         "generation_scope": _clean(_candidate_attr(composer_candidate, "generation_scope", "") or runtime_meta.get("generation_scope")),
         "coverage_scope": _clean(_candidate_attr(composer_candidate, "coverage_scope", "") or runtime_meta.get("coverage_scope")),
         "observation_status": observation_status,
+        "runtime_surface_source_lock_version": RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
+        "runtime_surface_source_lock_ready": bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready")),
+        "runtime_surface_source_locked": bool(runtime_surface_source_lock.get("runtime_surface_source_locked")),
+        "runtime_surface_source_lock": runtime_surface_source_lock,
+        "step1_runtime_surface_source_lock": runtime_surface_source_lock,
+        "runtime_composer_source": runtime_surface_source_lock.get("composer_source"),
+        "composer_requested": runtime_surface_source_lock.get("composer_requested"),
+        "composer_resolved": runtime_surface_source_lock.get("composer_resolved"),
+        "runtime_composer_model": runtime_surface_source_lock.get("composer_model"),
+        "runtime_surface_source_complete_initial_client_used": bool(runtime_surface_source_lock.get("complete_initial_client_used")),
+        "runtime_surface_source_limited_reader_repair_applied": bool(runtime_surface_source_lock.get("limited_reader_repair_applied")),
+        "sentence_plan_version": runtime_surface_source_lock.get("sentence_plan_version"),
+        "surface_realizer_version": runtime_surface_source_lock.get("surface_realizer_version"),
+        "tone_policy_version": runtime_surface_source_lock.get("tone_policy_version"),
+        "self_repair_version": runtime_surface_source_lock.get("self_repair_version"),
+        "surface_quality_signature_version": SURFACE_QUALITY_SIGNATURE_VERSION,
+        "step2_surface_quality_signature_ready": bool(scorecard_event.get("step2_surface_quality_signature_ready")),
+        "surface_quality_signature": surface_quality_signature,
+        "step2_surface_quality_signature": surface_quality_signature,
+        "surface_signature_id": scorecard_event.get("surface_signature_id"),
+        "surface_signature_family_key": scorecard_event.get("surface_signature_family_key"),
+        "surface_template_major": bool(scorecard_event.get("surface_template_major")),
+        "surface_grammar_warning_codes": list(scorecard_event.get("surface_grammar_warning_codes") or []),
+        "surface_grammar_warning_count": int(scorecard_event.get("surface_grammar_warning_count") or 0),
         "connected_parts": connected_parts,
         "binding_count": binding_count,
         "binding_present": bool(binding_count),
@@ -1252,6 +1419,7 @@ def build_complete_reply_service_diagnostics(
         "comment_text_contract": "passed_only",
         "comment_text_publicly_assigned": False,
         "comment_text_key_written": False,
+        "comment_text_body_included": False,
         "input_feedback_comment_text_contract_preserved": True,
         "input_feedback_emlis_ai_contract_preserved": True,
         "observation_status_contract_preserved": True,
@@ -1283,6 +1451,21 @@ def attach_complete_reply_service_diagnostics(
     scorecard_event = dict(diagnostics.get("scorecard_event") or {})
     repair_trace = list(diagnostics.get("repair_trace") or [])
     complete_meta = dict(diagnostics.get("complete_composer_initial_meta") or diagnostics.get("complete_runtime_meta") or {})
+    runtime_surface_source_lock = dict(
+        diagnostics.get("runtime_surface_source_lock")
+        or diagnostics.get("step1_runtime_surface_source_lock")
+        or scorecard_event.get("runtime_surface_source_lock")
+        or {}
+    )
+    surface_quality_signature = dict(
+        diagnostics.get("surface_quality_signature")
+        or diagnostics.get("step2_surface_quality_signature")
+        or scorecard_event.get("surface_quality_signature")
+        or scorecard_event.get("step2_surface_quality_signature")
+        or {}
+    )
+    if surface_quality_signature:
+        assert_surface_quality_signature_meta_only(surface_quality_signature)
     diagnostic_summary["step11_complete_reply_diagnostics"] = dict(diagnostics)
     diagnostic_summary["complete_reply_diagnostics"] = dict(diagnostics)
     diagnostic_summary["complete_composer_reply_diagnostics"] = dict(diagnostics)
@@ -1292,6 +1475,34 @@ def attach_complete_reply_service_diagnostics(
     diagnostic_summary["complete_composer_initial_scorecard_event"] = scorecard_event
     diagnostic_summary["complete_composer_scorecard_event"] = scorecard_event
     diagnostic_summary["scorecard_event"] = scorecard_event
+    if runtime_surface_source_lock:
+        diagnostic_summary["runtime_surface_source_lock"] = runtime_surface_source_lock
+        diagnostic_summary["step1_runtime_surface_source_lock"] = runtime_surface_source_lock
+        diagnostic_summary["runtime_surface_source_lock_ready"] = bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready"))
+        diagnostic_summary["runtime_surface_source_locked"] = bool(runtime_surface_source_lock.get("runtime_surface_source_locked"))
+        diagnostic_summary["runtime_composer_source"] = runtime_surface_source_lock.get("composer_source")
+        diagnostic_summary["composer_requested"] = runtime_surface_source_lock.get("composer_requested")
+        diagnostic_summary["composer_resolved"] = runtime_surface_source_lock.get("composer_resolved")
+        diagnostic_summary["runtime_composer_model"] = runtime_surface_source_lock.get("composer_model")
+        diagnostic_summary["runtime_surface_source_complete_initial_client_used"] = bool(runtime_surface_source_lock.get("complete_initial_client_used"))
+        diagnostic_summary["runtime_surface_source_limited_reader_repair_applied"] = bool(runtime_surface_source_lock.get("limited_reader_repair_applied"))
+        diagnostic_summary["sentence_plan_version"] = runtime_surface_source_lock.get("sentence_plan_version")
+        diagnostic_summary["surface_realizer_version"] = runtime_surface_source_lock.get("surface_realizer_version")
+        diagnostic_summary["tone_policy_version"] = runtime_surface_source_lock.get("tone_policy_version")
+        diagnostic_summary["self_repair_version"] = runtime_surface_source_lock.get("self_repair_version")
+        diagnostic_summary["comment_text_body_included"] = False
+    if surface_quality_signature:
+        diagnostic_summary["surface_quality_signature_version"] = SURFACE_QUALITY_SIGNATURE_VERSION
+        diagnostic_summary["step2_surface_quality_signature_ready"] = bool(
+            scorecard_event.get("step2_surface_quality_signature_ready", True)
+        )
+        diagnostic_summary["surface_quality_signature"] = surface_quality_signature
+        diagnostic_summary["step2_surface_quality_signature"] = surface_quality_signature
+        diagnostic_summary["surface_signature_id"] = surface_quality_signature.get("surface_signature_id")
+        diagnostic_summary["surface_signature_family_key"] = surface_quality_signature.get("surface_signature_family_key")
+        diagnostic_summary["surface_template_major"] = bool(surface_quality_signature.get("template_major"))
+        diagnostic_summary["surface_grammar_warning_codes"] = list(surface_quality_signature.get("grammar_warning_codes") or [])
+        diagnostic_summary["surface_grammar_warning_count"] = int(surface_quality_signature.get("grammar_warning_count") or 0)
 
     relation_diagnostic = dict(
         diagnostics.get("positive_recovery_relation_diagnostic")
@@ -1336,6 +1547,16 @@ def attach_complete_reply_service_diagnostics(
     phase_gate["step11_complete_meta_connected"] = bool(diagnostics.get("complete_meta_connected"))
     phase_gate["step11_repair_trace_connected"] = bool(diagnostics.get("repair_trace_connected"))
     phase_gate["step11_scorecard_event_connected"] = bool(diagnostics.get("scorecard_event_connected"))
+    phase_gate["step1_runtime_surface_source_lock_ready"] = bool(
+        runtime_surface_source_lock.get("runtime_surface_source_lock_ready")
+    )
+    phase_gate["runtime_surface_source_lock_ready"] = bool(
+        runtime_surface_source_lock.get("runtime_surface_source_lock_ready")
+    )
+    phase_gate["runtime_composer_source"] = runtime_surface_source_lock.get("composer_source", "")
+    phase_gate["step2_surface_quality_signature_ready"] = bool(surface_quality_signature)
+    phase_gate["surface_quality_signature_ready"] = bool(surface_quality_signature)
+    phase_gate["surface_template_major"] = bool(surface_quality_signature.get("template_major")) if surface_quality_signature else False
     phase_gate["step11_passed_only_preserved"] = bool(diagnostics.get("passed_only_preserved"))
     phase_gate["step11_response_shape_changed"] = bool(diagnostics.get("response_shape_changed"))
     phase_gate["step11_public_response_key_change"] = bool(diagnostics.get("public_response_key_change"))
@@ -1355,6 +1576,7 @@ __all__ = [
     "COMPLETE_REPLY_DIAGNOSTICS_STEP",
     "COMPLETE_REPLY_DIAGNOSTICS_VERSION",
     "COMPLETE_SCORECARD_EVENT_VERSION",
+    "RUNTIME_SURFACE_SOURCE_LOCK_VERSION",
     "LIMITED_READER_REPAIR_DIAGNOSTIC_VERSION",
     "attach_complete_reply_service_diagnostics",
     "build_complete_reply_diagnostics_contract_meta",

@@ -12,6 +12,7 @@ from emlis_ai_types import (
     SafetyBoundaryReport,
     TemplateEchoReport,
 )
+from emlis_ai_observation_reply_contract import OBSERVATION_REPLY_KIND_LOW_INFORMATION
 
 _VALID_STATUSES = {"passed", "rejected", "unavailable", "safety_blocked"}
 _UNAVAILABLE_SOURCES = {"", "unavailable", "empty"}
@@ -30,7 +31,6 @@ _STEP7_GATE_BINDING_TRACE_VERSION = "emlis.limited_composer_gate_binding_reflect
 _STEP7_GATE_BINDING_TARGET_STEP = "7_Gate_binding_reflection"
 GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 _BINDING_DECISION_GATES = {"grounding", "display"}
-
 
 def _dedupe(values: List[str]) -> List[str]:
     return list(dict.fromkeys(str(v) for v in values if str(v)))
@@ -233,7 +233,53 @@ def _gate_passed(gate_trace: Mapping[str, Any], key: str) -> bool:
 
 
 def _all_core_gates_passed(gate_trace: Mapping[str, Any]) -> bool:
-    return all(_gate_passed(gate_trace, key) for key in _required_gate_trace_keys())
+    core_passed = all(_gate_passed(gate_trace, key) for key in _required_gate_trace_keys())
+    if not core_passed:
+        return False
+    if isinstance(gate_trace.get("observation_structure"), Mapping):
+        return _gate_passed(gate_trace, "observation_structure")
+    return True
+
+
+def _structure_gate_meta(observation_structure_gate_report: Any = None) -> Dict[str, Any]:
+    if observation_structure_gate_report is None:
+        return {}
+    if isinstance(observation_structure_gate_report, Mapping):
+        raw = dict(observation_structure_gate_report)
+    else:
+        as_meta = getattr(observation_structure_gate_report, "as_meta", None)
+        if callable(as_meta):
+            try:
+                meta = as_meta()
+                raw = dict(meta) if isinstance(meta, Mapping) else {}
+            except Exception:
+                raw = {}
+        else:
+            raw = {
+                "passed": bool(getattr(observation_structure_gate_report, "passed", True)),
+                "evaluated": bool(getattr(observation_structure_gate_report, "evaluated", False)),
+                "status": str(getattr(observation_structure_gate_report, "status", "") or ""),
+                "rejection_reasons": list(getattr(observation_structure_gate_report, "rejection_reasons", []) or []),
+                "selected_entry_ids": list(getattr(observation_structure_gate_report, "selected_entry_ids", []) or []),
+                "selected_relation_ids": list(getattr(observation_structure_gate_report, "selected_relation_ids", []) or []),
+                "gate_constraint_ids": list(getattr(observation_structure_gate_report, "gate_constraint_ids", []) or []),
+            }
+    if not raw:
+        return {}
+    reasons = raw.get("rejection_reasons") if isinstance(raw.get("rejection_reasons"), list) else []
+    return {
+        "passed": bool(raw.get("passed", True)),
+        "evaluated": bool(raw.get("evaluated", False)),
+        "status": str(raw.get("status") or ""),
+        "rejection_reasons": [str(item) for item in reasons if str(item)],
+        "selected_entry_ids": list(raw.get("selected_entry_ids") or []),
+        "selected_relation_ids": list(raw.get("selected_relation_ids") or []),
+        "gate_constraint_ids": list(raw.get("gate_constraint_ids") or []),
+        "comment_text_included": False,
+        "raw_text_included": False,
+        "raw_input_required_for_debug": False,
+        "display_gate_relaxed": False,
+    }
 
 
 def _step14_reason_subset(reasons: List[str]) -> List[str]:
@@ -261,6 +307,59 @@ def _status_for_failure(*, source: str, reasons: List[str]) -> str:
     return "rejected"
 
 
+def _low_information_quality_rejection_reasons(
+    *,
+    comment_text: str,
+    observation_quality_meta: Mapping[str, Any] | None = None,
+) -> List[str]:
+    """Return Step 10 low-information observation quality failures.
+
+    This is an additive branch quality gate. It does not relax safety, source,
+    phase, template, or unsupported-overclaim guards.
+    """
+
+    meta = observation_quality_meta if isinstance(observation_quality_meta, Mapping) else {}
+    text = str(comment_text or "").strip()
+    reasons: List[str] = []
+
+    def _bool(*keys: str, default: bool = False) -> bool:
+        for key in keys:
+            if key in meta:
+                return bool(meta.get(key))
+        return bool(default)
+
+    def _list(*keys: str) -> List[Any]:
+        for key in keys:
+            value = meta.get(key)
+            if isinstance(value, list):
+                return list(value)
+            if value:
+                return [value]
+        return []
+
+    if not text:
+        reasons.append("low_information_body_missing")
+    if meta and not _bool("body_non_empty", "comment_text_non_empty", default=bool(text)):
+        reasons.append("low_information_body_missing")
+    if not _bool("known_scope_observation_present", "low_info_known_scope_present"):
+        reasons.append("low_information_known_scope_missing")
+    if not _bool("contains_humility_marker", "humility_marker_present"):
+        reasons.append("low_information_humility_marker_missing")
+    if not _bool("contains_question", "question_present", "low_info_question_present"):
+        reasons.append("low_information_question_missing")
+    if meta.get("question_not_only") is False or _bool("question_only", "question_only_surface"):
+        reasons.append("low_information_question_only")
+    if not _list("unknown_slots"):
+        reasons.append("low_information_unknown_slots_missing")
+    if _bool("unsupported_event_assertion_present", "current_event_assertion_from_user_fact_present"):
+        reasons.append("low_information_unsupported_event_assertion")
+    if _bool("user_fact_may_promote_to_eligible"):
+        reasons.append("low_information_user_fact_promotion_attempt")
+    if _bool("free_user_fact_violation", "free_user_fact_surface_violation"):
+        reasons.append("low_information_free_user_fact_violation")
+    return _dedupe(reasons)
+
+
 def _with_display_gate_trace(
     gate_trace: Dict[str, Any],
     *,
@@ -269,6 +368,8 @@ def _with_display_gate_trace(
     comment_text: str,
     binding_meta: Mapping[str, Any] | None = None,
     binding_used_override: bool | None = None,
+    observation_reply_kind: str = "",
+    low_information_quality_rejection_reasons: List[str] | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
     binding_fields = _gate_binding_fields(
@@ -280,12 +381,19 @@ def _with_display_gate_trace(
             else bool(binding_used_override)
         ),
     )
+    kind = str(observation_reply_kind or "").strip()
+    low_info_reasons = _dedupe(list(low_information_quality_rejection_reasons or []))
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
         "comment_text_allowed": bool(observation_status == "passed" and str(comment_text or "").strip()),
         "comment_text_present": bool(str(comment_text or "").strip()),
         "rejection_reasons": list(rejection_reasons or []),
+        "observation_reply_kind": kind,
+        "low_information_quality_gate": kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+        "low_information_quality_passed": bool(kind != OBSERVATION_REPLY_KIND_LOW_INFORMATION or not low_info_reasons),
+        "low_information_quality_rejection_reasons": low_info_reasons,
+        "display_gate_relaxed": False,
         **binding_fields,
     }
     return out
@@ -299,6 +407,7 @@ def build_emlis_gate_trace(
     composer_source: str = "",
     phase_completion_ready: bool = True,
     binding_meta: Mapping[str, Any] | None = None,
+    observation_structure_gate_report: Any = None,
 ) -> Dict[str, Any]:
     """Build a compact pass/fail trace for all EmlisAI judge gates.
 
@@ -341,7 +450,7 @@ def build_emlis_gate_trace(
         elif source in _NON_AI_RENDERED_SOURCES:
             source_reasons.append("rule_rendered_or_fallback_source")
     phase_reasons = [] if phase_completion_ready else ["phase_not_complete"]
-    return {
+    trace: Dict[str, Any] = {
         "reader": {
             "passed": bool(reader_report.understandable),
             "rejection_reasons": list(reader_report.rejection_reasons or []),
@@ -449,7 +558,10 @@ def build_emlis_gate_trace(
             "rejection_reasons": phase_reasons,
         },
     }
-
+    structure_gate = _structure_gate_meta(observation_structure_gate_report)
+    if structure_gate:
+        trace["observation_structure"] = structure_gate
+    return trace
 
 
 def phase9_frontend_display_contract_ready(*, display_gate_ready: bool = True) -> bool:
@@ -571,8 +683,18 @@ def decide_emlis_observation_display(
     composer_source: str = "",
     phase_completion_ready: bool = True,
     binding_meta: Mapping[str, Any] | None = None,
+    observation_reply_kind: str = "",
+    observation_quality_meta: Mapping[str, Any] | None = None,
+    observation_structure_gate_report: Any = None,
 ) -> DisplayDecision:
-    """Final fail-closed decision for displaying Emlis observation text."""
+    """Final fail-closed decision for displaying Emlis observation text.
+
+    Step 10 adds a narrow Display/Repair integration path for the
+    low-information observation branch. It keeps the public passed+body
+    contract and does not add a public observation_status. Reader, Grounding,
+    Template, safety, source, and phase gates still have to pass; the only
+    addition here is branch-specific low-information quality validation.
+    """
 
     safety = safety_report or SafetyBoundaryReport()
     source = str(composer_source or "").strip()
@@ -585,9 +707,18 @@ def decide_emlis_observation_display(
         composer_source=source,
         phase_completion_ready=phase_completion_ready,
         binding_meta=binding_meta,
+        observation_structure_gate_report=observation_structure_gate_report,
     )
     display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
     reasons: List[str] = []
+    observation_kind = str(observation_reply_kind or "").strip()
+    low_information_quality_reasons: List[str] = []
+
+    if observation_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION:
+        low_information_quality_reasons = _low_information_quality_rejection_reasons(
+            comment_text=text,
+            observation_quality_meta=observation_quality_meta,
+        )
 
     if safety.requires_block:
         reasons.extend(safety.reasons or ["safety_boundary"])
@@ -604,6 +735,8 @@ def decide_emlis_observation_display(
                 comment_text="",
                 binding_meta=binding_meta,
                 binding_used_override=display_binding_used,
+                observation_reply_kind=observation_kind,
+                low_information_quality_rejection_reasons=low_information_quality_reasons,
             ),
         )
 
@@ -621,10 +754,16 @@ def decide_emlis_observation_display(
         reasons.extend(grounding_report.rejection_reasons or ["ungrounded_or_relation_broken"])
     if not template_echo_report.passed:
         reasons.extend(template_echo_report.rejection_reasons or ["template_or_echo_detected"])
+    structure_gate = _structure_gate_meta(observation_structure_gate_report)
+    if structure_gate and not bool(structure_gate.get("passed")):
+        reasons.extend(list(structure_gate.get("rejection_reasons") or ["observation_structure_gate_rejected"]))
     if not text:
         reasons.append("empty_comment_text")
         if source in _UNAVAILABLE_SOURCES:
             reasons.append("empty_comment_text_without_candidate")
+
+    if observation_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION:
+        reasons.extend(low_information_quality_reasons)
 
     if reasons:
         deduped = _dedupe(reasons)
@@ -641,6 +780,8 @@ def decide_emlis_observation_display(
                 comment_text="",
                 binding_meta=binding_meta,
                 binding_used_override=display_binding_used,
+                observation_reply_kind=observation_kind,
+                low_information_quality_rejection_reasons=low_information_quality_reasons,
             ),
         )
 
@@ -656,9 +797,10 @@ def decide_emlis_observation_display(
             comment_text=text,
             binding_meta=binding_meta,
             binding_used_override=display_binding_used,
+            observation_reply_kind=observation_kind,
+            low_information_quality_rejection_reasons=low_information_quality_reasons,
         ),
     )
-
 
 def phase8_display_gate_contract_ready(display_decision: DisplayDecision | None = None) -> bool:
     """Return True when Display Gate enforces the Phase 8 fail-closed contract.

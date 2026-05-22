@@ -20,8 +20,14 @@ from emlis_ai_complete_product_quality_scorecard_service import (
     COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET,
     COMPLETE_PRODUCT_QUALITY_READ_FEELING_PRODUCT_TARGET,
     COMPLETE_PRODUCT_QUALITY_REASON_COVERAGE_TARGET,
+    COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_STEP,
+    COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
 )
 from emlis_ai_display_gate import GATE_BINDING_CONTRACT_VERSION
+from emlis_ai_runtime_surface_exit_gate import (
+    RUNTIME_SURFACE_EXIT_GATE_STEP,
+    RUNTIME_SURFACE_EXIT_GATE_VERSION,
+)
 
 COMPLETE_PRODUCT_QUALITY_RELEASE_LADDER_VERSION = "emlis.complete_product_quality_release_ladder.v1"
 COMPLETE_PRODUCT_QUALITY_RELEASE_LADDER_STAGE = "Step7_Release_ladder_connection"
@@ -61,6 +67,13 @@ _TEMPLATE_STOP_MARKERS = (
     "role_fixed",
     "raw_echo",
     "same_ending",
+    "surface_signature_repeat",
+    "surface_template_major",
+    "surface_connector_repetition",
+    "connector_repetition",
+    "predicate_family_repetition",
+    "generic_center_phrase",
+    "grammar_warning",
 )
 _UNSUPPORTED_STOP_MARKERS = (
     "unsupported_sentence",
@@ -326,7 +339,17 @@ def build_complete_product_quality_release_ladder_criteria() -> dict[str, Any]:
             "limited_min_coverage_group_count": COMPLETE_RELEASE_LADDER_LIMITED_MIN_COVERAGE_GROUPS,
             "broader_min_coverage_group_count": COMPLETE_RELEASE_LADDER_BROADER_MIN_COVERAGE_GROUPS,
             "product_gate_min_coverage_group_count": COMPLETE_RELEASE_LADDER_PRODUCT_MIN_COVERAGE_GROUPS,
+            "surface_metrics_version": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
+            "surface_signature_repeat_rate": 0.0,
+            "connector_repetition_rate": 0.0,
+            "grammar_warning_rate": 0.0,
+            "surface_template_major_count": 0,
         },
+        "runtime_surface_exit_gate_step": RUNTIME_SURFACE_EXIT_GATE_STEP,
+        "runtime_surface_exit_gate_version": RUNTIME_SURFACE_EXIT_GATE_VERSION,
+        "runtime_surface_exit_gate_handoff_only": True,
+        "runtime_surface_exit_gate_required_before_public_release": True,
+        "step12_exit_gate_required_before_public_release": True,
         "comment_text_contract": "passed_only",
         "meta_only": True,
         "raw_input_included": False,
@@ -363,6 +386,37 @@ def build_complete_product_quality_release_ladder(
 
     safety_major_count = _safe_int(scorecard.get("safety_major_count"), _safe_int(machine.get("safety_major_count"), 0))
     template_major_count = _safe_int(scorecard.get("template_major_count"), _safe_int(machine.get("template_major_count"), 0))
+    surface_metrics = _safe_mapping(scorecard.get("surface_metrics")) or _safe_mapping(machine.get("surface_metrics"))
+    surface_template_major_count = _safe_int(
+        scorecard.get("surface_template_major_count"),
+        _safe_int(machine.get("surface_template_major_count"), _safe_int(surface_metrics.get("surface_template_major_count"), 0)),
+    )
+    template_major_count = max(template_major_count, surface_template_major_count)
+    surface_signature_count = _safe_int(
+        scorecard.get("surface_signature_count"),
+        _safe_int(machine.get("surface_signature_count"), _safe_int(surface_metrics.get("surface_signature_count"), 0)),
+    )
+    surface_signature_repeat_count = _safe_int(
+        scorecard.get("surface_signature_repeat_count"),
+        _safe_int(machine.get("surface_signature_repeat_count"), _safe_int(surface_metrics.get("surface_signature_repeat_count"), 0)),
+    )
+    surface_signature_repeat_rate = _safe_float(
+        scorecard.get("surface_signature_repeat_rate"),
+        _safe_float(machine.get("surface_signature_repeat_rate"), _safe_float(surface_metrics.get("surface_signature_repeat_rate"), 0.0)),
+    )
+    connector_repetition_rate = _safe_float(
+        scorecard.get("connector_repetition_rate"),
+        _safe_float(machine.get("connector_repetition_rate"), _safe_float(surface_metrics.get("connector_repetition_rate"), 0.0)),
+    )
+    grammar_warning_rate = _safe_float(
+        scorecard.get("grammar_warning_rate"),
+        _safe_float(machine.get("grammar_warning_rate"), _safe_float(surface_metrics.get("grammar_warning_rate"), 0.0)),
+    )
+    coverage_surface_diversity_rate = _safe_float(
+        scorecard.get("coverage_surface_diversity_rate"),
+        _safe_float(machine.get("coverage_surface_diversity_rate"), _safe_float(surface_metrics.get("coverage_surface_diversity_rate"), 0.0)),
+    )
+    surface_metrics_ready = bool(scorecard.get("surface_metrics_ready") or machine.get("surface_metrics_ready") or surface_metrics.get("surface_metrics_ready"))
     eligible_count = _safe_int(scorecard.get("eligible_count"), _safe_int(machine.get("eligible_count"), 0))
     passed_display_count = _safe_int(scorecard.get("passed_display_count"), _safe_int(machine.get("passed_display_count"), 0))
     coverage_groups = _coverage_groups_from_scorecard(scorecard)
@@ -443,6 +497,8 @@ def build_complete_product_quality_release_ladder(
         limited_blockers.append("binding_pass_rate_below_target")
     if template_major_count > 0:
         limited_blockers.append("template_major_detected")
+    if surface_template_major_count > 0:
+        limited_blockers.append("surface_template_major_detected")
     if safety_major_count > 0:
         limited_blockers.append("safety_major_detected")
     if unsupported_stop:
@@ -483,6 +539,8 @@ def build_complete_product_quality_release_ladder(
         product_blockers.append("safety_major_detected")
     if template_major_count > 0:
         product_blockers.append("template_major_detected")
+    if surface_template_major_count > 0:
+        product_blockers.append("surface_template_major_detected")
     if gate_relaxed:
         product_blockers.append("gate_relaxed")
     if raw_input_dependency:
@@ -504,6 +562,7 @@ def build_complete_product_quality_release_ladder(
                 "binding_contract_ready": binding_contract_ready,
                 "reason_contract_ready": reason_contract_ready,
                 "rn_contract_ready": rn_contract_ready,
+                "surface_metrics_ready": surface_metrics_ready,
             },
         ),
         "limited": _stage_payload(
@@ -518,6 +577,10 @@ def build_complete_product_quality_release_ladder(
                 "binding_pass_rate": binding_pass_rate,
                 "binding_target": COMPLETE_PRODUCT_QUALITY_BINDING_TARGET,
                 "template_major_count": template_major_count,
+                "surface_template_major_count": surface_template_major_count,
+                "surface_signature_repeat_rate": surface_signature_repeat_rate,
+                "connector_repetition_rate": connector_repetition_rate,
+                "grammar_warning_rate": grammar_warning_rate,
                 "safety_major_count": safety_major_count,
             },
         ),
@@ -535,6 +598,8 @@ def build_complete_product_quality_release_ladder(
                 "read_feeling_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET,
                 "reason_coverage_rate": reason_coverage_rate,
                 "reason_coverage_target": COMPLETE_PRODUCT_QUALITY_REASON_COVERAGE_TARGET,
+                "coverage_surface_diversity_rate": coverage_surface_diversity_rate,
+                "surface_signature_count": surface_signature_count,
             },
         ),
         "product_gate": _stage_payload(
@@ -554,6 +619,11 @@ def build_complete_product_quality_release_ladder(
                 "read_feeling_target": COMPLETE_PRODUCT_QUALITY_READ_FEELING_PRODUCT_TARGET,
                 "safety_major_count": safety_major_count,
                 "template_major_count": template_major_count,
+                "surface_template_major_count": surface_template_major_count,
+                "surface_signature_repeat_count": surface_signature_repeat_count,
+                "surface_signature_repeat_rate": surface_signature_repeat_rate,
+                "connector_repetition_rate": connector_repetition_rate,
+                "grammar_warning_rate": grammar_warning_rate,
                 "gate_relaxed": gate_relaxed,
                 "raw_input_dependency": raw_input_dependency,
             },
@@ -577,6 +647,17 @@ def build_complete_product_quality_release_ladder(
         "implementation_unit": COMPLETE_PRODUCT_QUALITY_RELEASE_LADDER_IMPLEMENTATION_UNIT,
         "guard_version": COMPLETE_PRODUCT_QUALITY_RELEASE_LADDER_GUARD_VERSION,
         "release_ladder_connected": True,
+        "runtime_surface_quality_exit_gate_required": True,
+        "runtime_surface_quality_exit_gate_supported": True,
+        "runtime_surface_quality_exit_gate_step": RUNTIME_SURFACE_EXIT_GATE_STEP,
+        "runtime_surface_quality_exit_gate_version": RUNTIME_SURFACE_EXIT_GATE_VERSION,
+        "runtime_surface_quality_exit_gate_handoff_only": True,
+        "runtime_surface_quality_exit_gate_release_ladder_connected": True,
+        "step12_exit_gate_release_ladder_connected": True,
+        "runtime_surface_quality_exit_gate_requires_explicit_release_judgment": True,
+        "runtime_surface_quality_exit_gate_release_allowed": False,
+        "runtime_surface_quality_exit_gate_product_gate_achieved": False,
+        "runtime_surface_quality_exit_gate_public_release_applied": False,
         "release_ladder_guard_ready": bool(scorecard_ready),
         "release_ladder_stage_order": list(COMPLETE_RELEASE_LADDER_STAGES),
         "current_stage": max_allowed_stage,
@@ -595,6 +676,16 @@ def build_complete_product_quality_release_ladder(
             "read_feeling_source": _clean(scorecard.get("read_feeling_source")) or ("blind_qa" if blind_qa_ready else "not_evaluated"),
             "safety_major_count": safety_major_count,
             "template_major_count": template_major_count,
+            "surface_metrics_version": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_VERSION,
+            "surface_metrics_step": COMPLETE_PRODUCT_QUALITY_SURFACE_METRICS_STEP,
+            "surface_metrics_ready": surface_metrics_ready,
+            "surface_signature_count": surface_signature_count,
+            "surface_signature_repeat_count": surface_signature_repeat_count,
+            "surface_signature_repeat_rate": surface_signature_repeat_rate,
+            "connector_repetition_rate": connector_repetition_rate,
+            "grammar_warning_rate": grammar_warning_rate,
+            "coverage_surface_diversity_rate": coverage_surface_diversity_rate,
+            "surface_template_major_count": surface_template_major_count,
             "reason_coverage_rate": reason_coverage_rate,
             "coverage_group_count": coverage_group_count,
             "coverage_groups": list(coverage_groups),
@@ -614,6 +705,7 @@ def build_complete_product_quality_release_ladder(
             "reason_contract_ready": reason_contract_ready,
             "scorecard_ready": scorecard_ready,
             "machine_metrics_ready": machine_metrics_ready,
+            "surface_metrics_ready": surface_metrics_ready,
             "blind_qa_ready": blind_qa_ready,
         },
         "stop_conditions": {
@@ -621,11 +713,16 @@ def build_complete_product_quality_release_ladder(
             "contract_changed": contract_changed,
             "fixed_fallback_or_template_used": forbidden_generation_used or template_reason_stop,
             "raw_input_dependency": raw_input_dependency,
+            "surface_template_major_detected": surface_template_major_count > 0,
+            "surface_signature_repeat_detected": surface_signature_repeat_count > 0,
+            "surface_connector_repetition_detected": connector_repetition_rate > 0,
+            "surface_grammar_warning_detected": grammar_warning_rate > 0,
             "unsupported_sentence_detected": unsupported_stop,
             "overinterpretation_generic_or_diagnostic_tone_detected": broader_reason_stop,
         },
         "reason_counter": reason_counter,
         "release_blockers": _dedupe(product_blockers if not product_allowed else []),
+        "runtime_surface_quality_exit_gate_release_blockers": _dedupe(product_blockers if not product_allowed else []),
         "ladder_blockers": _dedupe(stage_evaluations.get(max_allowed_stage, {}).get("blockers") if max_allowed_stage != "blocked" else internal_blockers),
         "product_gate_candidate_ready": product_gate_candidate_ready,
         "product_gate_transition_allowed": product_gate_candidate_ready,
@@ -633,6 +730,8 @@ def build_complete_product_quality_release_ladder(
         "product_gate_reached": False,
         "product_gate_decision": product_gate_decision,
         "product_gate_public_release_applied": False,
+        "public_release_applied": False,
+        "release_ladder_public_release_applied": False,
         "product_quality_released": False,
         "release_judgment": {
             "release_allowed": False,

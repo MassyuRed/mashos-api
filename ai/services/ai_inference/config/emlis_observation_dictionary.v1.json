@@ -1,0 +1,187 @@
+{
+  "schema_version": "emlis.observation_dictionary.v1",
+  "dictionary_version": "emlis.observation_dictionary.default.2026-05-20",
+  "contract_step": "Step5_Observation_Dictionary_Schema",
+  "description": "Default observation material dictionary. Positive entries are phrase materials only; forbidden_template_signature entries are guard signatures and must never be selected as surface material.",
+  "entries": [
+    {
+      "entry_id": "receive_now",
+      "category": "receive_phrase",
+      "surface": "今は",
+      "allowed_reply_kinds": ["eligible_observation", "low_information_observation"],
+      "requires_evidence_role": ["current_input"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.12
+    },
+    {
+      "entry_id": "receive_word_only",
+      "category": "receive_phrase",
+      "surface": "この言葉だけでも",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["current_input"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.18
+    },
+    {
+      "entry_id": "known_scope_visible_range",
+      "category": "known_scope_phrase",
+      "surface": "ここから見えているのは",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["state", "current_input"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.2
+    },
+    {
+      "entry_id": "known_scope_event_not_visible",
+      "category": "known_scope_phrase",
+      "surface": "まだ詳しい出来事までは見えませんが",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.3,
+      "unknown_slots": ["event"]
+    },
+    {
+      "entry_id": "burden_before_words",
+      "category": "burden_phrase",
+      "surface": "言葉になる前の重さ",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["state"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.2
+    },
+    {
+      "entry_id": "burden_not_light",
+      "category": "burden_phrase",
+      "surface": "軽く流せるものではなさそう",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["state"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.28
+    },
+    {
+      "entry_id": "arrangement_state_and",
+      "category": "arrangement_connector",
+      "surface": "という状態と",
+      "allowed_reply_kinds": ["eligible_observation"],
+      "requires_evidence_role": ["state"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.1
+    },
+    {
+      "entry_id": "arrangement_both_remain",
+      "category": "arrangement_connector",
+      "surface": "が同時に残っていて",
+      "allowed_reply_kinds": ["eligible_observation"],
+      "requires_evidence_role": ["contrast", "relation"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.16
+    },
+    {
+      "entry_id": "relation_difference_as_load",
+      "category": "relation_phrase",
+      "surface": "その差が負荷として残っているように",
+      "allowed_reply_kinds": ["eligible_observation"],
+      "requires_evidence_role": ["contrast", "relation"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.22
+    },
+    {
+      "entry_id": "relation_treated_large",
+      "category": "relation_phrase",
+      "surface": "それだけ大きく扱っているように",
+      "allowed_reply_kinds": ["eligible_observation"],
+      "requires_evidence_role": ["state", "repetition", "relation"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.24
+    },
+    {
+      "entry_id": "humility_looks_like",
+      "category": "humility_marker",
+      "surface": "ように見えます",
+      "allowed_reply_kinds": ["eligible_observation", "low_information_observation"],
+      "requires_evidence_role": ["relation", "state"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.18
+    },
+    {
+      "entry_id": "humility_may_be",
+      "category": "humility_marker",
+      "surface": "かもしれません",
+      "allowed_reply_kinds": ["eligible_observation", "low_information_observation"],
+      "requires_evidence_role": ["state", "unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.22
+    },
+    {
+      "entry_id": "unknown_what_happened",
+      "category": "unknown_slot_marker",
+      "surface": "何が起きたか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.14,
+      "unknown_slots": ["event"]
+    },
+    {
+      "entry_id": "unknown_which_part_heavy",
+      "category": "unknown_slot_marker",
+      "surface": "どの部分が重くなっているか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.14,
+      "unknown_slots": ["target", "relation"]
+    },
+    {
+      "entry_id": "question_what_happened",
+      "category": "question_ending",
+      "surface": "何がありましたか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.34,
+      "unknown_slots": ["event"]
+    },
+    {
+      "entry_id": "question_which_part_heavy",
+      "category": "question_ending",
+      "surface": "どの部分が重くなっていますか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.34,
+      "unknown_slots": ["target", "relation"]
+    },
+    {
+      "entry_id": "forbid_empathy_only",
+      "category": "forbidden_template_signature",
+      "surface": "つらかったですね。無理しないでくださいね。",
+      "allowed_reply_kinds": ["eligible_observation", "low_information_observation"],
+      "requires_evidence_role": ["none"],
+      "must_not_be_complete_sentence": false,
+      "template_signature_weight": 1.0,
+      "positive_material": false
+    },
+    {
+      "entry_id": "forbid_question_only",
+      "category": "forbidden_template_signature",
+      "surface": "もっと詳しく教えてください",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["none"],
+      "must_not_be_complete_sentence": false,
+      "template_signature_weight": 1.0,
+      "positive_material": false
+    },
+    {
+      "entry_id": "forbid_unavailable_observation",
+      "category": "forbidden_template_signature",
+      "surface": "Emlisでは観測できません",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["none"],
+      "must_not_be_complete_sentence": false,
+      "template_signature_weight": 1.0,
+      "positive_material": false
+    }
+  ]
+}
