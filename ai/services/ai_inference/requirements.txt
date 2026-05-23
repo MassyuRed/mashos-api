@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 httpx
 firebase-admin
+jsonschema>=4.21.1
