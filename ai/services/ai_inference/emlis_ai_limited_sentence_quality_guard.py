@@ -598,7 +598,16 @@ _STEP4_RESIDUAL_NOMINAL_COMPACT = {"普通こと", "普通にこと", "現実こ
 _STEP4_UNFINISHED_SUFFIX_RE = re.compile(r"(?:なんであ|考え始め|現実と|自分のことを|普通に|それだと|だと|けどさ|だけどさ|でもさ|けど|けれど|だけど|でも|のに|から|ので|なら|すると|したら)$")
 _STEP4_ORPHAN_PARTICLE_RE = re.compile(r"[をがにはへでも]$")
 _STEP4_BROKEN_NOMINAL_RE = re.compile(r"(?:なんであこと|考え始めこと|現実こと|普通こと|普通にこと|それだとこと|自分のことをこと|けどこと|けどさこと|だけどこと|だけどさこと|でもこと|でもさこと|のにこと|からこと)$")
-_STEP4_BLOCKING_MATERIAL_FLAGS = {"empty_phrase_unit_material", "emotion_label_only", "connector_only_material", "residual_nominal_material", "unfinished_phrase", "orphan_particle", "broken_nominalized_fragment", "too_long_quote", "too_short_phrase_unit_material", "non_text_material_source"}
+_STEP4_MALFORMED_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("malformed_nominalization_temporal_fragment", re.compile(r"(?:今まで|これまで|さっき|先ほど|さきほど|このまま|まだ)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_adjective_fragment", re.compile(r"(?:大丈夫|平気|普通|不安定|曖昧|中途半端|好き|嫌い|上手|下手)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_question_fragment", re.compile(r"(?:ないか|どれ|どこ|なに|何|なんで|どうして)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_auxiliary_fragment", re.compile(r"(?:(?<!かも)しれない(?:どれ|どこ|なに|何)?|なっ|し|見え|残っ|重なっ)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_te_form_fragment", re.compile(r"(?:なくて|ないで|なれなくて|できなくて|ならなくて|なせなくて|しきれなくて)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_unknown_fragment", re.compile(r"しれない(?:どれ|どこ|なに|何)こと(?:$|[もがはに])")),
+)
+_STEP4_MALFORMED_NOMINALIZATION_FLAGS = {code for code, _pattern in _STEP4_MALFORMED_NOMINALIZATION_PATTERNS}
+_STEP4_BLOCKING_MATERIAL_FLAGS = {"empty_phrase_unit_material", "emotion_label_only", "connector_only_material", "residual_nominal_material", "unfinished_phrase", "orphan_particle", "broken_nominalized_fragment", "too_long_quote", "too_short_phrase_unit_material", "non_text_material_source", *_STEP4_MALFORMED_NOMINALIZATION_FLAGS}
 
 
 def _step4_material_norm(value: Any) -> str:
@@ -655,6 +664,16 @@ def phrase_unit_material_flags(
     if _STEP4_BROKEN_NOMINAL_RE.search(compact):
         _step4_add_material_reason(reasons, matched, "broken_nominalized_fragment", phrase)
         _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
+    for code, pattern in _STEP4_MALFORMED_NOMINALIZATION_PATTERNS:
+        if pattern.search(compact):
+            _step4_add_material_reason(reasons, matched, code, phrase)
+            _step4_add_material_reason(reasons, matched, "broken_nominalized_fragment", phrase)
+            if code in {
+                "malformed_nominalization_question_fragment",
+                "malformed_nominalization_te_form_fragment",
+                "malformed_nominalization_unknown_fragment",
+            }:
+                _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
     if not safe_suffix and _STEP4_UNFINISHED_SUFFIX_RE.search(compact):
         _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
     if not safe_suffix and _STEP4_ORPHAN_PARTICLE_RE.search(compact):
@@ -722,6 +741,16 @@ def judge_phrase_unit_material_quality(
         "connector_only_material_blocked": "connector_only_material" in rejection_reasons,
         "residual_nominal_material_blocked": "residual_nominal_material" in rejection_reasons,
         "broken_nominalized_fragment_blocked": "broken_nominalized_fragment" in rejection_reasons,
+        "malformed_nominalization_guard_enabled": True,
+        "malformed_phrase_unit_guard_enabled": True,
+        "malformed_nominalization_blocked": any(str(reason).startswith("malformed_nominalization_") for reason in rejection_reasons),
+        "malformed_nominalization_rejection_reasons": [reason for reason in rejection_reasons if str(reason).startswith("malformed_nominalization_")],
+        "malformed_nominalization_temporal_fragment_blocked": "malformed_nominalization_temporal_fragment" in rejection_reasons,
+        "malformed_nominalization_adjective_fragment_blocked": "malformed_nominalization_adjective_fragment" in rejection_reasons,
+        "malformed_nominalization_question_fragment_blocked": "malformed_nominalization_question_fragment" in rejection_reasons,
+        "malformed_nominalization_auxiliary_fragment_blocked": "malformed_nominalization_auxiliary_fragment" in rejection_reasons,
+        "malformed_nominalization_te_form_fragment_blocked": "malformed_nominalization_te_form_fragment" in rejection_reasons,
+        "malformed_nominalization_unknown_fragment_blocked": "malformed_nominalization_unknown_fragment" in rejection_reasons,
         "role": str(role or "").strip(),
         "detected_type": str(detected_type or "").strip(),
         "source_field": str(source_field or "").strip(),
@@ -755,6 +784,14 @@ def phrase_unit_material_quality_policy_meta() -> Dict[str, Any]:
         "orphan_particle_guarded": True,
         "emotion_label_single_guarded": True,
         "too_long_quote_guarded": True,
+        "malformed_nominalization_guard_enabled": True,
+        "malformed_phrase_unit_guard_enabled": True,
+        "malformed_nominalization_temporal_fragment_guarded": True,
+        "malformed_nominalization_adjective_fragment_guarded": True,
+        "malformed_nominalization_question_fragment_guarded": True,
+        "malformed_nominalization_auxiliary_fragment_guarded": True,
+        "malformed_nominalization_te_form_fragment_guarded": True,
+        "malformed_nominalization_unknown_fragment_guarded": True,
         "input_specific_template_used": False,
         "completion_sentence_templates_added": False,
     }

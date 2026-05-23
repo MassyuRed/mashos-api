@@ -120,7 +120,7 @@ _ALLOWED_UNKNOWN_SLOTS: Final = frozenset(
 _SPACE_RE: Final = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
-    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか)"
+    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
 )
 _HUMILITY_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
 _FORBIDDEN_COMPLETE_TEMPLATE_RE: Final = re.compile(
@@ -788,7 +788,10 @@ def _low_information_lines_from_draft(draft: LowInformationObservationDraft) -> 
         q_entry_id = ""
         material_ids = _dedupe(line_meta.get("material_entry_ids"))
         if role == OBSERVATION_ROLE_LOW_INFO_QUESTION:
-            text = _ensure_sentence(f"よければ、{question_surface}")
+            if not _QUESTION_RE.search(text):
+                text = _ensure_sentence(f"よければ、{question_surface}")
+            else:
+                text = _ensure_sentence(text)
             q_kind = question_surface_kind
             q_entry_id = _clean(question_entry.get("entry_id"))
             if q_entry_id and q_entry_id not in material_ids:
@@ -870,6 +873,13 @@ def realize_low_information_observation_surface(
         source_meta={
             "source_step": draft_meta.get("source_step"),
             "low_information_observation_composer_ready": bool(draft_meta.get("low_information_observation_composer_ready")),
+            "low_information_specificity_plan": dict(draft_meta.get("low_information_specificity_plan") or {}),
+            "low_information_specificity_used": bool(draft_meta.get("low_information_specificity_used")),
+            "step6_low_information_specificity_ready": bool(draft_meta.get("step6_low_information_specificity_ready")),
+            "safe_anchor_count": int(draft_meta.get("safe_anchor_count") or 0),
+            "uses_safe_anchor": bool(draft_meta.get("uses_safe_anchor")),
+            "safe_anchor_role": _clean(draft_meta.get("safe_anchor_role")) or "none",
+            "safe_anchor_surface_kind": _clean(draft_meta.get("safe_anchor_surface_kind")) or "none",
             "comment_text_generated": False,
             "raw_input_included": False,
         },

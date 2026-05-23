@@ -13,6 +13,8 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from emlis_ai_runtime_surface_exit_criteria import build_runtime_surface_exit_criteria_report
+
 DIAGNOSTIC_LOCKDOWN_VERSION = "emlis.observation_diagnostic_lockdown.v1"
 DEFAULT_SOURCE = "backend_emotion_submit"
 _MAX_REASON_COUNT = 20
@@ -266,6 +268,251 @@ def _extract_runtime_meta(
         diagnostic_summary.get("complete_composer_meta"),
     )
     return _first_mapping(*candidates)
+
+
+def _extract_runtime_surface_diagnostics(
+    *,
+    input_feedback_meta: Mapping[str, Any],
+    diagnostic_summary: Mapping[str, Any],
+    complete_diagnostics: Mapping[str, Any],
+    scorecard_event: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Extract Step8 runtime-surface QA fields for submit lockdown logs.
+
+    The lockdown row is what Render screenshots usually expose.  Step9 keeps the
+    row meta-only while making the runtime surface gate result visible enough to
+    distinguish ordinary display rejection from surface-quality rejection.
+    """
+
+    scorecard_runtime = _safe_mapping(scorecard_event.get("runtime_surface_diagnostics_scorecard"))
+    candidates = (
+        complete_diagnostics.get("runtime_surface_step8_diagnostics"),
+        complete_diagnostics.get("runtime_surface_diagnostics_scorecard"),
+        _get_path(complete_diagnostics, "scorecard_event", "runtime_surface_diagnostics_scorecard"),
+        diagnostic_summary.get("runtime_surface_step8_diagnostics"),
+        diagnostic_summary.get("runtime_surface_diagnostics_scorecard"),
+        diagnostic_summary.get("runtime_surface_diagnostic"),
+        scorecard_runtime,
+        input_feedback_meta.get("runtime_surface_step8_diagnostics"),
+        input_feedback_meta.get("runtime_surface_diagnostics_scorecard"),
+    )
+    source = _first_mapping(*candidates)
+    if not source:
+        source = _first_mapping(complete_diagnostics, diagnostic_summary, scorecard_event, input_feedback_meta)
+
+    nested_gate = _first_mapping(
+        source.get("runtime_surface_pre_return_gate"),
+        diagnostic_summary.get("runtime_surface_pre_return_gate"),
+        complete_diagnostics.get("runtime_surface_pre_return_gate"),
+        scorecard_event.get("runtime_surface_pre_return_gate"),
+        input_feedback_meta.get("runtime_surface_pre_return_gate"),
+    )
+    gate_reasons = _dedupe_strings(
+        source.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or nested_gate.get("rejection_reasons")
+        or diagnostic_summary.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or complete_diagnostics.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or scorecard_event.get("runtime_surface_pre_return_gate_rejection_reasons"),
+        limit=_MAX_REASON_COUNT,
+    )
+    gate_action = _first_nonempty(
+        source.get("runtime_surface_pre_return_gate_action"),
+        nested_gate.get("action"),
+        diagnostic_summary.get("runtime_surface_pre_return_gate_action"),
+        complete_diagnostics.get("runtime_surface_pre_return_gate_action"),
+        scorecard_event.get("runtime_surface_pre_return_gate_action"),
+    )
+    gate_evaluated = any(
+        _to_bool(value)
+        for value in (
+            source.get("runtime_surface_pre_return_gate_evaluated"),
+            nested_gate.get("evaluated"),
+            diagnostic_summary.get("runtime_surface_pre_return_gate_evaluated"),
+            complete_diagnostics.get("runtime_surface_pre_return_gate_evaluated"),
+            scorecard_event.get("runtime_surface_pre_return_gate_evaluated"),
+        )
+    )
+    gate_pass_sources = (
+        source.get("runtime_surface_pre_return_gate_passed"),
+        nested_gate.get("passed"),
+        diagnostic_summary.get("runtime_surface_pre_return_gate_passed"),
+        complete_diagnostics.get("runtime_surface_pre_return_gate_passed"),
+        scorecard_event.get("runtime_surface_pre_return_gate_passed"),
+    )
+    gate_passed = any(_to_bool(value) for value in gate_pass_sources)
+    gate_final_passed = any(
+        _to_bool(value)
+        for value in (
+            source.get("runtime_surface_pre_return_gate_final_passed"),
+            diagnostic_summary.get("runtime_surface_pre_return_gate_final_passed"),
+            complete_diagnostics.get("runtime_surface_pre_return_gate_final_passed"),
+            scorecard_event.get("runtime_surface_pre_return_gate_final_passed"),
+        )
+    ) or gate_passed
+    malformed_count = max(
+        _to_int(source.get("malformed_phrase_unit_blocked_count")),
+        _to_int(source.get("malformed_phrase_unit_count")),
+        _to_int(nested_gate.get("malformed_phrase_unit_count")),
+        _to_int(diagnostic_summary.get("malformed_phrase_unit_blocked_count")),
+        _to_int(complete_diagnostics.get("malformed_phrase_unit_blocked_count")),
+        _to_int(scorecard_event.get("malformed_phrase_unit_blocked_count")),
+    )
+    safe_anchor_count = max(
+        _to_int(source.get("safe_anchor_count") or source.get("low_information_safe_anchor_count")),
+        _to_int(diagnostic_summary.get("safe_anchor_count")),
+        _to_int(complete_diagnostics.get("safe_anchor_count")),
+        _to_int(scorecard_event.get("safe_anchor_count")),
+    )
+    surface_template_major = any(
+        _to_bool(value)
+        for value in (
+            source.get("surface_template_major"),
+            source.get("template_major"),
+            nested_gate.get("surface_template_major"),
+            nested_gate.get("template_major"),
+            diagnostic_summary.get("surface_template_major"),
+            diagnostic_summary.get("template_major"),
+            complete_diagnostics.get("surface_template_major"),
+            complete_diagnostics.get("template_major"),
+            scorecard_event.get("surface_template_major"),
+            scorecard_event.get("template_major"),
+        )
+    )
+    surface_template_major_blocked = any(
+        _to_bool(value)
+        for value in (
+            source.get("surface_template_major_blocked"),
+            surface_template_major,
+            diagnostic_summary.get("surface_template_major_blocked"),
+            complete_diagnostics.get("surface_template_major_blocked"),
+            scorecard_event.get("surface_template_major_blocked"),
+        )
+    ) or any(reason in {"surface_template_major", "generic_center_phrase", "same_connector_run", "surface_template_skeleton"} for reason in gate_reasons)
+    surface_grammar_warning_count = max(
+        _to_int(source.get("surface_grammar_warning_count")),
+        _to_int(source.get("grammar_warning_count")),
+        _to_int(nested_gate.get("grammar_warning_count")),
+        _to_int(diagnostic_summary.get("surface_grammar_warning_count")),
+        _to_int(diagnostic_summary.get("grammar_warning_count")),
+        _to_int(complete_diagnostics.get("surface_grammar_warning_count")),
+        _to_int(complete_diagnostics.get("grammar_warning_count")),
+        _to_int(scorecard_event.get("surface_grammar_warning_count")),
+        _to_int(scorecard_event.get("grammar_warning_count")),
+    )
+    shallow_realizer_version = _first_nonempty(
+        source.get("shallow_realizer_version"),
+        source.get("surface_realizer_version"),
+        diagnostic_summary.get("shallow_realizer_version"),
+        complete_diagnostics.get("shallow_realizer_version"),
+        scorecard_event.get("shallow_realizer_version"),
+    )
+    shallow_v2_used = any(
+        _to_bool(value)
+        for value in (
+            source.get("shallow_v2_used"),
+            diagnostic_summary.get("shallow_v2_used"),
+            complete_diagnostics.get("shallow_v2_used"),
+            scorecard_event.get("shallow_v2_used"),
+            shallow_realizer_version == "shallow_surface_realizer.v2",
+        )
+    )
+    low_information_specificity_used = any(
+        _to_bool(value)
+        for value in (
+            source.get("low_information_specificity_used"),
+            diagnostic_summary.get("low_information_specificity_used"),
+            complete_diagnostics.get("low_information_specificity_used"),
+            scorecard_event.get("low_information_specificity_used"),
+        )
+    )
+    uses_safe_anchor = any(
+        _to_bool(value)
+        for value in (
+            source.get("uses_safe_anchor"),
+            diagnostic_summary.get("uses_safe_anchor"),
+            complete_diagnostics.get("uses_safe_anchor"),
+            scorecard_event.get("uses_safe_anchor"),
+            safe_anchor_count > 0,
+        )
+    )
+    return {
+        "runtime_surface_pre_return_gate_evaluated": gate_evaluated,
+        "runtime_surface_pre_return_gate_passed": gate_passed,
+        "runtime_surface_pre_return_gate_final_passed": gate_final_passed,
+        "runtime_surface_pre_return_gate_action": gate_action,
+        "runtime_surface_pre_return_gate_rejection_reasons": gate_reasons,
+        "runtime_surface_pre_return_gate_scorecard_connected": any(
+            _to_bool(value)
+            for value in (
+                source.get("runtime_surface_pre_return_gate_scorecard_connected"),
+                source.get("runtime_surface_pre_return_gate_evaluated"),
+                bool(scorecard_runtime),
+                gate_evaluated,
+            )
+        ),
+        "runtime_surface_diagnostics_scorecard_updated": any(
+            _to_bool(value)
+            for value in (
+                source.get("runtime_surface_diagnostics_scorecard_updated"),
+                diagnostic_summary.get("runtime_surface_diagnostics_scorecard_updated"),
+                complete_diagnostics.get("runtime_surface_diagnostics_scorecard_updated"),
+                scorecard_event.get("runtime_surface_diagnostics_scorecard_updated"),
+                bool(scorecard_runtime),
+            )
+        ),
+        "step8_runtime_surface_diagnostics_ready": any(
+            _to_bool(value)
+            for value in (
+                source.get("step8_runtime_surface_diagnostics_ready"),
+                source.get("runtime_surface_step8_diagnostics_ready"),
+                diagnostic_summary.get("step8_runtime_surface_diagnostics_ready"),
+                complete_diagnostics.get("step8_runtime_surface_diagnostics_ready"),
+                scorecard_event.get("step8_runtime_surface_diagnostics_ready"),
+                gate_evaluated,
+            )
+        ),
+        "surface_template_major_blocked": surface_template_major_blocked,
+        "surface_template_major": surface_template_major,
+        "surface_grammar_warning_count": surface_grammar_warning_count,
+        "malformed_phrase_unit_blocked_count": malformed_count,
+        "shallow_realizer_version": shallow_realizer_version,
+        "shallow_v2_used": shallow_v2_used,
+        "low_information_specificity_used": low_information_specificity_used,
+        "step6_low_information_specificity_ready": any(
+            _to_bool(value)
+            for value in (
+                source.get("step6_low_information_specificity_ready"),
+                source.get("low_information_specificity_ready"),
+                diagnostic_summary.get("step6_low_information_specificity_ready"),
+                complete_diagnostics.get("step6_low_information_specificity_ready"),
+                scorecard_event.get("step6_low_information_specificity_ready"),
+                low_information_specificity_used,
+            )
+        ),
+        "safe_anchor_count": safe_anchor_count,
+        "uses_safe_anchor": uses_safe_anchor,
+        "safe_anchor_role": _first_nonempty(
+            source.get("safe_anchor_role"),
+            diagnostic_summary.get("safe_anchor_role"),
+            complete_diagnostics.get("safe_anchor_role"),
+            scorecard_event.get("safe_anchor_role"),
+        ),
+        "safe_anchor_surface_kind": _first_nonempty(
+            source.get("safe_anchor_surface_kind"),
+            diagnostic_summary.get("safe_anchor_surface_kind"),
+            complete_diagnostics.get("safe_anchor_surface_kind"),
+            scorecard_event.get("safe_anchor_surface_kind"),
+        ),
+        "safe_anchor_evidence_ids": _dedupe_strings(
+            source.get("safe_anchor_evidence_ids")
+            or diagnostic_summary.get("safe_anchor_evidence_ids")
+            or complete_diagnostics.get("safe_anchor_evidence_ids")
+            or scorecard_event.get("safe_anchor_evidence_ids"),
+            limit=_MAX_REASON_COUNT,
+        ),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
 
 
 def _extract_connection_resolution(diagnostic_summary: Mapping[str, Any]) -> dict[str, Any]:
@@ -755,6 +1002,32 @@ def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
         if gate.get("passed") is False:
             return classification
 
+    runtime_surface = _safe_mapping(record.get("runtime_surface"))
+    runtime_surface_reasons = set(_dedupe_strings(runtime_surface.get("runtime_surface_pre_return_gate_rejection_reasons")))
+    runtime_surface_reasons.update(
+        reason
+        for reason in rejection_reasons
+        if reason.startswith("runtime_surface_pre_return_gate")
+        or reason in {"surface_template_major", "malformed_phrase_unit", "generic_center_phrase", "same_connector_run"}
+    )
+    runtime_surface_blocked = (
+        (_to_bool(runtime_surface.get("runtime_surface_pre_return_gate_evaluated")) and not _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_passed")))
+        or _to_bool(runtime_surface.get("surface_template_major_blocked"))
+        or _to_int(runtime_surface.get("malformed_phrase_unit_blocked_count")) > 0
+        or any(
+            reason in runtime_surface_reasons
+            for reason in (
+                "runtime_surface_pre_return_gate_failed",
+                "surface_template_major",
+                "malformed_phrase_unit",
+                "generic_center_phrase",
+                "same_connector_run",
+            )
+        )
+    )
+    if runtime_surface_blocked:
+        return "surface_quality_blocked"
+
     display_gate = _safe_mapping(gate_results.get("display"))
     if display_gate.get("passed") is False:
         return "candidate_generated_but_display_rejected"
@@ -793,6 +1066,12 @@ def build_observation_diagnostic_lockdown(
     complete_diagnostics = _extract_complete_reply_diagnostics(meta, diagnostic_summary)
     scorecard_event = _extract_scorecard_event(meta, diagnostic_summary, complete_diagnostics)
     runtime_meta = _extract_runtime_meta(diagnostic_summary, complete_diagnostics)
+    runtime_surface = _extract_runtime_surface_diagnostics(
+        input_feedback_meta=meta,
+        diagnostic_summary=diagnostic_summary,
+        complete_diagnostics=complete_diagnostics,
+        scorecard_event=scorecard_event,
+    )
     comment_text_length = len(_clean(input_feedback_comment))
     observation_status = _first_nonempty(meta.get("observation_status"), diagnostic_summary.get("observation_status"), "unavailable")
     display_rejection_reasons = _extract_display_rejection_reasons(meta, diagnostic_summary, complete_diagnostics)
@@ -879,6 +1158,28 @@ def build_observation_diagnostic_lockdown(
         "relation_type": relation_types[0] if relation_types else "",
         "gate_results": gate_results,
         "display_rejection_reasons": display_rejection_reasons,
+        "runtime_surface": runtime_surface,
+        "runtime_surface_pre_return_gate_evaluated": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_evaluated")),
+        "runtime_surface_pre_return_gate_passed": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_passed")),
+        "runtime_surface_pre_return_gate_final_passed": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_final_passed")),
+        "runtime_surface_pre_return_gate_action": _first_nonempty(runtime_surface.get("runtime_surface_pre_return_gate_action")),
+        "runtime_surface_pre_return_gate_rejection_reasons": _dedupe_strings(runtime_surface.get("runtime_surface_pre_return_gate_rejection_reasons"), limit=_MAX_REASON_COUNT),
+        "runtime_surface_pre_return_gate_scorecard_connected": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_scorecard_connected")),
+        "runtime_surface_diagnostics_scorecard_updated": _to_bool(runtime_surface.get("runtime_surface_diagnostics_scorecard_updated")),
+        "step8_runtime_surface_diagnostics_ready": _to_bool(runtime_surface.get("step8_runtime_surface_diagnostics_ready")),
+        "surface_template_major_blocked": _to_bool(runtime_surface.get("surface_template_major_blocked")),
+        "surface_template_major": _to_bool(runtime_surface.get("surface_template_major")),
+        "surface_grammar_warning_count": _to_int(runtime_surface.get("surface_grammar_warning_count")),
+        "malformed_phrase_unit_blocked_count": _to_int(runtime_surface.get("malformed_phrase_unit_blocked_count")),
+        "shallow_realizer_version": _first_nonempty(runtime_surface.get("shallow_realizer_version")),
+        "shallow_v2_used": _to_bool(runtime_surface.get("shallow_v2_used")),
+        "low_information_specificity_used": _to_bool(runtime_surface.get("low_information_specificity_used")),
+        "step6_low_information_specificity_ready": _to_bool(runtime_surface.get("step6_low_information_specificity_ready")),
+        "safe_anchor_count": _to_int(runtime_surface.get("safe_anchor_count")),
+        "uses_safe_anchor": _to_bool(runtime_surface.get("uses_safe_anchor")),
+        "safe_anchor_role": _first_nonempty(runtime_surface.get("safe_anchor_role")),
+        "safe_anchor_surface_kind": _first_nonempty(runtime_surface.get("safe_anchor_surface_kind")),
+        "safe_anchor_evidence_ids": _dedupe_strings(runtime_surface.get("safe_anchor_evidence_ids"), limit=_MAX_REASON_COUNT),
         "limited_reader_repair": limited_reader_repair,
         "limited_reader_repair_attempted": _to_bool(limited_reader_repair.get("attempted")),
         "limited_reader_repair_applied": _to_bool(limited_reader_repair.get("applied")),
@@ -897,6 +1198,12 @@ def build_observation_diagnostic_lockdown(
         "comment_text_included": False,
     }
     record["classification"] = classify_observation_diagnostic(record)
+    runtime_surface_exit_criteria = build_runtime_surface_exit_criteria_report(diagnostic_record=record)
+    record["runtime_surface_exit_criteria"] = runtime_surface_exit_criteria
+    record["step10_runtime_surface_exit_criteria_ready"] = _to_bool(runtime_surface_exit_criteria.get("step10_runtime_surface_exit_criteria_ready"))
+    record["runtime_surface_exit_criteria_passed"] = _to_bool(runtime_surface_exit_criteria.get("passed"))
+    record["runtime_surface_exit_criteria_outcome"] = _first_nonempty(runtime_surface_exit_criteria.get("outcome"))
+    record["runtime_surface_exit_criteria_failure_reasons"] = _dedupe_strings(runtime_surface_exit_criteria.get("failure_reasons"), limit=_MAX_REASON_COUNT)
     return record
 
 

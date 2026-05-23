@@ -360,6 +360,18 @@ def _source_event(record: Any) -> dict[str, Any]:
     return item
 
 
+def _runtime_surface_step8_meta(event: Mapping[str, Any]) -> dict[str, Any]:
+    for key in (
+        "runtime_surface_step8_diagnostics",
+        "runtime_surface_diagnostics_scorecard",
+        "runtime_surface_pre_return_gate",
+    ):
+        value = event.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
 def _normalize_coverage_group(group: Any, relation_types: Sequence[str] | None = None) -> str:
     raw = _clean(group)
     raw_lower = raw.lower()
@@ -647,6 +659,48 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
     repair_success = bool(event.get("repair_success")) and repair_meaning_added_count == 0 and repair_policy_violation_count == 0
     repair_operation_counts = event.get("repair_operation_counts") if isinstance(event.get("repair_operation_counts"), Mapping) else {}
     repair_reason_counts = event.get("repair_reason_counts") if isinstance(event.get("repair_reason_counts"), Mapping) else {}
+
+    runtime_surface_step8 = _runtime_surface_step8_meta(event)
+    runtime_surface_reasons = _dedupe(
+        event.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or runtime_surface_step8.get("runtime_surface_pre_return_gate_rejection_reasons")
+    )
+    runtime_surface_evaluated = bool(
+        event.get("runtime_surface_pre_return_gate_evaluated")
+        or runtime_surface_step8.get("runtime_surface_pre_return_gate_evaluated")
+    )
+    runtime_surface_passed_raw = (
+        event.get("runtime_surface_pre_return_gate_passed")
+        if "runtime_surface_pre_return_gate_passed" in event
+        else runtime_surface_step8.get("runtime_surface_pre_return_gate_passed")
+    )
+    runtime_surface_passed = bool(runtime_surface_passed_raw) if runtime_surface_evaluated else True
+    runtime_surface_action = _clean(
+        event.get("runtime_surface_pre_return_gate_action")
+        or runtime_surface_step8.get("runtime_surface_pre_return_gate_action")
+    )
+    surface_template_major_blocked = bool(
+        event.get("surface_template_major_blocked")
+        or runtime_surface_step8.get("surface_template_major_blocked")
+    )
+    malformed_phrase_unit_blocked_count = max(
+        _safe_int(event.get("malformed_phrase_unit_blocked_count"), 0),
+        _safe_int(runtime_surface_step8.get("malformed_phrase_unit_blocked_count"), 0),
+    )
+    shallow_realizer_version = _clean(
+        event.get("shallow_realizer_version")
+        or runtime_surface_step8.get("shallow_realizer_version")
+    )
+    shallow_v2_used = bool(event.get("shallow_v2_used") or runtime_surface_step8.get("shallow_v2_used"))
+    low_information_specificity_used = bool(
+        event.get("low_information_specificity_used")
+        or runtime_surface_step8.get("low_information_specificity_used")
+    )
+    if runtime_surface_reasons:
+        reason_markers = _dedupe([*reason_markers, *runtime_surface_reasons])
+    if surface_template_major_blocked and template_major_count <= 0:
+        template_major_count = 1
+
     normalized = {
         "version": COMPLETE_SCORECARD_NORMALIZED_EVENT_VERSION,
         "source_event_version": _clean(event.get("version")) or COMPLETE_SCORECARD_EVENT_VERSION,
@@ -691,6 +745,22 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
         "repair_policy_violation_count": repair_policy_violation_count,
         "repair_operation_counts": {str(key): _safe_int(value, 0) for key, value in repair_operation_counts.items()},
         "repair_reason_counts": {str(key): _safe_int(value, 0) for key, value in repair_reason_counts.items()},
+        "runtime_surface_step8_diagnostics": _safe_json(runtime_surface_step8) if runtime_surface_step8 else {},
+        "runtime_surface_diagnostics_scorecard": _safe_json(runtime_surface_step8) if runtime_surface_step8 else {},
+        "runtime_surface_pre_return_gate_evaluated": runtime_surface_evaluated,
+        "runtime_surface_pre_return_gate_evaluated_count": 1 if runtime_surface_evaluated else 0,
+        "runtime_surface_pre_return_gate_passed": runtime_surface_passed,
+        "runtime_surface_pre_return_gate_failed_count": 1 if runtime_surface_evaluated and not runtime_surface_passed else 0,
+        "runtime_surface_pre_return_gate_action": runtime_surface_action,
+        "runtime_surface_pre_return_gate_rejection_reasons": runtime_surface_reasons,
+        "surface_template_major_blocked": surface_template_major_blocked,
+        "surface_template_major_blocked_count": 1 if surface_template_major_blocked else 0,
+        "malformed_phrase_unit_blocked_count": malformed_phrase_unit_blocked_count,
+        "shallow_realizer_version": shallow_realizer_version,
+        "shallow_v2_used": shallow_v2_used,
+        "shallow_v2_used_count": 1 if shallow_v2_used else 0,
+        "low_information_specificity_used": low_information_specificity_used,
+        "low_information_specificity_used_count": 1 if low_information_specificity_used else 0,
         "template_major_count": template_major_count,
         "surface_same_ending_major_count": surface_same_ending_major_count,
         "surface_signature_repeat_count": surface_signature_repeat_count,
@@ -722,6 +792,7 @@ def normalize_complete_scorecard_event(scorecard_event: Mapping[str, Any] | None
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
+        "comment_text_body_included": False,
         "response_shape_changed": False,
         "public_response_key_change": False,
         "api_route_changed": False,
@@ -761,6 +832,12 @@ def _empty_bucket(group: str, fixture_suite: Mapping[str, Any]) -> dict[str, Any
         "repair_aborted_count": 0,
         "repair_meaning_added_count": 0,
         "repair_policy_violation_count": 0,
+        "runtime_surface_pre_return_gate_evaluated_count": 0,
+        "runtime_surface_pre_return_gate_failed_count": 0,
+        "surface_template_major_blocked_count": 0,
+        "malformed_phrase_unit_blocked_count": 0,
+        "shallow_v2_used_count": 0,
+        "low_information_specificity_used_count": 0,
         "template_major_count": 0,
         "surface_same_ending_major_count": 0,
         "surface_signature_repeat_count": 0,
@@ -816,6 +893,12 @@ def _merge_event(bucket: dict[str, Any], event: Mapping[str, Any]) -> None:
         "repair_aborted_count",
         "repair_meaning_added_count",
         "repair_policy_violation_count",
+        "runtime_surface_pre_return_gate_evaluated_count",
+        "runtime_surface_pre_return_gate_failed_count",
+        "surface_template_major_blocked_count",
+        "malformed_phrase_unit_blocked_count",
+        "shallow_v2_used_count",
+        "low_information_specificity_used_count",
         "template_major_count",
         "surface_same_ending_major_count",
         "surface_signature_repeat_count",
@@ -848,6 +931,8 @@ def _merge_event(bucket: dict[str, Any], event: Mapping[str, Any]) -> None:
             _inc_count_map(bucket, "reason_counts", reason, _safe_int(count, 0))
     for reason in _dedupe(event.get("top_rejection_reasons")):
         _inc_count_map(bucket, "reason_counts", reason)
+    for reason in _dedupe(event.get("runtime_surface_pre_return_gate_rejection_reasons")):
+        _inc_count_map(bucket, "reason_counts", f"runtime_surface:{reason}")
     for reason in _dedupe(event.get("tone_guard_reasons")):
         _inc_count_map(bucket, "reason_counts", f"tone_guard:{reason}")
     primary_reason = _clean(event.get("gate_primary_reason"))
@@ -896,6 +981,12 @@ def aggregate_complete_scorecard_events(
         release_blockers.append("tone_meaning_added_detected")
     if _safe_int(totals.get("template_major_count"), 0) > 0:
         release_blockers.append("template_major_detected")
+    if _safe_int(totals.get("runtime_surface_pre_return_gate_failed_count"), 0) > 0:
+        release_blockers.append("runtime_surface_gate_failed_detected")
+    if _safe_int(totals.get("surface_template_major_blocked_count"), 0) > 0:
+        release_blockers.append("surface_template_major_blocked_detected")
+    if _safe_int(totals.get("malformed_phrase_unit_blocked_count"), 0) > 0:
+        release_blockers.append("malformed_phrase_unit_blocked_detected")
     if _safe_int(totals.get("repair_meaning_added_count"), 0) > 0:
         release_blockers.append("repair_meaning_added_detected")
     if _safe_int(totals.get("repair_policy_violation_count"), 0) > 0:
@@ -915,6 +1006,9 @@ def aggregate_complete_scorecard_events(
         or _safe_int(row.get("tone_guard_major_count"), 0)
         or _safe_int(row.get("tone_meaning_added_count"), 0)
         or _safe_int(row.get("template_major_count"), 0)
+        or _safe_int(row.get("runtime_surface_pre_return_gate_failed_count"), 0)
+        or _safe_int(row.get("surface_template_major_blocked_count"), 0)
+        or _safe_int(row.get("malformed_phrase_unit_blocked_count"), 0)
         or _safe_int(row.get("repair_meaning_added_count"), 0)
         or _safe_int(row.get("repair_policy_violation_count"), 0)
         or (_safe_int(row.get("eligible_count"), 0) and float(row.get("binding_pass_rate") or 0.0) < COMPLETE_BINDING_TARGET_RATE)
@@ -951,6 +1045,12 @@ def aggregate_complete_scorecard_events(
         "tone_advice_count": _safe_int(totals.get("tone_advice_count"), 0),
         "tone_generic_count": _safe_int(totals.get("tone_generic_count"), 0),
         "tone_meaning_added_count": _safe_int(totals.get("tone_meaning_added_count"), 0),
+        "runtime_surface_pre_return_gate_evaluated_count": _safe_int(totals.get("runtime_surface_pre_return_gate_evaluated_count"), 0),
+        "runtime_surface_pre_return_gate_failed_count": _safe_int(totals.get("runtime_surface_pre_return_gate_failed_count"), 0),
+        "surface_template_major_blocked_count": _safe_int(totals.get("surface_template_major_blocked_count"), 0),
+        "malformed_phrase_unit_blocked_count": _safe_int(totals.get("malformed_phrase_unit_blocked_count"), 0),
+        "shallow_v2_used_count": _safe_int(totals.get("shallow_v2_used_count"), 0),
+        "low_information_specificity_used_count": _safe_int(totals.get("low_information_specificity_used_count"), 0),
         "read_feeling_evaluated_count": _safe_int(totals.get("read_feeling_evaluated_count"), 0),
         "groups_needing_attention": groups_needing_attention,
         "non_template_major_clear": bool(totals.get("non_template_major_clear")),
@@ -1031,6 +1131,11 @@ def build_complete_scorecard_harness(
         "tone_guard_major_count": _safe_int(aggregate.get("tone_guard_major_count"), 0),
         "tone_guard_clear": _safe_int(aggregate.get("tone_guard_major_count"), 0) == 0,
         "tone_meaning_added_count": _safe_int(aggregate.get("tone_meaning_added_count"), 0),
+        "runtime_surface_pre_return_gate_failed_count": _safe_int(aggregate.get("runtime_surface_pre_return_gate_failed_count"), 0),
+        "surface_template_major_blocked_count": _safe_int(aggregate.get("surface_template_major_blocked_count"), 0),
+        "malformed_phrase_unit_blocked_count": _safe_int(aggregate.get("malformed_phrase_unit_blocked_count"), 0),
+        "shallow_v2_used_count": _safe_int(aggregate.get("shallow_v2_used_count"), 0),
+        "low_information_specificity_used_count": _safe_int(aggregate.get("low_information_specificity_used_count"), 0),
         "missing_fixture_groups": list(aggregate.get("missing_fixture_groups") or []),
         "fixture_coverage_rate": float(aggregate.get("fixture_coverage_rate") or 0.0),
         "release_blockers": list(aggregate.get("release_blockers") or []),

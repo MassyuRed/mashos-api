@@ -531,12 +531,18 @@ def test_step13_surface_realizer_naturalizes_shallow_current_input_core_line():
 
     assert result["composer_source"] == "ai_generated"
     assert "中心として書かれています" not in result["comment_text"]
-    assert "仕事で疲れたことが中心にあります" in result["comment_text"]
+    assert "中心にあります" not in result["comment_text"]
+    assert "その中でも" not in result["comment_text"]
+    assert "仕事で疲れたことが先に出ています" in result["comment_text"]
     surface = result["composer_meta"]["step13_surface_realizer"]
+    shallow_v2 = result["composer_meta"]["step5_shallow_surface_realizer_v2"]
     assert surface["shallow_observation_path"] is True
     assert surface["grammar_parts_only"] is True
     assert surface["completion_sentence_templates_added"] is False
-    assert "center" in surface["used_tail_keys"]
+    assert "receive_first" in surface["used_tail_keys"]
+    assert "center" not in surface["used_tail_keys"]
+    assert shallow_v2["realizer_version"] == "shallow_surface_realizer.v2"
+    assert shallow_v2["generic_center_phrase_count"] == 0
     assert result["composer_meta"]["composer_diagnostic"]["surface_variation_enabled"] is True
 
 
@@ -610,11 +616,16 @@ def test_step13_surface_realizer_records_shallow_current_input_core_surface_keys
     assert result["composer_source"] == "ai_generated"
     compact = _compact_source_text(result["comment_text"])
     assert "中心として書かれています" not in compact
-    assert "中心にあります" in compact
+    assert "中心にあります" not in compact
+    assert "その中でも" not in compact
+    assert "先に出ています" in compact
     surface = result["composer_meta"]["step13_surface_realizer"]
+    shallow_v2 = result["composer_meta"]["step5_shallow_surface_realizer_v2"]
     assert surface["shallow_observation_path"] is True
-    assert "center" in surface["predicate_keys"]
+    assert "receive_first" in surface["predicate_keys"]
+    assert "center" not in surface["predicate_keys"]
     assert surface["completion_sentence_templates_added"] is False
+    assert shallow_v2["old_current_input_core_skeleton_disabled"] is True
 
 
 def test_step13_surface_realizer_records_componentized_tail_policy():

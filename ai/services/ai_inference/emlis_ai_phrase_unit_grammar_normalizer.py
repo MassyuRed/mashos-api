@@ -71,8 +71,39 @@ _BROKEN_NOMINALIZATION_RE = re.compile(
     r"(?:離れ|分かれ|外れ|崩れ|揺れ|流れ|逃げ|戻れ|向かえ|変われ|整え|貯め|決め|始め|頼り|頑張り|楽しみ|守り|選び|進み)こと"
 )
 _PARTICLE_BEFORE_KOTO_RE = re.compile(r"(?:を|が|は|に|で|へ|まで|より)こと")
-_AUXILIARY_FRAGMENT_KOTO_RE = re.compile(r"(?:なっ|し|い|見え|残っ|重なっ)こと(?:も|が|は|に|$)")
+_AUXILIARY_FRAGMENT_KOTO_RE = re.compile(r"(?:なっ|し|見え|残っ|重なっ)こと(?:も|が|は|に|$)")
 _RAW_FRAGMENT_NOMINAL_RE = re.compile(r"(?:自分のことをこと|普通にこと|現実こと|なんであこと|考え始めこと|けどこと|でもこと|のにこと|からこと)$")
+
+# Step3: fatal malformed nominalization fragments observed in the shallow
+# current-input path.  These are material/phrase-unit patterns, not screenshot
+# special cases and not user-facing replacement templates.
+_MALFORMED_NOMINALIZATION_FRAGMENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "malformed_nominalization_temporal_fragment",
+        re.compile(r"(?:今まで|これまで|さっき|先ほど|さきほど|このまま|まだ)こと(?:$|[もがはに])"),
+    ),
+    (
+        "malformed_nominalization_adjective_fragment",
+        re.compile(r"(?:大丈夫|平気|普通|不安定|曖昧|中途半端|好き|嫌い|上手|下手)こと(?:$|[もがはに])"),
+    ),
+    (
+        "malformed_nominalization_question_fragment",
+        re.compile(r"(?:ないか|どれ|どこ|なに|何|なんで|どうして)こと(?:$|[もがはに])"),
+    ),
+    (
+        "malformed_nominalization_auxiliary_fragment",
+        re.compile(r"(?:(?<!かも)しれない(?:どれ|どこ|なに|何)?|なっ|し|見え|残っ|重なっ)こと(?:$|[もがはに])"),
+    ),
+    (
+        "malformed_nominalization_te_form_fragment",
+        re.compile(r"(?:なくて|ないで|なれなくて|できなくて|ならなくて|なせなくて|しきれなくて)こと(?:$|[もがはに])"),
+    ),
+    (
+        "malformed_nominalization_unknown_fragment",
+        re.compile(r"しれない(?:どれ|どこ|なに|何)こと(?:$|[もがはに])"),
+    ),
+)
+_FATAL_MALFORMED_NOMINALIZATION_CODES = {code for code, _pattern in _MALFORMED_NOMINALIZATION_FRAGMENT_PATTERNS}
 _BROKEN_FEELING_RE = re.compile(r"(?:だ|だから|けど|けれど|から)(?:気持ち|思い|願い|状態)$")
 _HALF_WAY_RE = re.compile(r"中途半端(?:だ|だから)(?:気持ち|状態)?$")
 
@@ -147,6 +178,14 @@ def assert_phrase_unit_grammar_normalizer_meta_only(
             raise ValueError(f"{source} violates fixed contract: {key}=true")
 
 
+def _malformed_nominalization_fragment_codes(compact: str) -> tuple[str, ...]:
+    codes: list[str] = []
+    for code, pattern in _MALFORMED_NOMINALIZATION_FRAGMENT_PATTERNS:
+        if pattern.search(compact) and code not in codes:
+            codes.append(code)
+    return tuple(codes)
+
+
 def _warning_codes_for(text: Any) -> tuple[str, ...]:
     phrase = _clean(text)
     compact = _compact(phrase)
@@ -157,6 +196,7 @@ def _warning_codes_for(text: Any) -> tuple[str, ...]:
         codes.append("emotion_label_only")
     if compact in _CONNECTOR_ONLY:
         codes.extend(["connector_only_material", "unfinished_phrase"])
+    codes.extend(_malformed_nominalization_fragment_codes(compact))
     if _BROKEN_NOMINALIZATION_RE.search(phrase):
         codes.append("malformed_nominalization_missing_ru")
     if _PARTICLE_BEFORE_KOTO_RE.search(phrase):
@@ -298,6 +338,16 @@ class PhraseUnitGrammarNormalizationResult:
             "phrase_unit_grammar_warning_count": len(tuple(self.warning_codes)),
             "grammar_warning_major": self.grammar_warning_major,
             "malformed_nominalization_risk": any("nominal" in code or "stem_koto" in code for code in self.warning_codes),
+            "malformed_nominalization_guard_version": "emlis.phrase_unit_malformed_nominalization_guard.v1",
+            "malformed_nominalization_guard_enabled": True,
+            "malformed_phrase_unit_guard_enabled": True,
+            "malformed_phrase_unit_count": len([code for code in self.warning_codes if "nominalization" in code or "stem_koto" in code or "malformed" in code]),
+            "malformed_nominalization_temporal_fragment_guarded": "malformed_nominalization_temporal_fragment" in self.warning_codes,
+            "malformed_nominalization_adjective_fragment_guarded": "malformed_nominalization_adjective_fragment" in self.warning_codes,
+            "malformed_nominalization_question_fragment_guarded": "malformed_nominalization_question_fragment" in self.warning_codes,
+            "malformed_nominalization_auxiliary_fragment_guarded": "malformed_nominalization_auxiliary_fragment" in self.warning_codes,
+            "malformed_nominalization_te_form_fragment_guarded": "malformed_nominalization_te_form_fragment" in self.warning_codes,
+            "malformed_nominalization_unknown_fragment_guarded": "malformed_nominalization_unknown_fragment" in self.warning_codes,
             "orphan_particle_risk": "orphan_particle" in self.warning_codes,
             "unfinished_phrase_risk": "unfinished_phrase" in self.warning_codes or "unfinished_stem_fragment" in self.warning_codes,
             "phrase_unit_id_present": bool(self.phrase_unit_id),
@@ -389,6 +439,7 @@ def normalize_phrase_unit_grammar(
             "malformed_nominalization_particle_before_koto",
             "malformed_nominalization_auxiliary_fragment",
             "raw_fragment_centered_as_nominal",
+            *_FATAL_MALFORMED_NOMINALIZATION_CODES,
         }
     ]
     if not effective_codes:
@@ -583,10 +634,19 @@ def build_phrase_unit_grammar_normalizer_contract_meta() -> dict[str, Any]:
         "material_stage_normalizer": True,
         "surface_text_repair_by_step8": False,
         "safe_nominalization_guard_enabled": True,
+        "malformed_nominalization_guard_version": "emlis.phrase_unit_malformed_nominalization_guard.v1",
+        "malformed_nominalization_guard_enabled": True,
         "stem_koto_guard_enabled": True,
         "orphan_particle_guard_enabled": True,
         "unfinished_phrase_guard_enabled": True,
         "raw_fragment_center_guard_enabled": True,
+        "malformed_phrase_unit_guard_enabled": True,
+        "malformed_nominalization_temporal_fragment_guard_enabled": True,
+        "malformed_nominalization_adjective_fragment_guard_enabled": True,
+        "malformed_nominalization_question_fragment_guard_enabled": True,
+        "malformed_nominalization_auxiliary_fragment_guard_enabled": True,
+        "malformed_nominalization_te_form_fragment_guard_enabled": True,
+        "malformed_nominalization_unknown_fragment_guard_enabled": True,
         "drop_rephrase_defer_supported": True,
         "must_keep_defer_not_drop": True,
         "grammar_warning_codes_connected": True,

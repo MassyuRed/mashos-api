@@ -13,6 +13,15 @@ from emlis_ai_types import (
     TemplateEchoReport,
 )
 from emlis_ai_observation_reply_contract import OBSERVATION_REPLY_KIND_LOW_INFORMATION
+from emlis_ai_runtime_surface_pre_return_gate import (
+    ACTION_ALLOW,
+    ACTION_BLOCK,
+    ACTION_FAIL_CLOSED,
+    ACTION_RERENDER_SHALLOW_V2,
+    ACTION_REROUTE_LOW_INFORMATION,
+    RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+    assert_runtime_surface_pre_return_gate_meta_only,
+)
 
 _VALID_STATUSES = {"passed", "rejected", "unavailable", "safety_blocked"}
 _UNAVAILABLE_SOURCES = {"", "unavailable", "empty"}
@@ -32,8 +41,17 @@ _STEP7_GATE_BINDING_TARGET_STEP = "7_Gate_binding_reflection"
 GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 _BINDING_DECISION_GATES = {"grounding", "display"}
 
-def _dedupe(values: List[str]) -> List[str]:
-    return list(dict.fromkeys(str(v) for v in values if str(v)))
+def _dedupe(values: Any) -> List[str]:
+    if values is None:
+        return []
+    if isinstance(values, (str, bytes, bytearray)):
+        source = [values]
+    else:
+        try:
+            source = list(values)
+        except TypeError:
+            source = [values]
+    return list(dict.fromkeys(str(v) for v in source if str(v)))
 
 
 
@@ -236,8 +254,10 @@ def _all_core_gates_passed(gate_trace: Mapping[str, Any]) -> bool:
     core_passed = all(_gate_passed(gate_trace, key) for key in _required_gate_trace_keys())
     if not core_passed:
         return False
-    if isinstance(gate_trace.get("observation_structure"), Mapping):
-        return _gate_passed(gate_trace, "observation_structure")
+    if isinstance(gate_trace.get("observation_structure"), Mapping) and not _gate_passed(gate_trace, "observation_structure"):
+        return False
+    if isinstance(gate_trace.get("runtime_surface_pre_return_gate"), Mapping) and not _gate_passed(gate_trace, "runtime_surface_pre_return_gate"):
+        return False
     return True
 
 
@@ -280,6 +300,89 @@ def _structure_gate_meta(observation_structure_gate_report: Any = None) -> Dict[
         "raw_input_required_for_debug": False,
         "display_gate_relaxed": False,
     }
+
+
+def _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report: Any = None) -> Dict[str, Any]:
+    """Return sanitized Step2 Runtime Surface Pre-Return Gate trace meta.
+
+    The report is meta-only.  If a malformed report is supplied, fail closed
+    without copying exception details or any candidate body.
+    """
+
+    if not runtime_surface_pre_return_gate_report:
+        return {}
+    if not isinstance(runtime_surface_pre_return_gate_report, Mapping):
+        return {
+            "version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+            "evaluated": True,
+            "passed": False,
+            "action": ACTION_FAIL_CLOSED,
+            "rejection_reasons": ["runtime_surface_pre_return_gate_invalid"],
+            "runtime_surface_pre_return_gate_invalid": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+            "display_gate_relaxed": False,
+        }
+    data = dict(runtime_surface_pre_return_gate_report)
+    try:
+        assert_runtime_surface_pre_return_gate_meta_only(data, source="display_gate.runtime_surface_pre_return_gate")
+    except Exception:
+        return {
+            "version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+            "evaluated": True,
+            "passed": False,
+            "action": ACTION_FAIL_CLOSED,
+            "rejection_reasons": ["runtime_surface_pre_return_gate_invalid"],
+            "runtime_surface_pre_return_gate_invalid": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+            "display_gate_relaxed": False,
+        }
+    reasons = _dedupe(list(data.get("rejection_reasons") or []))
+    action = str(data.get("action") or ACTION_ALLOW).strip()
+    if action not in {ACTION_ALLOW, ACTION_BLOCK, ACTION_FAIL_CLOSED, ACTION_RERENDER_SHALLOW_V2, ACTION_REROUTE_LOW_INFORMATION}:
+        action = ACTION_FAIL_CLOSED
+        if "runtime_surface_pre_return_gate_invalid" not in reasons:
+            reasons.append("runtime_surface_pre_return_gate_invalid")
+    return {
+        "version": str(data.get("version") or RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION),
+        "schema_version": str(data.get("schema_version") or data.get("version") or RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION),
+        "evaluated": bool(data.get("evaluated", True)),
+        "passed": bool(data.get("passed")),
+        "blocked": bool(data.get("blocked", not bool(data.get("passed")))),
+        "action": action,
+        "rerender_recommended": bool(data.get("rerender_recommended") or action == ACTION_RERENDER_SHALLOW_V2),
+        "reroute_low_information_recommended": bool(data.get("reroute_low_information_recommended") or action == ACTION_REROUTE_LOW_INFORMATION),
+        "rejection_reasons": reasons,
+        "surface_signature_ready": bool(data.get("surface_signature_ready") or data.get("surface_signature_id")),
+        "surface_signature_id": str(data.get("surface_signature_id") or ""),
+        "surface_template_major": bool(data.get("surface_template_major")),
+        "generic_center_phrase_count": _safe_int(data.get("generic_center_phrase_count")),
+        "same_connector_run_max": _safe_int(data.get("same_connector_run_max")),
+        "same_connector_repetition_count": _safe_int(data.get("same_connector_repetition_count")),
+        "grammar_warning_count": _safe_int(data.get("grammar_warning_count")),
+        "malformed_nominalization_risk": bool(data.get("malformed_nominalization_risk")),
+        "malformed_phrase_unit_count": _safe_int(data.get("malformed_phrase_unit_count")),
+        "shallow_observation_path": bool(data.get("shallow_observation_path")),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+    }
+
+
+def _runtime_surface_gate_rejection_reasons(runtime_surface_gate: Mapping[str, Any] | None) -> List[str]:
+    gate = runtime_surface_gate if isinstance(runtime_surface_gate, Mapping) else {}
+    if not gate:
+        return []
+    if bool(gate.get("passed")):
+        return []
+    reasons = _dedupe(list(gate.get("rejection_reasons") or []))
+    out = ["runtime_surface_pre_return_gate_failed"]
+    out.extend(reasons)
+    action = str(gate.get("action") or "").strip()
+    if action and action != ACTION_ALLOW:
+        out.append(f"runtime_surface_pre_return_gate_action_{action}")
+    return _dedupe(out)
 
 
 def _step14_reason_subset(reasons: List[str]) -> List[str]:
@@ -370,6 +473,7 @@ def _with_display_gate_trace(
     binding_used_override: bool | None = None,
     observation_reply_kind: str = "",
     low_information_quality_rejection_reasons: List[str] | None = None,
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
     binding_fields = _gate_binding_fields(
@@ -383,6 +487,12 @@ def _with_display_gate_trace(
     )
     kind = str(observation_reply_kind or "").strip()
     low_info_reasons = _dedupe(list(low_information_quality_rejection_reasons or []))
+    runtime_surface_gate = _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report) or (
+        out.get("runtime_surface_pre_return_gate") if isinstance(out.get("runtime_surface_pre_return_gate"), Mapping) else {}
+    )
+    if runtime_surface_gate:
+        out["runtime_surface_pre_return_gate"] = dict(runtime_surface_gate)
+    runtime_surface_reasons = _dedupe(runtime_surface_gate.get("rejection_reasons") if isinstance(runtime_surface_gate, Mapping) else [])
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
@@ -393,6 +503,12 @@ def _with_display_gate_trace(
         "low_information_quality_gate": kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION,
         "low_information_quality_passed": bool(kind != OBSERVATION_REPLY_KIND_LOW_INFORMATION or not low_info_reasons),
         "low_information_quality_rejection_reasons": low_info_reasons,
+        "runtime_surface_pre_return_gate_evaluated": bool(runtime_surface_gate.get("evaluated")) if isinstance(runtime_surface_gate, Mapping) else False,
+        "runtime_surface_pre_return_gate_passed": bool(runtime_surface_gate.get("passed")) if isinstance(runtime_surface_gate, Mapping) and runtime_surface_gate else True,
+        "runtime_surface_pre_return_gate_action": str(runtime_surface_gate.get("action") or "") if isinstance(runtime_surface_gate, Mapping) else "",
+        "runtime_surface_pre_return_gate_rejection_reasons": runtime_surface_reasons,
+        "surface_template_major_blocked": "surface_template_major" in runtime_surface_reasons,
+        "malformed_phrase_unit_blocked_count": _safe_int(runtime_surface_gate.get("malformed_phrase_unit_count")) if isinstance(runtime_surface_gate, Mapping) else 0,
         "display_gate_relaxed": False,
         **binding_fields,
     }
@@ -408,6 +524,7 @@ def build_emlis_gate_trace(
     phase_completion_ready: bool = True,
     binding_meta: Mapping[str, Any] | None = None,
     observation_structure_gate_report: Any = None,
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Build a compact pass/fail trace for all EmlisAI judge gates.
 
@@ -561,6 +678,9 @@ def build_emlis_gate_trace(
     structure_gate = _structure_gate_meta(observation_structure_gate_report)
     if structure_gate:
         trace["observation_structure"] = structure_gate
+    runtime_surface_gate = _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report)
+    if runtime_surface_gate:
+        trace["runtime_surface_pre_return_gate"] = runtime_surface_gate
     return trace
 
 
@@ -686,6 +806,7 @@ def decide_emlis_observation_display(
     observation_reply_kind: str = "",
     observation_quality_meta: Mapping[str, Any] | None = None,
     observation_structure_gate_report: Any = None,
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
 ) -> DisplayDecision:
     """Final fail-closed decision for displaying Emlis observation text.
 
@@ -699,6 +820,7 @@ def decide_emlis_observation_display(
     safety = safety_report or SafetyBoundaryReport()
     source = str(composer_source or "").strip()
     text = str(comment_text or "").strip()
+    runtime_surface_gate = _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report)
     gate_trace = build_emlis_gate_trace(
         reader_report=reader_report,
         grounding_report=grounding_report,
@@ -708,6 +830,7 @@ def decide_emlis_observation_display(
         phase_completion_ready=phase_completion_ready,
         binding_meta=binding_meta,
         observation_structure_gate_report=observation_structure_gate_report,
+        runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
     )
     display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
     reasons: List[str] = []
@@ -737,6 +860,7 @@ def decide_emlis_observation_display(
                 binding_used_override=display_binding_used,
                 observation_reply_kind=observation_kind,
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
+                runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
             ),
         )
 
@@ -757,6 +881,7 @@ def decide_emlis_observation_display(
     structure_gate = _structure_gate_meta(observation_structure_gate_report)
     if structure_gate and not bool(structure_gate.get("passed")):
         reasons.extend(list(structure_gate.get("rejection_reasons") or ["observation_structure_gate_rejected"]))
+    reasons.extend(_runtime_surface_gate_rejection_reasons(runtime_surface_gate))
     if not text:
         reasons.append("empty_comment_text")
         if source in _UNAVAILABLE_SOURCES:
@@ -782,6 +907,7 @@ def decide_emlis_observation_display(
                 binding_used_override=display_binding_used,
                 observation_reply_kind=observation_kind,
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
+                runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
             ),
         )
 
@@ -799,6 +925,7 @@ def decide_emlis_observation_display(
             binding_used_override=display_binding_used,
             observation_reply_kind=observation_kind,
             low_information_quality_rejection_reasons=low_information_quality_reasons,
+            runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
         ),
     )
 

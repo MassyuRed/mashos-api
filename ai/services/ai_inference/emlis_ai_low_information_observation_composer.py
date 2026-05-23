@@ -66,6 +66,8 @@ from emlis_ai_user_fact_grounding_boundary import resolve_user_fact_grounding_bo
 LOW_INFORMATION_OBSERVATION_COMPOSER_VERSION: Final = "emlis.low_information_observation_composer.v1"
 LOW_INFORMATION_OBSERVATION_COMPOSER_STEP: Final = "Step8_Low_Information_Observation_Composer"
 LOW_INFORMATION_OBSERVATION_BODY_SCHEMA_VERSION: Final = "emlis.low_information_observation_body.v1"
+LOW_INFORMATION_SPECIFICITY_PLAN_VERSION: Final = "emlis.low_information_specificity_plan.v1"
+LOW_INFORMATION_SPECIFICITY_STEP: Final = "Step6_Low_Information_Specificity"
 
 QUESTION_SURFACE_WHAT_HAPPENED: Final = "what_happened"
 QUESTION_SURFACE_WHAT_CHANGED: Final = "what_changed"
@@ -83,9 +85,26 @@ _FORBIDDEN_COMPLETE_TEMPLATE_RE: Final = re.compile(
 )
 _PAST_REFERENCE_RE: Final = re.compile(r"(以前にも|前にも|過去にも|前回も)")
 _EVENT_ASSERTION_RE: Final = re.compile(r"(同じことで疲れている|環境の件で疲れている|前と同じことで|今回も環境|あなたはいつも|しやすい人)")
-_QUESTION_MARK_RE: Final = re.compile(r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|どの部分が重くなっているか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか)")
+_QUESTION_MARK_RE: Final = re.compile(r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|どの部分が重くなっているか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)")
 _HUMILITY_MARKER_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
-_KNOWN_SCOPE_RE: Final = re.compile(r"(言葉になる前の重さ|ここから見えているのは|軽く流せるものではなさそう|詳しい出来事まではまだ見えません|まだ詳しい出来事までは見えません|まだ詳細までは見えません)")
+_KNOWN_SCOPE_RE: Final = re.compile(r"(言葉になる前の重さ|疲れの重さ|不安の重さ|無理かもしれない感じ|大丈夫かどうか|安心してよいか|ここから見えているのは|軽く流せるものではなさそう|詳しい出来事まではまだ見えません|まだ詳しい出来事までは見えません|まだ詳細までは見えません)")
+
+_SAFE_ANCHOR_PATTERNS: Final = (
+    ("question", "safety_confirmation", re.compile(r"(大丈夫|だいじょうぶ|平気|安心)", re.IGNORECASE), "「大丈夫かどうか」を確かめたい感じ"),
+    ("emotion", "anxiety_weight", re.compile(r"(不安|こわい|怖い|焦り|焦っ)", re.IGNORECASE), "不安の重さ"),
+    ("state", "overload", re.compile(r"(無理|限界|しんど|つらい|辛い|きつい)", re.IGNORECASE), "無理かもしれない感じ"),
+    ("emotion", "fatigue_weight", re.compile(r"(疲れ|つかれ|消耗)", re.IGNORECASE), "疲れの重さ"),
+    ("uncertainty", "uncertainty", re.compile(r"(分からな|わからな|迷|決められな)", re.IGNORECASE), "まだ決めきれない感じ"),
+    ("state", "hard_to_say", re.compile(r"(言えな|言いにく|話しにく)", re.IGNORECASE), "言いにくさ"),
+)
+_EMOTION_ANCHOR_SURFACES: Final = {
+    "疲れ": ("emotion", "fatigue_weight", "疲れの重さ"),
+    "つかれ": ("emotion", "fatigue_weight", "疲れの重さ"),
+    "不安": ("emotion", "anxiety_weight", "不安の重さ"),
+    "焦り": ("emotion", "anxiety_weight", "不安の重さ"),
+    "怖い": ("emotion", "anxiety_weight", "不安の重さ"),
+    "こわい": ("emotion", "anxiety_weight", "不安の重さ"),
+}
 
 _TEXT_PAYLOAD_KEYS: Final = frozenset(
     {
@@ -354,6 +373,110 @@ def _body_contains_raw_input(body: str, current_input: Any) -> bool:
     return current_text in body
 
 
+def _emotion_labels(current_input: Any) -> list[str]:
+    if not isinstance(current_input, Mapping):
+        return []
+    out: list[str] = []
+    for key in ("emotions", "emotion_details", "emotion_labels"):
+        value = current_input.get(key)
+        if isinstance(value, Mapping):
+            iterable: Iterable[Any] = [value]
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            iterable = value
+        else:
+            iterable = [value] if value is not None else []
+        for item in iterable:
+            if isinstance(item, Mapping):
+                label = _clean(item.get("type") or item.get("label") or item.get("name") or item.get("emotion"))
+            else:
+                label = _clean(item)
+            if label and label not in out:
+                out.append(label)
+    return out
+
+
+def _low_information_safe_anchor_evidence_ids(
+    eligibility_meta: Mapping[str, Any],
+    material_meta: Mapping[str, Any],
+    *,
+    limit: int = 2,
+) -> list[str]:
+    ids = _known_fragment_ids(eligibility_meta, material_meta)
+    return ids[: max(0, int(limit))]
+
+
+def _select_low_information_safe_anchor(
+    current_input: Any,
+    eligibility_meta: Mapping[str, Any],
+    material_meta: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Select one bounded current-input anchor for Step 6 specificity.
+
+    The returned mapping may contain a short display surface, but only the role,
+    kind, and evidence ids are exposed in diagnostics.  Long raw input is never
+    stored in meta, and the surface is a constrained rephrase rather than a raw
+    memo copy.
+    """
+
+    text = _current_input_text(current_input)
+    evidence_ids = _low_information_safe_anchor_evidence_ids(eligibility_meta, material_meta)
+    for role, kind, pattern, surface in _SAFE_ANCHOR_PATTERNS:
+        if text and pattern.search(text):
+            return {
+                "role": role,
+                "surface_kind": kind,
+                "surface": surface,
+                "source": "current_input_safe_anchor",
+                "evidence_ids": evidence_ids,
+            }
+
+    for label in _emotion_labels(current_input):
+        normalized = _clean(label)
+        for needle, (role, kind, surface) in _EMOTION_ANCHOR_SURFACES.items():
+            if needle in normalized:
+                return {
+                    "role": role,
+                    "surface_kind": kind,
+                    "surface": surface,
+                    "source": "emotion_label_safe_anchor",
+                    "evidence_ids": evidence_ids,
+                }
+
+    return {
+        "role": "none",
+        "surface_kind": "none",
+        "surface": "",
+        "source": "none",
+        "evidence_ids": [],
+    }
+
+
+def _low_information_specificity_plan(anchor: Mapping[str, Any] | None) -> dict[str, Any]:
+    role = _clean((anchor or {}).get("role")) or "none"
+    surface_kind = _clean((anchor or {}).get("surface_kind")) or "none"
+    uses_anchor = role != "none" and surface_kind != "none"
+    evidence_ids = _dedupe((anchor or {}).get("evidence_ids")) if uses_anchor else []
+    return {
+        "version": LOW_INFORMATION_SPECIFICITY_PLAN_VERSION,
+        "source_step": LOW_INFORMATION_SPECIFICITY_STEP,
+        "eligible": True,
+        "safe_anchor_count": 1 if uses_anchor else 0,
+        "uses_safe_anchor": bool(uses_anchor),
+        "safe_anchor_role": role if uses_anchor else "none",
+        "safe_anchor_surface_kind": surface_kind if uses_anchor else "none",
+        "safe_anchor_source": _clean((anchor or {}).get("source")) if uses_anchor else "none",
+        "safe_anchor_evidence_ids": evidence_ids,
+        "contains_humility_marker": True,
+        "contains_question": True,
+        "unsupported_event_assertion_present": False,
+        "user_fact_promotion_attempt": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_body_included": False,
+        "comment_text_included": False,
+    }
+
+
 @dataclass(frozen=True)
 class LowInformationObservationLine:
     line_id: str
@@ -405,6 +528,7 @@ class LowInformationObservationDraft:
     question_surface_internal_question_ids: Sequence[str] = field(default_factory=tuple)
     selected_material_entry_ids: Sequence[str] = field(default_factory=tuple)
     forbidden_template_signature_ids: Sequence[str] = field(default_factory=tuple)
+    low_information_specificity_plan: Mapping[str, Any] = field(default_factory=dict)
     observation_reply_meta: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -457,6 +581,16 @@ class LowInformationObservationDraft:
             "question_surface_internal_question_ids": list(self.question_surface_internal_question_ids),
             "selected_material_entry_ids": list(self.selected_material_entry_ids),
             "forbidden_template_signature_ids": list(self.forbidden_template_signature_ids),
+            "low_information_specificity_plan": dict(self.low_information_specificity_plan or {}),
+            "low_information_specificity_used": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
+            "step6_low_information_specificity_ready": True,
+            "safe_anchor_count": int((self.low_information_specificity_plan or {}).get("safe_anchor_count") or 0),
+            "uses_safe_anchor": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
+            "safe_anchor_role": _clean((self.low_information_specificity_plan or {}).get("safe_anchor_role")) or "none",
+            "safe_anchor_surface_kind": _clean((self.low_information_specificity_plan or {}).get("safe_anchor_surface_kind")) or "none",
+            "safe_anchor_evidence_ids": list((self.low_information_specificity_plan or {}).get("safe_anchor_evidence_ids") or []),
+            "unsupported_event_assertion_present": bool(_EVENT_ASSERTION_RE.search(self.body)),
+            "user_fact_promotion_attempt": False,
             "observation_reply_meta": dict(self.observation_reply_meta or {}),
             "low_information_known_scope_only": True,
             "known_scope_only": True,
@@ -616,6 +750,7 @@ def _build_lines(
     facts_used: Sequence[Mapping[str, Any]],
     surface_disclosure_required: bool,
     known_fragment_evidence_ids: Sequence[str],
+    safe_anchor: Mapping[str, Any] | None = None,
 ) -> tuple[LowInformationObservationLine, ...]:
     receive = _select_first_material(
         category=CATEGORY_RECEIVE_PHRASE,
@@ -655,7 +790,12 @@ def _build_lines(
     receive_surface = _clean(receive.get("surface")) or "今は"
     burden_surface = _clean(burden.get("surface")) or "言葉になる前の重さ"
     humility_surface = _clean(humility.get("surface")) or "ように見えます"
-    if humility_surface == "かもしれません":
+    anchor_surface = _clean((safe_anchor or {}).get("surface"))
+    anchor_role = _clean((safe_anchor or {}).get("role")) or "none"
+    anchor_kind = _clean((safe_anchor or {}).get("surface_kind")) or "none"
+    if anchor_surface:
+        opening_text = f"{receive_surface}、{anchor_surface}が先に出ています。" if anchor_role == "question" else f"{receive_surface}、{anchor_surface}が先に出ている{humility_surface}。"
+    elif humility_surface == "かもしれません":
         opening_text = f"{receive_surface}、{burden_surface}が先に出ている{humility_surface}。"
     else:
         opening_text = f"{receive_surface}、{burden_surface}が先に出ている{humility_surface}。"
@@ -663,6 +803,8 @@ def _build_lines(
     unknown_surface = _clean(unknown_marker.get("surface")) or _unknown_marker_for_slots(unknown_slots)
     if plan == "subscription" and facts_used and user_fact_mode == USER_FACT_GROUNDING_MODE_EXPLICIT_REFERENCE and surface_disclosure_required:
         known_scope_text = f"以前にも近い重さが残っていたことはありますが、今回{unknown_surface}まではまだ見えていません。"
+    elif anchor_kind == "safety_confirmation":
+        known_scope_text = "まだ何が起きたかまでは見えていませんが、安心してよいかを探しているように見えます。"
     elif question_surface_kind == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY:
         known_scope_text = f"まだ詳しい出来事までは見えませんが、{unknown_surface}はまだ見えていません。"
     elif question_surface_kind == QUESTION_SURFACE_WHAT_CHANGED:
@@ -671,7 +813,10 @@ def _build_lines(
         known_surface = _clean(known_scope.get("surface")) or "まだ詳しい出来事までは見えませんが"
         known_scope_text = f"{known_surface}、軽く流せるものではなさそうです。"
 
-    question_text = _ensure_sentence(f"よければ、{question_surface}")
+    if anchor_kind == "safety_confirmation":
+        question_text = _ensure_sentence("よければ、何について大丈夫か気になっていますか")
+    else:
+        question_text = _ensure_sentence(f"よければ、{question_surface}")
 
     lines = (
         LowInformationObservationLine(
@@ -772,6 +917,8 @@ def compose_low_information_observation(
     known_ids = _known_fragment_ids(eligibility_meta, material_meta)
     internal_question_ids = _dedupe(material_meta.get("internal_question_ids") or (q.get("question_id") for q in internal_meta.get("questions") or [] if isinstance(q, Mapping)))
     question_internal_ids = _question_internal_ids(internal_meta, material_meta)
+    safe_anchor = _select_low_information_safe_anchor(current_input, eligibility_meta, material_meta)
+    specificity_plan = _low_information_specificity_plan(safe_anchor)
 
     lines = _build_lines(
         unknown_slots=unknown_slots,
@@ -782,6 +929,7 @@ def compose_low_information_observation(
         facts_used=facts_used,
         surface_disclosure_required=surface_disclosure_required,
         known_fragment_evidence_ids=known_ids,
+        safe_anchor=safe_anchor,
     )
     body = "".join(line.text for line in lines)
     selected_material_ids = _dedupe(line_id for line in lines for line_id in line.material_entry_ids)
@@ -822,6 +970,7 @@ def compose_low_information_observation(
         question_surface_internal_question_ids=tuple(question_internal_ids),
         selected_material_entry_ids=tuple(selected_material_ids),
         forbidden_template_signature_ids=tuple(forbidden_signature_ids),
+        low_information_specificity_plan=specificity_plan,
         observation_reply_meta=observation_reply_meta,
     )
     assert_low_information_observation_composer_contract(draft, current_input=current_input)
@@ -912,6 +1061,20 @@ def assert_low_information_observation_composer_contract(
     if _QUESTION_MARK_RE.fullmatch(body.strip("。！？!?")):
         raise ValueError(f"{source} must not return question-only text")
 
+    specificity_plan = meta.get("low_information_specificity_plan") if isinstance(meta.get("low_information_specificity_plan"), Mapping) else {}
+    safe_anchor_count = int(meta.get("safe_anchor_count") if meta.get("safe_anchor_count") is not None else specificity_plan.get("safe_anchor_count") or 0)
+    uses_safe_anchor = bool(meta.get("uses_safe_anchor") or specificity_plan.get("uses_safe_anchor"))
+    if safe_anchor_count > 0 and not uses_safe_anchor:
+        raise ValueError(f"{source} must use a safe anchor when safe_anchor_count is positive")
+    if safe_anchor_count == 0 and uses_safe_anchor:
+        raise ValueError(f"{source} must not mark safe anchor usage without a safe anchor")
+    if safe_anchor_count > 0 and _clean(meta.get("safe_anchor_role") or specificity_plan.get("safe_anchor_role")) in {"", "none"}:
+        raise ValueError(f"{source} must expose safe_anchor_role as meta-only classification")
+    if meta.get("unsupported_event_assertion_present") is True or specificity_plan.get("unsupported_event_assertion_present") is True:
+        raise ValueError(f"{source} must not contain unsupported event assertions")
+    if meta.get("user_fact_promotion_attempt") is True or specificity_plan.get("user_fact_promotion_attempt") is True:
+        raise ValueError(f"{source} must not attempt user fact promotion")
+
     roles = _dedupe(meta.get("sentence_plan_observation_roles"))
     if not set(roles).issuperset(_ALLOWED_OBSERVATION_ROLES):
         raise ValueError(f"{source} must include low_info receive / known_scope / question roles")
@@ -986,6 +1149,16 @@ def _draft_as_meta_without_assert(self: LowInformationObservationDraft) -> dict[
         "question_surface_internal_question_ids": list(self.question_surface_internal_question_ids),
         "selected_material_entry_ids": list(self.selected_material_entry_ids),
         "forbidden_template_signature_ids": list(self.forbidden_template_signature_ids),
+        "low_information_specificity_plan": dict(self.low_information_specificity_plan or {}),
+        "low_information_specificity_used": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
+        "step6_low_information_specificity_ready": True,
+        "safe_anchor_count": int((self.low_information_specificity_plan or {}).get("safe_anchor_count") or 0),
+        "uses_safe_anchor": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
+        "safe_anchor_role": _clean((self.low_information_specificity_plan or {}).get("safe_anchor_role")) or "none",
+        "safe_anchor_surface_kind": _clean((self.low_information_specificity_plan or {}).get("safe_anchor_surface_kind")) or "none",
+        "safe_anchor_evidence_ids": list((self.low_information_specificity_plan or {}).get("safe_anchor_evidence_ids") or []),
+        "unsupported_event_assertion_present": bool(_EVENT_ASSERTION_RE.search(self.body)),
+        "user_fact_promotion_attempt": False,
         "observation_reply_meta": dict(self.observation_reply_meta or {}),
         "low_information_known_scope_only": True,
         "known_scope_only": True,
@@ -1044,6 +1217,7 @@ def dump_low_information_observation(value: LowInformationObservationDraft | Map
 OBSERVED_SCOPE_EMOTION_WEIGHT: Final = "emotion_weight"
 OBSERVED_SCOPE_LANGUAGE_BEFORE_DETAIL: Final = "language_before_detail"
 OBSERVED_SCOPE_UNSPECIFIED_BURDEN: Final = "unspecified_burden"
+LOW_INFORMATION_SPECIFICITY_PLAN_SCHEMA_VERSION: Final = LOW_INFORMATION_SPECIFICITY_PLAN_VERSION
 QUESTION_SURFACE_KIND_WHAT_HAPPENED: Final = QUESTION_SURFACE_WHAT_HAPPENED
 QUESTION_SURFACE_KIND_WHAT_CHANGED: Final = QUESTION_SURFACE_WHAT_CHANGED
 QUESTION_SURFACE_KIND_WHICH_PART_FEELS_HEAVY: Final = QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY
@@ -1060,6 +1234,9 @@ __all__ = [
     "LOW_INFORMATION_OBSERVATION_BODY_SCHEMA_VERSION",
     "LOW_INFORMATION_OBSERVATION_COMPOSER_STEP",
     "LOW_INFORMATION_OBSERVATION_COMPOSER_VERSION",
+    "LOW_INFORMATION_SPECIFICITY_PLAN_VERSION",
+    "LOW_INFORMATION_SPECIFICITY_PLAN_SCHEMA_VERSION",
+    "LOW_INFORMATION_SPECIFICITY_STEP",
     "QUESTION_SURFACE_WHAT_CHANGED",
     "QUESTION_SURFACE_WHAT_HAPPENED",
     "QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY",

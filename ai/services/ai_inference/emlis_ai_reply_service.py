@@ -76,6 +76,11 @@ from emlis_ai_complete_product_quality_scorecard_service import (
 )
 from emlis_ai_complete_release_ladder_service import build_complete_product_quality_release_ladder
 from emlis_ai_runtime_surface_complete_activation_branch import build_runtime_surface_complete_activation_branch
+from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
+from emlis_ai_bounded_repair_reroute import (
+    ACTION_RERENDER_SHALLOW_V2 as BOUNDED_ACTION_RERENDER_SHALLOW_V2,
+    decide_bounded_repair_reroute,
+)
 from emlis_ai_complete_initial_fixture_qa_service import build_complete_initial_fixture_qa_run
 from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_emlis_limited_composer_scorecard_harness
 from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
@@ -270,6 +275,11 @@ _COMPLETE_COMPOSER_RETRY_REASONS = frozenset(
     }
 )
 _LIMITED_READER_RETRY_REASONS = frozenset({"addressee_not_clear", "relation_not_expressed"})
+_RUNTIME_SURFACE_RERENDER_RETRY_REASONS = frozenset(
+    {
+        "runtime_surface_pre_return_gate_action_rerender_shallow_v2",
+    }
+)
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
@@ -385,7 +395,7 @@ def _composer_retry_reason_allowlist(composer_client: Any) -> frozenset[str]:
     class_name = type(composer_client).__name__ if composer_client is not None else ""
     if class_name == "CocolonCompleteComposerClient":
         return _COMPLETE_COMPOSER_RETRY_REASONS
-    return _LIMITED_READER_RETRY_REASONS
+    return frozenset((*_LIMITED_READER_RETRY_REASONS, *_RUNTIME_SURFACE_RERENDER_RETRY_REASONS))
 
 
 def _regeneration_reasons_for_retry(rejection_reasons: Iterable[Any], composer_client: Any) -> List[str]:
@@ -1362,6 +1372,66 @@ def _candidate_meta_value(composer_candidate: Any, key: str, default: Any = "") 
 def _composer_candidate_meta_dict(composer_candidate: Any) -> Dict[str, Any]:
     meta = _candidate_meta_value(composer_candidate, "composer_meta", {})
     return dict(meta or {}) if isinstance(meta, dict) else {}
+
+
+def _runtime_surface_composer_meta_for_candidate(composer_candidate: Any, composer_source: str = "") -> Dict[str, Any]:
+    """Build meta-only composer context for the runtime surface pre-return gate."""
+
+    meta = _composer_candidate_meta_dict(composer_candidate)
+    out: Dict[str, Any] = dict(meta)
+    for attr in ("composer_model", "generation_method", "generation_scope", "coverage_scope", "status"):
+        value = getattr(composer_candidate, attr, None) if composer_candidate is not None else None
+        if value is not None and str(value or "").strip():
+            out.setdefault(attr, value)
+    out.setdefault("composer_source", composer_source or getattr(composer_candidate, "composer_source", "") if composer_candidate is not None else composer_source)
+    coverage_scope = str(out.get("coverage_scope") or out.get("generation_scope") or "").strip()
+    profile_key = str(out.get("profile_key") or out.get("composer_profile_key") or "").strip()
+    if coverage_scope == "current_input_core" or profile_key == "current_input_core":
+        out.setdefault("shallow_observation_path", True)
+    return out
+
+
+def _runtime_surface_phrase_unit_grammar_meta(composer_meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    meta = dict(composer_meta or {}) if isinstance(composer_meta, Mapping) else {}
+    for key in (
+        "phrase_unit_grammar_normalizer",
+        "phrase_unit_grammar_normalizer_report",
+        "phrase_unit_grammar",
+        "phrase_unit_grammar_summary",
+    ):
+        value = meta.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    return meta
+
+
+def _runtime_surface_signature_meta(composer_meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    meta = dict(composer_meta or {}) if isinstance(composer_meta, Mapping) else {}
+    for key in ("surface_quality_signature", "step2_surface_quality_signature", "surface_signature"):
+        value = meta.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
+def _build_runtime_surface_pre_return_report_for_candidate(
+    *,
+    comment_text: str,
+    composer_candidate: Any,
+    composer_source: str,
+    rerender_attempted: bool = False,
+) -> Dict[str, Any]:
+    composer_meta = _runtime_surface_composer_meta_for_candidate(composer_candidate, composer_source=composer_source)
+    return build_runtime_surface_pre_return_gate_report(
+        comment_text=comment_text,
+        composer_meta=composer_meta,
+        surface_quality_signature=_runtime_surface_signature_meta(composer_meta),
+        phrase_unit_grammar_meta=_runtime_surface_phrase_unit_grammar_meta(composer_meta),
+        rerender_allowed=True,
+        rerender_attempted=bool(rerender_attempted),
+        rerender_attempt_limit=1,
+        low_information_reroute_allowed=False,
+    )
 
 
 def _step3_int(value: Any, default: int = 0) -> int:
@@ -3392,6 +3462,8 @@ def _diagnostic_summary_meta(
     phase_gate = phase_gate if isinstance(phase_gate, dict) else {}
     rollout_metrics = rollout_metrics if isinstance(rollout_metrics, dict) else {}
     gate_results = _diagnostic_gate_results(gate_trace)
+    runtime_surface_gate = gate_trace.get("runtime_surface_pre_return_gate") if isinstance(gate_trace, dict) else {}
+    runtime_surface_gate = dict(runtime_surface_gate or {}) if isinstance(runtime_surface_gate, dict) else {}
     observation_status = str(getattr(display_decision, "observation_status", "") or "unavailable")
     display_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
     resolution_reasons = _dedupe_reason_codes(resolution_meta.get("rejection_reasons") or [])
@@ -3639,6 +3711,16 @@ def _diagnostic_summary_meta(
         gate_results=gate_results,
     )
     summary_meta = summary.as_meta()
+    if runtime_surface_gate:
+        summary_meta["runtime_surface_pre_return_gate"] = runtime_surface_gate
+        summary_meta["runtime_surface_pre_return_gate_evaluated"] = bool(runtime_surface_gate.get("evaluated"))
+        summary_meta["runtime_surface_pre_return_gate_passed"] = bool(runtime_surface_gate.get("passed"))
+        summary_meta["runtime_surface_pre_return_gate_action"] = str(runtime_surface_gate.get("action") or "")
+        summary_meta["runtime_surface_pre_return_gate_rejection_reasons"] = list(runtime_surface_gate.get("rejection_reasons") or [])
+        summary_meta["surface_template_major_blocked"] = "surface_template_major" in list(runtime_surface_gate.get("rejection_reasons") or [])
+        summary_meta["malformed_phrase_unit_blocked_count"] = int(runtime_surface_gate.get("malformed_phrase_unit_count") or 0)
+        summary_meta["raw_input_included"] = False
+        summary_meta["comment_text_body_included"] = False
     summary_meta["diagnostic_contract_version"] = _COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION
     summary_meta["gate_binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
     limited_composer_baseline = build_limited_composer_extension_baseline_meta()
@@ -3839,6 +3921,9 @@ def _multi_perspective_meta(
         composer_source=str(composer_source or ""),
         phase_completion_ready=False,
     )
+    runtime_surface_gate_trace = gate_trace.get("runtime_surface_pre_return_gate") if isinstance(gate_trace, dict) else {}
+    runtime_surface_gate_trace = dict(runtime_surface_gate_trace or {}) if isinstance(runtime_surface_gate_trace, dict) else {}
+    runtime_surface_gate_reasons = list(runtime_surface_gate_trace.get("rejection_reasons") or []) if runtime_surface_gate_trace else []
     resolution_meta: Dict[str, Any] = {}
     as_meta = getattr(composer_client_resolution, "as_meta", None)
     if callable(as_meta):
@@ -3936,6 +4021,15 @@ def _multi_perspective_meta(
         "phase10_regression_release_ready": phase10_ready,
         "regression_release_tests_ready": phase10_ready,
         "comment_text_allowed": bool(phase8_ready and display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip()),
+        "runtime_surface_pre_return_gate_evaluated": bool(runtime_surface_gate_trace.get("evaluated")) if runtime_surface_gate_trace else False,
+        "runtime_surface_pre_return_gate_passed": bool(runtime_surface_gate_trace.get("passed")) if runtime_surface_gate_trace else True,
+        "runtime_surface_pre_return_gate_action": str(runtime_surface_gate_trace.get("action") or "") if runtime_surface_gate_trace else "",
+        "runtime_surface_pre_return_gate_rejection_reasons": runtime_surface_gate_reasons,
+        "surface_template_major_blocked": "surface_template_major" in runtime_surface_gate_reasons,
+        "malformed_phrase_unit_blocked_count": int(runtime_surface_gate_trace.get("malformed_phrase_unit_count") or 0) if runtime_surface_gate_trace else 0,
+        "runtime_surface_pre_return_gate_display_gate_relaxed": False,
+        "runtime_surface_pre_return_gate_comment_text_body_included": False,
+        "runtime_surface_pre_return_gate_raw_input_included": False,
     }
     diagnostic_summary = _diagnostic_summary_meta(
         display_decision=display_decision,
@@ -4138,6 +4232,45 @@ def _multi_perspective_meta(
         scorecard_harness=step9_scorecard_harness,
     )
     complete_scorecard_event = dict(step11_complete_reply_diagnostics.get("scorecard_event") or {})
+    runtime_surface_step8_diagnostics = dict(
+        step11_complete_reply_diagnostics.get("runtime_surface_step8_diagnostics")
+        or step11_complete_reply_diagnostics.get("runtime_surface_diagnostics_scorecard")
+        or complete_scorecard_event.get("runtime_surface_step8_diagnostics")
+        or complete_scorecard_event.get("runtime_surface_diagnostics_scorecard")
+        or {}
+    )
+    if runtime_surface_step8_diagnostics:
+        diagnostic_summary["runtime_surface_step8_diagnostics"] = runtime_surface_step8_diagnostics
+        diagnostic_summary["runtime_surface_diagnostics_scorecard"] = runtime_surface_step8_diagnostics
+        for _runtime_surface_step8_key in (
+            "runtime_surface_pre_return_gate_evaluated",
+            "runtime_surface_pre_return_gate_passed",
+            "runtime_surface_pre_return_gate_action",
+            "runtime_surface_pre_return_gate_rejection_reasons",
+            "runtime_surface_pre_return_gate_final_passed",
+            "runtime_surface_pre_return_gate_scorecard_connected",
+            "runtime_surface_diagnostics_scorecard_updated",
+            "step8_runtime_surface_diagnostics_ready",
+            "surface_template_major_blocked",
+            "malformed_phrase_unit_blocked_count",
+            "shallow_realizer_version",
+            "shallow_v2_used",
+            "low_information_specificity_used",
+            "step6_low_information_specificity_ready",
+            "safe_anchor_count",
+            "uses_safe_anchor",
+            "safe_anchor_role",
+            "safe_anchor_surface_kind",
+            "safe_anchor_evidence_ids",
+            "unsupported_event_assertion_present",
+            "user_fact_promotion_attempt",
+        ):
+            if _runtime_surface_step8_key in runtime_surface_step8_diagnostics:
+                diagnostic_summary[_runtime_surface_step8_key] = runtime_surface_step8_diagnostics[_runtime_surface_step8_key]
+                phase_gate_meta[_runtime_surface_step8_key] = runtime_surface_step8_diagnostics[_runtime_surface_step8_key]
+        phase_gate_meta["runtime_surface_step8_diagnostics_ready"] = bool(runtime_surface_step8_diagnostics.get("ready", True))
+        phase_gate_meta["runtime_surface_step8_raw_input_included"] = False
+        phase_gate_meta["runtime_surface_step8_comment_text_body_included"] = False
     complete_repair_trace = list(step11_complete_reply_diagnostics.get("complete_repair_trace") or [])
     complete_runtime_meta = dict(step11_complete_reply_diagnostics.get("complete_runtime_meta") or {})
     runtime_surface_source_lock = dict(
@@ -4371,6 +4504,11 @@ def _multi_perspective_meta(
     phase_gate_meta["complete_scorecard_binding_pass_rate"] = float(step12_complete_scorecard_harness.get("binding_pass_rate") or 0.0)
     phase_gate_meta["complete_scorecard_read_feeling_requires_blind_qa"] = bool(step12_complete_scorecard_harness.get("read_feeling_requires_blind_qa"))
     phase_gate_meta["complete_scorecard_response_shape_changed"] = bool(step12_complete_scorecard_harness.get("response_shape_changed"))
+    phase_gate_meta["runtime_surface_scorecard_failed_count"] = int(step12_complete_scorecard_harness.get("runtime_surface_pre_return_gate_failed_count") or 0)
+    phase_gate_meta["surface_template_major_blocked_scorecard_count"] = int(step12_complete_scorecard_harness.get("surface_template_major_blocked_count") or 0)
+    phase_gate_meta["malformed_phrase_unit_blocked_scorecard_count"] = int(step12_complete_scorecard_harness.get("malformed_phrase_unit_blocked_count") or 0)
+    phase_gate_meta["shallow_v2_used_scorecard_count"] = int(step12_complete_scorecard_harness.get("shallow_v2_used_count") or 0)
+    phase_gate_meta["low_information_specificity_used_scorecard_count"] = int(step12_complete_scorecard_harness.get("low_information_specificity_used_count") or 0)
     phase_gate_meta["step12_product_gate_evaluation"] = str(step12_complete_scorecard_harness.get("product_gate_evaluation") or "")
     diagnostic_summary["step12_complete_scorecard_harness"] = step12_complete_scorecard_harness
     diagnostic_summary["complete_scorecard_harness"] = step12_complete_scorecard_harness
@@ -4381,6 +4519,11 @@ def _multi_perspective_meta(
     diagnostic_summary["complete_composer_initial_scorecard"] = step12_complete_scorecard_harness
     diagnostic_summary["complete_scorecard_fixture_suite"] = dict(step12_complete_scorecard_harness.get("fixture_suite") or {})
     diagnostic_summary["complete_blind_qa_rubric"] = dict(step12_complete_scorecard_harness.get("blind_qa_rubric") or {})
+    diagnostic_summary["runtime_surface_pre_return_gate_failed_scorecard_count"] = int(step12_complete_scorecard_harness.get("runtime_surface_pre_return_gate_failed_count") or 0)
+    diagnostic_summary["surface_template_major_blocked_scorecard_count"] = int(step12_complete_scorecard_harness.get("surface_template_major_blocked_count") or 0)
+    diagnostic_summary["malformed_phrase_unit_blocked_scorecard_count"] = int(step12_complete_scorecard_harness.get("malformed_phrase_unit_blocked_count") or 0)
+    diagnostic_summary["shallow_v2_used_scorecard_count"] = int(step12_complete_scorecard_harness.get("shallow_v2_used_count") or 0)
+    diagnostic_summary["low_information_specificity_used_scorecard_count"] = int(step12_complete_scorecard_harness.get("low_information_specificity_used_count") or 0)
 
     step6_final_ap0_scorecard_connection = _attach_step6_complete_initial_final_ap0_scorecard_meta(
         diagnostic_summary=diagnostic_summary,
@@ -4709,6 +4852,29 @@ def _multi_perspective_meta(
             "complete_reply_service_diagnostics": step11_complete_reply_diagnostics,
             "complete_composer_reply_diagnostics": step11_complete_reply_diagnostics,
             "complete_composer_initial_reply_diagnostics": step11_complete_reply_diagnostics,
+            "runtime_surface_step8_diagnostics": runtime_surface_step8_diagnostics,
+            "runtime_surface_diagnostics_scorecard": runtime_surface_step8_diagnostics,
+            "runtime_surface_pre_return_gate_evaluated": bool(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_evaluated")),
+            "runtime_surface_pre_return_gate_passed": bool(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_passed")),
+            "runtime_surface_pre_return_gate_action": str(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_action") or ""),
+            "runtime_surface_pre_return_gate_rejection_reasons": list(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_rejection_reasons") or []),
+            "runtime_surface_pre_return_gate_final_passed": bool(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_final_passed")),
+            "runtime_surface_pre_return_gate_scorecard_connected": bool(runtime_surface_step8_diagnostics.get("runtime_surface_pre_return_gate_scorecard_connected")),
+            "runtime_surface_diagnostics_scorecard_updated": bool(runtime_surface_step8_diagnostics.get("runtime_surface_diagnostics_scorecard_updated")),
+            "step8_runtime_surface_diagnostics_ready": bool(runtime_surface_step8_diagnostics.get("step8_runtime_surface_diagnostics_ready")),
+            "surface_template_major_blocked": bool(runtime_surface_step8_diagnostics.get("surface_template_major_blocked")),
+            "malformed_phrase_unit_blocked_count": int(runtime_surface_step8_diagnostics.get("malformed_phrase_unit_blocked_count") or 0),
+            "shallow_realizer_version": str(runtime_surface_step8_diagnostics.get("shallow_realizer_version") or ""),
+            "shallow_v2_used": bool(runtime_surface_step8_diagnostics.get("shallow_v2_used")),
+            "low_information_specificity_used": bool(runtime_surface_step8_diagnostics.get("low_information_specificity_used")),
+            "step6_low_information_specificity_ready": bool(runtime_surface_step8_diagnostics.get("step6_low_information_specificity_ready")),
+            "safe_anchor_count": int(runtime_surface_step8_diagnostics.get("safe_anchor_count") or 0),
+            "uses_safe_anchor": bool(runtime_surface_step8_diagnostics.get("uses_safe_anchor")),
+            "safe_anchor_role": str(runtime_surface_step8_diagnostics.get("safe_anchor_role") or ""),
+            "safe_anchor_surface_kind": str(runtime_surface_step8_diagnostics.get("safe_anchor_surface_kind") or ""),
+            "safe_anchor_evidence_ids": list(runtime_surface_step8_diagnostics.get("safe_anchor_evidence_ids") or []),
+            "unsupported_event_assertion_present": bool(runtime_surface_step8_diagnostics.get("unsupported_event_assertion_present")),
+            "user_fact_promotion_attempt": bool(runtime_surface_step8_diagnostics.get("user_fact_promotion_attempt")),
             "runtime_surface_source_lock": runtime_surface_source_lock,
             "step1_runtime_surface_source_lock": runtime_surface_source_lock,
             "runtime_surface_source_lock_ready": bool(runtime_surface_source_lock.get("runtime_surface_source_lock_ready")),
@@ -4931,6 +5097,7 @@ async def render_emlis_ai_reply(
         grounding_scope=grounding_scope,
     )
     template_echo_report = guard_template_echo(comment_text="", evidence_spans=evidence_spans, composer_source="unavailable")
+    runtime_surface_pre_return_gate_report: Dict[str, Any] = {}
     initial_binding_meta = build_limited_composer_binding_presence_meta(
         composer_candidate=None,
     )
@@ -5011,6 +5178,12 @@ async def render_emlis_ai_reply(
         candidate_binding_presence = build_limited_composer_binding_presence_meta(
             composer_candidate=composer_candidate,
         )
+        runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+            comment_text=comment_text,
+            composer_candidate=composer_candidate,
+            composer_source=composer_source,
+            rerender_attempted=attempt > 1,
+        )
         display_decision = decide_emlis_observation_display(
             comment_text=comment_text,
             reader_report=reader_report,
@@ -5022,9 +5195,28 @@ async def render_emlis_ai_reply(
             phase_completion_ready=phase7_ready,
             binding_meta=candidate_binding_presence,
             observation_structure_gate_report=observation_structure_gate_report,
+            runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break
+        bounded_reroute_decision = decide_bounded_repair_reroute(
+            display_decision=display_decision,
+            composer_source=composer_source,
+            safety_report=safety_report,
+            runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            repair_allowed=True,
+        )
+        if (
+            bounded_reroute_decision.action == BOUNDED_ACTION_RERENDER_SHALLOW_V2
+            and resolved_composer_client is not None
+            and attempt < max_attempts
+            and str(getattr(composer_candidate, "status", "") or "") != "unavailable"
+        ):
+            regeneration_reasons = _regeneration_reasons_for_retry(
+                display_decision.rejection_reasons or [],
+                resolved_composer_client,
+            ) or list(bounded_reroute_decision.repair_reasons or ()) or ["bounded_shallow_v2_rerender_required"]
+            continue
         if resolved_composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
             break
         next_regeneration_reasons = _regeneration_reasons_for_retry(
@@ -5073,6 +5265,7 @@ async def render_emlis_ai_reply(
         original_composer_candidate=composer_candidate,
         repair_allowed=not bool(step10_repair_block_reason),
         repair_block_reason=step10_repair_block_reason,
+        runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
     )
     if observation_display_repair_result.applied:
         display_decision = observation_display_repair_result.display_decision
@@ -5084,6 +5277,38 @@ async def render_emlis_ai_reply(
         grounding_graph = graph
         grounding_scope = "low_information_known_scope"
         grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+
+    # Step 2 final pre-return enforcement.  Low-information repair may replace
+    # the candidate after the first display decision, so the exact final public
+    # candidate is re-checked by the runtime surface gate before returning.
+    final_candidate_text = str(display_decision.comment_text or "").strip()
+    if final_candidate_text and str(display_decision.observation_status or "") == "passed":
+        runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+            comment_text=final_candidate_text,
+            composer_candidate=composer_candidate,
+            composer_source=composer_source,
+            rerender_attempted=bool(
+                runtime_surface_pre_return_gate_report.get("rerender_attempted")
+                if isinstance(runtime_surface_pre_return_gate_report, Mapping)
+                else False
+            ),
+        )
+        final_binding_meta = build_limited_composer_binding_presence_meta(
+            composer_candidate=composer_candidate,
+        )
+        display_decision = decide_emlis_observation_display(
+            comment_text=final_candidate_text,
+            reader_report=reader_report,
+            grounding_report=grounding_report,
+            template_echo_report=template_echo_report,
+            safety_report=safety_report,
+            trace_id=trace_id,
+            composer_source=composer_source,
+            phase_completion_ready=True,
+            binding_meta=final_binding_meta,
+            observation_structure_gate_report=observation_structure_gate_report,
+            runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+        )
 
     # No fixed fallback. The display gate is fail-closed.
     final_text = str(display_decision.comment_text or "").strip()

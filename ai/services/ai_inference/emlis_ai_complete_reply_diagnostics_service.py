@@ -29,6 +29,13 @@ from emlis_ai_runtime_surface_source_lock import (
     RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
     build_runtime_surface_source_lock,
 )
+from emlis_ai_runtime_surface_pre_return_gate import (
+    ACTION_ALLOW as RUNTIME_SURFACE_ACTION_ALLOW,
+    ACTION_BLOCK as RUNTIME_SURFACE_ACTION_BLOCK,
+    ACTION_FAIL_CLOSED as RUNTIME_SURFACE_ACTION_FAIL_CLOSED,
+    RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+    assert_runtime_surface_pre_return_gate_meta_only,
+)
 from emlis_ai_runtime_surface_tone_engine_2_1 import (
     RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION,
     normalize_tone_engine_2_1_to_scorecard_event,
@@ -39,6 +46,8 @@ COMPLETE_SCORECARD_EVENT_VERSION = "emlis.complete_scorecard_event.v1"
 COMPLETE_REPLY_DIAGNOSTICS_STAGE = "Step11_Reply_service_diagnostics_integration"
 COMPLETE_REPLY_DIAGNOSTICS_STEP = COMPLETE_REPLY_DIAGNOSTICS_STAGE
 COMPLETE_REPLY_DIAGNOSTICS_IMPLEMENTATION_UNIT = "Commit 11"
+RUNTIME_SURFACE_STEP8_DIAGNOSTICS_VERSION = "emlis.runtime_surface_diagnostics_scorecard.v1"
+RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP = "Step8_diagnostics_scorecard_update"
 
 _TEXT_PAYLOAD_KEYS = {
     "raw_text",
@@ -204,6 +213,31 @@ _SAFE_META_KEYS = (
     "surface_template_major",
     "surface_grammar_warning_codes",
     "surface_grammar_warning_count",
+    "runtime_surface_pre_return_gate",
+    "runtime_surface_pre_return_gate_evaluated",
+    "runtime_surface_pre_return_gate_passed",
+    "runtime_surface_pre_return_gate_action",
+    "runtime_surface_pre_return_gate_rejection_reasons",
+    "surface_template_major_blocked",
+    "malformed_phrase_unit_blocked_count",
+    "shallow_surface_realizer_v2",
+    "step5_shallow_surface_realizer_v2",
+    "shallow_realizer_version",
+    "shallow_v2_used",
+    "shallow_phrase_unit_guard",
+    "step4_shallow_phrase_unit_guard",
+    "shallow_phrase_unit_creation_guard",
+    "step4_shallow_phrase_unit_creation_guard",
+    "low_information_specificity_plan",
+    "low_information_specificity_used",
+    "safe_anchor_count",
+    "uses_safe_anchor",
+    "safe_anchor_role",
+    "safe_anchor_surface_kind",
+    "safe_anchor_evidence_ids",
+    "user_fact_promotion_attempt",
+    "unsupported_event_assertion_present",
+    "step6_low_information_specificity_ready",
     "comment_text_body_included",
     "raw_input_included",
 )
@@ -307,6 +341,395 @@ def _safe_subset(meta: Mapping[str, Any]) -> dict[str, Any]:
             out[key] = safe_item
     return out
 
+
+def _first_mapping(*values: Any) -> dict[str, Any]:
+    for value in values:
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
+def _runtime_surface_invalid_gate_report(reason: str) -> dict[str, Any]:
+    """Return a fail-closed Step8-safe gate report for invalid Step1 meta."""
+
+    report = {
+        "version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+        "schema_version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+        "source": "step8.runtime_surface_diagnostics_scorecard",
+        "source_step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "runtime_surface_pre_return_gate_ready": True,
+        "runtime_surface_pre_return_gate_contract_ready": True,
+        "evaluated": True,
+        "passed": False,
+        "blocked": True,
+        "action": RUNTIME_SURFACE_ACTION_FAIL_CLOSED,
+        "rejection_reasons": _dedupe(["runtime_surface_pre_return_gate_invalid", reason]),
+        "runtime_surface_pre_return_gate_invalid": True,
+        "surface_template_major": False,
+        "generic_center_phrase_count": 0,
+        "same_connector_run_max": 0,
+        "same_connector_repetition_count": 0,
+        "grammar_warning_count": 0,
+        "malformed_phrase_unit_count": 0,
+        "rerender_allowed": False,
+        "rerender_attempted": False,
+        "rerender_attempt_limit": 1,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "input_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "gate_relaxed": False,
+        "fixed_sentence_template_added": False,
+        "input_specific_template_used": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+        "public_release_applied": False,
+        "product_gate_achieved": False,
+    }
+    assert_runtime_surface_pre_return_gate_meta_only(report, source="step8.runtime_surface_invalid_gate_report")
+    return report
+
+
+def _validated_runtime_surface_gate_report(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    report = dict(value)
+    try:
+        assert_runtime_surface_pre_return_gate_meta_only(report, source="step8.runtime_surface_pre_return_gate")
+    except Exception as exc:
+        return _runtime_surface_invalid_gate_report(str(exc).splitlines()[0][:160])
+    return _safe_mapping(report)
+
+
+def _display_decision_gate_trace(display_decision: Any) -> dict[str, Any]:
+    trace = _candidate_attr(display_decision, "gate_trace", {})
+    if isinstance(trace, Mapping):
+        return dict(trace)
+    return {}
+
+
+def _display_decision_meta(display_decision: Any) -> dict[str, Any]:
+    meta = _candidate_attr(display_decision, "meta", {}) or _candidate_attr(display_decision, "display_meta", {})
+    if isinstance(meta, Mapping):
+        return dict(meta)
+    return {}
+
+
+def _runtime_surface_gate_report_from_sources(
+    *,
+    gate_trace: Mapping[str, Any] | None = None,
+    diagnostic_summary: Mapping[str, Any] | None = None,
+    display_decision: Any = None,
+) -> dict[str, Any]:
+    trace = dict(gate_trace or {}) if isinstance(gate_trace, Mapping) else {}
+    summary = dict(diagnostic_summary or {}) if isinstance(diagnostic_summary, Mapping) else {}
+    display_trace = _display_decision_gate_trace(display_decision)
+    display_meta = _display_decision_meta(display_decision)
+    report = _first_mapping(
+        summary.get("runtime_surface_pre_return_gate"),
+        trace.get("runtime_surface_pre_return_gate"),
+        display_trace.get("runtime_surface_pre_return_gate"),
+        display_meta.get("runtime_surface_pre_return_gate"),
+    )
+    if report:
+        return _validated_runtime_surface_gate_report(report)
+
+    display_gate = trace.get("display_gate") if isinstance(trace.get("display_gate"), Mapping) else {}
+    if not isinstance(display_gate, Mapping):
+        display_gate = {}
+    display_trace_gate = display_trace.get("display_gate") if isinstance(display_trace.get("display_gate"), Mapping) else {}
+    if isinstance(display_trace_gate, Mapping):
+        display_gate = {**dict(display_trace_gate), **dict(display_gate)}
+
+    evaluated = bool(
+        summary.get("runtime_surface_pre_return_gate_evaluated")
+        or display_gate.get("runtime_surface_pre_return_gate_evaluated")
+        or display_meta.get("runtime_surface_pre_return_gate_evaluated")
+    )
+    if not evaluated:
+        return {}
+
+    reasons = _dedupe(
+        summary.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or display_gate.get("runtime_surface_pre_return_gate_rejection_reasons")
+        or display_meta.get("runtime_surface_pre_return_gate_rejection_reasons")
+    )
+    passed_value = (
+        summary.get("runtime_surface_pre_return_gate_passed")
+        if "runtime_surface_pre_return_gate_passed" in summary
+        else display_gate.get("runtime_surface_pre_return_gate_passed")
+        if "runtime_surface_pre_return_gate_passed" in display_gate
+        else display_meta.get("runtime_surface_pre_return_gate_passed")
+    )
+    passed = bool(passed_value)
+    action = _clean(
+        summary.get("runtime_surface_pre_return_gate_action")
+        or display_gate.get("runtime_surface_pre_return_gate_action")
+        or display_meta.get("runtime_surface_pre_return_gate_action")
+        or (RUNTIME_SURFACE_ACTION_ALLOW if passed and not reasons else RUNTIME_SURFACE_ACTION_BLOCK)
+    )
+    if action not in {RUNTIME_SURFACE_ACTION_ALLOW, RUNTIME_SURFACE_ACTION_BLOCK, RUNTIME_SURFACE_ACTION_FAIL_CLOSED, "rerender_shallow_v2", "reroute_low_information"}:
+        action = RUNTIME_SURFACE_ACTION_FAIL_CLOSED
+        reasons = _dedupe([*reasons, "runtime_surface_pre_return_gate_invalid_action"])
+        passed = False
+    synthetic_report = {
+        "version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+        "schema_version": RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
+        "source": "step8.runtime_surface_diagnostics_scorecard",
+        "source_step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "runtime_surface_pre_return_gate_ready": True,
+        "runtime_surface_pre_return_gate_contract_ready": True,
+        "evaluated": True,
+        "passed": passed,
+        "blocked": not passed,
+        "action": action,
+        "rejection_reasons": reasons,
+        "surface_template_major": bool(
+            summary.get("surface_template_major_blocked")
+            or display_gate.get("surface_template_major_blocked")
+            or display_meta.get("surface_template_major_blocked")
+            or "surface_template_major" in reasons
+        ),
+        "generic_center_phrase_count": _safe_int(summary.get("generic_center_phrase_count") or display_gate.get("generic_center_phrase_count")),
+        "same_connector_run_max": _safe_int(summary.get("same_connector_run_max") or display_gate.get("same_connector_run_max")),
+        "same_connector_repetition_count": _safe_int(summary.get("same_connector_repetition_count") or display_gate.get("same_connector_repetition_count")),
+        "grammar_warning_count": _safe_int(summary.get("surface_grammar_warning_count") or display_gate.get("surface_grammar_warning_count")),
+        "malformed_phrase_unit_count": max(
+            _safe_int(summary.get("malformed_phrase_unit_blocked_count")),
+            _safe_int(display_gate.get("malformed_phrase_unit_blocked_count")),
+            _safe_int(display_meta.get("malformed_phrase_unit_blocked_count")),
+        ),
+        "rerender_allowed": False,
+        "rerender_attempted": False,
+        "rerender_attempt_limit": 1,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "input_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "gate_relaxed": False,
+        "fixed_sentence_template_added": False,
+        "input_specific_template_used": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+        "public_release_applied": False,
+        "product_gate_achieved": False,
+    }
+    return _validated_runtime_surface_gate_report(synthetic_report)
+
+def _shallow_v2_meta_from_runtime(runtime_meta: Mapping[str, Any]) -> dict[str, Any]:
+    surface_realizer = runtime_meta.get("surface_realizer") if isinstance(runtime_meta.get("surface_realizer"), Mapping) else {}
+    composer_diagnostic = runtime_meta.get("composer_diagnostic") if isinstance(runtime_meta.get("composer_diagnostic"), Mapping) else {}
+    return _first_mapping(
+        runtime_meta.get("shallow_surface_realizer_v2"),
+        runtime_meta.get("step5_shallow_surface_realizer_v2"),
+        surface_realizer.get("shallow_surface_realizer_v2") if isinstance(surface_realizer, Mapping) else {},
+        surface_realizer.get("step5_shallow_surface_realizer_v2") if isinstance(surface_realizer, Mapping) else {},
+        composer_diagnostic.get("shallow_surface_realizer_v2") if isinstance(composer_diagnostic, Mapping) else {},
+        composer_diagnostic.get("step5_shallow_surface_realizer_v2") if isinstance(composer_diagnostic, Mapping) else {},
+    )
+
+
+def _low_information_plan_from_runtime(runtime_meta: Mapping[str, Any]) -> dict[str, Any]:
+    composer_diagnostic = runtime_meta.get("composer_diagnostic") if isinstance(runtime_meta.get("composer_diagnostic"), Mapping) else {}
+    return _first_mapping(
+        runtime_meta.get("low_information_specificity_plan"),
+        runtime_meta.get("step6_low_information_specificity_plan"),
+        composer_diagnostic.get("low_information_specificity_plan") if isinstance(composer_diagnostic, Mapping) else {},
+    )
+
+
+def _bounded_bool(value: Any) -> bool:
+    return bool(value) if value is not None else False
+
+
+def build_runtime_surface_step8_diagnostics_meta(
+    *,
+    runtime_meta: Mapping[str, Any] | None = None,
+    gate_trace: Mapping[str, Any] | None = None,
+    diagnostic_summary: Mapping[str, Any] | None = None,
+    surface_quality_signature: Mapping[str, Any] | None = None,
+    display_decision: Any = None,
+) -> dict[str, Any]:
+    """Build Step8 diagnostics/scorecard meta without storing raw input or body text."""
+
+    runtime = dict(runtime_meta or {}) if isinstance(runtime_meta, Mapping) else {}
+    summary = dict(diagnostic_summary or {}) if isinstance(diagnostic_summary, Mapping) else {}
+    gate_report = _runtime_surface_gate_report_from_sources(
+        gate_trace=gate_trace,
+        diagnostic_summary=diagnostic_summary,
+        display_decision=display_decision,
+    )
+    gate_reasons = _dedupe(gate_report.get("rejection_reasons")) if gate_report else _dedupe(
+        summary.get("runtime_surface_pre_return_gate_rejection_reasons")
+    )
+    shallow_v2_meta = _safe_mapping(_shallow_v2_meta_from_runtime(runtime))
+    shallow_guard_meta = _safe_mapping(_first_mapping(
+        runtime.get("shallow_phrase_unit_guard"),
+        runtime.get("step4_shallow_phrase_unit_guard"),
+        runtime.get("shallow_phrase_unit_creation_guard"),
+        runtime.get("step4_shallow_phrase_unit_creation_guard"),
+    ))
+    low_information_plan = _safe_mapping(_low_information_plan_from_runtime(runtime))
+    surface_signature = dict(surface_quality_signature or {}) if isinstance(surface_quality_signature, Mapping) else {}
+    if surface_signature:
+        assert_surface_quality_signature_meta_only(surface_signature, source="step8.surface_quality_signature")
+    if gate_report:
+        assert_runtime_surface_pre_return_gate_meta_only(gate_report, source="step8.runtime_surface_gate_report")
+
+    gate_evaluated = bool(gate_report.get("evaluated")) if gate_report else bool(summary.get("runtime_surface_pre_return_gate_evaluated"))
+    gate_passed = bool(gate_report.get("passed")) if gate_report else bool(summary.get("runtime_surface_pre_return_gate_passed", True))
+    gate_action = _clean(gate_report.get("action") if gate_report else summary.get("runtime_surface_pre_return_gate_action"))
+    malformed_blocked_count = max(
+        _safe_int(gate_report.get("malformed_phrase_unit_count") if gate_report else 0),
+        _safe_int(runtime.get("malformed_phrase_unit_blocked_count")),
+        _safe_int(runtime.get("malformed_nominalization_blocked_count")),
+        _safe_int(shallow_guard_meta.get("malformed_phrase_unit_blocked_count")),
+        _safe_int(shallow_guard_meta.get("malformed_nominalization_blocked_count")),
+        _safe_int(shallow_guard_meta.get("blocked_count")),
+    )
+    shallow_version = _clean(
+        runtime.get("shallow_realizer_version")
+        or runtime.get("surface_realizer_version")
+        or shallow_v2_meta.get("realizer_version")
+        or shallow_v2_meta.get("shallow_realizer_version")
+        or summary.get("shallow_realizer_version")
+    )
+    shallow_v2_used = bool(
+        runtime.get("shallow_v2_used")
+        or runtime.get("step5_shallow_v2_used")
+        or shallow_v2_meta.get("shallow_v2_used")
+        or shallow_v2_meta.get("eligible")
+        or shallow_v2_meta.get("realizer_version") == "shallow_surface_realizer.v2"
+        or shallow_version == "shallow_surface_realizer.v2"
+    )
+    low_information_specificity_used = bool(
+        runtime.get("low_information_specificity_used")
+        or runtime.get("step6_low_information_specificity_used")
+        or low_information_plan.get("uses_safe_anchor")
+        or low_information_plan.get("safe_anchor_count")
+        or summary.get("low_information_specificity_used")
+    )
+    safe_anchor_count = max(
+        _safe_int(runtime.get("safe_anchor_count")),
+        _safe_int(summary.get("safe_anchor_count")),
+        _safe_int(low_information_plan.get("safe_anchor_count")),
+    )
+    uses_safe_anchor = bool(runtime.get("uses_safe_anchor") or summary.get("uses_safe_anchor") or low_information_plan.get("uses_safe_anchor") or safe_anchor_count > 0)
+    safe_anchor_role = _clean(runtime.get("safe_anchor_role") or summary.get("safe_anchor_role") or low_information_plan.get("safe_anchor_role"))
+    safe_anchor_surface_kind = _clean(runtime.get("safe_anchor_surface_kind") or summary.get("safe_anchor_surface_kind") or low_information_plan.get("safe_anchor_surface_kind"))
+    safe_anchor_evidence_ids = _dedupe(runtime.get("safe_anchor_evidence_ids") or summary.get("safe_anchor_evidence_ids") or low_information_plan.get("safe_anchor_evidence_ids") or [])
+
+    gate_surface_template_major = bool(gate_report.get("surface_template_major")) if gate_report else bool(summary.get("surface_template_major_blocked"))
+    signature_template_major = bool(surface_signature.get("surface_template_major") or surface_signature.get("template_major"))
+    surface_template_major_blocked = bool(
+        (gate_evaluated and not gate_passed and (gate_surface_template_major or signature_template_major))
+        or "surface_template_major" in gate_reasons
+        or "generic_center_phrase" in gate_reasons
+        or "same_connector_run" in gate_reasons
+        or "surface_template_skeleton" in gate_reasons
+    )
+    step6_ready = bool(
+        runtime.get("step6_low_information_specificity_ready")
+        or runtime.get("low_information_specificity_ready")
+        or low_information_plan.get("version")
+        or low_information_specificity_used
+        or summary.get("step6_low_information_specificity_ready")
+    )
+    result = {
+        "version": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_VERSION,
+        "target_step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "step": RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP,
+        "ready": True,
+        "step8_runtime_surface_diagnostics_ready": True,
+        "runtime_surface_step8_diagnostics_ready": True,
+        "diagnostics_scorecard_update_ready": True,
+        "runtime_surface_diagnostics_scorecard_updated": True,
+        "runtime_surface_pre_return_gate_scorecard_connected": bool(gate_report or gate_evaluated),
+        "runtime_surface_pre_return_gate": dict(gate_report) if gate_report else {},
+        "runtime_surface_pre_return_gate_evaluated": gate_evaluated,
+        "runtime_surface_pre_return_gate_passed": gate_passed,
+        "runtime_surface_pre_return_gate_final_passed": gate_passed,
+        "runtime_surface_pre_return_gate_action": gate_action,
+        "runtime_surface_pre_return_gate_rejection_reasons": gate_reasons,
+        "surface_template_major_blocked": surface_template_major_blocked,
+        "surface_template_major": signature_template_major or gate_surface_template_major,
+        "surface_grammar_warning_count": _safe_int(
+            surface_signature.get("surface_grammar_warning_count")
+            or surface_signature.get("grammar_warning_count")
+            or (gate_report.get("grammar_warning_count") if gate_report else 0)
+        ),
+        "malformed_phrase_unit_blocked_count": malformed_blocked_count,
+        "shallow_surface_realizer_v2": shallow_v2_meta,
+        "step5_shallow_surface_realizer_v2": shallow_v2_meta,
+        "shallow_realizer_version": shallow_version,
+        "shallow_v2_used": shallow_v2_used,
+        "shallow_phrase_unit_guard": shallow_guard_meta,
+        "step4_shallow_phrase_unit_guard": shallow_guard_meta,
+        "low_information_specificity_plan": low_information_plan,
+        "low_information_specificity_used": low_information_specificity_used,
+        "step6_low_information_specificity_ready": step6_ready,
+        "low_information_safe_anchor_count": safe_anchor_count,
+        "safe_anchor_count": safe_anchor_count,
+        "uses_safe_anchor": uses_safe_anchor,
+        "safe_anchor_role": safe_anchor_role,
+        "safe_anchor_surface_kind": safe_anchor_surface_kind,
+        "safe_anchor_evidence_ids": safe_anchor_evidence_ids,
+        "unsupported_event_assertion_present": bool(
+            runtime.get("unsupported_event_assertion_present")
+            or low_information_plan.get("unsupported_event_assertion_present")
+            or summary.get("unsupported_event_assertion_present")
+        ),
+        "user_fact_promotion_attempt": bool(
+            runtime.get("user_fact_promotion_attempt")
+            or low_information_plan.get("user_fact_promotion_attempt")
+            or summary.get("user_fact_promotion_attempt")
+        ),
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "input_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+    }
+    # Contract check the nested Step1 report if present, then return a whitelisted,
+    # JSON-safe object.  This keeps Step8 diagnostics meta-only even when upstream
+    # sources carry accidental text fields.
+    if result["runtime_surface_pre_return_gate"]:
+        assert_runtime_surface_pre_return_gate_meta_only(
+            result["runtime_surface_pre_return_gate"],
+            source="step8.runtime_surface_pre_return_gate_nested",
+        )
+    return _safe_mapping(result)
 
 def _is_complete_candidate(candidate: Any) -> bool:
     if candidate is None:
@@ -1081,6 +1504,13 @@ def build_complete_scorecard_event(
     display_passed = observation_status == "passed"
     gate_reasons = _dedupe(_candidate_attr(display_decision, "rejection_reasons", []))
     summary = dict(diagnostic_summary or {}) if isinstance(diagnostic_summary, Mapping) else {}
+    runtime_surface_step8 = build_runtime_surface_step8_diagnostics_meta(
+        runtime_meta=runtime_meta,
+        gate_trace=gate_trace,
+        diagnostic_summary=summary,
+        surface_quality_signature=surface_quality_signature,
+        display_decision=display_decision,
+    )
     repair_attempted = bool(repair_trace or self_repair.get("attempt_count") or self_repair.get("repair_attempted"))
     repair_success = _repair_succeeded(self_repair, repair_trace, display_passed)
     repair_trace_v2 = _repair_trace_v2_summary(repair_trace, self_repair)
@@ -1189,7 +1619,30 @@ def build_complete_scorecard_event(
         "tone_meaning_added": bool(runtime_meta.get("tone_meaning_added") or tone_guard_report.get("meaning_added") or tone_guard_report.get("meaning_added_by_tone_policy") or tone_engine_2_1_event.get("tone_meaning_added")),
         "safety_major_count": safety_major_count,
         "read_feeling_score": None,
-        "top_rejection_reasons": list(dict.fromkeys([*gate_reasons[:5], *tone_guard_reasons[:3]])),
+        "top_rejection_reasons": list(dict.fromkeys([*gate_reasons[:5], *tone_guard_reasons[:3], *runtime_surface_step8.get("runtime_surface_pre_return_gate_rejection_reasons", [])[:3]])),
+        "runtime_surface_step8_diagnostics": runtime_surface_step8,
+        "runtime_surface_diagnostics_scorecard": runtime_surface_step8,
+        "runtime_surface_pre_return_gate_evaluated": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_evaluated")),
+        "runtime_surface_pre_return_gate_passed": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_passed")),
+        "runtime_surface_pre_return_gate_action": str(runtime_surface_step8.get("runtime_surface_pre_return_gate_action") or ""),
+        "runtime_surface_pre_return_gate_rejection_reasons": list(runtime_surface_step8.get("runtime_surface_pre_return_gate_rejection_reasons") or []),
+        "runtime_surface_pre_return_gate_final_passed": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_final_passed")),
+        "runtime_surface_pre_return_gate_scorecard_connected": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_scorecard_connected")),
+        "runtime_surface_diagnostics_scorecard_updated": bool(runtime_surface_step8.get("runtime_surface_diagnostics_scorecard_updated")),
+        "step8_runtime_surface_diagnostics_ready": bool(runtime_surface_step8.get("step8_runtime_surface_diagnostics_ready")),
+        "surface_template_major_blocked": bool(runtime_surface_step8.get("surface_template_major_blocked")),
+        "malformed_phrase_unit_blocked_count": int(runtime_surface_step8.get("malformed_phrase_unit_blocked_count") or 0),
+        "shallow_realizer_version": str(runtime_surface_step8.get("shallow_realizer_version") or ""),
+        "shallow_v2_used": bool(runtime_surface_step8.get("shallow_v2_used")),
+        "low_information_specificity_used": bool(runtime_surface_step8.get("low_information_specificity_used")),
+        "step6_low_information_specificity_ready": bool(runtime_surface_step8.get("step6_low_information_specificity_ready")),
+        "safe_anchor_count": int(runtime_surface_step8.get("safe_anchor_count") or 0),
+        "uses_safe_anchor": bool(runtime_surface_step8.get("uses_safe_anchor")),
+        "safe_anchor_role": str(runtime_surface_step8.get("safe_anchor_role") or ""),
+        "safe_anchor_surface_kind": str(runtime_surface_step8.get("safe_anchor_surface_kind") or ""),
+        "safe_anchor_evidence_ids": list(runtime_surface_step8.get("safe_anchor_evidence_ids") or []),
+        "unsupported_event_assertion_present": bool(runtime_surface_step8.get("unsupported_event_assertion_present")),
+        "user_fact_promotion_attempt": bool(runtime_surface_step8.get("user_fact_promotion_attempt")),
         "observation_status": observation_status,
         "display_passed": display_passed,
         "runtime_surface_source_lock_version": RUNTIME_SURFACE_SOURCE_LOCK_VERSION,
@@ -1278,6 +1731,13 @@ def build_complete_reply_service_diagnostics(
     )
     if surface_quality_signature:
         assert_surface_quality_signature_meta_only(surface_quality_signature)
+    runtime_surface_step8 = build_runtime_surface_step8_diagnostics_meta(
+        runtime_meta=runtime_meta,
+        gate_trace=gate_trace,
+        diagnostic_summary=diagnostic_summary,
+        surface_quality_signature=surface_quality_signature,
+        display_decision=display_decision,
+    )
     relation_diagnostic = build_positive_recovery_relation_diagnostic(
         composer_candidate=composer_candidate,
         gate_trace=gate_trace,
@@ -1358,6 +1818,29 @@ def build_complete_reply_service_diagnostics(
         "surface_template_major": bool(scorecard_event.get("surface_template_major")),
         "surface_grammar_warning_codes": list(scorecard_event.get("surface_grammar_warning_codes") or []),
         "surface_grammar_warning_count": int(scorecard_event.get("surface_grammar_warning_count") or 0),
+        "runtime_surface_step8_diagnostics": runtime_surface_step8,
+        "runtime_surface_diagnostics_scorecard": runtime_surface_step8,
+        "runtime_surface_pre_return_gate_evaluated": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_evaluated")),
+        "runtime_surface_pre_return_gate_passed": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_passed")),
+        "runtime_surface_pre_return_gate_action": str(runtime_surface_step8.get("runtime_surface_pre_return_gate_action") or ""),
+        "runtime_surface_pre_return_gate_rejection_reasons": list(runtime_surface_step8.get("runtime_surface_pre_return_gate_rejection_reasons") or []),
+        "runtime_surface_pre_return_gate_final_passed": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_final_passed")),
+        "runtime_surface_pre_return_gate_scorecard_connected": bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_scorecard_connected")),
+        "runtime_surface_diagnostics_scorecard_updated": bool(runtime_surface_step8.get("runtime_surface_diagnostics_scorecard_updated")),
+        "step8_runtime_surface_diagnostics_ready": bool(runtime_surface_step8.get("step8_runtime_surface_diagnostics_ready")),
+        "surface_template_major_blocked": bool(runtime_surface_step8.get("surface_template_major_blocked")),
+        "malformed_phrase_unit_blocked_count": int(runtime_surface_step8.get("malformed_phrase_unit_blocked_count") or 0),
+        "shallow_realizer_version": str(runtime_surface_step8.get("shallow_realizer_version") or ""),
+        "shallow_v2_used": bool(runtime_surface_step8.get("shallow_v2_used")),
+        "low_information_specificity_used": bool(runtime_surface_step8.get("low_information_specificity_used")),
+        "step6_low_information_specificity_ready": bool(runtime_surface_step8.get("step6_low_information_specificity_ready")),
+        "safe_anchor_count": int(runtime_surface_step8.get("safe_anchor_count") or 0),
+        "uses_safe_anchor": bool(runtime_surface_step8.get("uses_safe_anchor")),
+        "safe_anchor_role": str(runtime_surface_step8.get("safe_anchor_role") or ""),
+        "safe_anchor_surface_kind": str(runtime_surface_step8.get("safe_anchor_surface_kind") or ""),
+        "safe_anchor_evidence_ids": list(runtime_surface_step8.get("safe_anchor_evidence_ids") or []),
+        "unsupported_event_assertion_present": bool(runtime_surface_step8.get("unsupported_event_assertion_present")),
+        "user_fact_promotion_attempt": bool(runtime_surface_step8.get("user_fact_promotion_attempt")),
         "connected_parts": connected_parts,
         "binding_count": binding_count,
         "binding_present": bool(binding_count),
@@ -1475,6 +1958,41 @@ def attach_complete_reply_service_diagnostics(
     diagnostic_summary["complete_composer_initial_scorecard_event"] = scorecard_event
     diagnostic_summary["complete_composer_scorecard_event"] = scorecard_event
     diagnostic_summary["scorecard_event"] = scorecard_event
+    runtime_surface_step8 = dict(
+        diagnostics.get("runtime_surface_step8_diagnostics")
+        or diagnostics.get("runtime_surface_diagnostics_scorecard")
+        or scorecard_event.get("runtime_surface_step8_diagnostics")
+        or scorecard_event.get("runtime_surface_diagnostics_scorecard")
+        or {}
+    )
+    if runtime_surface_step8:
+        diagnostic_summary["runtime_surface_step8_diagnostics"] = runtime_surface_step8
+        diagnostic_summary["runtime_surface_diagnostics_scorecard"] = runtime_surface_step8
+        for key in (
+            "runtime_surface_pre_return_gate_evaluated",
+            "runtime_surface_pre_return_gate_passed",
+            "runtime_surface_pre_return_gate_action",
+            "runtime_surface_pre_return_gate_rejection_reasons",
+            "runtime_surface_pre_return_gate_final_passed",
+            "runtime_surface_pre_return_gate_scorecard_connected",
+            "runtime_surface_diagnostics_scorecard_updated",
+            "step8_runtime_surface_diagnostics_ready",
+            "surface_template_major_blocked",
+            "malformed_phrase_unit_blocked_count",
+            "shallow_realizer_version",
+            "shallow_v2_used",
+            "low_information_specificity_used",
+            "step6_low_information_specificity_ready",
+            "safe_anchor_count",
+            "uses_safe_anchor",
+            "safe_anchor_role",
+            "safe_anchor_surface_kind",
+            "safe_anchor_evidence_ids",
+            "unsupported_event_assertion_present",
+            "user_fact_promotion_attempt",
+        ):
+            if key in runtime_surface_step8:
+                diagnostic_summary[key] = runtime_surface_step8[key]
     if runtime_surface_source_lock:
         diagnostic_summary["runtime_surface_source_lock"] = runtime_surface_source_lock
         diagnostic_summary["step1_runtime_surface_source_lock"] = runtime_surface_source_lock
@@ -1557,6 +2075,31 @@ def attach_complete_reply_service_diagnostics(
     phase_gate["step2_surface_quality_signature_ready"] = bool(surface_quality_signature)
     phase_gate["surface_quality_signature_ready"] = bool(surface_quality_signature)
     phase_gate["surface_template_major"] = bool(surface_quality_signature.get("template_major")) if surface_quality_signature else False
+    if runtime_surface_step8:
+        phase_gate["runtime_surface_step8_diagnostics_ready"] = bool(runtime_surface_step8.get("ready", True))
+        phase_gate["runtime_surface_pre_return_gate_evaluated"] = bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_evaluated"))
+        phase_gate["runtime_surface_pre_return_gate_passed"] = bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_passed"))
+        phase_gate["runtime_surface_pre_return_gate_action"] = str(runtime_surface_step8.get("runtime_surface_pre_return_gate_action") or "")
+        phase_gate["runtime_surface_pre_return_gate_rejection_reasons"] = list(runtime_surface_step8.get("runtime_surface_pre_return_gate_rejection_reasons") or [])
+        phase_gate["runtime_surface_pre_return_gate_final_passed"] = bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_final_passed"))
+        phase_gate["runtime_surface_pre_return_gate_scorecard_connected"] = bool(runtime_surface_step8.get("runtime_surface_pre_return_gate_scorecard_connected"))
+        phase_gate["runtime_surface_diagnostics_scorecard_updated"] = bool(runtime_surface_step8.get("runtime_surface_diagnostics_scorecard_updated"))
+        phase_gate["step8_runtime_surface_diagnostics_ready"] = bool(runtime_surface_step8.get("step8_runtime_surface_diagnostics_ready"))
+        phase_gate["surface_template_major_blocked"] = bool(runtime_surface_step8.get("surface_template_major_blocked"))
+        phase_gate["malformed_phrase_unit_blocked_count"] = int(runtime_surface_step8.get("malformed_phrase_unit_blocked_count") or 0)
+        phase_gate["shallow_realizer_version"] = str(runtime_surface_step8.get("shallow_realizer_version") or "")
+        phase_gate["shallow_v2_used"] = bool(runtime_surface_step8.get("shallow_v2_used"))
+        phase_gate["low_information_specificity_used"] = bool(runtime_surface_step8.get("low_information_specificity_used"))
+        phase_gate["step6_low_information_specificity_ready"] = bool(runtime_surface_step8.get("step6_low_information_specificity_ready"))
+        phase_gate["safe_anchor_count"] = int(runtime_surface_step8.get("safe_anchor_count") or 0)
+        phase_gate["uses_safe_anchor"] = bool(runtime_surface_step8.get("uses_safe_anchor"))
+        phase_gate["safe_anchor_role"] = str(runtime_surface_step8.get("safe_anchor_role") or "")
+        phase_gate["safe_anchor_surface_kind"] = str(runtime_surface_step8.get("safe_anchor_surface_kind") or "")
+        phase_gate["safe_anchor_evidence_ids"] = list(runtime_surface_step8.get("safe_anchor_evidence_ids") or [])
+        phase_gate["unsupported_event_assertion_present"] = bool(runtime_surface_step8.get("unsupported_event_assertion_present"))
+        phase_gate["user_fact_promotion_attempt"] = bool(runtime_surface_step8.get("user_fact_promotion_attempt"))
+        phase_gate["runtime_surface_step8_raw_input_included"] = False
+        phase_gate["runtime_surface_step8_comment_text_body_included"] = False
     phase_gate["step11_passed_only_preserved"] = bool(diagnostics.get("passed_only_preserved"))
     phase_gate["step11_response_shape_changed"] = bool(diagnostics.get("response_shape_changed"))
     phase_gate["step11_public_response_key_change"] = bool(diagnostics.get("public_response_key_change"))
@@ -1576,12 +2119,15 @@ __all__ = [
     "COMPLETE_REPLY_DIAGNOSTICS_STEP",
     "COMPLETE_REPLY_DIAGNOSTICS_VERSION",
     "COMPLETE_SCORECARD_EVENT_VERSION",
+    "RUNTIME_SURFACE_STEP8_DIAGNOSTICS_VERSION",
+    "RUNTIME_SURFACE_STEP8_DIAGNOSTICS_STEP",
     "RUNTIME_SURFACE_SOURCE_LOCK_VERSION",
     "LIMITED_READER_REPAIR_DIAGNOSTIC_VERSION",
     "attach_complete_reply_service_diagnostics",
     "build_complete_reply_diagnostics_contract_meta",
     "build_complete_reply_service_diagnostics",
     "build_complete_scorecard_event",
+    "build_runtime_surface_step8_diagnostics_meta",
     "build_positive_recovery_relation_diagnostic",
     "extract_complete_composer_runtime_meta",
 ]

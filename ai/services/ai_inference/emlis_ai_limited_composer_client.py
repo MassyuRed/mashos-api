@@ -35,6 +35,12 @@ from emlis_ai_limited_surface_realizer import (
     build_surface_stabilization_meta,
     choose_limited_surface_parts,
 )
+from emlis_ai_phrase_unit_grammar_normalizer import (
+    KEEP as PHRASE_UNIT_GRAMMAR_KEEP,
+    REPHRASE as PHRASE_UNIT_GRAMMAR_REPHRASE,
+    normalize_phrase_unit_grammar,
+    summarize_phrase_unit_grammar_normalizer,
+)
 from emlis_ai_relation_surface_contract import (
     detect_relation_surface,
     normalize_relation_surface_type,
@@ -160,7 +166,12 @@ _STEP3_SENTENCE_BINDING_TYPE_VERSION = "emlis.limited_composer_sentence_binding_
 _STEP5_RELATION_TAXONOMY_VERSION = LIMITED_RELATION_TAXONOMY_VERSION
 _STEP4_PHRASE_UNIT_MATERIAL_VERSION = "emlis.phrase_unit_material_quality.v1"
 _STEP4_PHRASE_UNIT_MATERIAL_TARGET_STEP = "4_PhraseUnit_material_improvement"
+_STEP4_SHALLOW_PHRASE_UNIT_GUARD_VERSION = "emlis.shallow_phrase_unit_creation_guard.v1"
+_STEP4_SHALLOW_PHRASE_UNIT_GUARD_TARGET_STEP = "Step4_shallow_phrase_unit_creation_guard"
 _STEP5_RELATION_TAXONOMY_TARGET_STEP = LIMITED_RELATION_TAXONOMY_TARGET_STEP
+_STEP5_SHALLOW_SURFACE_REALIZER_V2_VERSION = "emlis.shallow_surface_realizer_plan.v2"
+_STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP = "Step5_shallow_surface_realizer_v2"
+_STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME = "shallow_surface_realizer.v2"
 
 
 @dataclass(frozen=True)
@@ -1379,6 +1390,8 @@ def _compress_text(raw: str, role: str) -> str:
         if has("深呼吸"):
             return "深呼吸できたこと"
         if has("散歩"):
+            if has("落ち着") and has("したら"):
+                return "少し散歩したら落ち着いたこと" if has("少し") else "散歩したら落ち着いたこと"
             return "少し散歩したこと" if has("少し") else "散歩したこと"
         if has("休め"):
             return "少し休めたこと"
@@ -1841,11 +1854,13 @@ def _generic_shallow_phrase(raw: str, detected_type: str = "") -> str:
     parts.sort(key=lambda part: (0 if any(term in _compact(part) for term in priority_terms) else 1, len(part)))
     chosen = parts[0].strip(_PUNCT_TRIM)
     chosen = re.sub(r"^(?:今日は|今日|朝から|夜になって|昼過ぎには|また|もう|それでも|本当は|このまま|さっき)\s*", "", chosen).strip(_PUNCT_TRIM)
-    chosen = re.sub(r"(?:を|が|で|に|へ|は|も|と|から|なら)$", "", chosen).strip(_PUNCT_TRIM)
     if not chosen or _compact(chosen) in {"それ", "それでも", "でも", "本当は", "今日", "今日は"}:
         return ""
     if chosen.endswith(("こと", "気持ち", "感覚", "怖さ", "不安", "つらさ", "しんどさ", "限界", "願い")):
         return chosen
+    chosen = re.sub(r"(?:を|が|に|へ|は|も|と|から|なら)$", "", chosen).strip(_PUNCT_TRIM)
+    if not chosen or _compact(chosen) in {"それ", "それでも", "でも", "本当は", "今日", "今日は"}:
+        return ""
     if chosen.endswith(("たい", "したい")):
         return f"{chosen}気持ち"
     return f"{chosen}こと"
@@ -1861,6 +1876,194 @@ def _role_phrase_safe_for_shallow(phrase: str, raw: str) -> bool:
     return True
 
 
+
+
+def _safe_step4_meta_list(value: Any) -> List[str]:
+    if isinstance(value, (list, tuple, set)):
+        return _dedupe(str(item or "").strip() for item in value if str(item or "").strip())
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _shallow_phrase_creation_extra_warning_codes(*, phrase: str, raw: str) -> Tuple[str, ...]:
+    phrase_compact = _compact(phrase)
+    raw_compact = _compact(raw)
+    codes: List[str] = []
+    if phrase_compact in {"今まこと", "これまこと", "さっきこと", "先ほどこと", "さきほどこと", "このままこと"}:
+        codes.append("malformed_nominalization_temporal_fragment")
+    if raw_compact in {"今まで", "これまで", "さっき", "先ほど", "さきほど", "このまま", "まだ"} and phrase_compact.endswith("こと"):
+        codes.append("malformed_nominalization_temporal_fragment")
+    return tuple(dict.fromkeys(codes))
+
+
+def _shallow_phrase_unit_guard_row(
+    *,
+    candidate_id: str,
+    evidence_span_id: str,
+    role: str,
+    stage: str,
+    grammar_meta: Mapping[str, Any],
+    material_report: Mapping[str, Any] | None = None,
+    accepted: bool = False,
+    duplicate_suppressed: bool = False,
+    final_phrase_unit_id: str = "",
+    extra_warning_codes: Sequence[str] | None = None,
+) -> Dict[str, Any]:
+    grammar = dict(grammar_meta or {}) if isinstance(grammar_meta, Mapping) else {}
+    material = dict(material_report or {}) if isinstance(material_report, Mapping) else {}
+    grammar_codes = _dedupe([
+        *_safe_step4_meta_list(grammar.get("grammar_warning_codes")),
+        *list(extra_warning_codes or []),
+    ])
+    material_reasons = _safe_step4_meta_list(material.get("rejection_reasons"))
+    quality_flags = _safe_step4_meta_list(material.get("quality_flags"))
+    action = str(grammar.get("phrase_unit_grammar_action") or grammar.get("action") or "").strip()
+    safe = bool(accepted)
+    malformed_count = int(grammar.get("malformed_phrase_unit_count") or 0) + len(
+        [code for code in grammar_codes if "malformed" in code or "nominalization" in code]
+    )
+    return {
+        "candidate_id": str(candidate_id or "").strip(),
+        "phrase_unit_id": str(final_phrase_unit_id or candidate_id or "").strip(),
+        "evidence_span_id": str(evidence_span_id or "").strip(),
+        "role": str(role or "current_input_core").strip(),
+        "stage": str(stage or "shallow_phrase_unit_candidate").strip(),
+        "safe_for_render": safe,
+        "rendered_text_allowed": safe,
+        "accepted": safe,
+        "kept": safe,
+        "blocked": not safe,
+        "duplicate_suppressed": bool(duplicate_suppressed),
+        "phrase_unit_grammar_action": action,
+        "grammar_warning_codes": grammar_codes,
+        "creation_guard_warning_codes": list(extra_warning_codes or []),
+        "phrase_unit_grammar_normalizer": grammar,
+        "normalizer": grammar,
+        "material_passed": bool(material.get("passed")) if material else bool(safe),
+        "quality_flags": quality_flags,
+        "material_rejection_reasons": material_reasons,
+        "malformed_nominalization_risk": bool(grammar.get("malformed_nominalization_risk")) or any("malformed" in code or "nominalization" in code for code in grammar_codes),
+        "malformed_phrase_unit_count": malformed_count,
+        "must_keep": bool(grammar.get("must_keep")),
+        "must_keep_deferred": bool(grammar.get("must_keep_deferred")) or ((not safe) and bool(grammar.get("must_keep"))),
+        "must_keep_deferred_not_rendered": bool(grammar.get("must_keep_deferred")) or ((not safe) and bool(grammar.get("must_keep"))),
+        "must_keep_dropped": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "normalized_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "completion_sentence_templates_added": False,
+        "fixed_sentence_template_added": False,
+        "input_specific_template_used": False,
+        "unsupported_completion_added": False,
+        "unsupported_complement_added": False,
+        "meaning_added": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+    }
+
+
+def _step4_shallow_phrase_unit_guard_meta(
+    rows: Sequence[Mapping[str, Any]] | None,
+    *,
+    kept_units: Sequence[EmlisPhraseUnit] | None = None,
+) -> Dict[str, Any]:
+    source_rows = [dict(row) for row in list(rows or []) if isinstance(row, Mapping)]
+    kept = list(kept_units or [])
+    normalizer_rows = [row.get("phrase_unit_grammar_normalizer") or row.get("normalizer") for row in source_rows if isinstance(row.get("phrase_unit_grammar_normalizer") or row.get("normalizer"), Mapping)]
+    normalizer_summary = summarize_phrase_unit_grammar_normalizer(normalizer_rows)
+    blocked_rows = [row for row in source_rows if bool(row.get("blocked")) or not bool(row.get("safe_for_render"))]
+    deferred_rows = [row for row in blocked_rows if str(row.get("phrase_unit_grammar_action") or "") == "defer" or bool(row.get("must_keep_deferred"))]
+    dropped_rows = [row for row in blocked_rows if str(row.get("phrase_unit_grammar_action") or "") == "drop"]
+    malformed_rows = [
+        row for row in blocked_rows
+        if bool(row.get("malformed_nominalization_risk")) or int(row.get("malformed_phrase_unit_count") or 0) > 0
+    ]
+    reason_counts: Dict[str, int] = {}
+    for row in blocked_rows:
+        for reason in [
+            *_safe_step4_meta_list(row.get("grammar_warning_codes")),
+            *_safe_step4_meta_list(row.get("material_rejection_reasons")),
+            *_safe_step4_meta_list(row.get("creation_guard_warning_codes")),
+        ]:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    return {
+        "version": _STEP4_SHALLOW_PHRASE_UNIT_GUARD_VERSION,
+        "schema_version": _STEP4_SHALLOW_PHRASE_UNIT_GUARD_VERSION,
+        "target_step": _STEP4_SHALLOW_PHRASE_UNIT_GUARD_TARGET_STEP,
+        "step": _STEP4_SHALLOW_PHRASE_UNIT_GUARD_TARGET_STEP,
+        "step4_shallow_phrase_unit_guard_applied": True,
+        "shallow_phrase_unit_guard_applied": True,
+        "shallow_phrase_unit_creation_guard_applied": True,
+        "raw_fragment_to_generic_phrase_guarded": True,
+        "runs_before_render_current_input_core_lines": True,
+        "runs_before_surface_realizer": True,
+        "phrase_grammar_normalizer_connected": True,
+        "phrase_unit_grammar_normalizer_applied": True,
+        "material_quality_guard_connected": True,
+        "material_quality_guard_applied": True,
+        "safe_phrase_units_only_for_realizer": True,
+        "safe_phrase_units_only_passed_to_realizer": True,
+        "safe_phrase_unit_only_passed_to_realizer": True,
+        "must_keep_deferred_not_rendered": True,
+        "must_keep_malformed_deferred_not_rendered": True,
+        "must_keep_dropped": False,
+        "candidate_phrase_unit_count": len(source_rows),
+        "kept_phrase_unit_count": len(kept),
+        "safe_phrase_unit_count": len(kept),
+        "accepted_phrase_unit_count": len([row for row in source_rows if bool(row.get("accepted"))]),
+        "blocked_phrase_unit_count": len(blocked_rows),
+        "deferred_phrase_unit_count": len(deferred_rows),
+        "dropped_phrase_unit_count": len(dropped_rows),
+        "duplicate_suppressed_count": sum(1 for row in source_rows if bool(row.get("duplicate_suppressed"))),
+        "malformed_phrase_unit_blocked_count": len(malformed_rows),
+        "malformed_nominalization_blocked_count": len(malformed_rows),
+        "all_rendered_phrase_units_safe": True,
+        "unsafe_candidates_reach_rendered_text": False,
+        "safe_unit_shortage": len(kept) < 2,
+        "blocked_reasons": dict(reason_counts),
+        "blocked_reason_keys": _dedupe(reason_counts.keys()),
+        "rows": source_rows,
+        "rejected_rows": blocked_rows,
+        "phrase_unit_grammar_normalizer_summary": normalizer_summary,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "normalized_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "completion_sentence_templates_added": False,
+        "fixed_sentence_template_added": False,
+        "input_specific_template_used": False,
+        "unsupported_completion_added": False,
+        "unsupported_complement_added": False,
+        "meaning_added": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+        "product_gate_achieved": False,
+        "public_release_applied": False,
+    }
+
+
+def _append_step4_shallow_guard_row(rows: Optional[List[Dict[str, Any]]], row: Mapping[str, Any]) -> None:
+    if rows is not None:
+        rows.append(dict(row))
+
 def _add_shallow_unit(
     units: List[EmlisPhraseUnit],
     *,
@@ -1869,17 +2072,88 @@ def _add_shallow_unit(
     phrase: str,
     role: str,
     polarity: str,
+    guard_rows: Optional[List[Dict[str, Any]]] = None,
+    stage: str = "shallow_phrase_unit_candidate",
 ) -> None:
     compressed = _clean(phrase, limit=90)
     compact = _compact(compressed)
+    candidate_id = f"shallow_pu_candidate_{len(guard_rows or []) + 1}"
     if not compressed or compressed in _EMOTION_LABELS or len(compact) < 3:
+        reason = "empty_phrase_unit_material" if not compressed else "emotion_label_only"
+        _append_step4_shallow_guard_row(
+            guard_rows,
+            _shallow_phrase_unit_guard_row(
+                candidate_id=candidate_id,
+                evidence_span_id=span_id,
+                role=role or "current_input_core",
+                stage=stage,
+                grammar_meta={
+                    "phrase_unit_grammar_action": "drop",
+                    "grammar_warning_codes": [reason],
+                    "must_keep": True,
+                    "raw_input_included": False,
+                    "comment_text_body_included": False,
+                },
+                material_report={"passed": False, "quality_flags": [], "rejection_reasons": [reason]},
+                accepted=False,
+            ),
+        )
         return
-    flags = _quality_flags(compressed, raw_text=raw, role=role)
-    if _phrase_material_blocked(flags):
+
+    normalizer_result = normalize_phrase_unit_grammar(
+        compressed,
+        raw_text=raw,
+        role=role or "current_input_core",
+        must_keep=True,
+        phrase_unit_id=candidate_id,
+        evidence_span_id=span_id,
+        source_field="shallow_current_input_core",
+        source="shallow_current_input_core",
+    )
+    normalizer_meta = normalizer_result.as_meta()
+    extra_warning_codes = _shallow_phrase_creation_extra_warning_codes(phrase=compressed, raw=raw)
+    normalized = _clean(normalizer_result.normalized_text, limit=90) if bool(normalizer_result.usable) else ""
+    normalized_compact = _compact(normalized)
+    if normalizer_result.action not in {PHRASE_UNIT_GRAMMAR_KEEP, PHRASE_UNIT_GRAMMAR_REPHRASE, "keep", "rephrase"} or not normalized or len(normalized_compact) < 3 or extra_warning_codes:
+        _append_step4_shallow_guard_row(
+            guard_rows,
+            _shallow_phrase_unit_guard_row(
+                candidate_id=candidate_id,
+                evidence_span_id=span_id,
+                role=role or "current_input_core",
+                stage=stage,
+                grammar_meta=normalizer_meta,
+                accepted=False,
+                extra_warning_codes=extra_warning_codes,
+            ),
+        )
         return
+
+    flags = _quality_flags(normalized, raw_text=raw, role=role)
+    material_report = judge_phrase_unit_material_quality(
+        normalized,
+        raw_text=raw,
+        role=role or "current_input_core",
+        source_field="shallow_current_input_core",
+    )
+    if (not bool(material_report.get("passed"))) or _phrase_material_blocked(flags):
+        _append_step4_shallow_guard_row(
+            guard_rows,
+            _shallow_phrase_unit_guard_row(
+                candidate_id=candidate_id,
+                evidence_span_id=span_id,
+                role=role or "current_input_core",
+                stage=stage,
+                grammar_meta=normalizer_meta,
+                material_report=material_report,
+                accepted=False,
+            ),
+        )
+        return
+
     for index, unit in enumerate(units):
         existing = _compact(unit.compressed_text)
-        duplicate = compact == existing or (len(compact) >= 6 and compact in existing) or (len(existing) >= 6 and existing in compact)
+        duplicate = normalized_compact == existing or (len(normalized_compact) >= 6 and normalized_compact in existing) or (len(existing) >= 6 and existing in normalized_compact)
         if not duplicate:
             continue
         if role in _STEP11_EXPANDED_ROLES and unit.role == "current_input_core" and unit.evidence_span_id == span_id:
@@ -1887,29 +2161,66 @@ def _add_shallow_unit(
                 phrase_unit_id=unit.phrase_unit_id,
                 evidence_span_id=span_id,
                 raw_text=raw,
-                compressed_text=compressed,
+                compressed_text=normalized,
                 role=role,
-                polarity=polarity or _shallow_polarity(compressed),
+                polarity=polarity or _shallow_polarity(normalized),
                 must_keep=True,
                 quality_flags=flags,
             )
+            accepted = True
+        else:
+            accepted = False
+        _append_step4_shallow_guard_row(
+            guard_rows,
+            _shallow_phrase_unit_guard_row(
+                candidate_id=candidate_id,
+                evidence_span_id=span_id,
+                role=role or "current_input_core",
+                stage=stage,
+                grammar_meta=normalizer_meta,
+                material_report=material_report,
+                accepted=accepted,
+                duplicate_suppressed=not accepted,
+                final_phrase_unit_id=unit.phrase_unit_id,
+            ),
+        )
         return
+
+    final_unit_id = f"pu{len(units)+1}"
     units.append(
         EmlisPhraseUnit(
-            phrase_unit_id=f"pu{len(units)+1}",
+            phrase_unit_id=final_unit_id,
             evidence_span_id=span_id,
             raw_text=raw,
-            compressed_text=compressed,
+            compressed_text=normalized,
             role=role or "current_input_core",
-            polarity=polarity or _shallow_polarity(compressed),
+            polarity=polarity or _shallow_polarity(normalized),
             must_keep=True,
             quality_flags=flags,
         )
     )
+    _append_step4_shallow_guard_row(
+        guard_rows,
+        _shallow_phrase_unit_guard_row(
+            candidate_id=candidate_id,
+            evidence_span_id=span_id,
+            role=role or "current_input_core",
+            stage=stage,
+            grammar_meta=normalizer_meta,
+            material_report=material_report,
+            accepted=True,
+            final_phrase_unit_id=final_unit_id,
+        ),
+    )
 
 
-def _build_current_input_core_phrase_units(evidence_items: Sequence[Mapping[str, Any]]) -> List[EmlisPhraseUnit]:
+def _build_current_input_core_phrase_units_with_guard_meta(
+    evidence_items: Sequence[Mapping[str, Any]],
+    *,
+    guard_rows: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[EmlisPhraseUnit], Dict[str, Any]]:
     units: List[EmlisPhraseUnit] = []
+    guard_rows = guard_rows if guard_rows is not None else []
     role_priority = (
         "fatigue_accumulation",
         "loss_of_control",
@@ -1950,18 +2261,19 @@ def _build_current_input_core_phrase_units(evidence_items: Sequence[Mapping[str,
             phrase=generic,
             role="current_input_core",
             polarity=_shallow_polarity(generic or raw),
+            guard_rows=guard_rows,
+            stage="generic_shallow_phrase",
         )
         roles = set(phase8_roles_for_text(raw, _detected_type(item)))
         for role in role_priority:
             if role not in roles:
                 continue
             if role in {"safe_home", "ordinary_life_wish", "reality_damage", "worsening_risk"} and generic:
-                # In the shallow path, prefer the direct source phrase over a broad Phase8 profile phrase.
                 continue
             compressed = _compress_text(raw, role)
             if not _role_phrase_safe_for_shallow(compressed, raw):
                 continue
-            polarity, must_keep = phase8_role_meta(role)
+            polarity, _must_keep = phase8_role_meta(role)
             _add_shallow_unit(
                 units,
                 span_id=span_id,
@@ -1969,7 +2281,18 @@ def _build_current_input_core_phrase_units(evidence_items: Sequence[Mapping[str,
                 phrase=compressed,
                 role=role,
                 polarity=polarity,
+                guard_rows=guard_rows,
+                stage="phase8_role_phrase",
             )
+    return units, _step4_shallow_phrase_unit_guard_meta(guard_rows, kept_units=units)
+
+
+def _build_current_input_core_phrase_units(
+    evidence_items: Sequence[Mapping[str, Any]],
+    *,
+    guard_rows: Optional[List[Dict[str, Any]]] = None,
+) -> List[EmlisPhraseUnit]:
+    units, _guard_meta = _build_current_input_core_phrase_units_with_guard_meta(evidence_items, guard_rows=guard_rows)
     return units
 
 
@@ -2045,6 +2368,146 @@ def _shallow_tail_options(relation: str) -> Tuple[Tuple[str, str, str], ...]:
     return (("も", "見えています", "visible"), ("も", "重なっています", "stack"), ("も", "残っています", "remain"))
 
 
+
+_SHALLOW_V2_BLOCKED_SURFACE_PATTERNS = (
+    "generic_center_phrase",
+    "same_connector_run",
+    "malformed_phrase_unit",
+    "old_current_input_core_skeleton",
+)
+
+
+def _shallow_v2_body_lines(lines: Sequence[str]) -> List[str]:
+    return [str(line or "").strip() for line in list(lines or []) if str(line or "").strip() and "Emlis" not in str(line or "")]
+
+
+def _shallow_v2_connector_key(line: str) -> str:
+    value = str(line or "").strip()
+    if value.startswith("一方で"):
+        return "contrast_after"
+    if value.startswith("そのあとに"):
+        return "sequence_after"
+    if value.startswith("さらに"):
+        return "bounded_additional"
+    if value.startswith("そこに"):
+        return "coexistence_add"
+    if value.startswith("今は"):
+        return "receive_now"
+    return "none"
+
+
+def _shallow_v2_same_connector_run_max(lines: Sequence[str]) -> int:
+    keys = [_shallow_v2_connector_key(line) for line in _shallow_v2_body_lines(lines)]
+    longest = 0
+    current_key = ""
+    current_count = 0
+    for key in keys:
+        if key and key == current_key:
+            current_count += 1
+        else:
+            current_key = key
+            current_count = 1 if key else 0
+        longest = max(longest, current_count)
+    return longest
+
+
+def _shallow_v2_generic_center_phrase_count(lines: Sequence[str]) -> int:
+    return sum(1 for line in _shallow_v2_body_lines(lines) if "中心にあります" in line or "中心として" in line)
+
+
+def _shallow_v2_role_for_index(index: int) -> str:
+    if index <= 0:
+        return "receive_line"
+    if index == 1:
+        return "state_arrangement_line"
+    return "bounded_observation_line"
+
+
+def _shallow_v2_meta(
+    *,
+    eligible: bool,
+    selected: Sequence[EmlisPhraseUnit],
+    lines: Sequence[str] | None = None,
+    relation_types: Sequence[str] | None = None,
+    sentence_roles: Sequence[str] | None = None,
+    failure_reason: str = "",
+) -> Dict[str, Any]:
+    body_lines = _shallow_v2_body_lines(lines or ())
+    generic_center_count = _shallow_v2_generic_center_phrase_count(lines or ())
+    same_connector_run_max = _shallow_v2_same_connector_run_max(lines or ())
+    blocked_patterns = list(_SHALLOW_V2_BLOCKED_SURFACE_PATTERNS)
+    meta: Dict[str, Any] = {
+        "version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_VERSION,
+        "target_step": _STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP,
+        "step": _STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP,
+        "eligible": bool(eligible),
+        "realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+        "profile_key": "current_input_core",
+        "coverage_scope": "current_input_core",
+        "safe_focus_unit_count": 1 if selected else 0,
+        "safe_phrase_unit_count": len(list(selected or ())),
+        "deferred_phrase_unit_count": 0,
+        "relation_candidate_count": len([r for r in list(relation_types or ()) if str(r or "").strip()]),
+        "sentence_roles": _dedupe(sentence_roles or ()),
+        "blocked_surface_patterns": blocked_patterns,
+        "same_connector_run_max": same_connector_run_max,
+        "generic_center_phrase_count": generic_center_count,
+        "body_line_count": len(body_lines),
+        "body_line_count_between_2_and_4": 2 <= len(body_lines) <= 4,
+        "old_current_input_core_skeleton_disabled": True,
+        "center_phrase_disabled": True,
+        "default_sono_nakademo_disabled": True,
+        "malformed_phrase_unit_count": 0,
+        "malformed_phrase_unit_in_rendered_units": False,
+        "relation_bearing_surface": bool(len(selected or ()) >= 2),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "completion_sentence_templates_added": False,
+        "input_specific_template_added": False,
+        "example_sentence_match_used": False,
+    }
+    if failure_reason:
+        meta["failure_reason"] = str(failure_reason or "").strip()
+    return meta
+
+
+def _shallow_v2_receive_line(unit: EmlisPhraseUnit) -> Tuple[str, str, str, str]:
+    phrase = _clean(unit.compressed_text, limit=80)
+    if not phrase:
+        return "", "", "", ""
+    return _finish(f"今は、{phrase}が先に出ています"), "receive_first", "center", "receive_line"
+
+
+def _shallow_v2_relation_line(previous: EmlisPhraseUnit, current: EmlisPhraseUnit, *, relation: str, body_index: int) -> Tuple[str, str, str, str, str]:
+    phrase = _clean(current.compressed_text, limit=80)
+    if not phrase:
+        return "", "", "", "", ""
+    relation = normalize_relation_type(relation, roles=(previous.role, current.role), line_role="state_arrangement_line")
+    if relation == "contrast":
+        if body_index <= 1:
+            line = _finish(f"一方で、{phrase}も残っていて、ひとつの向きだけでは切れない状態です")
+            role = "state_arrangement_line"
+        else:
+            line = _finish(f"さらに、{phrase}も残っていて、まだ一つの答えには絞りきれません")
+            role = "bounded_observation_line"
+        return line, "contrast_remaining", relation, role, "も"
+    if relation in {"continuation", "recovery", "sequence", "progress"}:
+        if body_index <= 1:
+            line = _finish(f"そのあとに、{phrase}が少し戻れる手がかりとして出ています")
+            role = "state_arrangement_line"
+        else:
+            line = _finish(f"さらに、{phrase}も続いていて、少し整えようとする動きがあります")
+            role = "bounded_observation_line"
+        return line, "progress_signal", relation, role, "が"
+    if body_index <= 1:
+        line = _finish(f"そこに、{phrase}も加わっていて、状態が一色ではありません")
+        role = "state_arrangement_line"
+    else:
+        line = _finish(f"さらに、{phrase}もあり、今見えている範囲は一つの要素だけではありません")
+        role = "bounded_observation_line"
+    return line, "coexistence_parallel", relation or "coexistence", role, "も"
+
+
 def _render_current_input_core_lines(*, payload: Mapping[str, Any], units: Sequence[EmlisPhraseUnit]) -> Tuple[List[str], List[str], List[str], List[SentenceBinding], List[Dict[str, Any]]]:
     selected = _select_current_input_core_units(units, max_units=3)
     if len(selected) < 2:
@@ -2052,82 +2515,87 @@ def _render_current_input_core_lines(*, payload: Mapping[str, Any], units: Seque
 
     lines: List[str] = []
     used: List[str] = []
-    tail_keys: List[str] = ["center"]
+    tail_keys: List[str] = []
     bindings: List[SentenceBinding] = []
     surface_rows: List[Dict[str, Any]] = []
     greeting = _greeting(payload)
     if greeting:
         lines.append(greeting)
 
+    relation_types_for_meta: List[str] = []
+    sentence_roles_for_meta: List[str] = []
+
     first = selected[0]
-    first_line = _finish(f"{first.compressed_text}が中心にあります")
+    first_line, first_tail_key, first_relation, first_role = _shallow_v2_receive_line(first)
     if first_line:
-        first_line = _trim_line(first_line, limit=100)
+        first_line = _trim_line(first_line, limit=110)
         lines.append(first_line)
         used.append(first.phrase_unit_id)
+        tail_keys.append(first_tail_key)
+        relation_types_for_meta.append(first_relation)
+        sentence_roles_for_meta.append(first_role)
         binding = _make_sentence_binding(
             sentence_index=len(bindings) + 1,
             text=first_line,
             units=(first,),
-            relation_type="center",
-            line_role=first.role or "current_input_core",
+            relation_type=first_relation,
+            line_role=first_role,
             coverage_scope="current_input_core",
             must_include=True,
-            source="limited_composer_current_input_core_unit",
-            predicate_key="center",
+            source="limited_composer_shallow_surface_realizer_v2",
+            predicate_key=first_tail_key,
         )
         if binding is not None:
             bindings.append(binding)
         surface_rows.append(
             build_surface_component_row(
-                line_role=first.role or "current_input_core",
-                relation_type="center",
+                line_role=first_role,
+                relation_type=first_relation,
                 role_keys=(first.role,),
                 phrase_unit_ids=(first.phrase_unit_id,),
                 sequence_order=0,
                 particle="が",
-                predicate_key="center",
+                predicate_key=first_tail_key,
                 shallow_path=True,
             )
         )
 
     previous = first
     for unit in selected[1:]:
+        body_index = len(_shallow_v2_body_lines(lines))
         relation = _current_input_core_relation(previous, unit)
-        prefix = _shallow_opener(relation=relation, body_index=len([line for line in lines if "Emlis" not in line]), total=len(selected))
-        particle, tail, tail_key = choose_limited_surface_parts(
-            relation_type=relation,
-            line_role=unit.role or "current_input_core",
-            role_keys=(unit.role,),
-            polarity=unit.polarity,
-            current_candidates=_shallow_tail_options(relation),
-            used_tail_keys=tail_keys,
+        line, tail_key, relation_type, line_role, particle = _shallow_v2_relation_line(
+            previous,
+            unit,
+            relation=relation,
+            body_index=body_index,
         )
-        raw_line = f"{prefix}{unit.compressed_text}{particle}{tail}"
-        line = _trim_line(_finish(raw_line), limit=100)
+        line = _trim_line(line, limit=118)
         if line and line not in lines:
             lines.append(line)
-            used.append(unit.phrase_unit_id)
+            used.extend([previous.phrase_unit_id, unit.phrase_unit_id])
             tail_keys.append(tail_key)
+            relation_types_for_meta.append(relation_type)
+            sentence_roles_for_meta.append(line_role)
             binding = _make_sentence_binding(
                 sentence_index=len(bindings) + 1,
                 text=line,
-                units=(unit,),
-                relation_type=relation,
-                line_role=unit.role or "current_input_core",
+                units=(previous, unit),
+                relation_type=relation_type,
+                line_role=line_role,
                 coverage_scope="current_input_core",
                 must_include=True,
-                source="limited_composer_current_input_core_unit",
+                source="limited_composer_shallow_surface_realizer_v2",
                 predicate_key=tail_key,
             )
             if binding is not None:
                 bindings.append(binding)
             surface_rows.append(
                 build_surface_component_row(
-                    line_role=unit.role or "current_input_core",
-                    relation_type=relation,
-                    role_keys=(unit.role,),
-                    phrase_unit_ids=(unit.phrase_unit_id,),
+                    line_role=line_role,
+                    relation_type=relation_type,
+                    role_keys=(previous.role, unit.role),
+                    phrase_unit_ids=(previous.phrase_unit_id, unit.phrase_unit_id),
                     sequence_order=len(surface_rows),
                     particle=particle,
                     predicate_key=tail_key,
@@ -2135,13 +2603,17 @@ def _render_current_input_core_lines(*, payload: Mapping[str, Any], units: Seque
                 )
             )
         previous = unit
-        if len(lines) >= 4:
+        if len(_shallow_v2_body_lines(lines)) >= 3:
             break
-    body_count = len([line for line in lines if "Emlis" not in line])
+
+    body_count = len(_shallow_v2_body_lines(lines))
     if body_count < 2:
         return [], [], [], [], []
+    if _shallow_v2_generic_center_phrase_count(lines) > 0:
+        return [], [], [], [], []
+    if _shallow_v2_same_connector_run_max(lines) > 1:
+        return [], [], [], [], []
     return lines, _dedupe(used), list(tail_keys), bindings, surface_rows
-
 
 def _shallow_opener(*, relation: str, body_index: int, total: int) -> str:
     if body_index <= 0:
@@ -2173,22 +2645,62 @@ def _generate_current_input_core_candidate(
     if not allowed_evidence_ids:
         allowed_evidence_ids = _text_evidence_ids(evidence_items)
     generation_evidence_items = _generation_items_for_allowed_ids(evidence_items, allowed_evidence_ids)
-    phrase_units = _build_current_input_core_phrase_units(generation_evidence_items)
+    phrase_units, shallow_phrase_unit_guard_meta = _build_current_input_core_phrase_units_with_guard_meta(generation_evidence_items)
     if len(phrase_units) < 2 or len({unit.evidence_span_id for unit in phrase_units}) < 2:
         return _unavailable_response(
             "limited_composer_shallow_insufficient_evidence",
             coverage_scope="current_input_core",
             profile_key=profile_key,
-            extra_meta={"source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True, "phrase_unit_count": len(phrase_units), "sentence_plan_count": 0},
+            extra_meta={
+                "source_profile_key": source_profile_key,
+                "shallow_observation_path": True,
+                "profile_unmatched": True,
+                "phrase_unit_count": len(phrase_units),
+                "sentence_plan_count": 0,
+                "shallow_surface_realizer_v2": _shallow_v2_meta(eligible=False, selected=phrase_units, failure_reason="insufficient_evidence"),
+                "step5_shallow_surface_realizer_v2": _shallow_v2_meta(eligible=False, selected=phrase_units, failure_reason="insufficient_evidence"),
+                "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+                "shallow_v2_used": False,
+                "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
+            },
         )
 
     lines, used_unit_ids, surface_tail_keys, sentence_bindings, surface_rows = _render_current_input_core_lines(payload=payload, units=phrase_units)
+    rendered_unit_by_id = {unit.phrase_unit_id: unit for unit in phrase_units}
+    rendered_units_for_v2 = [rendered_unit_by_id[unit_id] for unit_id in _dedupe(used_unit_ids) if unit_id in rendered_unit_by_id]
+    shallow_v2_plan_meta = _shallow_v2_meta(
+        eligible=bool(lines),
+        selected=rendered_units_for_v2 or _select_current_input_core_units(phrase_units, max_units=3),
+        lines=lines,
+        relation_types=[str(row.get("relation_type") or "").strip() for row in list(surface_rows or []) if isinstance(row, Mapping)],
+        sentence_roles=[str(row.get("line_role") or "").strip() for row in list(surface_rows or []) if isinstance(row, Mapping)],
+        failure_reason="" if lines else "empty_candidate",
+    )
     if not lines:
         return _unavailable_response(
             "limited_composer_shallow_empty_candidate",
             coverage_scope="current_input_core",
             profile_key=profile_key,
-            extra_meta={"source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True, "phrase_unit_count": len(phrase_units), "sentence_plan_count": 0},
+            extra_meta={
+                "source_profile_key": source_profile_key,
+                "shallow_observation_path": True,
+                "profile_unmatched": True,
+                "phrase_unit_count": len(phrase_units),
+                "sentence_plan_count": 0,
+                "shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+                "shallow_v2_used": False,
+                "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
+            },
         )
 
     comment_text = "\n".join(line for line in lines if line).strip()
@@ -2199,7 +2711,20 @@ def _generate_current_input_core_candidate(
             matched_forbidden=matched_forbidden,
             coverage_scope="current_input_core",
             profile_key=profile_key,
-            extra_meta={"source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True},
+            extra_meta={
+                "source_profile_key": source_profile_key,
+                "shallow_observation_path": True,
+                "profile_unmatched": True,
+                "shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+                "shallow_v2_used": True,
+                "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
+            },
         )
 
     unit_by_id = {unit.phrase_unit_id: unit for unit in phrase_units}
@@ -2217,7 +2742,21 @@ def _generate_current_input_core_candidate(
             matched_forbidden=list(quality_report.get("matched_fragments") or quality_report.get("matched_surfaces") or []),
             coverage_scope="current_input_core",
             profile_key=profile_key,
-            extra_meta={"phase8_quality": quality_report, "source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True},
+            extra_meta={
+                "phase8_quality": quality_report,
+                "source_profile_key": source_profile_key,
+                "shallow_observation_path": True,
+                "profile_unmatched": True,
+                "shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+                "shallow_v2_used": True,
+                "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
+            },
         )
 
     used_evidence_ids = [span_id for span_id in used_evidence_ids if span_id in evidence_by_id]
@@ -2226,7 +2765,20 @@ def _generate_current_input_core_candidate(
             "limited_composer_no_used_evidence",
             coverage_scope="current_input_core",
             profile_key=profile_key,
-            extra_meta={"source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True},
+            extra_meta={
+                "source_profile_key": source_profile_key,
+                "shallow_observation_path": True,
+                "profile_unmatched": True,
+                "shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
+                "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+                "shallow_v2_used": True,
+                "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+                "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+                "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
+            },
         )
     greeting_count = 1 if lines and "Emlis" in lines[0] else 0
     body_lines = lines[greeting_count:]
@@ -2245,12 +2797,21 @@ def _generate_current_input_core_candidate(
         "body_line_count": len(body_lines),
         "phrase_unit_count": len(phrase_units),
         "sentence_plan_count": 0,
-        "sentence_surface_mode": "componentized_surface_realizer",
-        "surface_realizer_stage": "Step13_surface_realizer",
+        "sentence_surface_mode": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+        "surface_realizer_stage": _STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP,
+        "shallow_surface_realizer_v2": shallow_v2_plan_meta,
+        "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
+        "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
+        "shallow_v2_used": True,
         "sentence_tail_keys": surface_tail_keys,
         "surface_tail_keys": surface_tail_keys,
         "allowed_evidence_span_ids": sorted(allowed_evidence_ids),
         "phase8_quality": quality_report,
+        "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+        "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
+        "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+        "step4_shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
+        "malformed_phrase_unit_blocked_count": int(shallow_phrase_unit_guard_meta.get("malformed_phrase_unit_blocked_count") or 0),
     }
     composer_meta["phrase_unit_material_quality"] = _step4_phrase_unit_material_meta(phrase_units)
     composer_meta["step4_phrase_unit_material_quality"] = composer_meta["phrase_unit_material_quality"]

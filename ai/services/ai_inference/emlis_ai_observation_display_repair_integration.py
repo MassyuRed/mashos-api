@@ -21,6 +21,13 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Final
 
+from emlis_ai_bounded_repair_reroute import (
+    ACTION_NO_REPAIR as BOUNDED_ACTION_NO_REPAIR,
+    ACTION_RERENDER_SHALLOW_V2 as BOUNDED_ACTION_RERENDER_SHALLOW_V2,
+    ACTION_REROUTE_LOW_INFORMATION as BOUNDED_ACTION_REROUTE_LOW_INFORMATION,
+    BoundedRepairRerouteDecision,
+    decide_bounded_repair_reroute,
+)
 from emlis_ai_display_gate import decide_emlis_observation_display
 from emlis_ai_low_information_observation_composer import (
     LowInformationObservationDraft,
@@ -41,6 +48,7 @@ from emlis_ai_observation_surface_realizer_tone import (
     ObservationSurfaceRealization,
     realize_low_information_observation_surface,
 )
+from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
 from emlis_ai_types import (
     ConversationComposerCandidate,
     DisplayDecision,
@@ -58,7 +66,7 @@ OBSERVATION_DISPLAY_REPAIR_COMPOSER_MODEL: Final = "emlis.low_information_observ
 
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
-    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか)"
+    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
 )
 _HUMILITY_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
 _UNSUPPORTED_ASSERTION_RE: Final = re.compile(
@@ -718,6 +726,7 @@ class ObservationDisplayRepairIntegrationResult:
     original_observation_status: str = ""
     repair_reasons: Sequence[str] = field(default_factory=tuple)
     blocked_reasons: Sequence[str] = field(default_factory=tuple)
+    bounded_repair_reroute_decision: BoundedRepairRerouteDecision | None = None
 
     def as_meta(self) -> dict[str, Any]:
         eligibility_meta = _meta(self.eligibility_decision)
@@ -738,6 +747,27 @@ class ObservationDisplayRepairIntegrationResult:
                 "user_fact_may_promote_to_eligible": False,
             }
         status = str(getattr(self.display_decision, "observation_status", "") or "")
+        bounded_meta = (
+            self.bounded_repair_reroute_decision.as_meta()
+            if self.bounded_repair_reroute_decision is not None
+            else {
+                "version": "emlis.bounded_repair_reroute.v1",
+                "source_step": "Step7_Bounded_Repair_Reroute",
+                "step7_bounded_repair_reroute_ready": True,
+                "evaluated": False,
+                "allowed": False,
+                "action": BOUNDED_ACTION_NO_REPAIR,
+                "runtime_surface_gate_evaluated": False,
+                "runtime_surface_gate_passed": False,
+                "runtime_surface_gate_action": "",
+                "rejection_reasons": [],
+                "repair_reasons": [],
+                "blocked_reasons": [],
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+                "display_gate_relaxed": False,
+            }
+        )
         return {
             "version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
             "schema_version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
@@ -745,6 +775,11 @@ class ObservationDisplayRepairIntegrationResult:
             "step": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_STEP,
             "display_repair_integration_ready": True,
             "step10_display_repair_integration_ready": True,
+            "step7_bounded_repair_reroute": bounded_meta,
+            "bounded_repair_reroute": bounded_meta,
+            "step7_bounded_repair_reroute_ready": True,
+            "bounded_repair_reroute_action": bounded_meta.get("action"),
+            "bounded_repair_reroute_allowed": bool(bounded_meta.get("allowed")),
             "applied": bool(self.applied),
             "low_information_repair_applied": bool(self.applied),
             "rerouted_from_eligible": bool("eligible_branch_repaired_to_low_information" in self.repair_reasons),
@@ -808,6 +843,7 @@ def integrate_observation_display_repair(
     original_composer_candidate: Any = None,
     repair_allowed: bool = True,
     repair_block_reason: str = "",
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
 ) -> ObservationDisplayRepairIntegrationResult:
     """Apply the Step 10 low-information display repair, when appropriate."""
 
@@ -896,11 +932,49 @@ def integrate_observation_display_repair(
             blocked_reasons=tuple(resolution_blockers),
         )
 
+    bounded_reroute_decision = decide_bounded_repair_reroute(
+        display_decision=original_display_decision,
+        composer_source=original_composer_source,
+        safety_report=safety_report,
+        runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+        repair_allowed=True,
+    )
+    bounded_action = str(bounded_reroute_decision.action or "")
+    if bounded_reroute_decision.runtime_surface_gate_evaluated and bounded_action == BOUNDED_ACTION_RERENDER_SHALLOW_V2:
+        return ObservationDisplayRepairIntegrationResult(
+            applied=False,
+            display_decision=original_display_decision,
+            reader_report=original_reader_report,
+            grounding_report=original_grounding_report,
+            template_echo_report=original_template_echo_report,
+            composer_source=original_composer_source,
+            composer_candidate=original_composer_candidate,
+            original_observation_status=original_status,
+            blocked_reasons=tuple(bounded_reroute_decision.repair_reasons or ("bounded_shallow_v2_rerender_required",)),
+            bounded_repair_reroute_decision=bounded_reroute_decision,
+        )
+    if bounded_reroute_decision.runtime_surface_gate_evaluated and bounded_action not in {BOUNDED_ACTION_NO_REPAIR, BOUNDED_ACTION_REROUTE_LOW_INFORMATION}:
+        return ObservationDisplayRepairIntegrationResult(
+            applied=False,
+            display_decision=original_display_decision,
+            reader_report=original_reader_report,
+            grounding_report=original_grounding_report,
+            template_echo_report=original_template_echo_report,
+            composer_source=original_composer_source,
+            composer_candidate=original_composer_candidate,
+            original_observation_status=original_status,
+            blocked_reasons=tuple(bounded_reroute_decision.blocked_reasons or ("bounded_surface_repair_not_available",)),
+            bounded_repair_reroute_decision=bounded_reroute_decision,
+        )
+
     route_allowed, route_reasons = _display_repair_route_allowed(
         original_display_decision=original_display_decision,
         original_composer_source=original_composer_source,
         original_composer_candidate=original_composer_candidate,
     )
+    if bounded_action == BOUNDED_ACTION_REROUTE_LOW_INFORMATION:
+        route_allowed = True
+        route_reasons = tuple(bounded_reroute_decision.repair_reasons or ("bounded_low_information_reroute",))
     if not route_allowed:
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
@@ -912,6 +986,7 @@ def integrate_observation_display_repair(
             composer_candidate=original_composer_candidate,
             original_observation_status=original_status,
             blocked_reasons=tuple(route_reasons),
+            bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
 
     eligibility_decision = route_observation_eligibility(
@@ -940,6 +1015,7 @@ def integrate_observation_display_repair(
             eligibility_decision=eligibility_decision,
             original_observation_status=original_status,
             blocked_reasons=tuple(feature_flag_blockers),
+            bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
     original_rejection_reasons = _dedupe(getattr(original_display_decision, "rejection_reasons", []))
     eligibility_for_composer: Any = eligibility_decision
@@ -960,6 +1036,7 @@ def integrate_observation_display_repair(
                 eligibility_decision=eligibility_decision,
                 original_observation_status=original_status,
                 blocked_reasons=("not_low_information",),
+                bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
             )
         eligibility_meta = _repair_low_information_eligibility_meta(
             eligibility_meta,
@@ -979,6 +1056,7 @@ def integrate_observation_display_repair(
             eligibility_decision=eligibility_for_composer,
             original_observation_status=original_status,
             blocked_reasons=("no_current_input_low_information_signal",),
+            bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
 
     try:
@@ -1004,6 +1082,7 @@ def integrate_observation_display_repair(
             eligibility_decision=eligibility_decision,
             original_observation_status=original_status,
             blocked_reasons=(f"low_information_repair_build_failed:{exc.__class__.__name__}",),
+            bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
 
     quality_reasons = _low_information_quality_reasons(surface)
@@ -1015,6 +1094,20 @@ def integrate_observation_display_repair(
         surface=surface,
         draft=draft,
         eligibility_meta=eligibility_meta,
+    )
+    runtime_surface_pre_return_gate_report = build_runtime_surface_pre_return_gate_report(
+        comment_text=surface.body,
+        composer_meta={
+            **_meta(getattr(candidate, "composer_meta", {})),
+            "composer_source": "ai_generated",
+            "observation_reply_kind": OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+            "shallow_observation_path": False,
+        },
+        phrase_unit_grammar_meta=surface.as_meta(),
+        rerender_allowed=False,
+        rerender_attempted=True,
+        rerender_attempt_limit=1,
+        low_information_reroute_allowed=False,
     )
     display_decision = decide_emlis_observation_display(
         comment_text=surface.body,
@@ -1028,6 +1121,7 @@ def integrate_observation_display_repair(
         binding_meta=_binding_meta_for_surface(surface),
         observation_reply_kind=OBSERVATION_REPLY_KIND_LOW_INFORMATION,
         observation_quality_meta=surface.as_meta(),
+        runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
     )
     applied = bool(display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip())
     return ObservationDisplayRepairIntegrationResult(
@@ -1052,6 +1146,7 @@ def integrate_observation_display_repair(
             )
         ) if applied else tuple(),
         blocked_reasons=tuple(quality_reasons if quality_reasons else getattr(display_decision, "rejection_reasons", []) or []),
+        bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
     )
 
 
