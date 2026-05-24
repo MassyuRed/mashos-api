@@ -128,6 +128,85 @@ async def test_persist_emits_one_lockdown_record_on_success_with_new_env(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_persist_returns_public_sanitized_meta_while_lockdown_uses_internal_meta(monkeypatch, caplog) -> None:
+    _clear_diagnostic_env(monkeypatch)
+    monkeypatch.setenv("EMLIS_AI_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED", "1")
+    caplog.set_level(logging.INFO)
+    visible_comment = "これはpublic metaへ入れてはいけない観測本文です"
+    raw_memo = "これはpublic metaへ入れてはいけない入力本文です"
+    raw_evidence = "これはpublic metaへ入れてはいけない根拠全文です"
+
+    async def fake_render_reply(**_kwargs):
+        return SimpleNamespace(
+            comment_text=visible_comment,
+            meta={
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
+                "tier": "free",
+                "observation_status": "passed",
+                "observation_trace_id": "emlisobs-step3-boundary",
+                "diagnostic_summary": {
+                    "stage": "display",
+                    "primary_reason": "passed",
+                    "coverage_group": "low_information",
+                    "composer_status": "generated",
+                    "composer_source": "ai_generated",
+                    "gate_results": {
+                        "reader": {"passed": True, "primary_reason": "passed"},
+                        "display": {"passed": True, "primary_reason": "passed"},
+                    },
+                },
+                "complete_reply_service_diagnostics": {
+                    "used_phrase_unit_ids": ["phrase-unit-internal-only"],
+                    "relation_types": ["relation-internal-only"],
+                    "current_input": {"memo": raw_memo},
+                    "comment_text": visible_comment,
+                },
+                "multi_perspective": {
+                    "evidence_spans": [{"raw_text": raw_evidence, "source_text": raw_memo}],
+                    "observation_graph": {"nodes": [{"text": raw_evidence}]},
+                },
+                "current_input": {"memo": raw_memo},
+                "comment_text": visible_comment,
+            },
+        )
+
+    _patch_persist_baseline(monkeypatch, render_reply=fake_render_reply)
+
+    result = await service.persist_emotion_submission(
+        user_id="user-1",
+        emotions=["neutral"],
+        memo=raw_memo,
+        memo_action=None,
+        category=["daily"],
+    )
+
+    public_meta = result["input_feedback_meta"]
+    dumped_public_meta = json.dumps(public_meta, ensure_ascii=False, sort_keys=True)
+    assert public_meta["schema_version"] == "emlis.public_input_feedback_meta.v1"
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["public_feedback_meta_boundary"]["sanitized"] is True
+    assert public_meta["public_feedback_meta_boundary"]["internal_meta_returned"] is False
+    assert "complete_reply_service_diagnostics" not in public_meta
+    assert "multi_perspective" not in public_meta
+    assert "current_input" not in dumped_public_meta
+    assert visible_comment not in dumped_public_meta
+    assert raw_memo not in dumped_public_meta
+    assert raw_evidence not in dumped_public_meta
+
+    records = _lockdown_records(caplog)
+    assert len(records) == 1
+    record = records[0]
+    assert record["trace_id"] == "emlisobs-step3-boundary"
+    assert record["classification"] == "passed_displayed"
+    assert record["used_phrase_unit_ids"] == ["phrase-unit-internal-only"]
+    assert record["relation_types"] == ["relation-internal-only"]
+    assert visible_comment not in caplog.text
+    assert raw_memo not in caplog.text
+    assert raw_evidence not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_persist_emits_lockdown_record_on_render_exception(monkeypatch, caplog) -> None:
     _clear_diagnostic_env(monkeypatch)
     monkeypatch.setenv("EMLIS_AI_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED", "true")

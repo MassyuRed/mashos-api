@@ -81,11 +81,14 @@ _LINE_ROLE_CLOSING: Final = "closing"
 _SPACE_RE: Final = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _FORBIDDEN_COMPLETE_TEMPLATE_RE: Final = re.compile(
-    r"(Emlisです|Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています)"
+    r"(Emlisです|Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています|よければ、何がありましたか|何がありましたか)"
 )
 _PAST_REFERENCE_RE: Final = re.compile(r"(以前にも|前にも|過去にも|前回も)")
 _EVENT_ASSERTION_RE: Final = re.compile(r"(同じことで疲れている|環境の件で疲れている|前と同じことで|今回も環境|あなたはいつも|しやすい人)")
-_QUESTION_MARK_RE: Final = re.compile(r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|どの部分が重くなっているか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)")
+_QUESTION_MARK_RE: Final = re.compile(
+    r"(詳しく残せそうなら、(?:何があったか|どのあたりが重くなっているか|何が変わったのか|どこから言いにくくなっているか|何について大丈夫か気になっているのか)残してみませんか|残してみませんか|何がありましたか|何が起きたか|どの部分が重くなっていますか|どの部分が重くなっているか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
+)
+_LEGACY_LOW_INFORMATION_PROMPT_RE: Final = re.compile(r"(よければ、|何がありましたか[。！？!?]?)")
 _HUMILITY_MARKER_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
 _KNOWN_SCOPE_RE: Final = re.compile(r"(言葉になる前の重さ|疲れの重さ|不安の重さ|無理かもしれない感じ|大丈夫かどうか|安心してよいか|ここから見えているのは|軽く流せるものではなさそう|詳しい出来事まではまだ見えません|まだ詳しい出来事までは見えません|まだ詳細までは見えません)")
 
@@ -338,20 +341,53 @@ def _question_surface_kind_for_slots(unknown_slots: Sequence[str]) -> str:
 def _question_surface_for_kind(kind: str, selected_entry: Mapping[str, Any]) -> str:
     surface = _clean(selected_entry.get("surface"))
     if surface:
-        return surface
+        return _normalize_low_information_question_fragment(surface)
     if kind == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY:
-        return "どの部分が重くなっていますか"
+        return "どのあたりが重くなっているか"
     if kind == QUESTION_SURFACE_WHAT_CHANGED:
-        return "何が変わりましたか"
+        return "何が変わったのか"
     if kind == QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY:
-        return "どこから言いにくくなっていますか"
-    return "何がありましたか"
+        return "どこから言いにくくなっているか"
+    return "何があったか"
+
+
+def _normalize_low_information_question_fragment(question_surface: Any) -> str:
+    fragment = _clean(question_surface)
+    if not fragment:
+        return "何があったか"
+    fragment = re.sub(r"^よければ、", "", fragment).strip()
+    fragment = re.sub(r"^詳しく残せそうなら、", "", fragment).strip()
+    fragment = re.sub(r"残してみませんか[。！？!?]*$", "", fragment).strip()
+    fragment = fragment.rstrip("。！？!?")
+    legacy_map = {
+        "何がありましたか": "何があったか",
+        "何が起きたか": "何があったか",
+        "どの部分が重くなっていますか": "どのあたりが重くなっているか",
+        "どの部分が重くなっているか": "どのあたりが重くなっているか",
+        "何が変わりましたか": "何が変わったのか",
+        "どこから言いにくくなっていますか": "どこから言いにくくなっているか",
+        "何を言いにくく感じていますか": "どこから言いにくくなっているか",
+        "何について大丈夫か気になっていますか": "何について大丈夫か気になっているのか",
+    }
+    return legacy_map.get(fragment, fragment or "何があったか")
+
+
+def format_low_information_question_prompt(
+    question_surface: Any = "",
+    *,
+    safe_anchor_kind: str = "",
+) -> str:
+    if _clean(safe_anchor_kind) == "safety_confirmation":
+        fragment = "何について大丈夫か気になっているのか"
+    else:
+        fragment = _normalize_low_information_question_fragment(question_surface)
+    return _ensure_sentence(f"詳しく残せそうなら、{fragment}残してみませんか")
 
 
 def _unknown_marker_for_slots(unknown_slots: Sequence[str]) -> str:
     slots = set(unknown_slots)
     if UNKNOWN_SLOT_TARGET in slots or UNKNOWN_SLOT_RELATION in slots:
-        return "どの部分が重くなっているか"
+        return "どのあたりが重くなっているか"
     if UNKNOWN_SLOT_DESIRED_DIRECTION in slots:
         return "何が変わったのか"
     if UNKNOWN_SLOT_CURRENT_FEELING_TARGET in slots:
@@ -813,10 +849,10 @@ def _build_lines(
         known_surface = _clean(known_scope.get("surface")) or "まだ詳しい出来事までは見えませんが"
         known_scope_text = f"{known_surface}、軽く流せるものではなさそうです。"
 
-    if anchor_kind == "safety_confirmation":
-        question_text = _ensure_sentence("よければ、何について大丈夫か気になっていますか")
-    else:
-        question_text = _ensure_sentence(f"よければ、{question_surface}")
+    question_text = format_low_information_question_prompt(
+        question_surface,
+        safe_anchor_kind=anchor_kind,
+    )
 
     lines = (
         LowInformationObservationLine(
@@ -1056,6 +1092,8 @@ def assert_low_information_observation_composer_contract(
         raise ValueError(f"{source} body must include known-scope observation")
     if not _HUMILITY_MARKER_RE.search(body):
         raise ValueError(f"{source} body must include a humility marker")
+    if _LEGACY_LOW_INFORMATION_PROMPT_RE.search(body):
+        raise ValueError(f"{source} must not use legacy low-information question wording")
     if not _QUESTION_MARK_RE.search(body):
         raise ValueError(f"{source} body must include a question for an unknown slot")
     if _QUESTION_MARK_RE.fullmatch(body.strip("。！？!?")):
@@ -1237,6 +1275,7 @@ __all__ = [
     "LOW_INFORMATION_SPECIFICITY_PLAN_VERSION",
     "LOW_INFORMATION_SPECIFICITY_PLAN_SCHEMA_VERSION",
     "LOW_INFORMATION_SPECIFICITY_STEP",
+    "format_low_information_question_prompt",
     "QUESTION_SURFACE_WHAT_CHANGED",
     "QUESTION_SURFACE_WHAT_HAPPENED",
     "QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY",

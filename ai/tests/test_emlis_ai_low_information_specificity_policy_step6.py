@@ -49,7 +49,7 @@ def test_step6_uses_specific_safe_anchor_for_safety_question_without_raw_long_co
     assert plan["raw_input_included"] is False
     assert plan["comment_text_body_included"] is False
     assert "大丈夫かどうか" in draft.body
-    assert "何について大丈夫か気になっていますか" in draft.body
+    assert "詳しく残せそうなら、何について大丈夫か気になっているのか残してみませんか" in draft.body
     assert "大丈夫かどうか不安" not in draft.body
     assert meta["unsupported_event_assertion_present"] is False
     assert meta["user_fact_promotion_attempt"] is False
@@ -70,7 +70,7 @@ def test_step6_uses_emotion_anchor_but_does_not_echo_short_raw_input() -> None:
     assert meta["safe_anchor_surface_kind"] == "fatigue_weight"
     assert "疲れの重さ" in draft.body
     assert "疲れた" not in draft.body
-    assert "何がありましたか" in draft.body
+    assert "詳しく残せそうなら、何があったか残してみませんか" in draft.body
     assert_low_information_observation_composer_contract(draft, current_input=_input("疲れた"))
 
 
@@ -87,7 +87,7 @@ def test_step6_keeps_fully_anchorless_low_information_abstract_and_meta_only() -
     assert meta["safe_anchor_role"] == "none"
     assert meta["safe_anchor_surface_kind"] == "none"
     assert "言葉になる前の重さ" in draft.body
-    assert "何がありましたか" in draft.body
+    assert "詳しく残せそうなら、何があったか残してみませんか" in draft.body
     assert_low_information_observation_composer_contract(draft, current_input=_input("あれだけ", emotions=[]))
 
 
@@ -128,7 +128,7 @@ def test_step6_surface_realizer_preserves_anchor_specific_question_line() -> Non
     surface = realize_low_information_observation_surface(draft, current_input=_input("大丈夫かどうか不安"))
     meta = surface.as_meta()
 
-    assert "何について大丈夫か気になっていますか" in surface.body
+    assert "詳しく残せそうなら、何について大丈夫か気になっているのか残してみませんか" in surface.body
     assert "よければ、何がありましたか" not in surface.body
     assert meta["source_meta"]["low_information_specificity_used"] is True
     assert meta["source_meta"]["safe_anchor_surface_kind"] == "safety_confirmation"
@@ -147,5 +147,5 @@ async def test_step6_public_low_information_repair_keeps_specific_safe_anchor_qu
 
     assert reply.meta["observation_status"] == "passed"
     assert "大丈夫かどうか" in reply.comment_text
-    assert "何について大丈夫か気になっていますか" in reply.comment_text
+    assert "詳しく残せそうなら、何について大丈夫か気になっているのか残してみませんか" in reply.comment_text
     assert "よければ、何がありましたか" not in reply.comment_text

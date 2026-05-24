@@ -103,8 +103,28 @@ def test_step5_selects_positive_material_by_reply_kind_category_and_evidence_rol
     )
 
     assert low_info_questions
+    low_info_question_surfaces = {entry["surface"] for entry in low_info_questions}
+    assert "何があったか" in low_info_question_surfaces
+    assert "何がありましたか" not in low_info_question_surfaces
     assert all(entry["category"] == CATEGORY_QUESTION_ENDING for entry in low_info_questions)
     assert all(entry["positive_material"] is True for entry in low_info_questions)
+
+    changed_questions = select_observation_dictionary_entries(
+        dictionary,
+        category=CATEGORY_QUESTION_ENDING,
+        reply_kind=OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+        evidence_roles=["unknown_slot"],
+        unknown_slots=["desired_direction"],
+    )
+    hard_to_say_questions = select_observation_dictionary_entries(
+        dictionary,
+        category=CATEGORY_QUESTION_ENDING,
+        reply_kind=OBSERVATION_REPLY_KIND_LOW_INFORMATION,
+        evidence_roles=["unknown_slot"],
+        unknown_slots=["current_feeling_target"],
+    )
+    assert {entry["surface"] for entry in changed_questions} == {"何が変わったのか"}
+    assert {entry["surface"] for entry in hard_to_say_questions} == {"どこから言いにくくなっているか"}
     assert eligible_relations
     assert all(OBSERVATION_REPLY_KIND_ELIGIBLE in entry["allowed_reply_kinds"] for entry in eligible_relations)
     assert hidden_forbidden == []

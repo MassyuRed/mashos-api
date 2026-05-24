@@ -43,6 +43,7 @@ from emlis_ai_observation_diagnostic_lockdown import (
     build_observation_diagnostic_lockdown,
     dump_observation_diagnostic,
 )
+from emlis_ai_public_feedback_meta import build_public_emlis_input_feedback_meta
 from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
@@ -331,7 +332,7 @@ async def persist_emotion_submission(
     })
 
     input_feedback_comment = ""
-    input_feedback_meta: Dict[str, Any] = {}
+    internal_input_feedback_meta: Dict[str, Any] = {}
     try:
         subscription_tier = await get_subscription_tier_for_user(
             str(user_id or "").strip(),
@@ -350,18 +351,18 @@ async def persist_emotion_submission(
             timeout=_emlis_ai_reply_timeout_seconds(),
         )
         input_feedback_comment = str(reply.comment_text or "").strip()
-        input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
+        internal_input_feedback_meta = reply.meta if isinstance(reply.meta, dict) else {}
 
         _log_emlis_ai_observation_result(
             input_feedback_comment=input_feedback_comment,
-            input_feedback_meta=input_feedback_meta,
+            input_feedback_meta=internal_input_feedback_meta,
         )
     except Exception as exc:
         _log_emlis_ai_reply_failure(exc)
         # Fail-closed: do not fall back to a fixed Emlis observation sentence.
         # The saved emotion remains successful, but Emlisの観測 is not shown.
         input_feedback_comment = ""
-        input_feedback_meta = {
+        internal_input_feedback_meta = {
             "version": "emlis_ai_v3",
             "kernel_version": "multi_perspective_observation.v1",
             "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
@@ -379,11 +380,17 @@ async def persist_emotion_submission(
 
     _log_emlis_ai_observation_diagnostic_lockdown(
         input_feedback_comment=input_feedback_comment,
-        input_feedback_meta=input_feedback_meta,
+        input_feedback_meta=internal_input_feedback_meta,
         emotion_log_id=str(inserted.get("id") or ""),
         created_at=str(
             inserted.get("created_at", effective_created_at) or effective_created_at
         ),
+    )
+
+    public_input_feedback_meta = build_public_emlis_input_feedback_meta(
+        internal_input_feedback_meta,
+        comment_text_present=bool(input_feedback_comment),
+        subscription_tier=subscription_tier,
     )
 
     return {
@@ -391,7 +398,7 @@ async def persist_emotion_submission(
         "created_at": inserted.get("created_at", effective_created_at),
         "global_summary_activity_date": activity_date,
         "input_feedback_comment": input_feedback_comment,
-        "input_feedback_meta": input_feedback_meta,
+        "input_feedback_meta": public_input_feedback_meta,
         "normalized": normalized,
     }
 

@@ -66,14 +66,15 @@ OBSERVATION_DISPLAY_REPAIR_COMPOSER_MODEL: Final = "emlis.low_information_observ
 
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
-    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
+    r"(詳しく残せそうなら、(?:何があったか|どのあたりが重くなっているか|何が変わったのか|どこから言いにくくなっているか|何について大丈夫か気になっているのか)残してみませんか|残してみませんか|何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
 )
+_LEGACY_LOW_INFORMATION_PROMPT_RE: Final = re.compile(r"(よければ、|何がありましたか[。！？!?]?)")
 _HUMILITY_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
 _UNSUPPORTED_ASSERTION_RE: Final = re.compile(
     r"(前と同じことで疲れている|環境の件で疲れている|あなたはいつも|しやすい人|診断|治療|症状|トラウマ|障害|ADHD|うつ|鬱|PTSD)"
 )
 _FORBIDDEN_FIXED_TEXT_RE: Final = re.compile(
-    r"(Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています)"
+    r"(Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています|よければ、何がありましたか|何がありましたか)"
 )
 
 
@@ -470,6 +471,8 @@ def _low_information_quality_reasons(surface: ObservationSurfaceRealization) -> 
     reasons.extend(f"missing_role:{role}" for role in missing)
     if not meta.get("unknown_slots"):
         reasons.append("unknown_slots_missing")
+    if _LEGACY_LOW_INFORMATION_PROMPT_RE.search(body):
+        reasons.append("legacy_low_information_question_wording")
     if not _QUESTION_RE.search(body):
         reasons.append("low_information_question_missing")
     if not _HUMILITY_RE.search(body):

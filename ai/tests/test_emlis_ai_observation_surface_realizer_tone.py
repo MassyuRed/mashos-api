@@ -173,7 +173,8 @@ def test_step9_low_information_surface_selects_question_ending_from_unknown_slot
     assert meta["contains_humility_marker"] is True
     assert meta["contains_question"] is True
     assert meta["question_not_only"] is True
-    assert "どの部分が重くなっていますか" in surface.body
+    assert "詳しく残せそうなら、どのあたりが重くなっているか残してみませんか" in surface.body
+    assert "どの部分が重くなっていますか" not in surface.body
     assert "もっと詳しく教えてください" not in surface.body
     assert meta["tone_guard_passed"] is True
     assert meta["template_guard_passed"] is True
@@ -214,7 +215,7 @@ def test_step9_tone_and_template_guards_reject_comfort_only_question_only_and_pu
     assert tone_report["generic_comfort_detected"] is True
 
     template_report = build_observation_surface_template_report(
-        text="よければ、何がありましたか。",
+        text="詳しく残せそうなら、何があったか残してみませんか。",
         observation_reply_kind=OBSERVATION_REPLY_KIND_LOW_INFORMATION,
     )
     assert template_report["template_guard_passed"] is False
@@ -246,6 +247,7 @@ def test_step9_dump_does_not_include_surface_text_or_raw_user_payload() -> None:
     assert "realized_text" not in dumped
     assert "今は" not in dumped
     assert "よければ" not in dumped
+    assert "詳しく残せそうなら" not in dumped
 
 
 def test_step9_short_import_path_reexports_tone_implementation() -> None:
@@ -281,7 +283,7 @@ def test_step9_template_echo_guard_consumes_observation_surface_reports_fail_clo
     from emlis_ai_template_echo_guard import guard_template_echo
 
     report = guard_template_echo(
-        comment_text="よければ、何がありましたか。",
+        comment_text="詳しく残せそうなら、何があったか残してみませんか。",
         evidence_spans=[],
         composer_source="ai_generated",
         composer_meta={

@@ -18,6 +18,7 @@ from piece_publish_entitlements import (
     resolve_reflection_publish_limit_for_tier,
 )
 from subscription import SubscriptionTier, normalize_subscription_tier
+from emlis_ai_public_feedback_meta import should_include_public_input_feedback
 
 from .emotion_submit_service import persist_emotion_submission
 
@@ -154,7 +155,7 @@ async def publish_emotion_reflection_preview(*, user_id: str, preview_id: str) -
     input_feedback = None
     input_feedback_meta = persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None
     input_feedback_comment = str(persisted.get("input_feedback_comment") or "").strip()
-    if input_feedback_comment or isinstance(input_feedback_meta, dict):
+    if should_include_public_input_feedback(input_feedback_comment, input_feedback_meta):
         input_feedback = {
             "comment_text": input_feedback_comment,
             "emlis_ai": input_feedback_meta,

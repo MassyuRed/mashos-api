@@ -59,6 +59,8 @@ def test_step10_low_information_branch_passes_existing_display_contract() -> Non
     assert result.applied is True
     assert result.display_decision.observation_status == "passed"
     assert result.display_decision.comment_text.strip()
+    assert "詳しく残せそうなら、何があったか残してみませんか" in result.display_decision.comment_text
+    assert "よければ、何がありましたか" not in result.display_decision.comment_text
 
     meta = result.as_meta()
     assert meta["observation_reply_kind"] == OBSERVATION_REPLY_KIND_LOW_INFORMATION

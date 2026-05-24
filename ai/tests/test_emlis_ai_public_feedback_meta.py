@@ -1,0 +1,395 @@
+from __future__ import annotations
+
+import importlib
+import json
+from collections.abc import Mapping
+from typing import Any
+
+
+SECRET_COMMENT = "これはpublic metaへ入れてはいけない観測本文です"
+SECRET_RAW_INPUT = "これはpublic metaへ入れてはいけない入力本文です"
+SECRET_EVIDENCE = "これはpublic metaへ入れてはいけない根拠全文です"
+
+FORBIDDEN_PUBLIC_KEYS = {
+    "multi_perspective",
+    "evidence_spans",
+    "perspective_reports",
+    "perspective_board",
+    "observation_graph",
+    "composer_candidate",
+    "complete_scorecard_event",
+    "complete_scorecard_harness",
+    "complete_reply_diagnostics",
+    "complete_reply_service_diagnostics",
+    "complete_composer_reply_diagnostics",
+    "complete_initial_fixture_qa_run",
+    "fixture_qa_run",
+    "product_quality_scorecard",
+    "release_ladder_guard",
+    "current_input",
+    "memo",
+    "memo_text",
+    "raw_input",
+    "raw_text",
+    "source_text",
+    "input_text",
+    "comment_text",
+    "commentText",
+    "candidate_comment_text",
+    "public_comment_text",
+    "realized_text",
+    "body",
+    "text",
+}
+
+
+class ExplodingMapping(Mapping[str, Any]):
+    """Mapping that lets the sanitizer prove fail-closed behavior."""
+
+    def __getitem__(self, key: str) -> Any:  # pragma: no cover - invoked by implementation under test
+        raise RuntimeError(f"unexpected read: {key}")
+
+    def __iter__(self):  # pragma: no cover - invoked by implementation under test
+        raise RuntimeError("unexpected iteration")
+
+    def __len__(self) -> int:
+        return 1
+
+    def get(self, key: str, default: Any = None) -> Any:  # pragma: no cover - invoked by implementation under test
+        raise RuntimeError(f"unexpected get: {key}")
+
+
+
+def _public_meta_module():
+    # Step 1 is test-first. Step 2 must add this module and make these
+    # contract tests pass without loosening the RN display contract.
+    return importlib.import_module("emlis_ai_public_feedback_meta")
+
+
+
+def _compact_json_bytes(value: Mapping[str, Any]) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+
+def _all_keys(value: Any) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            keys.add(str(key))
+            keys.update(_all_keys(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            keys.update(_all_keys(nested))
+    return keys
+
+
+
+def _dump(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+
+def _large_internal_meta() -> dict[str, Any]:
+    return {
+        "version": "emlis_ai_v3",
+        "kernel_version": "multi_perspective_observation.v1",
+        "tier": "internal-tier-must-not-override-explicit-subscription",
+        "observation_status": "passed",
+        "observation_trace_id": "emlisobs-public-boundary",
+        "trace_id": "trace-public-boundary",
+        "observation_reply_kind": "low_information_observation",
+        "rejection_reasons": [f"reason_{idx}_" + ("x" * 160) for idx in range(32)],
+        "diagnostic_summary": {
+            "stage": "display",
+            "primary_reason": "passed",
+            "secondary_reasons": ["must_not_be_copied"],
+            "coverage_group": "low_information",
+            "coverage_scope": "current_input_core",
+            "composer_status": "generated",
+            "composer_source": "ai_generated",
+            "gate_results": {
+                "reader": {
+                    "passed": True,
+                    "primary_reason": "passed",
+                    "raw_text": SECRET_RAW_INPUT,
+                    "rejection_reasons": ["must_not_be_copied"],
+                },
+                "grounding": {
+                    "passed": True,
+                    "primary_reason": "passed",
+                    "debug_payload": {"raw_text": SECRET_EVIDENCE},
+                },
+                "display": {
+                    "passed": True,
+                    "primary_reason": "passed",
+                    "comment_text": SECRET_COMMENT,
+                },
+            },
+            "complete_reply_service_diagnostics": {
+                "current_input": {"memo": SECRET_RAW_INPUT},
+                "comment_text": SECRET_COMMENT,
+                "complete_candidate_generated": True,
+            },
+        },
+        "runtime_surface_pre_return_gate": {
+            "passed": True,
+            "action": "pass",
+            "rerender_attempted": False,
+            "rejection_reasons": ["safe_reason"],
+            "candidate_comment_text": SECRET_COMMENT,
+            "diagnostics": {"raw_text": SECRET_RAW_INPUT},
+        },
+        "observation_reply_meta": {
+            "observation_reply_kind": "low_information_observation",
+            "eligible_for_full_observation": False,
+            "question_required": True,
+            "user_fact_may_promote_to_eligible": False,
+            "comment_text": SECRET_COMMENT,
+        },
+        "step10_observation_display_repair_integration": {
+            "applied": True,
+            "final_observation_status": "passed",
+            "observation_reply_kind": "low_information_observation",
+            "public_status_extended": False,
+            "observation_status_enum_extended": False,
+            "rn_visible_contract_changed": False,
+            "response_shape_changed": False,
+            "display_gate_relaxed": False,
+            "fixed_fallback_used": False,
+            "external_ai_used": False,
+            "comment_text": SECRET_COMMENT,
+        },
+        "multi_perspective": {
+            "evidence_spans": [
+                {
+                    "span_id": "span-1",
+                    "raw_text": SECRET_EVIDENCE,
+                    "source_text": SECRET_RAW_INPUT,
+                }
+            ],
+            "perspective_reports": [
+                {
+                    "observer": "reader",
+                    "claims": [{"object": SECRET_RAW_INPUT}],
+                }
+            ],
+            "perspective_board": {"raw_text": SECRET_EVIDENCE},
+            "observation_graph": {
+                "nodes": [
+                    {
+                        "id": "node-1",
+                        "text": SECRET_EVIDENCE,
+                        "body": SECRET_RAW_INPUT,
+                    }
+                ]
+            },
+            "composer_candidate": {
+                "comment_text": SECRET_COMMENT,
+                "current_input": {"memo": SECRET_RAW_INPUT},
+            },
+        },
+        "complete_scorecard_event": {"raw_text": SECRET_EVIDENCE},
+        "complete_scorecard_harness": {"raw_text": SECRET_EVIDENCE},
+        "complete_reply_diagnostics": {"current_input": {"memo": SECRET_RAW_INPUT}},
+        "complete_composer_reply_diagnostics": {"comment_text": SECRET_COMMENT},
+        "complete_initial_fixture_qa_run": {"input_text": SECRET_RAW_INPUT},
+        "fixture_qa_run": {"source_text": SECRET_EVIDENCE},
+        "product_quality_scorecard": {"body": SECRET_EVIDENCE},
+        "release_ladder_guard": {"text": SECRET_EVIDENCE},
+        "current_input": {"memo": SECRET_RAW_INPUT},
+        "memo": SECRET_RAW_INPUT,
+        "memo_text": SECRET_RAW_INPUT,
+        "raw_input": SECRET_RAW_INPUT,
+        "raw_text": SECRET_EVIDENCE,
+        "source_text": SECRET_EVIDENCE,
+        "input_text": SECRET_RAW_INPUT,
+        "comment_text": SECRET_COMMENT,
+        "commentText": SECRET_COMMENT,
+        "candidate_comment_text": SECRET_COMMENT,
+        "public_comment_text": SECRET_COMMENT,
+        "realized_text": SECRET_COMMENT,
+        "body": SECRET_RAW_INPUT,
+        "text": SECRET_RAW_INPUT,
+    }
+
+
+
+def _build_public_meta(internal_meta: Mapping[str, Any] | None, **kwargs: Any) -> dict[str, Any]:
+    module = _public_meta_module()
+    return module.build_public_emlis_input_feedback_meta(internal_meta, **kwargs)
+
+
+
+def test_public_feedback_meta_keeps_public_rn_contract_keys_and_boundary_marker() -> None:
+    module = _public_meta_module()
+
+    public_meta = module.build_public_emlis_input_feedback_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["schema_version"] == "emlis.public_input_feedback_meta.v1"
+    assert public_meta["version"] == "emlis_ai_v3"
+    assert public_meta["kernel_version"] == "multi_perspective_observation.v1"
+    assert public_meta["tier"] == "free"
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["observation_trace_id"] == "emlisobs-public-boundary"
+    assert public_meta["trace_id"] == "trace-public-boundary"
+    assert public_meta["observation_reply_kind"] == "low_information_observation"
+
+    boundary = public_meta["public_feedback_meta_boundary"]
+    assert boundary == {
+        "version": "emlis.public_feedback_meta_boundary.v1",
+        "sanitized": True,
+        "max_bytes": module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES,
+        "trimmed": False,
+        "internal_meta_returned": False,
+        "raw_input_included": False,
+        "comment_text_included": False,
+    }
+
+
+
+def test_public_feedback_meta_drops_internal_text_and_diagnostic_payloads() -> None:
+    public_meta = _build_public_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+
+def test_public_feedback_meta_reduces_diagnostic_summary_to_safe_gate_summary() -> None:
+    public_meta = _build_public_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    diagnostic_summary = public_meta["diagnostic_summary"]
+    assert diagnostic_summary == {
+        "stage": "display",
+        "primary_reason": "passed",
+        "coverage_group": "low_information",
+        "composer_status": "generated",
+        "composer_source": "ai_generated",
+        "gate_results": {
+            "reader": {"passed": True, "primary_reason": "passed"},
+            "grounding": {"passed": True, "primary_reason": "passed"},
+            "display": {"passed": True, "primary_reason": "passed"},
+        },
+    }
+    for gate_summary in diagnostic_summary["gate_results"].values():
+        assert set(gate_summary) <= {"passed", "primary_reason"}
+
+
+
+def test_public_feedback_meta_retains_runtime_and_reply_optional_summaries_only() -> None:
+    public_meta = _build_public_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["runtime_surface_pre_return_gate"] == {
+        "passed": True,
+        "action": "pass",
+        "rerender_attempted": False,
+        "rejection_reasons": ["safe_reason"],
+    }
+    assert public_meta["observation_reply_meta"] == {
+        "observation_reply_kind": "low_information_observation",
+        "eligible_for_full_observation": False,
+        "question_required": True,
+        "user_fact_may_promote_to_eligible": False,
+    }
+    assert public_meta["step10_observation_display_repair_integration"] == {
+        "applied": True,
+        "final_observation_status": "passed",
+        "observation_reply_kind": "low_information_observation",
+        "public_status_extended": False,
+        "observation_status_enum_extended": False,
+        "rn_visible_contract_changed": False,
+        "response_shape_changed": False,
+        "display_gate_relaxed": False,
+        "fixed_fallback_used": False,
+        "external_ai_used": False,
+    }
+
+
+
+def test_public_feedback_meta_caps_reason_count_string_lengths_and_total_bytes() -> None:
+    module = _public_meta_module()
+
+    public_meta = module.build_public_emlis_input_feedback_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert len(public_meta["rejection_reasons"]) == module.PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS
+    assert all(
+        len(reason) <= module.PUBLIC_EMLIS_FEEDBACK_META_MAX_REASON_LENGTH
+        for reason in public_meta["rejection_reasons"]
+    )
+    assert _compact_json_bytes(public_meta) <= module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
+
+
+
+def test_public_feedback_meta_returns_minimal_unavailable_when_sanitizer_cannot_read_meta() -> None:
+    module = _public_meta_module()
+
+    public_meta = module.build_public_emlis_input_feedback_meta(
+        ExplodingMapping(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta == {
+        "schema_version": "emlis.public_input_feedback_meta.v1",
+        "version": "emlis_ai_v3",
+        "kernel_version": "multi_perspective_observation.v1",
+        "tier": "free",
+        "observation_status": "unavailable",
+        "rejection_reasons": ["public_feedback_meta_sanitizer_failed"],
+        "public_feedback_meta_boundary": {
+            "version": "emlis.public_feedback_meta_boundary.v1",
+            "sanitized": True,
+            "max_bytes": module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES,
+            "trimmed": True,
+            "internal_meta_returned": False,
+            "raw_input_included": False,
+            "comment_text_included": False,
+        },
+    }
+    assert _compact_json_bytes(public_meta) <= module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
+
+
+def test_should_include_public_input_feedback_requires_comment_and_passed_public_meta() -> None:
+    module = _public_meta_module()
+
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {"observation_status": "passed"},
+    ) is True
+    assert module.should_include_public_input_feedback(
+        "",
+        {"observation_status": "passed"},
+    ) is False
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {"observation_status": "unavailable"},
+    ) is False
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {"version": "legacy_meta_without_public_status"},
+    ) is False
+    assert module.should_include_public_input_feedback("Emlisの観測本文です。", None) is False

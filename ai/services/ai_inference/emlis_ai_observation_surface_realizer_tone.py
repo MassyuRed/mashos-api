@@ -31,6 +31,7 @@ from emlis_ai_complete_surface_realizer_anti_template import build_surface_reali
 from emlis_ai_low_information_observation_composer import (
     LowInformationObservationDraft,
     compose_low_information_observation,
+    format_low_information_question_prompt,
 )
 from emlis_ai_observation_dictionary_loader import (
     CATEGORY_FORBIDDEN_TEMPLATE_SIGNATURE,
@@ -120,11 +121,12 @@ _ALLOWED_UNKNOWN_SLOTS: Final = frozenset(
 _SPACE_RE: Final = re.compile(r"\s+")
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
-    r"(何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
+    r"(詳しく残せそうなら、(?:何があったか|どのあたりが重くなっているか|何が変わったのか|どこから言いにくくなっているか|何について大丈夫か気になっているのか)残してみませんか|残してみませんか|何がありましたか|何が起きたか|どの部分が重くなっていますか|何が変わりましたか|どこから言いにくくなっていますか|何を言いにくく感じていますか|どうしましたか|何について大丈夫か気になっていますか)"
 )
+_LEGACY_LOW_INFORMATION_PROMPT_RE: Final = re.compile(r"(よければ、|何がありましたか[。！？!?]?)")
 _HUMILITY_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
 _FORBIDDEN_COMPLETE_TEMPLATE_RE: Final = re.compile(
-    r"(Emlisです|Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています)"
+    r"(Emlisです|Emlisでは観測できません|もっと詳しく教えてください|つらかったですね[。\s]*無理しないでくださいね|無理しないでくださいね|あなたは十分頑張っています|よければ、何がありましたか|何がありましたか)"
 )
 _UNSUPPORTED_EVENT_ASSERTION_RE: Final = re.compile(
     r"(前と同じことで疲れている|環境の件で疲れている|あなたはいつも|しやすい人|診断|治療|症状|トラウマ|障害|ADHD|うつ|鬱|PTSD)"
@@ -314,10 +316,10 @@ def _question_entry_for_kind(kind: str, unknown_slots: Sequence[str]) -> dict[st
         if entry_slots & wanted:
             return dict(entry)
     fallback_surface = {
-        QUESTION_SURFACE_KIND_WHICH_PART_FEELS_HEAVY: "どの部分が重くなっていますか",
-        QUESTION_SURFACE_KIND_WHAT_CHANGED: "何が変わりましたか",
-        QUESTION_SURFACE_KIND_WHAT_IS_HARD_TO_SAY: "どこから言いにくくなっていますか",
-    }.get(kind, "何がありましたか")
+        QUESTION_SURFACE_KIND_WHICH_PART_FEELS_HEAVY: "どのあたりが重くなっているか",
+        QUESTION_SURFACE_KIND_WHAT_CHANGED: "何が変わったのか",
+        QUESTION_SURFACE_KIND_WHAT_IS_HARD_TO_SAY: "どこから言いにくくなっているか",
+    }.get(kind, "何があったか")
     return {
         "entry_id": f"fallback_question_ending_{kind}",
         "category": CATEGORY_QUESTION_ENDING,
@@ -453,6 +455,8 @@ def _tone_guard_report(*, body: str, observation_roles: Sequence[str], reply_kin
         reasons.append("advice_like_instruction")
     if _GENERIC_COMFORT_RE.search(body):
         reasons.append("generic_comfort_or_over_empathy")
+    if low_info and _LEGACY_LOW_INFORMATION_PROMPT_RE.search(body):
+        reasons.append("legacy_low_information_question_wording")
     if low_info:
         if OBSERVATION_ROLE_LOW_INFO_KNOWN_SCOPE not in roles:
             reasons.append("low_info_known_scope_missing")
@@ -777,7 +781,8 @@ def _low_information_lines_from_draft(draft: LowInformationObservationDraft) -> 
     unknown_slots = _dedupe(draft_meta.get("unknown_slots"))
     question_surface_kind = _normalize_question_surface_kind(draft_meta.get("question_surface_kind"), unknown_slots)
     question_entry = _question_entry_for_kind(question_surface_kind, unknown_slots)
-    question_surface = _clean(question_entry.get("surface")) or "何がありましたか"
+    question_surface = _clean(question_entry.get("surface")) or "何があったか"
+    safe_anchor_kind = _clean(draft_meta.get("safe_anchor_surface_kind"))
     lines: list[ObservationSurfaceLine] = []
     for item in draft.lines:
         line_meta = item.as_meta()
@@ -788,10 +793,13 @@ def _low_information_lines_from_draft(draft: LowInformationObservationDraft) -> 
         q_entry_id = ""
         material_ids = _dedupe(line_meta.get("material_entry_ids"))
         if role == OBSERVATION_ROLE_LOW_INFO_QUESTION:
-            if not _QUESTION_RE.search(text):
-                text = _ensure_sentence(f"よければ、{question_surface}")
-            else:
+            if _QUESTION_RE.search(text) and not _LEGACY_LOW_INFORMATION_PROMPT_RE.search(text):
                 text = _ensure_sentence(text)
+            else:
+                text = format_low_information_question_prompt(
+                    question_surface,
+                    safe_anchor_kind=safe_anchor_kind,
+                )
             q_kind = question_surface_kind
             q_entry_id = _clean(question_entry.get("entry_id"))
             if q_entry_id and q_entry_id not in material_ids:
@@ -1090,6 +1098,8 @@ def assert_observation_surface_realizer_tone_contract(value: ObservationSurfaceR
             raise ValueError("low information surface must include question role")
         if not meta.get("question_ending_selected_by_unknown_slot"):
             raise ValueError("low information surface must select a question ending from unknown slots")
+        if body and _LEGACY_LOW_INFORMATION_PROMPT_RE.search(body):
+            raise ValueError("low information surface must not use legacy question wording")
         if body and not _QUESTION_RE.search(body):
             raise ValueError("low information surface body must contain a question")
         if body and _body_sentence_count(body) < 2:

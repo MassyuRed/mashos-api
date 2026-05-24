@@ -1,6 +1,6 @@
 {
   "schema_version": "emlis.observation_dictionary.v1",
-  "dictionary_version": "emlis.observation_dictionary.default.2026-05-20",
+  "dictionary_version": "emlis.observation_dictionary.default.2026-05-23",
   "contract_step": "Step5_Observation_Dictionary_Schema",
   "description": "Default observation material dictionary. Positive entries are phrase materials only; forbidden_template_signature entries are guard signatures and must never be selected as surface material.",
   "entries": [
@@ -126,7 +126,7 @@
     {
       "entry_id": "unknown_which_part_heavy",
       "category": "unknown_slot_marker",
-      "surface": "どの部分が重くなっているか",
+      "surface": "どのあたりが重くなっているか",
       "allowed_reply_kinds": ["low_information_observation"],
       "requires_evidence_role": ["unknown_slot"],
       "must_not_be_complete_sentence": true,
@@ -136,22 +136,42 @@
     {
       "entry_id": "question_what_happened",
       "category": "question_ending",
-      "surface": "何がありましたか",
+      "surface": "何があったか",
       "allowed_reply_kinds": ["low_information_observation"],
       "requires_evidence_role": ["unknown_slot"],
       "must_not_be_complete_sentence": true,
-      "template_signature_weight": 0.34,
-      "unknown_slots": ["event"]
+      "template_signature_weight": 0.30,
+      "unknown_slots": ["event", "cause"]
     },
     {
       "entry_id": "question_which_part_heavy",
       "category": "question_ending",
-      "surface": "どの部分が重くなっていますか",
+      "surface": "どのあたりが重くなっているか",
       "allowed_reply_kinds": ["low_information_observation"],
       "requires_evidence_role": ["unknown_slot"],
       "must_not_be_complete_sentence": true,
-      "template_signature_weight": 0.34,
+      "template_signature_weight": 0.30,
       "unknown_slots": ["target", "relation"]
+    },
+    {
+      "entry_id": "question_what_changed",
+      "category": "question_ending",
+      "surface": "何が変わったのか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.28,
+      "unknown_slots": ["desired_direction", "time"]
+    },
+    {
+      "entry_id": "question_hard_to_say",
+      "category": "question_ending",
+      "surface": "どこから言いにくくなっているか",
+      "allowed_reply_kinds": ["low_information_observation"],
+      "requires_evidence_role": ["unknown_slot"],
+      "must_not_be_complete_sentence": true,
+      "template_signature_weight": 0.28,
+      "unknown_slots": ["current_feeling_target"]
     },
     {
       "entry_id": "forbid_empathy_only",

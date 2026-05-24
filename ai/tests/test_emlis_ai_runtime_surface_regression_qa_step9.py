@@ -238,7 +238,7 @@ def test_step9_low_information_specificity_anchor_and_anchorless_cases_keep_disp
     assert anchored_meta["uses_safe_anchor"] is True
     assert anchored_meta["safe_anchor_surface_kind"] == "safety_confirmation"
     assert "大丈夫かどうか" in anchored.body
-    assert "何について大丈夫か気になっていますか" in anchored.body
+    assert "詳しく残せそうなら、何について大丈夫か気になっているのか残してみませんか" in anchored.body
 
     anchored_decision = _display_decision(
         anchored.body,

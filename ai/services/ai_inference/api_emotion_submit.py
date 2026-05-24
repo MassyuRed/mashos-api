@@ -36,6 +36,7 @@ import logging
 import os
 import tempfile
 import threading
+from uuid import UUID
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -73,6 +74,7 @@ from astor_snapshot_enqueue import ASTOR_SELF_STRUCTURE_SNAPSHOT_DEBOUNCE_SECOND
 # Shared Supabase HTTP client (connection pooled)
 from client_compat import extract_client_meta
 from home_gateway.command_gateway import execute_home_command
+from emlis_ai_public_feedback_meta import should_include_public_input_feedback
 
 from supabase_client import (
     sb_auth_headers as _sb_auth_headers_shared,
@@ -975,6 +977,44 @@ EMOTION_NOTIFICATION_GLOBAL_OWNER_IDS = (EMOTION_NOTIFICATION_GLOBAL_OWNER_ID, "
 FRIEND_NOTIFICATION_GLOBAL_OWNER_ID = "__global_friend_notifications__"  # backward-compatible alias
 
 
+def _is_uuid_like(value: Any) -> bool:
+    """Return True only when value can be safely sent to a uuid-typed PostgREST filter."""
+    text = str(value or "").strip()
+    if not text:
+        return False
+    try:
+        UUID(text)
+        return True
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _postgrest_in_quoted_values(values: Sequence[str]) -> str:
+    """Quote already-vetted PostgREST in.(...) filter values."""
+    quoted: List[str] = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        escaped = text.replace('"', '\\"')
+        quoted.append(f'"{escaped}"')
+    return ",".join(quoted)
+
+
+def _emotion_notification_owner_filter_ids(owner_user_id: str) -> List[str]:
+    """Build owner_user_id filter values for uuid-typed notification settings views.
+
+    Global mute sentinel values such as ``__global_emotion_notifications__`` are
+    intentionally not included here. Some current Supabase read views expose
+    ``owner_user_id`` as uuid, and mixing text sentinels into the same filter
+    causes PostgREST to return ``invalid input syntax for type uuid``.
+    """
+    owner = str(owner_user_id or "").strip()
+    if not _is_uuid_like(owner):
+        return []
+    return [owner]
+
+
 async def _filter_viewer_ids_by_emotion_notification_settings(
     *,
     viewer_user_ids: List[str],
@@ -990,10 +1030,11 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
 
     Rule:
         - If a row exists with is_enabled=false for (viewer, owner), exclude that viewer.
-        - If a row exists with is_enabled=false for
-          (viewer, EMOTION_NOTIFICATION_GLOBAL_OWNER_ID), exclude that viewer
-          from all emotion notifications.
         - Missing row => enabled (do not exclude).
+    Boundary:
+        - Global text sentinels are not sent through owner_user_id filters because
+          current read views may type owner_user_id as uuid. This keeps submit
+          notification filtering from emitting uuid syntax warnings.
     Backward compatibility:
         - If the table/columns are missing, filtering is skipped (treat as all enabled).
     """
@@ -1009,16 +1050,24 @@ async def _filter_viewer_ids_by_emotion_notification_settings(
     if not ids:
         return []
 
-    quoted_viewer_ids = ",".join([f"\"{uid}\"" for uid in ids])
-    quoted_owner_ids = ",".join(
-        [
-            f'"{owner_user_id}"',
-            *[f'"{oid}"' for oid in EMOTION_NOTIFICATION_GLOBAL_OWNER_IDS],
-        ]
-    )
+    queryable_viewer_ids = [uid for uid in ids if _is_uuid_like(uid)]
+    owner_filter_ids = _emotion_notification_owner_filter_ids(owner_user_id)
+    if not queryable_viewer_ids or not owner_filter_ids:
+        logger.debug(
+            "Skip %s filtering because ids are not uuid-filter-safe: owner_uuid_like=%s viewer_count=%s queryable_viewer_count=%s",
+            EMOTION_NOTIFICATION_SETTINGS_READ_TABLE,
+            bool(owner_filter_ids),
+            len(ids),
+            len(queryable_viewer_ids),
+        )
+        return ids
+
+    quoted_viewer_ids = _postgrest_in_quoted_values(queryable_viewer_ids)
+    quoted_owner_ids = _postgrest_in_quoted_values(owner_filter_ids)
 
     try:
-        # Fetch only disabled rows for this owner or the global emotion-notification mute.
+        # Fetch only disabled rows for this owner. Do not include global text
+        # sentinels in owner_user_id because the read view may be uuid-typed.
         resp = await _sb_get_shared(
             f"/rest/v1/{EMOTION_NOTIFICATION_SETTINGS_READ_TABLE}",
             params={
@@ -2157,14 +2206,17 @@ def register_emotion_submit_routes(app: FastAPI) -> None:
         input_feedback_comment = str(persisted.get("input_feedback_comment") or "").strip()
         input_feedback_meta = persisted.get("input_feedback_meta") if isinstance(persisted.get("input_feedback_meta"), dict) else None
 
+        input_feedback = None
+        if should_include_public_input_feedback(input_feedback_comment, input_feedback_meta):
+            input_feedback = EmotionSubmitInputFeedback(
+                comment_text=input_feedback_comment,
+                emlis_ai=input_feedback_meta,
+            )
+
         return EmotionSubmitResponse(
             status="ok",
             id=(persisted.get("inserted") or {}).get("id") if isinstance(persisted.get("inserted"), dict) else None,
             created_at=str(persisted.get("created_at") or payload.created_at or datetime.now(timezone.utc).isoformat()),
-            input_feedback=(
-                EmotionSubmitInputFeedback(comment_text=input_feedback_comment, emlis_ai=input_feedback_meta)
-                if (input_feedback_comment or isinstance(input_feedback_meta, dict))
-                else None
-            ),
+            input_feedback=input_feedback,
         )
 

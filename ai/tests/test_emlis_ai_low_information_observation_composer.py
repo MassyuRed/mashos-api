@@ -8,6 +8,8 @@ from emlis_ai_low_information_observation_composer import (
     LOW_INFORMATION_OBSERVATION_COMPOSER_STEP,
     OBSERVED_SCOPE_EMOTION_WEIGHT,
     QUESTION_SURFACE_KIND_WHAT_HAPPENED,
+    QUESTION_SURFACE_KIND_WHAT_CHANGED,
+    QUESTION_SURFACE_KIND_WHAT_IS_HARD_TO_SAY,
     QUESTION_SURFACE_KIND_WHICH_PART_FEELS_HEAVY,
     assert_low_information_observation_composer_contract,
     build_emlis_ai_low_information_observation,
@@ -20,6 +22,8 @@ from emlis_ai_observation_reply_contract import (
     OBSERVATION_ROLE_LOW_INFO_KNOWN_SCOPE,
     OBSERVATION_ROLE_LOW_INFO_QUESTION,
     OBSERVATION_ROLE_LOW_INFO_RECEIVE,
+    UNKNOWN_SLOT_CURRENT_FEELING_TARGET,
+    UNKNOWN_SLOT_DESIRED_DIRECTION,
     UNKNOWN_SLOT_RELATION,
     UNKNOWN_SLOT_TARGET,
     USER_FACT_GROUNDING_MODE_DISABLED,
@@ -197,8 +201,40 @@ def test_step8_question_surface_changes_when_unknown_slot_is_target_or_relation(
     meta = draft.as_meta()
 
     assert meta["question_surface_kind"] == QUESTION_SURFACE_KIND_WHICH_PART_FEELS_HEAVY
-    assert "どの部分が重くなっていますか" in draft.body
+    assert "詳しく残せそうなら、どのあたりが重くなっているか残してみませんか" in draft.body
+    assert "どの部分が重くなっていますか" not in draft.body
     assert_low_information_observation_composer_contract(draft)
+
+
+def test_step8_question_surface_changes_for_direction_and_hard_to_say_slots() -> None:
+    for slots, expected_kind, expected_surface in (
+        (
+            [UNKNOWN_SLOT_DESIRED_DIRECTION],
+            QUESTION_SURFACE_KIND_WHAT_CHANGED,
+            "詳しく残せそうなら、何が変わったのか残してみませんか",
+        ),
+        (
+            [UNKNOWN_SLOT_CURRENT_FEELING_TARGET],
+            QUESTION_SURFACE_KIND_WHAT_IS_HARD_TO_SAY,
+            "詳しく残せそうなら、どこから言いにくくなっているか残してみませんか",
+        ),
+    ):
+        eligibility = route_observation_eligibility(current_input=_input("疲れた"), subscription_tier="free")
+        custom_meta = dict(eligibility.as_meta())
+        custom_meta["unknown_slots"] = list(slots)
+        custom_meta["observation_reply_meta"] = dict(custom_meta["observation_reply_meta"])
+        custom_meta["observation_reply_meta"]["unknown_slots"] = list(slots)
+
+        draft = compose_low_information_observation(
+            current_input=_input("疲れた"),
+            eligibility_decision=custom_meta,
+            subscription_tier="free",
+        )
+
+        assert draft.as_meta()["question_surface_kind"] == expected_kind
+        assert expected_surface in draft.body
+        assert "よければ、何がありましたか" not in draft.body
+        assert_low_information_observation_composer_contract(draft)
 
 
 def test_step8_rejects_eligible_decision_question_only_and_contract_drift() -> None:
@@ -217,9 +253,14 @@ def test_step8_rejects_eligible_decision_question_only_and_contract_drift() -> N
     valid = {"body": valid_draft.body, **valid_draft.as_meta()}
 
     invalid_question_only = dict(valid)
-    invalid_question_only["body"] = "よければ、何がありましたか。"
+    invalid_question_only["body"] = "詳しく残せそうなら、何があったか残してみませんか。"
     with pytest.raises(ValueError):
         assert_low_information_observation_composer_contract(invalid_question_only)
+
+    invalid_legacy_question = dict(valid)
+    invalid_legacy_question["body"] = "今は、言葉になる前の重さが先に出ているように見えます。まだ詳しい出来事までは見えませんが、軽く流せるものではなさそうです。よければ、何がありましたか。"
+    with pytest.raises(ValueError):
+        assert_low_information_observation_composer_contract(invalid_legacy_question)
 
     invalid_public_status = dict(valid)
     invalid_public_status["observation_status_enum_extended"] = True

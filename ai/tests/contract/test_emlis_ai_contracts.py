@@ -15,27 +15,22 @@ def test_emotion_submit_contract_allows_additive_emlis_ai_meta(client, monkeypat
             "created_at": "2026-04-18T00:00:00Z",
             "input_feedback_comment": "Mashさん、こんにちは。Emlisです。今回は不安が近かったのですね。",
             "input_feedback_meta": {
-                "version": "emlis_ai_v2",
-                "kernel_version": "observation_kernel.v2",
+                "schema_version": "emlis.public_input_feedback_meta.v1",
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
                 "tier": "plus",
-                "capability": {
-                    "history_mode": "extended",
-                    "continuity_mode": "basic",
-                    "style_mode": "adaptive",
-                    "partner_mode": "on_basic",
-                    "model_mode": "compact",
-                    "interpretation_mode": "memory_aligned",
+                "observation_status": "passed",
+                "observation_trace_id": "emlisobs-contract-1",
+                "observation_reply_kind": "low_information_observation",
+                "public_feedback_meta_boundary": {
+                    "version": "emlis.public_feedback_meta_boundary.v1",
+                    "sanitized": True,
+                    "max_bytes": 12288,
+                    "trimmed": False,
+                    "internal_meta_returned": False,
+                    "raw_input_included": False,
+                    "comment_text_included": False,
                 },
-                "used_sources": ["current_input", "history", "greeting_state", "derived_user_model"],
-                "used_memory_layers": ["canonical_history", "derived_user_model", "side_state"],
-                "reply_length_mode": "input_scaled",
-                "evidence_count": 2,
-                "evidence_by_line": {
-                    "receive": [{"kind": "emotion", "ref_id": "emo-1", "weight": 1.0, "note": None}],
-                },
-                "rejected_candidate_count": 1,
-                "fallback_used": False,
-                "model_revision": "2026-04-18T00:00:00Z",
             },
         }
 
@@ -52,16 +47,60 @@ def test_emotion_submit_contract_allows_additive_emlis_ai_meta(client, monkeypat
     assert response.headers["X-Cocolon-Contract-Id"] == "emotion.submit.v1"
     body = response.json()
     assert body["input_feedback"]["comment_text"] == "Mashさん、こんにちは。Emlisです。今回は不安が近かったのですね。"
-    assert body["input_feedback"]["emlis_ai"]["version"] == "emlis_ai_v2"
-    assert body["input_feedback"]["emlis_ai"]["kernel_version"] == "observation_kernel.v2"
-    assert body["input_feedback"]["emlis_ai"]["capability"]["history_mode"] == "extended"
-    assert body["input_feedback"]["emlis_ai"]["capability"]["model_mode"] == "compact"
-    assert body["input_feedback"]["emlis_ai"]["capability"]["interpretation_mode"] == "memory_aligned"
-    assert body["input_feedback"]["emlis_ai"]["used_memory_layers"] == ["canonical_history", "derived_user_model", "side_state"]
-    assert body["input_feedback"]["emlis_ai"]["reply_length_mode"] == "input_scaled"
-    assert body["input_feedback"]["emlis_ai"]["evidence_by_line"]["receive"][0]["ref_id"] == "emo-1"
-    assert body["input_feedback"]["emlis_ai"]["rejected_candidate_count"] == 1
-    assert body["input_feedback"]["emlis_ai"]["fallback_used"] is False
+    public_meta = body["input_feedback"]["emlis_ai"]
+    assert public_meta["schema_version"] == "emlis.public_input_feedback_meta.v1"
+    assert public_meta["version"] == "emlis_ai_v3"
+    assert public_meta["kernel_version"] == "multi_perspective_observation.v1"
+    assert public_meta["tier"] == "plus"
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["observation_trace_id"] == "emlisobs-contract-1"
+    assert public_meta["public_feedback_meta_boundary"]["sanitized"] is True
+    assert public_meta["public_feedback_meta_boundary"]["internal_meta_returned"] is False
+
+
+def test_emotion_submit_contract_omits_non_displayable_input_feedback(client, monkeypatch):
+    import api_emotion_submit as emotion_submit_module
+    import emotion_submit_service as emotion_submit_service_module
+
+    async def fake_resolve_user_id_from_token(_access_token: str) -> str:
+        return "user-123"
+
+    async def fake_persist_emotion_submission(**kwargs):
+        assert kwargs["user_id"] == "user-123"
+        return {
+            "inserted": {"id": "emo-1"},
+            "created_at": "2026-04-18T00:00:00Z",
+            "input_feedback_comment": "",
+            "input_feedback_meta": {
+                "schema_version": "emlis.public_input_feedback_meta.v1",
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
+                "tier": "free",
+                "observation_status": "unavailable",
+                "rejection_reasons": ["render_timeout"],
+                "public_feedback_meta_boundary": {
+                    "version": "emlis.public_feedback_meta_boundary.v1",
+                    "sanitized": True,
+                    "max_bytes": 12288,
+                    "trimmed": True,
+                    "internal_meta_returned": False,
+                    "raw_input_included": False,
+                    "comment_text_included": False,
+                },
+            },
+        }
+
+    monkeypatch.setattr(emotion_submit_module, "_resolve_user_id_from_token", fake_resolve_user_id_from_token)
+    monkeypatch.setattr(emotion_submit_service_module, "persist_emotion_submission", fake_persist_emotion_submission)
+
+    response = client.post(
+        "/emotion/submit",
+        headers={"Authorization": "Bearer test-token"},
+        json={"emotions": ["不安"]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["input_feedback"] is None
 
 
 def test_subscription_bootstrap_contract_allows_plan_emlis_ai_meta(client, monkeypatch):
