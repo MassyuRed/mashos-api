@@ -604,6 +604,7 @@ _STEP4_MALFORMED_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...
     ("malformed_nominalization_question_fragment", re.compile(r"(?:ないか|どれ|どこ|なに|何|なんで|どうして)こと(?:$|[もがはに])")),
     ("malformed_nominalization_auxiliary_fragment", re.compile(r"(?:(?<!かも)しれない(?:どれ|どこ|なに|何)?|なっ|し|見え|残っ|重なっ)こと(?:$|[もがはに])")),
     ("malformed_nominalization_te_form_fragment", re.compile(r"(?:なくて|ないで|なれなくて|できなくて|ならなくて|なせなくて|しきれなくて)こと(?:$|[もがはに])")),
+    ("malformed_nominalization_tari_fragment", re.compile(r"たりこと(?:$|[もがはにをでへ])")),
     ("malformed_nominalization_unknown_fragment", re.compile(r"しれない(?:どれ|どこ|なに|何)こと(?:$|[もがはに])")),
 )
 _STEP4_MALFORMED_NOMINALIZATION_FLAGS = {code for code, _pattern in _STEP4_MALFORMED_NOMINALIZATION_PATTERNS}
@@ -671,6 +672,7 @@ def phrase_unit_material_flags(
             if code in {
                 "malformed_nominalization_question_fragment",
                 "malformed_nominalization_te_form_fragment",
+                "malformed_nominalization_tari_fragment",
                 "malformed_nominalization_unknown_fragment",
             }:
                 _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
@@ -750,6 +752,7 @@ def judge_phrase_unit_material_quality(
         "malformed_nominalization_question_fragment_blocked": "malformed_nominalization_question_fragment" in rejection_reasons,
         "malformed_nominalization_auxiliary_fragment_blocked": "malformed_nominalization_auxiliary_fragment" in rejection_reasons,
         "malformed_nominalization_te_form_fragment_blocked": "malformed_nominalization_te_form_fragment" in rejection_reasons,
+        "malformed_nominalization_tari_fragment_blocked": "malformed_nominalization_tari_fragment" in rejection_reasons,
         "malformed_nominalization_unknown_fragment_blocked": "malformed_nominalization_unknown_fragment" in rejection_reasons,
         "role": str(role or "").strip(),
         "detected_type": str(detected_type or "").strip(),
@@ -791,6 +794,7 @@ def phrase_unit_material_quality_policy_meta() -> Dict[str, Any]:
         "malformed_nominalization_question_fragment_guarded": True,
         "malformed_nominalization_auxiliary_fragment_guarded": True,
         "malformed_nominalization_te_form_fragment_guarded": True,
+        "malformed_nominalization_tari_fragment_guarded": True,
         "malformed_nominalization_unknown_fragment_guarded": True,
         "input_specific_template_used": False,
         "completion_sentence_templates_added": False,

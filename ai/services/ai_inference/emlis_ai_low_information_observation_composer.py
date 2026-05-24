@@ -74,6 +74,21 @@ QUESTION_SURFACE_WHAT_CHANGED: Final = "what_changed"
 QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY: Final = "which_part_feels_heavy"
 QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY: Final = "what_is_hard_to_say"
 
+LOW_INFORMATION_TONE_PROFILE_VERSION: Final = "emlis.low_information_tone_profile.v1"
+LOW_INFORMATION_TONE_PROFILE_STEP: Final = "Step5_Low_Information_Tone_Profile"
+LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY: Final = "positive_only"
+LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY: Final = "negative_only"
+LOW_INFORMATION_TONE_PROFILE_MIXED: Final = "mixed"
+LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT: Final = "self_insight"
+LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN: Final = "neutral_or_unknown"
+LOW_INFORMATION_TONE_PROFILES: Final = (
+    LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY,
+    LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY,
+    LOW_INFORMATION_TONE_PROFILE_MIXED,
+    LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT,
+    LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+)
+
 _LINE_ROLE_OPENING: Final = "opening"
 _LINE_ROLE_CORE: Final = "core"
 _LINE_ROLE_CLOSING: Final = "closing"
@@ -90,7 +105,25 @@ _QUESTION_MARK_RE: Final = re.compile(
 )
 _LEGACY_LOW_INFORMATION_PROMPT_RE: Final = re.compile(r"(よければ、|何がありましたか[。！？!?]?)")
 _HUMILITY_MARKER_RE: Final = re.compile(r"(ように見えます|かもしれません|まだ見えていません|まだ決められません|なさそうです)")
-_KNOWN_SCOPE_RE: Final = re.compile(r"(言葉になる前の重さ|疲れの重さ|不安の重さ|無理かもしれない感じ|大丈夫かどうか|安心してよいか|ここから見えているのは|軽く流せるものではなさそう|詳しい出来事まではまだ見えません|まだ詳しい出来事までは見えません|まだ詳細までは見えません)")
+_KNOWN_SCOPE_RE: Final = re.compile(r"(言葉になる前の重さ|疲れの重さ|不安の重さ|無理かもしれない感じ|大丈夫かどうか|安心してよいか|ここから見えているのは|軽く流せるものではなさそう|詳しい出来事まではまだ見えません|まだ詳しい出来事までは見えません|まだ詳細までは見えません|穏やかに残っているもの|大切に置かれている|同時に残っている範囲)")
+
+_POSITIVE_EMOTIONS: Final = frozenset({"喜び", "平穏"})
+_NEGATIVE_EMOTIONS: Final = frozenset({"悲しみ", "怒り", "不安", "疲れ", "疲労"})
+_SELF_INSIGHT_EMOTIONS: Final = frozenset({"自己理解"})
+_NEGATIVE_TEXT_ANCHOR_RE: Final = re.compile(
+    r"(不安|悲し|怒り|疲れ|つかれ|疲労|つらい|辛い|苦しい|しんどい|きつい|怖い|こわい|焦り|焦っ|負荷|重さ|重い|無理|限界|消耗|眠れ)",
+    re.IGNORECASE,
+)
+_BURDEN_SURFACE_RE: Final = re.compile(r"(不安の重さ|疲れの重さ|言葉になる前の重さ|軽く流せるものではなさそう|無理かもしれない|負荷|重さ)")
+_POSITIVE_OPENING_SURFACE_BY_EMOTION: Final = {
+    "喜び": "大切にしたい気持ち",
+    "平穏": "穏やかに残っているもの",
+}
+_POSITIVE_DEFAULT_OPENING_SURFACE: Final = "その日に感じたこと"
+_POSITIVE_KNOWN_SCOPE_SURFACE: Final = "まだ詳しい出来事までは見えませんが、その日に感じたことは大切に置かれているように見えます。"
+_MIXED_KNOWN_SCOPE_SURFACE: Final = "まだ詳しい出来事までは見えませんが、同時に残っている範囲だけが見えています。"
+_SELF_INSIGHT_OPENING_SURFACE: Final = "自分について見えかけているもの"
+_SELF_INSIGHT_KNOWN_SCOPE_SURFACE: Final = "まだ詳細までは見えませんが、理解がどこから出てきたのかはまだ決められません。"
 
 _SAFE_ANCHOR_PATTERNS: Final = (
     ("question", "safety_confirmation", re.compile(r"(大丈夫|だいじょうぶ|平気|安心)", re.IGNORECASE), "「大丈夫かどうか」を確かめたい感じ"),
@@ -339,9 +372,16 @@ def _question_surface_kind_for_slots(unknown_slots: Sequence[str]) -> str:
 
 
 def _question_surface_for_kind(kind: str, selected_entry: Mapping[str, Any]) -> str:
-    surface = _clean(selected_entry.get("surface"))
+    surface = _normalize_low_information_question_fragment(selected_entry.get("surface"))
     if surface:
-        return _normalize_low_information_question_fragment(surface)
+        if kind == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY and surface == "どのあたりが重くなっているか":
+            return surface
+        if kind == QUESTION_SURFACE_WHAT_CHANGED and surface == "何が変わったのか":
+            return surface
+        if kind == QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY and surface == "どこから言いにくくなっているか":
+            return surface
+        if kind == QUESTION_SURFACE_WHAT_HAPPENED and surface == "何があったか":
+            return surface
     if kind == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY:
         return "どのあたりが重くなっているか"
     if kind == QUESTION_SURFACE_WHAT_CHANGED:
@@ -429,6 +469,141 @@ def _emotion_labels(current_input: Any) -> list[str]:
             if label and label not in out:
                 out.append(label)
     return out
+
+
+def _negative_text_anchor_present(current_input: Any) -> bool:
+    return bool(_NEGATIVE_TEXT_ANCHOR_RE.search(_current_input_text(current_input)))
+
+
+def _low_information_tone_profile(current_input: Any) -> str:
+    labels = set(_emotion_labels(current_input))
+    negative_anchor_present = _negative_text_anchor_present(current_input)
+    if not labels:
+        return LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY if negative_anchor_present else LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN
+    has_positive = bool(labels & _POSITIVE_EMOTIONS)
+    has_negative = bool(labels & _NEGATIVE_EMOTIONS)
+    has_self_insight = bool(labels & _SELF_INSIGHT_EMOTIONS)
+    if has_self_insight and not has_positive and not has_negative and labels <= _SELF_INSIGHT_EMOTIONS:
+        return LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT
+    if has_positive and not has_negative and not negative_anchor_present:
+        return LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY
+    if has_positive and (has_negative or negative_anchor_present):
+        return LOW_INFORMATION_TONE_PROFILE_MIXED
+    if has_negative and not has_positive:
+        return LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY
+    if negative_anchor_present and not has_positive:
+        return LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY
+    return LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN
+
+
+def _positive_opening_surface(current_input: Any) -> str:
+    labels = _emotion_labels(current_input)
+    for label in labels:
+        surface = _POSITIVE_OPENING_SURFACE_BY_EMOTION.get(label)
+        if surface:
+            return surface
+    return _POSITIVE_DEFAULT_OPENING_SURFACE
+
+
+def _bridge_opening_text(
+    *,
+    receive_surface: str,
+    selected_positive_surface: str,
+    anchor_surface: str,
+    burden_surface: str,
+    humility_surface: str,
+) -> str:
+    secondary_surface = anchor_surface or burden_surface
+    primary_surface = selected_positive_surface or _POSITIVE_DEFAULT_OPENING_SURFACE
+    if secondary_surface:
+        return f"{receive_surface}、{primary_surface}だけではなく、{secondary_surface}も近くにある{humility_surface}。"
+    return f"{receive_surface}、状態が一色ではない{humility_surface}。"
+
+
+def _apply_tone_profile_question_surface_kind(
+    *,
+    question_surface_kind: str,
+    unknown_slots: Sequence[str],
+    tone_profile: str,
+) -> str:
+    if tone_profile != LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+        return question_surface_kind
+    if UNKNOWN_SLOT_DESIRED_DIRECTION in set(unknown_slots):
+        return QUESTION_SURFACE_WHAT_CHANGED
+    if question_surface_kind in {QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY, QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY}:
+        return QUESTION_SURFACE_WHAT_HAPPENED
+    return question_surface_kind
+
+
+def _low_information_tone_profile_plan(
+    *,
+    tone_profile: str,
+    current_input: Any,
+    question_surface_kind: str,
+) -> dict[str, Any]:
+    negative_anchor_present = _negative_text_anchor_present(current_input)
+    selected_labels = _emotion_labels(current_input)
+    burden_default_allowed = tone_profile in {
+        LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY,
+        LOW_INFORMATION_TONE_PROFILE_MIXED,
+        LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+    } or negative_anchor_present
+    return {
+        "version": LOW_INFORMATION_TONE_PROFILE_VERSION,
+        "source_step": LOW_INFORMATION_TONE_PROFILE_STEP,
+        "connected_to_composer_step": LOW_INFORMATION_OBSERVATION_COMPOSER_STEP,
+        "tone_profile": tone_profile if tone_profile in LOW_INFORMATION_TONE_PROFILES else LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+        "selected_emotion_count": len(selected_labels),
+        "negative_text_anchor_present": bool(negative_anchor_present),
+        "burden_surface_default_allowed": bool(burden_default_allowed),
+        "positive_burden_surface_default_blocked": bool(tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY and not negative_anchor_present),
+        "mixed_requires_bridge_between_emotions": bool(tone_profile == LOW_INFORMATION_TONE_PROFILE_MIXED),
+        "question_surface_kind": question_surface_kind,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_body_included": False,
+        "comment_text_included": False,
+    }
+
+
+def _observed_scope_for_tone_profile(tone_profile: str) -> tuple[str, ...]:
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+        return ("positive_feeling", "low_information_known_scope", "under_specified_detail")
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_MIXED:
+        return ("coexisting_emotions", "low_information_known_scope", "under_specified_detail")
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT:
+        return ("unformed_self_insight", "low_information_known_scope", "under_specified_detail")
+    return ("emotion_weight", "language_before_detail", "unspecified_burden")
+
+
+def _question_entry_for_low_information_tone_profile(
+    *,
+    base_question_surface_kind: str,
+    question_surface_kind: str,
+    unknown_slots: Sequence[str],
+) -> dict[str, Any]:
+    # When Step5 tone profile changes the preferred question family, avoid
+    # retaining a mismatched dictionary entry id such as question_what_happened
+    # while rendering a what_changed surface. The profile-selected question stays
+    # dictionary-shaped but is marked as a bounded profile preference.
+    if question_surface_kind != base_question_surface_kind:
+        return {
+            "entry_id": f"tone_profile_question_{question_surface_kind}",
+            "category": CATEGORY_QUESTION_ENDING,
+            "surface": _question_surface_for_kind(question_surface_kind, {}),
+            "allowed_reply_kinds": [OBSERVATION_REPLY_KIND_LOW_INFORMATION],
+            "requires_evidence_role": ["unknown_slot"],
+            "unknown_slots": list(unknown_slots),
+            "selected_by_tone_profile": True,
+            "template_signature_weight": 0.0,
+            "positive_material": True,
+        }
+    return _select_first_material(
+        category=CATEGORY_QUESTION_ENDING,
+        evidence_roles=["unknown_slot"],
+        unknown_slots=unknown_slots,
+        default_surface=_question_surface_for_kind(question_surface_kind, {}),
+    )
 
 
 def _low_information_safe_anchor_evidence_ids(
@@ -565,6 +740,7 @@ class LowInformationObservationDraft:
     selected_material_entry_ids: Sequence[str] = field(default_factory=tuple)
     forbidden_template_signature_ids: Sequence[str] = field(default_factory=tuple)
     low_information_specificity_plan: Mapping[str, Any] = field(default_factory=dict)
+    low_information_tone_profile_plan: Mapping[str, Any] = field(default_factory=dict)
     observation_reply_meta: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -618,6 +794,14 @@ class LowInformationObservationDraft:
             "selected_material_entry_ids": list(self.selected_material_entry_ids),
             "forbidden_template_signature_ids": list(self.forbidden_template_signature_ids),
             "low_information_specificity_plan": dict(self.low_information_specificity_plan or {}),
+            "low_information_tone_profile_plan": dict(self.low_information_tone_profile_plan or {}),
+            "low_information_tone_profile": _clean((self.low_information_tone_profile_plan or {}).get("tone_profile")) or LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+            "positive_tone_profile": _clean((self.low_information_tone_profile_plan or {}).get("tone_profile")) or LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+            "negative_text_anchor_present": bool((self.low_information_tone_profile_plan or {}).get("negative_text_anchor_present")),
+            "burden_surface_default_allowed": bool((self.low_information_tone_profile_plan or {}).get("burden_surface_default_allowed")),
+            "positive_burden_surface_default_blocked": bool((self.low_information_tone_profile_plan or {}).get("positive_burden_surface_default_blocked")),
+            "mixed_requires_bridge_between_emotions": bool((self.low_information_tone_profile_plan or {}).get("mixed_requires_bridge_between_emotions")),
+            "step5_low_information_tone_profile_ready": True,
             "low_information_specificity_used": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
             "step6_low_information_specificity_ready": True,
             "safe_anchor_count": int((self.low_information_specificity_plan or {}).get("safe_anchor_count") or 0),
@@ -787,6 +971,8 @@ def _build_lines(
     surface_disclosure_required: bool,
     known_fragment_evidence_ids: Sequence[str],
     safe_anchor: Mapping[str, Any] | None = None,
+    tone_profile: str = LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+    current_input: Any = None,
 ) -> tuple[LowInformationObservationLine, ...]:
     receive = _select_first_material(
         category=CATEGORY_RECEIVE_PHRASE,
@@ -817,11 +1003,10 @@ def _build_lines(
         default_surface=_unknown_marker_for_slots(unknown_slots),
     )
 
-    selected_ids = [
-        _clean(item.get("entry_id"))
-        for item in (receive, burden, known_scope, humility, unknown_marker)
-        if _clean(item.get("entry_id"))
-    ]
+    material_items_for_ids = (receive, burden, known_scope, humility, unknown_marker)
+    if tone_profile in {LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY, LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT}:
+        material_items_for_ids = (receive, known_scope, humility, unknown_marker)
+    selected_ids = [_clean(item.get("entry_id")) for item in material_items_for_ids if _clean(item.get("entry_id"))]
 
     receive_surface = _clean(receive.get("surface")) or "今は"
     burden_surface = _clean(burden.get("surface")) or "言葉になる前の重さ"
@@ -829,7 +1014,21 @@ def _build_lines(
     anchor_surface = _clean((safe_anchor or {}).get("surface"))
     anchor_role = _clean((safe_anchor or {}).get("role")) or "none"
     anchor_kind = _clean((safe_anchor or {}).get("surface_kind")) or "none"
-    if anchor_surface:
+    positive_surface = _positive_opening_surface(current_input)
+
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+        opening_text = f"{receive_surface}、{positive_surface}がある{humility_surface}。"
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_MIXED:
+        opening_text = _bridge_opening_text(
+            receive_surface=receive_surface,
+            selected_positive_surface=positive_surface,
+            anchor_surface=anchor_surface,
+            burden_surface=burden_surface,
+            humility_surface=humility_surface,
+        )
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT:
+        opening_text = f"{receive_surface}、{_SELF_INSIGHT_OPENING_SURFACE}がある{humility_surface}。"
+    elif anchor_surface:
         opening_text = f"{receive_surface}、{anchor_surface}が先に出ています。" if anchor_role == "question" else f"{receive_surface}、{anchor_surface}が先に出ている{humility_surface}。"
     elif humility_surface == "かもしれません":
         opening_text = f"{receive_surface}、{burden_surface}が先に出ている{humility_surface}。"
@@ -839,6 +1038,12 @@ def _build_lines(
     unknown_surface = _clean(unknown_marker.get("surface")) or _unknown_marker_for_slots(unknown_slots)
     if plan == "subscription" and facts_used and user_fact_mode == USER_FACT_GROUNDING_MODE_EXPLICIT_REFERENCE and surface_disclosure_required:
         known_scope_text = f"以前にも近い重さが残っていたことはありますが、今回{unknown_surface}まではまだ見えていません。"
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+        known_scope_text = _POSITIVE_KNOWN_SCOPE_SURFACE
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_MIXED:
+        known_scope_text = _MIXED_KNOWN_SCOPE_SURFACE
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT:
+        known_scope_text = _SELF_INSIGHT_KNOWN_SCOPE_SURFACE
     elif anchor_kind == "safety_confirmation":
         known_scope_text = "まだ何が起きたかまでは見えていませんが、安心してよいかを探しているように見えます。"
     elif question_surface_kind == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY:
@@ -932,12 +1137,17 @@ def compose_low_information_observation(
     unknown_slots = _dedupe(material_meta.get("unknown_slots") or internal_meta.get("unknown_slots") or eligibility_meta.get("unknown_slots"))
     if not unknown_slots:
         unknown_slots = [UNKNOWN_SLOT_EVENT]
-    question_surface_kind = _question_surface_kind_for_slots(unknown_slots)
-    question_entry = _select_first_material(
-        category=CATEGORY_QUESTION_ENDING,
-        evidence_roles=["unknown_slot"],
+    tone_profile = _low_information_tone_profile(current_input)
+    base_question_surface_kind = _question_surface_kind_for_slots(unknown_slots)
+    question_surface_kind = _apply_tone_profile_question_surface_kind(
+        question_surface_kind=base_question_surface_kind,
         unknown_slots=unknown_slots,
-        default_surface=_question_surface_for_kind(question_surface_kind, {}),
+        tone_profile=tone_profile,
+    )
+    question_entry = _question_entry_for_low_information_tone_profile(
+        base_question_surface_kind=base_question_surface_kind,
+        question_surface_kind=question_surface_kind,
+        unknown_slots=unknown_slots,
     )
     question_surface = _question_surface_for_kind(question_surface_kind, question_entry)
 
@@ -955,6 +1165,11 @@ def compose_low_information_observation(
     question_internal_ids = _question_internal_ids(internal_meta, material_meta)
     safe_anchor = _select_low_information_safe_anchor(current_input, eligibility_meta, material_meta)
     specificity_plan = _low_information_specificity_plan(safe_anchor)
+    tone_profile_plan = _low_information_tone_profile_plan(
+        tone_profile=tone_profile,
+        current_input=current_input,
+        question_surface_kind=question_surface_kind,
+    )
 
     lines = _build_lines(
         unknown_slots=unknown_slots,
@@ -966,6 +1181,8 @@ def compose_low_information_observation(
         surface_disclosure_required=surface_disclosure_required,
         known_fragment_evidence_ids=known_ids,
         safe_anchor=safe_anchor,
+        tone_profile=tone_profile,
+        current_input=current_input,
     )
     body = "".join(line.text for line in lines)
     selected_material_ids = _dedupe(line_id for line in lines for line_id in line.material_entry_ids)
@@ -994,7 +1211,7 @@ def compose_low_information_observation(
         body=body,
         lines=lines,
         unknown_slots=tuple(unknown_slots),
-        observed_scope=("emotion_weight", "language_before_detail", "unspecified_burden"),
+        observed_scope=_observed_scope_for_tone_profile(tone_profile),
         question_surface_kind=question_surface_kind,
         user_fact_hint_mode=user_fact_mode,
         plan=plan,
@@ -1007,6 +1224,7 @@ def compose_low_information_observation(
         selected_material_entry_ids=tuple(selected_material_ids),
         forbidden_template_signature_ids=tuple(forbidden_signature_ids),
         low_information_specificity_plan=specificity_plan,
+        low_information_tone_profile_plan=tone_profile_plan,
         observation_reply_meta=observation_reply_meta,
     )
     assert_low_information_observation_composer_contract(draft, current_input=current_input)
@@ -1113,6 +1331,16 @@ def assert_low_information_observation_composer_contract(
     if meta.get("user_fact_promotion_attempt") is True or specificity_plan.get("user_fact_promotion_attempt") is True:
         raise ValueError(f"{source} must not attempt user fact promotion")
 
+    tone_profile_plan = meta.get("low_information_tone_profile_plan") if isinstance(meta.get("low_information_tone_profile_plan"), Mapping) else {}
+    tone_profile = _clean(meta.get("low_information_tone_profile") or meta.get("positive_tone_profile") or tone_profile_plan.get("tone_profile"))
+    if tone_profile and tone_profile not in LOW_INFORMATION_TONE_PROFILES:
+        raise ValueError(f"{source} has invalid low-information tone profile")
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY and not bool(meta.get("negative_text_anchor_present") or tone_profile_plan.get("negative_text_anchor_present")):
+        if _BURDEN_SURFACE_RE.search(body):
+            raise ValueError(f"{source} must not default positive-only low information to burden surfaces")
+        if _clean(meta.get("question_surface_kind")) == QUESTION_SURFACE_WHICH_PART_FEELS_HEAVY:
+            raise ValueError(f"{source} positive-only low information must not default to heavy-part question surface")
+
     roles = _dedupe(meta.get("sentence_plan_observation_roles"))
     if not set(roles).issuperset(_ALLOWED_OBSERVATION_ROLES):
         raise ValueError(f"{source} must include low_info receive / known_scope / question roles")
@@ -1188,6 +1416,14 @@ def _draft_as_meta_without_assert(self: LowInformationObservationDraft) -> dict[
         "selected_material_entry_ids": list(self.selected_material_entry_ids),
         "forbidden_template_signature_ids": list(self.forbidden_template_signature_ids),
         "low_information_specificity_plan": dict(self.low_information_specificity_plan or {}),
+        "low_information_tone_profile_plan": dict(self.low_information_tone_profile_plan or {}),
+        "low_information_tone_profile": _clean((self.low_information_tone_profile_plan or {}).get("tone_profile")) or LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+        "positive_tone_profile": _clean((self.low_information_tone_profile_plan or {}).get("tone_profile")) or LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
+        "negative_text_anchor_present": bool((self.low_information_tone_profile_plan or {}).get("negative_text_anchor_present")),
+        "burden_surface_default_allowed": bool((self.low_information_tone_profile_plan or {}).get("burden_surface_default_allowed")),
+        "positive_burden_surface_default_blocked": bool((self.low_information_tone_profile_plan or {}).get("positive_burden_surface_default_blocked")),
+        "mixed_requires_bridge_between_emotions": bool((self.low_information_tone_profile_plan or {}).get("mixed_requires_bridge_between_emotions")),
+        "step5_low_information_tone_profile_ready": True,
         "low_information_specificity_used": bool((self.low_information_specificity_plan or {}).get("uses_safe_anchor")),
         "step6_low_information_specificity_ready": True,
         "safe_anchor_count": int((self.low_information_specificity_plan or {}).get("safe_anchor_count") or 0),
@@ -1273,8 +1509,23 @@ __all__ = [
     "LOW_INFORMATION_OBSERVATION_COMPOSER_STEP",
     "LOW_INFORMATION_OBSERVATION_COMPOSER_VERSION",
     "LOW_INFORMATION_SPECIFICITY_PLAN_VERSION",
+    "LOW_INFORMATION_TONE_PROFILE_VERSION",
+    "LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY",
+    "LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY",
+    "LOW_INFORMATION_TONE_PROFILE_MIXED",
+    "LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT",
+    "LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN",
+    "LOW_INFORMATION_TONE_PROFILES",
     "LOW_INFORMATION_SPECIFICITY_PLAN_SCHEMA_VERSION",
     "LOW_INFORMATION_SPECIFICITY_STEP",
+    "LOW_INFORMATION_TONE_PROFILE_VERSION",
+    "LOW_INFORMATION_TONE_PROFILE_STEP",
+    "LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY",
+    "LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY",
+    "LOW_INFORMATION_TONE_PROFILE_MIXED",
+    "LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT",
+    "LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN",
+    "LOW_INFORMATION_TONE_PROFILES",
     "format_low_information_question_prompt",
     "QUESTION_SURFACE_WHAT_CHANGED",
     "QUESTION_SURFACE_WHAT_HAPPENED",

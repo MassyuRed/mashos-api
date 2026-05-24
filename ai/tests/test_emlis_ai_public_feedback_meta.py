@@ -221,6 +221,28 @@ def _build_public_meta(internal_meta: Mapping[str, Any] | None, **kwargs: Any) -
 
 
 
+def _visible_surface_gate_failed_payload() -> dict[str, Any]:
+    return {
+        "version": "emlis.visible_surface_acceptance_gate.v1",
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": [
+            "emotion_focus_unbridged_secondary",
+            SECRET_RAW_INPUT,
+            "x" * 180,
+        ],
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "rn_visible_contract_changed": False,
+        "public_response_key_change": False,
+        "db_physical_name_changed": False,
+        "display_gate_relaxed": False,
+    }
+
+
+
 def test_public_feedback_meta_keeps_public_rn_contract_keys_and_boundary_marker() -> None:
     module = _public_meta_module()
 
@@ -325,6 +347,135 @@ def test_public_feedback_meta_retains_runtime_and_reply_optional_summaries_only(
     }
 
 
+def test_public_feedback_meta_retains_visible_surface_gate_summary_only() -> None:
+    internal_meta = _large_internal_meta()
+    internal_meta["multi_perspective"]["gate_trace"] = {
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "repair_required",
+            "action": "rerender_surface",
+            "rejection_reasons": [
+                "emotion_focus_unbridged_secondary",
+                "visible_surface_reason_with_" + ("x" * 160),
+                SECRET_RAW_INPUT,
+            ],
+            "comment_text": SECRET_COMMENT,
+            "candidate_comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+            "raw_text": SECRET_EVIDENCE,
+            "selected_emotion_count": 2,
+            "malformed_nominalization_codes": ["malformed_nominalization_tari_fragment"],
+        }
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": [
+            "emotion_focus_unbridged_secondary",
+            "visible_surface_reason_with_" + ("x" * 68),
+        ],
+    }
+    assert set(public_meta["visible_surface_acceptance_gate"]) <= {
+        "evaluated",
+        "passed",
+        "classification",
+        "action",
+        "rejection_reasons",
+    }
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+
+def test_public_feedback_meta_exposes_visible_surface_acceptance_gate_summary_only() -> None:
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["visible_surface_acceptance_gate"] = _visible_surface_gate_failed_payload()
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": [
+            "emotion_focus_unbridged_secondary",
+            "x" * 96,
+        ],
+    }
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+def test_public_feedback_meta_reads_visible_surface_gate_from_phase_gate_trace() -> None:
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["phase_gate"] = {
+        "gate_trace": {
+            "visible_surface_acceptance_gate": _visible_surface_gate_failed_payload(),
+        },
+        "visible_surface_acceptance_gate_comment_text_body_included": False,
+        "visible_surface_acceptance_gate_raw_input_included": False,
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["visible_surface_acceptance_gate"]["passed"] is False
+    assert public_meta["visible_surface_acceptance_gate"]["classification"] == "repair_required"
+    assert public_meta["visible_surface_acceptance_gate"]["action"] == "rerender_surface"
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+
+
+def test_public_feedback_meta_fails_visible_surface_summary_closed_when_gate_contract_is_unsafe() -> None:
+    internal_meta = dict(_large_internal_meta())
+    unsafe_gate = _visible_surface_gate_failed_payload()
+    unsafe_gate["comment_text_body_included"] = True
+    unsafe_gate["comment_text"] = SECRET_COMMENT
+    internal_meta["visible_surface_acceptance_gate"] = unsafe_gate
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "passed": False,
+        "classification": "red",
+        "action": "fail_closed",
+        "rejection_reasons": ["visible_surface_acceptance_gate_public_meta_unsafe"],
+    }
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+
 
 def test_public_feedback_meta_caps_reason_count_string_lengths_and_total_bytes() -> None:
     module = _public_meta_module()
@@ -381,6 +532,28 @@ def test_should_include_public_input_feedback_requires_comment_and_passed_public
         {"observation_status": "passed"},
     ) is True
     assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {
+            "observation_status": "passed",
+            "visible_surface_acceptance_gate": {
+                "passed": True,
+                "classification": "yellow",
+                "action": "warn",
+            },
+        },
+    ) is True
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {
+            "observation_status": "passed",
+            "visible_surface_acceptance_gate": {
+                "passed": False,
+                "classification": "repair_required",
+                "action": "rerender_surface",
+            },
+        },
+    ) is False
+    assert module.should_include_public_input_feedback(
         "",
         {"observation_status": "passed"},
     ) is False
@@ -393,3 +566,14 @@ def test_should_include_public_input_feedback_requires_comment_and_passed_public
         {"version": "legacy_meta_without_public_status"},
     ) is False
     assert module.should_include_public_input_feedback("Emlisの観測本文です。", None) is False
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {
+            "observation_status": "passed",
+            "visible_surface_acceptance_gate": {
+                "passed": True,
+                "classification": "pass",
+                "action": "allow",
+            },
+        },
+    ) is True

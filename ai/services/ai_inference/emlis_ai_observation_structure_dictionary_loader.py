@@ -24,10 +24,13 @@ from pathlib import Path
 import re
 from typing import Any, Final
 
-try:  # pragma: no cover - exercised by tests in the normal dependency path.
-    from jsonschema import Draft202012Validator
-except Exception:  # pragma: no cover
-    Draft202012Validator = None  # type: ignore[assignment]
+# Keep the structure dictionary loader independent from jsonschema at import time.
+# In the local Python 3.13 regression environment, importing jsonschema eagerly can
+# trigger a very slow rfc3987/lark grammar compile during pytest collection.  The
+# semantic validator below already owns the Cocolon-specific contract checks, so
+# _validate_schema performs the small top-level schema checks this module needs
+# without importing the external validator on hot paths.
+Draft202012Validator = None  # retained for legacy imports/tests that may introspect the symbol
 
 OBSERVATION_STRUCTURE_DICTIONARY_SCHEMA_VERSION: Final = "emlis.observation_structure_dictionary.v1"
 OBSERVATION_STRUCTURE_DICTIONARY_ID: Final = "emlis_observation_structure_dictionary"
@@ -212,14 +215,120 @@ def _ensure_no_duplicates(ids: Sequence[str], *, label: str) -> None:
 
 
 def _validate_schema(payload: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
-    if Draft202012Validator is None:  # pragma: no cover
-        raise ValueError("jsonschema Draft202012Validator is required for structure dictionary schema validation")
-    validator = Draft202012Validator(schema)
-    errors = sorted(validator.iter_errors(payload), key=lambda error: list(error.path))
-    if errors:
-        first = errors[0]
-        path = ".".join(str(part) for part in first.path) or "<root>"
-        raise ValueError(f"observation structure dictionary schema validation failed at {path}: {first.message}")
+    """Validate the schema subset used by the bundled dictionary without jsonschema.
+
+    The Cocolon-specific contract remains enforced by the semantic validators
+    that follow this function.  This recursive pass covers the JSON-schema
+    features present in ``emlis_observation_structure_dictionary.schema.json``
+    so regression tests keep schema-drift protection without importing
+    jsonschema/rfc3987/lark during pytest collection.
+    """
+    if not isinstance(schema, Mapping):
+        raise ValueError("observation structure dictionary schema root must be an object")
+
+    defs = schema.get("$defs")
+    if not isinstance(defs, Mapping):
+        defs = {}
+
+    def _fail(path: str, message: str) -> None:
+        raise ValueError(
+            f"observation structure dictionary schema validation failed at {path or '<root>'}: {message}"
+        )
+
+    def _resolve_ref(ref: Any, path: str) -> Mapping[str, Any]:
+        ref_text = _clean(ref)
+        prefix = "#/$defs/"
+        if not ref_text.startswith(prefix):
+            _fail(path, f"unsupported schema ref {ref_text or '<empty>'}")
+        key = ref_text[len(prefix) :]
+        target = defs.get(key)
+        if not isinstance(target, Mapping):
+            _fail(path, f"missing schema ref {ref_text}")
+        return target
+
+    def _matches_type(value: Any, declared_type: Any) -> bool:
+        if isinstance(declared_type, Sequence) and not isinstance(declared_type, (str, bytes, bytearray)):
+            return any(_matches_type(value, item) for item in declared_type)
+        if declared_type == "object":
+            return isinstance(value, Mapping)
+        if declared_type == "array":
+            return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+        if declared_type == "string":
+            return isinstance(value, str)
+        if declared_type == "boolean":
+            return isinstance(value, bool)
+        if declared_type == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if declared_type == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return True
+
+    def _stable_item(value: Any) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+        except Exception:  # pragma: no cover - defensive for non-json values
+            return repr(value)
+
+    def _validate(value: Any, spec: Mapping[str, Any], path: str) -> None:
+        if "$ref" in spec:
+            _validate(value, _resolve_ref(spec.get("$ref"), path), path)
+            return
+
+        if "const" in spec and value != spec.get("const"):
+            _fail(path, f"expected const {spec.get('const')!r}")
+        if "enum" in spec:
+            enum_values = spec.get("enum")
+            if isinstance(enum_values, Sequence) and not isinstance(enum_values, (str, bytes, bytearray)):
+                if value not in enum_values:
+                    _fail(path, f"value {value!r} is not one of the allowed enum values")
+        if "type" in spec and not _matches_type(value, spec.get("type")):
+            _fail(path, f"expected type {spec.get('type')}")
+
+        if isinstance(value, str):
+            min_length = spec.get("minLength")
+            if isinstance(min_length, int) and len(value) < min_length:
+                _fail(path, f"string is shorter than minLength {min_length}")
+            pattern = spec.get("pattern")
+            if isinstance(pattern, str) and not re.match(pattern, value):
+                _fail(path, f"string does not match pattern {pattern}")
+
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            min_items = spec.get("minItems")
+            if isinstance(min_items, int) and len(value) < min_items:
+                _fail(path, f"array has fewer than minItems {min_items}")
+            if spec.get("uniqueItems") is True:
+                seen: set[str] = set()
+                for item in value:
+                    marker = _stable_item(item)
+                    if marker in seen:
+                        _fail(path, "array items must be unique")
+                    seen.add(marker)
+            item_spec = spec.get("items")
+            if isinstance(item_spec, Mapping):
+                for index, item in enumerate(value):
+                    _validate(item, item_spec, f"{path}.{index}" if path else str(index))
+
+        if isinstance(value, Mapping):
+            required = spec.get("required")
+            if isinstance(required, Sequence) and not isinstance(required, (str, bytes, bytearray)):
+                for key in required:
+                    item_key = _clean(key)
+                    if item_key and item_key not in value:
+                        _fail(path, f"missing required property {item_key}")
+            properties = spec.get("properties")
+            if isinstance(properties, Mapping):
+                if spec.get("additionalProperties") is False:
+                    allowed = {_clean(key) for key in properties.keys()}
+                    for key in value.keys():
+                        item_key = _clean(key)
+                        if item_key not in allowed:
+                            _fail(f"{path}.{item_key}" if path else item_key, "additional properties are not allowed")
+                for key, child_spec in properties.items():
+                    item_key = _clean(key)
+                    if item_key in value and isinstance(child_spec, Mapping):
+                        _validate(value[item_key], child_spec, f"{path}.{item_key}" if path else item_key)
+
+    _validate(payload, schema, "")
 
 
 def _normalize_question(raw: Mapping[str, Any], *, owner_id: str, index: int) -> dict[str, Any]:

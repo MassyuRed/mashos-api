@@ -62,6 +62,10 @@ _MALFORMED_SURFACE_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], .
         re.compile(r"(?:なくて|ないで|なれなくて|できなくて|ならなくて|なせなくて|しきれなくて)こと"),
     ),
     (
+        "malformed_nominalization_tari_fragment",
+        re.compile(r"たりこと"),
+    ),
+    (
         "malformed_nominalization_auxiliary_fragment",
         re.compile(r"(?:しれない|かもしれない|だった|している|見えている)こと(?:も|が|は|に|$)"),
     ),
@@ -300,17 +304,19 @@ def _malformed_phrase_unit_count(
         if "phrase_unit_malformed_count" in meta
         else None
     )
+    surface_malformed_count = len(_dedupe(surface_malformed_codes or []))
     if explicit_raw is not None:
-        return max(0, _safe_int(explicit_raw))
+        return max(0, _safe_int(explicit_raw), surface_malformed_count)
     warning_codes = _dedupe(
         list(signature.get("phrase_unit_grammar_warning_codes") or [])
         + list(signature.get("grammar_warning_codes") or [])
         + list(surface_malformed_codes or [])
     )
-    return len([
+    warning_count = len([
         code for code in warning_codes
         if "nominalization" in code or "stem_koto" in code or "malformed" in code
     ])
+    return max(warning_count, surface_malformed_count)
 
 
 def _is_shallow_observation_path(composer_meta: Mapping[str, Any] | None) -> bool:

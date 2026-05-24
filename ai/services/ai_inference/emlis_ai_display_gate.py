@@ -22,6 +22,18 @@ from emlis_ai_runtime_surface_pre_return_gate import (
     RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION,
     assert_runtime_surface_pre_return_gate_meta_only,
 )
+from emlis_ai_visible_surface_acceptance_gate import (
+    ACTION_ALLOW as VISIBLE_SURFACE_ACTION_ALLOW,
+    ACTION_BLOCK as VISIBLE_SURFACE_ACTION_BLOCK,
+    ACTION_FAIL_CLOSED as VISIBLE_SURFACE_ACTION_FAIL_CLOSED,
+    ACTION_RERENDER_SURFACE as VISIBLE_SURFACE_ACTION_RERENDER_SURFACE,
+    ACTION_REROUTE_LOW_INFORMATION as VISIBLE_SURFACE_ACTION_REROUTE_LOW_INFORMATION,
+    ACTION_WARN as VISIBLE_SURFACE_ACTION_WARN,
+    CLASSIFICATION_RED as VISIBLE_SURFACE_CLASSIFICATION_RED,
+    CLASSIFICATION_REPAIR_REQUIRED as VISIBLE_SURFACE_CLASSIFICATION_REPAIR_REQUIRED,
+    VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
+    assert_visible_surface_acceptance_gate_meta_only,
+)
 
 _VALID_STATUSES = {"passed", "rejected", "unavailable", "safety_blocked"}
 _UNAVAILABLE_SOURCES = {"", "unavailable", "empty"}
@@ -258,6 +270,10 @@ def _all_core_gates_passed(gate_trace: Mapping[str, Any]) -> bool:
         return False
     if isinstance(gate_trace.get("runtime_surface_pre_return_gate"), Mapping) and not _gate_passed(gate_trace, "runtime_surface_pre_return_gate"):
         return False
+    if isinstance(gate_trace.get("visible_surface_acceptance_gate"), Mapping) and _visible_surface_gate_blocks(
+        gate_trace.get("visible_surface_acceptance_gate")
+    ):
+        return False
     return True
 
 
@@ -385,6 +401,149 @@ def _runtime_surface_gate_rejection_reasons(runtime_surface_gate: Mapping[str, A
     return _dedupe(out)
 
 
+def _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report: Any = None) -> Dict[str, Any]:
+    """Return a meta-only Visible Surface Acceptance Gate trace.
+
+    Step4 wires the Step3 acceptance report into the Display Gate without
+    adding text payloads, response keys, API routes, or DB changes.  Invalid
+    gate payloads fail closed because a malformed display-quality report should
+    never be used to pass a public ``comment_text``.
+    """
+
+    if not visible_surface_acceptance_gate_report:
+        return {}
+    if not isinstance(visible_surface_acceptance_gate_report, Mapping):
+        return {
+            "version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
+            "schema_version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
+            "evaluated": True,
+            "passed": False,
+            "blocked": True,
+            "classification": VISIBLE_SURFACE_CLASSIFICATION_RED,
+            "action": VISIBLE_SURFACE_ACTION_FAIL_CLOSED,
+            "rejection_reasons": ["visible_surface_acceptance_gate_invalid"],
+            "warning_reasons": [],
+            "visible_surface_acceptance_gate_invalid": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+            "rn_visible_contract_changed": False,
+            "public_response_key_change": False,
+            "db_physical_name_changed": False,
+            "display_gate_relaxed": False,
+        }
+    data = dict(visible_surface_acceptance_gate_report)
+    try:
+        assert_visible_surface_acceptance_gate_meta_only(
+            data,
+            source="display_gate.visible_surface_acceptance_gate",
+        )
+    except Exception:
+        return {
+            "version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
+            "schema_version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
+            "evaluated": True,
+            "passed": False,
+            "blocked": True,
+            "classification": VISIBLE_SURFACE_CLASSIFICATION_RED,
+            "action": VISIBLE_SURFACE_ACTION_FAIL_CLOSED,
+            "rejection_reasons": ["visible_surface_acceptance_gate_invalid"],
+            "warning_reasons": [],
+            "visible_surface_acceptance_gate_invalid": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+            "rn_visible_contract_changed": False,
+            "public_response_key_change": False,
+            "db_physical_name_changed": False,
+            "display_gate_relaxed": False,
+        }
+    reasons = _dedupe(list(data.get("rejection_reasons") or []))
+    warnings = _dedupe(list(data.get("warning_reasons") or []))
+    action = str(data.get("action") or VISIBLE_SURFACE_ACTION_ALLOW).strip()
+    if action not in {
+        VISIBLE_SURFACE_ACTION_ALLOW,
+        VISIBLE_SURFACE_ACTION_WARN,
+        VISIBLE_SURFACE_ACTION_RERENDER_SURFACE,
+        VISIBLE_SURFACE_ACTION_REROUTE_LOW_INFORMATION,
+        VISIBLE_SURFACE_ACTION_BLOCK,
+        VISIBLE_SURFACE_ACTION_FAIL_CLOSED,
+    }:
+        action = VISIBLE_SURFACE_ACTION_FAIL_CLOSED
+        if "visible_surface_acceptance_gate_invalid" not in reasons:
+            reasons.append("visible_surface_acceptance_gate_invalid")
+    return {
+        "version": str(data.get("version") or VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION),
+        "schema_version": str(data.get("schema_version") or data.get("version") or VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION),
+        "evaluated": bool(data.get("evaluated", True)),
+        "passed": bool(data.get("passed")),
+        "blocked": bool(data.get("blocked", not bool(data.get("passed")))),
+        "classification": str(data.get("classification") or ""),
+        "action": action,
+        "rerender_recommended": bool(data.get("rerender_recommended") or action == VISIBLE_SURFACE_ACTION_RERENDER_SURFACE),
+        "reroute_low_information_recommended": bool(
+            data.get("reroute_low_information_recommended") or action == VISIBLE_SURFACE_ACTION_REROUTE_LOW_INFORMATION
+        ),
+        "rejection_reasons": reasons,
+        "warning_reasons": warnings,
+        "visible_header_dominant_emotion_present": bool(data.get("visible_header_dominant_emotion_present")),
+        "visible_header_dominant_emotion_source": str(data.get("visible_header_dominant_emotion_source") or ""),
+        "opening_emotion_focus_present": bool(data.get("opening_emotion_focus_present")),
+        "dominant_emotion_bridge_present": bool(data.get("dominant_emotion_bridge_present")),
+        "selected_emotion_count": _safe_int(data.get("selected_emotion_count")),
+        "secondary_emotion_focus_detected": bool(data.get("secondary_emotion_focus_detected")),
+        "unselected_emotion_focus_detected": bool(data.get("unselected_emotion_focus_detected")),
+        "negative_text_anchor_present": bool(data.get("negative_text_anchor_present")),
+        "positive_tone_profile": str(data.get("positive_tone_profile") or ""),
+        "burden_surface_without_anchor_detected": bool(data.get("burden_surface_without_anchor_detected")),
+        "malformed_nominalization_detected": bool(data.get("malformed_nominalization_detected")),
+        "malformed_nominalization_codes": _dedupe(list(data.get("malformed_nominalization_codes") or [])),
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "rn_visible_contract_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "display_gate_relaxed": False,
+    }
+
+
+def _visible_surface_gate_blocks(visible_surface_gate: Mapping[str, Any] | None) -> bool:
+    gate = visible_surface_gate if isinstance(visible_surface_gate, Mapping) else {}
+    if not gate:
+        return False
+    action = str(gate.get("action") or "").strip()
+    classification = str(gate.get("classification") or "").strip()
+    if action == VISIBLE_SURFACE_ACTION_WARN:
+        return False
+    if classification in {VISIBLE_SURFACE_CLASSIFICATION_RED, VISIBLE_SURFACE_CLASSIFICATION_REPAIR_REQUIRED}:
+        return True
+    if action in {
+        VISIBLE_SURFACE_ACTION_RERENDER_SURFACE,
+        VISIBLE_SURFACE_ACTION_REROUTE_LOW_INFORMATION,
+        VISIBLE_SURFACE_ACTION_BLOCK,
+        VISIBLE_SURFACE_ACTION_FAIL_CLOSED,
+    }:
+        return True
+    return bool(not gate.get("passed") and action != VISIBLE_SURFACE_ACTION_WARN)
+
+
+def _visible_surface_gate_rejection_reasons(visible_surface_gate: Mapping[str, Any] | None) -> List[str]:
+    gate = visible_surface_gate if isinstance(visible_surface_gate, Mapping) else {}
+    if not _visible_surface_gate_blocks(gate):
+        return []
+    reasons = _dedupe(list(gate.get("rejection_reasons") or []))
+    out = ["visible_surface_acceptance_gate_failed"]
+    out.extend(reasons)
+    action = str(gate.get("action") or "").strip()
+    if action and action != VISIBLE_SURFACE_ACTION_ALLOW:
+        out.append(f"visible_surface_acceptance_gate_action_{action}")
+    classification = str(gate.get("classification") or "").strip()
+    if classification:
+        out.append(f"visible_surface_acceptance_gate_classification_{classification}")
+    return _dedupe(out)
+
+
 def _step14_reason_subset(reasons: List[str]) -> List[str]:
     markers = (
         "diagnosis",
@@ -474,6 +633,7 @@ def _with_display_gate_trace(
     observation_reply_kind: str = "",
     low_information_quality_rejection_reasons: List[str] | None = None,
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
+    visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
     binding_fields = _gate_binding_fields(
@@ -493,6 +653,13 @@ def _with_display_gate_trace(
     if runtime_surface_gate:
         out["runtime_surface_pre_return_gate"] = dict(runtime_surface_gate)
     runtime_surface_reasons = _dedupe(runtime_surface_gate.get("rejection_reasons") if isinstance(runtime_surface_gate, Mapping) else [])
+    visible_surface_gate = _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report) or (
+        out.get("visible_surface_acceptance_gate") if isinstance(out.get("visible_surface_acceptance_gate"), Mapping) else {}
+    )
+    if visible_surface_gate:
+        out["visible_surface_acceptance_gate"] = dict(visible_surface_gate)
+    visible_surface_reasons = _dedupe(visible_surface_gate.get("rejection_reasons") if isinstance(visible_surface_gate, Mapping) else [])
+    visible_surface_blocks = _visible_surface_gate_blocks(visible_surface_gate)
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
@@ -509,6 +676,16 @@ def _with_display_gate_trace(
         "runtime_surface_pre_return_gate_rejection_reasons": runtime_surface_reasons,
         "surface_template_major_blocked": "surface_template_major" in runtime_surface_reasons,
         "malformed_phrase_unit_blocked_count": _safe_int(runtime_surface_gate.get("malformed_phrase_unit_count")) if isinstance(runtime_surface_gate, Mapping) else 0,
+        "visible_surface_acceptance_gate_evaluated": bool(visible_surface_gate.get("evaluated")) if isinstance(visible_surface_gate, Mapping) else False,
+        "visible_surface_acceptance_gate_passed": bool(not visible_surface_blocks) if isinstance(visible_surface_gate, Mapping) and visible_surface_gate else True,
+        "visible_surface_acceptance_gate_report_passed": bool(visible_surface_gate.get("passed")) if isinstance(visible_surface_gate, Mapping) and visible_surface_gate else True,
+        "visible_surface_acceptance_gate_action": str(visible_surface_gate.get("action") or "") if isinstance(visible_surface_gate, Mapping) else "",
+        "visible_surface_acceptance_gate_classification": str(visible_surface_gate.get("classification") or "") if isinstance(visible_surface_gate, Mapping) else "",
+        "visible_surface_acceptance_gate_rejection_reasons": visible_surface_reasons,
+        "visible_surface_acceptance_gate_blocked": bool(visible_surface_blocks),
+        "visible_surface_acceptance_gate_display_gate_relaxed": False,
+        "visible_surface_acceptance_gate_comment_text_body_included": False,
+        "visible_surface_acceptance_gate_raw_input_included": False,
         "display_gate_relaxed": False,
         **binding_fields,
     }
@@ -525,6 +702,7 @@ def build_emlis_gate_trace(
     binding_meta: Mapping[str, Any] | None = None,
     observation_structure_gate_report: Any = None,
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
+    visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Build a compact pass/fail trace for all EmlisAI judge gates.
 
@@ -681,6 +859,9 @@ def build_emlis_gate_trace(
     runtime_surface_gate = _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report)
     if runtime_surface_gate:
         trace["runtime_surface_pre_return_gate"] = runtime_surface_gate
+    visible_surface_gate = _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report)
+    if visible_surface_gate:
+        trace["visible_surface_acceptance_gate"] = visible_surface_gate
     return trace
 
 
@@ -807,6 +988,7 @@ def decide_emlis_observation_display(
     observation_quality_meta: Mapping[str, Any] | None = None,
     observation_structure_gate_report: Any = None,
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
+    visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
 ) -> DisplayDecision:
     """Final fail-closed decision for displaying Emlis observation text.
 
@@ -821,6 +1003,7 @@ def decide_emlis_observation_display(
     source = str(composer_source or "").strip()
     text = str(comment_text or "").strip()
     runtime_surface_gate = _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report)
+    visible_surface_gate = _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report)
     gate_trace = build_emlis_gate_trace(
         reader_report=reader_report,
         grounding_report=grounding_report,
@@ -831,6 +1014,7 @@ def decide_emlis_observation_display(
         binding_meta=binding_meta,
         observation_structure_gate_report=observation_structure_gate_report,
         runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
+        visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
     )
     display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
     reasons: List[str] = []
@@ -861,6 +1045,7 @@ def decide_emlis_observation_display(
                 observation_reply_kind=observation_kind,
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
+                visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
             ),
         )
 
@@ -882,6 +1067,7 @@ def decide_emlis_observation_display(
     if structure_gate and not bool(structure_gate.get("passed")):
         reasons.extend(list(structure_gate.get("rejection_reasons") or ["observation_structure_gate_rejected"]))
     reasons.extend(_runtime_surface_gate_rejection_reasons(runtime_surface_gate))
+    reasons.extend(_visible_surface_gate_rejection_reasons(visible_surface_gate))
     if not text:
         reasons.append("empty_comment_text")
         if source in _UNAVAILABLE_SOURCES:
@@ -908,6 +1094,7 @@ def decide_emlis_observation_display(
                 observation_reply_kind=observation_kind,
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
+                visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
             ),
         )
 
@@ -926,6 +1113,7 @@ def decide_emlis_observation_display(
             observation_reply_kind=observation_kind,
             low_information_quality_rejection_reasons=low_information_quality_reasons,
             runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
+            visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
         ),
     )
 

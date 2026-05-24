@@ -21,12 +21,22 @@ from fixtures.emlis_ai_runtime_surface_red_fixtures import (
     RUNTIME_SURFACE_BASELINE_RED_FIXTURES,
     RUNTIME_SURFACE_RED_FIXTURE_VERSION,
 )
+from fixtures.emlis_ai_visible_surface_acceptance_fixtures import (
+    VISIBLE_SURFACE_ACCEPTANCE_SCREENSHOT_INVENTORY,
+)
 
 _NATURAL_SURFACE = (
     "Emlisです。\n"
     "今は、自分の特技を探そうとしている感じが出ています。\n"
     "好きで続けているものはあるのに、それを得意と呼べるかで止まっているように見えます。"
 )
+
+
+def _visible_surface_fixture_by_id(fixture_id: str):
+    for fixture in VISIBLE_SURFACE_ACCEPTANCE_SCREENSHOT_INVENTORY:
+        if fixture.fixture_id == fixture_id:
+            return fixture
+    raise AssertionError(f"visible surface fixture not found: {fixture_id}")
 
 
 def test_step0_baseline_red_fixtures_are_fixed_without_good_sentence_locking() -> None:
@@ -68,6 +78,54 @@ def test_step1_runtime_surface_pre_return_gate_blocks_all_baseline_red_fixtures(
         assert payload["raw_input_included"] is False
         for marker in fixture.forbidden_surface_markers:
             assert marker not in dumped
+
+
+def test_step2_runtime_surface_pre_return_gate_blocks_screenshot_tari_koto_surface() -> None:
+    fixture = _visible_surface_fixture_by_id("visible_surface_red_malformed_tari_koto_20260524")
+
+    report = build_runtime_surface_pre_return_gate_report(
+        comment_text=fixture.public_body,
+        composer_meta={"profile_key": "current_input_core", "composer_source": "ai_generated"},
+        # The pre-return surface must still catch visible-surface breakage even
+        # when upstream phrase-unit meta has no explicit malformed count.
+        phrase_unit_grammar_meta={"malformed_phrase_unit_count": 0, "grammar_warning_codes": []},
+    )
+
+    assert report["evaluated"] is True
+    assert report["passed"] is False
+    assert report["blocked"] is True
+    assert report["action"] == ACTION_RERENDER_SHALLOW_V2
+    assert report["rerender_recommended"] is True
+    assert report["malformed_phrase_unit_count"] >= 1
+    assert report["malformed_nominalization_risk"] is True
+    assert "malformed_phrase_unit" in report["rejection_reasons"]
+    assert "malformed_nominalization_tari_fragment" in report["rejection_reasons"]
+    assert set(fixture.expected_rejection_reasons).issubset(set(report["rejection_reasons"]))
+    assert_runtime_surface_pre_return_gate_meta_only(report)
+
+    dumped = dump_runtime_surface_pre_return_gate_report(report)
+    assert "たりこと" not in dumped
+    assert "無理に変えよう" not in dumped
+    assert '"comment_text"' not in dumped
+
+
+@pytest.mark.parametrize(
+    "safe_surface",
+    (
+        "Emlisです。\n今は、考えたりすることを急がず見ようとしている感じが出ています。",
+        "Emlisです。\n今は、見たり聞いたりすることの中に手がかりが残っています。",
+        "Emlisです。\n今は、無理に変えようとしたことも含めて見ようとしている感じが出ています。",
+    ),
+)
+def test_step2_runtime_surface_pre_return_gate_does_not_flag_safe_tari_nominalizations(safe_surface: str) -> None:
+    report = build_runtime_surface_pre_return_gate_report(
+        comment_text=safe_surface,
+        composer_meta={"profile_key": "complete_initial", "composer_source": "ai_generated"},
+    )
+
+    assert "malformed_nominalization_tari_fragment" not in report["rejection_reasons"]
+    assert "malformed_phrase_unit" not in report["rejection_reasons"]
+    assert report["malformed_phrase_unit_count"] == 0
 
 
 def test_step1_runtime_surface_pre_return_gate_allows_clean_surface_contract() -> None:

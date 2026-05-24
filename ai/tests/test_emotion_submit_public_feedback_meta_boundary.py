@@ -118,6 +118,25 @@ def _assert_no_internal_payload(body: dict[str, Any]) -> None:
     assert SECRET_INTERNAL_COMMENT not in dumped
 
 
+def _with_failed_visible_surface_gate(meta: dict[str, Any]) -> dict[str, Any]:
+    out = dict(meta)
+    out["visible_surface_acceptance_gate"] = {
+        "version": "emlis.visible_surface_acceptance_gate.v1",
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": ["emotion_focus_unbridged_secondary"],
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "rn_visible_contract_changed": False,
+        "public_response_key_change": False,
+        "db_physical_name_changed": False,
+        "display_gate_relaxed": False,
+    }
+    return out
+
+
 def test_emotion_submit_public_response_meta_stays_small_when_internal_meta_is_huge() -> None:
     public_meta = build_public_emlis_input_feedback_meta(
         _huge_internal_meta("passed"),
@@ -135,6 +154,27 @@ def test_emotion_submit_public_response_meta_stays_small_when_internal_meta_is_h
     assert meta["public_feedback_meta_boundary"]["internal_meta_returned"] is False
     assert _compact_json_bytes(meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
     assert _compact_json_bytes(body) <= 16 * 1024
+    _assert_no_internal_payload(body)
+
+
+def test_emotion_submit_public_response_omits_failed_visible_surface_gate_feedback() -> None:
+    public_meta = build_public_emlis_input_feedback_meta(
+        _with_failed_visible_surface_gate(_huge_internal_meta("passed")),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": ["emotion_focus_unbridged_secondary"],
+    }
+    assert body["input_feedback"] is None
+    assert _compact_json_bytes(public_meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
     _assert_no_internal_payload(body)
 
 
@@ -174,3 +214,72 @@ def test_observation_diagnostic_lockdown_keeps_classification_summary_without_ra
     assert SECRET_RAW_INPUT not in dumped
     assert SECRET_EVIDENCE not in dumped
     assert SECRET_INTERNAL_COMMENT not in dumped
+
+
+def test_emotion_submit_public_response_omits_feedback_when_visible_surface_gate_blocks() -> None:
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta["multi_perspective"]["gate_trace"] = {
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "repair_required",
+            "action": "rerender_surface",
+            "rejection_reasons": ["emotion_focus_unbridged_secondary"],
+            "comment_text": SECRET_INTERNAL_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+            "raw_text": SECRET_EVIDENCE,
+        }
+    }
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": ["emotion_focus_unbridged_secondary"],
+    }
+    assert body["input_feedback"] is None
+    assert _compact_json_bytes(public_meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
+    _assert_no_internal_payload(body)
+
+
+def test_emotion_submit_public_response_keeps_visible_surface_gate_summary_when_allowed() -> None:
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta["multi_perspective"]["gate_trace"] = {
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": True,
+            "classification": "pass",
+            "action": "allow",
+            "rejection_reasons": [],
+            "comment_text": SECRET_INTERNAL_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+            "raw_text": SECRET_EVIDENCE,
+        }
+    }
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert body["input_feedback"]["comment_text"] == VISIBLE_COMMENT
+    meta = body["input_feedback"]["emlis_ai"]
+    assert meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": True,
+        "classification": "pass",
+        "action": "allow",
+    }
+    assert _compact_json_bytes(meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
+    _assert_no_internal_payload(body)

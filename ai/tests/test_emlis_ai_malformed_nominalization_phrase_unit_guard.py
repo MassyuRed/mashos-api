@@ -26,6 +26,11 @@ _MALFORMED_CASES = (
     ("上手になせなくてこと", "malformed_nominalization_te_form_fragment"),
     ("好きこと", "malformed_nominalization_adjective_fragment"),
     ("見えこと", "malformed_nominalization_auxiliary_fragment"),
+    ("変えようとしたりこと", "malformed_nominalization_tari_fragment"),
+    ("考えたりこと", "malformed_nominalization_tari_fragment"),
+    ("見たりこと", "malformed_nominalization_tari_fragment"),
+    ("無理に変えようとしたりこともあり", "malformed_nominalization_tari_fragment"),
+    ("やろうとしたりこと", "malformed_nominalization_tari_fragment"),
 )
 
 
@@ -100,12 +105,19 @@ def test_step3_guard_keeps_safe_nominalizations_and_safe_stem_repair() -> None:
     safe_keep = normalize_phrase_unit_grammar("好きなこと", role="current_expression", must_keep=False)
     safe_repair = normalize_phrase_unit_grammar("私から離れこと", role="self_protection", must_keep=True)
     material_report = judge_phrase_unit_material_quality("今まで続けてきたこと", raw_text="今まで続けてきたこと", role="current_expression", source_field="memo")
+    safe_tari_action = normalize_phrase_unit_grammar("考えたりすること", role="current_expression", must_keep=False)
+    safe_tari_pair = judge_phrase_unit_material_quality("見たり聞いたりすること", raw_text="見たり聞いたりすること", role="current_expression", source_field="memo")
+    safe_non_tari_nominalization = judge_phrase_unit_material_quality("無理に変えようとしたこと", raw_text="無理に変えようとしたこと", role="current_expression", source_field="memo")
 
     assert safe_keep.action == KEEP
     assert safe_keep.normalized_text == "好きなこと"
     assert safe_repair.action == REPHRASE
     assert safe_repair.normalized_text == "私から離れること"
     assert material_report["passed"] is True
+    assert safe_tari_action.action == KEEP
+    assert safe_tari_action.normalized_text == "考えたりすること"
+    assert safe_tari_pair["passed"] is True
+    assert safe_non_tari_nominalization["passed"] is True
 
 
 def test_step3_complete_material_service_defers_must_keep_malformed_phrase_unit_without_dropping_contract() -> None:
@@ -146,7 +158,9 @@ def test_step3_contract_meta_reports_guard_without_public_contract_changes() -> 
     normalizer_meta = build_phrase_unit_grammar_normalizer_contract_meta()
 
     assert material_meta["malformed_nominalization_guard_enabled"] is True
+    assert material_meta["malformed_nominalization_tari_fragment_guarded"] is True
     assert normalizer_meta["malformed_nominalization_guard_enabled"] is True
+    assert normalizer_meta["malformed_nominalization_tari_fragment_guard_enabled"] is True
     assert normalizer_meta["safe_nominalization_guard_enabled"] is True
     assert normalizer_meta["gate_relaxed"] is False
     assert normalizer_meta["public_response_key_change"] is False

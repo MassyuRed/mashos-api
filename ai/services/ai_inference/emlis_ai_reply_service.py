@@ -77,6 +77,7 @@ from emlis_ai_complete_product_quality_scorecard_service import (
 from emlis_ai_complete_release_ladder_service import build_complete_product_quality_release_ladder
 from emlis_ai_runtime_surface_complete_activation_branch import build_runtime_surface_complete_activation_branch
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
+from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_acceptance_gate_report
 from emlis_ai_bounded_repair_reroute import (
     ACTION_RERENDER_SHALLOW_V2 as BOUNDED_ACTION_RERENDER_SHALLOW_V2,
     decide_bounded_repair_reroute,
@@ -280,6 +281,13 @@ _RUNTIME_SURFACE_RERENDER_RETRY_REASONS = frozenset(
         "runtime_surface_pre_return_gate_action_rerender_shallow_v2",
     }
 )
+_VISIBLE_SURFACE_RERENDER_RETRY_REASONS = frozenset(
+    {
+        "visible_surface_acceptance_gate_action_rerender_surface",
+        "emotion_focus_unbridged_secondary",
+        "positive_tone_over_burden_without_anchor",
+    }
+)
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
@@ -395,7 +403,13 @@ def _composer_retry_reason_allowlist(composer_client: Any) -> frozenset[str]:
     class_name = type(composer_client).__name__ if composer_client is not None else ""
     if class_name == "CocolonCompleteComposerClient":
         return _COMPLETE_COMPOSER_RETRY_REASONS
-    return frozenset((*_LIMITED_READER_RETRY_REASONS, *_RUNTIME_SURFACE_RERENDER_RETRY_REASONS))
+    return frozenset(
+        (
+            *_LIMITED_READER_RETRY_REASONS,
+            *_RUNTIME_SURFACE_RERENDER_RETRY_REASONS,
+            *_VISIBLE_SURFACE_RERENDER_RETRY_REASONS,
+        )
+    )
 
 
 def _regeneration_reasons_for_retry(rejection_reasons: Iterable[Any], composer_client: Any) -> List[str]:
@@ -1430,6 +1444,39 @@ def _build_runtime_surface_pre_return_report_for_candidate(
         rerender_allowed=True,
         rerender_attempted=bool(rerender_attempted),
         rerender_attempt_limit=1,
+        low_information_reroute_allowed=False,
+    )
+
+
+def _visible_surface_current_text(current_input: Mapping[str, Any] | None) -> str:
+    current = current_input if isinstance(current_input, Mapping) else {}
+    for key in ("memo", "memo_text", "text", "input_text", "body"):
+        value = str(current.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _build_visible_surface_acceptance_report_for_candidate(
+    *,
+    comment_text: str,
+    current_input: Mapping[str, Any] | None,
+    rerender_attempted: bool = False,
+) -> Dict[str, Any]:
+    """Build the Step4 visible-surface gate report for a public candidate.
+
+    The candidate text and current input are used only in memory.  The returned
+    report is the Step3 meta-only shape, so it can be attached to internal gate
+    traces without leaking raw text or changing RN/API/DB contracts.
+    """
+
+    current = current_input if isinstance(current_input, Mapping) else {}
+    return build_visible_surface_acceptance_gate_report(
+        comment_text=comment_text,
+        current_input=current,
+        current_text=_visible_surface_current_text(current),
+        rerender_allowed=True,
+        rerender_attempted=bool(rerender_attempted),
         low_information_reroute_allowed=False,
     )
 
@@ -2694,6 +2741,16 @@ def _gate_reason_category_for_summary(gate_key: str, reason: str) -> str:
         if "emotion_label" in value or "unfinished" in value or "quality" in value:
             return "template_echo_quality"
         return "template_echo_general"
+    if gate_key in {"visible_surface_acceptance", "visible_surface_acceptance_gate"}:
+        if "malformed" in value or "phrase_unit" in value:
+            return "visible_surface_malformed"
+        if "emotion_focus" in value or "secondary" in value:
+            return "visible_surface_emotion_focus"
+        if "positive_tone" in value or "burden" in value:
+            return "visible_surface_tone"
+        if "action" in value or "classification" in value:
+            return "visible_surface_action"
+        return "visible_surface_general"
     if gate_key == "display":
         if "empty_comment" in value or "comment" in value:
             return "display_empty_comment"
@@ -2795,6 +2852,29 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "step14_guard_rejection_reasons",
             "step14_guard_strengthening",
         )
+    elif gate_key == "visible_surface_acceptance_gate":
+        keys = (
+            "evaluated",
+            "classification",
+            "action",
+            "rerender_recommended",
+            "reroute_low_information_recommended",
+            "visible_header_dominant_emotion_present",
+            "visible_header_dominant_emotion_source",
+            "opening_emotion_focus_present",
+            "dominant_emotion_bridge_present",
+            "selected_emotion_count",
+            "secondary_emotion_focus_detected",
+            "unselected_emotion_focus_detected",
+            "negative_text_anchor_present",
+            "positive_tone_profile",
+            "burden_surface_without_anchor_detected",
+            "malformed_nominalization_detected",
+            "malformed_nominalization_codes",
+            "raw_input_included",
+            "comment_text_body_included",
+            "display_gate_relaxed",
+        )
     elif gate_key == "display":
         keys = (
             "observation_status",
@@ -2860,6 +2940,7 @@ def _diagnostic_gate_results(gate_trace: Dict[str, Any]) -> Dict[str, Diagnostic
         "reader": _gate_result_from_trace(gate_trace, "reader"),
         "grounding": _gate_result_from_trace(gate_trace, "grounding"),
         "template_echo": _gate_result_from_trace(gate_trace, "template_echo"),
+        "visible_surface_acceptance": _gate_result_from_trace(gate_trace, "visible_surface_acceptance_gate"),
         "display": _gate_result_from_trace(gate_trace, "display_gate"),
     }
 
@@ -2870,7 +2951,7 @@ def _build_gate_diagnostic_summary(
     observation_status: str,
     composer_status: str,
 ) -> Dict[str, Any]:
-    order = ["reader", "grounding", "template_echo", "display"]
+    order = ["reader", "grounding", "template_echo", "visible_surface_acceptance", "display"]
     gate_meta = {key: value.as_meta() for key, value in dict(gate_results or {}).items()}
     failed_gates: List[str] = []
     gate_primary_reasons: Dict[str, str] = {}
@@ -3924,6 +4005,9 @@ def _multi_perspective_meta(
     runtime_surface_gate_trace = gate_trace.get("runtime_surface_pre_return_gate") if isinstance(gate_trace, dict) else {}
     runtime_surface_gate_trace = dict(runtime_surface_gate_trace or {}) if isinstance(runtime_surface_gate_trace, dict) else {}
     runtime_surface_gate_reasons = list(runtime_surface_gate_trace.get("rejection_reasons") or []) if runtime_surface_gate_trace else []
+    visible_surface_gate_trace = gate_trace.get("visible_surface_acceptance_gate") if isinstance(gate_trace, dict) else {}
+    visible_surface_gate_trace = dict(visible_surface_gate_trace or {}) if isinstance(visible_surface_gate_trace, dict) else {}
+    visible_surface_gate_reasons = list(visible_surface_gate_trace.get("rejection_reasons") or []) if visible_surface_gate_trace else []
     resolution_meta: Dict[str, Any] = {}
     as_meta = getattr(composer_client_resolution, "as_meta", None)
     if callable(as_meta):
@@ -4030,6 +4114,14 @@ def _multi_perspective_meta(
         "runtime_surface_pre_return_gate_display_gate_relaxed": False,
         "runtime_surface_pre_return_gate_comment_text_body_included": False,
         "runtime_surface_pre_return_gate_raw_input_included": False,
+        "visible_surface_acceptance_gate_evaluated": bool(visible_surface_gate_trace.get("evaluated")) if visible_surface_gate_trace else False,
+        "visible_surface_acceptance_gate_passed": bool(visible_surface_gate_trace.get("passed")) if visible_surface_gate_trace else True,
+        "visible_surface_acceptance_gate_action": str(visible_surface_gate_trace.get("action") or "") if visible_surface_gate_trace else "",
+        "visible_surface_acceptance_gate_classification": str(visible_surface_gate_trace.get("classification") or "") if visible_surface_gate_trace else "",
+        "visible_surface_acceptance_gate_rejection_reasons": visible_surface_gate_reasons,
+        "visible_surface_acceptance_gate_display_gate_relaxed": False,
+        "visible_surface_acceptance_gate_comment_text_body_included": False,
+        "visible_surface_acceptance_gate_raw_input_included": False,
     }
     diagnostic_summary = _diagnostic_summary_meta(
         display_decision=display_decision,
@@ -5098,6 +5190,7 @@ async def render_emlis_ai_reply(
     )
     template_echo_report = guard_template_echo(comment_text="", evidence_spans=evidence_spans, composer_source="unavailable")
     runtime_surface_pre_return_gate_report: Dict[str, Any] = {}
+    visible_surface_acceptance_gate_report: Dict[str, Any] = {}
     initial_binding_meta = build_limited_composer_binding_presence_meta(
         composer_candidate=None,
     )
@@ -5184,6 +5277,11 @@ async def render_emlis_ai_reply(
             composer_source=composer_source,
             rerender_attempted=attempt > 1,
         )
+        visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+            comment_text=comment_text,
+            current_input=current_input,
+            rerender_attempted=attempt > 1,
+        )
         display_decision = decide_emlis_observation_display(
             comment_text=comment_text,
             reader_report=reader_report,
@@ -5196,6 +5294,7 @@ async def render_emlis_ai_reply(
             binding_meta=candidate_binding_presence,
             observation_structure_gate_report=observation_structure_gate_report,
             runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
         )
         if display_decision.observation_status in {"passed", "safety_blocked"}:
             break
@@ -5293,6 +5392,15 @@ async def render_emlis_ai_reply(
                 else False
             ),
         )
+        visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+            comment_text=final_candidate_text,
+            current_input=current_input,
+            rerender_attempted=bool(
+                visible_surface_acceptance_gate_report.get("rerender_attempted")
+                if isinstance(visible_surface_acceptance_gate_report, Mapping)
+                else False
+            ),
+        )
         final_binding_meta = build_limited_composer_binding_presence_meta(
             composer_candidate=composer_candidate,
         )
@@ -5308,6 +5416,7 @@ async def render_emlis_ai_reply(
             binding_meta=final_binding_meta,
             observation_structure_gate_report=observation_structure_gate_report,
             runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
         )
 
     # No fixed fallback. The display gate is fail-closed.

@@ -49,6 +49,7 @@ from emlis_ai_observation_surface_realizer_tone import (
     realize_low_information_observation_surface,
 )
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
+from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_acceptance_gate_report
 from emlis_ai_types import (
     ConversationComposerCandidate,
     DisplayDecision,
@@ -111,6 +112,15 @@ _NON_REPAIRABLE_AI_GENERATED_REJECTION_REASONS: Final = frozenset(
 
 def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\u3000", " ")).strip()
+
+
+def _current_text_for_visible_surface(current_input: Mapping[str, Any] | None) -> str:
+    current = current_input if isinstance(current_input, Mapping) else {}
+    for key in ("memo", "memo_text", "text", "input_text", "body"):
+        value = _clean(current.get(key))
+        if value:
+            return value
+    return ""
 
 
 def _dedupe(values: Iterable[Any] | Any | None) -> list[str]:
@@ -1112,6 +1122,14 @@ def integrate_observation_display_repair(
         rerender_attempt_limit=1,
         low_information_reroute_allowed=False,
     )
+    visible_surface_acceptance_gate_report = build_visible_surface_acceptance_gate_report(
+        comment_text=surface.body,
+        current_input=current_input if isinstance(current_input, Mapping) else {},
+        current_text=_current_text_for_visible_surface(current_input if isinstance(current_input, Mapping) else {}),
+        rerender_allowed=False,
+        rerender_attempted=True,
+        low_information_reroute_allowed=False,
+    )
     display_decision = decide_emlis_observation_display(
         comment_text=surface.body,
         reader_report=reader_report,
@@ -1125,6 +1143,7 @@ def integrate_observation_display_repair(
         observation_reply_kind=OBSERVATION_REPLY_KIND_LOW_INFORMATION,
         observation_quality_meta=surface.as_meta(),
         runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+        visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
     )
     applied = bool(display_decision.observation_status == "passed" and str(display_decision.comment_text or "").strip())
     return ObservationDisplayRepairIntegrationResult(
