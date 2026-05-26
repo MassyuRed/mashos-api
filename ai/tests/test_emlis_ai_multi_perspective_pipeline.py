@@ -591,8 +591,13 @@ async def test_phase8_reply_orchestrator_allows_comment_text_only_after_display_
         composer_client=FakeComposerAI(),
     )
 
+    expected_text = text.replace(
+        "リラックスできて自分のことを優先できる嬉しさと、",
+        "今回の入力では、リラックスできて自分のことを優先できる嬉しさと、",
+        1,
+    )
     phase_gate = envelope.meta["multi_perspective"]["phase_gate"]
-    assert envelope.comment_text == text
+    assert envelope.comment_text == expected_text
     assert envelope.meta["observation_status"] == "passed"
     assert phase_gate["completed_phases"] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert phase_gate["current_phase"] == 10

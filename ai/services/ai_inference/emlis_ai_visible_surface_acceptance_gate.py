@@ -16,6 +16,15 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from emlis_ai_state_answer_special_cases import (
+    state_answer_special_cases_forward_meta,
+    state_answer_special_cases_surface_gate_check,
+)
+from emlis_ai_state_answer_gate_boundary import (
+    build_state_answer_gate_boundary_report,
+    state_answer_gate_boundary_public_summary,
+)
+
 VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION = "emlis.visible_surface_acceptance_gate.v1"
 VISIBLE_SURFACE_ACCEPTANCE_GATE_SOURCE = "emlis_visible_surface_acceptance_gate"
 VISIBLE_SURFACE_ACCEPTANCE_GATE_STEP = "Step3_Visible_Surface_Acceptance_Gate"
@@ -124,8 +133,58 @@ _BRIDGE_MARKERS = (
 )
 _GREETING_MARKERS = ("Emlisです", "Emlisです。", "Emlisです!", "Emlisです！")
 
+# These are generic surface-level forms that must not be returned as
+# ``passed + comment_text``.  They intentionally describe malformed
+# nominalization families, not screenshot-specific strings.
 _MALFORMED_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("malformed_nominalization_tari_fragment", re.compile(r"たりこと(?:$|[もがはにをでへ、。,.])")),
+    (
+        "malformed_nominalization_conditional_fragment",
+        re.compile(
+            r"(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "malformed_nominalization_prediction_noun_fragment",
+        re.compile(r"(?:予感|気配|予定|必要|つもり|はず|可能性|見込み|感じ)こと(?:$|[もがはにをでへ、。,.])"),
+    ),
+    (
+        "residual_koto_splice_fragment",
+        re.compile(
+            r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと|予感こと|気配こと|予定こと|"
+            r"必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "long_clause_koto_attachment_risk",
+        re.compile(
+            r"[^。！？!?\n]{18,120}(?:(?:なければ|なきゃ|ないと|しないと|しなくては|せねば)こと|"
+            r"(?:予感|気配|予定|必要|可能性|見込み)こと)(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+)
+
+_KOTO_SPLICE_CODES = {
+    "malformed_nominalization_conditional_fragment",
+    "malformed_nominalization_prediction_noun_fragment",
+    "residual_koto_splice_fragment",
+    "long_clause_koto_attachment_risk",
+}
+
+_RELATION_SKELETON_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("state_not_one_color", re.compile(r"状態が一色ではありません")),
+    ("visible_range_not_single_element", re.compile(r"今見えている範囲は一つの要素だけではありません")),
+    ("not_single_element", re.compile(r"一つの要素だけではありません")),
+    ("not_reduced_to_one_side", re.compile(r"片方だけに減らさず")),
+    ("overlap_as_aligned", re.compile(r"重なりとして並んで")),
+)
+
+_ANALYTIC_REGISTER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("coverage", re.compile(r"網羅")),
+    ("element", re.compile(r"要素")),
+    ("range", re.compile(r"範囲")),
 )
 
 _FORBIDDEN_TEXT_PAYLOAD_KEYS = {
@@ -302,6 +361,16 @@ def build_visible_surface_acceptance_gate_contract_schema() -> dict[str, Any]:
             "burden_surface_without_anchor_detected": {"type": "boolean"},
             "malformed_nominalization_detected": {"type": "boolean"},
             "malformed_nominalization_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "koto_splice_detected": {"type": "boolean"},
+            "koto_splice_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "relation_skeleton_marker_count": {"type": "integer", "minimum": 0},
+            "relation_skeleton_marker_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "relation_skeleton_major": {"type": "boolean"},
+            "analytic_register_leak_count": {"type": "integer", "minimum": 0},
+            "analytic_register_leak_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "analytic_register_leak": {"type": "boolean"},
+            "surface_repair_requested": {"type": "boolean"},
+            "repair_reason_family": {"type": "string"},
             "rerender_allowed": {"type": "boolean"},
             "rerender_attempted": {"type": "boolean"},
             "raw_input_included": {"const": False},
@@ -520,6 +589,117 @@ def _malformed_nominalization_codes(comment_text: Any) -> list[str]:
     return _dedupe(code for code, pattern in _MALFORMED_NOMINALIZATION_PATTERNS if pattern.search(text))
 
 
+def _relation_skeleton_marker_codes(comment_text: Any) -> list[str]:
+    text = _clean(comment_text)
+    if not text:
+        return []
+    codes = _dedupe(code for code, pattern in _RELATION_SKELETON_PATTERNS if pattern.search(text))
+    if "visible_range_not_single_element" in codes and "not_single_element" in codes:
+        codes = [code for code in codes if code != "not_single_element"]
+    return codes
+
+
+def _input_derived_marker_values(
+    *,
+    current_text: Any,
+    current_input: Mapping[str, Any] | None,
+    input_derived_surface_markers: Sequence[Any] | None,
+) -> list[str]:
+    current = _safe_mapping(current_input)
+    values: list[Any] = []
+    if input_derived_surface_markers is not None:
+        values.extend(input_derived_surface_markers)
+    for key in ("input_derived_surface_markers", "inputDerivedSurfaceMarkers"):
+        raw = current.get(key)
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            values.extend(raw)
+    text = _clean(
+        current_text
+        or current.get("memo")
+        or current.get("memo_text")
+        or current.get("text")
+        or current.get("input_text")
+    )
+    if text:
+        values.append(text)
+    return _dedupe(values)
+
+
+def _analytic_register_leak_codes(
+    comment_text: Any,
+    *,
+    current_text: Any,
+    current_input: Mapping[str, Any] | None,
+    input_derived_surface_markers: Sequence[Any] | None,
+) -> list[str]:
+    text = _clean(comment_text)
+    if not text:
+        return []
+    input_derived_values = _input_derived_marker_values(
+        current_text=current_text,
+        current_input=current_input,
+        input_derived_surface_markers=input_derived_surface_markers,
+    )
+    out: list[str] = []
+    for code, pattern in _ANALYTIC_REGISTER_PATTERNS:
+        if not pattern.search(text):
+            continue
+        # Input-derived analytic wording is not over-read.  It may still be
+        # repaired when stacked with mechanical relation skeletons, but the leak
+        # counter should not mark it as non-derived.
+        if any(pattern.search(value) for value in input_derived_values):
+            continue
+        out.append(code)
+    return _dedupe(out)
+
+
+def _state_answer_special_cases_from_inputs(
+    *,
+    state_answer_special_cases: Any = None,
+    composer_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    explicit = state_answer_special_cases_forward_meta(state_answer_special_cases)
+    if explicit:
+        return explicit
+    meta = _safe_mapping(composer_meta)
+    for key in ("state_answer_special_cases", "state_answer_special_cases_payload", "special_handling"):
+        found = state_answer_special_cases_forward_meta(meta.get(key))
+        if found:
+            return found
+    contract = _safe_mapping(meta.get("state_answer_surface_contract"))
+    for key in ("special_handling", "state_answer_special_cases", "state_answer_special_cases_payload"):
+        found = state_answer_special_cases_forward_meta(contract.get(key))
+        if found:
+            return found
+    return {}
+
+
+def _repair_reason_family(
+    *,
+    red_reasons: Sequence[str],
+    repair_reasons: Sequence[str],
+    warning_reasons: Sequence[str],
+) -> str:
+    reasons = set(red_reasons) | set(repair_reasons) | set(warning_reasons)
+    if _KOTO_SPLICE_CODES & reasons:
+        return "koto_splice"
+    relation_reasons = {
+        "surface_relation_skeleton_major",
+        "surface_relation_skeleton_stack",
+        "surface_relation_skeleton_minor",
+        "analytic_register_leak",
+    }
+    if relation_reasons & reasons:
+        return "relation_skeleton"
+    if any(reason.startswith("emotion_focus_") for reason in reasons):
+        return "emotion_focus"
+    if "positive_tone_over_burden_without_anchor" in reasons:
+        return "tone_profile"
+    if reasons:
+        return "surface_general"
+    return "none"
+
+
 def _action_for_classification(
     *,
     classification: str,
@@ -549,8 +729,12 @@ def build_visible_surface_acceptance_gate_report(
     visible_header_dominant_emotion: Any = "",
     current_input: Mapping[str, Any] | None = None,
     current_text: Any = "",
+    input_derived_surface_markers: Sequence[Any] | None = None,
     current_text_negative_anchor_present: bool | None = None,
     negative_text_anchor_present: bool | None = None,
+    composer_meta: Mapping[str, Any] | None = None,
+    state_answer_special_cases: Any = None,
+    state_answer_surface_contract: Any = None,
     rerender_allowed: bool = True,
     rerender_attempted: bool = False,
     low_information_reroute_allowed: bool = False,
@@ -600,6 +784,38 @@ def build_visible_surface_acceptance_gate_report(
         negative_anchor_present=negative_anchor,
     )
     malformed_codes = _malformed_nominalization_codes(comment_text)
+    koto_splice_codes = [code for code in malformed_codes if code in _KOTO_SPLICE_CODES]
+    relation_skeleton_codes = _relation_skeleton_marker_codes(comment_text)
+    relation_skeleton_marker_count = len(relation_skeleton_codes)
+    relation_skeleton_major = relation_skeleton_marker_count >= 2
+    analytic_register_codes = _analytic_register_leak_codes(
+        comment_text,
+        current_text=current_text,
+        current_input=current_input,
+        input_derived_surface_markers=input_derived_surface_markers,
+    )
+    analytic_register_leak_count = len(analytic_register_codes)
+    special_cases_meta = _state_answer_special_cases_from_inputs(
+        state_answer_special_cases=state_answer_special_cases,
+        composer_meta=composer_meta,
+    )
+    special_case_surface_report = state_answer_special_cases_surface_gate_check(
+        visible_surface=comment_text,
+        special_cases=special_cases_meta,
+    )
+    state_answer_gate_boundary_report = build_state_answer_gate_boundary_report(
+        visible_surface=comment_text,
+        state_answer_surface_contract=state_answer_surface_contract,
+        state_answer_special_cases=special_cases_meta,
+        composer_meta=composer_meta,
+        current_input=current_input,
+    )
+    special_case_blockers = _dedupe(special_case_surface_report.get("surface_blocker_reasons") or [])
+    state_answer_gate_boundary_blockers = _dedupe(
+        state_answer_gate_boundary_report.get("surface_blocker_reasons")
+        or state_answer_gate_boundary_report.get("rejection_reasons")
+        or []
+    )
 
     rejection_reasons: list[str] = []
     warning_reasons: list[str] = []
@@ -608,12 +824,27 @@ def build_visible_surface_acceptance_gate_report(
 
     if malformed_codes:
         red_reasons.extend(["malformed_phrase_unit", *malformed_codes])
+    if relation_skeleton_major:
+        repair_reasons.append("surface_relation_skeleton_major")
+        if relation_skeleton_marker_count >= 3:
+            repair_reasons.append("surface_relation_skeleton_stack")
+    elif relation_skeleton_marker_count == 1:
+        warning_reasons.append("surface_relation_skeleton_minor")
+    if analytic_register_leak_count:
+        if relation_skeleton_major or analytic_register_leak_count >= 2:
+            repair_reasons.append("analytic_register_leak")
+        else:
+            warning_reasons.append("analytic_register_leak")
     if burden_without_anchor:
         repair_reasons.append("positive_tone_over_burden_without_anchor")
     if focused_secondary_labels and not bridge_present:
         repair_reasons.append("emotion_focus_unbridged_secondary")
     if unselected_focused_labels and not negative_anchor and not burden_without_anchor:
         red_reasons.append("emotion_focus_unselected_without_evidence")
+    if special_case_blockers:
+        red_reasons.extend(special_case_blockers)
+    if state_answer_gate_boundary_blockers:
+        red_reasons.extend(state_answer_gate_boundary_blockers)
 
     rejection_reasons.extend(red_reasons)
     rejection_reasons.extend(repair_reasons)
@@ -636,6 +867,12 @@ def build_visible_surface_acceptance_gate_report(
         low_information_reroute_allowed=bool(low_information_reroute_allowed),
     )
     passed = classification == CLASSIFICATION_PASS and action == ACTION_ALLOW
+    surface_repair_requested = action in {ACTION_RERENDER_SURFACE, ACTION_REROUTE_LOW_INFORMATION}
+    repair_reason_family = _repair_reason_family(
+        red_reasons=red_reasons,
+        repair_reasons=repair_reasons,
+        warning_reasons=warning_reasons,
+    )
     report: dict[str, Any] = {
         "version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
         "schema_version": VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION,
@@ -665,6 +902,45 @@ def build_visible_surface_acceptance_gate_report(
         "burden_surface_without_anchor_detected": bool(burden_without_anchor),
         "malformed_nominalization_detected": bool(malformed_codes),
         "malformed_nominalization_codes": list(malformed_codes),
+        "koto_splice_detected": bool(koto_splice_codes),
+        "koto_splice_codes": list(koto_splice_codes),
+        "relation_skeleton_marker_count": int(relation_skeleton_marker_count),
+        "relation_skeleton_marker_codes": list(relation_skeleton_codes),
+        "relation_skeleton_major": bool(relation_skeleton_major),
+        "analytic_register_leak_count": int(analytic_register_leak_count),
+        "analytic_register_leak_codes": list(analytic_register_codes),
+        "analytic_register_leak": bool(analytic_register_codes),
+        "state_answer_special_case_surface_guard": _safe_mapping(special_case_surface_report),
+        "state_answer_special_case_guard_reasons": list(special_case_blockers),
+        "state_answer_special_case_allowed_exception_ids": list(special_case_surface_report.get("allowed_exception_ids_detected") or []),
+        "self_denial_limited_counter_opinion_allowed_by_special_case": bool(
+            special_case_surface_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_special_case": bool(
+            special_case_surface_report.get("anger_target_judgement_agreement_detected")
+        ),
+        "state_answer_gate_boundary": state_answer_gate_boundary_public_summary(state_answer_gate_boundary_report),
+        "state_answer_gate_boundary_rejection_reasons": list(state_answer_gate_boundary_blockers),
+        "state_answer_gate_boundary_terminal_surface_block": bool(
+            state_answer_gate_boundary_report.get("terminal_surface_block") or state_answer_gate_boundary_blockers
+        ),
+        "state_answer_forbidden_claim_reasons": list(state_answer_gate_boundary_report.get("forbidden_claim_reasons") or []),
+        "state_answer_allowed_exception_ids_detected": list(
+            state_answer_gate_boundary_report.get("allowed_exception_ids_detected")
+            or state_answer_gate_boundary_report.get("allowed_exception_ids")
+            or []
+        ),
+        "state_answer_public_meta_summary_only": True,
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
+        "self_denial_limited_counter_opinion_allowed_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("anger_target_judgement_agreement_blocked")
+        ),
+        "surface_repair_requested": bool(surface_repair_requested),
+        "repair_reason_family": repair_reason_family,
         "rerender_allowed": bool(rerender_allowed),
         "rerender_attempted": bool(rerender_attempted),
         "low_information_reroute_allowed": bool(low_information_reroute_allowed),
@@ -726,6 +1002,16 @@ def build_visible_surface_acceptance_gate_contract_meta() -> dict[str, Any]:
         "burden_surface_without_anchor_detected": False,
         "malformed_nominalization_detected": False,
         "malformed_nominalization_codes": [],
+        "koto_splice_detected": False,
+        "koto_splice_codes": [],
+        "relation_skeleton_marker_count": 0,
+        "relation_skeleton_marker_codes": [],
+        "relation_skeleton_major": False,
+        "analytic_register_leak_count": 0,
+        "analytic_register_leak_codes": [],
+        "analytic_register_leak": False,
+        "surface_repair_requested": False,
+        "repair_reason_family": "none",
         "rerender_allowed": False,
         "rerender_attempted": False,
         "low_information_reroute_allowed": False,

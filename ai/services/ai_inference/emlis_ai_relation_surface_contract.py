@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence, Tuple
 
 RELATION_SURFACE_CONTRACT_VERSION = "emlis.relation_surface_contract.v1"
+PHRASE_SURFACE_SHAPE_VERSION = "emlis.phrase_surface_shape.v1.20260524"
 
 RAW_INPUT_META_KEYS = {
     "raw_text",
@@ -101,6 +102,258 @@ class RelationSurfaceSignal:
             "strict_recovery_bridge_required": bool(self.strict_recovery_bridge_required),
             "raw_input_included": False,
         }
+
+
+@dataclass(frozen=True)
+class PhraseSurfaceShapeSignal:
+    """Public-safe diagnostic for relation-line phrase surface shape.
+
+    The signal never stores the phrase body or the raw input.  It only tells the
+    shallow realizer whether a candidate phrase can be attached directly, needs
+    compression, or must be deferred before relation-line rendering.
+    """
+
+    shape: str
+    safe_for_direct_koto_attachment: bool
+    safe_for_relation_line: bool
+    requires_surface_compression: bool = False
+    requires_drop_or_defer: bool = False
+    warning_codes: Tuple[str, ...] = field(default_factory=tuple)
+    contract_version: str = RELATION_SURFACE_CONTRACT_VERSION
+    version: str = PHRASE_SURFACE_SHAPE_VERSION
+
+    def as_meta(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "phrase_surface_shape_version": self.version,
+            "relation_surface_contract_version": self.contract_version,
+            "contract_version": self.contract_version,
+            "shape": self.shape,
+            "safe_for_direct_koto_attachment": bool(self.safe_for_direct_koto_attachment),
+            "safe_for_relation_line": bool(self.safe_for_relation_line),
+            "requires_surface_compression": bool(self.requires_surface_compression),
+            "requires_drop_or_defer": bool(self.requires_drop_or_defer),
+            "warning_codes": list(self.warning_codes),
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_body_included": False,
+        }
+
+
+_KOTO_SPLICE_FRAGMENT_RE = re.compile(
+    r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|行かなければ|出なければ|やらなければ|取らなければ)こと|"
+    r"予感こと|気配こと|予定こと|必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ、。,.])"
+)
+_OBLIGATION_OR_SCHEDULE_RE = re.compile(
+    r"(?:なければ|なきゃ|しなければ|しないと|しなくては|せねば|いけない|ならない|必要|予定|締切|期日|タスク|出なければ|行かなければ|取らなければ)"
+)
+_PREDICTION_OR_CAPACITY_RE = re.compile(r"(?:予感|気配|キャパオーバー|限界が近|しそう|なりそう|崩れそう|詰まりそう)")
+_RELATIONSHIP_ACTION_RE = re.compile(r"(?:コミュニケーション|関わり|関係|連絡|話さ|顔を出|仲間|相手|人と|人との)")
+_ANALYTIC_OR_SYSTEM_REGISTER_RE = re.compile(r"(?:状態が一色|一つの要素|今見えている範囲|重なりとして並ん|片方だけに減らさず|網羅|要素だけ)")
+_SAFE_NOMINAL_ENDINGS = ("こと", "気持ち", "感覚", "怖さ", "不安", "つらさ", "しんどさ", "限界", "願い", "予感", "気配")
+
+
+def _compact_surface(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "").replace("　", " "))
+
+
+def _shape_codes(values: Iterable[Any] | Any = ()) -> Tuple[str, ...]:
+    if values is None:
+        return tuple()
+    if isinstance(values, (str, bytes)):
+        values = (values,)
+    return _dedupe(str(value or "").strip() for value in values if str(value or "").strip())
+
+
+def classify_phrase_surface_shape(
+    phrase: Any,
+    *,
+    raw_text: Any = "",
+    role: Any = "",
+    quality_flags: Iterable[Any] | Any = (),
+) -> dict[str, Any]:
+    """Classify whether a phrase can safely enter a shallow relation line.
+
+    This classifier is intentionally lexical and public-safe: it only returns
+    codes, booleans and counts.  It does not expose phrase text or raw input.
+    """
+
+    text = _clean(phrase)
+    compact = _compact_surface(text)
+    raw_compact = _compact_surface(raw_text)
+    joined = compact + raw_compact
+    flags = _shape_codes(quality_flags)
+    codes: list[str] = []
+
+    if not compact:
+        signal = PhraseSurfaceShapeSignal(
+            shape="unknown",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=False,
+            requires_drop_or_defer=True,
+            warning_codes=("empty_phrase_surface",),
+        )
+        return signal.as_meta()
+
+    if _KOTO_SPLICE_FRAGMENT_RE.search(text) or any("malformed_nominalization" in flag for flag in flags):
+        codes.extend(flag for flag in flags if "malformed" in flag or "nominalization" in flag)
+        codes.append("unsafe_koto_splice")
+        signal = PhraseSurfaceShapeSignal(
+            shape="unsafe_koto_splice",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=False,
+            requires_surface_compression=False,
+            requires_drop_or_defer=True,
+            warning_codes=_dedupe(codes),
+        )
+        return signal.as_meta()
+
+    if _ANALYTIC_OR_SYSTEM_REGISTER_RE.search(text):
+        signal = PhraseSurfaceShapeSignal(
+            shape="analytic_or_system_register",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=False,
+            requires_surface_compression=True,
+            requires_drop_or_defer=True,
+            warning_codes=("analytic_or_system_register",),
+        )
+        return signal.as_meta()
+
+    if _OBLIGATION_OR_SCHEDULE_RE.search(joined):
+        signal = PhraseSurfaceShapeSignal(
+            shape="obligation_or_schedule",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=True,
+            requires_surface_compression=True,
+            warning_codes=("direct_koto_attachment_blocked",),
+        )
+        return signal.as_meta()
+
+    if _PREDICTION_OR_CAPACITY_RE.search(joined):
+        signal = PhraseSurfaceShapeSignal(
+            shape="prediction_or_capacity",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=True,
+            requires_surface_compression=True,
+            warning_codes=("prediction_koto_attachment_blocked",),
+        )
+        return signal.as_meta()
+
+    if _RELATIONSHIP_ACTION_RE.search(joined):
+        long_relation = len(compact) >= 18 or len(raw_compact) >= 24
+        signal = PhraseSurfaceShapeSignal(
+            shape="relationship_action",
+            safe_for_direct_koto_attachment=not long_relation,
+            safe_for_relation_line=True,
+            requires_surface_compression=long_relation,
+            warning_codes=("relationship_action_compressed",) if long_relation else tuple(),
+        )
+        return signal.as_meta()
+
+    if len(compact) >= 34 or len(raw_compact) >= 42:
+        signal = PhraseSurfaceShapeSignal(
+            shape="long_raw_clause",
+            safe_for_direct_koto_attachment=False,
+            safe_for_relation_line=True,
+            requires_surface_compression=True,
+            warning_codes=("long_raw_clause_compressed",),
+        )
+        return signal.as_meta()
+
+    if compact.endswith(_SAFE_NOMINAL_ENDINGS):
+        signal = PhraseSurfaceShapeSignal(
+            shape="safe_nominalized_event",
+            safe_for_direct_koto_attachment=True,
+            safe_for_relation_line=True,
+        )
+        return signal.as_meta()
+
+    signal = PhraseSurfaceShapeSignal(
+        shape="feeling_state",
+        safe_for_direct_koto_attachment=False,
+        safe_for_relation_line=True,
+        requires_surface_compression=False,
+    )
+    return signal.as_meta()
+
+
+def compress_phrase_for_relation_surface(
+    phrase: Any,
+    *,
+    raw_text: Any = "",
+    role: Any = "",
+    quality_flags: Iterable[Any] | Any = (),
+    shape_meta: Mapping[str, Any] | None = None,
+) -> str:
+    """Return a safe relation-line phrase, or an empty string when deferred.
+
+    This is a grammar-surface compression helper, not a fixed observation
+    fallback.  It does not add a completed observation sentence and it never
+    returns diagnostic text.
+    """
+
+    meta = dict(shape_meta or classify_phrase_surface_shape(phrase, raw_text=raw_text, role=role, quality_flags=quality_flags))
+    shape = str(meta.get("shape") or "unknown").strip()
+    text = _clean(phrase)
+    compact = _compact_surface(text)
+    raw_compact = _compact_surface(raw_text)
+    joined = compact + raw_compact
+    if not text or shape in {"unsafe_koto_splice", "analytic_or_system_register", "unknown"} and bool(meta.get("requires_drop_or_defer")):
+        return ""
+
+    if shape == "prediction_or_capacity":
+        if "キャパオーバー" in joined and "予感" in joined:
+            return "キャパオーバーしそうな予感"
+        cleaned = re.sub(r"(?:がある)?こと$", "", text).strip(" 　、,。")
+        cleaned = cleaned.replace("予感こと", "予感").replace("気配こと", "気配")
+        if cleaned.endswith(("予感", "気配")):
+            return cleaned
+        if "予感" in joined:
+            return "予感"
+        if "気配" in joined:
+            return "気配"
+        if "失敗" in joined and "不安" in joined:
+            return "失敗しそうで不安な感覚"
+        if "失敗" in joined:
+            return "失敗しそうな感覚"
+        if "不安" in joined:
+            return "不安が近づいている感覚"
+        return "負荷が近づいている感覚"
+
+    if shape == "obligation_or_schedule":
+        if "コミュニケーション" in joined or "関わ" in joined or "連絡" in joined or "仲間" in joined:
+            return "人との関わりの負荷"
+        if "イベント" in joined and ("予定" in joined or "出" in joined or "顔を出" in joined):
+            return "イベント予定の近さ"
+        if "予定" in joined and ("集中" in joined or "詰ま" in joined):
+            cleaned = re.sub(r"(?:こと|があること)$", "", text).strip(" 　、,。")
+            return cleaned or "予定が詰まっていること"
+        if "予定" in joined or "締切" in joined or "期日" in joined:
+            return "予定の近さ"
+        if "必要" in joined or "なければ" in joined or "しないと" in joined:
+            return "必要なことの近さ"
+        return "やることの近さ"
+
+    if shape == "relationship_action":
+        if "コミュニケーション" in joined or "関わ" in joined or "連絡" in joined or "仲間" in joined:
+            return "人との関わり"
+        return re.sub(r"(?:こと|があること)$", "", text).strip(" 　、,。") or "人との関わり"
+
+    if shape == "long_raw_clause":
+        if "キャパオーバー" in joined and "予感" in joined:
+            return "キャパオーバーしそうな予感"
+        if "コミュニケーション" in joined or "関わ" in joined or "連絡" in joined or "仲間" in joined:
+            return "人との関わりの負荷"
+        if "予定" in joined or "締切" in joined or "期日" in joined:
+            return "予定の近さ"
+        cleaned = re.sub(r"(?:こと|があること)$", "", text).strip(" 　、,。")
+        if cleaned and len(_compact_surface(cleaned)) <= 24:
+            return cleaned
+        return ""
+
+    cleaned = text.replace("予感こと", "予感").replace("気配こと", "気配")
+    cleaned = re.sub(r"(こと){2,}$", "こと", cleaned).strip(" 　、,。")
+    return cleaned
 
 
 def _clean(value: Any) -> str:
@@ -208,12 +461,12 @@ def relation_marker_phrase(relation_type: Any, context_flags: Mapping[str, Any] 
     relation = normalize_relation_surface_type(relation_type)
     if relation == "recovery":
         if _context_flag(context_flags, "prior_load_present"):
-            return "戻ってくる動きと、その前の重さが同じ流れの中でつながっています。"
+            return "戻ってくる動きとその前の重さが同じ流れの中でつながっています。"
         return "戻る流れが、前の流れと切り離されずにつながっています。"
     if relation == "contrast":
         return "別々の向きが片方だけに寄らず、同じ場所に並んでいます。"
     if relation == "coexistence":
-        return "片方だけに減らさず、重なりとして並んで残っています。"
+        return "別々の向きが同じ場所に残っています。"
     if relation == "pressure":
         return "圧力として前面に出ていることも残っています。"
     if relation == "approach_avoidance":
@@ -248,6 +501,9 @@ def build_relation_surface_contract_meta() -> dict[str, Any]:
         "recovery_marker_key": relation_marker_key("recovery", {"prior_load_present": True}),
         "strict_matching": True,
         "relation_word_alone_passes": False,
+        "phrase_surface_shape_version": PHRASE_SURFACE_SHAPE_VERSION,
+        "phrase_surface_shape_classifier_available": True,
+        "direct_koto_attachment_safe_by_default": False,
         "raw_input_included": False,
     }
 
@@ -256,9 +512,13 @@ __all__ = [
     "GENERIC_RELATION_SURFACE_PATTERNS",
     "RECOVERY_RELATION_SURFACE_PATTERNS",
     "RELATION_SURFACE_CONTRACT_VERSION",
+    "PHRASE_SURFACE_SHAPE_VERSION",
     "RAW_INPUT_META_KEYS",
     "RelationSurfaceSignal",
+    "PhraseSurfaceShapeSignal",
     "build_relation_surface_contract_meta",
+    "classify_phrase_surface_shape",
+    "compress_phrase_for_relation_surface",
     "detect_relation_surface",
     "normalize_relation_surface_type",
     "relation_marker_key",

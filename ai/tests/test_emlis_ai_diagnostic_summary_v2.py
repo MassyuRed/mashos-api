@@ -16,6 +16,12 @@ PASSING_TEXT = (
     "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
 )
 
+PASSING_PUBLIC_TEXT = (
+    "Mashさん、Emlisです。\n"
+    "今回の入力では、リラックスできて自分のことを優先できる嬉しさと、現実と向き合うダメージが同じ場所で重なっています。\n"
+    "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
+)
+
 
 def _input(memo: str):
     return {
@@ -123,7 +129,7 @@ def _assert_step2_contract(summary: dict):
     assert step2["coverage_group"] == summary["coverage_primary_group"]
     assert isinstance(step2["coverage_groups"], list)
     assert isinstance(step2["gate_results"], dict)
-    assert set(step2["gate_results"]) == {"reader", "grounding", "template_echo", "display"}
+    assert set(step2["gate_results"]) == {"reader", "grounding", "template_echo", "display", "visible_surface_acceptance"}
     assert isinstance(step2["binding"], dict)
     assert step2["binding"]["version"] == "emlis.limited_composer_binding_presence.v1"
     assert summary["binding_diagnostic"] == step2["binding"]
@@ -213,7 +219,7 @@ async def test_step2_diagnostic_summary_extension_marks_missing_binding_for_gene
     assert summary["gate_results"]["grounding"]["binding_required"] is True
     assert summary["gate_results"]["display"]["binding_required"] is True
     assert all(gate["binding_used"] is False for gate in summary["gate_results"].values())
-    assert reply.comment_text == PASSING_TEXT
+    assert reply.comment_text == PASSING_PUBLIC_TEXT
 
 
 @pytest.mark.asyncio

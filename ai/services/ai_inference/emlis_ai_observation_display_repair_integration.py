@@ -109,6 +109,34 @@ _NON_REPAIRABLE_AI_GENERATED_REJECTION_REASONS: Final = frozenset(
     }
 )
 
+_NON_REPAIRABLE_UNAVAILABLE_CANDIDATE_REJECTION_REASONS: Final = frozenset(
+    {
+        "limited_composer_required_role_missing",
+        "limited_composer_missing_phrase_units",
+        "limited_composer_sentence_plan_unavailable",
+        "environment_state_output_body_line_missing",
+        "environment_state_output_scope_marker_missing",
+        "environment_state_output_forbidden_surface_claim",
+    }
+)
+
+
+def _candidate_rejection_reasons(candidate: Any) -> list[str]:
+    reasons = _dedupe(getattr(candidate, "rejection_reasons", []) if candidate is not None else [])
+    meta = _meta(getattr(candidate, "composer_meta", {}) if candidate is not None else {})
+    diagnostic = meta.get("composer_diagnostic") if isinstance(meta.get("composer_diagnostic"), Mapping) else {}
+    reasons.extend(_dedupe(diagnostic.get("reason_codes") if isinstance(diagnostic, Mapping) else []))
+    return _dedupe(reasons)
+
+
+def _unavailable_candidate_blocks_low_information_route(candidate: Any) -> list[str]:
+    reasons = _candidate_rejection_reasons(candidate)
+    blocked: list[str] = []
+    for reason in reasons:
+        if reason in _NON_REPAIRABLE_UNAVAILABLE_CANDIDATE_REJECTION_REASONS or reason.startswith("environment_state_output_"):
+            blocked.append(reason)
+    return _dedupe(blocked)
+
 
 def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace("\u3000", " ")).strip()
@@ -121,6 +149,29 @@ def _current_text_for_visible_surface(current_input: Mapping[str, Any] | None) -
         if value:
             return value
     return ""
+
+def _current_input_has_user_signal(current_input: Mapping[str, Any] | None) -> bool:
+    """Return whether the low-information branch has a user-provided anchor."""
+
+    current = current_input if isinstance(current_input, Mapping) else {}
+    if _current_text_for_visible_surface(current):
+        return True
+    if _clean(current.get("memo_action")) or _clean(current.get("action_text")):
+        return True
+    for key in ("emotions", "category", "categories"):
+        values = current.get(key)
+        if isinstance(values, Sequence) and not isinstance(values, (str, bytes, bytearray)):
+            if any(_clean(value) for value in values):
+                return True
+        elif _clean(values):
+            return True
+    details = current.get("emotion_details")
+    if isinstance(details, Sequence) and not isinstance(details, (str, bytes, bytearray)):
+        for detail in details:
+            if isinstance(detail, Mapping) and (_clean(detail.get("type")) or _clean(detail.get("strength"))):
+                return True
+    return False
+
 
 
 def _dedupe(values: Iterable[Any] | Any | None) -> list[str]:
@@ -250,6 +301,9 @@ def _display_repair_route_allowed(
     reasons = _dedupe(getattr(original_display_decision, "rejection_reasons", []) or [])
     candidate_available = bool(original_composer_candidate is not None and source == "ai_generated")
     if status == "unavailable" and source in {"", "unavailable", "empty"}:
+        blocked_candidate_reasons = _unavailable_candidate_blocks_low_information_route(original_composer_candidate)
+        if blocked_candidate_reasons:
+            return False, tuple(["unavailable_candidate_not_low_information_repairable", *blocked_candidate_reasons])
         return True, ("ordinary_unavailable_low_information_route",)
     allowed_markers = {"too_short_for_observation", "missing_information", "relation_confidence_low"}
     if status == "rejected" and any(reason in allowed_markers or "overclaim" in reason for reason in reasons):
@@ -1031,8 +1085,23 @@ def integrate_observation_display_repair(
             bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
     original_rejection_reasons = _dedupe(getattr(original_display_decision, "rejection_reasons", []))
+    source = _clean(original_composer_source)
     eligibility_for_composer: Any = eligibility_decision
     if eligibility_meta.get("observation_reply_kind") != OBSERVATION_REPLY_KIND_LOW_INFORMATION:
+        if source in {"", "unavailable", "empty"}:
+            return ObservationDisplayRepairIntegrationResult(
+                applied=False,
+                display_decision=original_display_decision,
+                reader_report=original_reader_report,
+                grounding_report=original_grounding_report,
+                template_echo_report=original_template_echo_report,
+                composer_source=original_composer_source,
+                composer_candidate=original_composer_candidate,
+                eligibility_decision=eligibility_decision,
+                original_observation_status=original_status,
+                blocked_reasons=("not_low_information", "unavailable_source_not_eligible_for_repair_reroute"),
+                bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
+            )
         if not should_reroute_to_low_information(
             eligibility_decision=eligibility_decision,
             display_decision=original_display_decision,
@@ -1057,7 +1126,28 @@ def integrate_observation_display_repair(
         )
         eligibility_for_composer = eligibility_meta
 
-    if not _dedupe(eligibility_meta.get("detected_signal_roles")) and not list(eligibility_meta.get("known_fragments") or []):
+    if not _current_input_has_user_signal(current_input if isinstance(current_input, Mapping) else {}):
+        return ObservationDisplayRepairIntegrationResult(
+            applied=False,
+            display_decision=original_display_decision,
+            reader_report=original_reader_report,
+            grounding_report=original_grounding_report,
+            template_echo_report=original_template_echo_report,
+            composer_source=original_composer_source,
+            composer_candidate=original_composer_candidate,
+            eligibility_decision=eligibility_for_composer,
+            original_observation_status=original_status,
+            blocked_reasons=("no_current_input_low_information_signal",),
+            bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
+        )
+
+    known_fragments = list(eligibility_meta.get("known_fragments") or [])
+    current_input_fragments = [
+        fragment
+        for fragment in known_fragments
+        if isinstance(fragment, Mapping) and bool(fragment.get("current_input_evidence"))
+    ]
+    if not _dedupe(eligibility_meta.get("detected_signal_roles")) or not current_input_fragments:
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
             display_decision=original_display_decision,
@@ -1209,6 +1299,8 @@ def attach_observation_display_repair_meta(
         if observation_reply_meta:
             multi["observation_reply_meta"] = observation_reply_meta
             multi["observation_reply_contract"] = observation_reply_meta
+        if isinstance(diagnostic, Mapping):
+            multi["diagnostic_summary"] = dict(diagnostic)
         phase_gate = multi.get("phase_gate")
         if isinstance(phase_gate, Mapping):
             phase_gate = dict(phase_gate)

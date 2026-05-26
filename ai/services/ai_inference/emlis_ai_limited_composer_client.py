@@ -8,10 +8,15 @@ PhraseUnit / ObservationProfile / SentencePlan decisions before creating text.
 It does not call external AI and does not use public knowledge.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from emlis_ai_environment_state_output_surface_contract_completion import (
+    DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS,
+    complete_environment_state_output_scope_marker,
+    environment_state_output_scoped_line,
+)
 from emlis_ai_limited_sentence_quality_guard import (
     detect_phase8_profile,
     judge_limited_sentence_quality,
@@ -41,7 +46,11 @@ from emlis_ai_phrase_unit_grammar_normalizer import (
     normalize_phrase_unit_grammar,
     summarize_phrase_unit_grammar_normalizer,
 )
+from emlis_ai_state_answer_composer_contract import attach_state_answer_composer_meta
 from emlis_ai_relation_surface_contract import (
+    PHRASE_SURFACE_SHAPE_VERSION,
+    classify_phrase_surface_shape,
+    compress_phrase_for_relation_surface,
     detect_relation_surface,
     normalize_relation_surface_type,
     relation_marker_meta,
@@ -173,6 +182,30 @@ _STEP5_SHALLOW_SURFACE_REALIZER_V2_VERSION = "emlis.shallow_surface_realizer_pla
 _STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP = "Step5_shallow_surface_realizer_v2"
 _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME = "shallow_surface_realizer.v2"
 
+_PHASE5_ENV_STATE_OUTPUT_LIMITED_USE_VERSION = "cocolon.environment_state_output.phase5_limited_composer_use.v1"
+_PHASE5_ENV_STATE_OUTPUT_TARGET_PHASE = "Phase5_EmlisObservationComposer_limited_use"
+_PHASE5_ENV_STATE_OUTPUT_SCOPE_MARKERS = DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS
+_PHASE5_ENV_STATE_OUTPUT_THEME_SURFACE_PHRASES: Dict[str, str] = {
+    "continuation_concern": "継続できるかへの心配",
+    "relation_loss_concern": "関係が離れることへの心配",
+    "maintenance_concern": "維持できるかへの心配",
+    "direction_concern": "このままでよいかへの心配",
+    "unfairness_focus": "不公平さへの意識",
+    "unrewarded_effort": "報われなさへの意識",
+    "reason_became_visible": "理由が少し見えたこと",
+    "unformed_self_insight": "まだ形になりきっていない自己理解",
+}
+_PHASE5_ENV_STATE_OUTPUT_THEME_ROLES: Dict[str, str] = {
+    "continuation_concern": "anxiety_return",
+    "relation_loss_concern": "anxiety_return",
+    "maintenance_concern": "anxiety_return",
+    "direction_concern": "anxiety_return",
+    "unfairness_focus": "anger_surface",
+    "unrewarded_effort": "hurt_core",
+    "reason_became_visible": "self_awareness",
+    "unformed_self_insight": "unformed_self_insight",
+}
+
 
 @dataclass(frozen=True)
 class EmlisPhraseUnit:
@@ -202,6 +235,11 @@ class SentencePlan:
     relation_type: str
     max_chars: int = 110
     must_include: bool = True
+    section_id: str = ""
+    section_role: str = ""
+    sentence_plan_unit_role: str = ""
+    state_answer_section_role: str = ""
+    section_order: int = 0
 
 
 @dataclass(frozen=True)
@@ -220,6 +258,83 @@ class SentenceSurfaceParts:
     particle: str = "が"
     predicate: str = "書かれています"
     max_phrases: int = 2
+
+
+def _state_answer_role_plan(payload: Mapping[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+    role_plan = payload.get("state_answer_composer_role_plan")
+    if isinstance(role_plan, Mapping) and role_plan:
+        return dict(role_plan)
+    return {}
+
+
+def _state_answer_role_plan_sections(payload: Mapping[str, Any] | None) -> List[Dict[str, Any]]:
+    role_plan = _state_answer_role_plan(payload)
+    sections = role_plan.get("sections")
+    if not isinstance(sections, Sequence) or isinstance(sections, (str, bytes, bytearray)):
+        return []
+    return [dict(section) for section in sections if isinstance(section, Mapping)]
+
+
+def _apply_state_answer_sentence_plan_boundary(
+    *, payload: Mapping[str, Any] | None, plans: Sequence[SentencePlan]
+) -> List[SentencePlan]:
+    plan_items = list(plans or [])
+    if not plan_items:
+        return []
+    sections = _state_answer_role_plan_sections(payload)
+    if len(sections) < 2:
+        return plan_items
+    observation_section = sections[0]
+    human_follow_section = sections[1]
+    follow_start_index = len(plan_items) - 1 if len(plan_items) >= 2 else len(plan_items)
+    out: List[SentencePlan] = []
+    for index, plan in enumerate(plan_items):
+        section = human_follow_section if index >= follow_start_index else observation_section
+        section_id = str(section.get("section_id") or "").strip()
+        section_role = str(section.get("section_role") or "").strip()
+        unit_role = str(section.get("sentence_plan_unit_role") or "").strip()
+        try:
+            order = int(section.get("order") or (2 if section is human_follow_section else 1))
+        except Exception:
+            order = 2 if section is human_follow_section else 1
+        out.append(
+            replace(
+                plan,
+                section_id=section_id,
+                section_role=section_role,
+                sentence_plan_unit_role=unit_role,
+                state_answer_section_role=section_role,
+                section_order=order,
+            )
+        )
+    return out
+
+
+def _state_answer_sentence_plan_boundary_meta(plans: Sequence[SentencePlan]) -> Dict[str, Any]:
+    plan_items = list(plans or [])
+    sections = [
+        {
+            "line_role": plan.line_role,
+            "section_id": plan.section_id,
+            "section_role": plan.section_role,
+            "sentence_plan_unit_role": plan.sentence_plan_unit_role,
+            "state_answer_section_role": plan.state_answer_section_role,
+            "section_order": int(plan.section_order or 0),
+        }
+        for plan in plan_items
+        if plan.section_id or plan.section_role or plan.state_answer_section_role
+    ]
+    section_roles = _dedupe(item.get("section_role") for item in sections)
+    return {
+        "state_answer_section_boundary_on_sentence_plan": bool(sections),
+        "state_answer_sentence_plan_sections": sections,
+        "state_answer_planned_section_roles": section_roles,
+        "state_answer_observation_section_present": "state_answer_observation" in section_roles,
+        "state_answer_human_follow_section_present": "human_follow" in section_roles,
+        "state_answer_section_boundary_required": bool(sections),
+    }
 
 
 class CocolonLimitedComposerClient:
@@ -301,6 +416,7 @@ class CocolonLimitedComposerClient:
             )
 
         plans = _sentence_plans_for_profile(profile=profile, units=phrase_units)
+        plans = _apply_state_answer_sentence_plan_boundary(payload=payload, plans=plans)
         if not plans:
             return _unavailable_response(
                 "limited_composer_sentence_plan_unavailable",
@@ -443,6 +559,7 @@ class CocolonLimitedComposerClient:
         composer_meta["profile_sentence_plan_expansion"] = composer_meta["profile_sentence_plan"]
         composer_meta["step12_profile_sentence_plan"] = composer_meta["profile_sentence_plan"]
         composer_meta["step12_profile_sentence_plan_expansion"] = composer_meta["profile_sentence_plan"]
+        composer_meta = attach_state_answer_composer_meta(composer_meta, payload)
         composer_meta["composer_diagnostic"] = _composer_diagnostic_meta(
             status="generated",
             coverage_scope=profile.coverage_scope or coverage_scope,
@@ -738,6 +855,7 @@ def _step12_profile_sentence_plan_meta(
         "sentence_plan_roles": plan_roles,
         "planned_line_roles": _dedupe(plan.line_role for plan in plans),
         "planned_relation_types": _dedupe(plan.relation_type for plan in plans),
+        **_state_answer_sentence_plan_boundary_meta(plans),
         "profile_source": "role_set_requirements_not_example_sentences",
         "sentence_plan_source": "role_and_relation_plan",
         "profile_selection_is_role_based": True,
@@ -875,6 +993,11 @@ def _make_sentence_binding(
     must_include: bool = True,
     source: str = "limited_composer_sentence_plan",
     predicate_key: str = "",
+    section_id: str = "",
+    section_role: str = "",
+    sentence_plan_unit_role: str = "",
+    state_answer_section_role: str = "",
+    section_order: int = 0,
 ) -> SentenceBinding | None:
     selected = [unit for unit in list(units or []) if unit.phrase_unit_id and unit.evidence_span_id]
     if not selected or not str(text or "").strip():
@@ -901,6 +1024,10 @@ def _make_sentence_binding(
             "canonical_relation_type": canonical_relation_type(relation),
             "relation_family": relation_family(relation),
             "raw_input_included": False,
+            "state_answer_section_id": str(section_id or "").strip(),
+            "state_answer_section_role": str(state_answer_section_role or section_role or "").strip(),
+            "state_answer_sentence_plan_unit_role": str(sentence_plan_unit_role or "").strip(),
+            "state_answer_section_order": int(section_order or 0),
         },
     )
 
@@ -1215,6 +1342,24 @@ def _composer_diagnostic_meta(
         "limited_surface_realizer_stabilization": dict(step8_meta),
         "step8_limited_surface_realizer_stabilization": dict(step8_meta),
         "limited_surface_realizer": dict(step8_meta),
+        "state_answer_surface_contract_connected": bool(meta.get("state_answer_surface_contract_connected")),
+        "state_answer_surface_contract_material_only": bool(meta.get("state_answer_surface_contract_material_only")),
+        "state_answer_composer_role_plan_connected": bool(meta.get("state_answer_composer_role_plan_connected")),
+        "state_answer_composer_role_plan_material_id": str(meta.get("state_answer_composer_role_plan_material_id") or ""),
+        "state_answer_composer_role_plan_schema_version": str(meta.get("state_answer_composer_role_plan_schema_version") or ""),
+        "state_answer_section_boundary_required": bool(meta.get("state_answer_section_boundary_required")),
+        "state_answer_section_role_order": list(meta.get("state_answer_section_role_order") or []),
+        "state_answer_sentence_plan_unit_roles": list(meta.get("state_answer_sentence_plan_unit_roles") or []),
+        "state_answer_observation_step_ids": list(meta.get("state_answer_observation_step_ids") or []),
+        "state_answer_primary_follow_key": str(meta.get("state_answer_primary_follow_key") or ""),
+        "state_answer_secondary_follow_keys": list(meta.get("state_answer_secondary_follow_keys") or []),
+        "state_answer_afterglow_follow_key": str(meta.get("state_answer_afterglow_follow_key") or ""),
+        "state_answer_resolved_ratio": dict(meta.get("state_answer_resolved_ratio") or {}),
+        "state_answer_completed_reply_generated_from_contract": bool(meta.get("state_answer_completed_reply_generated_from_contract")),
+        "state_answer_fixed_sentence_template_used": bool(meta.get("state_answer_fixed_sentence_template_used")),
+        "state_answer_runtime_renderer_marker_used": bool(meta.get("state_answer_runtime_renderer_marker_used")),
+        "state_answer_public_payload_changed": bool(meta.get("state_answer_public_payload_changed")),
+        "state_answer_public_response_key_added": bool(meta.get("state_answer_public_response_key_added")),
         "limited_surface_realizer_stabilized": bool(step8_meta.get("limited_surface_realizer_stabilized")),
         "surface_component_rows": list(step8_meta.get("surface_component_rows") or []),
         "surface_relation_component_rows": list(step8_meta.get("relation_component_rows") or []),
@@ -1781,6 +1926,19 @@ def _generic_shallow_phrase(raw: str, detected_type: str = "") -> str:
     def has(*terms: str) -> bool:
         return any(term and term in compact for term in terms)
 
+    if has("キャパオーバー") and has("予感"):
+        return "キャパオーバーしそうな予感"
+    if has("コミュニケーション", "関わり", "連絡") and has("なければ", "しないと", "必要", "予定"):
+        return "人との関わりの負荷"
+    if has("イベント") and has("予定", "出なければ", "顔を出"):
+        return "イベント予定の近さ"
+    if has("予定") and has("なければ", "しないと", "必要", "いけない", "ならない"):
+        return "予定の近さ"
+    if has("予感") and has("ある"):
+        return re.sub(r"がある$", "", text).strip(_PUNCT_TRIM) or "予感"
+    if has("気配") and has("ある"):
+        return re.sub(r"がある$", "", text).strip(_PUNCT_TRIM) or "気配"
+
     if has("仕事") and has("疲れ"):
         return "仕事で疲れたこと"
     if has("疲れ") and has("積"):
@@ -1856,7 +2014,14 @@ def _generic_shallow_phrase(raw: str, detected_type: str = "") -> str:
     chosen = re.sub(r"^(?:今日は|今日|朝から|夜になって|昼過ぎには|また|もう|それでも|本当は|このまま|さっき)\s*", "", chosen).strip(_PUNCT_TRIM)
     if not chosen or _compact(chosen) in {"それ", "それでも", "でも", "本当は", "今日", "今日は"}:
         return ""
-    if chosen.endswith(("こと", "気持ち", "感覚", "怖さ", "不安", "つらさ", "しんどさ", "限界", "願い")):
+    chosen_compact = _compact(chosen)
+    if "キャパオーバー" in chosen_compact and "予感" in chosen_compact:
+        return "キャパオーバーしそうな予感"
+    if "予感" in chosen_compact and chosen.endswith("がある"):
+        return re.sub(r"がある$", "", chosen).strip(_PUNCT_TRIM) or "予感"
+    if "気配" in chosen_compact and chosen.endswith("がある"):
+        return re.sub(r"がある$", "", chosen).strip(_PUNCT_TRIM) or "気配"
+    if chosen.endswith(("こと", "気持ち", "感覚", "怖さ", "不安", "つらさ", "しんどさ", "限界", "願い", "予感", "気配")):
         return chosen
     chosen = re.sub(r"(?:を|が|に|へ|は|も|と|から|なら)$", "", chosen).strip(_PUNCT_TRIM)
     if not chosen or _compact(chosen) in {"それ", "それでも", "でも", "本当は", "今日", "今日は"}:
@@ -2296,6 +2461,236 @@ def _build_current_input_core_phrase_units(
     return units
 
 
+
+def _environment_state_output_frame_from_payload(payload: Mapping[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+    for key in ("observation_structure_material", "observation_structure_dictionary"):
+        material = payload.get(key)
+        if not isinstance(material, Mapping):
+            continue
+        frame = material.get("environment_state_output_frame")
+        if isinstance(frame, Mapping) and frame:
+            return dict(frame)
+    return {}
+
+
+def _environment_state_output_frame_policy(frame: Mapping[str, Any]) -> Dict[str, Any]:
+    policy = frame.get("frame_policy") if isinstance(frame, Mapping) else {}
+    return dict(policy) if isinstance(policy, Mapping) else {}
+
+
+def _environment_state_output_scope_marker(frame: Mapping[str, Any]) -> str:
+    policy = _environment_state_output_frame_policy(frame)
+    marker = _clean(policy.get("scope_marker")) or "今回の入力では"
+    return marker if marker in _PHASE5_ENV_STATE_OUTPUT_SCOPE_MARKERS else "今回の入力では"
+
+
+def _environment_state_output_output_theme_candidates(frame: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    output_axis = frame.get("output_axis") if isinstance(frame, Mapping) else {}
+    output_axis = output_axis if isinstance(output_axis, Mapping) else {}
+    candidates: List[Dict[str, Any]] = []
+    raw_candidates = output_axis.get("output_theme_candidates")
+    if isinstance(raw_candidates, Sequence) and not isinstance(raw_candidates, (str, bytes, bytearray)):
+        for item in raw_candidates:
+            if not isinstance(item, Mapping):
+                continue
+            theme_id = _clean(item.get("theme_id"))
+            if not theme_id:
+                continue
+            candidates.append(
+                {
+                    "theme_id": theme_id,
+                    "evidence_span_ids": _dedupe(item.get("evidence_span_ids") or []),
+                    "confidence_kind": _clean(item.get("confidence_kind")) or "explicit_text_evidence",
+                    "allowed_surface_strength": _clean(item.get("allowed_surface_strength")) or "soft",
+                }
+            )
+    if candidates:
+        return candidates
+    evidence = frame.get("evidence") if isinstance(frame.get("evidence"), Mapping) else {}
+    frame_theme_span_ids = _dedupe(evidence.get("evidence_span_ids") or [])
+    for theme_id in list(output_axis.get("output_theme_ids") or []):
+        theme_key = _clean(theme_id)
+        if theme_key:
+            candidates.append({"theme_id": theme_key, "evidence_span_ids": frame_theme_span_ids, "confidence_kind": "frame_theme_id_only", "allowed_surface_strength": "soft"})
+    return candidates
+
+
+def _phase5_environment_state_output_base_meta(frame: Mapping[str, Any]) -> Dict[str, Any]:
+    if not frame:
+        return {
+            "version": _PHASE5_ENV_STATE_OUTPUT_LIMITED_USE_VERSION,
+            "target_phase": _PHASE5_ENV_STATE_OUTPUT_TARGET_PHASE,
+            "enabled": False,
+            "surface_use_applied": False,
+            "single_record_only": True,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_generated": False,
+            "completed_reply_generated": False,
+            "display_gate_relaxed": False,
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
+            "cause_from_category": False,
+            "cause_from_emotion_strength": False,
+            "personality_tendency_allowed": False,
+        }
+    output_axis = frame.get("output_axis") if isinstance(frame.get("output_axis"), Mapping) else {}
+    environment_axis = frame.get("environment_axis") if isinstance(frame.get("environment_axis"), Mapping) else {}
+    state_axis = frame.get("state_axis") if isinstance(frame.get("state_axis"), Mapping) else {}
+    return {
+        "version": _PHASE5_ENV_STATE_OUTPUT_LIMITED_USE_VERSION,
+        "target_phase": _PHASE5_ENV_STATE_OUTPUT_TARGET_PHASE,
+        "enabled": True,
+        "surface_use_mode": "single_record_scope_marker_and_safe_theme_unit",
+        "surface_use_applied": False,
+        "safe_theme_unit_count": 0,
+        "selected_theme_ids": [],
+        "scope_marker": _environment_state_output_scope_marker(frame),
+        "scope_marker_required": True,
+        "scope_marker_applied": False,
+        "single_record_only": True,
+        "material_id": _clean(frame.get("material_id")) or "environment_state_output_frame",
+        "projection_kind": _clean(frame.get("projection_kind")),
+        "category_labels": list(environment_axis.get("category_labels") or []),
+        "emotion_types": list(state_axis.get("emotion_types") or []),
+        "output_theme_ids": list(output_axis.get("output_theme_ids") or []),
+        "allowed_surface_claim_strength": "single_observation",
+        "must_not_use_for": [
+            "period_tendency_from_single_record",
+            "personality_type",
+            "diagnosis",
+            "cause_from_category",
+            "cause_from_emotion_strength",
+            "recovery_prescription",
+        ],
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_generated": False,
+        "completed_reply_generated": False,
+        "display_gate_relaxed": False,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "cause_from_category": False,
+        "cause_from_emotion_strength": False,
+        "personality_tendency_allowed": False,
+    }
+
+
+def _environment_state_output_theme_phrase_units(
+    *,
+    frame: Mapping[str, Any],
+    evidence_by_id: Mapping[str, Mapping[str, Any]],
+    existing_units: Sequence[EmlisPhraseUnit],
+) -> Tuple[List[EmlisPhraseUnit], Dict[str, Any]]:
+    meta = _phase5_environment_state_output_base_meta(frame)
+    if not frame:
+        return [], meta
+    policy = _environment_state_output_frame_policy(frame)
+    if policy and bool(policy.get("single_record_only")) is False:
+        meta["enabled"] = False
+        meta["blocked_reason"] = "frame_not_single_record_only"
+        return [], meta
+    existing_compact = {_compact(unit.compressed_text) for unit in existing_units}
+    out: List[EmlisPhraseUnit] = []
+    selected_theme_ids: List[str] = []
+    for candidate in _environment_state_output_output_theme_candidates(frame):
+        theme_id = _clean(candidate.get("theme_id"))
+        phrase = _PHASE5_ENV_STATE_OUTPUT_THEME_SURFACE_PHRASES.get(theme_id, "")
+        if not theme_id or not phrase:
+            continue
+        span_id = ""
+        for candidate_span_id in list(candidate.get("evidence_span_ids") or []):
+            clean_span_id = _clean(candidate_span_id)
+            if clean_span_id and clean_span_id in evidence_by_id:
+                span_id = clean_span_id
+                break
+        if not span_id:
+            continue
+        if _compact(phrase) in existing_compact:
+            continue
+        role = _PHASE5_ENV_STATE_OUTPUT_THEME_ROLES.get(theme_id, "current_input_core")
+        polarity, _must_keep = phase8_role_meta(role)
+        if not polarity:
+            polarity = "negative" if "concern" in theme_id or "unfair" in theme_id or "unrewarded" in theme_id else "neutral"
+        out.append(
+            EmlisPhraseUnit(
+                phrase_unit_id=f"eso_pu{len(existing_units) + len(out) + 1}",
+                evidence_span_id=span_id,
+                raw_text=phrase,
+                compressed_text=phrase,
+                role=role,
+                polarity=polarity,
+                must_keep=True,
+                quality_flags=("environment_state_output_frame_derived",),
+            )
+        )
+        selected_theme_ids.append(theme_id)
+    meta["safe_theme_unit_count"] = len(out)
+    meta["selected_theme_ids"] = _dedupe(selected_theme_ids)
+    meta["surface_use_applied"] = bool(out)
+    return out, meta
+
+
+def _environment_state_output_scoped_line(line: str, marker: str) -> str:
+    return environment_state_output_scoped_line(
+        _clean(line, limit=118),
+        _clean(marker) or "今回の入力では",
+        allowed_markers=_PHASE5_ENV_STATE_OUTPUT_SCOPE_MARKERS,
+    )
+
+
+def _apply_environment_state_output_scope_marker_to_first_body_line(
+    *,
+    lines: Sequence[str],
+    bindings: Sequence[SentenceBinding],
+    phase5_meta: Mapping[str, Any],
+) -> Tuple[List[str], List[SentenceBinding], Dict[str, Any]]:
+    out_lines = list(lines or [])
+    out_bindings = list(bindings or [])
+    meta = dict(phase5_meta or {})
+    marker = _clean(meta.get("scope_marker")) or "今回の入力では"
+    completion = complete_environment_state_output_scope_marker(
+        "\n".join(out_lines),
+        {
+            "connected": bool(meta.get("enabled")),
+            "single_record_only": bool(meta.get("single_record_only", True)),
+            "scope_marker_required": bool(meta.get("scope_marker_required", True)),
+            "required_scope_marker": marker,
+            "allowed_scope_markers": list(_PHASE5_ENV_STATE_OUTPUT_SCOPE_MARKERS),
+        },
+    )
+    meta["scope_marker_completion"] = completion.as_meta()
+    if not completion.applied:
+        return out_lines, out_bindings, meta
+
+    out_lines = completion.text.splitlines()
+    meta["scope_marker_applied"] = True
+    meta["surface_use_applied"] = True
+    target_index = completion.target_line_index if completion.target_line_index is not None else 0
+    updated_line = out_lines[target_index] if 0 <= target_index < len(out_lines) else ""
+    if updated_line and out_bindings:
+        first = out_bindings[0]
+        first_meta = dict(first.meta or {})
+        first_meta["environment_state_output_scope_marker_applied"] = True
+        first_meta["environment_state_output_scope_marker"] = marker
+        first_meta["environment_state_output_scope_marker_completion"] = completion.as_meta()
+        out_bindings[0] = SentenceBinding(
+            sentence_id=first.sentence_id,
+            text=updated_line,
+            used_evidence_span_ids=tuple(first.used_evidence_span_ids),
+            used_phrase_unit_ids=tuple(first.used_phrase_unit_ids),
+            relation_type=first.relation_type,
+            line_role=first.line_role,
+            coverage_scope=first.coverage_scope,
+            must_include=first.must_include,
+            binding_version=first.binding_version,
+            meta=first_meta,
+        )
+    return out_lines, out_bindings, meta
+
+
 def _step11_unit_rank(unit: EmlisPhraseUnit) -> Tuple[int, int, str, str]:
     role_order = {role: index for index, role in enumerate((*_STEP11_EXPANDED_ROLES, "positive_state", "anxiety_return", "small_action", "limit", "current_input_core"))}
     expanded_penalty = 0 if unit.role in _STEP11_EXPANDED_ROLES else 1
@@ -2377,6 +2772,63 @@ _SHALLOW_V2_BLOCKED_SURFACE_PATTERNS = (
 )
 
 
+def _shallow_v2_phrase_shape_meta(unit: EmlisPhraseUnit) -> Dict[str, Any]:
+    return dict(
+        classify_phrase_surface_shape(
+            unit.compressed_text,
+            raw_text=unit.raw_text,
+            role=unit.role,
+            quality_flags=unit.quality_flags,
+        )
+    )
+
+
+def _shallow_v2_surface_phrase(unit: EmlisPhraseUnit) -> Tuple[str, Dict[str, Any]]:
+    shape_meta = _shallow_v2_phrase_shape_meta(unit)
+    phrase = compress_phrase_for_relation_surface(
+        unit.compressed_text,
+        raw_text=unit.raw_text,
+        role=unit.role,
+        quality_flags=unit.quality_flags,
+        shape_meta=shape_meta,
+    )
+    phrase = _clean(phrase, limit=72)
+    if not phrase or bool(shape_meta.get("requires_drop_or_defer")) and not bool(shape_meta.get("safe_for_relation_line")):
+        return "", shape_meta
+    return phrase, shape_meta
+
+
+def _shallow_v2_phrase_shape_rows(units: Sequence[EmlisPhraseUnit]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for unit in list(units or ()):
+        meta = _shallow_v2_phrase_shape_meta(unit)
+        rows.append(
+            {
+                "phrase_unit_id": unit.phrase_unit_id,
+                "evidence_span_id": unit.evidence_span_id,
+                "role": unit.role,
+                "shape": str(meta.get("shape") or "unknown"),
+                "safe_for_direct_koto_attachment": bool(meta.get("safe_for_direct_koto_attachment")),
+                "safe_for_relation_line": bool(meta.get("safe_for_relation_line")),
+                "requires_surface_compression": bool(meta.get("requires_surface_compression")),
+                "requires_drop_or_defer": bool(meta.get("requires_drop_or_defer")),
+                "warning_codes": list(meta.get("warning_codes") or []),
+                "raw_input_included": False,
+                "raw_text_included": False,
+                "comment_text_body_included": False,
+            }
+        )
+    return rows
+
+
+def _shape_counts(rows: Sequence[Mapping[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for row in rows:
+        shape = str(row.get("shape") or "unknown")
+        counts[shape] = counts.get(shape, 0) + 1
+    return counts
+
+
 def _shallow_v2_body_lines(lines: Sequence[str]) -> List[str]:
     return [str(line or "").strip() for line in list(lines or []) if str(line or "").strip() and "Emlis" not in str(line or "")]
 
@@ -2436,6 +2888,8 @@ def _shallow_v2_meta(
     generic_center_count = _shallow_v2_generic_center_phrase_count(lines or ())
     same_connector_run_max = _shallow_v2_same_connector_run_max(lines or ())
     blocked_patterns = list(_SHALLOW_V2_BLOCKED_SURFACE_PATTERNS)
+    phrase_shape_rows = _shallow_v2_phrase_shape_rows(selected or ())
+    phrase_shape_counts = _shape_counts(phrase_shape_rows)
     meta: Dict[str, Any] = {
         "version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_VERSION,
         "target_step": _STEP5_SHALLOW_SURFACE_REALIZER_V2_TARGET_STEP,
@@ -2446,8 +2900,20 @@ def _shallow_v2_meta(
         "coverage_scope": "current_input_core",
         "safe_focus_unit_count": 1 if selected else 0,
         "safe_phrase_unit_count": len(list(selected or ())),
-        "deferred_phrase_unit_count": 0,
+        "deferred_phrase_unit_count": len([row for row in phrase_shape_rows if bool(row.get("requires_drop_or_defer"))]),
         "relation_candidate_count": len([r for r in list(relation_types or ()) if str(r or "").strip()]),
+        "phrase_surface_shape_version": PHRASE_SURFACE_SHAPE_VERSION,
+        "phrase_surface_shape_rows": phrase_shape_rows,
+        "phrase_surface_shape_counts": phrase_shape_counts,
+        "unsafe_koto_splice_deferred_count": int(phrase_shape_counts.get("unsafe_koto_splice") or 0),
+        "obligation_or_schedule_count": int(phrase_shape_counts.get("obligation_or_schedule") or 0),
+        "prediction_or_capacity_count": int(phrase_shape_counts.get("prediction_or_capacity") or 0),
+        "long_raw_clause_count": int(phrase_shape_counts.get("long_raw_clause") or 0),
+        "direct_koto_attachment_disabled": True,
+        "unsafe_koto_splice_reaches_relation_line": False,
+        "long_raw_clause_relation_line_passthrough": False,
+        "relation_line_phrase_compression_enabled": True,
+        "mechanical_relation_stack_disabled": True,
         "sentence_roles": _dedupe(sentence_roles or ()),
         "blocked_surface_patterns": blocked_patterns,
         "same_connector_run_max": same_connector_run_max,
@@ -2457,6 +2923,8 @@ def _shallow_v2_meta(
         "old_current_input_core_skeleton_disabled": True,
         "center_phrase_disabled": True,
         "default_sono_nakademo_disabled": True,
+        "koto_attachment_relation_skeleton_disabled": True,
+        "relation_skeleton_major_disabled": True,
         "malformed_phrase_unit_count": 0,
         "malformed_phrase_unit_in_rendered_units": False,
         "relation_bearing_surface": bool(len(selected or ()) >= 2),
@@ -2472,15 +2940,17 @@ def _shallow_v2_meta(
 
 
 def _shallow_v2_receive_line(unit: EmlisPhraseUnit) -> Tuple[str, str, str, str]:
-    phrase = _clean(unit.compressed_text, limit=80)
+    phrase, _shape_meta = _shallow_v2_surface_phrase(unit)
+    phrase = _clean(phrase, limit=72)
     if not phrase:
         return "", "", "", ""
     return _finish(f"今は、{phrase}が先に出ています"), "receive_first", "center", "receive_line"
 
 
 def _shallow_v2_relation_line(previous: EmlisPhraseUnit, current: EmlisPhraseUnit, *, relation: str, body_index: int) -> Tuple[str, str, str, str, str]:
-    phrase = _clean(current.compressed_text, limit=80)
-    if not phrase:
+    phrase, shape_meta = _shallow_v2_surface_phrase(current)
+    phrase = _clean(phrase, limit=72)
+    if not phrase or bool(shape_meta.get("requires_drop_or_defer")) and not bool(shape_meta.get("safe_for_relation_line")):
         return "", "", "", "", ""
     relation = normalize_relation_type(relation, roles=(previous.role, current.role), line_role="state_arrangement_line")
     if relation == "contrast":
@@ -2500,12 +2970,12 @@ def _shallow_v2_relation_line(previous: EmlisPhraseUnit, current: EmlisPhraseUni
             role = "bounded_observation_line"
         return line, "progress_signal", relation, role, "が"
     if body_index <= 1:
-        line = _finish(f"そこに、{phrase}も加わっていて、状態が一色ではありません")
+        line = _finish(f"その中で、{phrase}も同じ流れの中に残っています")
         role = "state_arrangement_line"
     else:
-        line = _finish(f"さらに、{phrase}もあり、今見えている範囲は一つの要素だけではありません")
+        line = _finish(f"さらに、{phrase}も同じ場所に残っています")
         role = "bounded_observation_line"
-    return line, "coexistence_parallel", relation or "coexistence", role, "も"
+    return line, "coexistence_same_flow", relation or "coexistence", role, "も"
 
 
 def _render_current_input_core_lines(*, payload: Mapping[str, Any], units: Sequence[EmlisPhraseUnit]) -> Tuple[List[str], List[str], List[str], List[SentenceBinding], List[Dict[str, Any]]]:
@@ -2646,6 +3116,17 @@ def _generate_current_input_core_candidate(
         allowed_evidence_ids = _text_evidence_ids(evidence_items)
     generation_evidence_items = _generation_items_for_allowed_ids(evidence_items, allowed_evidence_ids)
     phrase_units, shallow_phrase_unit_guard_meta = _build_current_input_core_phrase_units_with_guard_meta(generation_evidence_items)
+    environment_state_output_frame = _environment_state_output_frame_from_payload(payload)
+    environment_state_output_units, environment_state_output_phase5_meta = _environment_state_output_theme_phrase_units(
+        frame=environment_state_output_frame,
+        evidence_by_id=evidence_by_id,
+        existing_units=phrase_units,
+    )
+    if environment_state_output_units:
+        phrase_units = [*phrase_units, *environment_state_output_units]
+    shallow_phrase_unit_guard_meta = dict(shallow_phrase_unit_guard_meta or {})
+    shallow_phrase_unit_guard_meta["environment_state_output_frame_derived_unit_count"] = len(environment_state_output_units)
+    shallow_phrase_unit_guard_meta["environment_state_output_frame_limited_surface_use"] = bool(environment_state_output_units)
     if len(phrase_units) < 2 or len({unit.evidence_span_id for unit in phrase_units}) < 2:
         return _unavailable_response(
             "limited_composer_shallow_insufficient_evidence",
@@ -2657,6 +3138,9 @@ def _generate_current_input_core_candidate(
                 "profile_unmatched": True,
                 "phrase_unit_count": len(phrase_units),
                 "sentence_plan_count": 0,
+                "environment_state_output_phase5_limited_use": environment_state_output_phase5_meta,
+                "environment_state_output_frame_limited_use": bool(environment_state_output_phase5_meta.get("enabled")),
+                "environment_state_output_frame_derived_unit_count": len(environment_state_output_units),
                 "shallow_surface_realizer_v2": _shallow_v2_meta(eligible=False, selected=phrase_units, failure_reason="insufficient_evidence"),
                 "step5_shallow_surface_realizer_v2": _shallow_v2_meta(eligible=False, selected=phrase_units, failure_reason="insufficient_evidence"),
                 "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
@@ -2670,6 +3154,11 @@ def _generate_current_input_core_candidate(
         )
 
     lines, used_unit_ids, surface_tail_keys, sentence_bindings, surface_rows = _render_current_input_core_lines(payload=payload, units=phrase_units)
+    lines, sentence_bindings, environment_state_output_phase5_meta = _apply_environment_state_output_scope_marker_to_first_body_line(
+        lines=lines,
+        bindings=sentence_bindings,
+        phase5_meta=environment_state_output_phase5_meta,
+    )
     rendered_unit_by_id = {unit.phrase_unit_id: unit for unit in phrase_units}
     rendered_units_for_v2 = [rendered_unit_by_id[unit_id] for unit_id in _dedupe(used_unit_ids) if unit_id in rendered_unit_by_id]
     shallow_v2_plan_meta = _shallow_v2_meta(
@@ -2691,6 +3180,9 @@ def _generate_current_input_core_candidate(
                 "profile_unmatched": True,
                 "phrase_unit_count": len(phrase_units),
                 "sentence_plan_count": 0,
+                "environment_state_output_phase5_limited_use": environment_state_output_phase5_meta,
+                "environment_state_output_frame_limited_use": bool(environment_state_output_phase5_meta.get("enabled")),
+                "environment_state_output_frame_derived_unit_count": len(environment_state_output_units),
                 "shallow_surface_realizer_v2": shallow_v2_plan_meta,
                 "step5_shallow_surface_realizer_v2": shallow_v2_plan_meta,
                 "shallow_realizer_version": _STEP5_SHALLOW_SURFACE_REALIZER_V2_NAME,
@@ -2734,7 +3226,15 @@ def _generate_current_input_core_candidate(
         evidence_spans=_evidence_objects_for_quality(generation_evidence_items),
         profile_key=profile_key,
         used_evidence_span_ids=used_evidence_ids,
-        composer_meta={"profile_key": profile_key, "source_profile_key": source_profile_key, "shallow_observation_path": True, "profile_unmatched": True},
+        composer_meta={
+            "profile_key": profile_key,
+            "source_profile_key": source_profile_key,
+            "shallow_observation_path": True,
+            "profile_unmatched": True,
+            "environment_state_output_phase5_limited_use": environment_state_output_phase5_meta,
+            "environment_state_output_frame_limited_use": bool(environment_state_output_phase5_meta.get("enabled")),
+            "environment_state_output_surface_contract": payload.get("environment_state_output_surface_contract") if isinstance(payload.get("environment_state_output_surface_contract"), Mapping) else {},
+        },
     )
     if not bool(quality_report.get("passed")):
         return _unavailable_response(
@@ -2807,6 +3307,19 @@ def _generate_current_input_core_candidate(
         "surface_tail_keys": surface_tail_keys,
         "allowed_evidence_span_ids": sorted(allowed_evidence_ids),
         "phase8_quality": quality_report,
+        "environment_state_output_phase5_limited_use": environment_state_output_phase5_meta,
+        "environment_state_output_frame_limited_use": bool(environment_state_output_phase5_meta.get("enabled")),
+        "environment_state_output_frame_single_record_only": True,
+        "environment_state_output_scope_marker_required": bool(environment_state_output_phase5_meta.get("scope_marker_required", True)),
+        "environment_state_output_scope_marker_applied": bool(environment_state_output_phase5_meta.get("scope_marker_applied")),
+        "environment_state_output_allowed_surface_claim_strength": "single_observation",
+        "environment_state_output_output_theme_ids": list(environment_state_output_phase5_meta.get("selected_theme_ids") or environment_state_output_phase5_meta.get("output_theme_ids") or []),
+        "environment_state_output_frame_derived_unit_count": len(environment_state_output_units),
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "cause_inferred_from_category": False,
+        "cause_inferred_from_emotion_strength": False,
+        "personality_tendency_allowed": False,
         "shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
         "step4_shallow_phrase_unit_guard": shallow_phrase_unit_guard_meta,
         "shallow_phrase_unit_creation_guard": shallow_phrase_unit_guard_meta,
@@ -2857,6 +3370,7 @@ def _generate_current_input_core_candidate(
     composer_meta["profile_sentence_plan_expansion"] = composer_meta["profile_sentence_plan"]
     composer_meta["step12_profile_sentence_plan"] = composer_meta["profile_sentence_plan"]
     composer_meta["step12_profile_sentence_plan_expansion"] = composer_meta["profile_sentence_plan"]
+    composer_meta = attach_state_answer_composer_meta(composer_meta, payload)
     composer_meta["composer_diagnostic"] = _composer_diagnostic_meta(
         status="generated",
         coverage_scope="current_input_core",
@@ -3442,6 +3956,11 @@ def _render_sentence_plans(*, payload: Mapping[str, Any], profile: ObservationPr
                 must_include=plan.must_include,
                 source="limited_composer_sentence_plan",
                 predicate_key=predicate_key,
+                section_id=plan.section_id,
+                section_role=plan.section_role,
+                sentence_plan_unit_role=plan.sentence_plan_unit_role,
+                state_answer_section_role=plan.state_answer_section_role,
+                section_order=plan.section_order,
             )
             if binding is not None:
                 bindings.append(binding)
@@ -4209,7 +4728,7 @@ class CocolonAPlanEquivalentComposerClient(CocolonLimitedComposerClient):
 
     It reuses the stabilized scoped-graph composer and common Core path, then
     switches the developer-facing composer_model to the A-plan equivalent name.
-    The generated text is not post-rendered, expanded, or fall-backed here.
+    The generated text is not post-rendered, expanded, or rendered from backup text here.
     """
 
     composer_model = STEP19_A_PLAN_COMPOSER_MODEL

@@ -178,6 +178,36 @@ def test_emotion_submit_public_response_omits_failed_visible_surface_gate_feedba
     _assert_no_internal_payload(body)
 
 
+def test_phase5_emotion_submit_public_response_omits_failed_runtime_surface_gate_feedback() -> None:
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta["runtime_surface_pre_return_gate"] = {
+        "passed": False,
+        "action": "block",
+        "rerender_attempted": False,
+        "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+        "candidate_comment_text": SECRET_INTERNAL_COMMENT,
+        "diagnostics": {"raw_input": SECRET_RAW_INPUT, "raw_text": SECRET_EVIDENCE},
+    }
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["runtime_surface_pre_return_gate"] == {
+        "passed": False,
+        "action": "block",
+        "rerender_attempted": False,
+        "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+    }
+    assert body["input_feedback"] is None
+    assert _compact_json_bytes(public_meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
+    _assert_no_internal_payload(body)
+
+
 def test_emotion_submit_public_response_omits_unavailable_empty_comment_feedback() -> None:
     public_meta = build_public_emlis_input_feedback_meta(
         _huge_internal_meta("unavailable"),
@@ -283,3 +313,148 @@ def test_emotion_submit_public_response_keeps_visible_surface_gate_summary_when_
     }
     assert _compact_json_bytes(meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
     _assert_no_internal_payload(body)
+
+
+def _with_environment_state_output_runtime_gate(
+    meta: dict[str, Any],
+    *,
+    runtime_passed: bool,
+    marker_present: bool,
+    terminal_block: bool = False,
+    runtime_repair_applied: bool = False,
+) -> dict[str, Any]:
+    out = dict(meta)
+    out["environment_state_output_surface_contract"] = {
+        "connected": True,
+        "single_record_only": True,
+        "scope_marker_required": True,
+        "required_scope_marker": "今回の入力では",
+        "allowed_scope_markers": ["今回の入力では", "この入力では"],
+        "forbidden_surface_claims": ["diagnosis", "period_tendency_from_single_record"],
+        "output_theme_ids": [SECRET_RAW_INPUT],
+        "raw_input": SECRET_RAW_INPUT,
+        "comment_text": SECRET_INTERNAL_COMMENT,
+    }
+    out["environment_state_output_scope_marker_completion"] = {
+        "schema_version": "cocolon.emlis.environment_state_output_surface_completion_result.v1",
+        "evaluated": True,
+        "applied": marker_present,
+        "scope_marker": "今回の入力では",
+        "target_line": "first_body_line",
+        "target_line_index": 1,
+        "before_marker_present": False,
+        "after_marker_present": marker_present,
+        "claim_rejection_reasons": [] if marker_present else ["environment_state_output_scope_marker_missing"],
+        "action": "continue" if runtime_passed else "reject",
+        "completed_text": SECRET_INTERNAL_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+    }
+    out["runtime_surface_pre_return_gate"] = {
+        "passed": runtime_passed,
+        "action": "allow" if runtime_passed else "block",
+        "rerender_attempted": False,
+        "rejection_reasons": [] if runtime_passed else ["environment_state_output_scope_marker_missing"],
+        "environment_state_output_frame_surface_limited_use": True,
+        "environment_state_output_single_record_only": True,
+        "environment_state_output_scope_marker_required": True,
+        "environment_state_output_scope_marker_present": marker_present,
+        "environment_state_output_runtime_marker_check_performed": True,
+        "environment_state_output_runtime_double_check_active": True,
+        "environment_state_output_runtime_gate_repair_applied": runtime_repair_applied,
+        "environment_state_output_terminal_surface_block": terminal_block,
+        "diagnosis_surface_blocked": terminal_block,
+        "environment_state_output_output_theme_ids": [SECRET_RAW_INPUT],
+        "comment_text": SECRET_INTERNAL_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "raw_text": SECRET_EVIDENCE,
+    }
+    return out
+
+
+def test_phase5_public_meta_keeps_environment_state_completion_internal_only() -> None:
+    public_meta = build_public_emlis_input_feedback_meta(
+        _with_environment_state_output_runtime_gate(
+            _huge_internal_meta("passed"),
+            runtime_passed=True,
+            marker_present=True,
+        ),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+    dumped = json.dumps(body, ensure_ascii=False, sort_keys=True)
+
+    assert body["input_feedback"]["comment_text"] == VISIBLE_COMMENT
+    runtime_gate = body["input_feedback"]["emlis_ai"]["runtime_surface_pre_return_gate"]
+    assert runtime_gate["passed"] is True
+    assert runtime_gate["environment_state_output_frame_surface_limited_use"] is True
+    assert runtime_gate["environment_state_output_scope_marker_required"] is True
+    assert runtime_gate["environment_state_output_scope_marker_present"] is True
+    assert runtime_gate["environment_state_output_runtime_marker_check_performed"] is True
+    assert runtime_gate["environment_state_output_runtime_double_check_active"] is True
+    assert runtime_gate["environment_state_output_runtime_gate_repair_applied"] is False
+    assert runtime_gate["environment_state_output_terminal_surface_block"] is False
+    assert "environment_state_output_scope_marker_completion" not in dumped
+    assert "environment_state_output_surface_contract" not in dumped
+    assert "environment_state_output_output_theme_ids" not in dumped
+    _assert_no_internal_payload(body)
+
+
+def test_phase5_public_response_omits_feedback_when_runtime_environment_state_gate_blocks() -> None:
+    public_meta = build_public_emlis_input_feedback_meta(
+        _with_environment_state_output_runtime_gate(
+            _huge_internal_meta("passed"),
+            runtime_passed=False,
+            marker_present=False,
+            terminal_block=True,
+        ),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["runtime_surface_pre_return_gate"]["passed"] is False
+    assert public_meta["runtime_surface_pre_return_gate"]["action"] == "block"
+    assert public_meta["runtime_surface_pre_return_gate"]["environment_state_output_scope_marker_present"] is False
+    assert public_meta["runtime_surface_pre_return_gate"]["environment_state_output_terminal_surface_block"] is True
+    assert body["input_feedback"] is None
+    _assert_no_internal_payload(body)
+
+
+def test_phase5_public_response_omits_feedback_when_runtime_environment_state_marker_check_fails_open_status() -> None:
+    public_meta = build_public_emlis_input_feedback_meta(
+        _with_environment_state_output_runtime_gate(
+            _huge_internal_meta("passed"),
+            runtime_passed=True,
+            marker_present=False,
+        ),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+
+    assert public_meta["runtime_surface_pre_return_gate"]["passed"] is True
+    assert public_meta["runtime_surface_pre_return_gate"]["environment_state_output_runtime_marker_check_performed"] is True
+    assert public_meta["runtime_surface_pre_return_gate"]["environment_state_output_scope_marker_required"] is True
+    assert public_meta["runtime_surface_pre_return_gate"]["environment_state_output_scope_marker_present"] is False
+    assert body["input_feedback"] is None
+    _assert_no_internal_payload(body)
+
+
+def test_phase5_public_response_omits_non_passed_or_schema_invalid_status_even_with_comment_text() -> None:
+    for internal_status in ("schema_invalid", "rejected", "unavailable"):
+        public_meta = build_public_emlis_input_feedback_meta(
+            _with_environment_state_output_runtime_gate(
+                _huge_internal_meta(internal_status),
+                runtime_passed=True,
+                marker_present=True,
+            ),
+            comment_text_present=True,
+            subscription_tier="free",
+        )
+        body = _response_body(VISIBLE_COMMENT, public_meta)
+
+        assert body["input_feedback"] is None, internal_status
+        assert public_meta["observation_status"] != "passed"
+        _assert_no_internal_payload(body)

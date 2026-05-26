@@ -34,6 +34,7 @@ from .analysis_composer import (
     compose_analysis_report_text,
     compose_analysis_text_generation,
     evaluate_analysis_composer,
+    evaluate_analysis_environment_state_output_material,
     evaluate_analysis_report_text_safety,
 )
 from .analysis_composer_input_contract import (
@@ -127,6 +128,7 @@ _ANALYSIS_COMPOSER_EXPORTS = {
     "compose_analysis_report_text": ("compose_analysis_report_text", "direct"),
     "compose_analysis_text_generation": ("compose_analysis_text_generation", "direct"),
     "evaluate_analysis_composer": ("evaluate_analysis_composer", "direct"),
+    "evaluate_analysis_environment_state_output_material": ("evaluate_analysis_environment_state_output_material", "direct"),
 }
 
 

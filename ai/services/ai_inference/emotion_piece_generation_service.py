@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from piece_generated_display import (
     STATE_MASKED,
@@ -26,6 +26,10 @@ from piece_generated_display import (
 from piece_text_formatter import STATE_BLOCKED, format_reflection_text
 from piece_generated_identity import compute_generated_question_q_key
 from piece_generation_policy import build_piece_generation_policy
+from cocolon_environment_state_output_frame import build_environment_state_output_frame
+from cocolon_text_generation_core.adapters.piece_environment_state_output_guard import (
+    build_piece_environment_state_output_guard,
+)
 from cocolon_text_generation_core.adapters.piece_composer import (
     build_runtime_piece_plan,
     evaluate_piece_composer,
@@ -489,6 +493,94 @@ def _unique_texts(values: Iterable[Any]) -> List[str]:
         seen.add(text)
         out.append(text)
     return out
+
+
+def _emotion_type_texts(emotion_details: Sequence[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for item in emotion_details or []:
+        if isinstance(item, dict):
+            text = _collapse(item.get("type"))
+        else:
+            text = _collapse(item)
+        if text and text not in values:
+            values.append(text)
+    return values
+
+
+def _eso_category_labels(frame: Mapping[str, Any]) -> List[str]:
+    env = frame.get("environment_axis") if isinstance(frame, dict) else {}
+    out: List[str] = []
+    if isinstance(env, dict):
+        for item in env.get("category_labels") or []:
+            if isinstance(item, dict):
+                label = _collapse(item.get("label"))
+                if label and label not in out:
+                    out.append(label)
+    return out
+
+
+def _eso_emotion_labels(frame: Mapping[str, Any]) -> List[str]:
+    state = frame.get("state_axis") if isinstance(frame, dict) else {}
+    out: List[str] = []
+    if isinstance(state, dict):
+        for item in state.get("emotion_labels") or []:
+            if isinstance(item, dict):
+                label = _collapse(item.get("type"))
+                if label and label not in out:
+                    out.append(label)
+    return out
+
+
+def _eso_output_theme_ids(frame: Mapping[str, Any]) -> List[str]:
+    output = frame.get("output_axis") if isinstance(frame, dict) else {}
+    out: List[str] = []
+    if isinstance(output, dict):
+        for item in output.get("output_theme_candidates") or []:
+            if isinstance(item, dict):
+                theme_id = _collapse(item.get("theme_id"))
+                if theme_id and theme_id not in out:
+                    out.append(theme_id)
+    return out
+
+
+def _piece_sentence_from_eso_memo(memo: str) -> str:
+    source = _collapse(memo).rstrip("。！？!?")
+    if not source:
+        return ""
+    if source.endswith(("不安", "心配")):
+        return source + "です。"
+    if source.endswith(("怖い", "つらい", "辛い", "苦しい")):
+        return source + "です。"
+    return _polish_answer_sentence(source)
+
+
+def _build_environment_state_output_piece_preview_text(
+    *,
+    frame: Mapping[str, Any],
+    memo: str,
+    categories: Sequence[str],
+    emotion_details: Sequence[Dict[str, Any]],
+) -> str:
+    if not isinstance(frame, dict):
+        return ""
+    guard = build_piece_environment_state_output_guard(frame, apply_must_keep=True)
+    if not guard.get("must_keep_signal_keys_applied"):
+        return ""
+    theme_ids = _eso_output_theme_ids(frame) or list(guard.get("output_theme_ids") or [])
+    if not theme_ids:
+        return ""
+    category = _first_non_empty(*_eso_category_labels(frame), *(categories or []))
+    emotion = _first_non_empty(*_eso_emotion_labels(frame), *_emotion_type_texts(emotion_details))
+    sentence = _piece_sentence_from_eso_memo(memo)
+    if not sentence:
+        return ""
+    # Piece is a user-subject public Q&A, not Emlis commentary.  Use the selected
+    # environment only as the condition that preserves the user's core.
+    if category:
+        return _collapse(f"{category}の中で、{sentence}")
+    if emotion and emotion not in sentence:
+        return _collapse(f"{emotion}として、{sentence}")
+    return sentence
 
 
 def _dominant_emotion(emotion_details: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -974,6 +1066,19 @@ def generate_emotion_reflection_preview(
     normalized_memo = _collapse(memo)
     normalized_memo_action = _collapse(memo_action)
     normalized_categories = _unique_texts(categories or [])
+    normalized_emotion_types = _emotion_type_texts(emotion_details)
+    environment_state_output_frame = build_environment_state_output_frame(
+        {
+            "emotion_details": list(emotion_details or []),
+            "category": list(normalized_categories or []),
+            "memo": normalized_memo,
+            "memo_action": normalized_memo_action,
+        }
+    )
+    environment_state_output_piece_guard = build_piece_environment_state_output_guard(
+        environment_state_output_frame,
+        apply_must_keep=True,
+    )
     core_plan = _build_piece_core_question_answer_plan(
         emotion_details=emotion_details,
         categories=normalized_categories,
@@ -996,7 +1101,7 @@ def generate_emotion_reflection_preview(
             memo_action=normalized_memo_action,
             categories=normalized_categories,
         )
-    text_candidates = _unique_texts([normalized_memo, normalized_memo_action, *normalized_categories])
+    text_candidates = _unique_texts([normalized_memo, normalized_memo_action, *normalized_categories, *normalized_emotion_types])
     primary_category = normalized_categories[0] if normalized_categories else None
     display_result = _ensure_preview_display_result(
         question=question,
@@ -1048,16 +1153,42 @@ def generate_emotion_reflection_preview(
             candidate_text=preserved_text,
         )
 
+    eso_preview_text = _build_environment_state_output_piece_preview_text(
+        frame=environment_state_output_frame,
+        memo=normalized_memo,
+        categories=normalized_categories,
+        emotion_details=emotion_details,
+    )
+    if core_plan is None and eso_preview_text:
+        eso_result = replace(
+            display_result,
+            answer_display_text=eso_preview_text,
+            answer_display_state=STATE_READY,
+            changed=True,
+            flags=_merge_unique(display_result.flags, ["piece:environment_state_output_overcompression_guard"]),
+            actions=_merge_unique(display_result.actions, ["piece:environment_state_output_overcompression_guard"]),
+            answer_norm_hash=compute_generated_answer_norm_hash(eso_preview_text),
+            rewrite_needed=False,
+        )
+        display_result = _finalize_public_safe_preview_result(
+            result=eso_result,
+            question=question,
+            raw_answer=raw_answer,
+            candidate_text=eso_preview_text,
+        )
+
     answer_display_text = display_result.answer_display_text or _build_fallback_preview_text(question, raw_answer)
 
     piece_runtime_plan = core_plan or build_runtime_piece_plan(
         focus_key=focus_key,
         question=question,
         answer=answer_display_text,
-        source_claims=text_candidates,
+        source_texts=text_candidates,
         answer_preservation_policy="source_scaled",
         overcompression_risk=False,
         minimum_detail_level="source_scaled",
+        environment_state_output_frame=environment_state_output_frame,
+        environment_state_output_must_keep_enabled=True,
     )
     piece_core_evaluation = evaluate_piece_composer(
         piece_runtime_plan,
@@ -1137,14 +1268,20 @@ def generate_emotion_reflection_preview(
             "text_generation_core": piece_core_generation_meta,
             "piece_composer_connected": True,
             "core_guard_passed": bool(piece_core_evaluation.answer_passed),
+            "environment_state_output_frame_connected": bool(environment_state_output_piece_guard.get("connected", False)),
+            "environment_state_output_must_keep_applied": False,
         } if core_plan is not None else {
             "focus_key": focus_key,
             "text_generation_core": piece_core_generation_meta,
             "piece_composer_connected": True,
             "core_guard_passed": bool(piece_core_evaluation.answer_passed),
-            "answer_preservation_policy": "source_scaled",
-            "overcompression_risk": False,
-            "minimum_detail_level": "source_scaled",
+            "answer_preservation_policy": str(piece_runtime_plan.get("answer_preservation_policy") or "source_scaled"),
+            "overcompression_risk": bool(piece_runtime_plan.get("overcompression_risk", False)),
+            "minimum_detail_level": str(piece_runtime_plan.get("minimum_detail_level") or "source_scaled"),
+            "environment_state_output_frame_connected": bool(environment_state_output_piece_guard.get("connected", False)),
+            "environment_state_output_must_keep_applied": bool((piece_core_generation_meta.get("input_contract") or {}).get("environment_state_output_must_keep_applied", False)),
+            "environment_state_output_must_keep_signal_keys": list((piece_core_generation_meta.get("input_contract") or {}).get("environment_state_output_must_keep_signal_keys") or []),
+            "environment_state_output_output_theme_ids": list((piece_core_generation_meta.get("input_contract") or {}).get("environment_state_output_output_theme_ids") or []),
         },
     }
 

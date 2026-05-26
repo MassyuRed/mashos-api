@@ -43,7 +43,10 @@ from emlis_ai_observation_diagnostic_lockdown import (
     build_observation_diagnostic_lockdown,
     dump_observation_diagnostic,
 )
-from emlis_ai_public_feedback_meta import build_public_emlis_input_feedback_meta
+from emlis_ai_public_feedback_meta import (
+    build_public_emlis_input_feedback_meta,
+    should_include_public_input_feedback,
+)
 from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
@@ -127,6 +130,194 @@ def _extract_emlis_ai_diagnostic_summary(input_feedback_meta: Any) -> Dict[str, 
             return raw_diagnostic_summary
 
     return {}
+
+
+def _safe_reason_codes(values: Any, *, limit: int = 20) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, (str, bytes, bytearray)):
+        source = [values]
+    elif isinstance(values, (list, tuple, set)):
+        source = list(values)
+    else:
+        source = [values]
+    out: list[str] = []
+    for raw in source:
+        text = str(raw or "").strip()
+        if not text or text in out:
+            continue
+        out.append(text[:96])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _public_visible_surface_gate_blocks(public_meta: Dict[str, Any]) -> bool:
+    gate = public_meta.get("visible_surface_acceptance_gate") if isinstance(public_meta, dict) else None
+    if not isinstance(gate, dict):
+        return False
+    if gate.get("passed") is False:
+        return True
+    if str(gate.get("classification") or "").strip() in {"repair_required", "red"}:
+        return True
+    if str(gate.get("action") or "").strip() in {"rerender_surface", "reroute_low_information", "block", "fail_closed"}:
+        return True
+    return False
+
+
+def _public_input_feedback_comment(
+    input_feedback_comment: str,
+    public_input_feedback_meta: Dict[str, Any],
+) -> str:
+    """Return comment_text only when the public RN display contract can include it."""
+
+    comment_text = str(input_feedback_comment or "").strip()
+    if should_include_public_input_feedback(comment_text, public_input_feedback_meta):
+        return comment_text
+    return ""
+
+
+def _existing_step7_public_feedback_summary(internal_meta: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(internal_meta, dict):
+        return {}
+    for key in (
+        "step7_public_feedback_diagnostic_summary",
+        "public_feedback_diagnostic_summary",
+        "display_absence_summary",
+    ):
+        value = internal_meta.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+    diagnostic_summary = internal_meta.get("diagnostic_summary")
+    if isinstance(diagnostic_summary, dict):
+        for key in (
+            "step7_public_feedback_diagnostic_summary",
+            "public_feedback_diagnostic_summary",
+            "display_absence_summary",
+        ):
+            value = diagnostic_summary.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+    return {}
+
+
+def _build_public_feedback_inclusion_summary(
+    *,
+    input_feedback_comment: str,
+    internal_input_feedback_meta: Dict[str, Any],
+    public_input_feedback_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build Step7 public-safe inclusion diagnostics for submit logs.
+
+    The summary is code/boolean/count-only. It never copies raw input or the
+    public comment body.
+    """
+
+    public_meta = public_input_feedback_meta if isinstance(public_input_feedback_meta, dict) else {}
+    internal_meta = internal_input_feedback_meta if isinstance(internal_input_feedback_meta, dict) else {}
+    existing = _existing_step7_public_feedback_summary(internal_meta)
+    comment_present = bool(str(input_feedback_comment or "").strip())
+    observation_status = str(public_meta.get("observation_status") or internal_meta.get("observation_status") or "").strip()
+    public_feedback_included = should_include_public_input_feedback(input_feedback_comment, public_meta)
+    visible_gate_blocks = _public_visible_surface_gate_blocks(public_meta)
+    visible_gate = public_meta.get("visible_surface_acceptance_gate") if isinstance(public_meta.get("visible_surface_acceptance_gate"), dict) else {}
+    runtime_gate = public_meta.get("runtime_surface_pre_return_gate") if isinstance(public_meta.get("runtime_surface_pre_return_gate"), dict) else {}
+    reason_codes = _safe_reason_codes(
+        [
+            *(public_meta.get("rejection_reasons") or [] if isinstance(public_meta.get("rejection_reasons"), list) else []),
+            *(visible_gate.get("rejection_reasons") or [] if isinstance(visible_gate.get("rejection_reasons"), list) else []),
+            *(runtime_gate.get("rejection_reasons") or [] if isinstance(runtime_gate.get("rejection_reasons"), list) else []),
+            *(existing.get("reason_codes") or [] if isinstance(existing.get("reason_codes"), list) else []),
+        ]
+    )
+    candidate_blocked_koto_splice = bool(
+        existing.get("candidate_blocked_koto_splice") is True
+        or visible_gate.get("koto_splice_detected") is True
+        or any("koto" in reason or reason.startswith("malformed_nominalization_") for reason in reason_codes)
+    )
+    candidate_blocked_relation_skeleton = bool(
+        existing.get("candidate_blocked_relation_skeleton") is True
+        or visible_gate.get("relation_skeleton_major") is True
+        or visible_gate.get("analytic_register_leak") is True
+        or any(reason.startswith("surface_relation_skeleton") or reason == "analytic_register_leak" for reason in reason_codes)
+    )
+    candidate_blocked_surface_grammar = bool(
+        existing.get("candidate_blocked_surface_grammar") is True
+        or candidate_blocked_koto_splice
+        or runtime_gate.get("passed") is False
+        or any(reason in {"runtime_surface_pre_return_gate_failed", "surface_grammar_warning", "malformed_phrase_unit", "surface_template_major"} for reason in reason_codes)
+    )
+    candidate_repair_attempted = bool(existing.get("candidate_repair_attempted") is True)
+    candidate_repair_succeeded = bool(existing.get("candidate_repair_succeeded") is True or (candidate_repair_attempted and public_feedback_included))
+    candidate_repair_failed = bool(existing.get("candidate_repair_failed") is True or (candidate_repair_attempted and not candidate_repair_succeeded))
+    public_feedback_not_included_non_passed = bool(not public_feedback_included and observation_status != "passed")
+    public_feedback_not_included_empty_comment_text = bool(not public_feedback_included and not comment_present)
+    public_feedback_not_included_visible_surface_gate = bool(not public_feedback_included and visible_gate_blocks)
+    rn_payload_absent = bool(not public_feedback_included)
+    candidate_fail_closed_display_absent = bool(
+        existing.get("candidate_fail_closed_display_absent") is True
+        or rn_payload_absent
+        or public_feedback_not_included_non_passed
+        or public_feedback_not_included_empty_comment_text
+        or public_feedback_not_included_visible_surface_gate
+    )
+    if candidate_blocked_koto_splice:
+        reason_family = "koto_splice"
+    elif candidate_blocked_relation_skeleton:
+        reason_family = "relation_skeleton"
+    elif candidate_blocked_surface_grammar:
+        reason_family = "surface_grammar"
+    elif public_feedback_not_included_empty_comment_text:
+        reason_family = "empty_comment_text"
+    elif public_feedback_not_included_non_passed:
+        reason_family = "non_passed"
+    elif public_feedback_not_included_visible_surface_gate:
+        reason_family = "visible_surface_gate"
+    elif public_feedback_included:
+        reason_family = "included"
+    else:
+        reason_family = "display_absent"
+
+    return {
+        "version": "emlis.step7.public_feedback_inclusion_summary.v1",
+        "public_feedback_included": public_feedback_included,
+        "public_feedback_not_included_non_passed": public_feedback_not_included_non_passed,
+        "public_feedback_not_included_empty_comment_text": public_feedback_not_included_empty_comment_text,
+        "public_feedback_not_included_visible_surface_gate": public_feedback_not_included_visible_surface_gate,
+        "rn_payload_absent": rn_payload_absent,
+        "candidate_blocked_surface_grammar": candidate_blocked_surface_grammar,
+        "candidate_blocked_koto_splice": candidate_blocked_koto_splice,
+        "candidate_blocked_relation_skeleton": candidate_blocked_relation_skeleton,
+        "candidate_repair_attempted": candidate_repair_attempted,
+        "candidate_repair_succeeded": candidate_repair_succeeded,
+        "candidate_repair_failed": candidate_repair_failed,
+        "candidate_fail_closed_display_absent": candidate_fail_closed_display_absent,
+        "reason_family": reason_family,
+        "reason_codes": reason_codes,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+    }
+
+
+def _with_public_feedback_inclusion_summary(
+    *,
+    internal_input_feedback_meta: Dict[str, Any],
+    inclusion_summary: Dict[str, Any],
+) -> Dict[str, Any]:
+    meta = dict(internal_input_feedback_meta or {})
+    summary = dict(inclusion_summary or {})
+    if not summary:
+        return meta
+    diagnostic_summary = dict(meta.get("diagnostic_summary") or {}) if isinstance(meta.get("diagnostic_summary"), dict) else {}
+    diagnostic_summary["step7_public_feedback_diagnostic_summary"] = summary
+    diagnostic_summary["public_feedback_diagnostic_summary"] = summary
+    diagnostic_summary["display_absence_summary"] = summary
+    meta["diagnostic_summary"] = diagnostic_summary
+    meta["step7_public_feedback_diagnostic_summary"] = summary
+    meta["public_feedback_diagnostic_summary"] = summary
+    meta["display_absence_summary"] = summary
+    return meta
 
 
 def _log_emlis_ai_observation_result(
@@ -378,26 +569,39 @@ async def persist_emotion_submission(
             "fallback_used": False,
         }
 
+    public_input_feedback_meta = build_public_emlis_input_feedback_meta(
+        internal_input_feedback_meta,
+        comment_text_present=bool(input_feedback_comment),
+        subscription_tier=subscription_tier,
+    )
+    public_input_feedback_comment = _public_input_feedback_comment(
+        input_feedback_comment,
+        public_input_feedback_meta,
+    )
+    public_feedback_inclusion_summary = _build_public_feedback_inclusion_summary(
+        input_feedback_comment=input_feedback_comment,
+        internal_input_feedback_meta=internal_input_feedback_meta,
+        public_input_feedback_meta=public_input_feedback_meta,
+    )
+    diagnostic_input_feedback_meta = _with_public_feedback_inclusion_summary(
+        internal_input_feedback_meta=internal_input_feedback_meta,
+        inclusion_summary=public_feedback_inclusion_summary,
+    )
+
     _log_emlis_ai_observation_diagnostic_lockdown(
         input_feedback_comment=input_feedback_comment,
-        input_feedback_meta=internal_input_feedback_meta,
+        input_feedback_meta=diagnostic_input_feedback_meta,
         emotion_log_id=str(inserted.get("id") or ""),
         created_at=str(
             inserted.get("created_at", effective_created_at) or effective_created_at
         ),
     )
 
-    public_input_feedback_meta = build_public_emlis_input_feedback_meta(
-        internal_input_feedback_meta,
-        comment_text_present=bool(input_feedback_comment),
-        subscription_tier=subscription_tier,
-    )
-
     return {
         "inserted": inserted,
         "created_at": inserted.get("created_at", effective_created_at),
         "global_summary_activity_date": activity_date,
-        "input_feedback_comment": input_feedback_comment,
+        "input_feedback_comment": public_input_feedback_comment,
         "input_feedback_meta": public_input_feedback_meta,
         "normalized": normalized,
     }

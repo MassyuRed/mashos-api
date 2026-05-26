@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
+from emlis_ai_state_answer_gate_boundary import state_answer_gate_boundary_public_summary
+
 
 PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION = "emlis.public_input_feedback_meta.v1"
 PUBLIC_EMLIS_FEEDBACK_META_BOUNDARY_VERSION = "emlis.public_feedback_meta_boundary.v1"
@@ -23,6 +25,8 @@ PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES = 12 * 1024
 PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS = 20
 PUBLIC_EMLIS_FEEDBACK_META_MAX_REASON_LENGTH = 96
 PUBLIC_EMLIS_FEEDBACK_META_MAX_GATE_RESULTS = 20
+PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_CODE_COUNT = 16
+PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_COUNT = 32
 
 _DEFAULT_VERSION = "emlis_ai_v3"
 _DEFAULT_KERNEL_VERSION = "multi_perspective_observation.v1"
@@ -47,6 +51,24 @@ _BLOCKING_VISIBLE_SURFACE_ACCEPTANCE_ACTIONS = {
     "reroute_low_information",
     "block",
     "fail_closed",
+}
+_BLOCKING_RUNTIME_SURFACE_ACTIONS = {
+    "rerender_shallow_v2",
+    "rerender_surface",
+    "reroute_low_information",
+    "block",
+    "fail_closed",
+}
+_ENVIRONMENT_STATE_OUTPUT_TERMINAL_SURFACE_REASONS = {
+    "environment_state_output_scope_marker_missing",
+    "environment_state_output_empty_body",
+    "environment_state_output_body_line_missing",
+    "period_tendency_from_single_record_surface",
+    "personality_tendency_surface",
+    "diagnosis_surface",
+    "cause_from_category_surface",
+    "cause_from_emotion_strength_surface",
+    "recovery_prescription_surface",
 }
 _VISIBLE_SURFACE_ACCEPTANCE_UNSAFE_CONTRACT_FLAGS = (
     "api_route_changed",
@@ -169,6 +191,16 @@ def _safe_bool(value: Any) -> Optional[bool]:
     return None
 
 
+def _safe_int(value: Any, *, minimum: int = 0, maximum: int = PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_COUNT) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    try:
+        integer = int(value)
+    except Exception:
+        return None
+    return max(minimum, min(maximum, integer))
+
+
 def _safe_mapping(value: Any) -> Optional[Mapping[str, Any]]:
     if isinstance(value, Mapping):
         return value
@@ -185,12 +217,33 @@ def _safe_rejection_reasons(values: Any) -> list[str]:
     reasons: list[str] = []
     for raw in values:
         reason = _safe_reason(raw)
-        if not reason:
+        if not reason or reason in reasons:
             continue
         reasons.append(reason)
         if len(reasons) >= PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS:
             break
     return reasons
+
+
+def _prepend_public_rejection_reason(reasons: list[str], reason: str) -> list[str]:
+    safe = _safe_reason(reason)
+    if not safe:
+        return reasons
+    return [safe, *[item for item in reasons if item != safe]][:PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS]
+
+
+def _safe_surface_codes(values: Any) -> list[str]:
+    if not isinstance(values, Iterable) or isinstance(values, (str, bytes, bytearray)):
+        return []
+    codes: list[str] = []
+    for raw in values:
+        code = _safe_reason(raw)
+        if not code or code in codes:
+            continue
+        codes.append(code)
+        if len(codes) >= PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_CODE_COUNT:
+            break
+    return codes
 
 
 def _pick_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
@@ -230,6 +283,62 @@ def _build_gate_results(raw_gate_results: Any) -> Dict[str, Dict[str, Any]]:
     return public_gate_results
 
 
+def _pick_display_absence_summary(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    for key in (
+        "step7_public_feedback_diagnostic_summary",
+        "public_feedback_diagnostic_summary",
+        "display_absence_summary",
+    ):
+        direct = _safe_mapping(_safe_get(internal_meta, key))
+        if direct is not None:
+            return direct
+
+    summary = _pick_diagnostic_summary(internal_meta)
+    if summary is None:
+        return None
+    for key in (
+        "step7_public_feedback_diagnostic_summary",
+        "public_feedback_diagnostic_summary",
+        "display_absence_summary",
+    ):
+        nested = _safe_mapping(_safe_get(summary, key))
+        if nested is not None:
+            return nested
+    return None
+
+
+def _build_display_absence_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_display_absence_summary(internal_meta)
+    if source is None:
+        return {}
+
+    public_summary: Dict[str, Any] = {}
+    for key in (
+        "candidate_blocked_surface_grammar",
+        "candidate_blocked_koto_splice",
+        "candidate_blocked_relation_skeleton",
+        "candidate_repair_attempted",
+        "candidate_repair_succeeded",
+        "candidate_repair_failed",
+        "candidate_fail_closed_display_absent",
+        "public_feedback_not_included_non_passed",
+        "public_feedback_not_included_empty_comment_text",
+        "public_feedback_not_included_visible_surface_gate",
+        "rn_payload_absent",
+    ):
+        value = _safe_bool(_safe_get(source, key))
+        if value is not None:
+            public_summary[key] = value
+
+    reason_family = _safe_identifier(_safe_get(source, "reason_family"), max_length=80, default=None)
+    if reason_family:
+        public_summary["reason_family"] = reason_family
+    reason_codes = _safe_surface_codes(_safe_get(source, "reason_codes"))
+    if reason_codes:
+        public_summary["reason_codes"] = reason_codes
+    return public_summary
+
+
 def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
     source = _pick_diagnostic_summary(internal_meta)
     if source is None:
@@ -251,13 +360,76 @@ def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     if gate_results:
         public_summary["gate_results"] = gate_results
 
+    display_absence_summary = _build_display_absence_summary(internal_meta)
+    if display_absence_summary:
+        public_summary["display_absence_summary"] = display_absence_summary
+
     return public_summary
+
+
+def _runtime_surface_source_has_unsafe_contract_flags(source: Mapping[str, Any]) -> bool:
+    for flag in _VISIBLE_SURFACE_ACCEPTANCE_UNSAFE_CONTRACT_FLAGS:
+        if _safe_bool(_safe_get(source, flag)) is True:
+            return True
+        if _safe_bool(_safe_get(source, f"runtime_surface_pre_return_gate_{flag}")) is True:
+            return True
+    return False
+
+
+def _pick_state_answer_gate_boundary_source(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    for key in ("state_answer_gate_boundary", "state_answer_gate_public_meta_boundary"):
+        direct = _safe_mapping(_safe_get(internal_meta, key))
+        if direct is not None:
+            return direct
+
+    for container_key in (
+        "runtime_surface_pre_return_gate",
+        "visible_surface_acceptance_gate",
+        "runtime_surface_tone_engine_2_1",
+        "tone_engine_2_1",
+        "gate_trace",
+        "phase_gate",
+        "diagnostic_summary",
+        "composer_meta",
+        "multi_perspective",
+    ):
+        container = _safe_mapping(_safe_get(internal_meta, container_key))
+        if container is None:
+            continue
+        direct = _safe_mapping(_safe_get(container, "state_answer_gate_boundary"))
+        if direct is not None:
+            return direct
+        gate_trace = _safe_mapping(_safe_get(container, "gate_trace"))
+        if gate_trace is not None:
+            nested = _safe_mapping(_safe_get(gate_trace, "state_answer_gate_boundary"))
+            if nested is not None:
+                return nested
+            for gate_key in ("runtime_surface_pre_return_gate", "visible_surface_acceptance_gate"):
+                gate = _safe_mapping(_safe_get(gate_trace, gate_key))
+                nested = _safe_mapping(_safe_get(gate or {}, "state_answer_gate_boundary"))
+                if nested is not None:
+                    return nested
+    return None
+
+
+def _build_state_answer_gate_boundary_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_state_answer_gate_boundary_source(internal_meta)
+    if source is None:
+        return {}
+    return state_answer_gate_boundary_public_summary(source)
 
 
 def _build_runtime_surface_gate(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
     source = _safe_mapping(_safe_get(internal_meta, "runtime_surface_pre_return_gate"))
     if source is None:
         return {}
+
+    if _runtime_surface_source_has_unsafe_contract_flags(source):
+        return {
+            "passed": False,
+            "action": "fail_closed",
+            "rejection_reasons": ["runtime_surface_pre_return_gate_public_meta_unsafe"],
+        }
 
     public_gate: Dict[str, Any] = {}
     passed = _safe_bool(_safe_get(source, "passed"))
@@ -276,6 +448,42 @@ def _build_runtime_surface_gate(internal_meta: Mapping[str, Any]) -> Dict[str, A
     if reasons:
         public_gate["rejection_reasons"] = reasons
 
+    koto_splice_detected = _safe_bool(_safe_get(source, "koto_splice_detected"))
+    if koto_splice_detected is not None:
+        public_gate["koto_splice_detected"] = koto_splice_detected
+
+    malformed_phrase_unit_count = _safe_int(_safe_get(source, "malformed_phrase_unit_count"))
+    if malformed_phrase_unit_count is not None:
+        public_gate["malformed_phrase_unit_count"] = malformed_phrase_unit_count
+
+    for key in (
+        "koto_splice_codes",
+        "surface_malformed_nominalization_codes",
+    ):
+        codes = _safe_surface_codes(_safe_get(source, key))
+        if codes:
+            public_gate[key] = codes
+
+    for key in (
+        "environment_state_output_frame_surface_limited_use",
+        "environment_state_output_single_record_only",
+        "environment_state_output_scope_marker_required",
+        "environment_state_output_scope_marker_present",
+        "environment_state_output_runtime_marker_check_performed",
+        "environment_state_output_runtime_double_check_active",
+        "environment_state_output_runtime_gate_repair_applied",
+        "environment_state_output_terminal_surface_block",
+        "period_tendency_from_single_record_surface_blocked",
+        "personality_tendency_surface_blocked",
+        "cause_from_category_surface_blocked",
+        "cause_from_emotion_strength_surface_blocked",
+        "diagnosis_surface_blocked",
+        "recovery_prescription_surface_blocked",
+    ):
+        value = _safe_bool(_safe_get(source, key))
+        if value is not None:
+            public_gate[key] = value
+
     return public_gate
 
 
@@ -287,7 +495,23 @@ def _visible_surface_acceptance_value(source: Mapping[str, Any], key: str) -> An
 
 def _flat_visible_surface_acceptance_gate_source(source: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
     flat: Dict[str, Any] = {}
-    for suffix in ("evaluated", "passed", "classification", "action", "rejection_reasons"):
+    for suffix in (
+        "evaluated",
+        "passed",
+        "classification",
+        "action",
+        "rejection_reasons",
+        "koto_splice_detected",
+        "koto_splice_codes",
+        "relation_skeleton_marker_count",
+        "relation_skeleton_marker_codes",
+        "relation_skeleton_major",
+        "analytic_register_leak_count",
+        "analytic_register_leak_codes",
+        "analytic_register_leak",
+        "surface_repair_requested",
+        "repair_reason_family",
+    ):
         prefixed_key = f"visible_surface_acceptance_gate_{suffix}"
         if prefixed_key in source:
             flat[suffix] = _safe_get(source, prefixed_key)
@@ -387,6 +611,38 @@ def _build_visible_surface_acceptance_gate_meta(internal_meta: Mapping[str, Any]
     if reasons:
         public_gate["rejection_reasons"] = reasons
 
+    for key in (
+        "koto_splice_detected",
+        "relation_skeleton_major",
+        "analytic_register_leak",
+        "surface_repair_requested",
+    ):
+        value = _safe_bool(_visible_surface_acceptance_value(source, key))
+        if value is not None:
+            public_gate[key] = value
+
+    for key in ("relation_skeleton_marker_count", "analytic_register_leak_count"):
+        value = _safe_int(_visible_surface_acceptance_value(source, key))
+        if value is not None:
+            public_gate[key] = value
+
+    for key in (
+        "koto_splice_codes",
+        "relation_skeleton_marker_codes",
+        "analytic_register_leak_codes",
+    ):
+        codes = _safe_surface_codes(_visible_surface_acceptance_value(source, key))
+        if codes:
+            public_gate[key] = codes
+
+    repair_reason_family = _safe_identifier(
+        _visible_surface_acceptance_value(source, "repair_reason_family"),
+        max_length=80,
+        default=None,
+    )
+    if repair_reason_family:
+        public_gate["repair_reason_family"] = repair_reason_family
+
     return public_gate
 
 
@@ -480,6 +736,7 @@ def _fit_hard_byte_limit(meta: Dict[str, Any], *, subscription_tier: Any = None)
     meta.pop("diagnostic_summary", None)
     meta.pop("runtime_surface_pre_return_gate", None)
     meta.pop("visible_surface_acceptance_gate", None)
+    meta.pop("state_answer_gate_boundary", None)
     meta.pop("observation_reply_meta", None)
     meta.pop("step10_observation_display_repair_integration", None)
     meta["rejection_reasons"] = meta.get("rejection_reasons", [])[:5]
@@ -505,7 +762,8 @@ def build_public_emlis_input_feedback_meta(
     sanitizer never copies the actual comment text; response inclusion remains
     controlled by the caller in the next integration step.
     """
-    del comment_text_present  # The body is never copied into public meta.
+    # The body is never copied into public meta.  The boolean is only used to
+    # keep the public status contract from reporting passed without a body.
 
     try:
         if not isinstance(internal_meta, Mapping):
@@ -528,10 +786,19 @@ def build_public_emlis_input_feedback_meta(
         step10_meta = _safe_mapping(
             _safe_get(internal_meta, "step10_observation_display_repair_integration")
         )
+        comment_body_present = bool(comment_text_present)
         observation_status = _safe_status(_safe_get(internal_meta, "observation_status"))
         if observation_status is None and step10_meta is not None:
             observation_status = _safe_status(_safe_get(step10_meta, "final_observation_status"))
         observation_status = observation_status or "unavailable"
+
+        rejection_reasons = _safe_rejection_reasons(_safe_get(internal_meta, "rejection_reasons"))
+        if observation_status == "passed" and not comment_body_present:
+            observation_status = "unavailable"
+            rejection_reasons = _prepend_public_rejection_reason(
+                rejection_reasons,
+                "public_feedback_comment_text_missing",
+            )
 
         public_meta: Dict[str, Any] = {
             "schema_version": PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION,
@@ -553,7 +820,6 @@ def build_public_emlis_input_feedback_meta(
         if reply_kind:
             public_meta["observation_reply_kind"] = reply_kind
 
-        rejection_reasons = _safe_rejection_reasons(_safe_get(internal_meta, "rejection_reasons"))
         if rejection_reasons:
             public_meta["rejection_reasons"] = rejection_reasons
 
@@ -576,6 +842,18 @@ def build_public_emlis_input_feedback_meta(
         visible_surface_gate = _build_visible_surface_acceptance_gate_meta(internal_meta)
         if visible_surface_gate:
             public_meta["visible_surface_acceptance_gate"] = visible_surface_gate
+
+        state_answer_gate_boundary = _build_state_answer_gate_boundary_meta(internal_meta)
+        if state_answer_gate_boundary:
+            public_meta["state_answer_gate_boundary"] = state_answer_gate_boundary
+
+        if public_meta.get("observation_status") == "passed" and _state_answer_gate_boundary_blocks_public_feedback(public_meta):
+            public_meta["observation_status"] = "rejected"
+            reasons = _safe_rejection_reasons(public_meta.get("rejection_reasons"))
+            public_meta["rejection_reasons"] = _prepend_public_rejection_reason(
+                reasons,
+                "public_feedback_state_answer_gate_blocked",
+            )
 
         public_meta["public_feedback_meta_boundary"] = _boundary_marker(trimmed=False)
         return _fit_hard_byte_limit(public_meta, subscription_tier=tier_source)
@@ -603,6 +881,56 @@ def _visible_surface_acceptance_gate_blocks_public_feedback(public_meta: Mapping
     return False
 
 
+def _state_answer_gate_boundary_blocks_public_feedback(public_meta: Mapping[str, Any]) -> bool:
+    gate = _safe_mapping(_safe_get(public_meta, "state_answer_gate_boundary"))
+    if gate is None:
+        return False
+    passed = _safe_bool(_safe_get(gate, "passed"))
+    if passed is False:
+        return True
+    if _safe_bool(_safe_get(gate, "blocked")) is True:
+        return True
+    if _safe_bool(_safe_get(gate, "terminal_surface_block")) is True:
+        return True
+    reasons = _safe_rejection_reasons(_safe_get(gate, "rejection_reasons"))
+    if reasons:
+        return True
+    return False
+
+
+def _runtime_surface_gate_blocks_public_feedback(public_meta: Mapping[str, Any]) -> bool:
+    gate = _safe_mapping(_safe_get(public_meta, "runtime_surface_pre_return_gate"))
+    if gate is None:
+        return False
+
+    passed = _safe_bool(_safe_get(gate, "passed"))
+    if passed is False:
+        return True
+
+    action = _safe_identifier(_safe_get(gate, "action"), max_length=80, default=None)
+    if action in _BLOCKING_RUNTIME_SURFACE_ACTIONS:
+        return True
+
+    if _safe_bool(_safe_get(gate, "environment_state_output_terminal_surface_block")) is True:
+        return True
+
+    if _safe_bool(_safe_get(gate, "environment_state_output_runtime_gate_repair_applied")) is True:
+        return True
+
+    marker_check_required = bool(
+        _safe_bool(_safe_get(gate, "environment_state_output_runtime_marker_check_performed")) is True
+        and _safe_bool(_safe_get(gate, "environment_state_output_scope_marker_required")) is True
+    )
+    if marker_check_required and _safe_bool(_safe_get(gate, "environment_state_output_scope_marker_present")) is False:
+        return True
+
+    reasons = _safe_rejection_reasons(_safe_get(gate, "rejection_reasons"))
+    if any(reason in _ENVIRONMENT_STATE_OUTPUT_TERMINAL_SURFACE_REASONS for reason in reasons):
+        return True
+
+    return False
+
+
 def should_include_public_input_feedback(
     comment_text: Any,
     public_meta: Mapping[str, Any] | None,
@@ -620,7 +948,11 @@ def should_include_public_input_feedback(
         return False
     if str(public_meta.get("observation_status") or "").strip() != "passed":
         return False
+    if _runtime_surface_gate_blocks_public_feedback(public_meta):
+        return False
     if _visible_surface_acceptance_gate_blocks_public_feedback(public_meta):
+        return False
+    if _state_answer_gate_boundary_blocks_public_feedback(public_meta):
         return False
     return True
 
@@ -629,6 +961,8 @@ __all__ = [
     "PUBLIC_EMLIS_FEEDBACK_META_BOUNDARY_VERSION",
     "PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES",
     "PUBLIC_EMLIS_FEEDBACK_META_MAX_GATE_RESULTS",
+    "PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_CODE_COUNT",
+    "PUBLIC_EMLIS_FEEDBACK_META_MAX_SURFACE_COUNT",
     "PUBLIC_EMLIS_FEEDBACK_META_MAX_REASON_LENGTH",
     "PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS",
     "PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION",

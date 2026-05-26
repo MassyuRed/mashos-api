@@ -15,6 +15,11 @@ import re
 from typing import Any, Final
 
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+from cocolon_environment_state_output_frame import (
+    ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID,
+    ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION,
+    build_environment_state_output_frame,
+)
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
 from emlis_ai_observation_reply_contract import (
     UNKNOWN_SLOT_CAUSE,
@@ -64,6 +69,8 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset({
     "completed_reply_from_dictionary", "dictionary_returned_completed_reply", "dictionary_returns_completed_reply", "external_ai_used", "local_llm_used",
     "user_fact_may_promote_to_eligible", "promote_low_info_to_eligible", "assert_current_event_from_user_fact",
     "cause_inferred_from_category", "cause_inferred_from_emotion_strength", "personality_tendency_allowed",
+    "period_tendency_from_single_record", "period_tendency_allowed", "recovery_prescription_allowed",
+    "cause_from_category", "cause_from_emotion_strength",
 })
 
 
@@ -297,6 +304,38 @@ def _unknown_slots(low_information: bool, relation_ids: Sequence[str]) -> list[s
     return []
 
 
+def _environment_state_output_frame_connection_summary(frame: Mapping[str, Any]) -> dict[str, Any]:
+    output_axis = dict(frame.get("output_axis") or {})
+    frame_policy = dict(frame.get("surface_policy") or {})
+    output_theme_ids = [
+        _clean(item.get("theme_id"))
+        for item in output_axis.get("output_theme_candidates") or []
+        if isinstance(item, Mapping) and _clean(item.get("theme_id"))
+    ]
+    return {
+        "schema_version": frame.get("schema_version") or ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION,
+        "material_id": frame.get("material_id") or ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID,
+        "projection_kind": "phase4_connection_safe_summary",
+        "axis_presence": dict(frame.get("axis_presence") or {}),
+        "output_theme_ids": _dedupe(output_theme_ids),
+        "single_record_only": bool(frame_policy.get("single_record_only", True)),
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_generated": False,
+        "completed_reply_generated": False,
+    }
+
+
+def _build_environment_state_output_frame_connection_summary(current_input: Any, relation_ids: Sequence[str]) -> dict[str, Any]:
+    frame = build_environment_state_output_frame(
+        current_input,
+        observation_structure_relation_ids=list(relation_ids),
+    )
+    return _environment_state_output_frame_connection_summary(frame)
+
+
 @dataclass(frozen=True)
 class ObservationStructureConnection:
     selected_entry_ids: tuple[str, ...] = field(default_factory=tuple)
@@ -312,6 +351,7 @@ class ObservationStructureConnection:
     forbidden_inference_entry_ids: tuple[str, ...] = field(default_factory=tuple)
     forbidden_inference_relation_ids: tuple[str, ...] = field(default_factory=tuple)
     supporting_evidence_span_ids: tuple[str, ...] = field(default_factory=tuple)
+    environment_state_output_frame_summary: Mapping[str, Any] = field(default_factory=dict)
     dictionary_version: str = ""
     dictionary_id: str = OBSERVATION_STRUCTURE_DICTIONARY_ID
     schema_version: str = OBSERVATION_STRUCTURE_CONNECTION_VERSION
@@ -330,6 +370,15 @@ class ObservationStructureConnection:
             "selected_entry_ids": list(self.selected_entry_ids),
             "selected_relation_ids": list(self.selected_relation_ids),
             "supporting_evidence_span_ids": list(self.supporting_evidence_span_ids),
+            "environment_state_output_frame_connected": bool(self.environment_state_output_frame_summary),
+            "environment_state_output_frame_material_id": (self.environment_state_output_frame_summary or {}).get("material_id") or "",
+            "environment_state_output_frame_schema_version": (self.environment_state_output_frame_summary or {}).get("schema_version") or "",
+            "environment_state_output_frame_summary": dict(self.environment_state_output_frame_summary or {}),
+            "environment_state_output_frame_axis_presence": dict((self.environment_state_output_frame_summary or {}).get("axis_presence") or {}),
+            "environment_state_output_frame_output_theme_ids": list((self.environment_state_output_frame_summary or {}).get("output_theme_ids") or []),
+            "environment_state_output_frame_single_record_only": bool((self.environment_state_output_frame_summary or {}).get("single_record_only")),
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
             "gate_connected": True,
             "composer_connected": True,
             "gate_relation_ids": list(self.selected_relation_ids),
@@ -378,6 +427,8 @@ class ObservationStructureConnection:
             "local_llm_used": False,
             "unsupported_assertion_allowed": False,
             "personality_tendency_allowed": False,
+            "cause_from_category": False,
+            "cause_from_emotion_strength": False,
             "user_fact_may_promote_to_eligible": False,
             "assert_current_event_from_user_fact": False,
             "user_fact_used_for_current_event_assertion": False,
@@ -449,6 +500,10 @@ def build_observation_structure_connection(
         for relation_id in relation_ids
     )
     roles = tuple(_roles_for_relations(relation_ids))
+    environment_state_output_frame_summary = _build_environment_state_output_frame_connection_summary(
+        bundle.to_current_input_payload(),
+        relation_ids,
+    )
     return ObservationStructureConnection(
         selected_entry_ids=selected_entry_ids,
         selected_relation_ids=relation_ids,
@@ -463,6 +518,7 @@ def build_observation_structure_connection(
         forbidden_inference_entry_ids=selected_entry_ids,
         forbidden_inference_relation_ids=relation_ids,
         supporting_evidence_span_ids=tuple(_span_id(span, index) for index, span in enumerate(selected_spans)),
+        environment_state_output_frame_summary=environment_state_output_frame_summary,
         dictionary_version=dictionary_obj.dictionary_version,
     )
 
@@ -488,6 +544,13 @@ def observation_structure_connection_forward_composer_meta(value: Any) -> dict[s
         "selected_relation_ids": list(meta.get("composer_relation_ids") or meta.get("selected_relation_ids") or []),
         "composer_material_roles": list(meta.get("composer_material_roles") or []),
         "forbidden_inference_relation_ids": list(meta.get("forbidden_inference_relation_ids") or []),
+        "environment_state_output_frame_connected": bool(meta.get("environment_state_output_frame_connected")),
+        "environment_state_output_frame_material_id": meta.get("environment_state_output_frame_material_id") or "",
+        "environment_state_output_frame_axis_presence": dict(meta.get("environment_state_output_frame_axis_presence") or {}),
+        "environment_state_output_frame_output_theme_ids": list(meta.get("environment_state_output_frame_output_theme_ids") or []),
+        "environment_state_output_frame_single_record_only": bool(meta.get("environment_state_output_frame_single_record_only")),
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
         "observation_material_only": True,
         "dictionary_must_not_return_completed_sentence": True,
         "dictionary_returns_completed_reply": False,
@@ -499,6 +562,8 @@ def observation_structure_connection_forward_composer_meta(value: Any) -> dict[s
         "cause_inferred_from_category": False,
         "cause_inferred_from_emotion_strength": False,
         "personality_tendency_allowed": False,
+        "cause_from_category": False,
+        "cause_from_emotion_strength": False,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_generated": False,

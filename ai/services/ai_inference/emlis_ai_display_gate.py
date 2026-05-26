@@ -311,6 +311,10 @@ def _structure_gate_meta(observation_structure_gate_report: Any = None) -> Dict[
         "selected_entry_ids": list(raw.get("selected_entry_ids") or []),
         "selected_relation_ids": list(raw.get("selected_relation_ids") or []),
         "gate_constraint_ids": list(raw.get("gate_constraint_ids") or []),
+        "environment_state_output_frame_connected": bool(raw.get("environment_state_output_frame_connected")),
+        "environment_state_output_frame_material_id": str(raw.get("environment_state_output_frame_material_id") or ""),
+        "environment_state_output_frame_axis_presence": dict(raw.get("environment_state_output_frame_axis_presence") or {}),
+        "environment_state_output_frame_output_theme_ids": list(raw.get("environment_state_output_frame_output_theme_ids") or []),
         "comment_text_included": False,
         "raw_text_included": False,
         "raw_input_required_for_debug": False,
@@ -380,6 +384,39 @@ def _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report: Any = Non
         "malformed_nominalization_risk": bool(data.get("malformed_nominalization_risk")),
         "malformed_phrase_unit_count": _safe_int(data.get("malformed_phrase_unit_count")),
         "shallow_observation_path": bool(data.get("shallow_observation_path")),
+        "environment_state_output_frame_surface_limited_use": bool(data.get("environment_state_output_frame_surface_limited_use")),
+        "environment_state_output_single_record_only": bool(data.get("environment_state_output_single_record_only")),
+        "environment_state_output_scope_marker_required": bool(data.get("environment_state_output_scope_marker_required")),
+        "environment_state_output_scope_marker_present": bool(data.get("environment_state_output_scope_marker_present")),
+        "environment_state_output_allowed_surface_claim_strength": str(data.get("environment_state_output_allowed_surface_claim_strength") or ""),
+        "environment_state_output_output_theme_ids": list(data.get("environment_state_output_output_theme_ids") or []),
+        "environment_state_output_surface_rejection_reasons": _dedupe(list(data.get("environment_state_output_surface_rejection_reasons") or [])),
+        "period_tendency_from_single_record_surface_blocked": bool(data.get("period_tendency_from_single_record_surface_blocked")),
+        "personality_tendency_surface_blocked": bool(data.get("personality_tendency_surface_blocked")),
+        "cause_from_category_surface_blocked": bool(data.get("cause_from_category_surface_blocked")),
+        "cause_from_emotion_strength_surface_blocked": bool(data.get("cause_from_emotion_strength_surface_blocked")),
+        "diagnosis_surface_blocked": bool(data.get("diagnosis_surface_blocked")),
+        "recovery_prescription_surface_blocked": bool(data.get("recovery_prescription_surface_blocked")),
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "state_answer_gate_boundary": dict(data.get("state_answer_gate_boundary") or {})
+        if isinstance(data.get("state_answer_gate_boundary"), Mapping)
+        else {},
+        "state_answer_gate_boundary_rejection_reasons": _dedupe(
+            list(data.get("state_answer_gate_boundary_rejection_reasons") or [])
+        ),
+        "state_answer_gate_boundary_terminal_surface_block": bool(
+            data.get("state_answer_gate_boundary_terminal_surface_block")
+        ),
+        "state_answer_forbidden_claim_reasons": _dedupe(
+            list(data.get("state_answer_forbidden_claim_reasons") or [])
+        ),
+        "state_answer_allowed_exception_ids": _dedupe(
+            list(data.get("state_answer_allowed_exception_ids") or [])
+        ),
+        "state_answer_public_meta_summary_only": bool(data.get("state_answer_public_meta_summary_only", True)),
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
         "raw_input_included": False,
         "comment_text_body_included": False,
         "display_gate_relaxed": False,
@@ -496,6 +533,24 @@ def _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report
         "burden_surface_without_anchor_detected": bool(data.get("burden_surface_without_anchor_detected")),
         "malformed_nominalization_detected": bool(data.get("malformed_nominalization_detected")),
         "malformed_nominalization_codes": _dedupe(list(data.get("malformed_nominalization_codes") or [])),
+        "state_answer_gate_boundary": dict(data.get("state_answer_gate_boundary") or {})
+        if isinstance(data.get("state_answer_gate_boundary"), Mapping)
+        else {},
+        "state_answer_gate_boundary_rejection_reasons": _dedupe(
+            list(data.get("state_answer_gate_boundary_rejection_reasons") or [])
+        ),
+        "state_answer_gate_boundary_terminal_surface_block": bool(
+            data.get("state_answer_gate_boundary_terminal_surface_block")
+        ),
+        "state_answer_forbidden_claim_reasons": _dedupe(
+            list(data.get("state_answer_forbidden_claim_reasons") or [])
+        ),
+        "state_answer_allowed_exception_ids_detected": _dedupe(
+            list(data.get("state_answer_allowed_exception_ids_detected") or [])
+        ),
+        "state_answer_public_meta_summary_only": bool(data.get("state_answer_public_meta_summary_only", True)),
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
@@ -660,6 +715,17 @@ def _with_display_gate_trace(
         out["visible_surface_acceptance_gate"] = dict(visible_surface_gate)
     visible_surface_reasons = _dedupe(visible_surface_gate.get("rejection_reasons") if isinstance(visible_surface_gate, Mapping) else [])
     visible_surface_blocks = _visible_surface_gate_blocks(visible_surface_gate)
+    state_answer_runtime_reasons = _dedupe(
+        runtime_surface_gate.get("state_answer_gate_boundary_rejection_reasons")
+        if isinstance(runtime_surface_gate, Mapping)
+        else []
+    )
+    state_answer_visible_reasons = _dedupe(
+        visible_surface_gate.get("state_answer_gate_boundary_rejection_reasons")
+        if isinstance(visible_surface_gate, Mapping)
+        else []
+    )
+    state_answer_boundary_reasons = _dedupe([*state_answer_runtime_reasons, *state_answer_visible_reasons])
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
@@ -686,6 +752,16 @@ def _with_display_gate_trace(
         "visible_surface_acceptance_gate_display_gate_relaxed": False,
         "visible_surface_acceptance_gate_comment_text_body_included": False,
         "visible_surface_acceptance_gate_raw_input_included": False,
+        "state_answer_gate_boundary_runtime_blocked": bool(
+            runtime_surface_gate.get("state_answer_gate_boundary_terminal_surface_block")
+        ) if isinstance(runtime_surface_gate, Mapping) else False,
+        "state_answer_gate_boundary_visible_blocked": bool(
+            visible_surface_gate.get("state_answer_gate_boundary_terminal_surface_block")
+        ) if isinstance(visible_surface_gate, Mapping) else False,
+        "state_answer_gate_boundary_rejection_reasons": state_answer_boundary_reasons,
+        "state_answer_public_meta_summary_only": True,
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
         "display_gate_relaxed": False,
         **binding_fields,
     }

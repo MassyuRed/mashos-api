@@ -18,12 +18,20 @@ make the existing ``current_input`` dict explicit as a typed input bundle:
 The exported ``normalize_emlis_current_input`` function returns the same legacy
 shape that downstream services already consume, but with the fields normalized
 from the typed bundle.  No raw text is added to public metadata here.
+
+Phase 2 of the Cocolon environment/state/output observation structure keeps the
+public contract unchanged and exposes only a text-free internal connection
+summary from this bundle.  The summary verifies that the current input contains
+the materials needed by the later frame builder without materializing the Phase
+3 frame, schema file, or public response fields.
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION = "emlis.current_input_bundle.v1"
+ENVIRONMENT_STATE_OUTPUT_INPUT_CONNECTION_SCHEMA_VERSION = "cocolon.environment_state_output.input_connection.v1"
+ENVIRONMENT_STATE_OUTPUT_CURRENT_INPUT_CONNECTION_PHASE = "Phase2_current_input_bundle_connection"
 
 _STRENGTH_SCORE = {
     "": 0,
@@ -147,6 +155,116 @@ class EmlisCurrentInputBundle:
             "selected_at_present": bool(self.selected_at),
             "source_record_id_present": bool(self.source_record_id),
             "emotion_strength_summary": self.emotion_strength_summary.to_dict(),
+            "environment_state_output_connection": self.to_environment_state_output_connection_summary(),
+        }
+
+    def to_environment_state_output_connection_summary(self) -> Dict[str, Any]:
+        """Return Phase 2 connection material for the environment/state/output design.
+
+        This is deliberately text-free and internal-only.  It proves that the
+        current-input bundle already carries the source fields needed by the
+        Cocolon environment-state-output observation structure, without adding a
+        public response key or creating a full ``environment_state_output_frame``
+        yet.  Phase 3 owns the actual frame builder.
+        """
+
+        state_source_fields: list[str] = []
+        for emotion in self.emotions:
+            source_field = _clean(emotion.source_field) or "emotion_details"
+            if source_field not in state_source_fields:
+                state_source_fields.append(source_field)
+
+        environment_source_fields: list[str] = []
+        if self.categories:
+            environment_source_fields.append("category")
+        if self.action_text:
+            environment_source_fields.append("memo_action")
+
+        output_source_fields: list[str] = []
+        if self.thought_text:
+            output_source_fields.append("memo")
+
+        if self.categories and self.action_text:
+            environment_confidence_kind = "category_plus_action_evidence"
+        elif self.categories:
+            environment_confidence_kind = "category_only_topic_direction"
+        elif self.action_text:
+            environment_confidence_kind = "action_only_environment_evidence"
+        else:
+            environment_confidence_kind = "environment_axis_missing"
+
+        state_confidence_kind = "explicit_emotion_selection" if self.emotions else "state_axis_missing"
+        output_confidence_kind = "thought_text_present" if self.thought_text else "output_axis_missing"
+
+        has_environment_axis_material = bool(environment_source_fields)
+        has_state_axis_material = bool(state_source_fields)
+        has_output_axis_material = bool(output_source_fields)
+
+        return {
+            "schema_version": ENVIRONMENT_STATE_OUTPUT_INPUT_CONNECTION_SCHEMA_VERSION,
+            "phase": ENVIRONMENT_STATE_OUTPUT_CURRENT_INPUT_CONNECTION_PHASE,
+            "bundle_schema_version": self.schema_version,
+            "axis_presence": {
+                "has_environment_axis_material": has_environment_axis_material,
+                "has_state_axis_material": has_state_axis_material,
+                "has_output_axis_material": has_output_axis_material,
+                "has_all_single_record_axes": bool(
+                    has_environment_axis_material
+                    and has_state_axis_material
+                    and has_output_axis_material
+                    and self.selected_at
+                    and self.source_record_id
+                ),
+            },
+            "environment_axis": {
+                "source_fields": environment_source_fields,
+                "category_count": len(self.categories),
+                "has_action_text": bool(self.action_text),
+                "read_as": "topic_direction_plus_action_evidence",
+                "must_not_read_as": ["cause"],
+                "confidence_kind": environment_confidence_kind,
+            },
+            "state_axis": {
+                "source_fields": state_source_fields,
+                "emotion_count": len(self.emotions),
+                "strength_summary_present": bool(self.emotion_strength_summary.max_strength_score or self.emotions),
+                "max_strength_score": self.emotion_strength_summary.max_strength_score,
+                "has_strong": self.emotion_strength_summary.has_strong,
+                "read_as": "state_label",
+                "must_not_read_as": ["diagnosis", "cause"],
+                "confidence_kind": state_confidence_kind,
+            },
+            "output_axis": {
+                "source_fields": output_source_fields,
+                "has_thought_text": bool(self.thought_text),
+                "read_as": "output_content",
+                "must_not_read_as": ["personality_tendency", "period_tendency"],
+                "confidence_kind": output_confidence_kind,
+            },
+            "time_axis": {
+                "selected_at_present": bool(self.selected_at),
+                "source_record_id_present": bool(self.source_record_id),
+                "period_scope": "single_record",
+                "must_not_use_for_period_tendency": True,
+            },
+            "surface_policy": {
+                "public_payload_changed": False,
+                "public_response_key_added": False,
+                "api_route_changed": False,
+                "response_key_changed": False,
+                "db_physical_name_changed": False,
+                "rn_visible_contract_changed": False,
+                "raw_input_included": False,
+                "raw_text_included": False,
+                "comment_text_included": False,
+                "schema_file_materialized": False,
+                "full_frame_built_in_phase2": False,
+                "period_tendency_from_single_record": False,
+                "cause_from_category": False,
+                "cause_from_emotion_strength": False,
+                "personality_tendency_allowed": False,
+                "recovery_prescription_allowed": False,
+            },
         }
 
 
@@ -316,6 +434,8 @@ def normalize_emlis_current_input(current_input: Any) -> Dict[str, Any]:
 
 __all__ = [
     "EMLIS_CURRENT_INPUT_BUNDLE_SCHEMA_VERSION",
+    "ENVIRONMENT_STATE_OUTPUT_INPUT_CONNECTION_SCHEMA_VERSION",
+    "ENVIRONMENT_STATE_OUTPUT_CURRENT_INPUT_CONNECTION_PHASE",
     "EmlisCurrentInputBundle",
     "EmlisEmotionInput",
     "EmlisEmotionStrengthSummary",

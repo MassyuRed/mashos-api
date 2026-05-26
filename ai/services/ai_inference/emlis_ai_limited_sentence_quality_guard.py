@@ -605,6 +605,28 @@ _STEP4_MALFORMED_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...
     ("malformed_nominalization_auxiliary_fragment", re.compile(r"(?:(?<!かも)しれない(?:どれ|どこ|なに|何)?|なっ|し|見え|残っ|重なっ)こと(?:$|[もがはに])")),
     ("malformed_nominalization_te_form_fragment", re.compile(r"(?:なくて|ないで|なれなくて|できなくて|ならなくて|なせなくて|しきれなくて)こと(?:$|[もがはに])")),
     ("malformed_nominalization_tari_fragment", re.compile(r"たりこと(?:$|[もがはにをでへ])")),
+    (
+        "malformed_nominalization_conditional_fragment",
+        re.compile(
+            r"(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと(?:$|[もがはにをでへ])"
+        ),
+    ),
+    (
+        "malformed_nominalization_prediction_noun_fragment",
+        re.compile(r"(?:予感|気配|予定|必要|つもり|はず|可能性|見込み|感じ)こと(?:$|[もがはにをでへ])"),
+    ),
+    (
+        "residual_koto_splice_fragment",
+        re.compile(r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|行かなければ|出なければ|やらなければ|取らなければ)こと|予感こと|気配こと|予定こと|必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ])"),
+    ),
+    (
+        "long_clause_koto_attachment_risk",
+        re.compile(
+            r".{18,}(?:(?:なければ|なきゃ|ないと|しないと|しなくては|せねば)こと|"
+            r"(?:予感|気配|予定|必要|可能性|見込み)こと)(?:$|[もがはにをでへ])"
+        ),
+    ),
     ("malformed_nominalization_unknown_fragment", re.compile(r"しれない(?:どれ|どこ|なに|何)こと(?:$|[もがはに])")),
 )
 _STEP4_MALFORMED_NOMINALIZATION_FLAGS = {code for code, _pattern in _STEP4_MALFORMED_NOMINALIZATION_PATTERNS}
@@ -673,6 +695,10 @@ def phrase_unit_material_flags(
                 "malformed_nominalization_question_fragment",
                 "malformed_nominalization_te_form_fragment",
                 "malformed_nominalization_tari_fragment",
+                "malformed_nominalization_conditional_fragment",
+                "malformed_nominalization_prediction_noun_fragment",
+                "residual_koto_splice_fragment",
+                "long_clause_koto_attachment_risk",
                 "malformed_nominalization_unknown_fragment",
             }:
                 _step4_add_material_reason(reasons, matched, "unfinished_phrase", phrase)
@@ -745,14 +771,18 @@ def judge_phrase_unit_material_quality(
         "broken_nominalized_fragment_blocked": "broken_nominalized_fragment" in rejection_reasons,
         "malformed_nominalization_guard_enabled": True,
         "malformed_phrase_unit_guard_enabled": True,
-        "malformed_nominalization_blocked": any(str(reason).startswith("malformed_nominalization_") for reason in rejection_reasons),
-        "malformed_nominalization_rejection_reasons": [reason for reason in rejection_reasons if str(reason).startswith("malformed_nominalization_")],
+        "malformed_nominalization_blocked": any(str(reason).startswith("malformed_nominalization_") or str(reason) in {"residual_koto_splice_fragment", "long_clause_koto_attachment_risk"} for reason in rejection_reasons),
+        "malformed_nominalization_rejection_reasons": [reason for reason in rejection_reasons if str(reason).startswith("malformed_nominalization_") or str(reason) in {"residual_koto_splice_fragment", "long_clause_koto_attachment_risk"}],
         "malformed_nominalization_temporal_fragment_blocked": "malformed_nominalization_temporal_fragment" in rejection_reasons,
         "malformed_nominalization_adjective_fragment_blocked": "malformed_nominalization_adjective_fragment" in rejection_reasons,
         "malformed_nominalization_question_fragment_blocked": "malformed_nominalization_question_fragment" in rejection_reasons,
         "malformed_nominalization_auxiliary_fragment_blocked": "malformed_nominalization_auxiliary_fragment" in rejection_reasons,
         "malformed_nominalization_te_form_fragment_blocked": "malformed_nominalization_te_form_fragment" in rejection_reasons,
         "malformed_nominalization_tari_fragment_blocked": "malformed_nominalization_tari_fragment" in rejection_reasons,
+        "malformed_nominalization_conditional_fragment_blocked": "malformed_nominalization_conditional_fragment" in rejection_reasons,
+        "malformed_nominalization_prediction_noun_fragment_blocked": "malformed_nominalization_prediction_noun_fragment" in rejection_reasons,
+        "residual_koto_splice_fragment_blocked": "residual_koto_splice_fragment" in rejection_reasons,
+        "long_clause_koto_attachment_risk_blocked": "long_clause_koto_attachment_risk" in rejection_reasons,
         "malformed_nominalization_unknown_fragment_blocked": "malformed_nominalization_unknown_fragment" in rejection_reasons,
         "role": str(role or "").strip(),
         "detected_type": str(detected_type or "").strip(),
@@ -795,6 +825,10 @@ def phrase_unit_material_quality_policy_meta() -> Dict[str, Any]:
         "malformed_nominalization_auxiliary_fragment_guarded": True,
         "malformed_nominalization_te_form_fragment_guarded": True,
         "malformed_nominalization_tari_fragment_guarded": True,
+        "malformed_nominalization_conditional_fragment_guarded": True,
+        "malformed_nominalization_prediction_noun_fragment_guarded": True,
+        "residual_koto_splice_fragment_guarded": True,
+        "long_clause_koto_attachment_risk_guarded": True,
         "malformed_nominalization_unknown_fragment_guarded": True,
         "input_specific_template_used": False,
         "completion_sentence_templates_added": False,

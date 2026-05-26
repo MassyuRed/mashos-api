@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -20,6 +21,12 @@ SAMPLE_MEMO = """
 PASSING_TEXT = (
     "Mashさん、Emlisです。\n"
     "リラックスできて自分のことを優先できる嬉しさと、現実と向き合うダメージが同じ場所で重なっています。\n"
+    "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
+)
+
+SCOPED_PASSING_TEXT = (
+    "Mashさん、Emlisです。\n"
+    "今回の入力では、リラックスできて自分のことを優先できる嬉しさと、現実と向き合うダメージが同じ場所で重なっています。\n"
     "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
 )
 
@@ -68,6 +75,21 @@ def _input(memo: str = SAMPLE_MEMO) -> dict:
 
 def _body_lines(text: str) -> list[str]:
     return [line.strip() for line in str(text or "").splitlines()[1:] if line.strip()]
+
+
+def _public_meta_keys(value) -> set[str]:
+    if isinstance(value, dict):
+        keys: set[str] = set()
+        for key, nested in value.items():
+            keys.add(str(key))
+            keys.update(_public_meta_keys(nested))
+        return keys
+    if isinstance(value, list):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_public_meta_keys(item))
+        return keys
+    return set()
 
 
 class _BoundPassingComposer:
@@ -231,7 +253,12 @@ async def test_step10_e2e_passed_candidate_exposes_comment_text_only_after_displ
     summary = reply.meta["diagnostic_summary"]
     display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
 
-    assert reply.comment_text == PASSING_TEXT
+    candidate = reply.meta["multi_perspective"]["composer_candidate"]
+    completion = candidate["composer_meta"]["environment_state_output_scope_marker_completion"]
+
+    assert reply.comment_text == SCOPED_PASSING_TEXT
+    assert completion["applied"] is True
+    assert completion["display_gate_relaxed"] is False
     assert summary["primary_reason"] == "passed"
     assert display_trace["passed"] is True
     assert display_trace["comment_text_present"] is True
@@ -245,6 +272,72 @@ async def test_step10_e2e_passed_candidate_exposes_comment_text_only_after_displ
     assert step10["binding_count"] == len(_body_lines(PASSING_TEXT))
     assert step10["expected_binding_count"] == len(_body_lines(PASSING_TEXT))
     assert step10["relation_taxonomy_present"] is True
+
+
+@pytest.mark.asyncio
+async def test_phase5_passed_candidate_keeps_public_meta_sanitized(monkeypatch):
+    _clear_limited_composer_env(monkeypatch)
+    from emlis_ai_public_feedback_meta import (
+        build_public_emlis_input_feedback_meta,
+        should_include_public_input_feedback,
+    )
+    from emlis_ai_reply_service import render_emlis_ai_reply
+
+    reply = await render_emlis_ai_reply(
+        user_id="phase5-public-meta-boundary-passed-user",
+        subscription_tier="free",
+        current_input=_input(),
+        display_name="Mash",
+        timezone_name="Asia/Tokyo",
+        composer_client=_BoundPassingComposer(),
+    )
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        reply.meta,
+        comment_text_present=bool(str(reply.comment_text or "").strip()),
+        subscription_tier="free",
+    )
+    input_feedback_payload = None
+    if should_include_public_input_feedback(reply.comment_text, public_meta):
+        input_feedback_payload = {
+            "comment_text": reply.comment_text,
+            "emlis_ai": public_meta,
+        }
+
+    assert reply.comment_text == SCOPED_PASSING_TEXT
+    assert input_feedback_payload is not None
+    assert input_feedback_payload["comment_text"] == SCOPED_PASSING_TEXT
+    assert input_feedback_payload["emlis_ai"]["observation_status"] == "passed"
+
+    boundary = input_feedback_payload["emlis_ai"]["public_feedback_meta_boundary"]
+    assert boundary["sanitized"] is True
+    assert boundary["internal_meta_returned"] is False
+    assert boundary["raw_input_included"] is False
+    assert boundary["comment_text_included"] is False
+
+    public_keys = _public_meta_keys(input_feedback_payload["emlis_ai"])
+    for forbidden_key in (
+        "comment_text",
+        "composer_candidate",
+        "current_input",
+        "environment_state_output_scope_marker_completion",
+        "environment_state_output_surface_contract",
+        "internal_completion_result",
+        "multi_perspective",
+        "raw_input",
+        "text",
+    ):
+        assert forbidden_key not in public_keys
+
+    serialized_public_meta = json.dumps(
+        input_feedback_payload["emlis_ai"],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert SCOPED_PASSING_TEXT not in serialized_public_meta
+    assert PASSING_TEXT not in serialized_public_meta
+    assert "全部無視して普通に生活したい" not in serialized_public_meta
+    assert "binding text must not be copied into diagnostic rows" not in serialized_public_meta
 
 
 @pytest.mark.asyncio

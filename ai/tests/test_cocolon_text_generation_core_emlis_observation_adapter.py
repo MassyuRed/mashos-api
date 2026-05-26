@@ -131,7 +131,7 @@ def test_emlis_observation_adapter_rejects_broken_surface_fail_closed():
 
 
 @pytest.mark.asyncio
-async def test_render_meta_exposes_emlis_observation_common_core(monkeypatch):
+async def test_phase2_render_meta_completes_scope_marker_without_common_core_regression(monkeypatch):
     monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
     from emlis_ai_reply_service import render_emlis_ai_reply
 
@@ -153,11 +153,26 @@ async def test_render_meta_exposes_emlis_observation_common_core(monkeypatch):
 
     multi = reply.meta["multi_perspective"]
     core_meta = multi["text_generation_core"]
-    assert reply.meta["observation_status"] == "passed"
-    assert reply.comment_text
+    candidate = multi["composer_candidate"]
+    completion = candidate["composer_meta"]["environment_state_output_scope_marker_completion"]
+    reason_counter = multi["diagnostic_summary"]["release_ladder_guard"]["reason_counter"]
+
     assert multi["composer_source"] == "ai_generated"
+    assert candidate["status"] == "generated"
+    assert candidate["comment_text"]
+    assert "今回の入力では" in candidate["comment_text"]
+    assert candidate["rejection_reasons"] == []
+    assert completion["applied"] is True
+    assert completion["before_marker_present"] is False
+    assert completion["after_marker_present"] is True
     assert core_meta["adapter_name"] == ADAPTER_NAME
     assert core_meta["passed"] is True
     assert multi["core_text_generation"] == core_meta
     assert multi["phase_gate"]["emlis_observation_composer_adapter_ready"] is True
     assert multi["phase_gate"]["text_generation_core_ready"] is True
+    assert "environment_state_output_scope_marker_missing" not in reason_counter
+    # Phase 6 confirms the completed surface can pass the public display
+    # contract, while the scope-marker repair itself still does not relax gates.
+    assert reply.meta["observation_status"] == "passed"
+    assert reply.comment_text
+    assert "今回の入力では" in reply.comment_text

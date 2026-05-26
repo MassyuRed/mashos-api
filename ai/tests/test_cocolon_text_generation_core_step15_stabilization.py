@@ -193,7 +193,7 @@ def test_step15_detects_emlis_contract_boundary_drift() -> None:
 
 
 @pytest.mark.asyncio
-async def test_step15_render_meta_keeps_passed_only_and_scoped_grounding(monkeypatch) -> None:
+async def test_phase0_step15_render_meta_keeps_common_core_passed_but_public_surface_fail_closed(monkeypatch) -> None:
     monkeypatch.setenv("COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED", "true")
     from emlis_ai_reply_service import render_emlis_ai_reply
 
@@ -215,9 +215,17 @@ async def test_step15_render_meta_keeps_passed_only_and_scoped_grounding(monkeyp
 
     multi = reply.meta["multi_perspective"]
     step15 = multi["step15_common_core_stabilization"]
+    candidate = multi["composer_candidate"]
 
-    assert reply.meta["observation_status"] == "passed"
-    assert reply.comment_text
+    # Phase 6 confirms the completed surface feeds the public display contract
+    # without changing response keys or relaxing the Display Gate.
+    completion = candidate["composer_meta"]["environment_state_output_scope_marker_completion"]
+    assert candidate["status"] == "generated"
+    assert candidate["comment_text"]
+    assert "今回の入力では" in candidate["comment_text"]
+    assert candidate["rejection_reasons"] == []
+    assert completion["applied"] is True
+    assert completion["display_gate_relaxed"] is False
     assert multi["scoped_grounding"]["enabled"] is True
     assert multi["phase_gate"]["comment_text_allowed"] is True
     assert multi["phase_gate"]["step15_common_core_stabilization_ready"] is True
@@ -225,3 +233,6 @@ async def test_step15_render_meta_keeps_passed_only_and_scoped_grounding(monkeyp
     assert step15["passed"] is True
     assert step15["core_specific_contract"]["comment_text_contract"] == "passed_only"
     assert multi["common_core_stabilization"] == step15
+    assert reply.meta["observation_status"] == "passed"
+    assert reply.comment_text
+    assert "今回の入力では" in reply.comment_text

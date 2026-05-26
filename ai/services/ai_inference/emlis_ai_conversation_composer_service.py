@@ -15,6 +15,18 @@ import ast
 import inspect
 from typing import Any, Dict, List, Mapping, Protocol, Sequence, runtime_checkable
 
+from emlis_ai_environment_state_output_surface_contract_completion import (
+    DEFAULT_ENVIRONMENT_STATE_OUTPUT_FORBIDDEN_SURFACE_CLAIMS,
+    DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS,
+    complete_environment_state_output_scope_marker,
+    environment_state_output_surface_rejection_reasons,
+)
+from emlis_ai_state_answer_composer_contract import (
+    attach_state_answer_composer_meta,
+    state_answer_composer_payload_fragment,
+    state_answer_composition_contract_fragment,
+)
+
 from emlis_ai_types import (
     ConversationComposerCandidate,
     EvidenceSpan,
@@ -56,6 +68,9 @@ _RUNTIME_RENDERER_MARKERS = [
     "role_template",
     "static_observation_text",
 ]
+
+_ENV_STATE_OUTPUT_SURFACE_CONTRACT_VERSION = "cocolon.environment_state_output.surface_limited_use.v1"
+_ENV_STATE_OUTPUT_SCOPE_MARKERS = DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS
 
 
 @runtime_checkable
@@ -142,6 +157,84 @@ def _structure_material_payload(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _environment_state_output_frame_from_structure_payload(payload: Mapping[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        return {}
+    frame = payload.get("environment_state_output_frame")
+    return dict(frame) if isinstance(frame, Mapping) else {}
+
+
+def _environment_state_output_surface_contract(structure_payload: Mapping[str, Any] | None) -> Dict[str, Any]:
+    frame = _environment_state_output_frame_from_structure_payload(structure_payload)
+    if not frame:
+        return {}
+    frame_policy = frame.get("frame_policy") if isinstance(frame.get("frame_policy"), Mapping) else {}
+    output_axis = frame.get("output_axis") if isinstance(frame.get("output_axis"), Mapping) else {}
+    environment_axis = frame.get("environment_axis") if isinstance(frame.get("environment_axis"), Mapping) else {}
+    state_axis = frame.get("state_axis") if isinstance(frame.get("state_axis"), Mapping) else {}
+    return {
+        "version": _ENV_STATE_OUTPUT_SURFACE_CONTRACT_VERSION,
+        "connected": True,
+        "material_id": str(frame.get("material_id") or "environment_state_output_frame"),
+        "projection_kind": str(frame.get("projection_kind") or ""),
+        "source_scope": "single_record",
+        "single_record_only": True,
+        "scope_marker_required": True,
+        "required_scope_marker": str(frame_policy.get("scope_marker") or "今回の入力では"),
+        "allowed_scope_markers": list(_ENV_STATE_OUTPUT_SCOPE_MARKERS),
+        "forbidden_surface_claims": list(DEFAULT_ENVIRONMENT_STATE_OUTPUT_FORBIDDEN_SURFACE_CLAIMS),
+        "allowed_surface_claim_strength": "single_observation",
+        "category_labels": list(environment_axis.get("category_labels") or []),
+        "emotion_types": list(state_axis.get("emotion_types") or []),
+        "output_theme_ids": list(output_axis.get("output_theme_ids") or []),
+        "must_not_claim_period_tendency": True,
+        "must_not_claim_personality_type": True,
+        "must_not_claim_diagnosis": True,
+        "must_not_claim_cause_from_category": True,
+        "must_not_claim_cause_from_emotion_strength": True,
+        "must_not_claim_recovery_prescription": True,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "cause_inferred_from_category": False,
+        "cause_inferred_from_emotion_strength": False,
+        "personality_tendency_allowed": False,
+        "diagnosis_allowed": False,
+        "display_gate_relaxed": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_generated": False,
+    }
+
+
+def _environment_state_output_surface_contract_from_payload(payload_or_meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    data = dict(payload_or_meta or {}) if isinstance(payload_or_meta, Mapping) else {}
+    contract = data.get("environment_state_output_surface_contract")
+    if isinstance(contract, Mapping):
+        return dict(contract)
+    structure_payload = data.get("observation_structure_material") or data.get("observation_structure_dictionary")
+    return _environment_state_output_surface_contract(structure_payload if isinstance(structure_payload, Mapping) else None)
+
+
+def _environment_state_output_surface_rejection_reasons(comment_text: Any, payload_or_meta: Mapping[str, Any] | None) -> List[str]:
+    contract = _environment_state_output_surface_contract_from_payload(payload_or_meta)
+    return list(environment_state_output_surface_rejection_reasons(comment_text, contract if contract else None))
+
+
+def _complete_environment_state_output_scope_marker_before_surface_validation(
+    comment_text: str,
+    payload_or_meta: Mapping[str, Any] | None,
+) -> tuple[str, Dict[str, Any], List[str]]:
+    contract = _environment_state_output_surface_contract_from_payload(payload_or_meta)
+    if not contract:
+        return comment_text, {}, []
+
+    completion = complete_environment_state_output_scope_marker(comment_text, contract)
+    completion_meta = completion.as_meta()
+    if completion.action == "reject" or completion.rejection_reasons:
+        return completion.text, completion_meta, list(completion.rejection_reasons)
+    return completion.text, completion_meta, []
+
+
 
 def _merge_structure_material_meta(candidate_meta: Mapping[str, Any] | None, payload: Mapping[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = dict(candidate_meta or {})
@@ -155,6 +248,29 @@ def _merge_structure_material_meta(candidate_meta: Mapping[str, Any] | None, pay
         out["dictionary_returns_completed_reply"] = False
         out["dictionary_must_not_generate_completed_sentence"] = True
         out["comment_text_generated_from_dictionary"] = False
+    eso_contract = payload.get("environment_state_output_surface_contract")
+    if not isinstance(eso_contract, Mapping):
+        eso_contract = _environment_state_output_surface_contract(structure_material if isinstance(structure_material, Mapping) else None)
+    if isinstance(eso_contract, Mapping) and eso_contract:
+        out["environment_state_output_surface_contract"] = dict(eso_contract)
+        out["environment_state_output_frame_limited_use"] = True
+        out["environment_state_output_frame_single_record_only"] = True
+        out["environment_state_output_scope_marker_required"] = bool(eso_contract.get("scope_marker_required", True))
+        out["environment_state_output_allowed_scope_markers"] = list(eso_contract.get("allowed_scope_markers") or [])
+        out["environment_state_output_forbidden_surface_claims"] = list(
+            eso_contract.get("forbidden_surface_claims") or DEFAULT_ENVIRONMENT_STATE_OUTPUT_FORBIDDEN_SURFACE_CLAIMS
+        )
+        out["environment_state_output_allowed_surface_claim_strength"] = str(
+            eso_contract.get("allowed_surface_claim_strength") or "single_observation"
+        )
+        out["environment_state_output_output_theme_ids"] = list(eso_contract.get("output_theme_ids") or [])
+        out["period_tendency_from_single_record"] = False
+        out["recovery_prescription_allowed"] = False
+        out["cause_inferred_from_category"] = False
+        out["cause_inferred_from_emotion_strength"] = False
+        out["personality_tendency_allowed"] = False
+        out["diagnosis_allowed"] = False
+    out = attach_state_answer_composer_meta(out, payload)
     return out
 
 
@@ -296,6 +412,30 @@ def build_conversation_composer_payload(
         payload["composition_contract"]["structure_dictionary_selected_relation_ids"] = list(
             structure_payload.get("selected_relation_ids") or []
         )
+        eso_contract = _environment_state_output_surface_contract(structure_payload)
+        if eso_contract:
+            payload["environment_state_output_surface_contract"] = eso_contract
+            payload["composition_contract"]["environment_state_output_frame_limited_use"] = True
+            payload["composition_contract"]["environment_state_output_single_record_only"] = True
+            payload["composition_contract"]["environment_state_output_scope_marker_required"] = True
+            payload["composition_contract"]["environment_state_output_required_scope_marker"] = eso_contract["required_scope_marker"]
+            payload["composition_contract"]["environment_state_output_allowed_scope_markers"] = list(
+                eso_contract.get("allowed_scope_markers") or []
+            )
+            payload["composition_contract"]["environment_state_output_allowed_surface_claim_strength"] = "single_observation"
+            payload["composition_contract"]["must_not_claim_period_tendency_from_single_record"] = True
+            payload["composition_contract"]["must_not_claim_personality_type"] = True
+            payload["composition_contract"]["must_not_claim_cause_from_category"] = True
+            payload["composition_contract"]["must_not_claim_recovery_prescription"] = True
+            payload["composition_contract"]["environment_state_output_output_theme_ids"] = list(
+                eso_contract.get("output_theme_ids") or []
+            )
+    state_answer_fragment = state_answer_composer_payload_fragment(payload)
+    if state_answer_fragment:
+        payload.update(state_answer_fragment)
+        role_plan = state_answer_fragment.get("state_answer_composer_role_plan")
+        if isinstance(role_plan, Mapping):
+            payload["composition_contract"].update(state_answer_composition_contract_fragment(role_plan))
     return payload
 
 def _extract_text_from_response(response: Mapping[str, Any] | str) -> str:
@@ -403,6 +543,61 @@ def _normalize_ai_response(
             rejection_reasons=["composer_source_not_ai_generated"],
             request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
             response_schema_version=response_schema,
+            composer_model=composer_model,
+            generation_method=generation_method,
+            coverage_scope=coverage_scope,
+            generation_scope=generation_scope,
+            used_claim_ids=used_claim_ids,
+            used_relation_ids=used_relation_ids,
+            fixed_string_renderer_used=fixed_string_renderer_used,
+            composer_meta=composer_meta,
+        )
+
+    (
+        text,
+        completion_meta,
+        completion_reasons,
+    ) = _complete_environment_state_output_scope_marker_before_surface_validation(text, payload)
+    if completion_meta:
+        composer_meta["environment_state_output_scope_marker_completion"] = completion_meta
+        composer_meta["environment_state_output_scope_marker_completion_action"] = str(completion_meta.get("action") or "")
+        if bool(completion_meta.get("applied")):
+            composer_meta["environment_state_output_scope_marker_applied"] = True
+    if completion_reasons:
+        composer_meta["environment_state_output_surface_rejection_reasons"] = list(completion_reasons)
+        composer_meta["environment_state_output_frame_limited_use_rejected"] = True
+        return ConversationComposerCandidate(
+            comment_text="",
+            composer_source=response_source or "ai_generated",
+            status="schema_invalid",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=completion_reasons,
+            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+            response_schema_version=response_schema or _RESPONSE_SCHEMA_VERSION,
+            composer_model=composer_model,
+            generation_method=generation_method,
+            coverage_scope=coverage_scope,
+            generation_scope=generation_scope,
+            used_claim_ids=used_claim_ids,
+            used_relation_ids=used_relation_ids,
+            fixed_string_renderer_used=fixed_string_renderer_used,
+            composer_meta=composer_meta,
+        )
+
+    environment_state_output_reasons = _environment_state_output_surface_rejection_reasons(text, payload)
+    if environment_state_output_reasons:
+        composer_meta["environment_state_output_surface_rejection_reasons"] = list(environment_state_output_reasons)
+        composer_meta["environment_state_output_frame_limited_use_rejected"] = True
+        return ConversationComposerCandidate(
+            comment_text="",
+            composer_source=response_source or "ai_generated",
+            status="schema_invalid",
+            trace_id=trace_id,
+            attempt_count=attempt_count,
+            rejection_reasons=environment_state_output_reasons,
+            request_schema_version=str(payload.get("schema_version") or _REQUEST_SCHEMA_VERSION),
+            response_schema_version=response_schema or _RESPONSE_SCHEMA_VERSION,
             composer_model=composer_model,
             generation_method=generation_method,
             coverage_scope=coverage_scope,

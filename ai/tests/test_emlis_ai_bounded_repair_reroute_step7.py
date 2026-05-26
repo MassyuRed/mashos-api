@@ -8,6 +8,7 @@ import pytest
 from emlis_ai_bounded_repair_reroute import (
     ACTION_NO_REPAIR,
     BOUNDED_REPAIR_REROUTE_VERSION,
+    ACTION_RERENDER_SURFACE,
     ACTION_RERENDER_SHALLOW_V2,
     ACTION_REROUTE_LOW_INFORMATION,
     ACTION_BLOCK,
@@ -16,6 +17,11 @@ from emlis_ai_bounded_repair_reroute import (
 )
 from emlis_ai_reply_service import _regeneration_reasons_for_retry
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
+from emlis_ai_visible_surface_acceptance_gate import (
+    ACTION_RERENDER_SURFACE as VISIBLE_ACTION_RERENDER_SURFACE,
+    CLASSIFICATION_REPAIR_REQUIRED,
+    build_visible_surface_acceptance_gate_report,
+)
 from emlis_ai_types import DisplayDecision
 from fixtures.emlis_ai_runtime_surface_red_fixtures import RUNTIME_SURFACE_BASELINE_RED_FIXTURES
 
@@ -37,6 +43,24 @@ def _decision_from_report(report: dict[str, object], *extra_reasons: str) -> Dis
         comment_text="",
         rejection_reasons=reasons,
         gate_trace={"runtime_surface_pre_return_gate": report},
+    )
+
+
+def _decision_from_visible_report(report: dict[str, object], *extra_reasons: str) -> DisplayDecision:
+    action = str(report.get("action") or "")
+    classification = str(report.get("classification") or "")
+    reasons = [
+        "visible_surface_acceptance_gate_failed",
+        *[str(reason) for reason in list(report.get("rejection_reasons") or [])],
+        *( [f"visible_surface_acceptance_gate_action_{action}"] if action else [] ),
+        *( [f"visible_surface_acceptance_gate_classification_{classification}"] if classification else [] ),
+        *extra_reasons,
+    ]
+    return DisplayDecision(
+        observation_status="rejected",
+        comment_text="",
+        rejection_reasons=reasons,
+        gate_trace={"visible_surface_acceptance_gate": report},
     )
 
 
@@ -215,3 +239,78 @@ def test_step7_empty_placeholder_surface_fail_closed_without_candidate_is_not_a_
     assert meta["display_gate_relaxed"] is False
     assert meta["comment_text_body_included"] is False
     assert_bounded_repair_reroute_meta_only(meta)
+
+
+def test_step6_visible_surface_rerender_enters_one_bounded_repair_loop() -> None:
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text="Emlisです。\n今は、不安の重さが先に出ているように見えます。",
+        selected_emotions=(("悲しみ", "medium"), ("不安", "medium")),
+        rerender_allowed=True,
+        rerender_attempted=False,
+    )
+
+    decision = decide_bounded_repair_reroute(
+        display_decision=_decision_from_visible_report(report),
+        composer_source="ai_generated",
+        visible_surface_acceptance_gate_report=report,
+    )
+
+    assert report["classification"] == CLASSIFICATION_REPAIR_REQUIRED
+    assert report["action"] == VISIBLE_ACTION_RERENDER_SURFACE
+    assert decision.action == ACTION_RERENDER_SURFACE
+    assert decision.surface_rerender_allowed is True
+    assert decision.shallow_v2_rerender_allowed is False
+    assert decision.rerender_attempt_limit == 1
+    assert decision.visible_surface_gate_evaluated is True
+    assert decision.visible_surface_gate_action == VISIBLE_ACTION_RERENDER_SURFACE
+    assert "bounded_visible_surface_rerender_required" in decision.repair_reasons
+    meta = decision.as_meta()
+    assert meta["visible_surface_gate_evaluated"] is True
+    assert meta["surface_rerender_allowed"] is True
+    assert meta["display_gate_relaxed"] is False
+    assert meta["comment_text_body_included"] is False
+    assert meta["raw_input_included"] is False
+    assert "不安の重さ" not in str(meta)
+    assert_bounded_repair_reroute_meta_only(meta)
+
+
+def test_step6_visible_surface_rerender_attempt_limit_remains_one_and_second_failure_blocks() -> None:
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text="Emlisです。\n今は、不安の重さが先に出ているように見えます。",
+        selected_emotions=(("悲しみ", "medium"), ("不安", "medium")),
+        rerender_allowed=True,
+        rerender_attempted=True,
+    )
+
+    decision = decide_bounded_repair_reroute(
+        display_decision=_decision_from_visible_report(report),
+        composer_source="ai_generated",
+        visible_surface_acceptance_gate_report=report,
+    )
+
+    assert decision.rerender_attempted is True
+    assert decision.rerender_attempt_limit == 1
+    assert decision.action in {ACTION_BLOCK, "fail_closed"}
+    assert decision.surface_rerender_allowed is False
+    assert "bounded_surface_repair_not_available" in decision.blocked_reasons
+    meta = decision.as_meta()
+    assert meta["surface_rerender_allowed"] is False
+    assert meta["display_gate_relaxed"] is False
+    assert "不安の重さ" not in str(meta)
+    assert_bounded_repair_reroute_meta_only(meta)
+
+
+def test_step6_limited_composer_consumes_visible_surface_rerender_reason_for_retry() -> None:
+    retry_reasons = _regeneration_reasons_for_retry(
+        [
+            "phase_not_complete",
+            "visible_surface_acceptance_gate_failed",
+            "visible_surface_acceptance_gate_action_rerender_surface",
+            "surface_relation_skeleton_major",
+        ],
+        DummyLimitedComposerClient(),
+    )
+
+    assert retry_reasons == [
+        "visible_surface_acceptance_gate_action_rerender_surface",
+    ]

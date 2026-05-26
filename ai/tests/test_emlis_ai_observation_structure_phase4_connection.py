@@ -14,8 +14,17 @@ from emlis_ai_observation_structure_material_service import (
     OBSERVATION_STRUCTURE_MATERIAL_PHASE,
     assert_observation_structure_material_contract,
     build_observation_structure_material,
+    observation_structure_material_composer_payload,
     observation_structure_material_forward_meta,
     observation_structure_material_gate_report,
+)
+from emlis_ai_observation_structure_connection_service import (
+    build_observation_structure_connection,
+    observation_structure_connection_forward_composer_meta,
+)
+from cocolon_environment_state_output_frame import (
+    ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID,
+    ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION,
 )
 from emlis_ai_types import (
     AddresseeNotes,
@@ -83,6 +92,75 @@ def test_phase4_material_selects_state_text_gap_without_raw_text_or_completed_re
     assert "commentText" not in dumped
     assert '"comment_text_generated": false' in dumped
     assert '"raw_text_included": false' in dumped
+
+
+def test_phase4_material_carries_environment_state_output_frame_projection_only() -> None:
+    current_input = {
+        "id": "emo-eso-phase4-1",
+        "created_at": "2026-05-25T04:00:00Z",
+        "memo": "この職場でやっていけるか不安",
+        "memo_action": "職場で新しい仕事を任された",
+        "emotion_details": [{"type": "不安", "strength": "medium"}],
+        "category": ["仕事"],
+    }
+
+    material = build_observation_structure_material(current_input=current_input)
+    meta = material.as_meta()
+    composer_payload = observation_structure_material_composer_payload(material)
+    frame = meta["environment_state_output_frame"]
+    encoded = json.dumps(composer_payload, ensure_ascii=False, sort_keys=True)
+
+    assert meta["environment_state_output_frame_connected"] is True
+    assert meta["environment_state_output_frame_material_id"] == ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID
+    assert meta["environment_state_output_frame_schema_version"] == ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION
+    assert meta["environment_state_output_frame_single_record_only"] is True
+    assert frame["projection_kind"] == "phase4_gate_composer_safe_projection"
+    assert frame["axis_presence"]["has_all_single_record_axes"] is True
+    assert frame["environment_axis"]["category_labels"] == ["仕事"]
+    assert frame["state_axis"]["emotion_types"] == ["不安"]
+    assert "continuation_concern" in frame["output_axis"]["output_theme_ids"]
+    assert frame["time_axis"]["period_scope"] == "single_record"
+    assert frame["frame_policy"]["single_record_only"] is True
+    assert frame["frame_policy"]["period_tendency_from_single_record"] is False
+    assert frame["frame_policy"]["recovery_prescription_allowed"] is False
+    assert composer_payload["environment_state_output_frame_connected"] is True
+    assert composer_payload["period_tendency_from_single_record"] is False
+    assert composer_payload["recovery_prescription_allowed"] is False
+    assert "surface_policy" not in encoded
+    assert "この職場でやっていけるか不安" not in encoded
+    assert "職場で新しい仕事を任された" not in encoded
+    assert '"comment_text_generated": false' in encoded
+    assert_observation_structure_material_contract(meta)
+
+
+def test_phase4_connection_exposes_environment_state_output_summary_without_public_surface() -> None:
+    current_input = {
+        "id": "emo-eso-phase4-2",
+        "created_at": "2026-05-25T05:00:00Z",
+        "memo": "この職場でやっていけるか不安",
+        "memo_action": "職場で新しい仕事を任された",
+        "emotion_details": [{"type": "不安", "strength": "medium"}],
+        "category": ["仕事"],
+    }
+
+    connection = build_observation_structure_connection(current_input=current_input)
+    meta = connection.as_meta()
+    composer_meta = observation_structure_connection_forward_composer_meta(connection)
+    encoded = json.dumps(composer_meta, ensure_ascii=False, sort_keys=True)
+
+    assert meta["environment_state_output_frame_connected"] is True
+    assert meta["environment_state_output_frame_material_id"] == ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID
+    assert meta["environment_state_output_frame_single_record_only"] is True
+    assert meta["period_tendency_from_single_record"] is False
+    assert meta["recovery_prescription_allowed"] is False
+    assert "continuation_concern" in meta["environment_state_output_frame_output_theme_ids"]
+    assert composer_meta["environment_state_output_frame_connected"] is True
+    assert composer_meta["environment_state_output_frame_single_record_only"] is True
+    assert composer_meta["period_tendency_from_single_record"] is False
+    assert composer_meta["recovery_prescription_allowed"] is False
+    assert "この職場でやっていけるか不安" not in encoded
+    assert "職場で新しい仕事を任された" not in encoded
+    assert '"comment_text_generated": false' in encoded
 
 
 def test_phase4_material_distinguishes_category_parallel_and_overlap() -> None:
@@ -169,6 +247,8 @@ def test_phase4_composer_payload_receives_dictionary_material_only() -> None:
     assert payload["observation_structure_material"]["dictionary_is_observation_material_only"] is True
     assert payload["observation_structure_material"]["dictionary_returns_completed_reply"] is False
     assert "state_text_gap" in payload["observation_structure_material"]["selected_relation_ids"]
+    assert payload["observation_structure_material"]["environment_state_output_frame_connected"] is True
+    assert payload["observation_structure_material"]["environment_state_output_frame"]["material_id"] == ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID
 
     client = _EchoComposerClient()
     candidate = compose_emlis_conversation_candidate(
@@ -219,6 +299,7 @@ def test_phase4_display_gate_trace_receives_structure_gate_report_without_relaxi
     assert decision.gate_trace["observation_structure"]["selected_relation_ids"]
     assert "state_text_gap" in decision.gate_trace["observation_structure"]["selected_relation_ids"]
     assert decision.gate_trace["observation_structure"]["display_gate_relaxed"] is False
+    assert decision.gate_trace["observation_structure"]["environment_state_output_frame_connected"] is True
     assert decision.gate_trace["display_gate"]["display_gate_relaxed"] is False
 
 

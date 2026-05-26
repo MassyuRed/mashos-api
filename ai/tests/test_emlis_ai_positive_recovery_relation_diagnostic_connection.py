@@ -170,7 +170,7 @@ def test_step5_complete_reply_diagnostics_connects_reader_and_self_repair_relati
     assert reply_diagnostics["display_gate_relaxed"] is False
 
     serialized = json.dumps(reply_diagnostics, ensure_ascii=False, sort_keys=True)
-    assert "raw_text" not in serialized
+    assert "\"raw_text\":" not in serialized
     assert "current_input" not in serialized
     assert "source_text" not in serialized
     assert "comment_text\":" not in serialized

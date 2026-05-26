@@ -290,3 +290,155 @@ def test_lockdown_log_classifies_rejected_grounding_without_text_payload(monkeyp
     assert record["comment_text_length"] == 0
     assert record["classification"] == "candidate_generated_but_grounding_rejected"
     assert "raw input key" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_step7_lockdown_log_classifies_koto_splice_public_feedback_absent(monkeypatch, caplog) -> None:
+    _clear_diagnostic_env(monkeypatch)
+    monkeypatch.setenv("EMLIS_AI_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED", "1")
+    caplog.set_level(logging.INFO)
+    visible_comment = "これはログへ出してはいけないEmlis観測本文です"
+    raw_memo = "これはログへ出してはいけない入力本文です"
+
+    async def fake_render_reply(**_kwargs):
+        return SimpleNamespace(
+            comment_text=visible_comment,
+            meta={
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
+                "tier": "free",
+                "observation_status": "passed",
+                "observation_trace_id": "emlisobs-step7-koto-splice",
+                "diagnostic_summary": {
+                    "stage": "display",
+                    "primary_reason": "visible_surface_acceptance_gate_failed",
+                    "coverage_group": "mixed",
+                    "composer_status": "generated",
+                    "composer_source": "ai_generated",
+                    "gate_results": {
+                        "reader": {"passed": True},
+                        "grounding": {"passed": True},
+                        "template_echo": {"passed": True},
+                        "display": {"passed": False, "primary_reason": "visible_surface_acceptance_gate_failed"},
+                    },
+                },
+                "visible_surface_acceptance_gate": {
+                    "evaluated": True,
+                    "passed": False,
+                    "classification": "red",
+                    "action": "rerender_surface",
+                    "rejection_reasons": [
+                        "malformed_phrase_unit",
+                        "malformed_nominalization_conditional_fragment",
+                        "residual_koto_splice_fragment",
+                    ],
+                    "koto_splice_detected": True,
+                    "koto_splice_codes": ["malformed_nominalization_conditional_fragment"],
+                    "raw_input_included": False,
+                    "comment_text_body_included": False,
+                    "display_gate_relaxed": False,
+                    "comment_text": visible_comment,
+                    "raw_input": raw_memo,
+                },
+                "comment_text": visible_comment,
+                "raw_input": raw_memo,
+            },
+        )
+
+    _patch_persist_baseline(monkeypatch, render_reply=fake_render_reply)
+
+    result = await service.persist_emotion_submission(
+        user_id="user-1",
+        emotions=["neutral"],
+        memo=raw_memo,
+        memo_action=None,
+        category=["daily"],
+    )
+
+    public_meta = result["input_feedback_meta"]
+    assert public_meta["visible_surface_acceptance_gate"]["koto_splice_detected"] is True
+    records = _lockdown_records(caplog)
+    assert len(records) == 1
+    record = records[0]
+    assert record["trace_id"] == "emlisobs-step7-koto-splice"
+    assert record["classification"] == "candidate_blocked_koto_splice"
+    assert record["candidate_blocked_koto_splice"] is True
+    assert record["candidate_blocked_surface_grammar"] is True
+    assert record["candidate_fail_closed_display_absent"] is True
+    assert record["rn_payload_absent"] is True
+    assert record["public_feedback_not_included_visible_surface_gate"] is True
+    assert visible_comment not in caplog.text
+    assert raw_memo not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_phase5_persist_returns_empty_public_comment_for_non_passed_reply(monkeypatch, caplog) -> None:
+    _clear_diagnostic_env(monkeypatch)
+    monkeypatch.setenv("EMLIS_AI_OBSERVATION_DIAGNOSTIC_LOCKDOWN_LOG_ENABLED", "1")
+    caplog.set_level(logging.INFO)
+    blocked_comment = "これはpublic responseへ出してはいけない非passed観測本文です"
+    raw_memo = "これはpublic responseへ出してはいけない入力本文です"
+
+    async def fake_render_reply(**_kwargs):
+        return SimpleNamespace(
+            comment_text=blocked_comment,
+            meta={
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
+                "observation_status": "rejected",
+                "observation_trace_id": "emlisobs-phase5-non-passed-comment",
+                "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+                "diagnostic_summary": {
+                    "stage": "display",
+                    "primary_reason": "environment_state_output_scope_marker_missing",
+                    "coverage_group": "low_information",
+                    "composer_status": "generated",
+                    "composer_source": "ai_generated",
+                    "gate_results": {
+                        "reader": {"passed": True, "primary_reason": "passed"},
+                        "display": {"passed": False, "primary_reason": "environment_state_output_scope_marker_missing"},
+                    },
+                },
+                "runtime_surface_pre_return_gate": {
+                    "passed": False,
+                    "action": "block",
+                    "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+                    "candidate_comment_text": blocked_comment,
+                    "raw_input": raw_memo,
+                },
+                "comment_text": blocked_comment,
+                "raw_input": raw_memo,
+            },
+        )
+
+    _patch_persist_baseline(monkeypatch, render_reply=fake_render_reply)
+
+    result = await service.persist_emotion_submission(
+        user_id="user-1",
+        emotions=["neutral"],
+        memo=raw_memo,
+        memo_action=None,
+        category=["daily"],
+    )
+
+    assert result["input_feedback_comment"] == ""
+    public_meta = result["input_feedback_meta"]
+    assert public_meta["observation_status"] == "rejected"
+    assert public_meta["runtime_surface_pre_return_gate"] == {
+        "passed": False,
+        "action": "block",
+        "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+    }
+
+    records = _lockdown_records(caplog)
+    assert len(records) == 1
+    record = records[0]
+    assert record["trace_id"] == "emlisobs-phase5-non-passed-comment"
+    assert record["classification"] in {
+        "public_feedback_not_included_non_passed",
+        "candidate_blocked_surface_grammar",
+        "surface_quality_blocked",
+        "candidate_generated_but_display_rejected",
+    }
+    assert blocked_comment not in caplog.text
+    assert raw_memo not in caplog.text

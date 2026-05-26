@@ -31,6 +31,12 @@ _MALFORMED_CASES = (
     ("見たりこと", "malformed_nominalization_tari_fragment"),
     ("無理に変えようとしたりこともあり", "malformed_nominalization_tari_fragment"),
     ("やろうとしたりこと", "malformed_nominalization_tari_fragment"),
+    ("コス仲間とのコミュニケーションも取らなければことも加わっていて", "malformed_nominalization_conditional_fragment"),
+    ("予定ことも近くにあります", "malformed_nominalization_prediction_noun_fragment"),
+    ("キャパオーバーしそうな予感こともあり", "malformed_nominalization_prediction_noun_fragment"),
+    ("予感ことも近くにあります", "malformed_nominalization_prediction_noun_fragment"),
+    ("今の不安と予定ことも加わっていて", "malformed_nominalization_prediction_noun_fragment"),
+    ("ことことも残っています", "residual_koto_splice_fragment"),
 )
 
 
@@ -108,6 +114,11 @@ def test_step3_guard_keeps_safe_nominalizations_and_safe_stem_repair() -> None:
     safe_tari_action = normalize_phrase_unit_grammar("考えたりすること", role="current_expression", must_keep=False)
     safe_tari_pair = judge_phrase_unit_material_quality("見たり聞いたりすること", raw_text="見たり聞いたりすること", role="current_expression", source_field="memo")
     safe_non_tari_nominalization = judge_phrase_unit_material_quality("無理に変えようとしたこと", raw_text="無理に変えようとしたこと", role="current_expression", source_field="memo")
+    safe_felt = judge_phrase_unit_material_quality("感じたこと", raw_text="感じたこと", role="current_expression", source_field="memo")
+    safe_needed = judge_phrase_unit_material_quality("必要なこと", raw_text="必要なこと", role="current_expression", source_field="memo")
+    safe_schedule = normalize_phrase_unit_grammar("予定のこと", role="current_expression", must_keep=False)
+    safe_prediction = judge_phrase_unit_material_quality("予感があること", raw_text="予感があること", role="current_expression", source_field="memo")
+    safe_obligation = normalize_phrase_unit_grammar("しなければならないこと", role="current_expression", must_keep=False)
 
     assert safe_keep.action == KEEP
     assert safe_keep.normalized_text == "好きなこと"
@@ -118,6 +129,53 @@ def test_step3_guard_keeps_safe_nominalizations_and_safe_stem_repair() -> None:
     assert safe_tari_action.normalized_text == "考えたりすること"
     assert safe_tari_pair["passed"] is True
     assert safe_non_tari_nominalization["passed"] is True
+    assert safe_felt["passed"] is True
+    assert safe_needed["passed"] is True
+    assert safe_schedule.action == KEEP
+    assert safe_schedule.normalized_text == "予定のこと"
+    assert safe_prediction["passed"] is True
+    assert safe_obligation.action == KEEP
+    assert safe_obligation.normalized_text == "しなければならないこと"
+
+
+def test_step2_guard_blocks_residual_koto_splice_and_long_bad_attachment() -> None:
+    residual = judge_phrase_unit_material_quality(
+        "ことことも残っています",
+        raw_text="ことことも残っています",
+        role="current_expression",
+        source_field="memo",
+    )
+    long_bad = judge_phrase_unit_material_quality(
+        "趣味のVRCでのイベントキャストにも顔を出してコス仲間とのコミュニケーションも取らなければことも加わっていて",
+        raw_text="趣味のVRCでのイベントキャストにも顔を出してコス仲間とのコミュニケーションも取らなければことも加わっていて",
+        role="current_expression",
+        source_field="memo",
+        max_quote_chars=180,
+    )
+    normalized = normalize_phrase_unit_grammar(
+        "趣味のVRCでのイベントキャストにも顔を出してコス仲間とのコミュニケーションも取らなければことも加わっていて",
+        role="current_expression",
+        must_keep=False,
+    )
+
+    assert residual["passed"] is False
+    assert "residual_koto_splice_fragment" in residual["quality_flags"]
+    assert "residual_koto_splice_fragment" in residual["rejection_reasons"]
+    assert residual["residual_koto_splice_fragment_blocked"] is True
+    assert residual["malformed_nominalization_blocked"] is True
+
+    assert long_bad["passed"] is False
+    assert "malformed_nominalization_conditional_fragment" in long_bad["quality_flags"]
+    assert "residual_koto_splice_fragment" in long_bad["quality_flags"]
+    assert "long_clause_koto_attachment_risk" in long_bad["quality_flags"]
+    assert "long_clause_koto_attachment_risk" in long_bad["rejection_reasons"]
+    assert long_bad["long_clause_koto_attachment_risk_blocked"] is True
+    assert long_bad["residual_koto_splice_fragment_blocked"] is True
+
+    assert normalized.action == DROP
+    assert "malformed_nominalization_conditional_fragment" in normalized.warning_codes
+    assert "residual_koto_splice_fragment" in normalized.warning_codes
+    assert "long_clause_koto_attachment_risk" in normalized.warning_codes
 
 
 def test_step3_complete_material_service_defers_must_keep_malformed_phrase_unit_without_dropping_contract() -> None:
@@ -159,8 +217,16 @@ def test_step3_contract_meta_reports_guard_without_public_contract_changes() -> 
 
     assert material_meta["malformed_nominalization_guard_enabled"] is True
     assert material_meta["malformed_nominalization_tari_fragment_guarded"] is True
+    assert material_meta["malformed_nominalization_conditional_fragment_guarded"] is True
+    assert material_meta["malformed_nominalization_prediction_noun_fragment_guarded"] is True
+    assert material_meta["residual_koto_splice_fragment_guarded"] is True
+    assert material_meta["long_clause_koto_attachment_risk_guarded"] is True
     assert normalizer_meta["malformed_nominalization_guard_enabled"] is True
     assert normalizer_meta["malformed_nominalization_tari_fragment_guard_enabled"] is True
+    assert normalizer_meta["malformed_nominalization_conditional_fragment_guard_enabled"] is True
+    assert normalizer_meta["malformed_nominalization_prediction_noun_fragment_guard_enabled"] is True
+    assert normalizer_meta["residual_koto_splice_fragment_guard_enabled"] is True
+    assert normalizer_meta["long_clause_koto_attachment_risk_guard_enabled"] is True
     assert normalizer_meta["safe_nominalization_guard_enabled"] is True
     assert normalizer_meta["gate_relaxed"] is False
     assert normalizer_meta["public_response_key_change"] is False

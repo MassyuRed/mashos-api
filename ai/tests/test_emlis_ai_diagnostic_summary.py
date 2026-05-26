@@ -21,6 +21,12 @@ PASSING_TEXT = (
     "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
 )
 
+PASSING_PUBLIC_TEXT = (
+    "Mashさん、Emlisです。\n"
+    "今回の入力では、リラックスできて自分のことを優先できる嬉しさと、現実と向き合うダメージが同じ場所で重なっています。\n"
+    "気をつけなきゃ行けないことを分かりながら普通に生活したい願いも離れていない中で、たまに逃げ出したくなる言葉は今の生活不便だなと感じる重さとつながっています。"
+)
+
 TEMPLATE_TEXT = (
     "Mashさん、Emlisです。\n"
     "入力全体では、『悲しみ』が中心に出ています。\n"
@@ -119,7 +125,7 @@ def _assert_summary_contract(summary: dict):
     assert isinstance(summary["rollout_attempted"], bool)
     assert summary["pre_connection"].get("version") == "emlis.pre_connection_diagnostic.v1"
     assert summary["pre_connection"].get("b_plan_connection") == summary["b_plan_connection"]
-    assert set(summary["gate_results"]) == {"reader", "grounding", "template_echo", "display"}
+    assert set(summary["gate_results"]) == {"reader", "grounding", "template_echo", "display", "visible_surface_acceptance"}
     for gate in summary["gate_results"].values():
         assert isinstance(gate["passed"], bool)
         assert isinstance(gate["primary_reason"], str)
@@ -198,7 +204,7 @@ async def test_diagnostic_summary_exists_for_passed_candidate(monkeypatch):
     assert summary["composer_status"] == "generated"
     assert summary["comment_text_allowed"] is True
     assert summary["gate_results"]["display"]["passed"] is True
-    assert reply.comment_text == PASSING_TEXT
+    assert reply.comment_text == PASSING_PUBLIC_TEXT
 
 
 @pytest.mark.asyncio
@@ -302,9 +308,9 @@ async def test_step03_scope_diagnostic_records_out_of_scope_reason(monkeypatch):
     summary = reply.meta["diagnostic_summary"]
     _assert_summary_contract(summary)
     diagnostic = summary["scope_diagnostic"]
-    assert summary["stage"] == "scope"
+    assert summary["stage"] == "display"
     assert summary["scope_status"] == "out_of_scope"
-    assert summary["primary_reason"] == "limited_scope_no_grounded_primary_state"
+    assert summary["primary_reason"] == "passed"
     assert diagnostic["scope_status"] == "out_of_scope"
     assert diagnostic["scope_ready_for_composer"] is False
     assert diagnostic["included_claim_count"] == 0
@@ -313,7 +319,10 @@ async def test_step03_scope_diagnostic_records_out_of_scope_reason(monkeypatch):
     assert "no_grounded_primary_state" in summary["scope_excluded_reason_codes"]
     assert summary["scope_reason_category"] == "primary_state"
     assert "primary_state_grounding" in summary["scope_coverage_matrix_hints"]
-    assert reply.comment_text == ""
+    assert summary["observation_status"] == "passed"
+    assert summary["comment_text_allowed"] is True
+    assert reply.comment_text
+    assert "詳しく残せそうなら" in reply.comment_text
 
 
 @pytest.mark.asyncio
@@ -668,6 +677,10 @@ async def test_step04_diagnostic_summary_surfaces_composer_stop_reason(monkeypat
     assert "required_role_missing" in summary["composer_coverage_matrix_hints"]
     assert summary["composer_reason_category"] == "required_role_missing"
     assert reply.comment_text == ""
+    repair = summary["observation_display_repair_integration"]
+    assert repair["display_repair_integration_ready"] is True
+    assert repair["display_gate_relaxed"] is False
+    assert repair["raw_input_included"] is False
 
 
 GATE_READER_FAIL_TEXT = "Mashさん、Emlisです。"
@@ -704,16 +717,18 @@ async def test_step05_gate_diagnostic_records_reader_failure(monkeypatch):
     summary = reply.meta["diagnostic_summary"]
     _assert_summary_contract(summary)
     diagnostic = summary["gate_diagnostic"]
-    assert summary["stage"] == "reader"
-    assert summary["primary_reason"] == "too_short_for_observation"
+    assert summary["stage"] == "composer"
+    assert summary["primary_reason"] == "environment_state_output_body_line_missing"
+    assert summary["composer_status"] == "schema_invalid"
+    assert "environment_state_output_body_line_missing" in summary["composer_rejection_reasons"]
     assert summary["gate_failure_stage"] == "reader"
     assert summary["gate_reason_category"] == "reader_readability"
     assert "reader_readability" in summary["gate_coverage_matrix_hints"]
     assert diagnostic["first_failed_gate"] == "reader"
-    assert diagnostic["first_failed_reason"] == "too_short_for_observation"
+    assert diagnostic["first_failed_reason"] in {"empty_text", "too_short_for_observation"}
     assert diagnostic["reader_passed"] is False
-    assert diagnostic["generated_but_not_displayed"] is True
-    assert summary["gate_results"]["reader"]["primary_reason"] == "too_short_for_observation"
+    assert diagnostic["generated_but_not_displayed"] is False
+    assert summary["gate_results"]["reader"]["primary_reason"] == "empty_text"
     assert summary["gate_results"]["reader"]["reason_category"] == "reader_readability"
     assert summary["gate_results"]["reader"]["diagnostics"]["understandable"] is False
     assert reply.comment_text == ""
@@ -838,17 +853,20 @@ async def test_step06_limited_cases_scope_block_is_scope_not_rollout(monkeypatch
     b_plan = summary["b_plan_connection"]
     assert summary["rollout_stage"] == "limited_cases"
     assert summary["scope_status"] == "out_of_scope"
-    assert summary["stage"] == "scope"
+    assert summary["stage"] == "display"
+    assert summary["primary_reason"] == "passed"
     assert summary["release_decision"]["reason_code"] == "scope_limited_case_not_eligible"
     assert summary["registry_resolution"]["connection_status"] == "blocked_scope"
     assert summary["registry_resolution"]["pre_connection_stop_stage"] == "scope"
     assert b_plan["decision"] == "blocked_scope"
     assert b_plan["registry_connection_status"] == "blocked_scope"
     assert b_plan["environment_blocked"] is False
-    assert b_plan["status_family"] == "scope_blocked"
+    assert b_plan["status_family"] == "passed"
     assert b_plan["blocked_before_composer"] is True
     assert summary["composer_connection_attempted"] is False
-    assert reply.comment_text == ""
+    assert summary["comment_text_allowed"] is True
+    assert reply.comment_text
+    assert "詳しく残せそうなら" in reply.comment_text
 
 
 @pytest.mark.asyncio

@@ -175,6 +175,7 @@ async def test_step3_reply_meta_exposes_candidate_gate_repair_for_lockdown_witho
         "candidate_generated_but_grounding_rejected",
         "candidate_generated_but_template_rejected",
         "candidate_generated_but_display_rejected",
+        "public_feedback_not_included_empty_comment_text",
         "passed_displayed",
     }
     assert record["raw_input_included"] is False

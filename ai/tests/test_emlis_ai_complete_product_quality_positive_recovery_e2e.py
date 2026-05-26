@@ -24,8 +24,15 @@ _RELATION_MISSING_TEXT = "\n".join(
 _RELATION_REPAIRED_TEXT = "\n".join(
     [
         "Emlisです。",
-        "疲れのあとにも、小さな回復が少し戻ってきています。",
-        "戻ってくる動きと、その前の重さが同じ流れの中でつながっています。",
+        "今回の入力では、疲れのあとにも、小さな回復が少し戻ってきています。",
+        "戻ってくる動きとその前の重さが同じ流れの中でつながっています。",
+    ]
+)
+_RELATION_REPAIRED_PUBLIC_TEXT = "\n".join(
+    [
+        "Emlisです。",
+        "今回の入力では、疲れのあとにも、小さな回復が少し戻ってきています。",
+        "戻ってくる動きとその前の重さが同じ流れの中でつながっています。",
     ]
 )
 _FORBIDDEN_RAW_KEYS = {
@@ -285,7 +292,7 @@ async def test_step6_positive_recovery_e2e_repairs_reader_relation_not_expressed
     assert "recovery_load_bridge" in reader_gate["reader_relation_signal_keys"]
 
     if reply.meta["observation_status"] == "passed":
-        assert reply.comment_text == _RELATION_REPAIRED_TEXT
+        assert reply.comment_text == _RELATION_REPAIRED_PUBLIC_TEXT
         assert diagnostic["primary_reason"] == "passed"
         assert grounding_gate["passed"] is True
         assert display_gate["passed"] is True
@@ -314,6 +321,7 @@ async def test_step6_positive_recovery_e2e_repairs_reader_relation_not_expressed
     serialized_relation_diag = json.dumps(relation_diagnostic, ensure_ascii=False, sort_keys=True)
     assert _POSITIVE_RECOVERY_MEMO not in serialized_relation_diag
     assert _RELATION_REPAIRED_TEXT not in serialized_relation_diag
+    assert _RELATION_REPAIRED_PUBLIC_TEXT not in serialized_relation_diag
     assert "\"comment_text\":" not in serialized_relation_diag
 
 

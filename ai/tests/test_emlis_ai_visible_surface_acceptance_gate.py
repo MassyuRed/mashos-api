@@ -190,3 +190,110 @@ def test_step3_visible_surface_acceptance_gate_keeps_malformed_tari_koto_as_red_
     assert "たりこと" not in dumped
     assert "無理に変えよう" not in dumped
     assert '"comment_text"' not in dumped
+
+
+def test_step4_visible_surface_acceptance_gate_flags_koto_splice_fixtures_as_red() -> None:
+    for fixture_id in (
+        "visible_surface_red_conditional_koto_splice_20260524",
+        "visible_surface_red_prediction_noun_koto_splice_20260524",
+        "visible_surface_red_long_clause_koto_attachment_20260524",
+    ):
+        fixture = _fixture_by_id(fixture_id)
+        report = build_visible_surface_acceptance_gate_report(
+            comment_text=fixture.public_body,
+            selected_emotions=fixture.selected_emotions,
+            visible_header_dominant_emotion=fixture.visible_header_dominant_emotion,
+        )
+
+        assert report["passed"] is False
+        assert report["classification"] == CLASSIFICATION_RED
+        assert report["action"] == ACTION_RERENDER_SURFACE
+        assert report["koto_splice_detected"] is True
+        assert report["surface_repair_requested"] is True
+        assert report["repair_reason_family"] == "koto_splice"
+        assert "malformed_phrase_unit" in report["rejection_reasons"]
+        assert set(fixture.expected_rejection_reasons).issubset(set(report["rejection_reasons"]))
+        assert_visible_surface_acceptance_gate_meta_only(report)
+
+        dumped = dump_visible_surface_acceptance_gate_report(report)
+        for forbidden in fixture.forbidden_surface_markers:
+            assert forbidden not in dumped
+        assert '"comment_text"' not in dumped
+
+
+def test_step4_visible_surface_acceptance_gate_repairs_actual_b_relation_skeleton_stack() -> None:
+    fixture = _fixture_by_id("visible_surface_repair_relation_skeleton_mechanical_20260524")
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text=fixture.public_body,
+        selected_emotions=fixture.selected_emotions,
+        visible_header_dominant_emotion=fixture.visible_header_dominant_emotion,
+    )
+
+    assert report["passed"] is False
+    assert report["classification"] == CLASSIFICATION_REPAIR_REQUIRED
+    assert report["action"] == ACTION_RERENDER_SURFACE
+    assert report["koto_splice_detected"] is False
+    assert report["relation_skeleton_marker_count"] >= 2
+    assert report["relation_skeleton_major"] is True
+    assert report["analytic_register_leak_count"] >= 1
+    assert report["analytic_register_leak"] is True
+    assert report["surface_repair_requested"] is True
+    assert report["repair_reason_family"] == "relation_skeleton"
+    assert set(fixture.expected_rejection_reasons).issubset(set(report["rejection_reasons"]))
+    assert_visible_surface_acceptance_gate_meta_only(report)
+
+    dumped = dump_visible_surface_acceptance_gate_report(report)
+    assert "網羅" not in dumped
+    assert "状態が一色" not in dumped
+    assert '"comment_text"' not in dumped
+
+
+def test_step4_visible_surface_acceptance_gate_keeps_actual_a_low_information_positive_as_pass() -> None:
+    fixture = _fixture_by_id("visible_surface_pass_low_information_positive_prompt_20260524_actual_A")
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text=fixture.public_body,
+        selected_emotions=fixture.selected_emotions,
+        visible_header_dominant_emotion=fixture.visible_header_dominant_emotion,
+    )
+
+    assert report["passed"] is True
+    assert report["classification"] == CLASSIFICATION_PASS
+    assert report["action"] == ACTION_ALLOW
+    assert report["koto_splice_detected"] is False
+    assert report["relation_skeleton_marker_count"] == 0
+    assert report["analytic_register_leak_count"] == 0
+    assert report["surface_repair_requested"] is False
+    assert report["repair_reason_family"] == "none"
+    assert report["rejection_reasons"] == []
+    assert_visible_surface_acceptance_gate_meta_only(report)
+
+
+@pytest.mark.parametrize(
+    "safe_fragment",
+    (
+        "感じたこと",
+        "必要なこと",
+        "予定のこと",
+        "予感があること",
+        "しなければならないこと",
+    ),
+)
+def test_step4_visible_surface_acceptance_gate_does_not_overblock_safe_koto_forms(safe_fragment: str) -> None:
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text=(
+            "Emlisです。\n"
+            "今は、喜びが先に出ています。\n"
+            f"その近くに、{safe_fragment}も残っています。"
+        ),
+        selected_emotions=(("喜び", "medium"),),
+        visible_header_dominant_emotion="喜び",
+    )
+
+    assert report["passed"] is True
+    assert report["classification"] == CLASSIFICATION_PASS
+    assert report["action"] == ACTION_ALLOW
+    assert report["malformed_nominalization_detected"] is False
+    assert report["koto_splice_detected"] is False
+    assert "malformed_phrase_unit" not in report["rejection_reasons"]
+    assert "malformed_nominalization_conditional_fragment" not in report["rejection_reasons"]
+    assert "malformed_nominalization_prediction_noun_fragment" not in report["rejection_reasons"]

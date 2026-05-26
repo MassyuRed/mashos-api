@@ -10,6 +10,21 @@ SECRET_COMMENT = "これはpublic metaへ入れてはいけない観測本文で
 SECRET_RAW_INPUT = "これはpublic metaへ入れてはいけない入力本文です"
 SECRET_EVIDENCE = "これはpublic metaへ入れてはいけない根拠全文です"
 
+ENVIRONMENT_STATE_OUTPUT_INTERNAL_KEYS = {
+    "environment_state_output_surface_contract",
+    "environment_state_output_scope_marker_completion",
+    "environment_state_output_scope_marker_completion_action",
+    "environment_state_output_scope_marker_applied",
+    "environment_state_output_allowed_scope_markers",
+    "environment_state_output_forbidden_surface_claims",
+    "environment_state_output_output_theme_ids",
+    "environment_state_output_runtime_marker_check_performed",
+    "environment_state_output_runtime_double_check_active",
+    "environment_state_output_runtime_gate_repair_applied",
+    "environment_state_output_terminal_surface_block",
+}
+
+
 FORBIDDEN_PUBLIC_KEYS = {
     "multi_perspective",
     "evidence_spans",
@@ -289,6 +304,59 @@ def test_public_feedback_meta_drops_internal_text_and_diagnostic_payloads() -> N
 
 
 
+def test_phase5_public_feedback_meta_drops_environment_state_output_internal_completion_meta() -> None:
+    internal_meta = _large_internal_meta()
+    internal_meta.update({
+        "environment_state_output_surface_contract": {
+            "connected": True,
+            "scope_marker_required": True,
+            "required_scope_marker": "今回の入力では",
+            "allowed_scope_markers": ["今回の入力では"],
+            "comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+        },
+        "environment_state_output_scope_marker_completion": {
+            "schema_version": "cocolon.emlis.environment_state_output_surface_completion_result.v1",
+            "evaluated": True,
+            "connected": True,
+            "applied": True,
+            "scope_marker": "今回の入力では",
+            "target_line": "first_body_line",
+            "before_marker_present": False,
+            "after_marker_present": True,
+            "claim_rejection_reasons": [],
+            "action": "continue",
+            "display_gate_relaxed": False,
+            "raw_input_included": False,
+            "comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+        },
+        "environment_state_output_scope_marker_completion_action": "continue",
+        "environment_state_output_scope_marker_applied": True,
+        "environment_state_output_allowed_scope_markers": ["今回の入力では", "この入力では"],
+        "environment_state_output_forbidden_surface_claims": ["diagnosis"],
+        "environment_state_output_output_theme_ids": ["output-theme-internal-only"],
+        "environment_state_output_runtime_marker_check_performed": True,
+        "environment_state_output_runtime_double_check_active": True,
+        "environment_state_output_runtime_gate_repair_applied": False,
+        "environment_state_output_terminal_surface_block": False,
+    })
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert ENVIRONMENT_STATE_OUTPUT_INTERNAL_KEYS.isdisjoint(_all_keys(public_meta))
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert "output-theme-internal-only" not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
 def test_public_feedback_meta_reduces_diagnostic_summary_to_safe_gate_summary() -> None:
     public_meta = _build_public_meta(
         _large_internal_meta(),
@@ -427,6 +495,125 @@ def test_public_feedback_meta_exposes_visible_surface_acceptance_gate_summary_on
     assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
 
 
+def test_public_feedback_meta_exposes_step7_surface_codes_and_display_absence_summary_only() -> None:
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["runtime_surface_pre_return_gate"] = {
+        "passed": False,
+        "action": "rerender_shallow_v2",
+        "rerender_attempted": True,
+        "rejection_reasons": [
+            "malformed_phrase_unit",
+            SECRET_RAW_INPUT,
+        ],
+        "malformed_phrase_unit_count": 3,
+        "koto_splice_detected": True,
+        "koto_splice_codes": [
+            "malformed_nominalization_conditional_fragment",
+            SECRET_RAW_INPUT,
+        ],
+        "surface_malformed_nominalization_codes": [
+            "residual_koto_splice_fragment",
+            "long_clause_koto_attachment_risk",
+        ],
+        "comment_text": SECRET_COMMENT,
+    }
+    internal_meta["visible_surface_acceptance_gate"] = {
+        "evaluated": True,
+        "passed": False,
+        "classification": "red",
+        "action": "rerender_surface",
+        "rejection_reasons": ["malformed_phrase_unit", "surface_relation_skeleton_major"],
+        "koto_splice_detected": True,
+        "koto_splice_codes": ["malformed_nominalization_conditional_fragment"],
+        "relation_skeleton_marker_count": 2,
+        "relation_skeleton_marker_codes": ["surface_relation_skeleton_major"],
+        "relation_skeleton_major": True,
+        "analytic_register_leak_count": 1,
+        "analytic_register_leak_codes": ["analytic_register_leak"],
+        "analytic_register_leak": True,
+        "surface_repair_requested": True,
+        "repair_reason_family": "koto_splice",
+        "comment_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+    }
+    internal_meta["diagnostic_summary"] = {
+        "stage": "display",
+        "primary_reason": "visible_surface_gate_failed",
+        "display_absence_summary": {
+            "candidate_blocked_surface_grammar": True,
+            "candidate_blocked_koto_splice": True,
+            "candidate_blocked_relation_skeleton": True,
+            "candidate_repair_attempted": True,
+            "candidate_repair_succeeded": False,
+            "candidate_repair_failed": True,
+            "candidate_fail_closed_display_absent": True,
+            "public_feedback_not_included_non_passed": True,
+            "public_feedback_not_included_empty_comment_text": False,
+            "rn_payload_absent": True,
+            "reason_family": "koto_splice",
+            "reason_codes": ["residual_koto_splice_fragment", SECRET_RAW_INPUT],
+            "raw_text": SECRET_RAW_INPUT,
+            "comment_text": SECRET_COMMENT,
+        },
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["runtime_surface_pre_return_gate"] == {
+        "passed": False,
+        "action": "rerender_shallow_v2",
+        "rerender_attempted": True,
+        "rejection_reasons": ["malformed_phrase_unit"],
+        "koto_splice_detected": True,
+        "malformed_phrase_unit_count": 3,
+        "koto_splice_codes": ["malformed_nominalization_conditional_fragment"],
+        "surface_malformed_nominalization_codes": [
+            "residual_koto_splice_fragment",
+            "long_clause_koto_attachment_risk",
+        ],
+    }
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "red",
+        "action": "rerender_surface",
+        "rejection_reasons": ["malformed_phrase_unit", "surface_relation_skeleton_major"],
+        "koto_splice_detected": True,
+        "relation_skeleton_major": True,
+        "analytic_register_leak": True,
+        "surface_repair_requested": True,
+        "relation_skeleton_marker_count": 2,
+        "analytic_register_leak_count": 1,
+        "koto_splice_codes": ["malformed_nominalization_conditional_fragment"],
+        "relation_skeleton_marker_codes": ["surface_relation_skeleton_major"],
+        "analytic_register_leak_codes": ["analytic_register_leak"],
+        "repair_reason_family": "koto_splice",
+    }
+    assert public_meta["diagnostic_summary"]["display_absence_summary"] == {
+        "candidate_blocked_surface_grammar": True,
+        "candidate_blocked_koto_splice": True,
+        "candidate_blocked_relation_skeleton": True,
+        "candidate_repair_attempted": True,
+        "candidate_repair_succeeded": False,
+        "candidate_repair_failed": True,
+        "candidate_fail_closed_display_absent": True,
+        "public_feedback_not_included_non_passed": True,
+        "public_feedback_not_included_empty_comment_text": False,
+        "rn_payload_absent": True,
+        "reason_family": "koto_splice",
+        "reason_codes": ["residual_koto_splice_fragment"],
+    }
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
 def test_public_feedback_meta_reads_visible_surface_gate_from_phase_gate_trace() -> None:
     internal_meta = dict(_large_internal_meta())
     internal_meta["phase_gate"] = {
@@ -475,6 +662,49 @@ def test_public_feedback_meta_fails_visible_surface_summary_closed_when_gate_con
     assert SECRET_COMMENT not in dumped
     assert SECRET_RAW_INPUT not in dumped
     assert SECRET_EVIDENCE not in dumped
+
+
+def test_phase5_public_feedback_meta_downgrades_passed_status_when_comment_text_is_absent() -> None:
+    public_meta = _build_public_meta(
+        _large_internal_meta(),
+        comment_text_present=False,
+        subscription_tier="free",
+    )
+
+    assert public_meta["observation_status"] == "unavailable"
+    assert public_meta["rejection_reasons"][0] == "public_feedback_comment_text_missing"
+    assert public_meta["public_feedback_meta_boundary"]["comment_text_included"] is False
+    assert SECRET_COMMENT not in _dump(public_meta)
+
+
+def test_phase5_public_feedback_meta_hides_environment_state_output_completion_internal_result() -> None:
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["environment_state_output_scope_marker_completion"] = {
+        "schema_version": "cocolon.emlis.environment_state_output_surface_contract_completion.v1",
+        "evaluated": True,
+        "applied": True,
+        "scope_marker": "今回の入力では",
+        "target_line": "first_body_line",
+        "candidate_comment_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "internal_completion_result": {"comment_text": SECRET_COMMENT},
+    }
+    internal_meta["composer_meta"] = {
+        "environment_state_output_scope_marker_completion": internal_meta["environment_state_output_scope_marker_completion"],
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    dumped = _dump(public_meta)
+    assert "environment_state_output_scope_marker_completion" not in dumped
+    assert "internal_completion_result" not in dumped
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
 
 
 def test_public_feedback_meta_caps_reason_count_string_lengths_and_total_bytes() -> None:
@@ -570,6 +800,32 @@ def test_should_include_public_input_feedback_requires_comment_and_passed_public
         "Emlisの観測本文です。",
         {
             "observation_status": "passed",
+            "runtime_surface_pre_return_gate": {
+                "passed": False,
+                "action": "block",
+                "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+            },
+        },
+    ) is False
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {
+            "observation_status": "passed",
+            "runtime_surface_pre_return_gate": {
+                "passed": True,
+                "action": "allow",
+                "rejection_reasons": ["environment_state_output_scope_marker_missing"],
+            },
+        },
+    ) is False
+    assert module.should_include_public_input_feedback(
+        "Emlisの観測本文です。",
+        {
+            "observation_status": "passed",
+            "runtime_surface_pre_return_gate": {
+                "passed": True,
+                "action": "pass",
+            },
             "visible_surface_acceptance_gate": {
                 "passed": True,
                 "classification": "pass",
@@ -577,3 +833,93 @@ def test_should_include_public_input_feedback_requires_comment_and_passed_public
             },
         },
     ) is True
+
+
+def test_step7_public_feedback_meta_keeps_surface_reason_summary_code_only() -> None:
+    internal_meta = dict(_large_internal_meta())
+    gate = _visible_surface_gate_failed_payload()
+    gate.update({
+        "koto_splice_detected": True,
+        "koto_splice_codes": [
+            "malformed_nominalization_conditional_fragment",
+            "residual_koto_splice_fragment",
+            SECRET_COMMENT,
+        ],
+        "relation_skeleton_major": True,
+        "relation_skeleton_marker_count": 3,
+        "relation_skeleton_marker_codes": ["surface_relation_skeleton_major"],
+        "analytic_register_leak": True,
+        "analytic_register_leak_count": 2,
+        "analytic_register_leak_codes": ["analytic_register_leak"],
+        "surface_repair_requested": True,
+        "repair_reason_family": "koto_splice",
+        "comment_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+    })
+    internal_meta["visible_surface_acceptance_gate"] = gate
+    internal_meta["diagnostic_summary"]["step7_public_feedback_diagnostic_summary"] = {
+        "candidate_blocked_surface_grammar": True,
+        "candidate_blocked_koto_splice": True,
+        "candidate_blocked_relation_skeleton": True,
+        "candidate_repair_attempted": True,
+        "candidate_repair_succeeded": False,
+        "candidate_repair_failed": True,
+        "candidate_fail_closed_display_absent": True,
+        "public_feedback_not_included_non_passed": False,
+        "public_feedback_not_included_empty_comment_text": False,
+        "public_feedback_not_included_visible_surface_gate": True,
+        "rn_payload_absent": True,
+        "reason_family": "koto_splice",
+        "reason_codes": ["malformed_nominalization_conditional_fragment", SECRET_RAW_INPUT],
+        "comment_text": SECRET_COMMENT,
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "repair_required",
+        "action": "rerender_surface",
+        "rejection_reasons": [
+            "emotion_focus_unbridged_secondary",
+            "x" * 96,
+        ],
+        "koto_splice_detected": True,
+        "relation_skeleton_major": True,
+        "analytic_register_leak": True,
+        "surface_repair_requested": True,
+        "relation_skeleton_marker_count": 3,
+        "analytic_register_leak_count": 2,
+        "koto_splice_codes": [
+            "malformed_nominalization_conditional_fragment",
+            "residual_koto_splice_fragment",
+        ],
+        "relation_skeleton_marker_codes": ["surface_relation_skeleton_major"],
+        "analytic_register_leak_codes": ["analytic_register_leak"],
+        "repair_reason_family": "koto_splice",
+    }
+    assert public_meta["diagnostic_summary"]["display_absence_summary"] == {
+        "candidate_blocked_surface_grammar": True,
+        "candidate_blocked_koto_splice": True,
+        "candidate_blocked_relation_skeleton": True,
+        "candidate_repair_attempted": True,
+        "candidate_repair_succeeded": False,
+        "candidate_repair_failed": True,
+        "candidate_fail_closed_display_absent": True,
+        "public_feedback_not_included_non_passed": False,
+        "public_feedback_not_included_empty_comment_text": False,
+        "public_feedback_not_included_visible_surface_gate": True,
+        "rn_payload_absent": True,
+        "reason_family": "koto_splice",
+        "reason_codes": ["malformed_nominalization_conditional_fragment"],
+    }
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))

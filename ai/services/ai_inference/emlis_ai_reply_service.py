@@ -80,6 +80,7 @@ from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_r
 from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_acceptance_gate_report
 from emlis_ai_bounded_repair_reroute import (
     ACTION_RERENDER_SHALLOW_V2 as BOUNDED_ACTION_RERENDER_SHALLOW_V2,
+    ACTION_RERENDER_SURFACE as BOUNDED_ACTION_RERENDER_SURFACE,
     decide_bounded_repair_reroute,
 )
 from emlis_ai_complete_initial_fixture_qa_service import build_complete_initial_fixture_qa_run
@@ -2871,6 +2872,16 @@ def _gate_diagnostics_from_trace(gate: Dict[str, Any], gate_key: str) -> Dict[st
             "burden_surface_without_anchor_detected",
             "malformed_nominalization_detected",
             "malformed_nominalization_codes",
+            "koto_splice_detected",
+            "koto_splice_codes",
+            "relation_skeleton_marker_count",
+            "relation_skeleton_marker_codes",
+            "relation_skeleton_major",
+            "analytic_register_leak_count",
+            "analytic_register_leak_codes",
+            "analytic_register_leak",
+            "surface_repair_requested",
+            "repair_reason_family",
             "raw_input_included",
             "comment_text_body_included",
             "display_gate_relaxed",
@@ -3521,6 +3532,132 @@ def _b_plan_normal_connection_meta(
         "status_family": status_family,
     }
 
+def _step7_surface_code_list(*values: Any) -> List[str]:
+    return _dedupe_reason_codes([item for value in values for item in (value if isinstance(value, (list, tuple, set)) else [value])])
+
+
+def _build_step7_public_feedback_diagnostic_summary(
+    *,
+    display_decision: Any,
+    gate_trace: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Build Step7 code-only display absence diagnostics.
+
+    This is internal diagnostic meta. It does not copy comment_text or raw input,
+    does not relax any gate, and does not change the public response shape.
+    """
+
+    gate_trace = gate_trace if isinstance(gate_trace, dict) else {}
+    phase_gate_meta = phase_gate_meta if isinstance(phase_gate_meta, dict) else {}
+    runtime_gate = gate_trace.get("runtime_surface_pre_return_gate")
+    runtime_gate = dict(runtime_gate or {}) if isinstance(runtime_gate, dict) else {}
+    visible_gate = gate_trace.get("visible_surface_acceptance_gate")
+    visible_gate = dict(visible_gate or {}) if isinstance(visible_gate, dict) else {}
+    display_gate = gate_trace.get("display") or gate_trace.get("display_gate")
+    display_gate = dict(display_gate or {}) if isinstance(display_gate, dict) else {}
+
+    observation_status = str(getattr(display_decision, "observation_status", "") or "")
+    comment_present = bool(str(getattr(display_decision, "comment_text", "") or "").strip())
+    display_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
+    runtime_reasons = _dedupe_reason_codes(runtime_gate.get("rejection_reasons") or [])
+    visible_reasons = _dedupe_reason_codes(visible_gate.get("rejection_reasons") or [])
+    reason_codes = _dedupe_reason_codes([*display_reasons, *runtime_reasons, *visible_reasons])
+    visible_koto_codes = _step7_surface_code_list(
+        visible_gate.get("koto_splice_codes"),
+        visible_gate.get("malformed_nominalization_codes"),
+        visible_gate.get("surface_malformed_nominalization_codes"),
+    )
+    runtime_koto_codes = _step7_surface_code_list(
+        runtime_gate.get("koto_splice_codes"),
+        runtime_gate.get("malformed_nominalization_codes"),
+        runtime_gate.get("surface_malformed_nominalization_codes"),
+    )
+    relation_codes = _step7_surface_code_list(
+        visible_gate.get("relation_skeleton_marker_codes"),
+        visible_gate.get("analytic_register_leak_codes"),
+    )
+
+    candidate_blocked_koto_splice = bool(
+        visible_gate.get("koto_splice_detected")
+        or runtime_gate.get("koto_splice_detected")
+        or visible_koto_codes
+        or runtime_koto_codes
+        or any("koto" in reason or reason.startswith("malformed_nominalization_") or reason == "residual_koto_splice_fragment" for reason in reason_codes)
+    )
+    candidate_blocked_relation_skeleton = bool(
+        visible_gate.get("relation_skeleton_major")
+        or visible_gate.get("analytic_register_leak")
+        or relation_codes
+        or any(reason.startswith("surface_relation_skeleton") or reason == "analytic_register_leak" for reason in reason_codes)
+    )
+    candidate_blocked_surface_grammar = bool(
+        candidate_blocked_koto_splice
+        or (runtime_gate and runtime_gate.get("passed") is False)
+        or visible_gate.get("malformed_nominalization_detected")
+        or any(
+            reason in reason_codes
+            for reason in (
+                "runtime_surface_pre_return_gate_failed",
+                "surface_grammar_warning",
+                "malformed_phrase_unit",
+                "surface_template_major",
+            )
+        )
+    )
+    candidate_repair_attempted = bool(
+        runtime_gate.get("rerender_attempted")
+        or visible_gate.get("rerender_attempted")
+        or "bounded_visible_surface_rerender_required" in reason_codes
+        or "bounded_shallow_v2_rerender_required" in reason_codes
+    )
+    candidate_repair_succeeded = bool(candidate_repair_attempted and observation_status == "passed" and comment_present)
+    candidate_repair_failed = bool(candidate_repair_attempted and not candidate_repair_succeeded)
+    public_feedback_not_included_non_passed = bool(observation_status != "passed")
+    public_feedback_not_included_empty_comment_text = bool(not comment_present)
+    display_gate_failed = bool(display_gate and display_gate.get("passed") is False)
+    candidate_fail_closed_display_absent = bool(
+        public_feedback_not_included_non_passed
+        or public_feedback_not_included_empty_comment_text
+        or candidate_blocked_surface_grammar
+        or candidate_blocked_relation_skeleton
+        or display_gate_failed
+    )
+    if not candidate_fail_closed_display_absent and observation_status == "passed" and comment_present:
+        reason_family = "displayed"
+    elif candidate_blocked_koto_splice:
+        reason_family = "koto_splice"
+    elif candidate_blocked_relation_skeleton:
+        reason_family = "relation_skeleton"
+    elif candidate_blocked_surface_grammar:
+        reason_family = "surface_grammar"
+    elif public_feedback_not_included_empty_comment_text:
+        reason_family = "empty_comment_text"
+    elif public_feedback_not_included_non_passed:
+        reason_family = "non_passed"
+    else:
+        reason_family = "display_absent"
+
+    return {
+        "version": "emlis.step7.public_feedback_diagnostic_summary.v1",
+        "candidate_blocked_surface_grammar": candidate_blocked_surface_grammar,
+        "candidate_blocked_koto_splice": candidate_blocked_koto_splice,
+        "candidate_blocked_relation_skeleton": candidate_blocked_relation_skeleton,
+        "candidate_repair_attempted": candidate_repair_attempted,
+        "candidate_repair_succeeded": candidate_repair_succeeded,
+        "candidate_repair_failed": candidate_repair_failed,
+        "candidate_fail_closed_display_absent": candidate_fail_closed_display_absent,
+        "public_feedback_not_included_non_passed": public_feedback_not_included_non_passed,
+        "public_feedback_not_included_empty_comment_text": public_feedback_not_included_empty_comment_text,
+        "rn_payload_absent": candidate_fail_closed_display_absent,
+        "reason_family": reason_family,
+        "reason_codes": reason_codes[:20],
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+    }
+
+
 def _diagnostic_summary_meta(
     *,
     display_decision: Any,
@@ -4123,6 +4260,14 @@ def _multi_perspective_meta(
         "visible_surface_acceptance_gate_comment_text_body_included": False,
         "visible_surface_acceptance_gate_raw_input_included": False,
     }
+    step7_public_feedback_summary = _build_step7_public_feedback_diagnostic_summary(
+        display_decision=display_decision,
+        gate_trace=gate_trace,
+        phase_gate_meta=phase_gate_meta,
+    )
+    phase_gate_meta["step7_public_feedback_diagnostic_summary"] = step7_public_feedback_summary
+    phase_gate_meta["public_feedback_diagnostic_summary"] = step7_public_feedback_summary
+
     diagnostic_summary = _diagnostic_summary_meta(
         display_decision=display_decision,
         gate_trace=gate_trace,
@@ -4134,6 +4279,10 @@ def _multi_perspective_meta(
         rollout_metrics=phase7_rollout_metrics,
         current_input=bundle.current_input,
     )
+    diagnostic_summary["step7_public_feedback_diagnostic_summary"] = step7_public_feedback_summary
+    diagnostic_summary["public_feedback_diagnostic_summary"] = step7_public_feedback_summary
+    diagnostic_summary["display_absence_summary"] = step7_public_feedback_summary
+
     _attach_complete_initial_pre_generation_seed(
         diagnostic_summary=diagnostic_summary,
         phase_gate_meta=phase_gate_meta,
@@ -5303,18 +5452,27 @@ async def render_emlis_ai_reply(
             composer_source=composer_source,
             safety_report=safety_report,
             runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
             repair_allowed=True,
         )
         if (
-            bounded_reroute_decision.action == BOUNDED_ACTION_RERENDER_SHALLOW_V2
+            bounded_reroute_decision.action in {BOUNDED_ACTION_RERENDER_SHALLOW_V2, BOUNDED_ACTION_RERENDER_SURFACE}
             and resolved_composer_client is not None
             and attempt < max_attempts
             and str(getattr(composer_candidate, "status", "") or "") != "unavailable"
         ):
+            default_bounded_reason = (
+                "visible_surface_acceptance_gate_action_rerender_surface"
+                if bounded_reroute_decision.action == BOUNDED_ACTION_RERENDER_SURFACE
+                else "runtime_surface_pre_return_gate_action_rerender_shallow_v2"
+            )
             regeneration_reasons = _regeneration_reasons_for_retry(
                 display_decision.rejection_reasons or [],
                 resolved_composer_client,
-            ) or list(bounded_reroute_decision.repair_reasons or ()) or ["bounded_shallow_v2_rerender_required"]
+            ) or _regeneration_reasons_for_retry(
+                bounded_reroute_decision.repair_reasons or [],
+                resolved_composer_client,
+            ) or [default_bounded_reason]
             continue
         if resolved_composer_client is None or attempt >= max_attempts or str(getattr(composer_candidate, "status", "") or "") == "unavailable":
             break
@@ -5460,6 +5618,13 @@ async def render_emlis_ai_reply(
     if isinstance(meta.get("diagnostic_summary"), dict):
         meta["diagnostic_summary"]["emlis_observation_structure_dictionary"] = observation_structure_meta
         meta["diagnostic_summary"]["observation_structure_gate"] = observation_structure_gate_report
+    multi_perspective_meta = meta.get("multi_perspective")
+    if isinstance(multi_perspective_meta, dict) and isinstance(meta.get("diagnostic_summary"), dict):
+        # Keep the nested diagnostic summary in lockstep with the top-level
+        # internal diagnostic summary after additive Step10 / observation
+        # structure meta attachments.  Public sanitization still happens at
+        # the input_feedback boundary; this is internal meta consistency only.
+        multi_perspective_meta["diagnostic_summary"] = dict(meta["diagnostic_summary"])
 
     return ReplyEnvelope(
         comment_text=final_text,

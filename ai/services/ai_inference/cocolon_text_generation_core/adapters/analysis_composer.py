@@ -33,6 +33,12 @@ from .analysis_composer_input_contract import (
     build_analysis_composer_input_contract,
     normalize_analysis_material_domain,
 )
+from .analysis_environment_state_output_surface import (
+    ANALYSIS_ENVIRONMENT_STATE_OUTPUT_COMPOSER_DOMAIN,
+    ANALYSIS_ENVIRONMENT_STATE_OUTPUT_SURFACE_PHASE,
+    build_analysis_environment_state_output_surface_material,
+    extract_analysis_environment_state_output_period_material,
+)
 
 ADAPTER_NAME = "analysis_composer.v1"
 ANALYSIS_COMPOSER_MODEL = "cocolon_text_generation_core.analysis_composer.v1"
@@ -68,6 +74,21 @@ _EXTRA_FORBIDDEN_SURFACE_PATTERNS = (
     "必ず",
     "絶対に",
     "完全に",
+    "いつも",
+    "原因です",
+    "原因は",
+    "仕事が原因",
+    "カテゴリが原因",
+    "感情の強さが原因",
+    "戻りやすい",
+    "回復方法",
+    "治ります",
+    "治る",
+    "処方",
+    "対処法です",
+    "解決策です",
+    "今回の入力では",
+    "今回の入力",
 )
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_RE = re.compile(r"[^。！？!?\n]+[。！？!?]?")
@@ -200,6 +221,58 @@ def _candidate_text_from_kwargs(
         if text:
             return text
     return ""
+
+
+def _surface_meta_for_analysis_composer(surface: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(surface, Mapping) or not surface:
+        return {}
+    return {
+        "schema_version": _clean(surface.get("schema_version"), limit=120),
+        "material_id": _clean(surface.get("material_id"), limit=120),
+        "phase": _clean(surface.get("phase"), limit=120),
+        "status": _clean(surface.get("status"), limit=80),
+        "period_scope": dict(surface.get("period_scope") or {}),
+        "source_summary": dict(surface.get("source_summary") or {}),
+        "composer_domain": _clean(surface.get("composer_domain"), limit=80),
+        "composer_material_source_count": len(surface.get("composer_material_sources") or []),
+        "source_claim_count": len(surface.get("source_claims") or []),
+        "surface_policy": dict(surface.get("surface_policy") or {}),
+        "analysis_composer_surface_connected": bool((surface.get("surface_policy") or {}).get("public_analysis_text_connected", False)),
+        "content_text_generated": bool(_clean(surface.get("content_text"))),
+        "content_text_in_meta": False,
+        "raw_text_included": False,
+    }
+
+
+def _connect_environment_state_output_surface_if_available(
+    *,
+    normalized_domain: str,
+    materials: Any,
+    material_sources: Any,
+    material_fields: Iterable[Any] | None,
+    candidate_text: str,
+    meta: Mapping[str, Any] | None,
+) -> tuple[str, Any, Any, Iterable[Any] | None, str, dict[str, Any], dict[str, Any]]:
+    raw_material_input = material_sources if material_sources is not None else materials
+    period_material = extract_analysis_environment_state_output_period_material(raw_material_input)
+    runtime_meta = dict(meta or {})
+    if period_material is None:
+        return normalized_domain, materials, material_sources, material_fields, candidate_text, runtime_meta, {}
+
+    surface = build_analysis_environment_state_output_surface_material(period_material)
+    surface_summary = _surface_meta_for_analysis_composer(surface)
+    runtime_meta["environment_state_output_surface"] = surface_summary
+
+    safe_sources = tuple(surface.get("composer_material_sources") or ())
+    if safe_sources:
+        material_sources = safe_sources
+        materials = safe_sources
+        normalized_domain = _clean(surface.get("composer_domain"), limit=80) or ANALYSIS_ENVIRONMENT_STATE_OUTPUT_COMPOSER_DOMAIN
+        safe_fields = tuple(surface.get("composer_material_fields") or ())
+        material_fields = compact_tokens([*(material_fields or ()), *safe_fields])
+    if not candidate_text:
+        candidate_text = _clean(surface.get("content_text"), limit=0)
+    return normalized_domain, materials, material_sources, material_fields, candidate_text, runtime_meta, surface_summary
 
 
 def _add_runtime_meta_to_payload(
@@ -458,6 +531,22 @@ class AnalysisComposer:
             content_json=content_json,
             output_payload=output_payload,
         )
+        (
+            normalized_domain,
+            materials,
+            material_sources,
+            material_fields,
+            candidate_text,
+            runtime_meta,
+            environment_state_output_surface_meta,
+        ) = _connect_environment_state_output_surface_if_available(
+            normalized_domain=normalized_domain,
+            materials=materials,
+            material_sources=material_sources,
+            material_fields=material_fields,
+            candidate_text=candidate_text,
+            meta=meta,
+        )
         contract = build_analysis_composer_input_contract(
             domain=normalized_domain,
             materials=materials,
@@ -477,7 +566,7 @@ class AnalysisComposer:
             material_fields=material_fields,
             target_period=target_period,
         )
-        payload = _add_runtime_meta_to_payload(contract.payload, contract=contract, candidate_text=candidate_text, runtime_meta=meta)
+        payload = _add_runtime_meta_to_payload(contract.payload, contract=contract, candidate_text=candidate_text, runtime_meta=runtime_meta)
         candidate = _runtime_candidate(text=candidate_text, payload=payload, contract=contract)
         result = self.core_composer.generate(payload, candidate)
         return AnalysisComposerEvaluation(
@@ -485,7 +574,12 @@ class AnalysisComposer:
             result=result,
             candidate=candidate,
             text_safety=text_safety,
-            meta={"runtime_meta": dict(meta or {}), "contract_rejection_reasons": list(contract.rejection_reasons)},
+            meta={
+                "runtime_meta": dict(runtime_meta or {}),
+                "contract_rejection_reasons": list(contract.rejection_reasons),
+                "environment_state_output_surface": dict(environment_state_output_surface_meta or {}),
+                "environment_state_output_surface_phase": ANALYSIS_ENVIRONMENT_STATE_OUTPUT_SURFACE_PHASE if environment_state_output_surface_meta else "",
+            },
         )
 
     def __call__(self, **kwargs: Any) -> AnalysisComposerEvaluation:
@@ -494,6 +588,24 @@ class AnalysisComposer:
 
 def evaluate_analysis_composer(*, core_composer: CoreTextComposer | None = None, **kwargs: Any) -> AnalysisComposerEvaluation:
     return AnalysisComposer(core_composer=core_composer).compose(**kwargs)
+
+
+def evaluate_analysis_environment_state_output_material(
+    material: Mapping[str, Any],
+    *,
+    core_composer: CoreTextComposer | None = None,
+    target_period: Any = None,
+    source_id: Any = "analysis-environment-state-output-phase8",
+    **kwargs: Any,
+) -> AnalysisComposerEvaluation:
+    return evaluate_analysis_composer(
+        core_composer=core_composer,
+        domain=ANALYSIS_ENVIRONMENT_STATE_OUTPUT_COMPOSER_DOMAIN,
+        material_sources=material,
+        target_period=target_period,
+        source_id=source_id,
+        **kwargs,
+    )
 
 
 def compose_analysis_report(**kwargs: Any) -> AnalysisComposerEvaluation:
@@ -560,5 +672,6 @@ __all__ = [
     "compose_analysis_report_text",
     "compose_analysis_text_generation",
     "evaluate_analysis_composer",
+    "evaluate_analysis_environment_state_output_material",
     "evaluate_analysis_report_text_safety",
 ]

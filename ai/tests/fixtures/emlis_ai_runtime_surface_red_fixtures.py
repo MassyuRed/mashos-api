@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Baseline red fixtures for EmlisAI runtime surface pre-return gate.
+"""Red fixtures for EmlisAI runtime surface pre-return gate.
 
 These fixtures intentionally lock *bad public surfaces* as examples that must
 never be allowed to pass display pre-return quality.  They do not lock a good
@@ -11,7 +11,8 @@ replacement sentence and are not runtime special cases.
 from dataclasses import dataclass
 from typing import Any
 
-RUNTIME_SURFACE_RED_FIXTURE_VERSION = "emlis.runtime_surface_red_fixtures.v1"
+RUNTIME_SURFACE_RED_FIXTURE_VERSION = "emlis.runtime_surface_red_fixtures.v2"
+RUNTIME_SURFACE_PRODUCT_RED_INVENTORY_VERSION = "emlis.runtime_surface_product_red_inventory.v1.20260524"
 
 
 @dataclass(frozen=True)
@@ -123,14 +124,81 @@ RUNTIME_SURFACE_BASELINE_RED_FIXTURES: tuple[RuntimeSurfaceRedFixture, ...] = (
     ),
 )
 
+RUNTIME_SURFACE_PRODUCT_RED_INVENTORY_FIXTURES: tuple[RuntimeSurfaceRedFixture, ...] = (
+    RuntimeSurfaceRedFixture(
+        fixture_id="runtime_surface_red_conditional_koto_splice_20260524",
+        public_body=(
+            "Emlisです。\n"
+            "今は、戻ってきた不安が先に出ています。\n"
+            "そこに、趣味のVRCでのイベントキャストにも顔を出して"
+            "コス仲間とのコミュニケーションも取らなければことも加わっていて、"
+            "状態が一色ではありません。"
+        ),
+        composer_meta=dict(_SHALLOW_CURRENT_INPUT_CORE_META),
+        expected_rejection_reasons=(
+            "malformed_phrase_unit",
+            "malformed_nominalization_conditional_fragment",
+            "residual_koto_splice_fragment",
+        ),
+        forbidden_surface_markers=("なければこと", "取らなければこと"),
+    ),
+    RuntimeSurfaceRedFixture(
+        fixture_id="runtime_surface_red_prediction_noun_koto_splice_20260524",
+        public_body=(
+            "Emlisです。\n"
+            "さらに、色んな自分がありすぎてキャパオーバーしそうな予感こともあり、"
+            "今見えている範囲は一つの要素だけではありません。"
+        ),
+        composer_meta=dict(_SHALLOW_CURRENT_INPUT_CORE_META),
+        expected_rejection_reasons=(
+            "malformed_phrase_unit",
+            "malformed_nominalization_prediction_noun_fragment",
+            "residual_koto_splice_fragment",
+        ),
+        forbidden_surface_markers=("予感こと", "気配こと"),
+    ),
+    RuntimeSurfaceRedFixture(
+        fixture_id="runtime_surface_red_long_clause_koto_attachment_20260524",
+        public_body=(
+            "Emlisです。\n"
+            "今は、戻ってきた不安が先に出ています。\n"
+            "そこに、趣味のVRCでのイベントキャストにも顔を出して"
+            "コス仲間とのコミュニケーションも取らなければことも加わっていて、"
+            "状態が一色ではありません。\n"
+            "さらに、色んな自分がありすぎてキャパオーバーしそうな予感こともあり、"
+            "今見えている範囲は一つの要素だけではありません。\n"
+            "片方だけに減らさず、重なりとして並んで残っています。"
+        ),
+        composer_meta=dict(_SHALLOW_CURRENT_INPUT_CORE_META),
+        expected_rejection_reasons=(
+            "malformed_phrase_unit",
+            "long_clause_koto_attachment_risk",
+            "surface_relation_skeleton_major",
+        ),
+        forbidden_surface_markers=(
+            "取らなければこと",
+            "予感こと",
+            "状態が一色ではありません",
+            "一つの要素だけではありません",
+        ),
+    ),
+)
+
 
 def iter_runtime_surface_baseline_red_fixtures() -> tuple[RuntimeSurfaceRedFixture, ...]:
     return RUNTIME_SURFACE_BASELINE_RED_FIXTURES
 
 
+def iter_runtime_surface_product_red_inventory() -> tuple[RuntimeSurfaceRedFixture, ...]:
+    return RUNTIME_SURFACE_PRODUCT_RED_INVENTORY_FIXTURES
+
+
 __all__ = [
     "RUNTIME_SURFACE_BASELINE_RED_FIXTURES",
+    "RUNTIME_SURFACE_PRODUCT_RED_INVENTORY_FIXTURES",
+    "RUNTIME_SURFACE_PRODUCT_RED_INVENTORY_VERSION",
     "RUNTIME_SURFACE_RED_FIXTURE_VERSION",
     "RuntimeSurfaceRedFixture",
     "iter_runtime_surface_baseline_red_fixtures",
+    "iter_runtime_surface_product_red_inventory",
 ]

@@ -964,6 +964,98 @@ def _extract_self_repair(
     }
 
 
+def _extract_display_absence_summary(
+    input_feedback_meta: Mapping[str, Any],
+    diagnostic_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    source = _first_mapping(
+        diagnostic_summary.get("step7_public_feedback_diagnostic_summary"),
+        diagnostic_summary.get("public_feedback_diagnostic_summary"),
+        diagnostic_summary.get("display_absence_summary"),
+        input_feedback_meta.get("step7_public_feedback_diagnostic_summary"),
+        input_feedback_meta.get("public_feedback_diagnostic_summary"),
+        input_feedback_meta.get("display_absence_summary"),
+    )
+    visible_gate = _first_mapping(
+        input_feedback_meta.get("visible_surface_acceptance_gate"),
+        diagnostic_summary.get("visible_surface_acceptance_gate"),
+        _get_path(diagnostic_summary, "gate_trace", "visible_surface_acceptance_gate"),
+    )
+    runtime_gate = _first_mapping(
+        input_feedback_meta.get("runtime_surface_pre_return_gate"),
+        diagnostic_summary.get("runtime_surface_pre_return_gate"),
+        _get_path(diagnostic_summary, "gate_trace", "runtime_surface_pre_return_gate"),
+    )
+    reason_codes = _dedupe_strings(
+        source.get("reason_codes")
+        or [
+            *(source.get("rejection_reasons") if isinstance(source.get("rejection_reasons"), list) else []),
+            *(visible_gate.get("rejection_reasons") if isinstance(visible_gate.get("rejection_reasons"), list) else []),
+            *(runtime_gate.get("rejection_reasons") if isinstance(runtime_gate.get("rejection_reasons"), list) else []),
+        ],
+        limit=_MAX_REASON_COUNT,
+    )
+    candidate_blocked_koto_splice = bool(
+        _to_bool(source.get("candidate_blocked_koto_splice"))
+        or _to_bool(visible_gate.get("koto_splice_detected"))
+        or _to_bool(runtime_gate.get("koto_splice_detected"))
+        or any("koto" in reason or reason.startswith("malformed_nominalization_") for reason in reason_codes)
+    )
+    candidate_blocked_relation_skeleton = bool(
+        _to_bool(source.get("candidate_blocked_relation_skeleton"))
+        or _to_bool(visible_gate.get("relation_skeleton_major"))
+        or _to_bool(visible_gate.get("analytic_register_leak"))
+        or any(reason.startswith("surface_relation_skeleton") or reason == "analytic_register_leak" for reason in reason_codes)
+    )
+    candidate_blocked_surface_grammar = bool(
+        _to_bool(source.get("candidate_blocked_surface_grammar"))
+        or candidate_blocked_koto_splice
+        or runtime_gate.get("passed") is False
+        or any(reason in {"runtime_surface_pre_return_gate_failed", "surface_grammar_warning", "malformed_phrase_unit", "surface_template_major"} for reason in reason_codes)
+    )
+    candidate_repair_attempted = _to_bool(source.get("candidate_repair_attempted"))
+    candidate_repair_succeeded = _to_bool(source.get("candidate_repair_succeeded"))
+    candidate_repair_failed = _to_bool(source.get("candidate_repair_failed"))
+    public_feedback_not_included_non_passed = _to_bool(source.get("public_feedback_not_included_non_passed"))
+    public_feedback_not_included_empty_comment_text = _to_bool(source.get("public_feedback_not_included_empty_comment_text"))
+    public_feedback_not_included_visible_surface_gate = _to_bool(source.get("public_feedback_not_included_visible_surface_gate"))
+    rn_payload_absent = _to_bool(source.get("rn_payload_absent"))
+    candidate_fail_closed_display_absent = _to_bool(source.get("candidate_fail_closed_display_absent")) or rn_payload_absent
+    reason_family = _first_nonempty(source.get("reason_family"))
+    if not reason_family:
+        if candidate_blocked_koto_splice:
+            reason_family = "koto_splice"
+        elif candidate_blocked_relation_skeleton:
+            reason_family = "relation_skeleton"
+        elif candidate_blocked_surface_grammar:
+            reason_family = "surface_grammar"
+        elif public_feedback_not_included_empty_comment_text:
+            reason_family = "empty_comment_text"
+        elif public_feedback_not_included_non_passed:
+            reason_family = "non_passed"
+        elif rn_payload_absent:
+            reason_family = "display_absent"
+
+    return {
+        "candidate_blocked_surface_grammar": candidate_blocked_surface_grammar,
+        "candidate_blocked_koto_splice": candidate_blocked_koto_splice,
+        "candidate_blocked_relation_skeleton": candidate_blocked_relation_skeleton,
+        "candidate_repair_attempted": candidate_repair_attempted,
+        "candidate_repair_succeeded": candidate_repair_succeeded,
+        "candidate_repair_failed": candidate_repair_failed,
+        "candidate_fail_closed_display_absent": candidate_fail_closed_display_absent,
+        "public_feedback_not_included_non_passed": public_feedback_not_included_non_passed,
+        "public_feedback_not_included_empty_comment_text": public_feedback_not_included_empty_comment_text,
+        "public_feedback_not_included_visible_surface_gate": public_feedback_not_included_visible_surface_gate,
+        "rn_payload_absent": rn_payload_absent,
+        "reason_family": reason_family,
+        "reason_codes": reason_codes,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+    }
+
+
 def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
     """Classify a normalized submit-level Emlis observation diagnostic record."""
 
@@ -974,6 +1066,21 @@ def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
 
     observation_status = _clean(record.get("observation_status"))
     comment_text_length = _to_int(record.get("comment_text_length"))
+    display_absence = _safe_mapping(record.get("display_absence_summary"))
+    if _to_bool(display_absence.get("rn_payload_absent")):
+        if _to_bool(display_absence.get("candidate_blocked_koto_splice")):
+            return "candidate_blocked_koto_splice"
+        if _to_bool(display_absence.get("candidate_blocked_relation_skeleton")):
+            return "candidate_blocked_relation_skeleton"
+        if _to_bool(display_absence.get("candidate_blocked_surface_grammar")):
+            return "candidate_blocked_surface_grammar"
+        if _to_bool(display_absence.get("public_feedback_not_included_empty_comment_text")):
+            return "public_feedback_not_included_empty_comment_text"
+        if _to_bool(display_absence.get("public_feedback_not_included_non_passed")):
+            return "public_feedback_not_included_non_passed"
+        if _to_bool(display_absence.get("candidate_fail_closed_display_absent")):
+            return "candidate_fail_closed_display_absent"
+
     frontend = _safe_mapping(record.get("frontend"))
     if observation_status == "passed" and comment_text_length > 0:
         if frontend and frontend.get("modal_opened") is False:
@@ -1122,6 +1229,7 @@ def build_observation_diagnostic_lockdown(
         diagnostic_summary=diagnostic_summary,
         runtime_meta=runtime_meta,
     )
+    display_absence_summary = _extract_display_absence_summary(meta, diagnostic_summary)
 
     record: dict[str, Any] = {
         "version": DIAGNOSTIC_LOCKDOWN_VERSION,
@@ -1158,6 +1266,18 @@ def build_observation_diagnostic_lockdown(
         "relation_type": relation_types[0] if relation_types else "",
         "gate_results": gate_results,
         "display_rejection_reasons": display_rejection_reasons,
+        "display_absence_summary": display_absence_summary,
+        "candidate_blocked_surface_grammar": _to_bool(display_absence_summary.get("candidate_blocked_surface_grammar")),
+        "candidate_blocked_koto_splice": _to_bool(display_absence_summary.get("candidate_blocked_koto_splice")),
+        "candidate_blocked_relation_skeleton": _to_bool(display_absence_summary.get("candidate_blocked_relation_skeleton")),
+        "candidate_repair_attempted": _to_bool(display_absence_summary.get("candidate_repair_attempted")),
+        "candidate_repair_succeeded": _to_bool(display_absence_summary.get("candidate_repair_succeeded")),
+        "candidate_repair_failed": _to_bool(display_absence_summary.get("candidate_repair_failed")),
+        "candidate_fail_closed_display_absent": _to_bool(display_absence_summary.get("candidate_fail_closed_display_absent")),
+        "public_feedback_not_included_non_passed": _to_bool(display_absence_summary.get("public_feedback_not_included_non_passed")),
+        "public_feedback_not_included_empty_comment_text": _to_bool(display_absence_summary.get("public_feedback_not_included_empty_comment_text")),
+        "public_feedback_not_included_visible_surface_gate": _to_bool(display_absence_summary.get("public_feedback_not_included_visible_surface_gate")),
+        "rn_payload_absent": _to_bool(display_absence_summary.get("rn_payload_absent")),
         "runtime_surface": runtime_surface,
         "runtime_surface_pre_return_gate_evaluated": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_evaluated")),
         "runtime_surface_pre_return_gate_passed": _to_bool(runtime_surface.get("runtime_surface_pre_return_gate_passed")),

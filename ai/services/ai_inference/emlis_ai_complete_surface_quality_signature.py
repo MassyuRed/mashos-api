@@ -66,6 +66,32 @@ _MALFORMED_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("malformed_nominalization_missing_ru", re.compile(r"(?:離れ|分かれ|外れ|崩れ|揺れ|流れ|逃げ|戻れ|向かえ|変われ|整え|貯め|決め|始め)こと")),
     ("malformed_nominalization_particle_before_koto", re.compile(r"(?:を|が|は|に|で|へ|から|まで|より)こと")),
     ("malformed_nominalization_auxiliary_fragment", re.compile(r"(?:なっ|し|い|見え|残っ|重なっ)こと(?:も|が|は|に|$)")),
+    (
+        "malformed_nominalization_conditional_fragment",
+        re.compile(
+            r"(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "malformed_nominalization_prediction_noun_fragment",
+        re.compile(r"(?:予感|気配|予定|必要|つもり|はず|可能性|見込み|感じ)こと(?:$|[もがはにをでへ、。,.])"),
+    ),
+    (
+        "residual_koto_splice_fragment",
+        re.compile(
+            r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと|予感こと|気配こと|予定こと|"
+            r"必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "long_clause_koto_attachment_risk",
+        re.compile(
+            r"[^。！？!?\n]{18,120}(?:(?:なければ|なきゃ|ないと|しないと|しなくては|せねば)こと|"
+            r"(?:予感|気配|予定|必要|可能性|見込み)こと)(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
 )
 _OBSERVATION_PREDICATE_FAMILIES = {"visible", "remain", "overlap", "important", "center", "generic_exists"}
 
@@ -244,6 +270,16 @@ def _grammar_warning_codes(lines: Sequence[str]) -> list[str]:
     return codes
 
 
+
+
+def _is_malformed_nominalization_code(code: Any) -> bool:
+    value = _clean(code)
+    return bool(
+        value.startswith("malformed_nominalization_")
+        or value.startswith("stem_koto_")
+        or value in {"residual_koto_splice_fragment", "long_clause_koto_attachment_risk"}
+    )
+
 def _raw_echo_risk_from_meta(*metas: Mapping[str, Any]) -> bool:
     for meta in metas:
         safe = _safe_mapping(meta)
@@ -325,7 +361,12 @@ def build_surface_quality_signature(
     # body-free in the exported signature.
     phrase_unit_grammar_warning_codes = list(dict.fromkeys([*phrase_unit_grammar_warning_codes, *line_grammar_codes]))
     grammar_codes = list(dict.fromkeys([*line_grammar_codes, *phrase_unit_grammar_warning_codes]))
-    malformed_nominalization_risk = bool(grammar_codes)
+    malformed_nominalization_codes = [
+        code
+        for code in grammar_codes
+        if _is_malformed_nominalization_code(code)
+    ]
+    malformed_nominalization_risk = bool(malformed_nominalization_codes)
     relation = _safe_mapping(relation_meta)
     lock = _safe_mapping(runtime_surface_source_lock)
     bindings = _safe_mapping(sentence_bindings) if isinstance(sentence_bindings, Mapping) else {}
@@ -388,6 +429,10 @@ def build_surface_quality_signature(
         "observation_predicate_family_count": observation_predicate_family_count,
         "same_ending_family_count": same_ending_family_count,
         "malformed_nominalization_risk": malformed_nominalization_risk,
+        "malformed_nominalization_codes": malformed_nominalization_codes,
+        "surface_malformed_nominalization_codes": malformed_nominalization_codes,
+        "malformed_phrase_unit_count": len(malformed_nominalization_codes),
+        "surface_malformed_phrase_unit_count": len(malformed_nominalization_codes),
         "raw_echo_risk": raw_echo_risk,
         "grammar_warning_codes": grammar_codes,
         "surface_grammar_warning_codes": grammar_codes,
@@ -530,6 +575,10 @@ def normalize_surface_signature_to_scorecard_event(signature: Mapping[str, Any] 
         "same_ending_family_count": int(sig.get("same_ending_family_count") or 0),
         "surface_malformed_nominalization_risk": bool(sig.get("malformed_nominalization_risk")),
         "malformed_nominalization_risk": bool(sig.get("malformed_nominalization_risk")),
+        "surface_malformed_nominalization_codes": list(sig.get("surface_malformed_nominalization_codes") or sig.get("malformed_nominalization_codes") or []),
+        "malformed_nominalization_codes": list(sig.get("malformed_nominalization_codes") or sig.get("surface_malformed_nominalization_codes") or []),
+        "surface_malformed_phrase_unit_count": int(sig.get("surface_malformed_phrase_unit_count") or sig.get("malformed_phrase_unit_count") or 0),
+        "malformed_phrase_unit_count": int(sig.get("malformed_phrase_unit_count") or sig.get("surface_malformed_phrase_unit_count") or 0),
         "surface_raw_echo_risk": bool(sig.get("raw_echo_risk")),
         "raw_echo_risk": bool(sig.get("raw_echo_risk")),
         "surface_grammar_warning_codes": list(sig.get("surface_grammar_warning_codes") or sig.get("grammar_warning_codes") or []),

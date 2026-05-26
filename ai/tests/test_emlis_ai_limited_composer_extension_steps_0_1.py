@@ -10,7 +10,7 @@ SAMPLE_MEMO = """
 そんなの分かってる。たまに逃げ出したくなる。
 """
 
-GATE_READER_FAIL_TEXT = "Mashさん、Emlisです。"
+GATE_READER_FAIL_TEXT = "Mashさん、Emlisです。\n今回の入力では、短いです。"
 
 
 def _input(memo: str = SAMPLE_MEMO):

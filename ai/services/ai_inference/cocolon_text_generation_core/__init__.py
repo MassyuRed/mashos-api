@@ -151,6 +151,7 @@ from .adapters.analysis_composer import (
     compose_analysis_report_text,
     compose_analysis_text_generation,
     evaluate_analysis_composer,
+    evaluate_analysis_environment_state_output_material,
     evaluate_analysis_report_text_safety,
 )
 
@@ -241,6 +242,7 @@ __all__ = [
     "build_analysis_composer_evaluation",
     "compose_analysis_text_generation",
     "evaluate_analysis_composer",
+    "evaluate_analysis_environment_state_output_material",
     "evaluate_analysis_report_text_safety",
     "adapt_analysis_report_input_contract",
     "ANALYSIS_INPUT_CONTRACT_META_KEY",

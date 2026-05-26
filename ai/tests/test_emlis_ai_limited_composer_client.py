@@ -628,6 +628,61 @@ def test_step13_surface_realizer_records_shallow_current_input_core_surface_keys
     assert shallow_v2["old_current_input_core_skeleton_disabled"] is True
 
 
+def test_step5_shallow_surface_realizer_compresses_obligation_and_prediction_relation_line():
+    evidence = [
+        {"span_id": "sk1", "raw_text": "イベントに出なければいけない予定がある。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "sk2", "raw_text": "キャパオーバーしそうな予感がある。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["sk1", "sk2"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    text = result["comment_text"]
+    compact = _compact_source_text(text)
+    assert "イベント予定の近さ" in text
+    assert "キャパオーバーしそうな予感" in text
+    assert "なければこと" not in compact
+    assert "予感こと" not in compact
+    assert "ことも加わっていて" not in compact
+    assert "状態が一色" not in compact
+    assert "一つの要素" not in compact
+    assert "同じ流れ" in text or "同じ場所" in text
+
+    shallow_v2 = result["composer_meta"]["step5_shallow_surface_realizer_v2"]
+    assert shallow_v2["phrase_surface_shape_version"] == "emlis.phrase_surface_shape.v1.20260524"
+    assert shallow_v2["obligation_or_schedule_count"] == 1
+    assert shallow_v2["prediction_or_capacity_count"] == 1
+    assert shallow_v2["direct_koto_attachment_disabled"] is True
+    assert shallow_v2["unsafe_koto_splice_reaches_relation_line"] is False
+    assert shallow_v2["long_raw_clause_relation_line_passthrough"] is False
+    assert shallow_v2["mechanical_relation_stack_disabled"] is True
+    assert all(row["raw_text_included"] is False for row in shallow_v2["phrase_surface_shape_rows"])
+    assert all(row["comment_text_body_included"] is False for row in shallow_v2["phrase_surface_shape_rows"])
+
+
+def test_step5_shallow_surface_realizer_compresses_relationship_obligation_without_koto_attachment():
+    evidence = [
+        {"span_id": "srk1", "raw_text": "人とのコミュニケーションも取らなければいけない。", "detected_type": "event", "source_field": "memo"},
+        {"span_id": "srk2", "raw_text": "キャパオーバーしそうな予感がある。", "detected_type": "event", "source_field": "memo"},
+    ]
+    payload = _step04_payload(evidence)
+    payload["observation_graph"]["primary_state"]["evidence_span_ids"] = ["srk1", "srk2"]
+
+    result = CocolonLimitedComposerClient().generate(payload)
+
+    assert result["composer_source"] == "ai_generated"
+    compact = _compact_source_text(result["comment_text"])
+    assert "人との関わりの負荷" in result["comment_text"]
+    assert "取らなければこと" not in compact
+    assert "予感こと" not in compact
+    assert "ことも加わっていて" not in compact
+    assert "状態が一色" not in compact
+    assert "今見えている範囲" not in compact
+    assert "一つの要素" not in compact
+
+
 def test_step13_surface_realizer_records_componentized_tail_policy():
     evidence = [
         {"span_id": "sr1", "raw_text": "朝から仕事で疲れが溜まっていて、頭が回らない。", "detected_type": "event", "source_field": "memo"},

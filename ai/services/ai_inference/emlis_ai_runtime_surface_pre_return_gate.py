@@ -24,6 +24,21 @@ from emlis_ai_complete_surface_quality_signature import (
     coerce_surface_quality_signature_meta,
 )
 
+from emlis_ai_environment_state_output_surface_contract_completion import (
+    DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS,
+    environment_state_output_scope_marker_present as _shared_environment_state_output_scope_marker_present,
+    environment_state_output_surface_rejection_reasons as _shared_environment_state_output_surface_rejection_reasons,
+)
+
+from emlis_ai_state_answer_special_cases import (
+    state_answer_special_cases_forward_meta,
+    state_answer_special_cases_surface_gate_check,
+)
+from emlis_ai_state_answer_gate_boundary import (
+    build_state_answer_gate_boundary_report,
+    state_answer_gate_boundary_public_summary,
+)
+
 RUNTIME_SURFACE_PRE_RETURN_GATE_VERSION = "emlis.runtime_surface_pre_return_gate.v1"
 RUNTIME_SURFACE_PRE_RETURN_GATE_STEP = "Step1_Runtime_Surface_Pre_Return_Gate_Contract"
 RUNTIME_SURFACE_PRE_RETURN_GATE_SOURCE = "emlis_runtime_surface_pre_return_gate"
@@ -68,6 +83,32 @@ _MALFORMED_SURFACE_NOMINALIZATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], .
     (
         "malformed_nominalization_auxiliary_fragment",
         re.compile(r"(?:しれない|かもしれない|だった|している|見えている)こと(?:も|が|は|に|$)"),
+    ),
+    (
+        "malformed_nominalization_conditional_fragment",
+        re.compile(
+            r"(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "malformed_nominalization_prediction_noun_fragment",
+        re.compile(r"(?:予感|気配|予定|必要|つもり|はず|可能性|見込み|感じ)こと(?:$|[もがはにをでへ、。,.])"),
+    ),
+    (
+        "residual_koto_splice_fragment",
+        re.compile(
+            r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと|予感こと|気配こと|予定こと|"
+            r"必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ、。,.])"
+        ),
+    ),
+    (
+        "long_clause_koto_attachment_risk",
+        re.compile(
+            r"[^。！？!?\n]{18,120}(?:(?:なければ|なきゃ|ないと|しないと|しなくては|せねば)こと|"
+            r"(?:予感|気配|予定|必要|可能性|見込み)こと)(?:$|[もがはにをでへ、。,.])"
+        ),
     ),
 )
 
@@ -149,6 +190,26 @@ _SHALLOW_PROFILE_KEYS = {
     "shallow",
     "limited_current_input_core",
     "limited_shallow",
+}
+
+_ENV_STATE_OUTPUT_SCOPE_MARKERS = DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS
+_ENV_STATE_OUTPUT_PERIOD_TENDENCY_RE = re.compile(
+    r"(?:いつも|毎回|たびに|度に|よく|繰り返し|くり返し|傾向|出やすい|なりやすい|しやすい|パターン)"
+)
+_ENV_STATE_OUTPUT_PERSONALITY_RE = re.compile(r"(?:タイプ|性格|人格|本質|こういう人|診断|症状|病気|トラウマ|障害)")
+_ENV_STATE_OUTPUT_CAUSE_RE = re.compile(r"(?:原因は|原因です|原因として|原因にな|カテゴリ.*原因|仕事.*原因|人間関係.*原因|感情.*原因)")
+_ENV_STATE_OUTPUT_RECOVERY_RE = re.compile(
+    r"(?:回復方法|治る|治ります|解決策|こうすれば|すれば戻れ|戻りやすい|戻れます|必要があります|すべきです|するべきです)"
+)
+
+_ENV_STATE_OUTPUT_TERMINAL_SURFACE_REASONS = {
+    "environment_state_output_scope_marker_missing",
+    "period_tendency_from_single_record_surface",
+    "personality_tendency_surface",
+    "diagnosis_surface",
+    "cause_from_category_surface",
+    "cause_from_emotion_strength_surface",
+    "recovery_prescription_surface",
 }
 
 
@@ -248,6 +309,9 @@ def build_runtime_surface_pre_return_gate_contract_schema() -> dict[str, Any]:
             "same_connector_repetition_count": {"type": "integer", "minimum": 0},
             "grammar_warning_count": {"type": "integer", "minimum": 0},
             "malformed_phrase_unit_count": {"type": "integer", "minimum": 0},
+            "surface_malformed_nominalization_codes": {"type": "array", "items": {"type": "string"}},
+            "koto_splice_detected": {"type": "boolean"},
+            "koto_splice_codes": {"type": "array", "items": {"type": "string"}},
             "rerender_allowed": {"type": "boolean"},
             "rerender_attempted": {"type": "boolean"},
             "rerender_attempt_limit": {"type": "integer", "minimum": 0, "maximum": 1},
@@ -288,6 +352,33 @@ def _surface_malformed_nominalization_codes(comment_text: Any) -> list[str]:
     return _dedupe(codes)
 
 
+def _is_malformed_nominalization_code(code: Any) -> bool:
+    value = _clean(code)
+    return bool(
+        value.startswith("malformed_nominalization_")
+        or value.startswith("stem_koto_")
+        or value in {"residual_koto_splice_fragment", "long_clause_koto_attachment_risk"}
+    )
+
+
+def _surface_signature_malformed_nominalization_codes(signature: Mapping[str, Any]) -> list[str]:
+    if not signature:
+        return []
+    sources: list[Any] = []
+    for key in (
+        "surface_malformed_nominalization_codes",
+        "malformed_nominalization_codes",
+        "surface_grammar_warning_codes",
+        "grammar_warning_codes",
+        "phrase_unit_grammar_warning_codes",
+        "line_grammar_warning_codes",
+    ):
+        value = signature.get(key)
+        if isinstance(value, (list, tuple, set)):
+            sources.extend(value)
+    return _dedupe(code for code in sources if _is_malformed_nominalization_code(code))
+
+
 def _malformed_phrase_unit_count(
     *,
     signature: Mapping[str, Any],
@@ -309,14 +400,18 @@ def _malformed_phrase_unit_count(
         return max(0, _safe_int(explicit_raw), surface_malformed_count)
     warning_codes = _dedupe(
         list(signature.get("phrase_unit_grammar_warning_codes") or [])
+        + list(signature.get("surface_grammar_warning_codes") or [])
         + list(signature.get("grammar_warning_codes") or [])
+        + list(signature.get("surface_malformed_nominalization_codes") or [])
+        + list(signature.get("malformed_nominalization_codes") or [])
         + list(surface_malformed_codes or [])
     )
-    warning_count = len([
-        code for code in warning_codes
-        if "nominalization" in code or "stem_koto" in code or "malformed" in code
-    ])
-    return max(warning_count, surface_malformed_count)
+    warning_count = len([code for code in warning_codes if _is_malformed_nominalization_code(code)])
+    explicit_signature_count = _safe_int(
+        signature.get("surface_malformed_phrase_unit_count")
+        or signature.get("malformed_phrase_unit_count")
+    )
+    return max(warning_count, surface_malformed_count, explicit_signature_count)
 
 
 def _is_shallow_observation_path(composer_meta: Mapping[str, Any] | None) -> bool:
@@ -331,10 +426,85 @@ def _is_shallow_observation_path(composer_meta: Mapping[str, Any] | None) -> boo
     )
 
 
+def _state_answer_special_cases_from_inputs(
+    *,
+    state_answer_special_cases: Any = None,
+    composer_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    explicit = state_answer_special_cases_forward_meta(state_answer_special_cases)
+    if explicit:
+        return explicit
+    meta = _safe_mapping(composer_meta)
+    for key in ("state_answer_special_cases", "state_answer_special_cases_payload", "special_handling"):
+        found = state_answer_special_cases_forward_meta(meta.get(key))
+        if found:
+            return found
+    contract = _safe_mapping(meta.get("state_answer_surface_contract"))
+    for key in ("special_handling", "state_answer_special_cases", "state_answer_special_cases_payload"):
+        found = state_answer_special_cases_forward_meta(contract.get(key))
+        if found:
+            return found
+    return {}
+
+
+def _environment_state_output_surface_contract(composer_meta: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = _safe_mapping(composer_meta)
+    contract = meta.get("environment_state_output_surface_contract")
+    if isinstance(contract, Mapping):
+        return dict(contract)
+    structure = meta.get("observation_structure_material") or meta.get("observation_structure_dictionary")
+    if isinstance(structure, Mapping):
+        frame = structure.get("environment_state_output_frame")
+        if isinstance(frame, Mapping) and frame:
+            frame_policy = frame.get("frame_policy") if isinstance(frame.get("frame_policy"), Mapping) else {}
+            output_axis = frame.get("output_axis") if isinstance(frame.get("output_axis"), Mapping) else {}
+            return {
+                "connected": True,
+                "single_record_only": True,
+                "scope_marker_required": True,
+                "allowed_scope_markers": list(_ENV_STATE_OUTPUT_SCOPE_MARKERS),
+                "required_scope_marker": _clean(frame_policy.get("scope_marker")) or "今回の入力では",
+                "allowed_surface_claim_strength": "single_observation",
+                "output_theme_ids": list(output_axis.get("output_theme_ids") or []),
+            }
+    if bool(meta.get("environment_state_output_frame_limited_use")):
+        return {
+            "connected": True,
+            "single_record_only": True,
+            "scope_marker_required": bool(meta.get("environment_state_output_scope_marker_required", True)),
+            "allowed_scope_markers": list(meta.get("environment_state_output_allowed_scope_markers") or _ENV_STATE_OUTPUT_SCOPE_MARKERS),
+            "required_scope_marker": "今回の入力では",
+            "allowed_surface_claim_strength": _clean(meta.get("environment_state_output_allowed_surface_claim_strength")) or "single_observation",
+            "output_theme_ids": list(meta.get("environment_state_output_output_theme_ids") or []),
+        }
+    return {}
+
+
+def _environment_state_output_surface_rejection_reasons(
+    *,
+    comment_text: Any,
+    composer_meta: Mapping[str, Any] | None,
+) -> list[str]:
+    contract = _environment_state_output_surface_contract(composer_meta)
+    if not bool(contract.get("connected")):
+        return []
+    text = _clean(comment_text)
+    if not text:
+        if bool(contract.get("scope_marker_required", False)):
+            return ["environment_state_output_scope_marker_missing"]
+        return []
+    return _dedupe(_shared_environment_state_output_surface_rejection_reasons(text, contract))
+
+
+def _environment_state_output_terminal_surface_block(reasons: Sequence[str]) -> bool:
+    return any(_clean(reason) in _ENV_STATE_OUTPUT_TERMINAL_SURFACE_REASONS for reason in reasons)
+
+
 def _surface_rejection_reasons(
     *,
     signature: Mapping[str, Any],
     surface_malformed_codes: Sequence[str],
+    signature_malformed_codes: Sequence[str],
     malformed_phrase_unit_count: int,
 ) -> list[str]:
     if not signature:
@@ -367,8 +537,9 @@ def _surface_rejection_reasons(
         reasons.append("malformed_nominalization_risk")
     if malformed_phrase_unit_count > 0:
         reasons.append("malformed_phrase_unit")
-    reasons.extend(surface_malformed_codes)
-    if any(str(reason).startswith("malformed_nominalization_") for reason in surface_malformed_codes):
+    malformed_codes = _dedupe([*surface_malformed_codes, *signature_malformed_codes])
+    reasons.extend(malformed_codes)
+    if any(_is_malformed_nominalization_code(reason) for reason in malformed_codes):
         reasons.append("malformed_nominalization_risk")
     return _dedupe(reasons)
 
@@ -380,11 +551,14 @@ def _action_for_reasons(
     rerender_allowed: bool,
     rerender_attempted: bool,
     low_information_reroute_allowed: bool,
+    terminal_surface_block: bool = False,
 ) -> str:
     if not reasons:
         return ACTION_ALLOW
     if "surface_signature_unavailable" in reasons:
         return ACTION_FAIL_CLOSED
+    if terminal_surface_block:
+        return ACTION_BLOCK
     if shallow_observation_path and rerender_allowed and not rerender_attempted:
         return ACTION_RERENDER_SHALLOW_V2
     if low_information_reroute_allowed and not rerender_attempted:
@@ -402,6 +576,8 @@ def build_runtime_surface_pre_return_gate_report(
     rerender_attempted: bool = False,
     rerender_attempt_limit: int = 1,
     low_information_reroute_allowed: bool = False,
+    state_answer_special_cases: Any = None,
+    state_answer_surface_contract: Any = None,
 ) -> dict[str, Any]:
     """Build a meta-only Step1 pre-return gate report.
 
@@ -415,16 +591,54 @@ def build_runtime_surface_pre_return_gate_report(
         phrase_unit_grammar_meta=phrase_unit_grammar_meta,
     )
     surface_malformed_codes = _surface_malformed_nominalization_codes(comment_text)
+    signature_malformed_codes = _surface_signature_malformed_nominalization_codes(signature)
     malformed_count = _malformed_phrase_unit_count(
         signature=signature,
-        surface_malformed_codes=surface_malformed_codes,
+        surface_malformed_codes=_dedupe([*surface_malformed_codes, *signature_malformed_codes]),
         phrase_unit_grammar_meta=phrase_unit_grammar_meta,
     )
+    surface_malformed_codes = _dedupe([*surface_malformed_codes, *signature_malformed_codes])
     reasons = _surface_rejection_reasons(
         signature=signature,
         surface_malformed_codes=surface_malformed_codes,
+        signature_malformed_codes=signature_malformed_codes,
         malformed_phrase_unit_count=malformed_count,
     )
+    environment_state_output_contract = _environment_state_output_surface_contract(composer_meta)
+    environment_state_output_reasons = _environment_state_output_surface_rejection_reasons(
+        comment_text=comment_text,
+        composer_meta=composer_meta,
+    )
+    special_cases_meta = _state_answer_special_cases_from_inputs(
+        state_answer_special_cases=state_answer_special_cases,
+        composer_meta=composer_meta,
+    )
+    special_case_surface_report = state_answer_special_cases_surface_gate_check(
+        visible_surface=comment_text,
+        special_cases=special_cases_meta,
+    )
+    state_answer_gate_boundary_report = build_state_answer_gate_boundary_report(
+        visible_surface=comment_text,
+        state_answer_surface_contract=state_answer_surface_contract,
+        state_answer_special_cases=special_cases_meta,
+        composer_meta=composer_meta,
+    )
+    special_case_reasons = _dedupe(special_case_surface_report.get("surface_blocker_reasons") or [])
+    state_answer_gate_boundary_reasons = _dedupe(
+        state_answer_gate_boundary_report.get("surface_blocker_reasons")
+        or state_answer_gate_boundary_report.get("rejection_reasons")
+        or []
+    )
+    environment_state_output_terminal_block = _environment_state_output_terminal_surface_block(environment_state_output_reasons)
+    special_case_terminal_block = bool(special_case_reasons)
+    state_answer_gate_boundary_terminal_block = bool(
+        state_answer_gate_boundary_report.get("terminal_surface_block") or state_answer_gate_boundary_reasons
+    )
+    environment_state_output_marker_present = bool(
+        environment_state_output_contract.get("connected")
+        and _shared_environment_state_output_scope_marker_present(comment_text, environment_state_output_contract)
+    )
+    reasons = _dedupe([*reasons, *environment_state_output_reasons, *special_case_reasons, *state_answer_gate_boundary_reasons])
     shallow_path = _is_shallow_observation_path(composer_meta)
     action = _action_for_reasons(
         reasons=reasons,
@@ -432,6 +646,11 @@ def build_runtime_surface_pre_return_gate_report(
         rerender_allowed=bool(rerender_allowed),
         rerender_attempted=bool(rerender_attempted),
         low_information_reroute_allowed=bool(low_information_reroute_allowed),
+        terminal_surface_block=(
+            environment_state_output_terminal_block
+            or special_case_terminal_block
+            or state_answer_gate_boundary_terminal_block
+        ),
     )
     passed = action == ACTION_ALLOW and not reasons
     report: dict[str, Any] = {
@@ -463,11 +682,87 @@ def build_runtime_surface_pre_return_gate_report(
         ),
         "malformed_nominalization_risk": bool(signature.get("malformed_nominalization_risk") or surface_malformed_codes),
         "malformed_phrase_unit_count": int(malformed_count),
+        "surface_malformed_nominalization_codes": list(surface_malformed_codes),
+        "koto_splice_detected": any(
+            code in {
+                "malformed_nominalization_conditional_fragment",
+                "malformed_nominalization_prediction_noun_fragment",
+                "residual_koto_splice_fragment",
+                "long_clause_koto_attachment_risk",
+            }
+            for code in surface_malformed_codes
+        ),
+        "koto_splice_codes": [
+            code
+            for code in surface_malformed_codes
+            if code in {
+                "malformed_nominalization_conditional_fragment",
+                "malformed_nominalization_prediction_noun_fragment",
+                "residual_koto_splice_fragment",
+                "long_clause_koto_attachment_risk",
+            }
+        ],
         "shallow_observation_path": bool(shallow_path),
         "rerender_allowed": bool(rerender_allowed),
         "rerender_attempted": bool(rerender_attempted),
         "rerender_attempt_limit": max(0, min(1, _safe_int(rerender_attempt_limit, default=1))),
         "low_information_reroute_allowed": bool(low_information_reroute_allowed),
+        "environment_state_output_frame_surface_limited_use": bool(environment_state_output_contract.get("connected")),
+        "environment_state_output_single_record_only": bool(environment_state_output_contract.get("single_record_only", False)),
+        "environment_state_output_scope_marker_required": bool(environment_state_output_contract.get("scope_marker_required", False)),
+        "environment_state_output_scope_marker_present": bool(environment_state_output_marker_present),
+        "environment_state_output_runtime_marker_check_performed": bool(
+            environment_state_output_contract.get("connected")
+            and environment_state_output_contract.get("scope_marker_required", False)
+        ),
+        "environment_state_output_runtime_double_check_active": bool(environment_state_output_contract.get("connected")),
+        "environment_state_output_runtime_gate_repair_applied": False,
+        "environment_state_output_terminal_surface_block": bool(environment_state_output_terminal_block),
+        "environment_state_output_allowed_surface_claim_strength": _clean(
+            environment_state_output_contract.get("allowed_surface_claim_strength")
+        ),
+        "environment_state_output_output_theme_ids": list(environment_state_output_contract.get("output_theme_ids") or []),
+        "environment_state_output_surface_rejection_reasons": list(environment_state_output_reasons),
+        "state_answer_special_case_surface_guard": _safe_mapping(special_case_surface_report),
+        "state_answer_special_case_surface_rejection_reasons": list(special_case_reasons),
+        "state_answer_special_case_terminal_surface_block": bool(special_case_terminal_block),
+        "state_answer_special_case_allowed_exception_ids": list(special_case_surface_report.get("allowed_exception_ids_detected") or []),
+        "self_denial_limited_counter_opinion_allowed_by_special_case": bool(
+            special_case_surface_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_special_case": bool(
+            special_case_surface_report.get("anger_target_judgement_agreement_detected")
+        ),
+        "state_answer_gate_boundary": state_answer_gate_boundary_public_summary(state_answer_gate_boundary_report),
+        "state_answer_gate_boundary_rejection_reasons": list(state_answer_gate_boundary_reasons),
+        "state_answer_gate_boundary_terminal_surface_block": bool(state_answer_gate_boundary_terminal_block),
+        "state_answer_forbidden_claim_reasons": list(state_answer_gate_boundary_report.get("forbidden_claim_reasons") or []),
+        "state_answer_allowed_exception_ids": list(
+            state_answer_gate_boundary_report.get("allowed_exception_ids_detected")
+            or state_answer_gate_boundary_report.get("allowed_exception_ids")
+            or []
+        ),
+        "state_answer_public_meta_summary_only": True,
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
+        "self_denial_limited_counter_opinion_allowed_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("anger_target_judgement_agreement_blocked")
+        ),
+        "period_tendency_from_single_record_surface_blocked": "period_tendency_from_single_record_surface" in environment_state_output_reasons,
+        "personality_tendency_surface_blocked": "personality_tendency_surface" in environment_state_output_reasons,
+        "cause_from_category_surface_blocked": "cause_from_category_surface" in environment_state_output_reasons,
+        "cause_from_emotion_strength_surface_blocked": "cause_from_emotion_strength_surface" in environment_state_output_reasons,
+        "diagnosis_surface_blocked": "diagnosis_surface" in environment_state_output_reasons,
+        "recovery_prescription_surface_blocked": "recovery_prescription_surface" in environment_state_output_reasons,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "personality_tendency_allowed": False,
+        "diagnosis_allowed": False,
+        "cause_inferred_from_category": False,
+        "cause_inferred_from_emotion_strength": False,
         "raw_input_included": False,
         "raw_text_included": False,
         "input_text_included": False,
@@ -523,6 +818,9 @@ def build_runtime_surface_pre_return_gate_contract_meta() -> dict[str, Any]:
         "grammar_warning_count": 0,
         "malformed_nominalization_risk": False,
         "malformed_phrase_unit_count": 0,
+        "surface_malformed_nominalization_codes": [],
+        "koto_splice_detected": False,
+        "koto_splice_codes": [],
         "rerender_allowed": False,
         "rerender_attempted": False,
         "rerender_attempt_limit": 1,

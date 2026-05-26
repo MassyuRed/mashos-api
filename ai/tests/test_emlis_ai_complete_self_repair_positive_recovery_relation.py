@@ -115,7 +115,7 @@ def test_self_repair_positive_recovery_marker_uses_relation_surface_contract() -
     assert result.repaired is True
     assert result.ready is True
     assert repaired_text != before_text
-    assert "戻ってくる動きと、その前の重さが同じ流れの中でつながっています。" in repaired_text
+    assert "戻ってくる動きとその前の重さが同じ流れの中でつながっています。" in repaired_text
     assert "戻ってくる動きと前段の負荷の関係も残しています。" not in repaired_text
     assert trace["reason_code"] == "relation_not_expressed"
     assert trace["applied_operation"] == "make_declared_relation_surface_explicit"

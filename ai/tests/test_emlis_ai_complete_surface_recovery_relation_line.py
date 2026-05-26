@@ -70,7 +70,7 @@ def test_step4_surface_recovery_relation_line_uses_relation_surface_contract() -
     relation_line = _relation_line(realization)
 
     assert realization.ready is True
-    assert relation_line.surface_text == "戻ってくる動きと、その前の重さが同じ流れの中でつながっています。"
+    assert relation_line.surface_text == "戻ってくる動きとその前の重さが同じ流れの中でつながっています。"
     assert relation_line.connector_key == "relation_recovery_contract_load_bridge"
     assert relation_line.predicate_key == "recovery_load_bridge_contract"
     assert relation_line.ending_key == "tsunagaru"

@@ -14,6 +14,15 @@ from collections.abc import Iterable, Mapping
 import re
 from typing import Any, Sequence
 
+from emlis_ai_state_answer_special_cases import (
+    state_answer_special_cases_forward_meta,
+    state_answer_special_cases_surface_gate_check,
+)
+from emlis_ai_state_answer_gate_boundary import (
+    build_state_answer_gate_boundary_report,
+    state_answer_gate_boundary_public_summary,
+)
+
 RUNTIME_SURFACE_TONE_ENGINE_2_1_VERSION = "emlis.runtime_surface_tone_engine.v2_1"
 RUNTIME_SURFACE_TONE_ENGINE_2_1_POLICY_VERSION = "emlis.runtime_surface_tone_policy.v2_1"
 RUNTIME_SURFACE_TONE_ENGINE_2_1_REPORT_VERSION = "emlis.runtime_surface_tone_engine_report.v2_1"
@@ -356,6 +365,89 @@ def _hit_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return hits
 
 
+def _state_answer_special_cases_from_inputs(
+    *,
+    state_answer_special_cases: Any = None,
+    composer_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    explicit = state_answer_special_cases_forward_meta(state_answer_special_cases)
+    if explicit:
+        return explicit
+    meta = _safe_mapping(composer_meta)
+    for key in (
+        "state_answer_special_cases",
+        "state_answer_special_cases_payload",
+        "special_handling",
+    ):
+        found = state_answer_special_cases_forward_meta(meta.get(key))
+        if found:
+            return found
+    contract = _safe_mapping(meta.get("state_answer_surface_contract"))
+    for key in ("special_handling", "state_answer_special_cases", "state_answer_special_cases_payload"):
+        found = state_answer_special_cases_forward_meta(contract.get(key))
+        if found:
+            return found
+    return {}
+
+
+def _tone_hits_after_special_case_adjustment(
+    hits: Sequence[Mapping[str, Any]],
+    *,
+    special_case_surface_report: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], int]:
+    allowed_self_denial_exception = bool(
+        special_case_surface_report.get("self_denial_limited_counter_opinion_allowed")
+        and special_case_surface_report.get("self_denial_exception_evidence_ready")
+        and not special_case_surface_report.get("surface_blocker_reasons")
+    )
+    adjusted: list[dict[str, Any]] = []
+    allowed_hit_count = 0
+    for hit in hits:
+        reason = _clean(hit.get("reason"))
+        if allowed_self_denial_exception and reason in {"personality_claim", "generic_comfort", "over_empathy"}:
+            allowed_hit_count += 1
+            continue
+        adjusted.append(dict(hit))
+    return adjusted, allowed_hit_count
+
+
+def _special_case_synthetic_hits(special_case_surface_report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    for reason in _dedupe(special_case_surface_report.get("surface_blocker_reasons") or []):
+        hits.append(
+            {
+                "sentence_id": "state_answer_special_case_surface",
+                "line_role": "special_case_guard",
+                "reason": reason,
+                "reason_family": "safety",
+                "qa_dimension": "distance",
+            }
+        )
+    return hits
+
+
+def _state_answer_boundary_synthetic_hits(
+    state_answer_boundary_report: Mapping[str, Any],
+    *,
+    existing_reasons: Iterable[Any] | Any | None = None,
+) -> list[dict[str, Any]]:
+    existing = set(_dedupe(existing_reasons))
+    hits: list[dict[str, Any]] = []
+    for reason in _dedupe(state_answer_boundary_report.get("surface_blocker_reasons") or []):
+        if reason in existing:
+            continue
+        hits.append(
+            {
+                "sentence_id": "state_answer_gate_boundary_surface",
+                "line_role": "state_answer_gate_boundary",
+                "reason": reason,
+                "reason_family": "safety",
+                "qa_dimension": "distance",
+            }
+        )
+    return hits
+
+
 def _blind_qa_meta(blind_qa: Mapping[str, Any] | None) -> dict[str, Any]:
     qa = _safe_mapping(blind_qa)
     read = _safe_float(qa.get("read_feeling_score"))
@@ -423,6 +515,8 @@ def build_runtime_surface_tone_engine_2_1_report(
     tone_policy: Mapping[str, Any] | None = None,
     blind_qa: Mapping[str, Any] | None = None,
     composer_meta: Mapping[str, Any] | None = None,
+    state_answer_special_cases: Any = None,
+    state_answer_surface_contract: Any = None,
 ) -> dict[str, Any]:
     rows = _surface_rows(surface_realization, comment_text=comment_text)
     if not rows and isinstance(composer_meta, Mapping):
@@ -430,7 +524,31 @@ def build_runtime_surface_tone_engine_2_1_report(
         if isinstance(surface, Mapping):
             rows = _surface_rows(surface)
 
-    hits = _hit_rows(rows)
+    raw_hits = _hit_rows(rows)
+    special_cases_meta = _state_answer_special_cases_from_inputs(
+        state_answer_special_cases=state_answer_special_cases,
+        composer_meta=composer_meta,
+    )
+    special_case_surface_report = state_answer_special_cases_surface_gate_check(
+        visible_surface=comment_text,
+        special_cases=special_cases_meta,
+    )
+    state_answer_gate_boundary_report = build_state_answer_gate_boundary_report(
+        visible_surface=comment_text,
+        state_answer_surface_contract=state_answer_surface_contract,
+        state_answer_special_cases=special_cases_meta,
+        composer_meta=composer_meta,
+    )
+    adjusted_hits, special_case_allowed_tone_hit_count = _tone_hits_after_special_case_adjustment(
+        raw_hits,
+        special_case_surface_report=special_case_surface_report,
+    )
+    special_case_hits = _special_case_synthetic_hits(special_case_surface_report)
+    state_answer_gate_boundary_hits = _state_answer_boundary_synthetic_hits(
+        state_answer_gate_boundary_report,
+        existing_reasons=special_case_surface_report.get("surface_blocker_reasons") or [],
+    )
+    hits = [*adjusted_hits, *special_case_hits, *state_answer_gate_boundary_hits]
     reason_counter = Counter(hit["reason"] for hit in hits)
     family_counter = Counter(hit["reason_family"] for hit in hits)
     qa_counter = Counter(hit["qa_dimension"] for hit in hits)
@@ -469,6 +587,38 @@ def build_runtime_surface_tone_engine_2_1_report(
         "tone_read_feeling_machine_warning_count": read_feeling_machine_warning_count,
         "tone_naturalness_major_count": 1 if ending_family_repetition_major else 0,
         "tone_guard_hits": hits,
+        "state_answer_special_case_surface_guard": _json_safe_mapping(special_case_surface_report),
+        "state_answer_special_case_guard_reasons": list(special_case_surface_report.get("surface_blocker_reasons") or []),
+        "state_answer_special_case_allowed_exception_ids": list(special_case_surface_report.get("allowed_exception_ids_detected") or []),
+        "state_answer_special_case_allowed_tone_hit_count": int(special_case_allowed_tone_hit_count),
+        "state_answer_gate_boundary": state_answer_gate_boundary_public_summary(state_answer_gate_boundary_report),
+        "state_answer_gate_boundary_reasons": list(state_answer_gate_boundary_report.get("surface_blocker_reasons") or []),
+        "state_answer_gate_boundary_rejection_reasons": list(state_answer_gate_boundary_report.get("rejection_reasons") or []),
+        "state_answer_gate_boundary_terminal_surface_block": bool(
+            state_answer_gate_boundary_report.get("terminal_surface_block")
+        ),
+        "state_answer_forbidden_claim_reasons": list(state_answer_gate_boundary_report.get("forbidden_claim_reasons") or []),
+        "state_answer_forbidden_claim_hit_count": len(state_answer_gate_boundary_hits),
+        "state_answer_allowed_exception_ids_detected": list(
+            state_answer_gate_boundary_report.get("allowed_exception_ids_detected")
+            or state_answer_gate_boundary_report.get("allowed_exception_ids")
+            or []
+        ),
+        "state_answer_public_meta_summary_only": True,
+        "state_answer_contract_body_returned": False,
+        "state_answer_raw_evidence_included": False,
+        "self_denial_limited_counter_opinion_allowed_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_state_answer_boundary": bool(
+            state_answer_gate_boundary_report.get("anger_target_judgement_agreement_blocked")
+        ),
+        "self_denial_limited_counter_opinion_allowed_by_special_case": bool(
+            special_case_surface_report.get("self_denial_limited_counter_opinion_allowed")
+        ),
+        "anger_target_judgement_agreement_blocked_by_special_case": bool(
+            special_case_surface_report.get("anger_target_judgement_agreement_detected")
+        ),
         "tone_guard_reasons": blocker_reasons,
         "blocker_reasons": blocker_reasons,
         "tone_reason_counts": dict(reason_counter),

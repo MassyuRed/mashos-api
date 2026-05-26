@@ -18,6 +18,7 @@ from cocolon_text_generation_core.result import CoreTextCandidate, json_safe_map
 from cocolon_text_generation_core.sentence_plan import build_sentence_plan
 from cocolon_text_generation_core.types import CoreTextPayload, PhraseUnit, TextGenerationResult
 
+from .piece_environment_state_output_guard import build_piece_environment_state_output_guard
 from .piece_composer_input_contract import (
     CHANNEL_ANSWER,
     CHANNEL_QUESTION,
@@ -105,10 +106,29 @@ def build_runtime_piece_plan(
     answer_preservation_policy: str = "source_scaled",
     overcompression_risk: bool = False,
     minimum_detail_level: str = "source_scaled",
+    environment_state_output_frame: Mapping[str, Any] | None = None,
+    environment_state_output_must_keep_enabled: bool = True,
 ) -> Mapping[str, Any]:
-    keep = _tokens(must_keep_signal_keys or coverage_roles or ("piece_runtime_claim",))
-    roles = _tokens(coverage_roles or keep)
-    claims = _texts([*_as_list(source_texts), *_as_list(source_claims)], limit=180)
+    eso_guard = build_piece_environment_state_output_guard(
+        environment_state_output_frame,
+        apply_must_keep=bool(environment_state_output_must_keep_enabled),
+    )
+    eso_applied = bool(eso_guard.get("must_keep_signal_keys_applied", False))
+    eso_keys = _tokens(eso_guard.get("must_keep_signal_keys", ()) if eso_applied else ())
+    base_keep = _tokens(must_keep_signal_keys or coverage_roles or (() if eso_applied else ("piece_runtime_claim",)))
+    keep = _tokens([*base_keep, *eso_keys])
+    roles = _tokens([*_as_list(coverage_roles or base_keep), *eso_keys])
+    claims = _texts(
+        [
+            *_as_list(eso_guard.get("source_claim_values", ())),
+            *_as_list(source_texts),
+            *_as_list(source_claims),
+        ],
+        limit=180,
+    )
+    preservation = _clean(answer_preservation_policy) or "source_scaled"
+    if eso_applied:
+        preservation = "preserve_user_claims"
     return _RuntimePlan(
         {
             "focus_key": _clean(focus_key) or "piece_runtime",
@@ -118,9 +138,12 @@ def build_runtime_piece_plan(
             "coverage_roles": list(roles),
             "must_keep_signal_keys": list(keep),
             "source_claims": list(claims),
-            "answer_preservation_policy": _clean(answer_preservation_policy) or "source_scaled",
-            "overcompression_risk": bool(overcompression_risk),
+            "answer_preservation_policy": preservation,
+            "overcompression_risk": bool(overcompression_risk or eso_guard.get("overcompression_risk", False)),
             "minimum_detail_level": _clean(minimum_detail_level) or "source_scaled",
+            "environment_state_output_piece_guard": dict(eso_guard),
+            "environment_state_output_frame_connected": bool(eso_guard.get("connected", False)),
+            "environment_state_output_must_keep_enabled": bool(environment_state_output_must_keep_enabled),
             "reason": "phase10_runtime_piece_plan",
         }
     )
@@ -136,6 +159,10 @@ def _plan_with_runtime_text(plan: Any, *, question_text: Any, answer_text: Any) 
         "answer_preservation_policy",
         "overcompression_risk",
         "minimum_detail_level",
+        "environment_state_output_piece_guard",
+        "environment_state_output_frame",
+        "environment_state_output_frame_connected",
+        "environment_state_output_must_keep_enabled",
         "reason",
     )
     data = {key: _get(plan, key) for key in keys}
@@ -274,6 +301,9 @@ def _runtime_payload(
             "overcompression_risk": bool(_contract_meta(contract).get("overcompression_risk", False)),
             "must_keep_signal_keys": list(_contract_meta(contract).get("must_keep_signal_keys") or ()),
             "source_claims": list(_contract_meta(contract).get("source_claims") or ()),
+            "environment_state_output_piece_guard": dict(_contract_meta(contract).get("environment_state_output_piece_guard") or {}),
+            "environment_state_output_must_keep_applied": bool(_contract_meta(contract).get("environment_state_output_must_keep_applied", False)),
+            "environment_state_output_overcompression_risk": bool(_contract_meta(contract).get("environment_state_output_overcompression_risk", False)),
             "no_emlis_voice_leakage": True,
             "no_user_claim_addition": True,
             "require_text_for_must_keep": _requires_must_keep_text(contract, channel),
@@ -323,6 +353,10 @@ def _runtime_candidate(*, channel: str, text: str, payload: CoreTextPayload, con
             "minimum_detail_level": _contract_meta(contract).get("minimum_detail_level"),
             "overcompression_risk": bool(_contract_meta(contract).get("overcompression_risk", False)),
             "must_keep_signal_keys": list(_contract_meta(contract).get("must_keep_signal_keys") or ()),
+            "environment_state_output_frame_connected": bool(_contract_meta(contract).get("environment_state_output_frame_connected", False)),
+            "environment_state_output_must_keep_applied": bool(_contract_meta(contract).get("environment_state_output_must_keep_applied", False)),
+            "environment_state_output_overcompression_risk": bool(_contract_meta(contract).get("environment_state_output_overcompression_risk", False)),
+            "environment_state_output_output_theme_ids": list(_contract_meta(contract).get("environment_state_output_output_theme_ids") or ()),
         },
     )
 
@@ -411,6 +445,12 @@ class PieceComposerEvaluation:
             "overcompression_risk": bool(_contract_meta(self.contract).get("overcompression_risk", False)),
             "must_keep_signal_keys": list(_contract_meta(self.contract).get("must_keep_signal_keys") or ()),
             "source_claims": list(_contract_meta(self.contract).get("source_claims") or ()),
+            "environment_state_output_frame_connected": bool(_contract_meta(self.contract).get("environment_state_output_frame_connected", False)),
+            "environment_state_output_must_keep_applied": bool(_contract_meta(self.contract).get("environment_state_output_must_keep_applied", False)),
+            "environment_state_output_must_keep_signal_keys": list(_contract_meta(self.contract).get("environment_state_output_must_keep_signal_keys") or ()),
+            "environment_state_output_overcompression_risk": bool(_contract_meta(self.contract).get("environment_state_output_overcompression_risk", False)),
+            "environment_state_output_output_theme_ids": list(_contract_meta(self.contract).get("environment_state_output_output_theme_ids") or ()),
+            "environment_state_output_piece_guard": dict(_contract_meta(self.contract).get("environment_state_output_piece_guard") or {}),
             "results": {"question": self.question_result.as_meta(), "answer": self.answer_result.as_meta()},
             "input_contract": contract_meta,
             "meta": dict(self.meta),

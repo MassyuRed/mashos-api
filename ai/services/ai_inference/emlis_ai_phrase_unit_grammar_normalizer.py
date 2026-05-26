@@ -103,6 +103,28 @@ _MALFORMED_NOMINALIZATION_FRAGMENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], 
         re.compile(r"たりこと(?:$|[もがはにをでへ])"),
     ),
     (
+        "malformed_nominalization_conditional_fragment",
+        re.compile(
+            r"(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|"
+            r"行かなければ|出なければ|やらなければ|取らなければ)こと(?:$|[もがはにをでへ])"
+        ),
+    ),
+    (
+        "malformed_nominalization_prediction_noun_fragment",
+        re.compile(r"(?:予感|気配|予定|必要|つもり|はず|可能性|見込み|感じ)こと(?:$|[もがはにをでへ])"),
+    ),
+    (
+        "residual_koto_splice_fragment",
+        re.compile(r"(?:ことこと|(?:なければ|なきゃ|ないと|しないと|しなくては|せねば|しなければ|行かなければ|出なければ|やらなければ|取らなければ)こと|予感こと|気配こと|予定こと|必要こと|つもりこと|はずこと|可能性こと|見込みこと|感じこと)(?:$|[もがはにをでへ])"),
+    ),
+    (
+        "long_clause_koto_attachment_risk",
+        re.compile(
+            r".{18,}(?:(?:なければ|なきゃ|ないと|しないと|しなくては|せねば)こと|"
+            r"(?:予感|気配|予定|必要|可能性|見込み)こと)(?:$|[もがはにをでへ])"
+        ),
+    ),
+    (
         "malformed_nominalization_unknown_fragment",
         re.compile(r"しれない(?:どれ|どこ|なに|何)こと(?:$|[もがはに])"),
     ),
@@ -341,17 +363,27 @@ class PhraseUnitGrammarNormalizationResult:
             "surface_grammar_warning_count": len(tuple(self.warning_codes)),
             "phrase_unit_grammar_warning_count": len(tuple(self.warning_codes)),
             "grammar_warning_major": self.grammar_warning_major,
-            "malformed_nominalization_risk": any("nominal" in code or "stem_koto" in code for code in self.warning_codes),
+            "malformed_nominalization_risk": any(
+                "nominal" in code or "stem_koto" in code or "koto_splice" in code or "koto_attachment" in code
+                for code in self.warning_codes
+            ),
             "malformed_nominalization_guard_version": "emlis.phrase_unit_malformed_nominalization_guard.v1",
             "malformed_nominalization_guard_enabled": True,
             "malformed_phrase_unit_guard_enabled": True,
-            "malformed_phrase_unit_count": len([code for code in self.warning_codes if "nominalization" in code or "stem_koto" in code or "malformed" in code]),
+            "malformed_phrase_unit_count": len([
+                code for code in self.warning_codes
+                if "nominalization" in code or "stem_koto" in code or "malformed" in code or "koto_splice" in code or "koto_attachment" in code
+            ]),
             "malformed_nominalization_temporal_fragment_guarded": "malformed_nominalization_temporal_fragment" in self.warning_codes,
             "malformed_nominalization_adjective_fragment_guarded": "malformed_nominalization_adjective_fragment" in self.warning_codes,
             "malformed_nominalization_question_fragment_guarded": "malformed_nominalization_question_fragment" in self.warning_codes,
             "malformed_nominalization_auxiliary_fragment_guarded": "malformed_nominalization_auxiliary_fragment" in self.warning_codes,
             "malformed_nominalization_te_form_fragment_guarded": "malformed_nominalization_te_form_fragment" in self.warning_codes,
             "malformed_nominalization_tari_fragment_guarded": "malformed_nominalization_tari_fragment" in self.warning_codes,
+            "malformed_nominalization_conditional_fragment_guarded": "malformed_nominalization_conditional_fragment" in self.warning_codes,
+            "malformed_nominalization_prediction_noun_fragment_guarded": "malformed_nominalization_prediction_noun_fragment" in self.warning_codes,
+            "residual_koto_splice_fragment_guarded": "residual_koto_splice_fragment" in self.warning_codes,
+            "long_clause_koto_attachment_risk_guarded": "long_clause_koto_attachment_risk" in self.warning_codes,
             "malformed_nominalization_unknown_fragment_guarded": "malformed_nominalization_unknown_fragment" in self.warning_codes,
             "orphan_particle_risk": "orphan_particle" in self.warning_codes,
             "unfinished_phrase_risk": "unfinished_phrase" in self.warning_codes or "unfinished_stem_fragment" in self.warning_codes,
@@ -652,6 +684,10 @@ def build_phrase_unit_grammar_normalizer_contract_meta() -> dict[str, Any]:
         "malformed_nominalization_auxiliary_fragment_guard_enabled": True,
         "malformed_nominalization_te_form_fragment_guard_enabled": True,
         "malformed_nominalization_tari_fragment_guard_enabled": True,
+        "malformed_nominalization_conditional_fragment_guard_enabled": True,
+        "malformed_nominalization_prediction_noun_fragment_guard_enabled": True,
+        "residual_koto_splice_fragment_guard_enabled": True,
+        "long_clause_koto_attachment_risk_guard_enabled": True,
         "malformed_nominalization_unknown_fragment_guard_enabled": True,
         "drop_rephrase_defer_supported": True,
         "must_keep_defer_not_drop": True,

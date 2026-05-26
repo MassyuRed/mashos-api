@@ -17,6 +17,7 @@ from cocolon_text_generation_core.policies import CORE_ID_PIECE, compact_tokens
 from cocolon_text_generation_core.result import CoreTextCandidate, json_safe_mapping
 from cocolon_text_generation_core.sentence_plan import build_sentence_plan
 from cocolon_text_generation_core.types import CoreTextPayload, EvidenceSpanLike, PhraseUnit, SentencePlan
+from .piece_environment_state_output_guard import build_piece_environment_state_output_guard
 
 ADAPTER_NAME = "piece_composer_input_contract.v0"
 PIECE_INPUT_CONTRACT_MODEL = "cocolon_text_generation_core.piece_input_contract.v0"
@@ -81,7 +82,34 @@ def _bool(value: Any) -> bool:
     return bool(value)
 
 
+def _environment_state_output_piece_guard_from_plan(plan: Any) -> dict[str, Any]:
+    material = _get(plan, "environment_state_output_piece_guard", None)
+    if isinstance(material, Mapping):
+        return build_piece_environment_state_output_guard(material)
+    frame = _get(plan, "environment_state_output_frame", None)
+    return build_piece_environment_state_output_guard(
+        frame,
+        apply_must_keep=_bool(_get(plan, "environment_state_output_must_keep_enabled", True)),
+    )
+
+
 def _plan_meta(plan: Any, *, source_texts: Sequence[str], source_id: str) -> dict[str, Any]:
+    eso_guard = _environment_state_output_piece_guard_from_plan(plan)
+    eso_applied = bool(eso_guard.get("must_keep_signal_keys_applied", False))
+    eso_keys = list(_tokens(eso_guard.get("must_keep_signal_keys", ()))) if eso_applied else []
+    must_keep = list(_tokens([*_as_list(_get(plan, "must_keep_signal_keys", ())), *eso_keys]))
+    source_claims = list(
+        _texts(
+            [
+                *_as_list(eso_guard.get("source_claim_values", ())),
+                *_as_list(_get(plan, "source_claims", ())),
+            ],
+            limit=180,
+        )
+    )
+    preservation = _clean(_get(plan, "answer_preservation_policy", "source_scaled")) or "source_scaled"
+    if eso_applied:
+        preservation = "preserve_user_claims"
     return {
         "adapter_name": ADAPTER_NAME,
         "phase": PHASE_LABEL,
@@ -89,13 +117,20 @@ def _plan_meta(plan: Any, *, source_texts: Sequence[str], source_id: str) -> dic
         "source_id": source_id,
         "focus_key": _clean(_get(plan, "focus_key", "")),
         "selected_block_keys": list(_tokens(_get(plan, "selected_block_keys", ()))),
-        "coverage_roles": list(_tokens(_get(plan, "coverage_roles", ()))),
-        "must_keep_signal_keys": list(_tokens(_get(plan, "must_keep_signal_keys", ()))),
-        "source_claims": list(_texts(_get(plan, "source_claims", ()), limit=180)),
+        "coverage_roles": list(_tokens([*_as_list(_get(plan, "coverage_roles", ())), *eso_keys])),
+        "must_keep_signal_keys": must_keep,
+        "source_claims": source_claims,
         "source_text_count": len(source_texts),
-        "answer_preservation_policy": _clean(_get(plan, "answer_preservation_policy", "source_scaled")) or "source_scaled",
+        "answer_preservation_policy": preservation,
         "minimum_detail_level": _clean(_get(plan, "minimum_detail_level", "source_scaled")) or "source_scaled",
-        "overcompression_risk": _bool(_get(plan, "overcompression_risk", False)),
+        "overcompression_risk": bool(_bool(_get(plan, "overcompression_risk", False)) or eso_guard.get("overcompression_risk", False)),
+        "environment_state_output_piece_guard": eso_guard,
+        "environment_state_output_frame_connected": bool(eso_guard.get("connected", False)),
+        "environment_state_output_must_keep_signal_keys": list(eso_keys),
+        "environment_state_output_must_keep_applied": bool(eso_applied),
+        "environment_state_output_overcompression_risk": bool(eso_guard.get("overcompression_risk", False)),
+        "environment_state_output_output_theme_ids": list(eso_guard.get("output_theme_ids", ()) or ()),
+        "environment_state_output_single_record_only": bool(eso_guard.get("single_record_only", False)),
         "question_answer_separated": True,
         "runtime_connected": False,
         "piece_composer_connected": False,
@@ -131,21 +166,25 @@ def _evidence_pairs(plan: Any, source_texts: Sequence[str]) -> tuple[tuple[str, 
     return tuple(pairs)
 
 
-def _role(index: int, *, must_keep: Sequence[str], coverage_roles: Sequence[str]) -> str:
+def _role(index: int, *, must_keep: Sequence[str], coverage_roles: Sequence[str], sequential_must_keep: bool = False) -> str:
     if must_keep:
+        if sequential_must_keep:
+            return must_keep[index - 1] if index <= len(must_keep) else "piece_source_claim"
         return must_keep[0] if len(must_keep) == 1 else must_keep[min(index - 1, len(must_keep) - 1)]
     if coverage_roles:
         return coverage_roles[min(index - 1, len(coverage_roles) - 1)]
     return "piece_source_claim"
 
 
-def _build_evidence(plan: Any, *, source_id: str, source_texts: Sequence[str]) -> tuple[EvidenceSpanLike, ...]:
-    must_keep = _tokens(_get(plan, "must_keep_signal_keys", ()))
-    coverage_roles = _tokens(_get(plan, "coverage_roles", ()))
+def _build_evidence(plan: Any, *, source_id: str, source_texts: Sequence[str], meta: Mapping[str, Any] | None = None) -> tuple[EvidenceSpanLike, ...]:
+    material_meta = meta if isinstance(meta, Mapping) else {}
+    must_keep = _tokens(material_meta.get("must_keep_signal_keys") or _get(plan, "must_keep_signal_keys", ()))
+    coverage_roles = _tokens(material_meta.get("coverage_roles") or _get(plan, "coverage_roles", ()))
     must_keep_set = set(must_keep)
+    sequential_must_keep = bool(material_meta.get("environment_state_output_must_keep_applied", False))
     spans: list[EvidenceSpanLike] = []
     for index, (field_name, raw_text) in enumerate(_evidence_pairs(plan, source_texts), start=1):
-        role = _role(index, must_keep=must_keep, coverage_roles=coverage_roles)
+        role = _role(index, must_keep=must_keep, coverage_roles=coverage_roles, sequential_must_keep=sequential_must_keep)
         span = make_evidence_span_like(
             span_id=f"piece-source-{index}",
             source_id=source_id,
@@ -222,7 +261,7 @@ def _payload(channel: str, spans: Sequence[EvidenceSpanLike], units: Sequence[Ph
         phrase_units=units,
         sentence_plans=plans,
         tone_policy={"core_id": CORE_ID_PIECE, "piece_text_channel": channel, "voice_distance": "user_subject_public_qna", "emlis_observation_voice_allowed": False, "question_answer_separated": True},
-        safety_policy={"core_id": CORE_ID_PIECE, "piece_text_channel": channel, "answer_preservation_policy": meta.get("answer_preservation_policy"), "minimum_detail_level": meta.get("minimum_detail_level"), "overcompression_risk": bool(meta.get("overcompression_risk", False)), "must_keep_signal_keys": list(meta.get("must_keep_signal_keys") or ()), "source_claims": list(meta.get("source_claims") or ()), "legacy_boundary_names_kept": list(LEGACY_BOUNDARY_NAMES), "no_emlis_voice_leakage": True, "no_user_claim_addition": True, "require_text_for_must_keep": _requires_must_keep_text(channel, meta)},
+        safety_policy={"core_id": CORE_ID_PIECE, "piece_text_channel": channel, "answer_preservation_policy": meta.get("answer_preservation_policy"), "minimum_detail_level": meta.get("minimum_detail_level"), "overcompression_risk": bool(meta.get("overcompression_risk", False)), "must_keep_signal_keys": list(meta.get("must_keep_signal_keys") or ()), "source_claims": list(meta.get("source_claims") or ()), "environment_state_output_piece_guard": dict(meta.get("environment_state_output_piece_guard") or {}), "environment_state_output_must_keep_applied": bool(meta.get("environment_state_output_must_keep_applied", False)), "environment_state_output_overcompression_risk": bool(meta.get("environment_state_output_overcompression_risk", False)), "legacy_boundary_names_kept": list(LEGACY_BOUNDARY_NAMES), "no_emlis_voice_leakage": True, "no_user_claim_addition": True, "require_text_for_must_keep": _requires_must_keep_text(channel, meta)},
         must_keep_roles=meta.get("must_keep_signal_keys") or (),
         forbidden_surface_patterns=PIECE_FORBIDDEN_SURFACE_PATTERNS,
         composer_model=PIECE_INPUT_CONTRACT_MODEL,
@@ -271,6 +310,12 @@ class PieceComposerInputContract:
                 "answer": {"core_id": self.answer_payload.core_id, "valid_minimum": self.answer_payload.valid_minimum, "rejection_reasons": list(self.answer_payload.validate_minimum()), "evidence_span_count": len(self.answer_payload.evidence_spans), "phrase_unit_count": len(self.answer_payload.phrase_units), "sentence_plan_count": len(self.answer_payload.sentence_plans), "must_keep_roles": list(self.answer_payload.must_keep_roles)},
             },
             "candidates": {"question": self.question_candidate.as_meta(), "answer": self.answer_candidate.as_meta()},
+            "environment_state_output_frame_connected": bool(self.meta.get("environment_state_output_frame_connected", False)),
+            "environment_state_output_must_keep_applied": bool(self.meta.get("environment_state_output_must_keep_applied", False)),
+            "environment_state_output_must_keep_signal_keys": list(self.meta.get("environment_state_output_must_keep_signal_keys") or ()),
+            "environment_state_output_overcompression_risk": bool(self.meta.get("environment_state_output_overcompression_risk", False)),
+            "environment_state_output_output_theme_ids": list(self.meta.get("environment_state_output_output_theme_ids") or ()),
+            "environment_state_output_piece_guard": dict(self.meta.get("environment_state_output_piece_guard") or {}),
             "input_contract": dict(self.meta),
         }
 
@@ -294,7 +339,7 @@ def build_piece_composer_input_contract(plan: Any, *, source_texts: Iterable[Any
         reasons.append(REJECTION_PIECE_QUESTION_MISSING)
     if not answer:
         reasons.append(REJECTION_PIECE_ANSWER_MISSING)
-    spans = _build_evidence(plan, source_id=resolved_source_id, source_texts=source_values)
+    spans = _build_evidence(plan, source_id=resolved_source_id, source_texts=source_values, meta=meta)
     if not spans:
         reasons.append(REJECTION_PIECE_SOURCE_MISSING)
     units = _build_units(spans, tuple(meta.get("must_keep_signal_keys") or ()))

@@ -17,6 +17,21 @@ import re
 from typing import Any, Final
 
 from emlis_ai_current_input_bundle import EmlisCurrentInputBundle, build_emlis_current_input_bundle
+from cocolon_environment_state_output_frame import (
+    ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID,
+    ENVIRONMENT_STATE_OUTPUT_FRAME_PHASE,
+    ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION,
+    build_environment_state_output_frame,
+)
+from emlis_ai_state_answer_surface_contract import (
+    EMLIS_STATE_ANSWER_SURFACE_CONTRACT_MATERIAL_ID,
+    EMLIS_STATE_ANSWER_SURFACE_CONTRACT_SCHEMA_VERSION,
+    assert_emlis_state_answer_surface_contract,
+    build_emlis_state_answer_surface_contract,
+    state_answer_surface_contract_composer_payload,
+    state_answer_surface_contract_forward_meta,
+    state_answer_surface_contract_gate_report,
+)
 from emlis_ai_observation_structure_dictionary_loader import (
     OBSERVATION_STRUCTURE_DICTIONARY_BASE,
     OBSERVATION_STRUCTURE_DICTIONARY_ID,
@@ -113,6 +128,14 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
         "cause_inferred_from_emotion_strength",
         "personality_inference_allowed",
         "personality_tendency_allowed",
+        "period_tendency_from_single_record",
+        "period_tendency_allowed",
+        "recovery_prescription_allowed",
+        "recovery_prescription",
+        "cause_from_category",
+        "cause_from_emotion_strength",
+        "public_payload_changed",
+        "public_response_key_added",
     }
 )
 
@@ -353,6 +376,177 @@ def _evidence_ids_for_fields(evidence_ledger: Any, fields: Sequence[str]) -> lis
     return _dedupe(out)
 
 
+def _axis_source_fields(frame: Mapping[str, Any]) -> list[str]:
+    fields: list[str] = []
+    environment_axis = frame.get("environment_axis") or {}
+    state_axis = frame.get("state_axis") or {}
+    output_axis = frame.get("output_axis") or {}
+    if environment_axis.get("category_labels"):
+        fields.append("category")
+    if (environment_axis.get("action_evidence") or {}).get("has_action_text"):
+        fields.append("memo_action")
+    if state_axis.get("emotion_labels"):
+        fields.append("emotion_details")
+    if (output_axis.get("thought_evidence") or {}).get("has_thought_text"):
+        fields.append("memo")
+    return _dedupe(fields)
+
+
+def _environment_state_output_frame_material_projection(frame: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a Phase4-safe projection of the Phase3 frame.
+
+    The full Phase3 builder output stays internal.  Phase4 forwards only
+    Gate/Composer-useful structure: axes, selected labels, ids, evidence ids,
+    confidence kinds, and closed policy flags.  It does not forward raw
+    memo/memo_action text, completed replies, public text, or the direct
+    ``surface_policy`` object from the builder.
+    """
+
+    environment_axis = dict(frame.get("environment_axis") or {})
+    state_axis = dict(frame.get("state_axis") or {})
+    output_axis = dict(frame.get("output_axis") or {})
+    time_axis = dict(frame.get("time_axis") or {})
+    evidence = dict(frame.get("evidence") or {})
+    frame_policy = dict(frame.get("surface_policy") or {})
+    source = dict(frame.get("source") or {})
+    bridge = dict(frame.get("observation_structure_bridge") or {})
+
+    category_labels = [
+        _clean(item.get("label"))
+        for item in environment_axis.get("category_labels") or []
+        if isinstance(item, Mapping) and _clean(item.get("label"))
+    ]
+    emotion_types = [
+        _clean(item.get("type"))
+        for item in state_axis.get("emotion_labels") or []
+        if isinstance(item, Mapping) and _clean(item.get("type"))
+    ]
+    state_gap_candidate_ids = [
+        _clean(item.get("candidate_id"))
+        for item in state_axis.get("state_text_gap_candidates") or []
+        if isinstance(item, Mapping) and _clean(item.get("candidate_id"))
+    ]
+    output_theme_ids = [
+        _clean(item.get("theme_id"))
+        for item in output_axis.get("output_theme_candidates") or []
+        if isinstance(item, Mapping) and _clean(item.get("theme_id"))
+    ]
+    output_theme_candidates: list[dict[str, Any]] = []
+    for item in output_axis.get("output_theme_candidates") or []:
+        if not isinstance(item, Mapping):
+            continue
+        theme_id = _clean(item.get("theme_id"))
+        if not theme_id:
+            continue
+        output_theme_candidates.append(
+            {
+                "theme_id": theme_id,
+                "evidence_span_ids": _dedupe(item.get("evidence_span_ids") or []),
+                "confidence_kind": _clean(item.get("confidence_kind")) or "explicit_text_evidence",
+                "allowed_surface_strength": _clean(item.get("allowed_surface_strength")) or "soft",
+                "read_as": "current_output_theme_candidate",
+                "must_not_read_as": ["personality_tendency", "period_tendency", "diagnosis", "cause"],
+                "raw_input_included": False,
+                "raw_text_included": False,
+                "comment_text_generated": False,
+                "completed_reply_generated": False,
+            }
+        )
+    evidence_span_ids = [
+        _clean(item.get("span_id"))
+        for item in evidence.get("spans") or []
+        if isinstance(item, Mapping) and _clean(item.get("span_id"))
+    ]
+    source_fields = _axis_source_fields(frame)
+
+    return {
+        "schema_version": frame.get("schema_version") or ENVIRONMENT_STATE_OUTPUT_FRAME_SCHEMA_VERSION,
+        "material_id": frame.get("material_id") or ENVIRONMENT_STATE_OUTPUT_FRAME_MATERIAL_ID,
+        "phase": frame.get("phase") or ENVIRONMENT_STATE_OUTPUT_FRAME_PHASE,
+        "projection_kind": "phase4_gate_composer_safe_projection",
+        "source": {
+            "source_kind": source.get("source_kind") or "current_input",
+            "selected_at_present": bool(source.get("selected_at")),
+            "source_record_id_present": bool(source.get("source_record_id")),
+            "bundle_schema_version": source.get("bundle_schema_version") or "",
+        },
+        "axis_presence": copy.deepcopy(dict(frame.get("axis_presence") or {})),
+        "environment_axis": {
+            "source_fields": [field for field in ("category", "memo_action") if field in source_fields],
+            "category_labels": _dedupe(category_labels),
+            "category_count": len(_dedupe(category_labels)),
+            "has_action_text": bool((environment_axis.get("action_evidence") or {}).get("has_action_text")),
+            "confidence_kind": environment_axis.get("confidence_kind") or "environment_axis_missing",
+            "read_as": "topic_direction_plus_action_evidence",
+            "must_not_read_as": ["cause"],
+        },
+        "state_axis": {
+            "source_fields": ["emotion_details"] if "emotion_details" in source_fields else [],
+            "emotion_types": _dedupe(emotion_types),
+            "emotion_count": len(_dedupe(emotion_types)),
+            "strength_summary": copy.deepcopy(dict(state_axis.get("strength_summary") or {})),
+            "state_text_gap_candidate_ids": _dedupe(state_gap_candidate_ids),
+            "confidence_kind": state_axis.get("confidence_kind") or "state_axis_missing",
+            "read_as": "state_label",
+            "must_not_read_as": ["diagnosis", "cause"],
+        },
+        "output_axis": {
+            "source_fields": ["memo"] if "memo" in source_fields else [],
+            "has_thought_text": bool((output_axis.get("thought_evidence") or {}).get("has_thought_text")),
+            "output_theme_ids": _dedupe(output_theme_ids),
+            "output_theme_candidates": output_theme_candidates,
+            "output_theme_count": len(_dedupe(output_theme_ids)),
+            "confidence_kind": output_axis.get("confidence_kind") or "output_axis_missing",
+            "read_as": "output_content",
+            "must_not_read_as": ["personality_tendency", "period_tendency", "diagnosis"],
+        },
+        "time_axis": {
+            "period_scope": time_axis.get("period_scope") or "single_record",
+            "must_not_use_for_period_tendency": True,
+        },
+        "observation_structure_bridge": {
+            "selected_relation_ids": _dedupe(bridge.get("selected_relation_ids") or []),
+            "relation_ids_are_candidates_only": bool(bridge.get("relation_ids_are_candidates_only", True)),
+            "bridge_used_for_surface_text": False,
+        },
+        "evidence": {
+            "evidence_span_ids": _dedupe(evidence_span_ids),
+            "span_count": len(_dedupe(evidence_span_ids)),
+            "raw_text_included": False,
+            "redacted_preview_included": False,
+        },
+        "frame_policy": {
+            "single_record_only": True,
+            "must_use_scope_marker": bool(frame_policy.get("must_use_scope_marker", True)),
+            "scope_marker": frame_policy.get("scope_marker") or "今回の入力では",
+            "forbidden_claims": _dedupe(frame_policy.get("forbidden_claims") or []),
+            "completed_reply_generated": False,
+            "comment_text_generated": False,
+            "public_payload_changed": False,
+            "public_response_key_added": False,
+            "api_route_changed": False,
+            "response_key_changed": False,
+            "db_physical_name_changed": False,
+            "rn_visible_contract_changed": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "cause_from_category": False,
+            "cause_from_emotion_strength": False,
+            "period_tendency_from_single_record": False,
+            "personality_tendency_allowed": False,
+            "recovery_prescription_allowed": False,
+        },
+    }
+
+
+def _build_environment_state_output_frame_projection(current_input: Any, relation_ids: Sequence[str]) -> dict[str, Any]:
+    frame = build_environment_state_output_frame(
+        current_input,
+        observation_structure_relation_ids=list(relation_ids),
+    )
+    return _environment_state_output_frame_material_projection(frame)
+
+
 def _relation_policy_ids(relation_ids: Sequence[str]) -> list[str]:
     out: list[str] = []
     for relation_id in relation_ids:
@@ -431,6 +625,8 @@ class ObservationStructureMaterial:
     gate_policy: Mapping[str, Any] = field(default_factory=dict)
     composer_policy: Mapping[str, Any] = field(default_factory=dict)
     contract_safety: Mapping[str, Any] = field(default_factory=dict)
+    environment_state_output_frame: Mapping[str, Any] = field(default_factory=dict)
+    state_answer_surface_contract: Mapping[str, Any] = field(default_factory=dict)
     forbidden_inference_count: int = 0
     low_information_candidate: bool = False
     passed: bool = True
@@ -469,8 +665,27 @@ class ObservationStructureMaterial:
             "gate_policy": copy.deepcopy(dict(self.gate_policy)),
             "composer_policy": copy.deepcopy(dict(self.composer_policy)),
             "contract_safety": copy.deepcopy(dict(self.contract_safety)),
+            "environment_state_output_frame": copy.deepcopy(dict(self.environment_state_output_frame or {})),
+            "environment_state_output_frame_connected": bool(self.environment_state_output_frame),
+            "environment_state_output_frame_material_id": (self.environment_state_output_frame or {}).get("material_id") or "",
+            "environment_state_output_frame_schema_version": (self.environment_state_output_frame or {}).get("schema_version") or "",
+            "environment_state_output_frame_phase": (self.environment_state_output_frame or {}).get("phase") or "",
+            "environment_state_output_frame_single_record_only": bool(((self.environment_state_output_frame or {}).get("frame_policy") or {}).get("single_record_only")),
+            "environment_state_output_frame_safe_projection": bool(self.environment_state_output_frame),
+            "state_answer_surface_contract": copy.deepcopy(dict(self.state_answer_surface_contract or {})),
+            "state_answer_surface_contract_connected": bool(self.state_answer_surface_contract),
+            "state_answer_surface_contract_material_id": (self.state_answer_surface_contract or {}).get("material_id") or "",
+            "state_answer_surface_contract_schema_version": (self.state_answer_surface_contract or {}).get("schema_version") or "",
+            "state_answer_surface_contract_phase": (self.state_answer_surface_contract or {}).get("phase") or (self.state_answer_surface_contract or {}).get("source_phase") or "",
+            "state_answer_surface_contract_observation_layer_connected": bool((self.state_answer_surface_contract or {}).get("observation_layer")),
+            "state_answer_surface_contract_human_follow_layer_connected": bool((self.state_answer_surface_contract or {}).get("human_follow_layer")),
+            "state_answer_surface_contract_material_only": bool(self.state_answer_surface_contract),
             "forbidden_inference_count": int(self.forbidden_inference_count),
             "low_information_candidate": bool(self.low_information_candidate),
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
+            "cause_from_category": False,
+            "cause_from_emotion_strength": False,
             "structure_dictionary_loaded": True,
             "observation_structure_dictionary_connected": True,
             "structure_dictionary_material_ready": True,
@@ -533,6 +748,15 @@ class ObservationStructureMaterial:
             "cause_inferred_from_category": False,
             "cause_inferred_from_emotion_strength": False,
             "personality_tendency_allowed": False,
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
+            "environment_state_output_frame_connected": bool(self.environment_state_output_frame),
+            "environment_state_output_frame_material_id": (self.environment_state_output_frame or {}).get("material_id") or "",
+            "environment_state_output_frame_axis_presence": copy.deepcopy(dict((self.environment_state_output_frame or {}).get("axis_presence") or {})),
+            "environment_state_output_frame_output_theme_ids": list(((self.environment_state_output_frame or {}).get("output_axis") or {}).get("output_theme_ids") or []),
+            "state_answer_surface_contract_connected": bool(self.state_answer_surface_contract),
+            "state_answer_surface_contract_material_id": (self.state_answer_surface_contract or {}).get("material_id") or "",
+            "state_answer_surface_contract_gate_report": state_answer_surface_contract_gate_report(self.state_answer_surface_contract) if self.state_answer_surface_contract else {},
         }
 
     def composer_payload(self) -> dict[str, Any]:
@@ -554,6 +778,17 @@ class ObservationStructureMaterial:
             "composer_policy": meta["composer_policy"],
             "forbidden_inference_count": meta["forbidden_inference_count"],
             "low_information_candidate": meta["low_information_candidate"],
+            "environment_state_output_frame": copy.deepcopy(dict(meta.get("environment_state_output_frame") or {})),
+            "environment_state_output_frame_connected": bool(meta.get("environment_state_output_frame_connected")),
+            "environment_state_output_frame_material_id": meta.get("environment_state_output_frame_material_id") or "",
+            "environment_state_output_frame_schema_version": meta.get("environment_state_output_frame_schema_version") or "",
+            "environment_state_output_frame_single_record_only": bool(meta.get("environment_state_output_frame_single_record_only")),
+            "state_answer_surface_contract": state_answer_surface_contract_composer_payload(meta.get("state_answer_surface_contract") or {}) if meta.get("state_answer_surface_contract") else {},
+            "state_answer_surface_contract_connected": bool(meta.get("state_answer_surface_contract_connected")),
+            "state_answer_surface_contract_material_id": meta.get("state_answer_surface_contract_material_id") or "",
+            "state_answer_surface_contract_schema_version": meta.get("state_answer_surface_contract_schema_version") or "",
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
             "dictionary_is_observation_material_only": True,
             "dictionary_returns_completed_reply": False,
             "dictionary_returned_completed_reply": False,
@@ -683,6 +918,10 @@ def build_observation_structure_material(
         "source_priority_preserved": True,
         "dictionary_candidates_lower_than_current_explicit_fields": True,
         "must_not_promote_low_information_from_dictionary_only": True,
+        "environment_state_output_frame_connected": True,
+        "environment_state_output_frame_is_single_record": True,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
     }
     composer_policy = {
         "observation_material_only": True,
@@ -695,6 +934,11 @@ def build_observation_structure_material(
         "must_not_create_cause_without_evidence": True,
         "must_not_personality_diagnose": True,
         "must_not_use_fixed_reply_template": True,
+        "environment_state_output_frame_available": True,
+        "environment_state_output_frame_is_material_only": True,
+        "environment_state_output_frame_must_not_return_completed_sentence": True,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
     }
     contract_safety = {
         "public_route_changed": False,
@@ -718,7 +962,28 @@ def build_observation_structure_material(
         "cause_inferred_from_category": False,
         "cause_inferred_from_emotion_strength": False,
         "personality_tendency_allowed": False,
+        "period_tendency_from_single_record": False,
+        "recovery_prescription_allowed": False,
+        "cause_from_category": False,
+        "cause_from_emotion_strength": False,
     }
+
+    environment_state_output_frame = _build_environment_state_output_frame_projection(
+        bundle.to_current_input_payload(),
+        selected_relation_ids,
+    )
+    state_answer_surface_contract = state_answer_surface_contract_forward_meta(
+        build_emlis_state_answer_surface_contract(
+            bundle.to_current_input_payload(),
+            environment_state_output_frame=environment_state_output_frame,
+            observation_structure_material={
+                "selected_relation_ids": selected_relation_ids,
+                "evidence_span_ids": tuple(_evidence_ids_for_fields(evidence_ledger, matched_source_fields)),
+                "bundle_field_flags": _bundle_field_flags(bundle),
+                "low_information_candidate": low_information_candidate,
+            },
+        )
+    )
 
     material = ObservationStructureMaterial(
         dictionary_id=structure_dictionary.dictionary_id,
@@ -738,6 +1003,8 @@ def build_observation_structure_material(
         gate_policy=gate_policy,
         composer_policy=composer_policy,
         contract_safety=contract_safety,
+        environment_state_output_frame=environment_state_output_frame,
+        state_answer_surface_contract=state_answer_surface_contract,
         forbidden_inference_count=_forbidden_count(selected_entries, selected_relations),
         low_information_candidate=low_information_candidate,
     )
@@ -784,8 +1051,27 @@ def observation_structure_material_forward_meta(value: Any) -> dict[str, Any]:
         "gate_policy",
         "composer_policy",
         "contract_safety",
+        "environment_state_output_frame",
+        "environment_state_output_frame_connected",
+        "environment_state_output_frame_material_id",
+        "environment_state_output_frame_schema_version",
+        "environment_state_output_frame_phase",
+        "environment_state_output_frame_single_record_only",
+        "environment_state_output_frame_safe_projection",
+        "state_answer_surface_contract",
+        "state_answer_surface_contract_connected",
+        "state_answer_surface_contract_material_id",
+        "state_answer_surface_contract_schema_version",
+        "state_answer_surface_contract_phase",
+        "state_answer_surface_contract_observation_layer_connected",
+        "state_answer_surface_contract_human_follow_layer_connected",
+        "state_answer_surface_contract_material_only",
         "forbidden_inference_count",
         "low_information_candidate",
+        "period_tendency_from_single_record",
+        "recovery_prescription_allowed",
+        "cause_from_category",
+        "cause_from_emotion_strength",
         "structure_dictionary_loaded",
         "observation_structure_dictionary_connected",
         "structure_dictionary_material_ready",
@@ -855,6 +1141,15 @@ def observation_structure_material_gate_report(value: Any) -> dict[str, Any]:
             "cause_inferred_from_category": False,
             "cause_inferred_from_emotion_strength": False,
             "personality_tendency_allowed": False,
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
+            "environment_state_output_frame_connected": bool(meta.get("environment_state_output_frame_connected")),
+            "environment_state_output_frame_material_id": meta.get("environment_state_output_frame_material_id") or "",
+            "environment_state_output_frame_axis_presence": copy.deepcopy(dict((meta.get("environment_state_output_frame") or {}).get("axis_presence") or {})),
+            "environment_state_output_frame_output_theme_ids": list(((meta.get("environment_state_output_frame") or {}).get("output_axis") or {}).get("output_theme_ids") or []),
+            "state_answer_surface_contract_connected": bool(meta.get("state_answer_surface_contract_connected")),
+            "state_answer_surface_contract_material_id": meta.get("state_answer_surface_contract_material_id") or "",
+            "state_answer_surface_contract_gate_report": state_answer_surface_contract_gate_report(meta.get("state_answer_surface_contract") or {}) if meta.get("state_answer_surface_contract") else {},
         }
     else:
         return {}
@@ -886,6 +1181,17 @@ def observation_structure_material_composer_payload(value: Any) -> dict[str, Any
             "composer_policy": copy.deepcopy(dict(meta.get("composer_policy") or {})),
             "forbidden_inference_count": int(meta.get("forbidden_inference_count") or 0),
             "low_information_candidate": bool(meta.get("low_information_candidate")),
+            "environment_state_output_frame": copy.deepcopy(dict(meta.get("environment_state_output_frame") or {})),
+            "environment_state_output_frame_connected": bool(meta.get("environment_state_output_frame_connected")),
+            "environment_state_output_frame_material_id": meta.get("environment_state_output_frame_material_id") or "",
+            "environment_state_output_frame_schema_version": meta.get("environment_state_output_frame_schema_version") or "",
+            "environment_state_output_frame_single_record_only": bool(meta.get("environment_state_output_frame_single_record_only")),
+            "state_answer_surface_contract": state_answer_surface_contract_composer_payload(meta.get("state_answer_surface_contract") or {}) if meta.get("state_answer_surface_contract") else {},
+            "state_answer_surface_contract_connected": bool(meta.get("state_answer_surface_contract_connected")),
+            "state_answer_surface_contract_material_id": meta.get("state_answer_surface_contract_material_id") or "",
+            "state_answer_surface_contract_schema_version": meta.get("state_answer_surface_contract_schema_version") or "",
+            "period_tendency_from_single_record": False,
+            "recovery_prescription_allowed": False,
             "dictionary_is_observation_material_only": True,
             "dictionary_returns_completed_reply": False,
             "dictionary_returned_completed_reply": False,
@@ -930,6 +1236,13 @@ def assert_observation_structure_material_contract(value: Any, *, source: str = 
         raise ValueError(f"{source} must keep dictionary_is_observation_material_only=true when present")
     if value.get("display_gate_relaxed") is True:
         raise ValueError(f"{source} must not relax Display Gate")
+    state_answer_contract = value.get("state_answer_surface_contract")
+    if state_answer_contract:
+        assert_emlis_state_answer_surface_contract(state_answer_contract, source=f"{source}.state_answer_surface_contract")
+    if _clean(value.get("state_answer_surface_contract_material_id")) not in {"", EMLIS_STATE_ANSWER_SURFACE_CONTRACT_MATERIAL_ID}:
+        raise ValueError(f"{source} has unexpected state_answer_surface_contract_material_id")
+    if _clean(value.get("state_answer_surface_contract_schema_version")) not in {"", EMLIS_STATE_ANSWER_SURFACE_CONTRACT_SCHEMA_VERSION}:
+        raise ValueError(f"{source} has unexpected state_answer_surface_contract_schema_version")
     try:
         json.dumps(value, ensure_ascii=False, sort_keys=True)
     except TypeError as exc:
