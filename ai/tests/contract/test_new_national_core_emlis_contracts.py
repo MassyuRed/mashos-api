@@ -141,3 +141,62 @@ def test_phase12_connects_analysis_composer_while_evidence_adapters_remain_fail_
     assert ANALYSIS_REJECTION_NOT_CONNECTED in analysis_result.rejection_reasons
     assert "source_evidence_missing" in piece_result.rejection_reasons
     assert "source_evidence_missing" in analysis_result.rejection_reasons
+
+
+def test_phase10_emlis_state_answer_public_route_contract_stays_additive_only():
+    from pathlib import Path
+
+    ai_root = Path(__file__).resolve().parents[2]
+    source = (ai_root / "services" / "ai_inference" / "api_emotion_submit.py").read_text(encoding="utf-8")
+
+    assert '@app.post("/emotion/submit", response_model=EmotionSubmitResponse)' in source
+    assert "class EmotionSubmitInputFeedback" in source
+    assert "comment_text: str" in source
+    assert "emlis_ai: Optional[Dict[str, Any]]" in source
+    assert "class EmotionSubmitResponse" in source
+    assert "status: str" in source
+    assert "id: Optional[Any]" in source
+    assert "created_at: str" in source
+    assert "input_feedback: Optional[EmotionSubmitInputFeedback]" in source
+
+    response_model_section = source[
+        source.index("class EmotionSubmitInputFeedback") : source.index("async def _fetch_follow_viewer_ids")
+    ]
+    for forbidden in (
+        "environment_state_output_frame",
+        "emlis_state_answer_surface_contract",
+        "state_answer_surface_contract",
+        "state_answer_composer_role_plan",
+        "ratio_policy",
+        "human_follow_layer",
+        "special_handling",
+        "metaphor_policy",
+    ):
+        assert forbidden not in response_model_section
+
+
+def test_phase10_piece_and_analysis_adapters_do_not_import_state_answer_temperature_materials():
+    from pathlib import Path
+
+    ai_root = Path(__file__).resolve().parents[2]
+    adapter_dir = ai_root / "services" / "ai_inference" / "cocolon_text_generation_core" / "adapters"
+    piece_source = (adapter_dir / "piece_composer.py").read_text(encoding="utf-8")
+    analysis_source = (adapter_dir / "analysis_composer.py").read_text(encoding="utf-8")
+    joined = piece_source + "\n" + analysis_source
+
+    # Piece / Analysis may use environment-state-output material, but Phase 10
+    # keeps EmlisAI state-answer warmth and human-follow section plans owned by
+    # EmlisAI only.
+    assert "piece_environment_state_output_guard" in piece_source
+    assert "analysis_environment_state_output_material" in analysis_source
+    for forbidden in (
+        "emlis_ai_state_answer_surface_contract",
+        "emlis_ai_state_answer_composer_contract",
+        "emlis_ai_human_follow_selector",
+        "emlis_ai_state_answer_ratio_policy",
+        "emlis_ai_state_answer_special_cases",
+        "human_follow_layer",
+        "primary_follow_key",
+        "afterglow_follow_key",
+    ):
+        assert forbidden not in joined

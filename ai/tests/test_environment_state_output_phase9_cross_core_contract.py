@@ -20,6 +20,7 @@ from cocolon_text_generation_core.adapters.piece_environment_state_output_guard 
     build_piece_environment_state_output_guard,
 )
 from emlis_ai_observation_structure_material_service import build_observation_structure_material
+from emlis_ai_state_answer_surface_contract import build_emlis_state_answer_surface_contract
 from emlis_ai_public_feedback_meta import (
     build_public_emlis_input_feedback_meta,
     should_include_public_input_feedback,
@@ -249,3 +250,102 @@ def test_phase9_emotion_submit_public_route_response_and_db_name_contract_are_un
     assert "analysis_environment_state_output_surface" not in source
     assert "conditional_output_tendency" not in source
     assert "recovery_label_path" not in source
+
+
+
+def test_phase10_state_answer_material_keeps_piece_and_analysis_temperature_boundaries() -> None:
+    frame = build_environment_state_output_frame(
+        _WORK_ANXIETY_INPUT,
+        observation_structure_relation_ids=[],
+    )
+    state_answer_contract = build_emlis_state_answer_surface_contract(_WORK_ANXIETY_INPUT)
+    piece_guard = build_piece_environment_state_output_guard(frame)
+    analysis_material = build_analysis_environment_state_output_material(
+        _PERIOD_RECORDS,
+        period_kind="weekly",
+        period_label="2026-05-18/2026-05-24",
+    )
+    analysis_surface = build_analysis_environment_state_output_surface_material(analysis_material)
+
+    state_answer_dump = _json(state_answer_contract.composer_payload())
+    cross_core_dump = _json({"piece_guard": piece_guard, "analysis_surface": analysis_surface})
+
+    assert "human_follow_layer" in state_answer_dump
+    assert "primary_follow_key" in state_answer_dump
+    assert "state_answer_observation" in state_answer_dump
+
+    for forbidden in (
+        "emlis_state_answer_surface_contract",
+        "emlis_state_answer_composer_role_plan",
+        "human_follow_layer",
+        "primary_follow_key",
+        "secondary_follow_keys",
+        "afterglow_follow_key",
+        "emlis_impression_not_fact",
+        "state_answer_observation",
+        "human_follow_section",
+        "Emlisには",
+        "Emlisの感想",
+    ):
+        assert forbidden not in cross_core_dump
+
+    assert "emlis_voice" in piece_guard["forbidden_surface_claims"]
+    assert piece_guard["preview_publish_contract_untouched"] is True
+    assert analysis_surface["composer_domain"] == "emotion_structure"
+    assert analysis_surface["content_text"].startswith("この期間の記録では")
+    assert "今回の入力では" not in analysis_surface["content_text"]
+
+
+def test_phase10_state_answer_and_environment_materials_are_not_public_feedback_keys() -> None:
+    frame = build_environment_state_output_frame(
+        _WORK_ANXIETY_INPUT,
+        observation_structure_relation_ids=[],
+    )
+    state_answer_contract = build_emlis_state_answer_surface_contract(_WORK_ANXIETY_INPUT)
+    public_meta = build_public_emlis_input_feedback_meta(
+        {
+            "version": "emlis_ai_v3",
+            "kernel_version": "multi_perspective_observation.v1",
+            "observation_status": "passed",
+            "observation_trace_id": "phase10-cross-contract",
+            "environment_state_output_frame": frame,
+            "emlis_state_answer_surface_contract": state_answer_contract.as_meta(),
+            "state_answer_surface_contract": state_answer_contract.composer_payload(),
+            "memo": _WORK_ANXIETY_INPUT["memo"],
+            "memo_action": _WORK_ANXIETY_INPUT["memo_action"],
+            "comment_text": "今回の入力では、仕事という場面で不安が選ばれています。",
+            "runtime_surface_pre_return_gate": {
+                "passed": True,
+                "action": "allow",
+                "rejection_reasons": [],
+            },
+            "visible_surface_acceptance_gate": {
+                "evaluated": True,
+                "passed": True,
+                "classification": "pass",
+                "action": "allow",
+                "rejection_reasons": [],
+            },
+        },
+        comment_text_present=True,
+    )
+    dumped = _json(public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["public_feedback_meta_boundary"]["raw_input_included"] is False
+    assert public_meta["public_feedback_meta_boundary"]["comment_text_included"] is False
+    for forbidden in (
+        "environment_state_output_frame",
+        "emlis_state_answer_surface_contract",
+        "state_answer_surface_contract",
+        "human_follow_layer",
+        "ratio_policy",
+        "observation_layer",
+        "special_handling",
+        "metaphor_policy",
+        "surface_policy",
+    ):
+        assert forbidden not in dumped
+    assert _WORK_ANXIETY_INPUT["memo"] not in dumped
+    assert _WORK_ANXIETY_INPUT["memo_action"] not in dumped
+    assert should_include_public_input_feedback("表示する本文", public_meta) is True

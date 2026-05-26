@@ -458,3 +458,58 @@ def test_phase5_public_response_omits_non_passed_or_schema_invalid_status_even_w
         assert body["input_feedback"] is None, internal_status
         assert public_meta["observation_status"] != "passed"
         _assert_no_internal_payload(body)
+
+
+def test_phase10_emotion_submit_response_does_not_surface_state_answer_materials() -> None:
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta.update(
+        {
+            "emlis_state_answer_surface_contract": {
+                "schema_version": "cocolon.emlis_state_answer_surface_contract.v1",
+                "material_id": "emlis_state_answer_surface_contract",
+                "human_follow_layer": {
+                    "primary_follow_key": "effort_receiving",
+                    "comment_text": SECRET_INTERNAL_COMMENT,
+                },
+                "environment_state_output_frame": {
+                    "memo": SECRET_RAW_INPUT,
+                    "memo_action": SECRET_EVIDENCE,
+                },
+            },
+            "state_answer_surface_contract": {
+                "front_section_role": "state_answer_observation",
+                "back_section_role": "human_follow",
+                "raw_input": SECRET_RAW_INPUT,
+                "comment_text": SECRET_INTERNAL_COMMENT,
+            },
+            "environment_state_output_frame": {
+                "memo": SECRET_RAW_INPUT,
+                "memo_action": SECRET_EVIDENCE,
+            },
+        }
+    )
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+    dumped = json.dumps(body, ensure_ascii=False, sort_keys=True)
+
+    assert set(body.keys()) == {"status", "id", "created_at", "input_feedback"}
+    assert set(body["input_feedback"].keys()) == {"comment_text", "emlis_ai"}
+    assert body["input_feedback"]["comment_text"] == VISIBLE_COMMENT
+    assert body["input_feedback"]["emlis_ai"]["observation_status"] == "passed"
+
+    for forbidden in (
+        "emlis_state_answer_surface_contract",
+        "state_answer_surface_contract",
+        "environment_state_output_frame",
+        "human_follow_layer",
+        "primary_follow_key",
+        "state_answer_observation",
+        "human_follow",
+    ):
+        assert forbidden not in dumped
+
+    _assert_no_internal_payload(body)

@@ -49,6 +49,9 @@ ANALYSIS_CROSS_CORE_ENABLED = False
 ANALYSIS_FORBIDDEN_SURFACE_PATTERNS = (
     "Emlisです",
     "Emlisの観測",
+    "Emlisには",
+    "Emlisは",
+    "Emlisの感想",
     "Pieceの問い",
     "Pieceの答え",
     "あなたはこういう人",

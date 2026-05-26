@@ -27,7 +27,16 @@ CHANNEL_ANSWER = "answer"
 PAYLOAD_KIND_QUESTION = "piece_question_payload"
 PAYLOAD_KIND_ANSWER = "piece_answer_payload"
 LEGACY_BOUNDARY_NAMES = ("reflection", "mymodel_qna")
-PIECE_FORBIDDEN_SURFACE_PATTERNS = ("Emlisです", "Emlisの観測", "あなたはこういう人", "性格診断", "心理診断")
+PIECE_FORBIDDEN_SURFACE_PATTERNS = (
+    "Emlisです",
+    "Emlisの観測",
+    "Emlisには",
+    "Emlisは",
+    "Emlisの感想",
+    "あなたはこういう人",
+    "性格診断",
+    "心理診断",
+)
 COVERAGE_SCOPE_QUESTION = "piece_question_contract"
 COVERAGE_SCOPE_ANSWER = "piece_answer_contract"
 REJECTION_PIECE_PLAN_MISSING = "piece_question_answer_plan_missing"

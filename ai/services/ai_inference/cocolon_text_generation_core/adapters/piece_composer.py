@@ -39,6 +39,9 @@ REJECTION_PIECE_COMPOSER_NOT_CONNECTED = "piece_composer_not_connected"
 _EXTRA_FORBIDDEN_SURFACE_PATTERNS = (
     "Emlisです",
     "Emlisの観測",
+    "Emlisには",
+    "Emlisは",
+    "Emlisの感想",
     "あなたはこういう人",
     "性格診断",
     "心理診断",

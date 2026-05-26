@@ -62,6 +62,9 @@ REJECTION_ANALYSIS_RUNTIME_TEXT_MISSING = REJECTION_ANALYSIS_OBSERVATION_SURFACE
 _EXTRA_FORBIDDEN_SURFACE_PATTERNS = (
     "Emlisです",
     "Emlisの観測",
+    "Emlisには",
+    "Emlisは",
+    "Emlisの感想",
     "Pieceの問い",
     "Pieceの答え",
     "あなたはこういう人",

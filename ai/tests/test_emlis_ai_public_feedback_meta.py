@@ -923,3 +923,71 @@ def test_step7_public_feedback_meta_keeps_surface_reason_summary_code_only() -> 
     assert SECRET_RAW_INPUT not in dumped
     assert SECRET_EVIDENCE not in dumped
     assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+def test_phase10_public_feedback_meta_strips_state_answer_surface_contract_body() -> None:
+    from emlis_ai_state_answer_surface_contract import build_emlis_state_answer_surface_contract
+
+    current_input = {
+        "id": "phase10-public-meta-state-answer-001",
+        "created_at": "2026-05-26T00:00:00Z",
+        "memo": SECRET_RAW_INPUT,
+        "memo_action": SECRET_EVIDENCE,
+        "emotion_details": [{"type": "自己否定", "strength": "strong"}],
+        "category": ["自己理解"],
+    }
+    state_answer_contract = build_emlis_state_answer_surface_contract(current_input)
+    internal_meta = dict(_large_internal_meta())
+    internal_meta.update(
+        {
+            "observation_status": "passed",
+            "emlis_state_answer_surface_contract": state_answer_contract.as_meta(),
+            "state_answer_surface_contract": state_answer_contract.composer_payload(),
+            "state_answer_composer_role_plan": {
+                "front_section_role": "state_answer_observation",
+                "back_section_role": "human_follow",
+                "raw_input": SECRET_RAW_INPUT,
+                "comment_text": SECRET_COMMENT,
+            },
+            "environment_state_output_frame": state_answer_contract.as_meta().get("environment_state_output_frame"),
+            "comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+            "raw_text": SECRET_EVIDENCE,
+        }
+    )
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    dumped = _dump(public_meta)
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["public_feedback_meta_boundary"]["internal_meta_returned"] is False
+    assert public_meta["public_feedback_meta_boundary"]["raw_input_included"] is False
+    assert public_meta["public_feedback_meta_boundary"]["comment_text_included"] is False
+
+    for forbidden in (
+        "emlis_state_answer_surface_contract",
+        "state_answer_surface_contract",
+        "state_answer_composer_role_plan",
+        "environment_state_output_frame",
+        "human_follow_layer",
+        "primary_follow_key",
+        "secondary_follow_keys",
+        "afterglow_follow_key",
+        "ratio_policy",
+        "observation_layer",
+        "special_handling",
+        "metaphor_policy",
+        "surface_policy",
+        "state_answer_observation",
+        "human_follow",
+    ):
+        assert forbidden not in dumped
+
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
