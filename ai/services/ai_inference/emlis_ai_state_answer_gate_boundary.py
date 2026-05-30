@@ -20,6 +20,10 @@ from emlis_ai_state_answer_special_cases import (
     state_answer_special_cases_forward_meta,
     state_answer_special_cases_surface_gate_check,
 )
+from emlis_ai_two_stage_reception_gate import (
+    build_two_stage_reception_gate_report,
+    two_stage_reception_gate_public_summary,
+)
 
 EMLIS_AI_STATE_ANSWER_GATE_BOUNDARY_SCHEMA_VERSION: Final = (
     "cocolon.emlis_ai_state_answer.gate_public_meta_boundary.v1"
@@ -82,6 +86,10 @@ _FORBIDDEN_PAYLOAD_KEYS: Final = frozenset(
         "public_comment_text",
         "reply_text",
         "replyText",
+        "observation_text",
+        "observationText",
+        "reception_text",
+        "receptionText",
         "surface_text",
         "realized_text",
         "evidence_text",
@@ -103,6 +111,8 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
         "state_answer_contract_body_in_public_meta",
         "state_answer_raw_evidence_in_public_meta",
         "state_answer_comment_text_body_in_public_meta",
+        "observation_text_public_key_added",
+        "reception_text_public_key_added",
         "public_response_key_added",
         "public_response_key_change",
         "response_shape_changed",
@@ -256,6 +266,9 @@ def build_state_answer_gate_boundary_report(
     state_answer_special_cases: Any = None,
     composer_meta: Mapping[str, Any] | None = None,
     current_input: Any = None,
+    two_stage_reception_gate_required: bool = False,
+    shared_reception_evidence: Any = None,
+    reception_mode: Any = None,
 ) -> dict[str, Any]:
     """Evaluate Phase 8 state-answer Gate/Public Meta boundary.
 
@@ -273,15 +286,44 @@ def build_state_answer_gate_boundary_report(
         composer_meta=composer_meta,
     )
     surface = _clean(visible_surface)
+    # Phase16-1: a required two-stage surface must be blocked even before the
+    # labels appear in the body.  Passing ``None`` lets the two-stage gate derive
+    # the requirement from composer_meta / contract and report label-missing
+    # reasons instead of silently staying inactive.
+    two_stage_required_override = True if two_stage_reception_gate_required else None
     special_case_report = state_answer_special_cases_surface_gate_check(
         visible_surface=surface,
         special_cases=special_cases,
         current_input=current_input,
     )
+    two_stage_reception_gate_report = build_two_stage_reception_gate_report(
+        visible_surface=surface,
+        state_answer_surface_contract=contract,
+        composer_meta=composer_meta,
+        current_input=current_input,
+        shared_reception_evidence=shared_reception_evidence,
+        reception_mode=reception_mode,
+        two_stage_required=two_stage_required_override,
+    )
 
-    gate_context_active = bool(contract or special_cases)
+    two_stage_reception_gate_active = bool(two_stage_reception_gate_report.get("evaluated"))
+    gate_context_active = bool(contract or special_cases or two_stage_reception_gate_active)
     generic_reasons = _forbidden_claim_reasons(surface) if gate_context_active else []
     special_case_reasons = _dedupe(special_case_report.get("surface_blocker_reasons") or []) if gate_context_active else []
+    two_stage_reception_gate_reasons = (
+        _dedupe(
+            two_stage_reception_gate_report.get("surface_blocker_reasons")
+            or two_stage_reception_gate_report.get("rejection_reasons")
+            or []
+        )
+        if two_stage_reception_gate_active
+        else []
+    )
+    two_stage_unavailable_reason_codes = _dedupe(
+        two_stage_reception_gate_report.get("two_stage_unavailable_reason_codes")
+        or two_stage_reception_gate_report.get("phase16_7_unavailable_reason_codes")
+        or []
+    )
     allowed_exception_ids = _dedupe(special_case_report.get("allowed_exception_ids_detected") or [])
     warning_reasons = _dedupe(special_case_report.get("surface_warning_reasons") or [])
 
@@ -298,7 +340,7 @@ def build_state_answer_gate_boundary_report(
     if counter_allowed and not counter_evidence_ready:
         generic_reasons.append("self_denial_counter_opinion_without_input_evidence")
 
-    reasons = _dedupe([*generic_reasons, *special_case_reasons])
+    reasons = _dedupe([*generic_reasons, *special_case_reasons, *two_stage_reception_gate_reasons])
     passed = not reasons
     report = {
         "schema_version": EMLIS_AI_STATE_ANSWER_GATE_BOUNDARY_SCHEMA_VERSION,
@@ -314,6 +356,23 @@ def build_state_answer_gate_boundary_report(
         "surface_blocker_reasons": reasons,
         "forbidden_claim_reasons": _dedupe(generic_reasons),
         "special_case_rejection_reasons": special_case_reasons,
+        "two_stage_reception_gate": two_stage_reception_gate_public_summary(two_stage_reception_gate_report),
+        "two_stage_reception_gate_rejection_reasons": two_stage_reception_gate_reasons,
+        "phase16_7_unavailable_reason_codes": list(two_stage_unavailable_reason_codes),
+        "two_stage_unavailable_reason_codes": list(two_stage_unavailable_reason_codes),
+        "two_stage_required_but_unrealized": "two_stage_required_but_unrealized" in two_stage_reception_gate_reasons,
+        "two_stage_complete_surface_blocked_by_gate": bool(
+            "two_stage_complete_surface_blocked_by_gate" in two_stage_reception_gate_reasons
+        ),
+        "two_stage_reception_gate_connected": bool(two_stage_reception_gate_report.get("connected")),
+        "two_stage_reception_gate_terminal_surface_block": bool(
+            two_stage_reception_gate_report.get("terminal_surface_block")
+            or two_stage_reception_gate_reasons
+        ),
+        "two_stage_reception_gate_evaluated": bool(two_stage_reception_gate_report.get("evaluated")),
+        "two_stage_reception_gate_passed": bool(two_stage_reception_gate_report.get("passed")),
+        "two_stage_reception_cross_gate_connected": bool(two_stage_reception_gate_report.get("connected")),
+        "two_stage_reception_cross_gate_active": bool(two_stage_reception_gate_active),
         "warning_reasons": warning_reasons,
         "allowed_exception_ids": allowed_exception_ids,
         "allowed_exception_ids_detected": allowed_exception_ids,
@@ -328,7 +387,11 @@ def build_state_answer_gate_boundary_report(
         "self_denial_limited_counter_opinion_allowed": counter_allowed,
         "self_denial_exception_evidence_ready": counter_evidence_ready,
         "anger_special_handling_enabled": anger_enabled,
-        "anger_target_judgement_agreement_blocked": "anger_target_judgement_agreement" in reasons,
+        "anger_target_judgement_agreement_blocked": (
+            "anger_target_judgement_agreement" in reasons
+            or "target_judgement_agreement" in reasons
+            or "two_stage_target_judgement_agreement" in reasons
+        ),
         "anger_target_attack_amplification_blocked": "anger_target_attack_amplification" in reasons,
         "public_meta_summary_only": True,
         "public_meta_contract_body_allowed": False,
@@ -382,7 +445,15 @@ def state_answer_gate_boundary_public_summary(value: Any) -> dict[str, Any]:
     for key in ("evaluated", "passed", "blocked", "terminal_surface_block"):
         if isinstance(source.get(key), bool):
             summary[key] = bool(source.get(key))
-    for key in ("rejection_reasons", "surface_blocker_reasons", "forbidden_claim_reasons", "allowed_exception_ids"):
+    for key in (
+        "rejection_reasons",
+        "surface_blocker_reasons",
+        "forbidden_claim_reasons",
+        "allowed_exception_ids",
+        "two_stage_reception_gate_rejection_reasons",
+        "phase16_7_unavailable_reason_codes",
+        "two_stage_unavailable_reason_codes",
+    ):
         reasons = _dedupe(source.get(key) or [])
         if reasons:
             summary[key] = reasons[:12]
@@ -393,10 +464,19 @@ def state_answer_gate_boundary_public_summary(value: Any) -> dict[str, Any]:
         "self_denial_exception_evidence_ready",
         "anger_special_handling_enabled",
         "anger_target_judgement_agreement_blocked",
+        "two_stage_reception_gate_connected",
+        "two_stage_reception_gate_terminal_surface_block",
+        "two_stage_reception_cross_gate_connected",
+        "two_stage_reception_cross_gate_active",
+        "two_stage_required_but_unrealized",
+        "two_stage_complete_surface_blocked_by_gate",
         "public_meta_summary_only",
     ):
         if isinstance(source.get(key), bool):
             summary[key] = bool(source.get(key))
+    nested_two_stage = two_stage_reception_gate_public_summary(source.get("two_stage_reception_gate"))
+    if nested_two_stage:
+        summary["two_stage_reception_gate"] = nested_two_stage
     if summary:
         summary["public_meta_summary_only"] = True
     assert_state_answer_gate_boundary_contract(summary, source="state_answer_gate_boundary_public_summary")

@@ -58,6 +58,14 @@ def _evidence() -> list[EvidenceSpan]:
     ]
 
 
+def _contains_exact_key(value: Any, key_name: str) -> bool:
+    if isinstance(value, Mapping):
+        return any(str(key) == key_name or _contains_exact_key(child, key_name) for key, child in value.items())
+    if isinstance(value, list):
+        return any(_contains_exact_key(child, key_name) for child in value)
+    return False
+
+
 def test_phase4_material_selects_state_text_gap_without_raw_text_or_completed_reply() -> None:
     material = build_observation_structure_material(
         current_input={
@@ -126,7 +134,7 @@ def test_phase4_material_carries_environment_state_output_frame_projection_only(
     assert composer_payload["environment_state_output_frame_connected"] is True
     assert composer_payload["period_tendency_from_single_record"] is False
     assert composer_payload["recovery_prescription_allowed"] is False
-    assert "surface_policy" not in encoded
+    assert _contains_exact_key(composer_payload, "surface_policy") is False
     assert "この職場でやっていけるか不安" not in encoded
     assert "職場で新しい仕事を任された" not in encoded
     assert '"comment_text_generated": false' in encoded

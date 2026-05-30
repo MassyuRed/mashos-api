@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Phase 7 internal Composer connection for EmlisAI state answers.
+"""Phase 8 internal Composer role-plan connection for EmlisAI state answers.
 
 This module turns the text-free ``emlis_state_answer_surface_contract`` into a
 Composer-facing role plan.  It does not render completed sentences.  It only
-marks the section boundary between the observation half and the human-follow
-half, forwards the already-built contract material, and exposes small gate-safe
-metadata for ConversationComposer / LimitedComposer.
+marks the labelled two-stage boundary between the ``見えたこと`` observation
+section and the ``Emlisから`` reception section, forwards the already-built
+contract material, and exposes small gate-safe metadata for ConversationComposer
+/ LimitedComposer.
 """
 
 from collections.abc import Mapping, Sequence
@@ -20,6 +21,12 @@ from emlis_ai_state_answer_surface_contract import (
     state_answer_surface_contract_composer_payload,
     state_answer_surface_contract_gate_report,
 )
+from emlis_ai_two_stage_section_surface_plan import (
+    EMLIS_TWO_STAGE_SECTION_SURFACE_PLAN_MATERIAL_ID,
+    EMLIS_TWO_STAGE_SECTION_SURFACE_PLAN_SCHEMA_VERSION,
+    assert_two_stage_section_surface_plan,
+    build_two_stage_section_surface_plan,
+)
 
 EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_SCHEMA_VERSION: Final = (
     "cocolon.emlis_state_answer.composer_role_plan.v1"
@@ -28,8 +35,12 @@ EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_MATERIAL_ID: Final = (
     "emlis_state_answer_composer_role_plan"
 )
 EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_PHASE: Final = (
-    "Phase7_limited_conversation_composer_connection"
+    "Phase8_composer_role_plan_two_stage_reception"
 )
+EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL: Final = "見えたこと"
+EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL: Final = "Emlisから"
+EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE: Final = "labelled_two_stage_text"
+EMLIS_TWO_STAGE_SECTION_ORDER: Final = ("observation", "reception")
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
@@ -62,6 +73,70 @@ def _copy_mapping(value: Any) -> dict[str, Any]:
     return copy.deepcopy(dict(value or {})) if isinstance(value, Mapping) else {}
 
 
+def _two_stage_contract_summary(contract: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the Phase 8 two-stage display contract without completed text."""
+
+    two_stage = _as_mapping(contract.get("two_stage_reception"))
+    observation_layer = _as_mapping(contract.get("observation_layer"))
+    reception_section = _as_mapping(contract.get("reception_section_material"))
+    human_follow = _as_mapping(contract.get("human_follow_layer"))
+    reception_mode = _as_mapping(contract.get("reception_mode"))
+    labels = _as_mapping(two_stage.get("display_labels"))
+    observation_label = (
+        _clean(labels.get("observation"))
+        or _clean(observation_layer.get("display_label"))
+        or EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL
+    ).rstrip("：:")
+    reception_label = (
+        _clean(labels.get("reception"))
+        or _clean(reception_section.get("display_label"))
+        or _clean(human_follow.get("display_label"))
+        or EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL
+    ).rstrip("：:")
+    section_order = _dedupe(two_stage.get("section_order") or EMLIS_TWO_STAGE_SECTION_ORDER)
+    if section_order != list(EMLIS_TWO_STAGE_SECTION_ORDER):
+        section_order = list(EMLIS_TWO_STAGE_SECTION_ORDER)
+    mode_id = _clean(reception_mode.get("reception_mode_id") or reception_mode.get("mode_id"))
+    return {
+        "enabled": True,
+        "two_stage_display_required": True,
+        "two_stage_reception_surface_required": True,
+        "section_labels_required": True,
+        "display_labels": {
+            "observation": observation_label,
+            "reception": reception_label,
+        },
+        "two_stage_reception_labels": [observation_label, reception_label],
+        "section_order": section_order,
+        "section_id_order": section_order,
+        "display_label_order": [observation_label, reception_label],
+        "observation_display_label": observation_label,
+        "reception_display_label": reception_label,
+        "observation_label_marker": f"{observation_label}：",
+        "reception_label_marker": f"{reception_label}：",
+        "surface_joiner": _clean(two_stage.get("surface_joiner")) or "comment_text_two_stage_joiner",
+        "joined_comment_text_required": True,
+        "expected_comment_text_shape": (
+            _clean(two_stage.get("expected_comment_text_shape"))
+            or EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE
+        ),
+        "reception_mode_id": mode_id or "standard_state_answer",
+        "daily_reception_natural_short_comment_allowed": True,
+        "daily_reception_may_use_natural_short_comment": True,
+        "current_reception_mode_may_use_natural_short_comment": bool(mode_id.startswith("daily_")),
+        "must_not_prompt_for_event_when_event_fact_present": True,
+        "public_response_key_added": False,
+        "observation_text_public_response_key_added": False,
+        "reception_text_public_response_key_added": False,
+        "section_text_public_response_keys_added": False,
+        "public_payload_changed": False,
+        "response_key_changed": False,
+        "rn_visible_contract_changed": False,
+        "completed_reply_generated": False,
+        "fixed_sentence_template_used": False,
+    }
+
+
 def _contract_from_structure_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     structure_payload = _as_mapping(
         payload.get("observation_structure_material") or payload.get("observation_structure_dictionary")
@@ -75,7 +150,7 @@ def _contract_from_structure_payload(payload: Mapping[str, Any]) -> dict[str, An
 def state_answer_surface_contract_from_composer_payload(payload: Mapping[str, Any] | None) -> dict[str, Any]:
     """Extract the state-answer surface contract from a Composer payload.
 
-    The contract may already be attached at the top level by Phase 7, or may be
+    The contract may already be attached at the top level by Phase 8, or may be
     nested inside the observation-structure material from Phase 2.  The returned
     shape is the sanitized composer payload from the state-answer contract
     module; raw memo / memo_action / comment body fields are never added here.
@@ -125,6 +200,8 @@ def _ratio_summary(contract: Mapping[str, Any]) -> dict[str, Any]:
 
 def _observation_section(contract: Mapping[str, Any], *, sentence_plan_unit_count: int) -> dict[str, Any]:
     observation_layer = _as_mapping(contract.get("observation_layer"))
+    two_stage = _two_stage_contract_summary(contract)
+    observation_label = two_stage["observation_display_label"]
     steps = [item for item in list(observation_layer.get("steps") or []) if isinstance(item, Mapping)]
     step_ids = _dedupe(
         observation_layer.get("step_ids")
@@ -134,7 +211,15 @@ def _observation_section(contract: Mapping[str, Any], *, sentence_plan_unit_coun
         "section_id": "observation",
         "section_role": "state_answer_observation",
         "source_layer": "observation_layer",
+        "display_label": observation_label,
+        "section_label": observation_label,
+        "comment_text_section_label": f"{observation_label}：",
+        "section_label_required": True,
+        "two_stage_reception_section": True,
+        "two_stage_display_section": True,
+        "expected_comment_text_shape": two_stage["expected_comment_text_shape"],
         "position": "front",
+        "section_order_index": 0,
         "sentence_plan_unit_role": "observation_section",
         "sentence_plan_unit_count": max(1, int(sentence_plan_unit_count or len(step_ids) or 1)),
         "step_ids": step_ids,
@@ -150,6 +235,7 @@ def _observation_section(contract: Mapping[str, Any], *, sentence_plan_unit_coun
         "must_not_read_as": _dedupe(
             item for step in steps for item in list(step.get("must_not_read_as") or [])
         ),
+        "must_not_include_human_follow": True,
         "must_not_generate_completed_sentence": True,
         "completed_reply_generated": False,
         "raw_input_included": False,
@@ -159,6 +245,9 @@ def _observation_section(contract: Mapping[str, Any], *, sentence_plan_unit_coun
 
 def _human_follow_section(contract: Mapping[str, Any], *, sentence_plan_unit_count: int) -> dict[str, Any]:
     human_follow = _as_mapping(contract.get("human_follow_layer"))
+    two_stage = _two_stage_contract_summary(contract)
+    reception_label = two_stage["reception_display_label"]
+    reception_section = _as_mapping(contract.get("reception_section_material"))
     secondary = _dedupe(human_follow.get("secondary_follow_keys") or [])
     slots = []
     raw_slots = human_follow.get("follow_key_slots")
@@ -174,10 +263,19 @@ def _human_follow_section(contract: Mapping[str, Any], *, sentence_plan_unit_cou
                 )
     follow_key_count = 1 + len(secondary) + (1 if _clean(human_follow.get("afterglow_follow_key")) else 0)
     return {
-        "section_id": "human_follow",
+        "section_id": "reception",
         "section_role": "human_follow",
+        "reception_section_role": _clean(reception_section.get("section_role")) or "emlis_reception",
         "source_layer": "human_follow_layer",
+        "display_label": reception_label,
+        "section_label": reception_label,
+        "comment_text_section_label": f"{reception_label}：",
+        "section_label_required": True,
+        "two_stage_reception_section": True,
+        "two_stage_display_section": True,
+        "expected_comment_text_shape": two_stage["expected_comment_text_shape"],
         "position": "back",
+        "section_order_index": 1,
         "sentence_plan_unit_role": "human_follow_section",
         "sentence_plan_unit_count": max(1, int(sentence_plan_unit_count or follow_key_count or 1)),
         "primary_follow_key": _clean(human_follow.get("primary_follow_key")) or "fear_or_load_understanding",
@@ -195,6 +293,8 @@ def _human_follow_section(contract: Mapping[str, Any], *, sentence_plan_unit_cou
             human_follow.get("must_not_read_as")
             or ["personality_claim", "diagnosis", "absolute_support", "action_instruction"]
         ),
+        "must_not_include_new_observation_claim": True,
+        "must_not_generate_action_instruction": True,
         "must_not_generate_completed_sentence": True,
         "completed_reply_generated": False,
         "raw_input_included": False,
@@ -203,12 +303,13 @@ def _human_follow_section(contract: Mapping[str, Any], *, sentence_plan_unit_cou
 
 
 def build_state_answer_composer_role_plan(contract: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Build the Phase 7 role plan consumed by Composer paths."""
+    """Build the Phase 8 role plan consumed by Composer paths."""
 
     contract_payload = state_answer_surface_contract_composer_payload(contract or {}) if isinstance(contract, Mapping) and contract else {}
     if not contract_payload:
         return {}
     ratio = _ratio_summary(contract_payload)
+    two_stage = _two_stage_contract_summary(contract_payload)
     observation_layer = _as_mapping(contract_payload.get("observation_layer"))
     steps = [item for item in list(observation_layer.get("steps") or []) if isinstance(item, Mapping)]
     human_follow = _as_mapping(contract_payload.get("human_follow_layer"))
@@ -228,6 +329,32 @@ def build_state_answer_composer_role_plan(contract: Mapping[str, Any] | None) ->
         "state_answer_surface_contract_material_id": _clean(contract_payload.get("material_id")) or EMLIS_STATE_ANSWER_SURFACE_CONTRACT_MATERIAL_ID,
         "state_answer_surface_contract_schema_version": _clean(contract_payload.get("schema_version")) or EMLIS_STATE_ANSWER_SURFACE_CONTRACT_SCHEMA_VERSION,
         "role_plan_kind": "observation_then_human_follow_sections",
+        "two_stage_display_required": True,
+        "two_stage_reception_surface_required": True,
+        "section_labels_required": True,
+        "display_labels": dict(two_stage.get("display_labels") or {}),
+        "two_stage_reception_labels": list(two_stage.get("two_stage_reception_labels") or []),
+        "observation_display_label": two_stage.get("observation_display_label") or EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL,
+        "reception_display_label": two_stage.get("reception_display_label") or EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL,
+        "observation_label_marker": two_stage.get("observation_label_marker") or "見えたこと：",
+        "reception_label_marker": two_stage.get("reception_label_marker") or "Emlisから：",
+        "section_id_order": list(two_stage.get("section_id_order") or EMLIS_TWO_STAGE_SECTION_ORDER),
+        "display_label_order": list(two_stage.get("display_label_order") or []),
+        "labelled_section_order_required": True,
+        "joined_comment_text_required": True,
+        "expected_comment_text_shape": two_stage.get("expected_comment_text_shape") or EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE,
+        "comment_text_shape": two_stage.get("expected_comment_text_shape") or EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE,
+        "surface_joiner": two_stage.get("surface_joiner") or "comment_text_two_stage_joiner",
+        "observation_section_must_precede_reception_section": True,
+        "observation_section_must_not_include_human_follow": True,
+        "reception_section_must_not_include_new_observation_claim": True,
+        "daily_reception_may_use_natural_short_comment": bool(
+            two_stage.get("daily_reception_may_use_natural_short_comment", True)
+        ),
+        "current_reception_mode_may_use_natural_short_comment": bool(
+            two_stage.get("current_reception_mode_may_use_natural_short_comment")
+        ),
+        "must_not_prompt_for_event_when_event_fact_present": True,
         "section_boundary_required": True,
         "section_boundary_on_sentence_plan": True,
         "observation_section_required": True,
@@ -262,6 +389,9 @@ def build_state_answer_composer_role_plan(contract: Mapping[str, Any] | None) ->
         "passed_only_display_condition_unchanged": True,
         "public_payload_changed": False,
         "public_response_key_added": False,
+        "observation_text_public_response_key_added": False,
+        "reception_text_public_response_key_added": False,
+        "section_text_public_response_keys_added": False,
         "api_route_changed": False,
         "response_key_changed": False,
         "db_physical_name_changed": False,
@@ -272,13 +402,19 @@ def build_state_answer_composer_role_plan(contract: Mapping[str, Any] | None) ->
 
 
 def state_answer_composer_payload_fragment(payload: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Return top-level Phase 7 fields for a Composer request payload."""
+    """Return top-level Phase 8 fields for a Composer request payload."""
 
     contract = state_answer_surface_contract_from_composer_payload(payload)
     if not contract:
         return {}
     role_plan = build_state_answer_composer_role_plan(contract)
     gate_report = state_answer_surface_contract_gate_report(contract)
+    section_surface_plan = build_two_stage_section_surface_plan(
+        role_plan,
+        state_answer_surface_contract=contract,
+    )
+    if section_surface_plan:
+        assert_two_stage_section_surface_plan(section_surface_plan)
     return {
         "state_answer_surface_contract": contract,
         "state_answer_surface_contract_connected": True,
@@ -290,15 +426,56 @@ def state_answer_composer_payload_fragment(payload: Mapping[str, Any] | None) ->
         "state_answer_composer_role_plan_connected": bool(role_plan),
         "state_answer_composer_role_plan_material_id": role_plan.get("material_id") or "",
         "state_answer_composer_role_plan_schema_version": role_plan.get("schema_version") or "",
+        "two_stage_section_surface_plan": section_surface_plan,
+        "two_stage_section_surface_plan_connected": bool(section_surface_plan),
+        "two_stage_section_surface_plan_material_id": section_surface_plan.get("material_id") or "",
+        "two_stage_section_surface_plan_schema_version": section_surface_plan.get("schema_version") or "",
     }
 
 
 def state_answer_composition_contract_fragment(role_plan: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(role_plan, Mapping) or not role_plan:
         return {}
+    section_surface_plan = build_two_stage_section_surface_plan(role_plan)
+    if section_surface_plan:
+        assert_two_stage_section_surface_plan(section_surface_plan)
     return {
         "state_answer_surface_contract_connected": True,
         "state_answer_role_plan_connected": True,
+        "two_stage_section_surface_plan_connected": bool(section_surface_plan),
+        "two_stage_section_surface_plan_required": bool(section_surface_plan),
+        "two_stage_section_surface_plan_material_id": section_surface_plan.get("material_id") or "",
+        "two_stage_section_surface_plan_schema_version": section_surface_plan.get("schema_version") or "",
+        "two_stage_section_surface_plan_section_order": list(section_surface_plan.get("section_order") or []),
+        "two_stage_section_surface_plan_section_ids": list(section_surface_plan.get("section_ids") or []),
+        "two_stage_section_surface_plan_expected_comment_text_shape": _clean(
+            section_surface_plan.get("expected_comment_text_shape")
+        ),
+        "two_stage_reception_surface_required": True,
+        "two_stage_display_required": True,
+        "section_labels_required": True,
+        "two_stage_reception_labels": list(role_plan.get("two_stage_reception_labels") or []),
+        "two_stage_section_order": list(role_plan.get("section_id_order") or EMLIS_TWO_STAGE_SECTION_ORDER),
+        "observation_display_label": _clean(
+            role_plan.get("observation_display_label") or EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL
+        ),
+        "reception_display_label": _clean(
+            role_plan.get("reception_display_label") or EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL
+        ),
+        "joined_comment_text_required": True,
+        "expected_comment_text_shape": _clean(
+            role_plan.get("expected_comment_text_shape") or EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE
+        ),
+        "observation_section_must_precede_reception_section": True,
+        "observation_section_must_not_include_human_follow": True,
+        "reception_section_must_not_include_new_observation_claim": True,
+        "daily_reception_may_use_natural_short_comment": bool(
+            role_plan.get("daily_reception_may_use_natural_short_comment", True)
+        ),
+        "current_reception_mode_may_use_natural_short_comment": bool(
+            role_plan.get("current_reception_mode_may_use_natural_short_comment")
+        ),
+        "must_not_prompt_for_event_when_event_fact_present": True,
         "state_answer_section_boundary_required": True,
         "state_answer_section_boundary_on_sentence_plan": True,
         "state_answer_observation_section_required": True,
@@ -323,11 +500,16 @@ def state_answer_composition_contract_fragment(role_plan: Mapping[str, Any] | No
         "state_answer_passed_only_display_condition_unchanged": True,
         "state_answer_dictionary_must_not_generate_completed_sentence": True,
         "state_answer_material_is_not_fixed_template": True,
+        "public_response_key_added": False,
+        "observation_text_public_response_key_added": False,
+        "reception_text_public_response_key_added": False,
+        "section_text_public_response_keys_added": False,
+        "response_key_changed": False,
     }
 
 
 def attach_state_answer_composer_meta(meta: Mapping[str, Any] | None, payload: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Attach Phase 7 connection metadata to a response composer_meta mapping."""
+    """Attach Phase 8 connection metadata to a response composer_meta mapping."""
 
     out = _copy_mapping(meta)
     fragment = state_answer_composer_payload_fragment(payload)
@@ -344,6 +526,47 @@ def attach_state_answer_composer_meta(meta: Mapping[str, Any] | None, payload: M
     out["state_answer_composer_role_plan_connected"] = True
     out["state_answer_composer_role_plan_material_id"] = role_plan.get("material_id") or EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_MATERIAL_ID
     out["state_answer_composer_role_plan_schema_version"] = role_plan.get("schema_version") or EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_SCHEMA_VERSION
+    section_surface_plan = _as_mapping(fragment.get("two_stage_section_surface_plan"))
+    if section_surface_plan:
+        out["two_stage_section_surface_plan"] = dict(section_surface_plan)
+        out["two_stage_section_surface_plan_connected"] = True
+        out["two_stage_section_surface_plan_material_id"] = (
+            section_surface_plan.get("material_id") or EMLIS_TWO_STAGE_SECTION_SURFACE_PLAN_MATERIAL_ID
+        )
+        out["two_stage_section_surface_plan_schema_version"] = (
+            section_surface_plan.get("schema_version") or EMLIS_TWO_STAGE_SECTION_SURFACE_PLAN_SCHEMA_VERSION
+        )
+        out["two_stage_section_surface_plan_required"] = bool(section_surface_plan.get("required", True))
+        out["two_stage_section_surface_plan_section_order"] = list(section_surface_plan.get("section_order") or [])
+        out["two_stage_section_surface_plan_section_ids"] = list(section_surface_plan.get("section_ids") or [])
+        out["two_stage_section_surface_plan_expected_comment_text_shape"] = _clean(
+            section_surface_plan.get("expected_comment_text_shape")
+        )
+    out["state_answer_two_stage_display_required"] = True
+    out["state_answer_two_stage_reception_surface_required"] = True
+    out["state_answer_section_labels_required"] = True
+    out["state_answer_two_stage_reception_labels"] = list(role_plan.get("two_stage_reception_labels") or [])
+    out["state_answer_observation_display_label"] = _clean(
+        role_plan.get("observation_display_label") or EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL
+    )
+    out["state_answer_reception_display_label"] = _clean(
+        role_plan.get("reception_display_label") or EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL
+    )
+    out["state_answer_two_stage_section_order"] = list(role_plan.get("section_id_order") or [])
+    out["state_answer_expected_comment_text_shape"] = _clean(
+        role_plan.get("expected_comment_text_shape") or EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE
+    )
+    out["state_answer_joined_comment_text_required"] = True
+    out["state_answer_observation_section_must_precede_reception_section"] = True
+    out["state_answer_observation_section_must_not_include_human_follow"] = True
+    out["state_answer_reception_section_must_not_include_new_observation_claim"] = True
+    out["state_answer_daily_reception_may_use_natural_short_comment"] = bool(
+        role_plan.get("daily_reception_may_use_natural_short_comment", True)
+    )
+    out["state_answer_current_reception_mode_may_use_natural_short_comment"] = bool(
+        role_plan.get("current_reception_mode_may_use_natural_short_comment")
+    )
+    out["state_answer_must_not_prompt_for_event_when_event_fact_present"] = True
     out["state_answer_section_boundary_required"] = True
     out["state_answer_section_boundary_on_sentence_plan"] = True
     out["state_answer_observation_section_required"] = True
@@ -366,6 +589,9 @@ def attach_state_answer_composer_meta(meta: Mapping[str, Any] | None, payload: M
     out["state_answer_passed_only_display_condition_unchanged"] = True
     out["state_answer_public_payload_changed"] = False
     out["state_answer_public_response_key_added"] = False
+    out["state_answer_observation_text_public_response_key_added"] = False
+    out["state_answer_reception_text_public_response_key_added"] = False
+    out["state_answer_section_text_public_response_keys_added"] = False
     return out
 
 
@@ -392,14 +618,36 @@ def assert_state_answer_composer_role_plan(value: Any) -> None:
         raise ValueError("state_answer_composer_role_plan must not allow zero observation/follow sections")
     if bool(value.get("comfort_only_allowed")):
         raise ValueError("state_answer_composer_role_plan must not allow comfort-only output")
+    if not bool(value.get("two_stage_display_required")):
+        raise ValueError("state_answer_composer_role_plan requires two-stage display")
+    if not bool(value.get("section_labels_required")):
+        raise ValueError("state_answer_composer_role_plan requires section labels")
+    labels = _as_mapping(value.get("display_labels"))
+    if labels.get("observation") != EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL:
+        raise ValueError("state_answer_composer_role_plan must keep observation display label")
+    if labels.get("reception") != EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL:
+        raise ValueError("state_answer_composer_role_plan must keep reception display label")
+    if list(value.get("section_id_order") or []) != list(EMLIS_TWO_STAGE_SECTION_ORDER):
+        raise ValueError("state_answer_composer_role_plan must preserve observation -> reception order")
+    if bool(value.get("public_response_key_added")):
+        raise ValueError("state_answer_composer_role_plan must not add public response keys")
+    if bool(value.get("observation_text_public_response_key_added")):
+        raise ValueError("state_answer_composer_role_plan must not add observation_text public key")
+    if bool(value.get("reception_text_public_response_key_added")):
+        raise ValueError("state_answer_composer_role_plan must not add reception_text public key")
 
 
 __all__ = [
     "EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_MATERIAL_ID",
     "EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_PHASE",
     "EMLIS_STATE_ANSWER_COMPOSER_ROLE_PLAN_SCHEMA_VERSION",
+    "EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE",
+    "EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL",
+    "EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL",
+    "EMLIS_TWO_STAGE_SECTION_ORDER",
     "attach_state_answer_composer_meta",
     "build_state_answer_composer_role_plan",
+    "build_two_stage_section_surface_plan",
     "state_answer_composer_payload_fragment",
     "state_answer_composition_contract_fragment",
     "state_answer_surface_contract_from_composer_payload",

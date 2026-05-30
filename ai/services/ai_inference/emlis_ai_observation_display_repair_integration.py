@@ -64,6 +64,10 @@ OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION: Final = "emlis.observation_displ
 OBSERVATION_DISPLAY_REPAIR_INTEGRATION_STEP: Final = "Step10_Display_Repair_Integration"
 OBSERVATION_DISPLAY_REPAIR_GENERATION_METHOD: Final = "observation_reply_step10_low_information_branch"
 OBSERVATION_DISPLAY_REPAIR_COMPOSER_MODEL: Final = "emlis.low_information_observation_display_branch.v1"
+LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.low_information_public_repair_contract.v1"
+)
+LOW_INFORMATION_PUBLIC_REPAIR_SOURCE_PHASE: Final = "Phase18_product_quality_stabilization"
 
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
@@ -119,6 +123,26 @@ _NON_REPAIRABLE_UNAVAILABLE_CANDIDATE_REJECTION_REASONS: Final = frozenset(
         "environment_state_output_forbidden_surface_claim",
     }
 )
+_LOW_INFORMATION_REPAIR_IGNORED_SYNTHETIC_REASONS: Final = frozenset(
+    {
+        "empty_text",
+        "empty_comment_text",
+        "empty_comment_text_without_candidate",
+        "too_short_for_observation",
+        "missing_information",
+        "relation_confidence_low",
+        "composer_source_unavailable",
+        "phase_not_complete",
+        "two_stage_required_but_unrealized",
+        "two_stage_label_missing",
+        "two_stage_labels_missing_or_duplicated",
+        "two_stage_complete_surface_realizer_label_missing",
+        "two_stage_complete_surface_blocked_by_gate",
+    }
+)
+_SCOPE_REASON_MARKERS: Final = ("scope", "out_of_scope", "not_in_scope")
+_AP0_REASON_MARKERS: Final = ("ap0",)
+_ROLLOUT_REASON_MARKERS: Final = ("rollout", "release_gate", "phase7_rollout")
 
 
 def _candidate_rejection_reasons(candidate: Any) -> list[str]:
@@ -173,6 +197,35 @@ def _current_input_has_user_signal(current_input: Mapping[str, Any] | None) -> b
     return False
 
 
+def _current_input_is_compact_low_information_signal(current_input: Mapping[str, Any] | None) -> bool:
+    """Return whether a generated-candidate failure may fall back to low-info repair.
+
+    Phase18-9 intentionally allowed genuine short low-information inputs, such
+    as ``疲れた`` / ``なんか無理``, to recover from an over-eager generated
+    candidate failure.  Phase18-11 keeps that repair narrow: richer inputs that
+    already reached CompleteComposer must stay on the generated-candidate
+    fail-closed path instead of being reclassified as a low-information public
+    observation just because Step2 relation confidence was low.
+    """
+
+    current = current_input if isinstance(current_input, Mapping) else {}
+    text = _current_text_for_visible_surface(current)
+    if not text:
+        return False
+    if _clean(current.get("memo_action")) or _clean(current.get("action_text")):
+        return False
+    sentence_count = len(_body_sentences(text))
+    # Keep the generated-candidate repair path to compact, underspecified user
+    # signals.  Longer multi-clause inputs such as positive-recovery cases own a
+    # richer CompleteComposer relation contract and must remain fail-closed when
+    # that relation is still missing.
+    if len(text) <= 32:
+        return True
+    if len(text) <= 48 and sentence_count <= 1:
+        return True
+    return False
+
+
 
 def _dedupe(values: Iterable[Any] | Any | None) -> list[str]:
     if values is None:
@@ -222,6 +275,10 @@ def _composer_resolution_block_reasons(composer_client_resolution: Any) -> list[
         or any(str(reason).startswith("scope_") for reason in rejection_reasons)
         or "limited_composer_scope_not_allowed" in rejection_reasons
     )
+    if scope_blocked:
+        reasons.append("composer_resolution_blocked_scope")
+        if "limited_composer_scope_not_allowed" in rejection_reasons:
+            reasons.append("limited_composer_scope_not_allowed")
     if connection_status == "blocked_ap0" or stop_stage == "ap0":
         reasons.append("composer_resolution_blocked_ap0")
     if connection_status == "blocked_rollout":
@@ -248,6 +305,8 @@ def _composer_resolution_block_reasons(composer_client_resolution: Any) -> list[
             or any(str(reason).startswith("scope_") for reason in gate_reasons)
             or "limited_composer_scope_not_allowed" in gate_reasons
         )
+        if gate_scope_blocked:
+            reasons.append("phase7_scope_gate_blocked")
         if (
             gate.get("enabled") is False
             and not gate_scope_blocked
@@ -288,12 +347,17 @@ def _display_repair_route_allowed(
     original_display_decision: DisplayDecision,
     original_composer_source: str = "",
     original_composer_candidate: Any = None,
+    low_information_eligible: bool = False,
+    low_information_compact_signal: bool = False,
 ) -> tuple[bool, tuple[str, ...]]:
     """Decide whether Step 10 may move a failed path to low-information.
 
     Unavailable ordinary paths may enter low-information. AI-generated eligible
     candidates may enter only for missing-information style failures named in
-    the design. This keeps older fail-closed candidate quality tests intact.
+    the design. A genuine low-information input may also recover from a generated
+    candidate that failed grounding/surface grammar, because the failed Complete
+    candidate is not the public surface owner for that branch. Safety, scope,
+    AP0, rollout, and non-low-information AI failures still stay fail-closed.
     """
 
     status = _clean(getattr(original_display_decision, "observation_status", ""))
@@ -305,6 +369,10 @@ def _display_repair_route_allowed(
         if blocked_candidate_reasons:
             return False, tuple(["unavailable_candidate_not_low_information_repairable", *blocked_candidate_reasons])
         return True, ("ordinary_unavailable_low_information_route",)
+    if status == "rejected" and candidate_available and low_information_eligible:
+        if low_information_compact_signal:
+            return True, ("generated_candidate_low_information_public_repair",)
+        return False, ("ai_generated_candidate_not_compact_low_information", *reasons)
     allowed_markers = {"too_short_for_observation", "missing_information", "relation_confidence_low"}
     if status == "rejected" and any(reason in allowed_markers or "overclaim" in reason for reason in reasons):
         if candidate_available:
@@ -714,6 +782,155 @@ def _template_report_for_low_information(surface: ObservationSurfaceRealization)
     )
 
 
+
+def _reason_matches_any(reason: str, markers: Sequence[str]) -> bool:
+    lowered = str(reason or "").lower()
+    return any(marker in lowered for marker in markers)
+
+
+def _low_information_repair_block_flags(blocked_reasons: Sequence[str]) -> dict[str, bool]:
+    reasons = [str(reason or "") for reason in blocked_reasons]
+    return {
+        "blocked_by_safety": any(_reason_matches_any(reason, tuple(_SAFETY_REASON_MARKERS)) for reason in reasons),
+        "blocked_by_scope": any(_reason_matches_any(reason, _SCOPE_REASON_MARKERS) for reason in reasons),
+        "blocked_by_ap0": any(_reason_matches_any(reason, _AP0_REASON_MARKERS) for reason in reasons),
+        "blocked_by_rollout": any(_reason_matches_any(reason, _ROLLOUT_REASON_MARKERS) for reason in reasons),
+        "blocked_by_non_repairable_ai_candidate": any(
+            reason in _NON_REPAIRABLE_AI_GENERATED_REJECTION_REASONS
+            or reason in _NON_REPAIRABLE_UNAVAILABLE_CANDIDATE_REJECTION_REASONS
+            or reason == "ai_generated_candidate_non_repairable_rejection"
+            or reason == "unavailable_candidate_not_low_information_repairable"
+            for reason in reasons
+        ),
+    }
+
+
+def _ignored_low_information_synthetic_reasons(repair_reasons: Sequence[str]) -> list[str]:
+    return [
+        reason
+        for reason in _dedupe(repair_reasons)
+        if reason in _LOW_INFORMATION_REPAIR_IGNORED_SYNTHETIC_REASONS
+        or reason.startswith("two_stage_")
+    ]
+
+
+def _low_information_repair_route_reason(
+    *,
+    applied: bool,
+    repair_reasons: Sequence[str],
+    blocked_reasons: Sequence[str],
+) -> str:
+    if applied:
+        if "low_information_regular_branch" in repair_reasons:
+            return "ordinary_unavailable_low_information_route"
+        if "eligible_branch_repaired_to_low_information" in repair_reasons:
+            return "eligible_candidate_missing_information_repair"
+        return _clean(next(iter(repair_reasons), "")) or "low_information_public_repair_route"
+    return _clean(next(iter(blocked_reasons), "")) or "low_information_public_repair_not_applied"
+
+
+def _build_low_information_public_repair_contract(
+    *,
+    applied: bool,
+    final_observation_status: str,
+    observation_reply_meta: Mapping[str, Any],
+    eligibility_meta: Mapping[str, Any],
+    repair_reasons: Sequence[str],
+    blocked_reasons: Sequence[str],
+) -> dict[str, Any]:
+    """Return Phase18-4 public-repair contract meta without body/user text.
+
+    The contract is diagnostic material only.  It records why a low-information
+    branch was allowed or blocked, while keeping the existing public response
+    shape and RN ``commentText`` contract unchanged.
+    """
+
+    kind = _clean(
+        observation_reply_meta.get("observation_reply_kind")
+        or eligibility_meta.get("observation_reply_kind")
+    )
+    eligibility_status = _clean(
+        observation_reply_meta.get("eligibility_status")
+        or eligibility_meta.get("eligibility_status")
+        or eligibility_meta.get("status")
+    )
+    eligible = bool(
+        kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION
+        or eligibility_status == OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION
+    )
+    flags = _low_information_repair_block_flags(blocked_reasons)
+    ignored_reasons = _ignored_low_information_synthetic_reasons(repair_reasons)
+    return {
+        "schema_version": LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION,
+        "source_phase": LOW_INFORMATION_PUBLIC_REPAIR_SOURCE_PHASE,
+        "eligible": eligible,
+        "eligibility_reason": "low_information_current_input_with_user_signal" if eligible else "not_low_information_eligible",
+        "repair_route_allowed": bool(applied),
+        "repair_route_reason": _low_information_repair_route_reason(
+            applied=applied,
+            repair_reasons=repair_reasons,
+            blocked_reasons=blocked_reasons,
+        ),
+        **flags,
+        "ignored_synthetic_reasons": ignored_reasons,
+        "final_observation_status": final_observation_status,
+        "observation_reply_kind": kind,
+        "question_required": bool(
+            observation_reply_meta.get("question_required") is True
+            or eligibility_meta.get("question_required") is True
+        ),
+        "question_surface_family": "詳しく残せそうなら" if eligible else "",
+        "public_contract": {
+            "public_status_extended": False,
+            "public_response_key_added": False,
+            "observation_status_enum_extended": False,
+            "rn_visible_contract_changed": False,
+            "api_route_changed": False,
+            "db_physical_name_changed": False,
+            "comment_text_body_included_in_meta": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+        },
+        "gate_policy": {
+            "display_gate_relaxed": False,
+            "reader_gate_relaxed": False,
+            "grounding_gate_relaxed": False,
+            "template_gate_relaxed": False,
+        },
+    }
+
+
+def assert_low_information_public_repair_contract_meta_only(payload: Mapping[str, Any]) -> None:
+    """Assert Phase18-4 contract meta does not change public/gate contracts."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("low-information public repair contract must be a mapping")
+    if _clean(payload.get("schema_version")) != LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION:
+        raise ValueError("invalid low-information public repair contract schema")
+    public_contract = payload.get("public_contract") if isinstance(payload.get("public_contract"), Mapping) else {}
+    gate_policy = payload.get("gate_policy") if isinstance(payload.get("gate_policy"), Mapping) else {}
+    for key in (
+        "public_status_extended",
+        "public_response_key_added",
+        "observation_status_enum_extended",
+        "rn_visible_contract_changed",
+        "api_route_changed",
+        "db_physical_name_changed",
+        "comment_text_body_included_in_meta",
+        "raw_input_included",
+        "raw_text_included",
+    ):
+        if public_contract.get(key) is not False:
+            raise ValueError(f"low-information public repair contract must keep {key}=false")
+    for key in (
+        "display_gate_relaxed",
+        "reader_gate_relaxed",
+        "grounding_gate_relaxed",
+        "template_gate_relaxed",
+    ):
+        if gate_policy.get(key) is not False:
+            raise ValueError(f"low-information public repair contract must keep {key}=false")
+
 def _candidate_for_low_information(
     *,
     trace_id: str,
@@ -814,6 +1031,16 @@ class ObservationDisplayRepairIntegrationResult:
                 "user_fact_may_promote_to_eligible": False,
             }
         status = str(getattr(self.display_decision, "observation_status", "") or "")
+        repair_reasons = tuple(_dedupe(self.repair_reasons))
+        blocked_reasons = tuple(_dedupe(self.blocked_reasons))
+        low_information_public_repair_contract = _build_low_information_public_repair_contract(
+            applied=bool(self.applied),
+            final_observation_status=status,
+            observation_reply_meta=observation_reply_meta,
+            eligibility_meta=eligibility_meta,
+            repair_reasons=repair_reasons,
+            blocked_reasons=blocked_reasons,
+        )
         bounded_meta = (
             self.bounded_repair_reroute_decision.as_meta()
             if self.bounded_repair_reroute_decision is not None
@@ -884,10 +1111,12 @@ class ObservationDisplayRepairIntegrationResult:
             "must_not_promote_low_info_to_eligible": True,
             "must_not_assert_current_event_from_user_fact": True,
             "observation_reply_meta": observation_reply_meta,
+            "low_information_public_repair_contract": low_information_public_repair_contract,
+            "phase18_low_information_public_repair_contract": low_information_public_repair_contract,
             "low_information_observation_composer_meta": {k: v for k, v in draft_meta.items() if k not in {"line_metas"}},
             "observation_surface_realizer_tone_meta": {k: v for k, v in surface_meta.items() if k not in {"line_metas"}},
-            "repair_reasons": list(self.repair_reasons),
-            "blocked_reasons": list(self.blocked_reasons),
+            "repair_reasons": list(repair_reasons),
+            "blocked_reasons": list(blocked_reasons),
         }
 
 
@@ -999,6 +1228,21 @@ def integrate_observation_display_repair(
             blocked_reasons=tuple(resolution_blockers),
         )
 
+    eligibility_decision = route_observation_eligibility(
+        current_input=current_input,
+        subscription_tier=subscription_tier,
+        capability=capability,
+        user_facts=None,
+        evidence_ledger=evidence_ledger,
+        observation_graph=observation_graph,
+    )
+    eligibility_meta = _meta(eligibility_decision)
+    low_information_eligible = bool(
+        eligibility_meta.get("observation_reply_kind") == OBSERVATION_REPLY_KIND_LOW_INFORMATION
+        or eligibility_meta.get("eligibility_status") == OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION
+        or eligibility_meta.get("status") == OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION
+    )
+
     bounded_reroute_decision = decide_bounded_repair_reroute(
         display_decision=original_display_decision,
         composer_source=original_composer_source,
@@ -1021,23 +1265,32 @@ def integrate_observation_display_repair(
             bounded_repair_reroute_decision=bounded_reroute_decision,
         )
     if bounded_reroute_decision.runtime_surface_gate_evaluated and bounded_action not in {BOUNDED_ACTION_NO_REPAIR, BOUNDED_ACTION_REROUTE_LOW_INFORMATION}:
-        return ObservationDisplayRepairIntegrationResult(
-            applied=False,
-            display_decision=original_display_decision,
-            reader_report=original_reader_report,
-            grounding_report=original_grounding_report,
-            template_echo_report=original_template_echo_report,
-            composer_source=original_composer_source,
-            composer_candidate=original_composer_candidate,
-            original_observation_status=original_status,
-            blocked_reasons=tuple(bounded_reroute_decision.blocked_reasons or ("bounded_surface_repair_not_available",)),
-            bounded_repair_reroute_decision=bounded_reroute_decision,
-        )
+        if not (low_information_eligible and bounded_action == "block"):
+            return ObservationDisplayRepairIntegrationResult(
+                applied=False,
+                display_decision=original_display_decision,
+                reader_report=original_reader_report,
+                grounding_report=original_grounding_report,
+                template_echo_report=original_template_echo_report,
+                composer_source=original_composer_source,
+                composer_candidate=original_composer_candidate,
+                eligibility_decision=eligibility_decision,
+                original_observation_status=original_status,
+                blocked_reasons=tuple(bounded_reroute_decision.blocked_reasons or ("bounded_surface_repair_not_available",)),
+                bounded_repair_reroute_decision=bounded_reroute_decision,
+            )
 
     route_allowed, route_reasons = _display_repair_route_allowed(
         original_display_decision=original_display_decision,
         original_composer_source=original_composer_source,
         original_composer_candidate=original_composer_candidate,
+        low_information_eligible=low_information_eligible,
+        low_information_compact_signal=(
+            _current_input_is_compact_low_information_signal(
+                current_input if isinstance(current_input, Mapping) else {}
+            )
+            and _clean(resolution_meta.get("connection_status")) != "provided_client"
+        ),
     )
     if bounded_action == BOUNDED_ACTION_REROUTE_LOW_INFORMATION:
         route_allowed = True
@@ -1051,20 +1304,12 @@ def integrate_observation_display_repair(
             template_echo_report=original_template_echo_report,
             composer_source=original_composer_source,
             composer_candidate=original_composer_candidate,
+            eligibility_decision=eligibility_decision,
             original_observation_status=original_status,
             blocked_reasons=tuple(route_reasons),
             bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
 
-    eligibility_decision = route_observation_eligibility(
-        current_input=current_input,
-        subscription_tier=subscription_tier,
-        capability=capability,
-        user_facts=None,
-        evidence_ledger=evidence_ledger,
-        observation_graph=observation_graph,
-    )
-    eligibility_meta = _meta(eligibility_decision)
     feature_flag_blockers = _composer_resolution_feature_flag_block_reasons(composer_client_resolution)
     if feature_flag_blockers and (
         eligibility_meta.get("observation_reply_kind") != OBSERVATION_REPLY_KIND_LOW_INFORMATION
@@ -1316,8 +1561,11 @@ def attach_observation_display_repair_meta(
 
 __all__ = [
     "OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION",
+    "LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION",
+    "LOW_INFORMATION_PUBLIC_REPAIR_SOURCE_PHASE",
     "OBSERVATION_DISPLAY_REPAIR_INTEGRATION_STEP",
     "ObservationDisplayRepairIntegrationResult",
+    "assert_low_information_public_repair_contract_meta_only",
     "attach_observation_display_repair_meta",
     "integrate_observation_display_repair",
     "should_reroute_to_low_information",

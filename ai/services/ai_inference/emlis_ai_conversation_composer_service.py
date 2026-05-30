@@ -19,6 +19,7 @@ from emlis_ai_environment_state_output_surface_contract_completion import (
     DEFAULT_ENVIRONMENT_STATE_OUTPUT_FORBIDDEN_SURFACE_CLAIMS,
     DEFAULT_ENVIRONMENT_STATE_OUTPUT_SCOPE_MARKERS,
     complete_environment_state_output_scope_marker,
+    environment_state_output_forbidden_surface_rejection_reasons,
     environment_state_output_surface_rejection_reasons,
 )
 from emlis_ai_state_answer_composer_contract import (
@@ -96,6 +97,99 @@ def _jsonable(value: Any) -> Any:
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
+
+def _as_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _display_label_marker(label: Any) -> str:
+    clean = _clean_text(label).rstrip("：:")
+    return f"{clean}：" if clean else ""
+
+
+def _two_stage_label_config(payload_or_meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    data = _as_mapping(payload_or_meta)
+    composition_contract = _as_mapping(data.get("composition_contract"))
+    role_plan = _as_mapping(data.get("state_answer_composer_role_plan"))
+    surface_contract = _as_mapping(data.get("state_answer_surface_contract"))
+    two_stage = _as_mapping(surface_contract.get("two_stage_reception"))
+    two_stage_labels = _as_mapping(two_stage.get("display_labels"))
+    labels_from_role = _as_mapping(role_plan.get("display_labels"))
+    observation_label = (
+        _clean_text(composition_contract.get("observation_display_label"))
+        or _clean_text(role_plan.get("observation_display_label"))
+        or _clean_text(labels_from_role.get("observation"))
+        or _clean_text(two_stage_labels.get("observation"))
+        or "見えたこと"
+    ).rstrip("：:")
+    reception_label = (
+        _clean_text(composition_contract.get("reception_display_label"))
+        or _clean_text(role_plan.get("reception_display_label"))
+        or _clean_text(labels_from_role.get("reception"))
+        or _clean_text(two_stage_labels.get("reception"))
+        or "Emlisから"
+    ).rstrip("：:")
+    required = bool(
+        composition_contract.get("two_stage_reception_surface_required")
+        or composition_contract.get("two_stage_display_required")
+        or role_plan.get("two_stage_display_required")
+        or role_plan.get("section_labels_required")
+        or two_stage.get("enabled")
+    )
+    return {
+        "required": required,
+        "observation_label": observation_label,
+        "reception_label": reception_label,
+        "observation_marker": _display_label_marker(observation_label),
+        "reception_marker": _display_label_marker(reception_label),
+    }
+
+
+def _labelled_two_stage_comment_text_present(text: Any, payload_or_meta: Mapping[str, Any] | None) -> bool:
+    body = str(text or "").strip()
+    if not body:
+        return False
+    label_config = _two_stage_label_config(payload_or_meta)
+    if not bool(label_config.get("required")):
+        return False
+    observation_marker = str(label_config.get("observation_marker") or "")
+    reception_marker = str(label_config.get("reception_marker") or "")
+    if not observation_marker or not reception_marker:
+        return False
+    observation_index = body.find(observation_marker)
+    reception_index = body.find(reception_marker)
+    return observation_index >= 0 and reception_index >= 0 and observation_index < reception_index
+
+
+def _two_stage_scope_boundary_meta(
+    *,
+    text: str,
+    payload_or_meta: Mapping[str, Any] | None,
+    claim_reasons: Sequence[str],
+) -> Dict[str, Any]:
+    label_config = _two_stage_label_config(payload_or_meta)
+    return {
+        "schema_version": "cocolon.emlis.two_stage_scope_boundary.v1",
+        "evaluated": True,
+        "applied": False,
+        "scope_marker": None,
+        "target_line": None,
+        "target_line_index": None,
+        "two_stage_labels_present": True,
+        "section_labels_present": True,
+        "section_order_valid": True,
+        "observation_display_label": label_config.get("observation_label"),
+        "reception_display_label": label_config.get("reception_label"),
+        "before_marker_present": False,
+        "after_marker_present": True,
+        "claim_rejection_reasons": list(claim_reasons or []),
+        "action": "reject" if claim_reasons else "continue",
+        "skip_reason": "two_stage_labels_provide_scope_boundary",
+        "display_gate_relaxed": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_body_included": False,
+    }
 
 
 def _graph_claim_payload(claim: GraphClaim | None) -> Dict[str, Any]:
@@ -217,7 +311,10 @@ def _environment_state_output_surface_contract_from_payload(payload_or_meta: Map
 
 def _environment_state_output_surface_rejection_reasons(comment_text: Any, payload_or_meta: Mapping[str, Any] | None) -> List[str]:
     contract = _environment_state_output_surface_contract_from_payload(payload_or_meta)
-    return list(environment_state_output_surface_rejection_reasons(comment_text, contract if contract else None))
+    reasons = list(environment_state_output_surface_rejection_reasons(comment_text, contract if contract else None))
+    if _labelled_two_stage_comment_text_present(comment_text, payload_or_meta):
+        reasons = [reason for reason in reasons if reason != "environment_state_output_scope_marker_missing"]
+    return reasons
 
 
 def _complete_environment_state_output_scope_marker_before_surface_validation(
@@ -227,6 +324,18 @@ def _complete_environment_state_output_scope_marker_before_surface_validation(
     contract = _environment_state_output_surface_contract_from_payload(payload_or_meta)
     if not contract:
         return comment_text, {}, []
+
+    if _labelled_two_stage_comment_text_present(comment_text, payload_or_meta):
+        claim_reasons = list(environment_state_output_forbidden_surface_rejection_reasons(comment_text, contract))
+        return (
+            comment_text,
+            _two_stage_scope_boundary_meta(
+                text=comment_text,
+                payload_or_meta=payload_or_meta,
+                claim_reasons=claim_reasons,
+            ),
+            claim_reasons,
+        )
 
     completion = complete_environment_state_output_scope_marker(comment_text, contract)
     completion_meta = completion.as_meta()

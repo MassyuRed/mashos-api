@@ -1,0 +1,744 @@
+{
+  "schema_version": "emlis.reception_assistance_dictionary.v1",
+  "dictionary_id": "emlis_reception_assistance_dictionary",
+  "dictionary_version": "emlis.reception_assistance_dictionary.initial_two_stage_reception.2026-05-26.phase3",
+  "purpose": "EmlisAIのEmlisから sectionを、ユーザーの明示反応に基づいて自然に受け取るための内部補助辞書。一般辞書でも完成返答テンプレでもない。",
+  "non_goals": [
+    "一般辞書",
+    "完成返答文テンプレ集",
+    "診断辞書",
+    "人格分類辞書",
+    "外部知識補完",
+    "Piece生成辞書",
+    "Analysis期間観測辞書",
+    "public response key追加"
+  ],
+  "global_policies": {
+    "not_general_dictionary": true,
+    "user_reaction_is_primary": true,
+    "event_hint_must_not_create_emotion": true,
+    "unknown_word_meaning_must_not_be_asserted": true,
+    "completed_reply_template_forbidden": true
+  },
+  "unknown_word_policy": {
+    "general_dictionary_used": false,
+    "unknown_word_meaning_asserted": false,
+    "meaning_assertion_allowed": false,
+    "event_hint_can_support_mode_only": true,
+    "event_hint_must_not_create_emotion": true
+  },
+  "reaction_cues": [
+    {
+      "cue_id": "disgust",
+      "surface_patterns": [
+        "気持ち悪い",
+        "気持ちわるい",
+        "きもちわるい",
+        "きもい",
+        "キモい",
+        "嫌",
+        "いや",
+        "最悪"
+      ],
+      "reaction_family": "negative_daily_reaction",
+      "allowed_reception_modes": [
+        "daily_unpleasant_reception"
+      ],
+      "must_not_infer": [
+        "trauma",
+        "danger",
+        "diagnosis",
+        "period_tendency"
+      ]
+    },
+    {
+      "cue_id": "fear",
+      "surface_patterns": [
+        "怖い",
+        "こわい",
+        "恐怖",
+        "怖さ"
+      ],
+      "reaction_family": "fear_reaction",
+      "allowed_reception_modes": [
+        "daily_unpleasant_reception",
+        "uncertainty_support"
+      ],
+      "must_not_infer": [
+        "actual_danger_level",
+        "trauma",
+        "future_risk"
+      ]
+    },
+    {
+      "cue_id": "anger_irritation",
+      "surface_patterns": [
+        "イライラ",
+        "いらいら",
+        "怒り",
+        "怒っ",
+        "腹が立",
+        "ムカつ",
+        "むかつ"
+      ],
+      "reaction_family": "anger_reaction",
+      "allowed_reception_modes": [
+        "daily_unpleasant_reception",
+        "standard_state_answer"
+      ],
+      "must_not_infer": [
+        "target_is_bad",
+        "anger_is_correct",
+        "attack_is_justified"
+      ]
+    },
+    {
+      "cue_id": "joy_or_surprise",
+      "surface_patterns": [
+        "嬉しい",
+        "うれしい",
+        "びっくり",
+        "驚",
+        "動揺",
+        "ほっと",
+        "楽しい"
+      ],
+      "reaction_family": "positive_daily_reaction",
+      "allowed_reception_modes": [
+        "daily_positive_reception",
+        "self_understanding_follow"
+      ],
+      "must_not_infer": [
+        "stable_recovery",
+        "personality_change",
+        "future_success"
+      ]
+    },
+    {
+      "cue_id": "fatigue_or_load",
+      "surface_patterns": [
+        "疲れ",
+        "くたくた",
+        "しんど",
+        "元気がない",
+        "我慢",
+        "余裕ない"
+      ],
+      "reaction_family": "load_reaction",
+      "allowed_reception_modes": [
+        "self_understanding_follow",
+        "standard_state_answer"
+      ],
+      "must_not_infer": [
+        "medical_condition",
+        "weakness",
+        "inability"
+      ]
+    },
+    {
+      "cue_id": "uncertainty",
+      "surface_patterns": [
+        "これでいいのかな",
+        "大丈夫なのかな",
+        "頑張れてるかな",
+        "不安",
+        "自信がなく",
+        "自信ない"
+      ],
+      "reaction_family": "uncertainty_reaction",
+      "allowed_reception_modes": [
+        "uncertainty_support",
+        "self_denial_support"
+      ],
+      "must_not_infer": [
+        "failure",
+        "incapable_identity",
+        "future_failure"
+      ]
+    },
+    {
+      "cue_id": "self_denial",
+      "surface_patterns": [
+        "中途半端",
+        "自分を好き",
+        "好きになれる",
+        "自信をつけたい",
+        "なんで私はこう",
+        "自分を責め",
+        "自分を追い込"
+      ],
+      "reaction_family": "self_negative_reaction",
+      "allowed_reception_modes": [
+        "self_denial_support",
+        "uncertainty_support"
+      ],
+      "must_not_infer": [
+        "identity_is_true",
+        "identity_claim_is_fact",
+        "personality_defect",
+        "diagnosis"
+      ]
+    },
+    {
+      "cue_id": "self_understanding_effort",
+      "surface_patterns": [
+        "向き合",
+        "気づいて",
+        "優しく見",
+        "ちゃんと見て",
+        "見てあげる",
+        "整えて",
+        "直したい",
+        "挑戦",
+        "頑張りたい",
+        "小さくても大事"
+      ],
+      "reaction_family": "self_understanding_effort",
+      "allowed_reception_modes": [
+        "self_understanding_follow",
+        "self_denial_support",
+        "uncertainty_support"
+      ],
+      "must_not_infer": [
+        "already_recovered",
+        "growth_complete",
+        "future_success"
+      ]
+    },
+    {
+      "cue_id": "effort_pace",
+      "surface_patterns": [
+        "自立",
+        "動けるようになりたい",
+        "体調をちゃんと見",
+        "続けていけるペース",
+        "長く続け",
+        "無理をして頑張りすぎるんじゃなくて"
+      ],
+      "reaction_family": "effort_pace_reaction",
+      "allowed_reception_modes": [
+        "standard_state_answer",
+        "effort_support"
+      ],
+      "must_not_infer": [
+        "success_guarantee",
+        "action_instruction",
+        "money_is_cause"
+      ]
+    }
+  ],
+  "event_hints": [
+    {
+      "hint_id": "public_unpleasant_encounter",
+      "surface_patterns": [
+        "立ちション",
+        "すれ違",
+        "出くわ",
+        "見かけ",
+        "遭遇"
+      ],
+      "event_family": "daily_event_encounter",
+      "can_support_modes": [
+        "daily_unpleasant_reception"
+      ],
+      "cannot_alone_infer": [
+        "fear",
+        "anger",
+        "disgust",
+        "danger",
+        "trauma",
+        "actual_danger_level"
+      ]
+    },
+    {
+      "hint_id": "positive_change_after_work_streaming",
+      "surface_patterns": [
+        "配信",
+        "誰かとお話",
+        "話したい",
+        "仕事があった日",
+        "大きな変化"
+      ],
+      "event_family": "positive_daily_change",
+      "can_support_modes": [
+        "daily_positive_reception",
+        "self_understanding_follow"
+      ],
+      "cannot_alone_infer": [
+        "joy",
+        "stable_recovery",
+        "personality_change",
+        "future_success"
+      ]
+    },
+    {
+      "hint_id": "self_confidence_uncertainty_attempt",
+      "surface_patterns": [
+        "自信をつけたい",
+        "中途半端",
+        "色々挑戦",
+        "これでいいのかな",
+        "大丈夫なのかな"
+      ],
+      "event_family": "self_confidence_uncertainty_attempt",
+      "can_support_modes": [
+        "self_denial_support",
+        "uncertainty_support",
+        "self_understanding_follow"
+      ],
+      "cannot_alone_infer": [
+        "identity_claim_is_fact",
+        "failure",
+        "future_failure"
+      ]
+    },
+    {
+      "hint_id": "self_blame_to_gentle_self_observation",
+      "surface_patterns": [
+        "自分を責め",
+        "気持ちが沈",
+        "向き合わないと",
+        "優しく見て",
+        "気持ちをちゃんと見て"
+      ],
+      "event_family": "self_understanding_direction",
+      "can_support_modes": [
+        "self_denial_support",
+        "self_understanding_follow"
+      ],
+      "cannot_alone_infer": [
+        "growth_complete",
+        "already_recovered",
+        "diagnosis"
+      ]
+    },
+    {
+      "hint_id": "independence_life_health_money_pace",
+      "surface_patterns": [
+        "自立",
+        "生活のこと",
+        "体調のこと",
+        "お金のこと",
+        "長く続けていけるペース"
+      ],
+      "event_family": "life_pace_effort_context",
+      "can_support_modes": [
+        "standard_state_answer",
+        "effort_support"
+      ],
+      "cannot_alone_infer": [
+        "independence_success",
+        "money_is_cause",
+        "health_cause",
+        "action_instruction"
+      ]
+    }
+  ],
+  "reception_modes": [
+    {
+      "mode_id": "daily_unpleasant_reception",
+      "activation": {
+        "requires_event_fact_present": true,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "negative_daily_reaction",
+          "fear_reaction",
+          "anger_reaction"
+        ],
+        "excludes_structure_question": true,
+        "excludes_safety_risk": true,
+        "excludes_self_denial_primary": true,
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "daily_unpleasant_reception_light",
+      "observation_policy": {
+        "max_sentences": 1,
+        "must_not_prompt_for_event_if_event_fact_present": true,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "natural_short_reception",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "allow_casual_first_reaction": true,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "target_judgement_agreement",
+        "action_instruction",
+        "diagnosis",
+        "unknown_word_meaning_assertion"
+      ]
+    },
+    {
+      "mode_id": "daily_positive_reception",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "positive_daily_reaction"
+        ],
+        "excludes_structure_question": true,
+        "excludes_safety_risk": true,
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "daily_positive_reception_light",
+      "observation_policy": {
+        "max_sentences": 1,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "natural_short_reception",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "stable_recovery_claim",
+        "personality_change_claim",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "self_denial_support",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "self_negative_reaction"
+        ],
+        "priority_before_daily_reception": true,
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "self_denial_follow_thickened",
+      "observation_policy": {
+        "max_sentences": 2,
+        "claim_strength": "single_input_soft",
+        "self_denial_must_not_be_fact": true
+      },
+      "reception_policy": {
+        "allowed_tone_family": "gentle_self_support",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "identity_claim_accepted_as_fact",
+        "overcomfort_personality_praise",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "uncertainty_support",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "uncertainty_reaction",
+          "fear_reaction"
+        ],
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "self_confidence_uncertainty_follow_thickened",
+      "observation_policy": {
+        "max_sentences": 2,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "gentle_self_support",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "failure_claim",
+        "future_failure_claim",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "self_understanding_follow",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "self_understanding_effort",
+          "positive_daily_reaction",
+          "load_reaction"
+        ],
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "self_understanding_follow_balanced",
+      "observation_policy": {
+        "max_sentences": 2,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "self_understanding_observation",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "growth_complete_claim",
+        "already_recovered_claim",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "standard_state_answer",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "effort_pace_reaction",
+          "anger_reaction",
+          "load_reaction"
+        ],
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "standard_state_answer",
+      "observation_policy": {
+        "max_sentences": 2,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "balanced_state_answer",
+        "min_sentences": 1,
+        "max_sentences": 2,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "diagnosis",
+        "personality_claim",
+        "cause_overclaim",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "effort_support",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "effort_pace_reaction",
+          "self_understanding_effort"
+        ],
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "effort_support_balanced",
+      "observation_policy": {
+        "max_sentences": 2,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "balanced_state_answer",
+        "min_sentences": 1,
+        "max_sentences": 3,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "success_guarantee",
+        "money_is_cause",
+        "health_cause",
+        "action_instruction"
+      ]
+    },
+    {
+      "mode_id": "low_information_question",
+      "activation": {
+        "requires_event_fact_present": false,
+        "requires_reaction_present": false,
+        "requires_any_reaction_family": [],
+        "fallback_only": true,
+        "event_hint_alone_can_activate": false
+      },
+      "ratio_preset": "low_information_light_prompt",
+      "observation_policy": {
+        "max_sentences": 1,
+        "claim_strength": "visible_scope_only"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "balanced_state_answer",
+        "min_sentences": 0,
+        "max_sentences": 1,
+        "must_ground_to_explicit_reaction": false
+      },
+      "forbidden": [
+        "event_prompt_when_event_fact_present",
+        "raw_detail_request",
+        "public_status_extension"
+      ]
+    }
+  ],
+  "tone_families": [
+    {
+      "tone_family_id": "natural_short_reception",
+      "description": "日常入力に対して、観測者として硬くなりすぎず、Emlisが短く受け取る温度。",
+      "allowed_surface_features": [
+        "short_reaction_sentence",
+        "input_reaction_receiving",
+        "no_over_explanation",
+        "gentle_normalization"
+      ],
+      "forbidden_surface_features": [
+        "over_close_support",
+        "absolute_alliance",
+        "target_attack",
+        "diagnosis",
+        "fixed_template_loop"
+      ]
+    },
+    {
+      "tone_family_id": "gentle_self_support",
+      "description": "自己否定や不安を事実化せず、入力内にある試みや確認を受け取る温度。",
+      "allowed_surface_features": [
+        "self_denial_not_fact",
+        "effort_received",
+        "uncertainty_received",
+        "soft_scope"
+      ],
+      "forbidden_surface_features": [
+        "personality_praise_overcomfort",
+        "identity_claim_as_fact",
+        "action_instruction",
+        "fixed_template_loop"
+      ]
+    },
+    {
+      "tone_family_id": "self_understanding_observation",
+      "description": "気持ちを見ようとしている動きや変化を、成長断定にせず受け取る温度。",
+      "allowed_surface_features": [
+        "direction_seen",
+        "small_effort_received",
+        "no_growth_completion",
+        "soft_scope"
+      ],
+      "forbidden_surface_features": [
+        "growth_complete_claim",
+        "already_recovered_claim",
+        "instruction",
+        "diagnosis"
+      ]
+    },
+    {
+      "tone_family_id": "balanced_state_answer",
+      "description": "通常の状態回答として、観測と短い受け取りを混ぜずに両立する温度。",
+      "allowed_surface_features": [
+        "state_answer_observation",
+        "short_reception",
+        "no_cause_overclaim",
+        "current_input_scope"
+      ],
+      "forbidden_surface_features": [
+        "diagnosis",
+        "personality_claim",
+        "cause_overclaim",
+        "action_instruction"
+      ]
+    }
+  ],
+  "follow_shape_families": [
+    {
+      "shape_family_id": "daily_unpleasant_brief_receiving",
+      "mode_ids": [
+        "daily_unpleasant_reception"
+      ],
+      "allowed_intents": [
+        "嫌だった反応を受け取る",
+        "怖さや怒りが残る自然さを受け取る",
+        "深掘りしすぎない"
+      ],
+      "forbidden_intents": [
+        "相手が悪いと断定する",
+        "危険だったと断定する",
+        "詳しく説明させる",
+        "相談化する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "daily_positive_change_receiving",
+      "mode_ids": [
+        "daily_positive_reception"
+      ],
+      "allowed_intents": [
+        "嬉しさや動揺を受け取る",
+        "変化を小さく扱わない",
+        "我慢や制限を行動指示にしない"
+      ],
+      "forbidden_intents": [
+        "完全に回復したと断定する",
+        "もっと見るよう勧める",
+        "我慢しなくてよいと指示する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "self_denial_not_fact_support",
+      "mode_ids": [
+        "self_denial_support",
+        "uncertainty_support"
+      ],
+      "allowed_intents": [
+        "自己否定を事実化しない",
+        "直したい気持ちや挑戦を拾う",
+        "不安を確認したい気持ちとして受け取る"
+      ],
+      "forbidden_intents": [
+        "中途半端な人だと扱う",
+        "本当はすごい人だと人格保証する",
+        "自信を持つよう指示する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "self_understanding_direction_receiving",
+      "mode_ids": [
+        "self_understanding_follow"
+      ],
+      "allowed_intents": [
+        "自己責めから優しく見る方向への移動を受け取る",
+        "小さな頑張りを入力内の事実として扱う",
+        "成長完了にしない"
+      ],
+      "forbidden_intents": [
+        "成長していますと断定する",
+        "もう大丈夫と断定する",
+        "責めないでくださいと指示する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "pace_effort_receiving",
+      "mode_ids": [
+        "standard_state_answer",
+        "effort_support"
+      ],
+      "allowed_intents": [
+        "自立したい意図を観測する",
+        "体調を見ながら続けるペースを拾う",
+        "生活やお金を原因断定せず文脈として扱う"
+      ],
+      "forbidden_intents": [
+        "もっと頑張るよう指示する",
+        "自立できますと保証する",
+        "お金の問題が原因と断定する"
+      ],
+      "template_text_forbidden": true
+    }
+  ],
+  "contract_boundaries": {
+    "public_response_key_added": false,
+    "comment_text_generated_by_dictionary": false,
+    "raw_input_included": false,
+    "raw_text_included": false,
+    "general_knowledge_primary": false,
+    "completed_reply_generated": false,
+    "observation_status_enum_extended": false,
+    "api_route_changed": false,
+    "db_physical_name_changed": false,
+    "rn_visible_contract_changed": false
+  },
+  "contract_step": "Phase3_Reception_Assistance_Dictionary_Skeleton"
+}

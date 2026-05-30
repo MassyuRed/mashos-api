@@ -12,7 +12,7 @@ It does not generate user-facing ``comment_text`` and does not change DB
 physical names, API routes, public response keys, or RN display contracts.
 """
 
-from dataclasses import asdict, dataclass, field as dataclass_field, is_dataclass
+from dataclasses import asdict, dataclass, field as dataclass_field, is_dataclass, replace
 import re
 from typing import Any, Iterable, Mapping, Sequence, Tuple
 
@@ -35,6 +35,7 @@ from emlis_ai_observation_sentence_plan_roles import (
     build_observation_sentence_plan_roles_contract_meta,
     build_observation_sentence_plan_roles_meta,
 )
+from emlis_ai_two_stage_section_surface_plan import build_two_stage_section_surface_plan
 from emlis_ai_limited_relation_taxonomy import (
     canonical_relation_type,
     normalize_relation_type,
@@ -241,6 +242,12 @@ def _json_safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+def _sequence_mappings(value: Any) -> list[Mapping[str, Any]]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
 def _as_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
@@ -277,6 +284,20 @@ def _safe_int(value: Any, *, default: int = 0, minimum: int = 0, maximum: int = 
     except (TypeError, ValueError):
         number = default
     return max(minimum, min(number, maximum))
+
+
+def _boolish(value: Any, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "required", "enabled"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "none", ""}:
+            return False
+    return bool(value)
 
 
 def _normalize_coverage_group(value: Any) -> str:
@@ -642,6 +663,288 @@ def _line_policy(line_role: str, relation_type: str) -> tuple[tuple[str, ...], s
     return tuple(_dedupe(forbidden)), surface_intent, tuple(_dedupe(repair))
 
 
+def _two_stage_plan_from_inputs(
+    *,
+    two_stage_section_surface_plan: Mapping[str, Any] | None = None,
+    state_answer_composer_role_plan: Mapping[str, Any] | None = None,
+    state_answer_surface_contract: Mapping[str, Any] | None = None,
+    composition_contract: Mapping[str, Any] | None = None,
+    seed: Mapping[str, Any] | None = None,
+    meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return the internal two-stage section plan, if one is available.
+
+    Phase16-3 only consumes internal material.  It does not make completed
+    reply text and it does not require raw input.  The explicit plan wins;
+    otherwise we reuse a plan already placed in meta/seed by Phase16-2, or build
+    it from the role/surface/composition contracts when those are supplied.
+    """
+
+    for source in (
+        two_stage_section_surface_plan,
+        _as_mapping(meta).get("two_stage_section_surface_plan"),
+        _as_mapping(seed).get("two_stage_section_surface_plan"),
+    ):
+        candidate = _as_mapping(source)
+        if candidate and _boolish(candidate.get("required"), default=True):
+            return _json_safe_mapping(candidate)
+
+    role_plan = _as_mapping(state_answer_composer_role_plan)
+    if role_plan:
+        built = build_two_stage_section_surface_plan(
+            role_plan,
+            state_answer_surface_contract=_as_mapping(state_answer_surface_contract),
+            composition_contract=_as_mapping(composition_contract),
+        )
+        if built:
+            return _json_safe_mapping(built)
+    return {}
+
+
+def _two_stage_sections_by_id(two_stage_plan: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    sections: dict[str, Mapping[str, Any]] = {}
+    for section in _sequence_mappings(two_stage_plan.get("sections")):
+        section_id = _clean(section.get("section_id"))
+        if section_id and section_id not in sections:
+            sections[section_id] = section
+    return sections
+
+
+def _two_stage_section_budget_policy(two_stage_plan: Mapping[str, Any]) -> Mapping[str, Any]:
+    policy = _as_mapping(two_stage_plan.get("section_budget_policy"))
+    if policy:
+        return policy
+    budget = _as_mapping(two_stage_plan.get("mode_section_budget"))
+    if not budget:
+        return {}
+    return {
+        "applied": _boolish(two_stage_plan.get("section_budget_policy_applied"), default=False),
+        "selected_budget": budget,
+        "schema_version": _clean(two_stage_plan.get("section_budget_policy_schema_version")),
+        "source_phase": _clean(two_stage_plan.get("section_budget_policy_source_phase")),
+        "mode_id": _clean(two_stage_plan.get("reception_mode_id")),
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+    }
+
+
+def _two_stage_section_budget_applied(two_stage_plan: Mapping[str, Any]) -> bool:
+    if not two_stage_plan:
+        return False
+    policy = _two_stage_section_budget_policy(two_stage_plan)
+    return _boolish(
+        policy.get("applied")
+        if "applied" in policy
+        else two_stage_plan.get("section_budget_policy_applied"),
+        default=False,
+    )
+
+
+def _two_stage_section_budget_bounds(two_stage_plan: Mapping[str, Any]) -> dict[str, int]:
+    policy = _two_stage_section_budget_policy(two_stage_plan)
+    selected = _as_mapping(policy.get("selected_budget")) or _as_mapping(two_stage_plan.get("mode_section_budget"))
+    if not selected:
+        sections = _two_stage_sections_by_id(two_stage_plan)
+        observation = _as_mapping(sections.get("observation"))
+        reception = _as_mapping(sections.get("reception"))
+        selected = {
+            "observation_min": observation.get("section_budget_min_sentences") or observation.get("min_sentences") or 1,
+            "observation_max": observation.get("section_budget_max_sentences") or observation.get("max_sentences") or 1,
+            "reception_min": reception.get("section_budget_min_sentences") or reception.get("min_sentences") or 1,
+            "reception_max": reception.get("section_budget_max_sentences") or reception.get("max_sentences") or 2,
+        }
+    return {
+        "observation_min": _safe_int(selected.get("observation_min"), default=1, minimum=1, maximum=9),
+        "observation_max": _safe_int(selected.get("observation_max"), default=1, minimum=1, maximum=9),
+        "reception_min": _safe_int(selected.get("reception_min"), default=1, minimum=1, maximum=9),
+        "reception_max": _safe_int(selected.get("reception_max"), default=2, minimum=1, maximum=9),
+    }
+
+
+def _normalize_two_stage_sentence_budget(base_budget: int, two_stage_plan: Mapping[str, Any]) -> int:
+    if not _two_stage_section_budget_applied(two_stage_plan):
+        return base_budget
+    bounds = _two_stage_section_budget_bounds(two_stage_plan)
+    target_min = max(2, bounds["observation_min"] + bounds["reception_min"])
+    target_max = max(target_min, bounds["observation_max"] + bounds["reception_max"])
+    return max(target_min, min(target_max, int(base_budget)))
+
+
+def _two_stage_section_sequence(
+    *,
+    line_count: int,
+    two_stage_plan: Mapping[str, Any],
+    sections_by_id: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    if line_count <= 0:
+        return []
+    order = [item for item in _dedupe(two_stage_plan.get("section_order") or ("observation", "reception")) if item in sections_by_id]
+    if order != ["observation", "reception"]:
+        order = ["observation", "reception"]
+    if not all(section_id in sections_by_id for section_id in order):
+        return []
+
+    if line_count == 1:
+        return ["observation"]
+
+    if _two_stage_section_budget_applied(two_stage_plan):
+        bounds = _two_stage_section_budget_bounds(two_stage_plan)
+        observation_min = bounds["observation_min"]
+        observation_max = bounds["observation_max"]
+        reception_min = bounds["reception_min"]
+        reception_max = bounds["reception_max"]
+        observation_count = min(observation_max, max(observation_min, line_count - reception_min))
+        reception_count = line_count - observation_count
+        if reception_count < reception_min:
+            observation_count = max(observation_min, line_count - reception_min)
+            reception_count = line_count - observation_count
+        if reception_count > reception_max:
+            reception_count = reception_max
+            observation_count = max(observation_min, line_count - reception_count)
+        # If a legacy caller supplies more lines than the Phase17-4 policy allows,
+        # keep the sequence length stable and place the overflow at the back.  The
+        # normal path caps sentence_budget before this function is called.
+        overflow = max(0, line_count - (observation_count + reception_count))
+        return ["observation"] * observation_count + ["reception"] * (reception_count + overflow)
+
+    observation_units = _safe_int(
+        sections_by_id["observation"].get("sentence_plan_unit_count"),
+        default=1,
+        minimum=1,
+        maximum=max(1, line_count - 1),
+    )
+    observation_count = min(observation_units, max(1, line_count - 1))
+    reception_count = max(1, line_count - observation_count)
+    return ["observation"] * observation_count + ["reception"] * reception_count
+
+
+def _two_stage_section_line_meta(
+    *,
+    section: Mapping[str, Any],
+    two_stage_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    section_id = _clean(section.get("section_id"))
+    return {
+        "two_stage_section_id": section_id,
+        "two_stage_section_role": _clean(section.get("section_role")),
+        "two_stage_display_label": _clean(section.get("display_label")),
+        "two_stage_comment_text_section_label": _clean(section.get("comment_text_section_label")),
+        "two_stage_section_label_required": _boolish(section.get("two_stage_section_label_required") or section.get("section_label_required"), default=True),
+        "two_stage_section_order_index": _safe_int(section.get("section_order_index"), default=0 if section_id == "observation" else 1, minimum=0, maximum=9),
+        "two_stage_expected_comment_text_shape": _clean(section.get("expected_comment_text_shape") or two_stage_plan.get("expected_comment_text_shape")),
+        "two_stage_section_surface_plan_material_id": _clean(two_stage_plan.get("material_id")),
+        "two_stage_section_surface_plan_schema_version": _clean(two_stage_plan.get("schema_version")),
+        "two_stage_section_surface_plan_required": _boolish(two_stage_plan.get("required"), default=True),
+        "two_stage_section_plan_unit_count": _safe_int(section.get("sentence_plan_unit_count"), default=1, minimum=1, maximum=9),
+        "two_stage_section_min_sentences": _safe_int(section.get("min_sentences"), default=1, minimum=1, maximum=9),
+        "two_stage_section_max_sentences": _safe_int(section.get("max_sentences"), default=1, minimum=1, maximum=9),
+        "two_stage_section_budget_min_sentences": _safe_int(section.get("section_budget_min_sentences") or section.get("min_sentences"), default=1, minimum=1, maximum=9),
+        "two_stage_section_budget_max_sentences": _safe_int(section.get("section_budget_max_sentences") or section.get("max_sentences"), default=1, minimum=1, maximum=9),
+        "two_stage_section_max_chars": _safe_int(section.get("max_chars"), default=120, minimum=24, maximum=240),
+        "two_stage_reception_mode_id": _clean(section.get("reception_mode_id") or two_stage_plan.get("reception_mode_id")),
+        "two_stage_ratio_reason": _clean(section.get("ratio_reason") or two_stage_plan.get("ratio_reason")),
+        "two_stage_mode_context_schema_version": _clean(section.get("mode_context_schema_version") or two_stage_plan.get("mode_context_schema_version")),
+        "two_stage_mode_context_source_phase": _clean(section.get("mode_context_source_phase") or two_stage_plan.get("mode_context_source_phase")),
+        "two_stage_mode_context_source": _clean(section.get("mode_context_source") or two_stage_plan.get("mode_context_source") or "two_stage_section_surface_plan"),
+        "two_stage_mode_context_reception_mode_id": _clean(section.get("reception_mode_id") or two_stage_plan.get("reception_mode_id")),
+        "two_stage_mode_context_ratio_reason": _clean(section.get("ratio_reason") or two_stage_plan.get("ratio_reason")),
+        "two_stage_mode_context_propagated_to_sentence_line": _boolish(section.get("mode_context_propagated_to_sentence_line") or two_stage_plan.get("mode_context_propagated_to_sentence_line"), default=bool(two_stage_plan.get("mode_context_schema_version"))),
+        "two_stage_mode_context_propagated_to_surface_realizer": _boolish(section.get("mode_context_propagated_to_surface_realizer") or two_stage_plan.get("mode_context_propagated_to_surface_realizer"), default=bool(two_stage_plan.get("mode_context_schema_version"))),
+        "two_stage_mode_context_coverage_group_only_mode_selection_used": _boolish(section.get("coverage_group_only_mode_selection_used") or two_stage_plan.get("coverage_group_only_mode_selection_used"), default=False),
+        "two_stage_mode_context_case_id_branch_used": _boolish(section.get("case_id_branch_used") or two_stage_plan.get("case_id_branch_used"), default=False),
+        "two_stage_mode_context_comment_text_body_included": False,
+        "two_stage_mode_context_public_response_key_added": False,
+        "two_stage_coverage_group_only_mode_selection_used": _boolish(section.get("coverage_group_only_mode_selection_used") or two_stage_plan.get("coverage_group_only_mode_selection_used"), default=False),
+        "two_stage_case_id_branch_used": _boolish(section.get("case_id_branch_used") or two_stage_plan.get("case_id_branch_used"), default=False),
+        "must_not_include_human_follow": _boolish(section.get("must_not_include_human_follow"), default=section_id == "observation"),
+        "must_not_include_new_observation_claim": _boolish(section.get("must_not_include_new_observation_claim"), default=section_id == "reception"),
+        "allowed_tone_family": _clean(section.get("allowed_tone_family")),
+        "follow_mode": _clean(section.get("follow_mode")),
+        "allowed_surface_intents": list(_dedupe(section.get("allowed_surface_intents") or ())),
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_generated": False,
+        "completed_reply_template_used": False,
+    }
+
+
+def _annotate_two_stage_section_lines(
+    lines: Sequence[CompleteSentencePlanLine],
+    two_stage_plan: Mapping[str, Any],
+) -> tuple[CompleteSentencePlanLine, ...]:
+    sections_by_id = _two_stage_sections_by_id(two_stage_plan)
+    sequence = _two_stage_section_sequence(
+        line_count=len(lines),
+        two_stage_plan=two_stage_plan,
+        sections_by_id=sections_by_id,
+    )
+    if not sequence:
+        return tuple(lines)
+
+    annotated: list[CompleteSentencePlanLine] = []
+    for index, line in enumerate(lines):
+        section_id = sequence[index] if index < len(sequence) else sequence[-1]
+        section = sections_by_id.get(section_id)
+        if not section:
+            annotated.append(line)
+            continue
+        section_meta = _two_stage_section_line_meta(section=section, two_stage_plan=two_stage_plan)
+        annotated.append(
+            replace(
+                line,
+                meta={
+                    **dict(line.meta),
+                    **section_meta,
+                    "two_stage_section_line_index": index,
+                },
+            )
+        )
+    return tuple(annotated)
+
+
+def _two_stage_sentence_plan_summary(
+    *,
+    lines: Sequence[CompleteSentencePlanLine],
+    two_stage_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not two_stage_plan:
+        return {}
+    section_ids = [line.meta.get("two_stage_section_id") for line in lines if line.meta.get("two_stage_section_id")]
+    line_counts = {"observation": section_ids.count("observation"), "reception": section_ids.count("reception")}
+    expected_shape = _clean(two_stage_plan.get("expected_comment_text_shape"))
+    budget_policy = _two_stage_section_budget_policy(two_stage_plan)
+    budget_bounds = _two_stage_section_budget_bounds(two_stage_plan) if budget_policy else {}
+    return {
+        "two_stage_section_surface_plan_connected": True,
+        "two_stage_section_meta_propagated": bool(section_ids),
+        "two_stage_section_surface_plan_required": _boolish(two_stage_plan.get("required"), default=True),
+        "two_stage_section_surface_plan_material_id": _clean(two_stage_plan.get("material_id")),
+        "two_stage_section_surface_plan_schema_version": _clean(two_stage_plan.get("schema_version")),
+        "two_stage_expected_comment_text_shape": expected_shape,
+        "two_stage_section_surface_plan_expected_comment_text_shape": expected_shape,
+        "two_stage_section_labels_required": _boolish(two_stage_plan.get("section_labels_required"), default=True),
+        "two_stage_section_order": list(two_stage_plan.get("section_order") or ["observation", "reception"]),
+        "two_stage_section_ids": list(two_stage_plan.get("section_ids") or ["observation", "reception"]),
+        "two_stage_section_line_counts": line_counts,
+        "two_stage_section_budget_policy_schema_version": _clean(budget_policy.get("schema_version")),
+        "two_stage_section_budget_policy_source_phase": _clean(budget_policy.get("source_phase")),
+        "two_stage_section_budget_policy_applied": _two_stage_section_budget_applied(two_stage_plan),
+        "two_stage_mode_section_budget": dict(budget_bounds),
+        "two_stage_section_budget_public_response_key_added": False,
+        "two_stage_section_budget_comment_text_body_included": False,
+        "two_stage_section_budget_display_gate_relaxed": False,
+        "two_stage_section_budget_grounding_gate_relaxed": False,
+        "two_stage_observation_section_present": line_counts.get("observation", 0) > 0,
+        "two_stage_reception_section_present": line_counts.get("reception", 0) > 0,
+        "two_stage_section_meta_raw_input_included": False,
+        "two_stage_comment_text_generated": False,
+        "two_stage_completed_reply_template_used": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_generated": False,
+    }
+
+
 def _plan_line(
     *,
     plan_id: str,
@@ -849,6 +1152,11 @@ def build_complete_sentence_planner_contract_meta() -> dict[str, Any]:
         "observation_sentence_plan_roles_supported": True,
         "observation_sentence_plan_roles_step": OBSERVATION_SENTENCE_PLAN_ROLES_STEP,
         "sentence_plan_observation_roles_added": True,
+        "two_stage_section_surface_plan_supported": True,
+        "two_stage_section_meta_supported": True,
+        "two_stage_section_meta_carried_in_line_meta": True,
+        "complete_sentence_plan_dataclass_field_added_for_two_stage": False,
+        "two_stage_comment_text_generated": False,
         "existing_line_role_preserved": True,
         "observation_roles_meta_only": True,
         "short_eligible_role_merge_allowed": True,
@@ -994,6 +1302,10 @@ def build_complete_sentence_plan_v2(
     observation_graph: CompleteObservationGraphV2 | Mapping[str, Any] | None = None,
     relation_graph: CompleteObservationGraphV2 | Mapping[str, Any] | None = None,
     sentence_plan_seed: Mapping[str, Any] | None = None,
+    two_stage_section_surface_plan: Mapping[str, Any] | None = None,
+    state_answer_composer_role_plan: Mapping[str, Any] | None = None,
+    state_answer_surface_contract: Mapping[str, Any] | None = None,
+    composition_contract: Mapping[str, Any] | None = None,
     coverage_plan: Any = None,
     material_bundle: Any = None,
     focus_selector_input: Mapping[str, Any] | None = None,
@@ -1021,8 +1333,17 @@ def build_complete_sentence_plan_v2(
     )
     nodes, optional_nodes, rejected = _nodes_from_seed(seed)
     source_group = _normalize_coverage_group(coverage_group) or _normalize_coverage_group(seed.get("coverage_group")) or _normalize_coverage_group(source_graph_meta.get("coverage_group")) or "short_daily"
+    two_stage_plan = _two_stage_plan_from_inputs(
+        two_stage_section_surface_plan=two_stage_section_surface_plan,
+        state_answer_composer_role_plan=state_answer_composer_role_plan,
+        state_answer_surface_contract=state_answer_surface_contract,
+        composition_contract=composition_contract,
+        seed=seed,
+        meta=meta,
+    )
     relation_count = len(_dedupe(node.relation_type for node in nodes))
-    budget = _coverage_budget(source_group, seed.get("sentence_budget"), relation_count=relation_count, node_count=len(nodes))
+    base_budget = _coverage_budget(source_group, seed.get("sentence_budget"), relation_count=relation_count, node_count=len(nodes))
+    budget = _normalize_two_stage_sentence_budget(base_budget, two_stage_plan)
     required_roles = tuple(_dedupe(seed.get("required_line_roles") or ())) or ("opening", "core", "relation")
     plan_id = f"complete_sentence_plan_v2_{source_group}"
     lines = _build_lines(plan_id=plan_id, coverage_group=source_group, budget=budget, nodes=nodes, required_line_roles=required_roles)
@@ -1032,6 +1353,8 @@ def build_complete_sentence_plan_v2(
         observation_context=observation_role_context,
         coverage_group=source_group,
     )
+    lines = _annotate_two_stage_section_lines(lines, two_stage_plan)
+    two_stage_plan_summary = _two_stage_sentence_plan_summary(lines=lines, two_stage_plan=two_stage_plan)
     observation_role_meta = build_observation_sentence_plan_roles_meta(
         lines=lines,
         observation_context=observation_role_context,
@@ -1046,6 +1369,15 @@ def build_complete_sentence_plan_v2(
     base_meta = {
         **build_complete_sentence_planner_contract_meta(),
         **_json_safe_mapping(meta),
+        **two_stage_plan_summary,
+        "two_stage_section_budget_normalization_supported": True,
+        "two_stage_section_budget_normalization_source_phase": _clean(_two_stage_section_budget_policy(two_stage_plan).get("source_phase")),
+        "two_stage_section_budget_normalization_applied": _two_stage_section_budget_applied(two_stage_plan),
+        "two_stage_section_budget_base_sentence_budget": base_budget,
+        "two_stage_section_budget_normalized_sentence_budget": budget,
+        "two_stage_section_budget_display_gate_relaxed": False,
+        "two_stage_section_budget_grounding_gate_relaxed": False,
+        "two_stage_section_budget_comment_text_body_included": False,
         "source_relation_graph_summary": {
             "version": source_graph_meta.get("version"),
             "source_step": source_graph_meta.get("target_step") or source_graph_meta.get("source_step"),
@@ -1079,12 +1411,17 @@ def build_complete_sentence_plan_v2(
         source_graph_meta=source_graph_meta,
         required_line_roles=required_roles,
     )
+    final_meta = {
+        **planner_meta,
+        **_json_safe_mapping(meta),
+        **two_stage_plan_summary,
+    }
     return CompleteSentencePlanV2(
         plan_id=plan.plan_id,
         sentence_budget=plan.sentence_budget,
         coverage_group=plan.coverage_group,
         sentence_plans=plan.sentence_plans,
-        meta={**planner_meta, **_json_safe_mapping(meta)},
+        meta=final_meta,
     )
 
 

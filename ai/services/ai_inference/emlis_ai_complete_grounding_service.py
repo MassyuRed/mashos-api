@@ -18,10 +18,18 @@ from emlis_ai_complete_grounding_binding import (
     COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
     COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
     GATE_BINDING_CONTRACT_VERSION,
+    PHASE17_6_ALLOWED_RELATION_MARKER_CODES,
+    PHASE17_6_EFFORT_PACE_BINDING_ROLES,
+    PHASE17_6_EFFORT_PACE_CASE_FAMILY,
+    PHASE17_6_EFFORT_PACE_TARGET_MODES,
+    PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES,
+    PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+    PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
     build_complete_binding_aware_grounding_contract_meta,
     build_complete_grounding_binding_bundle,
     judge_complete_binding_aware_grounding as _judge_complete_binding_aware_grounding,
 )
+from emlis_ai_grounding_judge import PHASE17_6_EFFORT_PACE_RELATION_MARKERS
 from emlis_ai_types import EvidenceSpan, GroundingReport, ObservationGraph
 
 COMPLETE_GROUNDING_BINDING_VERSION = COMPLETE_BINDING_AWARE_GROUNDING_VERSION
@@ -53,6 +61,17 @@ def build_complete_grounding_contract_meta() -> dict[str, Any]:
     meta.setdefault("binding_support_source_required", True)
     meta.setdefault("unsupported_sentence_ids_reported", True)
     meta.setdefault("relation_not_expressed_sentence_ids_reported", True)
+    meta.setdefault("phase17_6_grounding_relation_binding_schema_version", PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION)
+    meta.setdefault("phase17_6_grounding_relation_binding_source_phase", PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE)
+    meta.setdefault("phase17_6_effort_pace_relation_binding_supported", True)
+    meta.setdefault("phase17_6_effort_pace_case_family", PHASE17_6_EFFORT_PACE_CASE_FAMILY)
+    meta.setdefault("phase17_6_effort_pace_target_modes", list(PHASE17_6_EFFORT_PACE_TARGET_MODES))
+    meta.setdefault("phase17_6_effort_pace_binding_roles", list(PHASE17_6_EFFORT_PACE_BINDING_ROLES))
+    meta.setdefault("phase17_6_effort_pace_relation_markers", list(PHASE17_6_EFFORT_PACE_RELATION_MARKERS))
+    meta.setdefault("phase17_6_allowed_relation_marker_codes", list(PHASE17_6_ALLOWED_RELATION_MARKER_CODES))
+    meta.setdefault("phase17_6_forbidden_relation_marker_codes", list(PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES))
+    meta.setdefault("phase17_6_unsupported_sentence_allowed", False)
+    meta.setdefault("phase17_6_relation_not_expressed_allowed", False)
     return meta
 
 
@@ -78,9 +97,22 @@ def build_complete_product_quality_grounding_contract_meta() -> dict[str, Any]:
             "phrase_unit_role_or_polarity_required": True,
             "relation_expression_checker": True,
             "relation_expression_checked": True,
+            "phase17_6_effort_pace_relation_binding_enabled": True,
+            "phase17_6_effort_pace_allowed_surface_relation_markers": list(PHASE17_6_EFFORT_PACE_RELATION_MARKERS),
             "binding_support_source_required": True,
             "unsupported_sentence_ids_reported": True,
             "relation_not_expressed_sentence_ids_reported": True,
+            "phase17_6_grounding_relation_binding_schema_version": PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+            "phase17_6_grounding_relation_binding_source_phase": PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
+            "phase17_6_effort_pace_relation_binding_supported": True,
+            "phase17_6_effort_pace_case_family": PHASE17_6_EFFORT_PACE_CASE_FAMILY,
+            "phase17_6_effort_pace_target_modes": list(PHASE17_6_EFFORT_PACE_TARGET_MODES),
+            "phase17_6_effort_pace_binding_roles": list(PHASE17_6_EFFORT_PACE_BINDING_ROLES),
+            "phase17_6_effort_pace_relation_markers": list(PHASE17_6_EFFORT_PACE_RELATION_MARKERS),
+            "phase17_6_allowed_relation_marker_codes": list(PHASE17_6_ALLOWED_RELATION_MARKER_CODES),
+            "phase17_6_forbidden_relation_marker_codes": list(PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES),
+            "phase17_6_unsupported_sentence_allowed": False,
+            "phase17_6_relation_not_expressed_allowed": False,
             "release_blocker_reported": True,
             "grounding_gate_relaxed": False,
             "display_gate_relaxed": False,
@@ -232,6 +264,7 @@ __all__ = [
     "COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP",
     "COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION",
     "GATE_BINDING_CONTRACT_VERSION",
+    "PHASE17_6_EFFORT_PACE_RELATION_MARKERS",
     "COMPLETE_GROUNDING_BINDING_STAGE",
     "COMPLETE_GROUNDING_BINDING_STEP",
     "COMPLETE_GROUNDING_BINDING_VERSION",

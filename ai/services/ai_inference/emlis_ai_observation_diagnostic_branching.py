@@ -183,6 +183,48 @@ _BRANCH_TABLE: dict[str, dict[str, Any]] = {
     },
 }
 
+
+# Phase18-7 canonical taxonomy classes.  Keep the old branch destinations as
+# compatibility targets; canonical classes simply route to the same next-work
+# layer without changing public/RN contracts.
+_BRANCH_TABLE.update(
+    {
+        "candidate_not_generated": dict(_BRANCH_TABLE["candidate_missing"]),
+        "candidate_generated_display_passed": dict(_BRANCH_TABLE["passed_displayed"]),
+        "candidate_blocked_surface_grammar": {
+            **dict(_BRANCH_TABLE["candidate_generated_but_display_rejected"]),
+            "target_area": "surface grammar / visible surface acceptance",
+            "next_work_name": "Surface grammar / visible surface acceptance fix",
+            "next_work_summary": "候補生成後に表示文法・visible surface acceptanceで落ちているため、表示文整形とanti-templateを修正する。",
+            "touch_files": ["complete_surface_realizer", "visible_surface_acceptance_gate", "runtime_surface_pre_return_gate"],
+            "required_evidence": ["surface grammar / visible_surface_acceptance reason code is present"],
+        },
+        "candidate_blocked_two_stage_contract": {
+            **dict(_BRANCH_TABLE["candidate_generated_but_display_rejected"]),
+            "target_area": "TwoStage required / label contract",
+            "next_work_name": "TwoStage required / label contract boundary fix",
+            "next_work_summary": "候補生成後にTwoStage label contractで落ちているため、required境界・section label伝搬を修正する。",
+            "touch_files": ["two_stage_applicability", "two_stage_reception_gate", "complete_surface_realizer"],
+            "required_evidence": ["two_stage_* reason code is present"],
+        },
+        "candidate_blocked_meta_boundary": {
+            **dict(_BRANCH_TABLE["candidate_generated_but_display_rejected"]),
+            "target_area": "meta-only public boundary",
+            "next_work_name": "meta-only boundary sanitizer fix",
+            "next_work_summary": "候補生成後にmeta境界違反で落ちているため、raw/body/policy本文のpayload混入を除外する。",
+            "touch_files": ["public_feedback_meta", "diagnostic_summary", "state_answer_surface_contract"],
+            "required_evidence": ["meta_boundary / public_meta_leak reason code is present"],
+        },
+        "low_information_public_repair_applied": dict(_BRANCH_TABLE["passed_displayed"]),
+        "low_information_public_repair_failed": dict(_BRANCH_TABLE["candidate_generated_but_display_rejected"]),
+        "pre_connection_blocked_safety": dict(_BRANCH_TABLE["pre_connection_stop"]),
+        "pre_connection_blocked_scope": dict(_BRANCH_TABLE["pre_connection_stop"]),
+        "pre_connection_blocked_ap0": dict(_BRANCH_TABLE["pre_connection_stop"]),
+        "pre_connection_blocked_rollout": dict(_BRANCH_TABLE["pre_connection_stop"]),
+        "pre_connection_blocked_flag": dict(_BRANCH_TABLE["pre_connection_stop"]),
+    }
+)
+
 _KNOWN_CLASSIFICATIONS = tuple(_BRANCH_TABLE.keys())
 
 
@@ -215,10 +257,19 @@ def _assert_meta_only(value: Mapping[str, Any], *, source: str = "branch") -> No
     assert_observation_branch_meta_only(value, source=source)
 
 
+def _source_classification_value(source: Mapping[str, Any]) -> str:
+    return _clean(
+        source.get("next_action_classification")
+        or source.get("canonical_classification")
+        or source.get("diagnostic_classification")
+        or source.get("classification")
+    )
+
+
 def _first_non_display_row(rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
     for row in rows:
-        classification = _clean(row.get("classification"))
-        if classification and classification != "passed_displayed":
+        classification = _source_classification_value(row)
+        if classification and classification not in {"passed_displayed", "candidate_generated_display_passed"}:
             return row
     return None
 
@@ -229,7 +280,7 @@ def known_observation_branch_classifications() -> tuple[str, ...]:
 
 def extract_branch_classification(source: Mapping[str, Any]) -> str:
     _assert_meta_only(source, source="branch_source")
-    explicit = _clean(source.get("next_action_classification") or source.get("classification"))
+    explicit = _source_classification_value(source)
     if explicit:
         return explicit
     rows_value = source.get("rows")
@@ -237,9 +288,9 @@ def extract_branch_classification(source: Mapping[str, Any]) -> str:
         rows = [dict(row) for row in rows_value if isinstance(row, Mapping)]
         non_display = _first_non_display_row(rows)
         if non_display is not None:
-            return _clean(non_display.get("classification")) or classify_observation_diagnostic(non_display)
+            return _source_classification_value(non_display) or classify_observation_diagnostic(non_display)
         if rows:
-            return _clean(rows[0].get("classification")) or classify_observation_diagnostic(rows[0])
+            return _source_classification_value(rows[0]) or classify_observation_diagnostic(rows[0])
     return classify_observation_diagnostic(source)
 
 

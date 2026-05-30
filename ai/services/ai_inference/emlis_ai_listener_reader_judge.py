@@ -32,6 +32,8 @@ _ADDRESSEE_RE = re.compile(
 )
 _LISTING_RE = re.compile(r"(.+もありました。?\s*){2,}|(.+も含まれていました。?\s*){2,}")
 _GENERIC_CLOSING_RE = re.compile(r"(小さく扱いません|軽く扱いません|今の言葉として一緒に見ます|一つの結論へ急がず)")
+_TWO_STAGE_OBSERVATION_LABEL = "見えたこと："
+_TWO_STAGE_RECEPTION_LABEL = "Emlisから："
 
 
 def _sentences(text: Any) -> List[str]:
@@ -73,7 +75,13 @@ def judge_listener_readability(
     if unclear:
         reasons.append("unclear_legacy_phrase")
 
-    addressee_clear = bool(_ADDRESSEE_RE.search(lines[0] if lines else ""))
+    labelled_two_stage_surface = bool(
+        len(lines) >= 4
+        and lines[0] == _TWO_STAGE_OBSERVATION_LABEL
+        and _TWO_STAGE_RECEPTION_LABEL in lines
+        and lines.index(_TWO_STAGE_OBSERVATION_LABEL) < lines.index(_TWO_STAGE_RECEPTION_LABEL)
+    )
+    addressee_clear = bool(_ADDRESSEE_RE.search(lines[0] if lines else "") or labelled_two_stage_surface)
     if not addressee_clear:
         reasons.append("addressee_not_clear")
 

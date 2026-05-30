@@ -6,6 +6,7 @@ from copy import deepcopy
 from emlis_ai_complete_grounding_service import (
     COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
     GATE_BINDING_CONTRACT_VERSION,
+    PHASE17_6_EFFORT_PACE_RELATION_MARKERS,
     build_complete_product_quality_grounding_contract_meta,
     build_complete_product_quality_grounding_report_v2,
     judge_complete_product_quality_grounding,
@@ -179,3 +180,101 @@ def test_product_quality_grounding_keeps_overclaim_and_raw_echo_as_release_block
     assert raw_echo_report.passed is False
     assert raw_echo_v2["raw_echo_sentence_ids"] == ["complete-s1"]
     assert raw_echo_v2["release_blocker"] is True
+
+
+def _phase17_6_effort_pace_graph() -> ObservationGraph:
+    return ObservationGraph(
+        primary_state=GraphClaim(
+            claim_id="claim-effort-pace-primary",
+            claim_type="coexistence",
+            text="自立したい気持ち、生活、体調、お金、続けられるペースが並んでいる",
+            evidence_span_ids=["span-effort-pace"],
+            confidence=0.91,
+        ),
+        core_tensions=[
+            RelationEdge(
+                edge_id="rel-effort-pace-context",
+                from_claim_id="claim-independence",
+                to_claim_id="claim-sustainable-pace",
+                relation_type="coexistence",
+                evidence_span_ids=["span-effort-pace"],
+                confidence=0.88,
+            )
+        ],
+    )
+
+
+def _phase17_6_effort_pace_grounding_input(*, expressed: bool = True) -> dict:
+    surface = (
+        "体調を見ながら、長く続けられる形を探す状態です。"
+        if expressed
+        else "体調と長く続けることがあります。"
+    )
+    return {
+        "coverage_group": "long_meaning_arc",
+        "realized_text": surface,
+        "surface_lines": [
+            {
+                "sentence_id": "complete_sentence_plan_v2_long_meaning_arc_s3",
+                "surface_text": surface,
+                "line_role": "closing",
+                "relation_type": "coexistence",
+                "used_evidence_span_ids": ["span-effort-pace"],
+                "used_phrase_unit_ids": ["cpu-effort-pace"],
+                "phrase_unit_roles": ["health_pace", "sustainable_pace"],
+                "phrase_unit_polarities": ["coexistence"],
+                "role_phrase_keys": ["effort_pace_reception_not_overeffort_received"],
+                "relation_expression_required": True,
+            }
+        ],
+    }
+
+
+def _phase17_6_effort_pace_evidence() -> list[EvidenceSpan]:
+    # Keep the evidence sanitized so the pass depends on declared binding, not
+    # raw-text substring overlap.
+    return [_span("span-effort-pace", "sanitized effort pace evidence handle")]
+
+
+def test_phase17_6_effort_pace_relation_markers_bind_log3_closing_line_without_relaxing_grounding():
+    contract = build_complete_product_quality_grounding_contract_meta()
+    assert contract["phase17_6_effort_pace_relation_binding_enabled"] is True
+    assert contract["phase17_6_effort_pace_allowed_surface_relation_markers"] == list(
+        PHASE17_6_EFFORT_PACE_RELATION_MARKERS
+    )
+
+    report = judge_complete_product_quality_grounding(
+        graph=_phase17_6_effort_pace_graph(),
+        evidence_spans=_phase17_6_effort_pace_evidence(),
+        grounding_input=_phase17_6_effort_pace_grounding_input(),
+        coverage_group="long_meaning_arc",
+    )
+    report_v2 = build_complete_product_quality_grounding_report_v2(report)
+
+    assert report.passed is True
+    assert report.binding_used is True
+    assert report.binding_support_source == "declared_relation_binding"
+    assert report.unsupported_sentence_ids == []
+    assert report.relation_not_expressed_sentence_ids == []
+    assert report_v2["binding_supported_sentence_count"] == 1
+    assert report_v2["relation_not_expressed_sentence_ids"] == []
+    assert report_v2["release_blocker"] is False
+    assert report_v2["grounding_gate_relaxed"] is False
+    assert report_v2["display_gate_relaxed"] is False
+    assert report_v2["raw_input_included"] is False
+
+
+def test_phase17_6_effort_pace_relation_binding_still_fails_when_relation_marker_is_absent():
+    report = judge_complete_product_quality_grounding(
+        graph=_phase17_6_effort_pace_graph(),
+        evidence_spans=_phase17_6_effort_pace_evidence(),
+        grounding_input=_phase17_6_effort_pace_grounding_input(expressed=False),
+        coverage_group="long_meaning_arc",
+    )
+    report_v2 = build_complete_product_quality_grounding_report_v2(report)
+
+    assert report.passed is False
+    assert "relation_not_expressed" in report.rejection_reasons
+    assert report_v2["relation_not_expressed_sentence_ids"] == ["complete_sentence_plan_v2_long_meaning_arc_s3"]
+    assert report_v2["grounding_gate_relaxed"] is False
+    assert report_v2["raw_input_included"] is False

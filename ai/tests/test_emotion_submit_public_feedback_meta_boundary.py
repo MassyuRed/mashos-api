@@ -513,3 +513,94 @@ def test_phase10_emotion_submit_response_does_not_surface_state_answer_materials
         assert forbidden not in dumped
 
     _assert_no_internal_payload(body)
+
+
+def _phase11_blocked_two_stage_gate_payload() -> dict[str, Any]:
+    return {
+        "schema_version": "cocolon.emlis_ai_two_stage_reception.cross_gate.v1",
+        "material_id": "emlis_ai_two_stage_reception_cross_gate",
+        "evaluated": True,
+        "active": True,
+        "connected": True,
+        "two_stage_required": True,
+        "passed": False,
+        "blocked": True,
+        "terminal_surface_block": True,
+        "labels_present": True,
+        "label_order_valid": True,
+        "observation_section_non_empty": True,
+        "reception_section_non_empty": True,
+        "reception_mode_id": "daily_unpleasant_reception",
+        "reception_mode_family": "daily_reception",
+        "daily_reception_question_escape_blocked": True,
+        "rejection_reasons": ["daily_reception_question_escape_when_event_fact_present"],
+        "surface_blocker_reasons": ["daily_reception_question_escape_when_event_fact_present"],
+        "comment_text": SECRET_INTERNAL_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "raw_text": SECRET_EVIDENCE,
+        "comment_text_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+    }
+
+
+def test_phase11_emotion_submit_public_response_omits_two_stage_gate_blocked_feedback() -> None:
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta["two_stage_reception_gate"] = _phase11_blocked_two_stage_gate_payload()
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    body = _response_body(VISIBLE_COMMENT, public_meta)
+    dumped = json.dumps(body, ensure_ascii=False, sort_keys=True)
+
+    assert public_meta["observation_status"] == "rejected"
+    assert public_meta["rejection_reasons"][0] == "public_feedback_two_stage_reception_gate_blocked"
+    assert public_meta["two_stage_reception_gate"]["passed"] is False
+    assert body["input_feedback"] is None
+    assert SECRET_INTERNAL_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    _assert_no_internal_payload(body)
+
+
+def test_phase11_emotion_submit_inclusion_summary_marks_two_stage_gate_without_body() -> None:
+    from emotion_submit_service import (
+        _build_public_feedback_inclusion_summary,
+        _public_input_feedback_comment,
+    )
+
+    internal_meta = _huge_internal_meta("passed")
+    internal_meta["two_stage_reception_gate"] = {
+        "evaluated": True,
+        "passed": False,
+        "blocked": True,
+        "terminal_surface_block": True,
+        "rejection_reasons": ["two_stage_bad_grammar_or_koto_splice_surface"],
+        "comment_text": SECRET_INTERNAL_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+    }
+    public_meta = build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    summary = _build_public_feedback_inclusion_summary(
+        input_feedback_comment=VISIBLE_COMMENT,
+        internal_input_feedback_meta=internal_meta,
+        public_input_feedback_meta=public_meta,
+    )
+
+    assert _public_input_feedback_comment(VISIBLE_COMMENT, public_meta) == ""
+    assert summary["public_feedback_included"] is False
+    assert summary["public_feedback_not_included_two_stage_reception_gate"] is True
+    assert summary["candidate_fail_closed_display_absent"] is True
+    assert summary["reason_family"] == "two_stage_reception_gate"
+    assert "two_stage_bad_grammar_or_koto_splice_surface" in summary["reason_codes"]
+    dumped = json.dumps(summary, ensure_ascii=False, sort_keys=True)
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert SECRET_INTERNAL_COMMENT not in dumped

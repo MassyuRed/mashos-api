@@ -43,6 +43,7 @@ _STEP14_PERSONALITY_LABEL_RE = re.compile(r"(?:あなた|その人|本人)(?:は
 _STEP14_GENERAL_KNOWLEDGE_RE = re.compile(r"(?:一般的に|普通は|多くの人|誰でも|人はみんな|よくあること|心理学的には|科学的には|医学的には)(?:[^。！？!?]{0,48})(?:です|あります|なります|と言われています)")
 _STEP14_ADVICE_ASSERTION_RE = re.compile(r"(?:必要があります|すべきです|するべきです|しなければなりません|正解です|間違いです)")
 _GREETING_SENTENCE_RE = re.compile(r"^[^。！？!?\n]{1,40}さん、(?:こんにちは|おはようございます|こんばんは)[。.!！]?$")
+_TWO_STAGE_SECTION_LABEL_RE = re.compile(r"^(?:見えたこと|Emlisから)：?$")
 
 _STEP6_BINDING_AWARE_GROUNDING_VERSION = "emlis.binding_aware_grounding.v1"
 _STEP6_BINDING_AWARE_TARGET_STEP = "6_binding_aware_grounding"
@@ -74,9 +75,19 @@ _REJECTION_COMPLETE_WEAK_MATERIAL = "weak_material"
 _REJECTION_COMPLETE_OVERCLAIM_DETECTED = "overclaim_detected"
 _REJECTION_COMPLETE_RAW_ECHO = "raw_echo"
 
+PHASE17_6_EFFORT_PACE_RELATION_MARKERS = (
+    "並んでいます",
+    "一緒に残っています",
+    "見ながら",
+    "続けられる形",
+)
+
 _COMPLETE_RELATION_TEXT_PATTERNS: Dict[str, re.Pattern[str]] = {
     "contrast": re.compile(r"別々|一方|片方|並んで|寄らず|同じ場所|せめぎ|ただ"),
-    "coexistence": re.compile(r"同時|同じ時間|重な|片方だけ|同じ中|並んで|保って|減らず"),
+    # Phase17-6: effort/pace two-stage surfaces can express coexistence
+    # without the older relation-skeleton words.  Keep this as recognition for
+    # grounded relation binding only; it does not relax evidence/phrase checks.
+    "coexistence": re.compile(r"同時|同じ時間|重な|片方だけ|同じ中|並んで|保って|減らず|一緒に残|一緒に|見ながら|続けられる形"),
     "pressure": re.compile(r"圧力|圧迫|負荷|重さ|限界|強く|前面|続いて|急がせない"),
     "approach_avoidance": re.compile(r"近づ|止ま|避け|両方|一方向|決まりきって|同じ線上"),
     "recovery": re.compile(r"回復|戻|取り直|それでも|消えず|少し"),
@@ -835,6 +846,8 @@ def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
         "implementation_unit": "Commit 8",
         "product_quality_grounding_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
         "product_quality_grounding_step": _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP,
+        "phase17_6_effort_pace_relation_binding_enabled": True,
+        "phase17_6_effort_pace_allowed_surface_relation_markers": list(PHASE17_6_EFFORT_PACE_RELATION_MARKERS),
         "grounding_report_contract_version": _COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION,
         "binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
         "gate_binding_contract_version": _GATE_BINDING_CONTRACT_VERSION,
@@ -963,7 +976,7 @@ def judge_grounding(
     complete_over_echo_count = 0
 
     for idx, sentence in enumerate(sentences):
-        if "Emlisです" in sentence or _GREETING_SENTENCE_RE.match(sentence):
+        if "Emlisです" in sentence or _GREETING_SENTENCE_RE.match(sentence) or _TWO_STAGE_SECTION_LABEL_RE.match(sentence):
             claims.append(GroundingSentenceClaim(sentence_index=idx, sentence=sentence, evidence_span_ids=[], relation_supported=True))
             continue
 
@@ -1061,7 +1074,13 @@ def judge_grounding(
             )
         )
 
-    content_sentence_count = len([s for s in sentences if "Emlisです" not in s and not _GREETING_SENTENCE_RE.match(s)])
+    content_sentence_count = len([
+        s
+        for s in sentences
+        if "Emlisです" not in s
+        and not _GREETING_SENTENCE_RE.match(s)
+        and not _TWO_STAGE_SECTION_LABEL_RE.match(s)
+    ])
     coverage_ratio = 0.0 if content_sentence_count <= 0 else 1.0 - (unsupported / max(1, content_sentence_count))
     reasons: List[str] = []
     if content_sentence_count <= 0:
@@ -1248,4 +1267,5 @@ __all__ = [
     "_REJECTION_COMPLETE_WEAK_MATERIAL",
     "_COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION",
     "_COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP",
+    "PHASE17_6_EFFORT_PACE_RELATION_MARKERS",
 ]

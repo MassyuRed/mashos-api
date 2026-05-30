@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from emlis_ai_complete_composer_types import CompleteSentencePlanLine, CompleteSentencePlanV2
 from emlis_ai_complete_sentence_planner import build_complete_sentence_plan_v2
 from emlis_ai_complete_surface_realizer import (
     COMPLETE_SURFACE_REALIZER_STAGE,
     COMPLETE_SURFACE_REALIZER_VERSION,
+    COMPLETE_SURFACE_STATUS_READY,
     CompleteSurfaceRealizationV2,
     build_complete_surface_realization_v2,
     build_complete_surface_realizer_contract_meta,
@@ -211,3 +213,213 @@ def test_step7_surface_signature_helper_returns_template_guard_material() -> Non
     assert signature["same_ending_guard_passed"] is True
     assert signature["completion_sentence_template_used"] is False
     assert signature["raw_input_included"] is False
+
+
+def test_phase17_2_internal_role_labels_are_mapped_to_product_visible_japanese_phrases() -> None:
+    realization = build_complete_surface_realization_v2(
+        sentence_plan_seed={
+            "coverage_group": "long_meaning_arc",
+            "sentence_budget": 4,
+            "graph_nodes": [
+                {"node_id": "n1", "material_id": "m1", "phrase_unit_id": "pu1", "evidence_span_id": "s1", "role": "achievement", "relation_type": "recovery", "must_keep": True, "source_anchor_present": True},
+                {"node_id": "n2", "material_id": "m2", "phrase_unit_id": "pu2", "evidence_span_id": "s2", "role": "positive_state", "relation_type": "recovery", "must_keep": True, "source_anchor_present": True},
+                {"node_id": "n3", "material_id": "m3", "phrase_unit_id": "pu3", "evidence_span_id": "s3", "role": "perfection_fear", "relation_type": "residue", "must_keep": True, "source_anchor_present": True},
+            ],
+        }
+    )
+
+    assert realization.status == COMPLETE_SURFACE_STATUS_READY
+    assert "achievement" not in realization.realized_text
+    assert "positive state" not in realization.realized_text
+    assert "positive_state" not in realization.realized_text
+    assert "perfection fear" not in realization.realized_text
+    assert "perfection_fear" not in realization.realized_text
+    assert "気持ちが動いた変化" in realization.realized_text
+    assert "少し整えようとする動き" in realization.realized_text
+    assert "完璧に元気でいようとする怖さ" in realization.realized_text
+    assert realization.as_meta(include_realized_text=False)["input_specific_template_used"] is False
+    assert realization.as_meta(include_realized_text=False)["role_completed_sentence_template_used"] is False
+    assert _contains_forbidden_raw_key(realization.as_meta(include_realized_text=False)) is False
+
+
+def test_phase17_2_unknown_internal_role_fallback_does_not_surface_english_role_labels() -> None:
+    realization = build_complete_surface_realization_v2(
+        sentence_plan_seed={
+            "coverage_group": "relationship",
+            "sentence_budget": 1,
+            "graph_nodes": [
+                {
+                    "node_id": "n1",
+                    "material_id": "m1",
+                    "phrase_unit_id": "pu1",
+                    "evidence_span_id": "s1",
+                    "role": "deep_internal_signal",
+                    "relation_type": "center",
+                    "must_keep": True,
+                    "source_anchor_present": True,
+                },
+            ],
+        }
+    )
+
+    assert realization.status == COMPLETE_SURFACE_STATUS_READY
+    assert "deep_internal_signal" not in realization.realized_text
+    assert "deep internal signal" not in realization.realized_text
+    assert "role_deep_internal_signal" not in realization.realized_text
+    assert "根拠のある材料" in realization.realized_text
+    assert all(line.role_phrase_key.startswith("unknown_internal_structural_label_") for line in realization.surface_lines)
+    assert realization.as_meta(include_realized_text=False)["input_specific_template_used"] is False
+    assert realization.as_meta(include_realized_text=False)["raw_input_included"] is False
+
+
+def test_phase17_2_internal_role_labels_are_surface_phrased_without_english_leak() -> None:
+    plan = CompleteSentencePlanV2(
+        plan_id="phase17_2_role_phrase_probe",
+        sentence_budget=4,
+        coverage_group="phase17_internal_role_phrase",
+        sentence_plans=(
+            CompleteSentencePlanLine(
+                sentence_id="s1",
+                line_role="opening",
+                relation_type="center",
+                phrase_unit_ids=("p1",),
+                evidence_span_ids=("e1",),
+                must_include_roles=("achievement",),
+            ),
+            CompleteSentencePlanLine(
+                sentence_id="s2",
+                line_role="core",
+                relation_type="residue",
+                phrase_unit_ids=("p2",),
+                evidence_span_ids=("e2",),
+                must_include_roles=("perfection_fear",),
+            ),
+            CompleteSentencePlanLine(
+                sentence_id="s3",
+                line_role="core",
+                relation_type="recovery",
+                phrase_unit_ids=("p3",),
+                evidence_span_ids=("e3",),
+                must_include_roles=("positive_state",),
+            ),
+            CompleteSentencePlanLine(
+                sentence_id="s4",
+                line_role="closing",
+                relation_type="context",
+                phrase_unit_ids=("p4",),
+                evidence_span_ids=("e4",),
+                must_include_roles=("unlisted_self_state_probe",),
+            ),
+        ),
+    )
+
+    realization = build_complete_surface_realization_v2(sentence_plan=plan)
+    body = realization.realized_text
+
+    assert realization.ready is True
+    assert realization.validation_errors == ()
+    assert "気持ちが動いた変化" in body
+    assert "完璧に元気でいようとする怖さ" in body
+    assert "少し整えようとする動き" in body
+    assert "自分の中にある状態" in body
+    forbidden_fragments = (
+        "achievement",
+        "positive state",
+        "positive_state",
+        "perfection fear",
+        "perfection_fear",
+        "role_",
+    )
+    assert all(fragment not in body.lower() for fragment in forbidden_fragments)
+    assert all("internal_role_label_leak" not in line.validation_errors for line in realization.surface_lines)
+    assert realization.as_meta(include_realized_text=False)["phase17_internal_role_surface_phrase_bank_supported"] is True
+
+
+def test_phase17_2_internal_role_labels_are_surface_phrase_fragments_not_visible_english() -> None:
+    meta = build_complete_surface_realizer_v2_meta(
+        sentence_plan_seed={
+            "coverage_group": "conflict",
+            "sentence_budget": 3,
+            "graph_nodes": [
+                {
+                    "node_id": "n1",
+                    "material_id": "m1",
+                    "phrase_unit_id": "pu1",
+                    "evidence_span_id": "s1",
+                    "role": "perfection_fear",
+                    "relation_type": "residue",
+                    "must_keep": True,
+                    "source_anchor_present": True,
+                },
+                {
+                    "node_id": "n2",
+                    "material_id": "m2",
+                    "phrase_unit_id": "pu2",
+                    "evidence_span_id": "s2",
+                    "role": "positive_state",
+                    "relation_type": "recovery",
+                    "must_keep": True,
+                    "source_anchor_present": True,
+                },
+                {
+                    "node_id": "n3",
+                    "material_id": "m3",
+                    "phrase_unit_id": "pu3",
+                    "evidence_span_id": "s3",
+                    "role": "achievement",
+                    "relation_type": "recovery",
+                    "must_keep": True,
+                    "source_anchor_present": True,
+                },
+            ],
+        }
+    )
+
+    realized_text = meta["realized_text"]
+
+    assert meta["status"] == "ready"
+    assert "perfection fear" not in realized_text
+    assert "positive state" not in realized_text
+    assert "achievement" not in realized_text
+    assert "role_" not in realized_text
+    assert "完璧に元気でいようとする怖さ" in realized_text
+    assert "少し整えようとする動き" in realized_text
+    assert meta["internal_role_surface_phrase_bank_added"] is True
+    assert meta["unknown_role_fallback_leaks_english_role_label"] is False
+    assert meta["internal_role_surface_completion_template_used"] is False
+    assert meta["comment_text_key_written"] is False
+    assert meta["raw_input_included"] is False
+
+
+def test_phase17_2_unknown_role_fallback_does_not_surface_sanitized_role_key() -> None:
+    meta = build_complete_surface_realizer_v2_meta(
+        sentence_plan_seed={
+            "coverage_group": "pressure",
+            "sentence_budget": 2,
+            "graph_nodes": [
+                {
+                    "node_id": "n1",
+                    "material_id": "m1",
+                    "phrase_unit_id": "pu1",
+                    "evidence_span_id": "s1",
+                    "role": "unregistered_role_alpha",
+                    "relation_type": "center",
+                    "must_keep": True,
+                    "source_anchor_present": True,
+                },
+            ],
+        }
+    )
+
+    realized_text = meta["realized_text"]
+
+    assert meta["status"] == "ready"
+    assert "unregistered role alpha" not in realized_text
+    assert "unregistered_role_alpha" not in realized_text
+    assert "role_unregistered_role_alpha" not in realized_text
+    assert "根拠のある材料" in realized_text
+    assert all(line["unknown_internal_role_surface_fallback_used"] is True for line in meta["surface_lines"])
+    assert meta["unknown_role_fallback_meta_only"] is True
+    assert meta["unknown_role_fallback_leaks_english_role_label"] is False
+    assert meta["comment_text_key_written"] is False
+    assert meta["raw_input_included"] is False

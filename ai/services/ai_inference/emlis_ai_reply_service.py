@@ -68,6 +68,10 @@ from emlis_ai_complete_reply_diagnostics_service import (
     build_complete_reply_service_diagnostics,
     build_positive_recovery_relation_diagnostic,
 )
+from emlis_ai_diagnostic_failure_taxonomy import (
+    attach_diagnostic_failure_taxonomy_meta,
+    build_diagnostic_failure_taxonomy_meta,
+)
 from emlis_ai_complete_scorecard_service import build_complete_scorecard_harness
 from emlis_ai_complete_product_quality_scorecard_service import (
     build_complete_product_quality_blind_qa_rubric,
@@ -1389,16 +1393,88 @@ def _composer_candidate_meta_dict(composer_candidate: Any) -> Dict[str, Any]:
     return dict(meta or {}) if isinstance(meta, dict) else {}
 
 
+_TWO_STAGE_GATE_REQUIREMENT_KEYS = (
+    "two_stage_reception_gate_required",
+    "state_answer_two_stage_display_required",
+    "state_answer_two_stage_reception_surface_required",
+    "state_answer_joined_comment_text_required",
+    "state_answer_section_labels_required",
+    "state_answer_expected_comment_text_shape",
+)
+
+
+def _legacy_text_candidate_without_two_stage_surface(meta: Mapping[str, Any] | None) -> bool:
+    source = dict(meta or {}) if isinstance(meta, Mapping) else {}
+    if source.get("two_stage_surface_realization") or source.get("complete_composer"):
+        return False
+    model = str(source.get("composer_model") or source.get("model") or "").strip().lower()
+    method = str(source.get("generation_method") or source.get("composer_method") or "").strip().lower()
+    composer_source = str(source.get("composer_source") or "").strip().lower()
+    if model == "cocolon.complete_composer.initial.v1" or method == "complete_composer_initial":
+        return False
+    if bool(source.get("limited_composer")):
+        return True
+    if method in {"test_composer", "step10_e2e_test_composer"}:
+        return True
+    if "text_composer" in model or "textcomposer" in model or "legacy_text" in model:
+        return True
+    if "text_composer" in method or "legacy_text" in method:
+        return True
+    if composer_source in {"legacy_text_composer", "text_composer"}:
+        return True
+    return False
+
+
+def _without_unrealized_limited_two_stage_gate_requirement(meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    """Return gate context for legacy one-stage candidates.
+
+    Phase16/17 labelled two-stage rendering is owned by CompleteComposerClient.
+    Older limited / test / legacy text composers may still carry state-answer
+    role-plan material for diagnostics, but their one-stage surface must not be
+    terminally blocked by stale labelled two-stage requirement meta.  This does
+    not relax any Gate; it only removes an inapplicable TwoStage-required flag
+    from the gate input for legacy one-stage candidate families.
+    """
+
+    source = dict(meta or {}) if isinstance(meta, Mapping) else {}
+    if not _legacy_text_candidate_without_two_stage_surface(source):
+        return source
+
+    out = dict(source)
+    for key in _TWO_STAGE_GATE_REQUIREMENT_KEYS:
+        out.pop(key, None)
+
+    for container_key in ("state_answer_composer_role_plan", "composition_contract", "composer_payload", "payload"):
+        container = out.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        patched = dict(container)
+        for key in (
+            "two_stage_display_required",
+            "two_stage_reception_surface_required",
+            "joined_comment_text_required",
+            "section_labels_required",
+            "expected_comment_text_shape",
+        ):
+            patched.pop(key, None)
+        out[container_key] = patched
+
+    out["legacy_text_composer_two_stage_gate_context_suppressed"] = True
+    out["limited_composer_two_stage_gate_context_suppressed"] = bool(source.get("limited_composer"))
+    out["limited_composer_two_stage_surface_realization_connected"] = False
+    return out
+
+
 def _runtime_surface_composer_meta_for_candidate(composer_candidate: Any, composer_source: str = "") -> Dict[str, Any]:
     """Build meta-only composer context for the runtime surface pre-return gate."""
 
-    meta = _composer_candidate_meta_dict(composer_candidate)
-    out: Dict[str, Any] = dict(meta)
+    out: Dict[str, Any] = dict(_composer_candidate_meta_dict(composer_candidate))
     for attr in ("composer_model", "generation_method", "generation_scope", "coverage_scope", "status"):
         value = getattr(composer_candidate, attr, None) if composer_candidate is not None else None
         if value is not None and str(value or "").strip():
             out.setdefault(attr, value)
     out.setdefault("composer_source", composer_source or getattr(composer_candidate, "composer_source", "") if composer_candidate is not None else composer_source)
+    out = _without_unrealized_limited_two_stage_gate_requirement(out)
     coverage_scope = str(out.get("coverage_scope") or out.get("generation_scope") or "").strip()
     profile_key = str(out.get("profile_key") or out.get("composer_profile_key") or "").strip()
     if coverage_scope == "current_input_core" or profile_key == "current_input_core":
@@ -1462,6 +1538,9 @@ def _build_visible_surface_acceptance_report_for_candidate(
     *,
     comment_text: str,
     current_input: Mapping[str, Any] | None,
+    composer_candidate: Any = None,
+    composer_source: str = "",
+    composer_meta: Mapping[str, Any] | None = None,
     rerender_attempted: bool = False,
 ) -> Dict[str, Any]:
     """Build the Step4 visible-surface gate report for a public candidate.
@@ -1472,10 +1551,18 @@ def _build_visible_surface_acceptance_report_for_candidate(
     """
 
     current = current_input if isinstance(current_input, Mapping) else {}
+    candidate_meta = (
+        dict(composer_meta or {})
+        if isinstance(composer_meta, Mapping)
+        else _runtime_surface_composer_meta_for_candidate(composer_candidate, composer_source=composer_source)
+        if composer_candidate is not None
+        else {}
+    )
     return build_visible_surface_acceptance_gate_report(
         comment_text=comment_text,
         current_input=current,
         current_text=_visible_surface_current_text(current),
+        composer_meta=candidate_meta,
         rerender_allowed=True,
         rerender_attempted=bool(rerender_attempted),
         low_information_reroute_allowed=False,
@@ -2351,15 +2438,25 @@ def _build_step5_complete_initial_candidate_generation_meta(
         or composer_meta.get("fixed_string_renderer_used")
         or composer_meta.get("fixed_sentence_template_used")
     )
+    phase18_candidate_path_contract_version = "cocolon.emlis.complete_initial.candidate_path.v2"
+    generation_display_gate_separated = bool(
+        composer_meta.get("complete_initial_candidate_generation_display_gate_separated")
+        or (candidate_generated and display_status != "")
+    )
     runtime = {
         "version": "emlis.complete_initial.runtime.v1",
         "step": "Step5_candidate_generation_path_confirmation",
         "client_status": "resolved" if complete_initial_client_resolved else "not_resolved",
+        "phase18_candidate_path_contract_version": phase18_candidate_path_contract_version,
         "candidate_generation_attempted": generate_called,
         "complete_composer_client_generate_called": generate_called,
         "candidate_generated": candidate_generated,
+        "candidate_generated_before_display_gate": candidate_generated,
         "candidate_status": status,
+        "candidate_status_before_display_gate": status,
+        "candidate_status_after_display_gate": display_status,
         "composer_source": composer_source,
+        "complete_initial_candidate_generation_display_gate_separated": generation_display_gate_separated,
         "composer_model": str(getattr(composer_candidate, "composer_model", "") or resolution_meta.get("composer_model") or ""),
         "generation_method": str(getattr(composer_candidate, "generation_method", "") or composer_meta.get("generation_method") or ""),
         "generation_scope": str(getattr(composer_candidate, "generation_scope", "") or composer_meta.get("generation_scope") or ""),
@@ -2388,12 +2485,17 @@ def _build_step5_complete_initial_candidate_generation_meta(
         "version": "emlis.complete_initial.step5.candidate_generation_path.v1",
         "step": "Step5_candidate_generation_path_confirmation",
         "complete_initial_client_resolved": complete_initial_client_resolved,
+        "phase18_candidate_path_contract_version": phase18_candidate_path_contract_version,
         "candidate_generation_attempted": generate_called,
         "complete_composer_client_generate_called": generate_called,
         "candidate_generated": candidate_generated,
+        "candidate_generated_before_display_gate": candidate_generated,
         "candidate_status": status,
+        "candidate_status_before_display_gate": status,
+        "candidate_status_after_display_gate": display_status,
         "composer_source": composer_source,
         "display_observation_status": display_status,
+        "complete_initial_candidate_generation_display_gate_separated": generation_display_gate_separated,
         "public_comment_text_present": bool(public_comment_text),
         "candidate_comment_text_present": candidate_comment_text_present,
         "non_passed_comment_text_empty": non_passed_comment_text_empty,
@@ -2992,6 +3094,31 @@ def _build_gate_diagnostic_summary(
         for key in order
         if gate_results.get(key) is not None
     )
+    display_result = gate_results.get("display")
+    display_reason = ""
+    display_category = ""
+    if display_result is not None and not bool(display_result.passed):
+        display_reason = str(display_result.primary_reason or _first_reason(display_result.rejection_reasons, default="display_failed"))
+        display_category = str(display_result.reason_category or _gate_reason_category_for_summary("display", display_reason))
+        # Phase18-7: visible-surface diagnostics can be nested in the same trace
+        # as the final display decision.  When the final decision is the display
+        # phase itself (for example ``phase_not_complete``), report display as
+        # the failed stage only if no terminal upstream gate has already failed.
+        upstream_terminal_gate_failed = any(gate in failed_gates for gate in ("reader", "grounding", "template_echo"))
+        if (not upstream_terminal_gate_failed) and (first_failed_gate in {"", "visible_surface_acceptance"}) and (display_reason == "phase_not_complete" or display_category == "display_phase"):
+            first_failed_gate = "display"
+            first_failed_reason = display_reason
+            first_failed_category = display_category
+
+    # Phase18-7: a visible-surface yellow/warn report is diagnostic signal, not
+    # a terminal display failure.  Keep the raw gate result visible in meta, but
+    # do not let it make a final passed reply look failed.
+    if str(observation_status or "") == "passed":
+        failed_gates = []
+        first_failed_gate = ""
+        first_failed_reason = ""
+        first_failed_category = ""
+
     return {
         "version": "emlis.gate_diagnostic.v1",
         "gate_order": order,
@@ -2999,7 +3126,7 @@ def _build_gate_diagnostic_summary(
         "gate_primary_reasons": gate_primary_reasons,
         "gate_rejection_reasons": gate_rejection_reasons,
         "failed_gates": failed_gates,
-        "all_gates_passed": all(bool(gate_results.get(key) and gate_results[key].passed) for key in order),
+        "all_gates_passed": not bool(failed_gates) if str(observation_status or "") == "passed" else all(bool(gate_results.get(key) and gate_results[key].passed) for key in order),
         "first_failed_gate": first_failed_gate,
         "first_failed_reason": first_failed_reason,
         "first_failed_category": first_failed_category,
@@ -3939,6 +4066,24 @@ def _diagnostic_summary_meta(
         summary_meta["malformed_phrase_unit_blocked_count"] = int(runtime_surface_gate.get("malformed_phrase_unit_count") or 0)
         summary_meta["raw_input_included"] = False
         summary_meta["comment_text_body_included"] = False
+    taxonomy_meta = build_diagnostic_failure_taxonomy_meta(
+        observation_status=summary_meta.get("observation_status"),
+        stage=summary_meta.get("stage"),
+        primary_reason=summary_meta.get("primary_reason"),
+        secondary_reasons=summary_meta.get("secondary_reasons"),
+        composer_status=summary_meta.get("composer_status"),
+        gate_results=summary_meta.get("gate_results") if isinstance(summary_meta.get("gate_results"), Mapping) else {},
+        gate_failure_stage=summary_meta.get("gate_failure_stage"),
+        display_rejection_reasons=display_reasons,
+        runtime_surface=runtime_surface_gate,
+        display_absence_summary={},
+        comment_text_allowed=summary_meta.get("comment_text_allowed"),
+        comment_text_length=0,
+    )
+    summary_meta["diagnostic_failure_taxonomy"] = taxonomy_meta
+    summary_meta["classification"] = taxonomy_meta["classification"]
+    summary_meta["canonical_classification"] = taxonomy_meta["canonical_classification"]
+    summary_meta["legacy_classification_aliases"] = list(taxonomy_meta.get("legacy_classification_aliases") or [])
     summary_meta["diagnostic_contract_version"] = _COMPLETE_PRODUCT_QUALITY_DIAGNOSTIC_CONTRACT_VERSION
     summary_meta["gate_binding_contract_version"] = GATE_BINDING_CONTRACT_VERSION
     limited_composer_baseline = build_limited_composer_extension_baseline_meta()
@@ -5257,8 +5402,16 @@ async def render_emlis_ai_reply(
 
     composer_env = dict(os.environ)
     composer_flag_state = default_composer_flag_state(composer_env)
+    explicit_complete_initial_client = bool(
+        composer_client is not None
+        and composer_client.__class__.__name__ == "CocolonCompleteComposerClient"
+    )
     limited_observation_scope = None
-    if (composer_client is None and bool(composer_flag_state.get("enabled"))) or safety_requires_block:
+    if (
+        (composer_client is None and bool(composer_flag_state.get("enabled")))
+        or explicit_complete_initial_client
+        or safety_requires_block
+    ):
         limited_observation_scope = build_limited_observation_scope(
             graph=graph,
             evidence_spans=evidence_spans,
@@ -5312,7 +5465,17 @@ async def render_emlis_ai_reply(
     grounding_graph = graph
     grounding_scope = "full_graph"
     grounding_allowed_evidence_span_ids: List[str] = []
-    if bool(getattr(composer_client_resolution, "default_client_used", False)) and limited_observation_scope is not None:
+    complete_initial_candidate_client = bool(
+        resolved_composer_client is not None
+        and resolved_composer_client.__class__.__name__ == "CocolonCompleteComposerClient"
+    )
+    if (
+        (
+            bool(getattr(composer_client_resolution, "default_client_used", False))
+            or complete_initial_candidate_client
+        )
+        and limited_observation_scope is not None
+    ):
         composer_graph = limited_observation_scope.scoped_graph
         grounding_graph = composer_graph
         grounding_scope = "limited_scoped_graph"
@@ -5429,6 +5592,8 @@ async def render_emlis_ai_reply(
         visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
             comment_text=comment_text,
             current_input=current_input,
+            composer_candidate=composer_candidate,
+            composer_source=composer_source,
             rerender_attempted=attempt > 1,
         )
         display_decision = decide_emlis_observation_display(
@@ -5553,6 +5718,8 @@ async def render_emlis_ai_reply(
         visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
             comment_text=final_candidate_text,
             current_input=current_input,
+            composer_candidate=composer_candidate,
+            composer_source=composer_source,
             rerender_attempted=bool(
                 visible_surface_acceptance_gate_report.get("rerender_attempted")
                 if isinstance(visible_surface_acceptance_gate_report, Mapping)
@@ -5618,6 +5785,7 @@ async def render_emlis_ai_reply(
     if isinstance(meta.get("diagnostic_summary"), dict):
         meta["diagnostic_summary"]["emlis_observation_structure_dictionary"] = observation_structure_meta
         meta["diagnostic_summary"]["observation_structure_gate"] = observation_structure_gate_report
+        meta["diagnostic_summary"] = attach_diagnostic_failure_taxonomy_meta(meta["diagnostic_summary"])
     multi_perspective_meta = meta.get("multi_perspective")
     if isinstance(multi_perspective_meta, dict) and isinstance(meta.get("diagnostic_summary"), dict):
         # Keep the nested diagnostic summary in lockstep with the top-level

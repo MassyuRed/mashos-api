@@ -46,6 +46,13 @@ from emlis_ai_observation_reply_contract import (
     assert_observation_reply_meta_contract,
     build_observation_reply_meta,
 )
+from emlis_ai_reception_mode_resolver import (
+    MODE_DAILY_POSITIVE,
+    MODE_DAILY_UNPLEASANT,
+    reception_mode_resolution_gate_report,
+    resolve_emlis_reception_mode,
+)
+from emlis_ai_shared_reception_evidence import build_emlis_shared_reception_evidence
 
 OBSERVATION_ELIGIBILITY_ROUTER_VERSION: Final = "emlis.observation_eligibility_router.v1"
 OBSERVATION_ELIGIBILITY_ROUTER_STEP: Final = "Step2_Observation_Eligibility_Router"
@@ -68,7 +75,15 @@ _SIGNAL_CONTRAST: Final = "contrast"
 _SIGNAL_REPETITION: Final = "repetition"
 _SIGNAL_SELF_AWARENESS: Final = "self_awareness"
 _SIGNAL_RELATION_GRAPH: Final = "relation_graph"
+_SIGNAL_EVENT_FACT: Final = "event_fact"
+_SIGNAL_DAILY_REACTION: Final = "daily_reaction"
+_SIGNAL_DAILY_UNPLEASANT: Final = "daily_unpleasant"
+_SIGNAL_DAILY_POSITIVE: Final = "daily_positive"
 _SIGNAL_SAFETY_RISK: Final = "safety_risk"
+
+_DAILY_RECEPTION_MODE_IDS: Final = frozenset({MODE_DAILY_UNPLEASANT, MODE_DAILY_POSITIVE})
+_DAILY_RECEPTION_ELIGIBLE_EVIDENCE_SCORE: Final = 0.60
+_DAILY_RECEPTION_RELATION_CONFIDENCE: Final = 0.48
 
 _SPACE_RE: Final = re.compile(r"\s+")
 _STATE_RE: Final = re.compile(
@@ -156,6 +171,8 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
         "promote_low_info_to_eligible",
         "assert_current_event_from_user_fact",
         "personality_tendency_allowed",
+        "daily_reception_is_public_status",
+        "daily_reception_public_status",
     }
 )
 _SUBSCRIPTION_PLAN_KEYS: Final = frozenset({"plus", "premium", "subscription", "subscriber"})
@@ -378,6 +395,10 @@ def _roles_for_signals(signals: Iterable[str]) -> list[str]:
         _SIGNAL_REPETITION: "repetition",
         _SIGNAL_SELF_AWARENESS: "self_awareness",
         _SIGNAL_RELATION_GRAPH: "relation_graph",
+        _SIGNAL_EVENT_FACT: "event_fact",
+        _SIGNAL_DAILY_REACTION: "daily_reaction",
+        _SIGNAL_DAILY_UNPLEASANT: "daily_unpleasant",
+        _SIGNAL_DAILY_POSITIVE: "daily_positive",
         _SIGNAL_SAFETY_RISK: "safety_risk",
     }
     return [role_by_signal[signal] for signal in signals if signal in role_by_signal]
@@ -411,6 +432,7 @@ class ObservationEligibilityDecision:
     observation_reply_meta: Mapping[str, Any] = field(default_factory=dict)
     user_fact_raw_text_stripped: bool = False
     observation_structure_connection: Mapping[str, Any] = field(default_factory=dict)
+    daily_reception_router_material: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def version(self) -> str:
@@ -432,6 +454,8 @@ class ObservationEligibilityDecision:
             "eligibility_status": self.eligibility_status,
             "eligible_for_full_observation": bool(self.eligible_for_full_observation),
             "question_required": bool(self.question_required),
+            "low_information_question_allowed": bool(self.observation_reply_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION),
+            "low_information_question_required": bool(self.question_required),
             "primary_reason": self.primary_reason,
             "current_input_evidence_score": round(float(self.current_input_evidence_score), 4),
             "relation_confidence": round(float(self.relation_confidence), 4),
@@ -467,6 +491,23 @@ class ObservationEligibilityDecision:
                 (self.observation_structure_connection or {}).get("low_information_unknown_slots")
             ),
             "structure_dictionary_candidates_do_not_promote_low_information": True,
+            "phase5_daily_reception_eligibility_router_connected": bool(self.daily_reception_router_material),
+            "daily_reception_router_material": dict(self.daily_reception_router_material or {}),
+            "current_input_has_action_event_fact": bool(
+                (self.daily_reception_router_material or {}).get("current_input_has_action_event_fact")
+            ),
+            "current_input_has_explicit_reaction": bool(
+                (self.daily_reception_router_material or {}).get("current_input_has_explicit_reaction")
+            ),
+            "current_input_has_daily_reception_basis": bool(
+                (self.daily_reception_router_material or {}).get("current_input_has_daily_reception_basis")
+            ),
+            "daily_reception_public_status": False,
+            "daily_reception_is_public_status": False,
+            "reception_mode_id": _clean((self.daily_reception_router_material or {}).get("reception_mode_id")),
+            "reception_mode_primary_reason": _clean(
+                (self.daily_reception_router_material or {}).get("reception_mode_primary_reason")
+            ),
             "current_input_only_eligibility": True,
             "user_fact_used_for_current_event_assertion": False,
             "raw_input_included": False,
@@ -532,6 +573,133 @@ def _analyze_current_input(current_input: Any, evidence_ledger: Any = None) -> t
     return aggregate_signals, known_fragments, text, spans
 
 
+def _build_daily_reception_router_material(current_input: Any) -> dict[str, Any]:
+    """Build text-free Phase 5 material for daily-reception eligibility routing.
+
+    This connects the Phase 2 Shared Evidence Builder and Phase 4 Reception Mode
+    Resolver to Step 2 routing without changing public status, response keys, or
+    ``comment_text`` generation.
+    """
+
+    shared_evidence = build_emlis_shared_reception_evidence(current_input)
+    shared_meta = shared_evidence.as_meta()
+    mode_resolution = resolve_emlis_reception_mode(current_input, shared_evidence=shared_evidence)
+    mode_report = reception_mode_resolution_gate_report(mode_resolution)
+
+    mode_id = _clean(mode_report.get("reception_mode"))
+    has_event_fact = bool(shared_meta.get("event_fact_present"))
+    has_reaction = bool(shared_meta.get("reaction_present"))
+    safety_required = bool(mode_report.get("safety_path_required") or mode_report.get("existing_safety_path_required"))
+    low_information_required = bool(mode_report.get("low_information_question_required"))
+    daily_basis = bool(
+        has_event_fact
+        and has_reaction
+        and mode_id in _DAILY_RECEPTION_MODE_IDS
+        and not safety_required
+        and not low_information_required
+    )
+
+    material: dict[str, Any] = {
+        "schema_version": "cocolon.emlis_observation_eligibility_daily_reception_router.v1",
+        "source_phase": "Phase5_observation_eligibility_router_connection",
+        "material_id": "emlis_observation_eligibility_daily_reception_router",
+        "current_input_has_action_event_fact": has_event_fact,
+        "current_input_has_explicit_reaction": has_reaction,
+        "current_input_has_daily_reception_basis": daily_basis,
+        "event_fact_source_fields": list(shared_meta.get("event_fact_source_fields") or []),
+        "reaction_source_fields": list(shared_meta.get("reaction_source_fields") or []),
+        "explicit_reaction_cue_ids": list(shared_meta.get("explicit_reaction_cue_ids") or []),
+        "explicit_emotion_label_ids": list(shared_meta.get("explicit_emotion_label_ids") or []),
+        "event_hint_ids": list(shared_meta.get("event_hint_ids") or []),
+        "reception_mode_id": mode_id,
+        "reception_mode_primary_reason": _clean(mode_report.get("primary_reason")),
+        "observation_reply_kind_from_reception_mode": _clean(mode_report.get("observation_reply_kind")),
+        "low_information_question_allowed": bool(mode_report.get("low_information_question_allowed")),
+        "low_information_question_required": low_information_required,
+        "safety_path_required": safety_required,
+        "daily_reception_is_public_status": False,
+        "daily_reception_public_status": False,
+        "public_status_extended": False,
+        "observation_status_enum_extended": False,
+        "api_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "rn_visible_title_changed": False,
+        "comment_text_generated": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "general_dictionary_used": False,
+        "unknown_word_meaning_asserted": False,
+        "event_hint_created_emotion": False,
+        "event_hint_alone_activated_mode": False,
+    }
+    if _contains_text_payload_key(material):
+        raise ValueError("daily reception router material must stay text-free")
+    for key in _FORBIDDEN_TRUE_FLAGS:
+        if material.get(key) is True:
+            raise ValueError(f"daily reception router material violates fixed contract: {key}=true")
+    json.dumps(material, ensure_ascii=False, sort_keys=True)
+    return material
+
+
+def _daily_reception_fragments(material: Mapping[str, Any]) -> list[dict[str, Any]]:
+    fragments: list[dict[str, Any]] = []
+    if material.get("current_input_has_action_event_fact") is True:
+        for source_field in _dedupe(material.get("event_fact_source_fields") or ["memo_action"]):
+            fragments.append(
+                {
+                    "evidence_span_id": f"daily_reception:{source_field}:event_fact",
+                    "source_field": source_field,
+                    "role": "event_fact",
+                    "confidence": 1.0,
+                    "current_input_evidence": True,
+                    "raw_input_included": False,
+                }
+            )
+    if (
+        material.get("current_input_has_action_event_fact") is True
+        and material.get("current_input_has_explicit_reaction") is True
+    ):
+        for source_field in _dedupe(material.get("reaction_source_fields") or ["memo", "emotion_details"]):
+            fragments.append(
+                {
+                    "evidence_span_id": f"daily_reception:{source_field}:daily_reaction",
+                    "source_field": source_field,
+                    "role": "daily_reaction",
+                    "confidence": 1.0,
+                    "current_input_evidence": True,
+                    "raw_input_included": False,
+                }
+            )
+    return fragments
+
+
+def _apply_daily_reception_router_material(
+    *,
+    signals: set[str],
+    known_fragments: list[dict[str, Any]],
+    material: Mapping[str, Any],
+) -> None:
+    if material.get("current_input_has_action_event_fact") is True:
+        signals.add(_SIGNAL_EVENT_FACT)
+    if (
+        material.get("current_input_has_action_event_fact") is True
+        and material.get("current_input_has_explicit_reaction") is True
+    ):
+        signals.add(_SIGNAL_DAILY_REACTION)
+    mode_id = _clean(material.get("reception_mode_id"))
+    if mode_id == MODE_DAILY_UNPLEASANT:
+        signals.add(_SIGNAL_DAILY_UNPLEASANT)
+    if mode_id == MODE_DAILY_POSITIVE:
+        signals.add(_SIGNAL_DAILY_POSITIVE)
+    for fragment in _daily_reception_fragments(material):
+        if fragment not in known_fragments:
+            known_fragments.append(fragment)
+
+
 def _score_current_evidence(signals: set[str], known_fragments: Sequence[Mapping[str, Any]]) -> float:
     score = 0.0
     if _SIGNAL_STATE in signals:
@@ -550,6 +718,12 @@ def _score_current_evidence(signals: set[str], known_fragments: Sequence[Mapping
         score += 0.08
     if _SIGNAL_RELATION_GRAPH in signals:
         score += 0.08
+    if _SIGNAL_EVENT_FACT in signals:
+        score += 0.18
+    if _SIGNAL_DAILY_REACTION in signals:
+        score += 0.18
+    if _SIGNAL_DAILY_UNPLEASANT in signals or _SIGNAL_DAILY_POSITIVE in signals:
+        score += 0.08
     # Multiple grounded fragments help, but only slightly; the branch remains
     # current-input structure driven rather than length driven.
     score += min(0.08, len(known_fragments) * 0.015)
@@ -564,6 +738,8 @@ def _score_relation_confidence(signals: set[str], graph_confidence: float) -> fl
         confidence = max(confidence, 0.62)
     if _SIGNAL_STATE in signals and _SIGNAL_TARGET in signals:
         confidence = max(confidence, 0.44)
+    if _SIGNAL_EVENT_FACT in signals and _SIGNAL_DAILY_REACTION in signals:
+        confidence = max(confidence, _DAILY_RECEPTION_RELATION_CONFIDENCE)
     if _SIGNAL_SELF_AWARENESS in signals and _SIGNAL_BLOCKAGE in signals:
         confidence = max(confidence, 0.50)
     if _SIGNAL_REPETITION in signals and (_SIGNAL_STATE in signals or _SIGNAL_TARGET in signals):
@@ -615,6 +791,8 @@ def _has_strong_current_relation(signals: set[str], relation_confidence: float) 
         return True
     if _SIGNAL_RELATION_GRAPH in signals and relation_confidence >= RELATION_CONFIDENCE_THRESHOLD:
         return True
+    if _SIGNAL_EVENT_FACT in signals and _SIGNAL_DAILY_REACTION in signals:
+        return True
     return False
 
 
@@ -636,6 +814,7 @@ def _build_decision(
     free_user_fact_blocked: bool,
     user_fact_raw_text_stripped: bool = False,
     observation_structure_connection: Mapping[str, Any] | None = None,
+    daily_reception_router_material: Mapping[str, Any] | None = None,
 ) -> ObservationEligibilityDecision:
     eligible = observation_reply_kind == OBSERVATION_REPLY_KIND_ELIGIBLE
     low_info = observation_reply_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION
@@ -694,6 +873,7 @@ def _build_decision(
         observation_reply_meta=observation_reply_meta,
         user_fact_raw_text_stripped=bool(user_fact_raw_text_stripped),
         observation_structure_connection=dict(observation_structure_connection or {}),
+        daily_reception_router_material=dict(daily_reception_router_material or {}),
     )
 
 
@@ -885,6 +1065,13 @@ def route_observation_eligibility(
             observation_structure_connection=structure_connection_meta,
         )
 
+    daily_reception_router_material = _build_daily_reception_router_material(current_input)
+    _apply_daily_reception_router_material(
+        signals=signals,
+        known_fragments=known_fragments,
+        material=daily_reception_router_material,
+    )
+
     evidence_score = _clamp(_score_current_evidence(signals, known_fragments) + max(0.0, structure_evidence_bonus))
     relation_confidence = max(_score_relation_confidence(signals, graph_confidence), structure_relation_hint)
     relation_confidence = _clamp(relation_confidence)
@@ -911,6 +1098,29 @@ def route_observation_eligibility(
         low_information = True
         has_strong_relation = False
 
+    daily_reception_basis = bool(daily_reception_router_material.get("current_input_has_daily_reception_basis"))
+    if daily_reception_basis and not high_ambiguity:
+        primary_reason = "current_input_has_daily_reception_basis"
+        return _build_decision(
+            status=OBSERVATION_ELIGIBILITY_STATUS_ELIGIBLE,
+            observation_reply_kind=OBSERVATION_REPLY_KIND_ELIGIBLE,
+            primary_reason=primary_reason,
+            current_input_evidence_score=max(evidence_score, _DAILY_RECEPTION_ELIGIBLE_EVIDENCE_SCORE),
+            relation_confidence=max(relation_confidence, _DAILY_RECEPTION_RELATION_CONFIDENCE),
+            ambiguity_reasons=(),
+            known_fragments=known_fragments,
+            unknown_slots=(),
+            detected_signal_roles=signal_roles,
+            relation_types=relation_types,
+            plan=plan,
+            sanitized_facts=sanitized_facts,
+            facts_ignored=facts_ignored,
+            free_user_fact_blocked=free_user_fact_blocked,
+            user_fact_raw_text_stripped=user_fact_raw_text_stripped,
+            observation_structure_connection=structure_connection_meta,
+            daily_reception_router_material=daily_reception_router_material,
+        )
+
     if has_strong_relation and not high_ambiguity and evidence_score >= LOW_INFORMATION_EVIDENCE_THRESHOLD:
         primary_reason = "current_input_has_strong_relation"
         return _build_decision(
@@ -930,6 +1140,7 @@ def route_observation_eligibility(
             free_user_fact_blocked=free_user_fact_blocked,
             user_fact_raw_text_stripped=user_fact_raw_text_stripped,
             observation_structure_connection=structure_connection_meta,
+            daily_reception_router_material=daily_reception_router_material,
         )
 
     if not low_information and evidence_score >= ELIGIBLE_EVIDENCE_THRESHOLD and relation_confidence >= RELATION_CONFIDENCE_THRESHOLD:
@@ -951,6 +1162,7 @@ def route_observation_eligibility(
             free_user_fact_blocked=free_user_fact_blocked,
             user_fact_raw_text_stripped=user_fact_raw_text_stripped,
             observation_structure_connection=structure_connection_meta,
+            daily_reception_router_material=daily_reception_router_material,
         )
 
     reason = "insufficient_current_input_evidence"
@@ -975,6 +1187,7 @@ def route_observation_eligibility(
         facts_ignored=facts_ignored,
         free_user_fact_blocked=free_user_fact_blocked,
         observation_structure_connection=structure_connection_meta,
+        daily_reception_router_material=daily_reception_router_material,
     )
 
 def route_emlis_observation_eligibility(
@@ -1047,6 +1260,8 @@ def assert_observation_eligibility_decision_contract(
             raise ValueError("low-information decision must require question")
     if value.get("user_fact_may_promote_to_eligible") is True:
         raise ValueError("user facts must never promote low-information input to eligible")
+    if value.get("daily_reception_is_public_status") is True or value.get("daily_reception_public_status") is True:
+        raise ValueError("daily_reception must remain an internal router mode, not a public status")
     if _clean(value.get("plan")) == "free":
         if value.get("user_fact_allowed") is True or value.get("facts_used"):
             raise ValueError("free plan must not carry user facts")

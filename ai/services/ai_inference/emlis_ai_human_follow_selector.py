@@ -22,6 +22,12 @@ from cocolon_environment_state_output_frame import (
     build_environment_state_output_frame,
 )
 from emlis_ai_current_input_bundle import build_emlis_current_input_bundle
+from emlis_ai_reception_mode_resolver import (
+    MODE_DAILY_UNPLEASANT,
+    MODE_SELF_DENIAL,
+    MODE_UNCERTAINTY,
+    resolve_emlis_reception_mode,
+)
 
 EMLIS_AI_HUMAN_FOLLOW_SELECTOR_SCHEMA_VERSION: Final = "cocolon.emlis_ai_human_follow_selector.v1"
 EMLIS_AI_HUMAN_FOLLOW_SELECTOR_MATERIAL_ID: Final = "emlis_ai_human_follow_selector"
@@ -49,6 +55,8 @@ FOLLOW_REASON_VISIBILITY_RECEIVING: Final = "reason_visibility_receiving"
 FOLLOW_NEXT_OBSERVATION_MARGIN: Final = "next_observation_margin"
 FOLLOW_SELF_DENIAL_EFFORT_EXISTENCE: Final = "self_denial_effort_and_existence_receiving"
 FOLLOW_INTENTION_AND_FEAR: Final = "intention_affirmation_with_fear_understanding"
+FOLLOW_EXPLICIT_REACTION_RECEIVING: Final = "explicit_reaction_receiving"
+FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT: Final = "not_over_explaining_daily_event"
 
 FOLLOW_KEY_FAMILIES: Final = {
     FOLLOW_INTENTION_AFFIRMATION: {
@@ -105,6 +113,26 @@ FOLLOW_KEY_FAMILIES: Final = {
         "follow4_family": "intention_affirmation_plus_fear_understanding",
         "role_kind": "ambivalence_primary_follow",
         "must_not_read_as": ["choice_instruction", "solution", "personality_claim"],
+    },
+    FOLLOW_EXPLICIT_REACTION_RECEIVING: {
+        "follow4_family": "explicit_reaction_receiving",
+        "role_kind": "user_stated_reaction_receiving",
+        "must_not_read_as": [
+            "target_judgement_agreement",
+            "actual_danger_level_assertion",
+            "diagnosis",
+            "unknown_word_meaning_assertion",
+        ],
+    },
+    FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT: {
+        "follow4_family": "not_over_explaining_daily_event",
+        "role_kind": "daily_event_not_overexplained",
+        "must_not_read_as": [
+            "dictionary_meaning_explanation",
+            "deep_structure_overread",
+            "action_instruction",
+            "consultation_prompt",
+        ],
     },
 }
 
@@ -198,9 +226,16 @@ _GUILT_RE: Final = re.compile(r"(罪悪感|申し訳|ごめん|自分のせい|�
 _AMBIVALENCE_RE: Final = re.compile(r"(迷い|迷って|どうしたら|どうすれば|決められ|選べない|わからない|分からない|悩んで)")
 _JOY_RE: Final = re.compile(r"(嬉し|うれし|喜び|楽しか|安心|達成|できた|ほっと|よかった|良かった)")
 _SELF_UNDERSTANDING_RE: Final = re.compile(r"(自己理解|理由が.*(?:見え|わか|分か)|納得|整理でき|気づいた)")
+_SELF_CONFIDENCE_UNCERTAINTY_RE: Final = re.compile(
+    r"(自信[^。！？!?]{0,24}(?:ない|なく|つけたい|持てない)|"
+    r"(?:これでいい|大丈夫|頑張れてる|がんばれてる)(?:のかな|かな|か不安)|"
+    r"中途半端|自分を好きになれる|好きになれるように|色々挑戦|いろいろ挑戦)"
+)
 
 _INPUT_TYPE_ORDER: Final = (
     "self_denial",
+    "self_confidence_uncertainty",
+    "daily_unpleasant_reception",
     "anger",
     "loneliness",
     "sadness",
@@ -214,6 +249,18 @@ _INPUT_TYPE_ORDER: Final = (
 )
 
 _INPUT_TYPE_FOLLOW_PLAN: Final = {
+    "daily_unpleasant_reception": {
+        "primary_follow_key": FOLLOW_EXPLICIT_REACTION_RECEIVING,
+        "secondary_follow_keys": [FOLLOW_FEAR_OR_LOAD_UNDERSTANDING, FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT],
+        "afterglow_follow_key": FOLLOW_EXISTENCE_RESPECT,
+        "reason": "daily_unpleasant_reception_explicit_reaction_receiving",
+    },
+    "self_confidence_uncertainty": {
+        "primary_follow_key": FOLLOW_IDENTITY_COUNTER_WITH_EVIDENCE,
+        "secondary_follow_keys": [FOLLOW_EFFORT_RECEIVING, FOLLOW_FEAR_OR_LOAD_UNDERSTANDING],
+        "afterglow_follow_key": FOLLOW_EXISTENCE_RESPECT,
+        "reason": "self_confidence_uncertainty_not_identity_fact",
+    },
     "anxiety": {
         "primary_follow_key": FOLLOW_FEAR_OR_LOAD_UNDERSTANDING,
         "secondary_follow_keys": [FOLLOW_EFFORT_RECEIVING, FOLLOW_EXISTENCE_RESPECT],
@@ -296,6 +343,8 @@ def _allowed_impression_claims_for_keys(keys: Sequence[str]) -> list[str]:
         FOLLOW_NEXT_OBSERVATION_MARGIN: "next_observation_margin_left",
         FOLLOW_SELF_DENIAL_EFFORT_EXISTENCE: "effort_and_existence_not_erased",
         FOLLOW_INTENTION_AND_FEAR: "intention_and_difficulty_both_seen",
+        FOLLOW_EXPLICIT_REACTION_RECEIVING: "explicit_reaction_received",
+        FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT: "daily_event_not_overexplained",
     }
     return _dedupe(claim_by_key.get(key) for key in keys)
 
@@ -303,12 +352,16 @@ def _allowed_impression_claims_for_keys(keys: Sequence[str]) -> list[str]:
 def _surface_risk_ids_for_input_type(input_type: str) -> list[str]:
     if input_type == "self_denial":
         return ["identity_claim_risk", "strong_follow_temperature"]
+    if input_type == "daily_unpleasant_reception":
+        return ["target_judgement_agreement_risk", "daily_event_overexplanation_risk"]
     if input_type == "anger":
         return ["target_judgement_agreement_risk", "strong_follow_temperature"]
     if input_type in {"sadness", "loneliness", "exhaustion"}:
         return ["observation_temperature_risk", "strong_follow_temperature"]
     if input_type == "guilt":
         return ["responsibility_overreach_risk"]
+    if input_type == "self_confidence_uncertainty":
+        return ["identity_claim_risk", "action_instruction_risk"]
     if input_type == "ambivalence":
         return ["action_instruction_risk"]
     return []
@@ -636,6 +689,7 @@ def _bundle_signal(current_input: Any) -> dict[str, Any]:
             "ambivalence_signal": False,
             "joy_or_relief_signal": False,
             "self_understanding_signal": False,
+            "self_confidence_uncertainty_signal": False,
         }
     bundle = build_emlis_current_input_bundle(current_input)
     # Internal-only classification source.  The returned material never exposes
@@ -660,6 +714,85 @@ def _bundle_signal(current_input: Any) -> dict[str, Any]:
         "ambivalence_signal": bool(_AMBIVALENCE_RE.search(combined)),
         "joy_or_relief_signal": bool(_JOY_RE.search(combined)),
         "self_understanding_signal": bool(_SELF_UNDERSTANDING_RE.search(combined)),
+        "self_confidence_uncertainty_signal": bool(_SELF_CONFIDENCE_UNCERTAINTY_RE.search(combined)),
+    }
+
+
+def _coerce_reception_mode_summary(
+    *,
+    current_input: Any,
+    reception_mode_resolution: Any = None,
+    reception_mode: str | None = None,
+) -> dict[str, Any]:
+    """Return a text-free Phase 9 reception-mode summary for follow selection."""
+
+    raw: Mapping[str, Any] = {}
+    source = "none"
+    if reception_mode_resolution is not None:
+        source = "provided_material"
+        if hasattr(reception_mode_resolution, "as_meta"):
+            try:
+                candidate = reception_mode_resolution.as_meta()
+                raw = candidate if isinstance(candidate, Mapping) else {}
+            except Exception:
+                raw = {}
+                source = "provided_material_unreadable"
+        elif isinstance(reception_mode_resolution, Mapping):
+            raw = reception_mode_resolution
+            source = "provided_mapping"
+        else:
+            scalar_mode = _clean(reception_mode_resolution)
+            raw = {"reception_mode": scalar_mode} if scalar_mode else {}
+            source = "provided_scalar"
+    elif reception_mode:
+        raw = {"reception_mode": reception_mode}
+        source = "provided_reception_mode"
+    elif current_input is not None:
+        try:
+            raw = resolve_emlis_reception_mode(current_input).as_meta()
+            source = "resolved_from_current_input"
+        except Exception:
+            raw = {}
+            source = "resolution_failed_closed"
+
+    mode_policy = _as_mapping(raw.get("mode_policy"))
+    selected_policy = _as_mapping(raw.get("selected_mode_policy"))
+    mode_id = _clean(raw.get("reception_mode_id") or raw.get("reception_mode") or raw.get("selected_reception_mode_id"))
+    event_hint_ids = _dedupe(raw.get("event_hint_ids") or [])
+    reaction_cue_ids = _dedupe(raw.get("explicit_reaction_cue_ids") or [])
+    category_topic_ids = _dedupe(raw.get("category_topic_ids") or [])
+    daily_unpleasant_follow_allowed = mode_id == MODE_DAILY_UNPLEASANT and (
+        "public_unpleasant_encounter" in event_hint_ids
+        or ({"disgust", "fear"}.issubset(set(reaction_cue_ids)) and "work" not in category_topic_ids)
+    )
+    return {
+        "available": bool(mode_id),
+        "source": source,
+        "reception_mode_id": mode_id,
+        "primary_reason": _clean(raw.get("primary_reason")),
+        "ratio_preset": _clean(raw.get("ratio_preset") or mode_policy.get("ratio_preset") or selected_policy.get("ratio_preset")),
+        "event_fact_present": bool(raw.get("event_fact_present")),
+        "reaction_present": bool(raw.get("reaction_present")),
+        "event_hint_ids": event_hint_ids,
+        "explicit_reaction_cue_ids": reaction_cue_ids,
+        "category_topic_ids": category_topic_ids,
+        "phase9_daily_unpleasant_follow_allowed": daily_unpleasant_follow_allowed,
+        "secondary_reception_mode_ids": _dedupe(raw.get("secondary_reception_mode_ids") or []),
+        "eligible_reception_mode_ids": _dedupe(raw.get("eligible_dictionary_mode_ids") or raw.get("resolved_mode_ids") or []),
+        "low_information_question_allowed": bool(raw.get("low_information_question_allowed")),
+        "low_information_question_required": bool(raw.get("low_information_question_required")),
+        "safety_path_required": bool(raw.get("safety_path_required") or raw.get("existing_safety_path_required")),
+        "phase9_human_follow_reception_mode_connected": bool(mode_id),
+        "backend_internal_mode_only": True,
+        "general_dictionary_used": False,
+        "unknown_word_meaning_asserted": False,
+        "event_hint_created_emotion": False,
+        "event_hint_alone_activated_mode": False,
+        "comment_text_generated": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_added": False,
+        "rn_visible_contract_changed": False,
     }
 
 
@@ -672,6 +805,7 @@ def _score_candidates(
     strength_summary: Mapping[str, Any],
     material: Mapping[str, Any],
     bundle_signal: Mapping[str, Any],
+    reception_mode_summary: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     emotions = " ".join(emotion_types)
     themes = set(output_theme_ids)
@@ -690,9 +824,16 @@ def _score_candidates(
         )
 
     scored: list[dict[str, Any]] = []
+    reception_mode_id = _clean(reception_mode_summary.get("reception_mode_id"))
+    reception_basis = ["reception_mode_resolution", "current_input_reception_basis"]
+    if reception_mode_id == MODE_DAILY_UNPLEASANT and reception_mode_summary.get("phase9_daily_unpleasant_follow_allowed"):
+        add(scored, "daily_unpleasant_reception", 42, reception_basis + ["daily_event_hint_or_disgust_fear_pair"])
+    if reception_mode_id in {MODE_SELF_DENIAL, MODE_UNCERTAINTY} and bundle_signal.get("self_confidence_uncertainty_signal"):
+        add(scored, "self_confidence_uncertainty", 36, reception_basis + ["current_input_internal_signal"])
 
     add(scored, "self_denial", 22 if bundle_signal.get("self_denial_signal") else 0, ["current_input_internal_signal"])
     add(scored, "self_denial", 18 if any(term in emotions for term in ("自己否定", "自責", "無価値")) else 0, ["emotion_labels"])
+    add(scored, "self_confidence_uncertainty", 18 if bundle_signal.get("self_confidence_uncertainty_signal") else 0, ["current_input_internal_signal"])
 
     add(scored, "anger", 11 if any(term in emotions for term in ("怒り", "苛立ち", "イライラ")) else 0, ["emotion_labels"])
     add(scored, "anger", 6 if "unfairness_concern" in themes else 0, ["output_theme_candidates"])
@@ -843,8 +984,11 @@ def _guard_policy(input_type: str) -> dict[str, Any]:
         "target_judgement_agreement_allowed": False,
         "target_attack_amplification_allowed": False,
         "self_denial_identity_claim_as_fact_allowed": False,
-        "self_denial_requires_evidence_for_counter_opinion": input_type == "self_denial",
-        "limited_counter_opinion_allowed": input_type == "self_denial",
+        "self_denial_requires_evidence_for_counter_opinion": input_type in {"self_denial", "self_confidence_uncertainty"},
+        "limited_counter_opinion_allowed": input_type in {"self_denial", "self_confidence_uncertainty"},
+        "daily_input_over_anger_structure_prevented": input_type == "daily_unpleasant_reception",
+        "important_value_receiving_overweighted_allowed": False,
+        "daily_reception_does_not_require_target_judgement": input_type == "daily_unpleasant_reception",
         "completed_reply_generated": False,
         "comment_text_generated": False,
         "raw_input_included": False,
@@ -867,6 +1011,7 @@ def _selector_input_summary(
     output_theme_ids: Sequence[str],
     category_labels: Sequence[str],
     strength_summary: Mapping[str, Any],
+    reception_mode_summary: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "axis_presence": _deepcopy_mapping(_as_mapping(frame.get("axis_presence"))),
@@ -878,6 +1023,20 @@ def _selector_input_summary(
         "category_topic_labels": _dedupe(category_labels),
         "structure_question_ids": _dedupe(material.get("structure_question_ids") or []),
         "low_information_candidate": bool(material.get("low_information_candidate")),
+        "reception_mode_resolution_connected": bool(reception_mode_summary.get("available")),
+        "reception_mode_id": _clean(reception_mode_summary.get("reception_mode_id")),
+        "reception_mode_primary_reason": _clean(reception_mode_summary.get("primary_reason")),
+        "reception_mode_ratio_preset": _clean(reception_mode_summary.get("ratio_preset")),
+        "reception_mode_event_hint_ids": _dedupe(reception_mode_summary.get("event_hint_ids") or []),
+        "reception_mode_explicit_reaction_cue_ids": _dedupe(
+            reception_mode_summary.get("explicit_reaction_cue_ids") or []
+        ),
+        "phase9_daily_unpleasant_follow_allowed": bool(
+            reception_mode_summary.get("phase9_daily_unpleasant_follow_allowed")
+        ),
+        "phase9_human_follow_reception_mode_connected": bool(
+            reception_mode_summary.get("phase9_human_follow_reception_mode_connected")
+        ),
         "uses_environment_state_output_frame": True,
         "uses_output_theme_candidates": bool(output_theme_ids),
         "uses_relation_role_ids": bool(relation_ids),
@@ -895,6 +1054,8 @@ def build_emlis_ai_human_follow_selection(
     environment_state_output_frame: Mapping[str, Any] | None = None,
     observation_structure_material: Any = None,
     relation_role_ids: Sequence[str] | None = None,
+    reception_mode_resolution: Any = None,
+    reception_mode: str | None = None,
 ) -> EmlisHumanFollowSelection:
     """Build the Phase 3 Follow-4 selector material.
 
@@ -918,6 +1079,11 @@ def build_emlis_ai_human_follow_selection(
     categories = _category_labels(frame)
     strength = _strength_summary(frame)
     bundle_signals = _bundle_signal(current_input)
+    reception_mode_summary = _coerce_reception_mode_summary(
+        current_input=current_input,
+        reception_mode_resolution=reception_mode_resolution,
+        reception_mode=reception_mode,
+    )
     candidates = _score_candidates(
         emotion_types=emotion_types,
         output_theme_ids=themes,
@@ -926,6 +1092,7 @@ def build_emlis_ai_human_follow_selection(
         strength_summary=strength,
         material=material,
         bundle_signal=bundle_signals,
+        reception_mode_summary=reception_mode_summary,
     )
     input_type = _selected_input_type(candidates)
     plan = copy.deepcopy(dict(_INPUT_TYPE_FOLLOW_PLAN.get(input_type) or _INPUT_TYPE_FOLLOW_PLAN["standard_state_answer"]))
@@ -951,6 +1118,13 @@ def build_emlis_ai_human_follow_selection(
         "selector_reason": plan.get("reason") or input_type,
         "selector_phase": EMLIS_AI_HUMAN_FOLLOW_SELECTOR_PHASE,
         "selector_basis": basis,
+        "reception_mode_id": _clean(reception_mode_summary.get("reception_mode_id")),
+        "reception_mode_primary_reason": _clean(reception_mode_summary.get("primary_reason")),
+        "phase9_human_follow_reception_mode_connected": bool(
+            reception_mode_summary.get("phase9_human_follow_reception_mode_connected")
+        ),
+        "daily_input_over_anger_structure_prevented": input_type == "daily_unpleasant_reception",
+        "important_value_receiving_overweighted_allowed": False,
         "primary_plus_secondary_plus_afterglow": True,
         "primary_slot_count": 1,
         "secondary_slot_count": 2,
@@ -970,6 +1144,7 @@ def build_emlis_ai_human_follow_selection(
         output_theme_ids=themes,
         category_labels=categories,
         strength_summary=strength,
+        reception_mode_summary=reception_mode_summary,
     )
     selector = EmlisHumanFollowSelection(
         source=_frame_source(frame),
@@ -1259,6 +1434,8 @@ __all__ = [
     "FOLLOW_EFFORT_RECEIVING",
     "FOLLOW_EXISTENCE_RESPECT",
     "FOLLOW_IMPORTANT_VALUE_RECEIVING",
+    "FOLLOW_EXPLICIT_REACTION_RECEIVING",
+    "FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT",
     "FOLLOW_IDENTITY_COUNTER_WITH_EVIDENCE",
     "FOLLOW_RESPONSIBILITY_SCOPE_OBSERVATION",
     "FOLLOW_REASON_VISIBILITY_RECEIVING",

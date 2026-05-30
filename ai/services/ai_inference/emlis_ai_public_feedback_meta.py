@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
 from emlis_ai_state_answer_gate_boundary import state_answer_gate_boundary_public_summary
+from emlis_ai_two_stage_reception_gate import two_stage_reception_gate_public_summary
 
 
 PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION = "emlis.public_input_feedback_meta.v1"
@@ -59,6 +60,24 @@ _BLOCKING_RUNTIME_SURFACE_ACTIONS = {
     "block",
     "fail_closed",
 }
+_TWO_STAGE_RECEPTION_GATE_SOURCE_KEYS = (
+    "two_stage_reception_gate",
+    "two_stage_reception_cross_gate",
+    "emlis_ai_two_stage_reception_gate",
+    "emlis_two_stage_reception_gate",
+)
+_TWO_STAGE_RECEPTION_GATE_CONTAINER_KEYS = (
+    "state_answer_gate_boundary",
+    "state_answer_gate_public_meta_boundary",
+    "visible_surface_acceptance_gate",
+    "visible_surface_acceptance",
+    "runtime_surface_pre_return_gate",
+    "gate_trace",
+    "phase_gate",
+    "diagnostic_summary",
+    "composer_meta",
+    "multi_perspective",
+)
 _ENVIRONMENT_STATE_OUTPUT_TERMINAL_SURFACE_REASONS = {
     "environment_state_output_scope_marker_missing",
     "environment_state_output_empty_body",
@@ -324,6 +343,10 @@ def _build_display_absence_summary(internal_meta: Mapping[str, Any]) -> Dict[str
         "public_feedback_not_included_non_passed",
         "public_feedback_not_included_empty_comment_text",
         "public_feedback_not_included_visible_surface_gate",
+        "public_feedback_not_included_two_stage_gate",
+        "public_feedback_not_included_two_stage_reception_gate",
+        "public_feedback_not_included_state_answer_gate",
+        "public_feedback_not_included_reply_timeout_or_error",
         "rn_payload_absent",
     ):
         value = _safe_bool(_safe_get(source, key))
@@ -416,7 +439,108 @@ def _build_state_answer_gate_boundary_meta(internal_meta: Mapping[str, Any]) -> 
     source = _pick_state_answer_gate_boundary_source(internal_meta)
     if source is None:
         return {}
-    return state_answer_gate_boundary_public_summary(source)
+    return _sanitize_gate_summary_reason_lists(state_answer_gate_boundary_public_summary(source))
+
+
+def _sanitize_gate_summary_reason_lists(summary: Dict[str, Any]) -> Dict[str, Any]:
+    for key in (
+        "rejection_reasons",
+        "surface_blocker_reasons",
+        "forbidden_claim_reasons",
+        "allowed_exception_ids",
+        "two_stage_reception_gate_rejection_reasons",
+        "section_shape_rejection_reasons",
+        "section_boundary_rejection_reasons",
+        "consistency_rejection_reasons",
+        "mode_specific_rejection_reasons",
+        "surface_quality_rejection_reasons",
+        "koto_splice_codes",
+    ):
+        if key in summary:
+            values = _safe_rejection_reasons(summary.get(key))
+            if values:
+                summary[key] = values
+            else:
+                summary.pop(key, None)
+
+    for key in ("reception_mode_id", "reception_mode_family"):
+        if key in summary:
+            safe = _safe_identifier(summary.get(key), max_length=80, default=None)
+            if safe:
+                summary[key] = safe
+            else:
+                summary.pop(key, None)
+
+    nested = _safe_mapping(summary.get("two_stage_reception_gate"))
+    if nested is not None:
+        summary["two_stage_reception_gate"] = _sanitize_gate_summary_reason_lists(dict(nested))
+    return summary
+
+
+def _pick_two_stage_reception_gate_source(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    """Pick the Phase 10 two-stage cross-gate report without copying text."""
+    for key in _TWO_STAGE_RECEPTION_GATE_SOURCE_KEYS:
+        direct = _safe_mapping(_safe_get(internal_meta, key))
+        if direct is not None:
+            return direct
+
+    visible_gate = _pick_visible_surface_acceptance_gate_source(internal_meta)
+    if visible_gate is not None:
+        nested = _safe_mapping(_safe_get(visible_gate, "two_stage_reception_gate"))
+        if nested is not None:
+            return nested
+
+    state_answer_gate = _pick_state_answer_gate_boundary_source(internal_meta)
+    if state_answer_gate is not None:
+        nested = _safe_mapping(_safe_get(state_answer_gate, "two_stage_reception_gate"))
+        if nested is not None:
+            return nested
+
+    for container_key in _TWO_STAGE_RECEPTION_GATE_CONTAINER_KEYS:
+        container = _safe_mapping(_safe_get(internal_meta, container_key))
+        if container is None:
+            continue
+
+        for key in _TWO_STAGE_RECEPTION_GATE_SOURCE_KEYS:
+            direct = _safe_mapping(_safe_get(container, key))
+            if direct is not None:
+                return direct
+
+        nested_state_answer_gate = _safe_mapping(_safe_get(container, "state_answer_gate_boundary"))
+        if nested_state_answer_gate is not None:
+            nested = _safe_mapping(_safe_get(nested_state_answer_gate, "two_stage_reception_gate"))
+            if nested is not None:
+                return nested
+
+        nested_visible_gate = _safe_mapping(_safe_get(container, "visible_surface_acceptance_gate"))
+        if nested_visible_gate is not None:
+            nested = _safe_mapping(_safe_get(nested_visible_gate, "two_stage_reception_gate"))
+            if nested is not None:
+                return nested
+
+        gate_trace = _safe_mapping(_safe_get(container, "gate_trace"))
+        if gate_trace is not None:
+            nested = _pick_two_stage_reception_gate_source(gate_trace)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _build_two_stage_reception_gate_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_two_stage_reception_gate_source(internal_meta)
+    if source is None:
+        return {}
+    try:
+        return _sanitize_gate_summary_reason_lists(two_stage_reception_gate_public_summary(source))
+    except Exception:
+        return {
+            "evaluated": True,
+            "passed": False,
+            "blocked": True,
+            "terminal_surface_block": True,
+            "rejection_reasons": ["two_stage_reception_gate_public_meta_unsafe"],
+            "public_meta_summary_only": True,
+        }
 
 
 def _build_runtime_surface_gate(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
@@ -737,6 +861,7 @@ def _fit_hard_byte_limit(meta: Dict[str, Any], *, subscription_tier: Any = None)
     meta.pop("runtime_surface_pre_return_gate", None)
     meta.pop("visible_surface_acceptance_gate", None)
     meta.pop("state_answer_gate_boundary", None)
+    meta.pop("two_stage_reception_gate", None)
     meta.pop("observation_reply_meta", None)
     meta.pop("step10_observation_display_repair_integration", None)
     meta["rejection_reasons"] = meta.get("rejection_reasons", [])[:5]
@@ -843,9 +968,21 @@ def build_public_emlis_input_feedback_meta(
         if visible_surface_gate:
             public_meta["visible_surface_acceptance_gate"] = visible_surface_gate
 
+        two_stage_reception_gate = _build_two_stage_reception_gate_meta(internal_meta)
+        if two_stage_reception_gate:
+            public_meta["two_stage_reception_gate"] = two_stage_reception_gate
+
         state_answer_gate_boundary = _build_state_answer_gate_boundary_meta(internal_meta)
         if state_answer_gate_boundary:
             public_meta["state_answer_gate_boundary"] = state_answer_gate_boundary
+
+        if public_meta.get("observation_status") == "passed" and _two_stage_reception_gate_blocks_public_feedback(public_meta):
+            public_meta["observation_status"] = "rejected"
+            reasons = _safe_rejection_reasons(public_meta.get("rejection_reasons"))
+            public_meta["rejection_reasons"] = _prepend_public_rejection_reason(
+                reasons,
+                "public_feedback_two_stage_reception_gate_blocked",
+            )
 
         if public_meta.get("observation_status") == "passed" and _state_answer_gate_boundary_blocks_public_feedback(public_meta):
             public_meta["observation_status"] = "rejected"
@@ -931,6 +1068,59 @@ def _runtime_surface_gate_blocks_public_feedback(public_meta: Mapping[str, Any])
     return False
 
 
+def _two_stage_gate_summary_blocks_public_feedback(gate: Mapping[str, Any] | None) -> bool:
+    if gate is None:
+        return False
+    passed = _safe_bool(_safe_get(gate, "passed"))
+    if passed is False:
+        return True
+    if _safe_bool(_safe_get(gate, "blocked")) is True:
+        return True
+    if _safe_bool(_safe_get(gate, "terminal_surface_block")) is True:
+        return True
+    reasons = _safe_rejection_reasons(
+        _safe_get(gate, "rejection_reasons")
+        or _safe_get(gate, "surface_blocker_reasons")
+    )
+    if reasons:
+        return True
+    return False
+
+
+def _two_stage_reception_gate_blocks_public_feedback(public_meta: Mapping[str, Any]) -> bool:
+    if _two_stage_gate_summary_blocks_public_feedback(
+        _safe_mapping(_safe_get(public_meta, "two_stage_reception_gate"))
+    ):
+        return True
+
+    state_gate = _safe_mapping(_safe_get(public_meta, "state_answer_gate_boundary"))
+    if state_gate is not None:
+        if _safe_bool(_safe_get(state_gate, "two_stage_reception_gate_terminal_surface_block")) is True:
+            return True
+        if _safe_bool(_safe_get(state_gate, "two_stage_reception_cross_gate_active")) is True and _safe_bool(
+            _safe_get(state_gate, "two_stage_reception_gate_connected")
+        ) is True and _safe_bool(_safe_get(state_gate, "two_stage_reception_gate_passed")) is False:
+            return True
+        if _safe_rejection_reasons(_safe_get(state_gate, "two_stage_reception_gate_rejection_reasons")):
+            return True
+        if _two_stage_gate_summary_blocks_public_feedback(
+            _safe_mapping(_safe_get(state_gate, "two_stage_reception_gate"))
+        ):
+            return True
+
+    visible_gate = _safe_mapping(_safe_get(public_meta, "visible_surface_acceptance_gate"))
+    if visible_gate is not None:
+        if _safe_bool(_safe_get(visible_gate, "two_stage_reception_gate_terminal_surface_block")) is True:
+            return True
+        if _safe_rejection_reasons(_safe_get(visible_gate, "two_stage_reception_gate_rejection_reasons")):
+            return True
+        if _two_stage_gate_summary_blocks_public_feedback(
+            _safe_mapping(_safe_get(visible_gate, "two_stage_reception_gate"))
+        ):
+            return True
+
+    return False
+
 def should_include_public_input_feedback(
     comment_text: Any,
     public_meta: Mapping[str, Any] | None,
@@ -951,6 +1141,8 @@ def should_include_public_input_feedback(
     if _runtime_surface_gate_blocks_public_feedback(public_meta):
         return False
     if _visible_surface_acceptance_gate_blocks_public_feedback(public_meta):
+        return False
+    if _two_stage_reception_gate_blocks_public_feedback(public_meta):
         return False
     if _state_answer_gate_boundary_blocks_public_feedback(public_meta):
         return False

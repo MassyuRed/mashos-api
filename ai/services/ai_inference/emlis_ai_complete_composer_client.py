@@ -47,7 +47,14 @@ from emlis_ai_complete_grounding_service import (
     build_complete_grounding_report_meta,
     judge_complete_product_quality_grounding,
 )
-from emlis_ai_complete_self_repair_service import ALLOWED_REPAIR_REASONS, run_complete_self_repair_loop
+from emlis_ai_complete_self_repair_service import (
+    ALLOWED_REPAIR_REASONS,
+    build_phase17_self_repair_unavailable_reason_summary,
+    normalize_complete_self_repair_reason,
+    run_complete_self_repair_loop,
+)
+from emlis_ai_two_stage_section_surface_plan import build_two_stage_section_surface_plan
+from emlis_ai_two_stage_applicability import build_two_stage_applicability_decision
 from emlis_ai_types import EvidenceSpan, GraphClaim, ObservationGraph, RelationEdge
 
 COMPLETE_COMPOSER_CLIENT_VERSION = "emlis.complete_composer_client.v1"
@@ -380,6 +387,111 @@ def _report_reasons(report: Any) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(reason for reason in reasons if reason))
 
 
+
+
+def _two_stage_applicability_decision_from_surface_meta(
+    surface_meta: Mapping[str, Any] | None,
+    *,
+    state_answer_two_stage_meta: Mapping[str, Any] | None = None,
+    two_stage_section_plan_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    surface = _json_safe_mapping(surface_meta)
+    summary = _json_safe_mapping(surface.get("two_stage_surface_realization")) or surface
+    state_meta = _json_safe_mapping(state_answer_two_stage_meta)
+    plan_meta = _json_safe_mapping(two_stage_section_plan_meta)
+    return build_two_stage_applicability_decision(
+        composer_meta={**state_meta, **plan_meta, "two_stage_surface_realization": summary, "composer_source": COMPLETE_COMPOSER_SOURCE_AI_GENERATED, "status": COMPLETE_COMPOSER_STATUS_GENERATED},
+        candidate_source=COMPLETE_COMPOSER_SOURCE_AI_GENERATED,
+        candidate_status=COMPLETE_COMPOSER_STATUS_GENERATED,
+        comment_text_present=bool(summary.get("comment_text_present") or surface.get("comment_text_present") or summary.get("labels_present")),
+        surface_shape={
+            "labels_present": summary.get("labels_present"),
+            "observation_label_count": 1 if summary.get("observation_label_present") else 0,
+            "reception_label_count": 1 if summary.get("reception_label_present") else 0,
+        },
+        state_answer_two_stage_meta=state_meta,
+        two_stage_section_plan_meta=plan_meta,
+        two_stage_surface_meta=summary,
+        explicit_required=None,
+    )
+
+
+def _two_stage_unavailable_reason_codes_from_surface_meta(
+    surface_meta: Mapping[str, Any] | None,
+    *,
+    state_answer_two_stage_meta: Mapping[str, Any] | None = None,
+    two_stage_section_plan_meta: Mapping[str, Any] | None = None,
+) -> Tuple[str, ...]:
+    surface = _json_safe_mapping(surface_meta)
+    summary = _json_safe_mapping(surface.get("two_stage_surface_realization")) or surface
+    state_meta = _json_safe_mapping(state_answer_two_stage_meta)
+    plan_meta = _json_safe_mapping(two_stage_section_plan_meta)
+    validation_errors = _dedupe(summary.get("validation_errors") or surface.get("validation_errors") or [])
+    applicability_decision = _two_stage_applicability_decision_from_surface_meta(
+        surface_meta,
+        state_answer_two_stage_meta=state_answer_two_stage_meta,
+        two_stage_section_plan_meta=two_stage_section_plan_meta,
+    )
+    if not bool(applicability_decision.get("required")):
+        return tuple()
+    reasons: list[str] = []
+    if summary.get("applied") is False:
+        reasons.append("two_stage_required_but_unrealized")
+    if summary.get("labels_present") is False:
+        reasons.append("two_stage_complete_surface_realizer_label_missing")
+    if summary.get("observation_section_non_empty") is False or summary.get("reception_section_non_empty") is False:
+        reasons.append("two_stage_complete_surface_realizer_section_empty")
+    if "two_stage_complete_sentence_plan_observation_section_missing" in validation_errors:
+        reasons.append("two_stage_complete_sentence_plan_observation_section_missing")
+    if "two_stage_complete_sentence_plan_reception_section_missing" in validation_errors:
+        reasons.append("two_stage_complete_sentence_plan_reception_section_missing")
+    if any(reason in validation_errors for reason in (
+        "two_stage_complete_sentence_plan_section_meta_missing",
+        "two_stage_complete_sentence_plan_observation_section_missing",
+        "two_stage_complete_sentence_plan_reception_section_missing",
+    )):
+        reasons.append("two_stage_complete_sentence_plan_section_meta_missing")
+    for reason in validation_errors:
+        if str(reason).startswith("two_stage_"):
+            reasons.append(str(reason))
+    reasons = list(_dedupe(reasons))
+    if reasons:
+        reasons.append("two_stage_complete_surface_blocked_by_gate")
+    return _dedupe(reasons)
+
+
+def _two_stage_unavailable_reason_summary(
+    surface_meta: Mapping[str, Any] | None,
+    *,
+    state_answer_two_stage_meta: Mapping[str, Any] | None = None,
+    two_stage_section_plan_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    decision = _two_stage_applicability_decision_from_surface_meta(
+        surface_meta,
+        state_answer_two_stage_meta=state_answer_two_stage_meta,
+        two_stage_section_plan_meta=two_stage_section_plan_meta,
+    )
+    codes = _two_stage_unavailable_reason_codes_from_surface_meta(
+        surface_meta,
+        state_answer_two_stage_meta=state_answer_two_stage_meta,
+        two_stage_section_plan_meta=two_stage_section_plan_meta,
+    )
+    return {
+        "phase16_7_unavailable_reason_codes": list(codes),
+        "two_stage_unavailable_reason_codes": list(codes),
+        "two_stage_required_but_unrealized": "two_stage_required_but_unrealized" in codes,
+        "two_stage_complete_surface_blocked_by_gate": "two_stage_complete_surface_blocked_by_gate" in codes,
+        "two_stage_applicability_decision": decision,
+        "two_stage_applicability_required": bool(decision.get("required")),
+        "two_stage_applicability_decision_reason": _clean(decision.get("decision_reason")),
+        "two_stage_applicability_exempt": bool(decision.get("exempt")),
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "display_gate_relaxed": False,
+        "public_response_key_added": False,
+    }
+
+
 def _complete_self_repair_reasons(reasons: Iterable[Any]) -> Tuple[str, ...]:
     """Keep Complete self-repair handoff limited to reasons it can repair.
 
@@ -390,7 +502,91 @@ def _complete_self_repair_reasons(reasons: Iterable[Any]) -> Tuple[str, ...]:
     """
 
     allowed = set(ALLOWED_REPAIR_REASONS)
-    return tuple(dict.fromkeys(reason for reason in _dedupe(reasons) if reason in allowed))
+    normalized: list[str] = []
+    for reason in _dedupe(reasons):
+        mapped = normalize_complete_self_repair_reason(reason)
+        if mapped in allowed:
+            normalized.append(mapped)
+    return tuple(dict.fromkeys(normalized))
+
+
+
+def _two_stage_section_surface_plan_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the internal Phase16 two-stage section plan for Complete Composer.
+
+    The payload produced by ConversationComposer already carries this material in
+    Phase16-2.  Direct callers may still provide only the older role/surface
+    contracts, so this helper rebuilds the same internal plan from those
+    additive contracts.  It does not render comment_text and it strips raw input
+    keys through the existing JSON-safe mapping helper.
+    """
+
+    existing = _json_safe_mapping(payload.get("two_stage_section_surface_plan"))
+    if existing and _bool(existing.get("required")):
+        return existing
+    built = build_two_stage_section_surface_plan(
+        _as_mapping(payload.get("state_answer_composer_role_plan")),
+        state_answer_surface_contract=_as_mapping(payload.get("state_answer_surface_contract")),
+        composition_contract=_as_mapping(payload.get("composition_contract")),
+    )
+    return _json_safe_mapping(built)
+
+
+def _two_stage_section_surface_plan_meta(plan: Mapping[str, Any] | None) -> dict[str, Any]:
+    data = _json_safe_mapping(plan)
+    if not data:
+        return {
+            "two_stage_section_surface_plan_connected": False,
+            "two_stage_section_surface_plan_required": False,
+            "two_stage_section_meta_expected": False,
+            "two_stage_surface_realization_expected": False,
+            "raw_input_included": False,
+        }
+    return {
+        "two_stage_section_surface_plan_connected": True,
+        "two_stage_section_surface_plan_required": bool(data.get("required", True)),
+        "two_stage_section_surface_plan_material_id": _clean(data.get("material_id")),
+        "two_stage_section_surface_plan_schema_version": _clean(data.get("schema_version")),
+        "two_stage_section_surface_plan_expected_comment_text_shape": _clean(data.get("expected_comment_text_shape")),
+        "two_stage_section_surface_plan_section_order": list(data.get("section_order") or []),
+        "two_stage_section_surface_plan_section_ids": list(data.get("section_ids") or []),
+        "two_stage_section_meta_expected": True,
+        "two_stage_surface_realization_expected": True,
+        "two_stage_section_surface_plan_comment_text_generated": False,
+        "two_stage_section_surface_plan_raw_input_included": False,
+        "raw_input_included": False,
+    }
+
+
+def _state_answer_two_stage_meta_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    role_plan = _as_mapping(payload.get("state_answer_composer_role_plan"))
+    composition_contract = _as_mapping(payload.get("composition_contract"))
+    expected_shape = (
+        _clean(role_plan.get("expected_comment_text_shape"))
+        or _clean(composition_contract.get("expected_comment_text_shape"))
+    )
+    two_stage_required = bool(
+        role_plan.get("two_stage_display_required")
+        or role_plan.get("section_labels_required")
+        or role_plan.get("joined_comment_text_required")
+        or composition_contract.get("two_stage_reception_surface_required")
+        or expected_shape == "labelled_two_stage_text"
+    )
+    return {
+        "state_answer_composer_role_plan_connected": bool(role_plan),
+        "state_answer_two_stage_display_required": two_stage_required,
+        "state_answer_section_labels_required": bool(
+            role_plan.get("section_labels_required")
+            or composition_contract.get("section_labels_required")
+            or two_stage_required
+        ),
+        "state_answer_expected_comment_text_shape": expected_shape or ("labelled_two_stage_text" if two_stage_required else ""),
+        "two_stage_reception_surface_required": bool(
+            composition_contract.get("two_stage_reception_surface_required") or two_stage_required
+        ),
+        "two_stage_required_propagated_to_complete_composer": two_stage_required,
+        "raw_input_included": False,
+    }
 
 def build_complete_composer_client_contract_meta() -> dict[str, Any]:
     term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
@@ -431,6 +627,13 @@ def build_complete_composer_client_contract_meta() -> dict[str, Any]:
         "rn_visible_title_changed": False,
         "raw_input_included": False,
         "raw_input_required_for_improvement": False,
+        "two_stage_section_surface_plan_supported": True,
+        "two_stage_complete_composer_connection_supported": True,
+        "two_stage_surface_realization_summary_supported": True,
+        "phase17_7_self_repair_unavailable_reason_supported": True,
+        "phase17_7_self_repair_unavailable_reason_summary_only": True,
+        "phase17_7_comment_text_body_included": False,
+        "phase17_7_raw_input_included": False,
     }
 
 
@@ -518,9 +721,24 @@ def build_complete_composer_client_runtime_gate(
     }
 
 def _unavailable_response(reason: str, *, coverage_scope: str = "complete_initial_unavailable", extra_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    extra = _json_safe_mapping(extra_meta)
+    phase17_reason_summary = build_phase17_self_repair_unavailable_reason_summary(
+        primary_reason=reason,
+        candidate_status=COMPLETE_COMPOSER_STATUS_UNAVAILABLE,
+        surface_meta=_as_mapping(extra.get("surface_realizer") or extra.get("surface_meta")),
+        grounding_meta=_as_mapping(extra.get("final_grounding") or extra.get("initial_grounding") or extra.get("grounding_meta")),
+        self_repair_meta=_as_mapping(extra.get("self_repair")),
+        extra_meta={**extra, "rejection_reasons": [reason, *list(extra.get("rejection_reasons") or [])]},
+    )
     meta = {
         **build_complete_composer_client_contract_meta(),
-        **_json_safe_mapping(extra_meta),
+        **extra,
+        "phase17_7_self_repair_unavailable_reason": phase17_reason_summary,
+        "phase17_7_unavailable_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
+        "phase17_7_self_repair_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
+        "phase17_7_self_repair_handoff_reason_codes": list(phase17_reason_summary.get("self_repair_handoff_reason_codes") or []),
+        "phase17_7_product_visible_fixture_reached": bool(phase17_reason_summary.get("product_visible_fixture_reached")),
+        "phase17_7_self_repair_reason_summary_only": True,
         "status": COMPLETE_COMPOSER_STATUS_UNAVAILABLE,
         "ready": False,
         "display_ready": False,
@@ -611,6 +829,9 @@ class CocolonCompleteComposerClient:
 
         coverage_group = _coverage_group_from_payload(payload)
         previous_gate_reasons = _composition_rejection_reasons(payload)
+        two_stage_section_surface_plan = _two_stage_section_surface_plan_from_payload(payload)
+        two_stage_section_surface_plan_meta = _two_stage_section_surface_plan_meta(two_stage_section_surface_plan)
+        state_answer_two_stage_meta = _state_answer_two_stage_meta_from_payload(payload)
 
         material_bundle = build_complete_material_bundle(
             evidence_spans=evidence_spans,
@@ -649,7 +870,16 @@ class CocolonCompleteComposerClient:
 
         sentence_plan = build_complete_sentence_plan_v2(
             observation_graph=relation_graph,
-            meta={"source": "complete_composer_client"},
+            two_stage_section_surface_plan=two_stage_section_surface_plan,
+            state_answer_composer_role_plan=_as_mapping(payload.get("state_answer_composer_role_plan")),
+            state_answer_surface_contract=_as_mapping(payload.get("state_answer_surface_contract")),
+            composition_contract=_as_mapping(payload.get("composition_contract")),
+            meta={
+                "source": "complete_composer_client",
+                "two_stage_section_surface_plan": two_stage_section_surface_plan,
+                **two_stage_section_surface_plan_meta,
+                **state_answer_two_stage_meta,
+            },
         )
         if not sentence_plan.usable:
             return _unavailable_response(
@@ -662,25 +892,44 @@ class CocolonCompleteComposerClient:
             sentence_plan=sentence_plan,
             coverage_group=coverage_group,
             relation_types=sentence_plan.relation_types,
-            meta={"source": "complete_composer_client"},
+            meta={
+                "source": "complete_composer_client",
+                **two_stage_section_surface_plan_meta,
+                **state_answer_two_stage_meta,
+            },
         )
         surface_realization = build_complete_surface_realization_v2(
             sentence_plan=sentence_plan,
             tone_policy=tone_policy,
-            meta={"source": "complete_composer_client", "tone_policy": tone_policy.as_meta()},
+            two_stage_section_surface_plan=two_stage_section_surface_plan,
+            meta={
+                "source": "complete_composer_client",
+                "tone_policy": tone_policy.as_meta(),
+                "two_stage_section_surface_plan": two_stage_section_surface_plan,
+                **two_stage_section_surface_plan_meta,
+                **state_answer_two_stage_meta,
+            },
         )
         if not surface_realization.ready:
+            surface_meta = surface_realization.as_meta(include_realized_text=False)
             return _unavailable_response(
                 "complete_initial_surface_unavailable",
                 coverage_scope=coverage_group,
-                extra_meta={"surface_realizer": surface_realization.as_meta(include_realized_text=False)},
+                extra_meta={
+                    "surface_realizer": surface_meta,
+                    **_two_stage_unavailable_reason_summary(
+                        surface_meta,
+                        state_answer_two_stage_meta=state_answer_two_stage_meta,
+                        two_stage_section_plan_meta=two_stage_section_surface_plan_meta,
+                    ),
+                },
             )
 
         grounding_graph = _grounding_observation_graph(relation_graph, evidence_span_objects)
         initial_grounding_report = judge_complete_product_quality_grounding(
             graph=grounding_graph,
             evidence_spans=evidence_span_objects,
-            comment_text=surface_realization.comment_text,
+            comment_text=surface_realization.realized_text,
             surface_realization=surface_realization,
             sentence_plan=sentence_plan,
             allowed_evidence_span_ids=surface_realization.used_evidence_span_ids,
@@ -722,27 +971,34 @@ class CocolonCompleteComposerClient:
         final_grounding_report = judge_complete_product_quality_grounding(
             graph=grounding_graph,
             evidence_spans=evidence_span_objects,
-            comment_text=comment_text,
+            comment_text=final_realization.realized_text,
             surface_realization=final_realization,
             sentence_plan=final_realization.source_sentence_plan or sentence_plan,
             allowed_evidence_span_ids=final_realization.used_evidence_span_ids,
             coverage_group=coverage_group,
             meta={"source": "complete_composer_client", "stage": "final_grounding"},
         )
-        if not final_grounding_report.passed:
-            return _unavailable_response(
-                "complete_initial_grounding_failed",
-                coverage_scope=coverage_group,
-                extra_meta={
-                    "initial_grounding": build_complete_grounding_report_meta(initial_grounding_report),
-                    "final_grounding": build_complete_grounding_report_meta(final_grounding_report),
-                    "self_repair": repair_result.as_meta(include_realized_text=False) if repair_result is not None else {},
-                },
+        final_grounding_meta = build_complete_grounding_report_meta(final_grounding_report)
+        final_grounding_failed_before_display_gate = not bool(final_grounding_report.passed)
+        final_grounding_failure_reason_codes = list(
+            _dedupe(
+                list(getattr(final_grounding_report, "rejection_reasons", []) or [])
+                + list(getattr(final_grounding_report, "binding_rejection_reasons", []) or [])
             )
+        )
+        # Phase18-3: Complete Initial candidate generation and public display
+        # gate evaluation are separate contracts.  A Complete surface that has
+        # already produced labelled text, evidence ids, phrase ids and sentence
+        # bindings remains a generated candidate even when an internal Complete
+        # grounding probe reports repair targets.  The outer Reader /
+        # Grounding / Template / Display gates still decide whether the text is
+        # public.  This keeps the legacy Complete Initial contract
+        # `candidate_generated == true` + non-passed `reply.comment_text == ""`
+        # without relaxing any public gate.
         grounding_input = build_complete_grounding_input(
             surface_realization=final_realization,
             sentence_plan=final_realization.source_sentence_plan or sentence_plan,
-            comment_text=comment_text,
+            comment_text=final_realization.realized_text,
             coverage_group=coverage_group,
             meta={"source": "complete_composer_client"},
         )
@@ -779,11 +1035,27 @@ class CocolonCompleteComposerClient:
         )
         repair_meta = repair_result.as_meta(include_realized_text=False) if repair_result is not None else {}
         grounding_meta = dict(grounding_input)
+        phase17_reason_summary = build_phase17_self_repair_unavailable_reason_summary(
+            primary_reason="" if not final_grounding_failed_before_display_gate else "complete_initial_grounding_failed",
+            candidate_status=COMPLETE_COMPOSER_STATUS_GENERATED,
+            surface_meta=surface_meta,
+            grounding_meta=final_grounding_meta,
+            self_repair_meta=repair_meta,
+            extra_meta={
+                "status": COMPLETE_COMPOSER_STATUS_GENERATED,
+                "phase17_product_visible_fixture_reached": not final_grounding_failed_before_display_gate,
+            },
+        )
         composer_meta = {
             **build_complete_composer_client_contract_meta(),
             "status": COMPLETE_COMPOSER_STATUS_GENERATED,
+            "candidate_status_before_display_gate": COMPLETE_COMPOSER_STATUS_GENERATED,
+            "candidate_status_after_internal_gate": "generated" if not final_grounding_failed_before_display_gate else "rejected",
+            "candidate_generated_before_display_gate": True,
+            "complete_candidate_generated_before_display_gate": True,
+            "complete_initial_candidate_generation_path_recovered": True,
             "ready": True,
-            "display_ready": True,
+            "display_ready": not final_grounding_failed_before_display_gate,
             "composer_model": COMPLETE_COMPOSER_INITIAL_MODEL,
             "generation_method": COMPLETE_COMPOSER_GENERATION_METHOD,
             "generation_scope": COMPLETE_COMPOSER_GENERATION_SCOPE,
@@ -792,6 +1064,9 @@ class CocolonCompleteComposerClient:
             "ap0_green": True,
             "rollout_allowed": True,
             "release_meta": self.release_meta,
+            **state_answer_two_stage_meta,
+            **two_stage_section_surface_plan_meta,
+            "two_stage_section_surface_plan": _json_safe_mapping(two_stage_section_surface_plan),
             "material_service": material_bundle.as_meta(),
             "coverage_plan": coverage_plan.as_meta(),
             "relation_graph": relation_graph.as_meta(),
@@ -807,10 +1082,33 @@ class CocolonCompleteComposerClient:
             "tone_policy_applied": True,
             "tone_meaning_added": False,
             "surface_realizer": surface_meta,
+            "two_stage_surface_realization": _json_safe_mapping(surface_meta.get("two_stage_surface_realization")),
+            "two_stage_applicability_decision": _two_stage_applicability_decision_from_surface_meta(
+                surface_meta,
+                state_answer_two_stage_meta=state_answer_two_stage_meta,
+                two_stage_section_plan_meta=two_stage_section_surface_plan_meta,
+            ),
+            "two_stage_surface_realization_applied": bool(surface_meta.get("two_stage_surface_realization_applied")),
+            "two_stage_comment_text_generated": bool(surface_meta.get("two_stage_comment_text_generated")),
+            "phase16_7_unavailable_reason_codes": [],
+            "two_stage_unavailable_reason_codes": [],
+            "two_stage_required_but_unrealized": False,
+            "two_stage_complete_surface_blocked_by_gate": False,
+            "daily_unpleasant_reception_surface_quality": _json_safe_mapping(surface_meta.get("daily_unpleasant_reception_surface_quality")),
             "surface_signature": build_complete_surface_signature(final_realization),
             "initial_grounding_report": build_complete_grounding_report_meta(initial_grounding_report),
-            "final_grounding_report": build_complete_grounding_report_meta(final_grounding_report),
-            "grounding_passed": final_grounding_report.passed,
+            "final_grounding_report": final_grounding_meta,
+            "grounding_passed": bool(final_grounding_report.passed),
+            "complete_initial_candidate_generated_before_display_gate": True,
+            "candidate_generated_before_display_gate": True,
+            "candidate_status_before_display_gate": COMPLETE_COMPOSER_STATUS_GENERATED,
+            "candidate_status_after_display_gate": "pending_outer_display_gate",
+            "complete_initial_internal_grounding_failed_before_display_gate": final_grounding_failed_before_display_gate,
+            "internal_grounding_failed_before_display_gate": final_grounding_failed_before_display_gate,
+            "internal_grounding_failure_reason_codes": final_grounding_failure_reason_codes,
+            "complete_initial_candidate_generation_display_gate_separated": True,
+            "display_gate_relaxed": False,
+            "grounding_gate_relaxed": False,
             "grounding_input": grounding_meta,
             "complete_grounding_binding": grounding_meta,
             "binding_meta": grounding_meta,
@@ -818,6 +1116,12 @@ class CocolonCompleteComposerClient:
             "self_repair": repair_meta,
             "self_repair_report_v2": repair_meta,
             "product_quality_self_repair": bool(repair_meta),
+            "phase17_7_self_repair_unavailable_reason": phase17_reason_summary,
+            "phase17_7_unavailable_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
+            "phase17_7_self_repair_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
+            "phase17_7_self_repair_handoff_reason_codes": list(phase17_reason_summary.get("self_repair_handoff_reason_codes") or []),
+            "phase17_7_product_visible_fixture_reached": bool(phase17_reason_summary.get("product_visible_fixture_reached")),
+            "phase17_7_self_repair_reason_summary_only": True,
             "repair_trace": list(repair_meta.get("repair_trace") or []),
             "repair_trace_v2": list(repair_meta.get("repair_trace_v2") or repair_meta.get("repair_trace") or []),
             "complete_composer_candidate": candidate.as_meta(include_comment_text=False),

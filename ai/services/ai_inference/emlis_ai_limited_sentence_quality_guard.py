@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 _EMOTION_LABELS = {"喜び", "悲しみ", "怒り", "不安", "平穏", "自己理解", "恐れ", "焦り"}
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
 _GREETING_RE = re.compile(r"^(?:[^。！？!?\n]{1,36}さん、)?(?:おはようございます|こんにちは|こんばんは|Emlisです|.+Emlisです)[。.!！]?$")
+_TWO_STAGE_LABEL_ONLY_RE = re.compile(r"^(?:見えたこと|Emlisから)[:：]$")
 _BROKEN_SURFACE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("phase8_generic_relation_suffix", re.compile(r"がつながっています[。.!！]?$")),
     ("phase8_generic_relation_suffix", re.compile(r"同じ中にあります[。.!！]?$")),
@@ -351,7 +352,11 @@ def _sentences(text: Any) -> List[str]:
 
 
 def _body_sentences(text: Any) -> List[str]:
-    return [s for s in _sentences(text) if not _GREETING_RE.match(s)]
+    return [
+        s
+        for s in _sentences(text)
+        if not _GREETING_RE.match(s) and not _TWO_STAGE_LABEL_ONLY_RE.match(s)
+    ]
 
 
 def _limited_tail_signatures(sentences: Sequence[str]) -> List[str]:

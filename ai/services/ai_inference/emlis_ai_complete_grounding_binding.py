@@ -34,6 +34,32 @@ COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION = _COMPLETE_PRODUCT_QUALITY_GROUNDING
 COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP = _COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP
 GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 
+PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION = "cocolon.emlis_two_stage.grounding_binding_patch.v1"
+PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE = "Phase17_6_grounding_relation_binding"
+PHASE17_6_EFFORT_PACE_CASE_FAMILY = "effort_pace_context"
+PHASE17_6_EFFORT_PACE_TARGET_MODES: Tuple[str, ...] = ("standard_state_answer", "effort_support")
+PHASE17_6_EFFORT_PACE_BINDING_ROLES: Tuple[str, ...] = (
+    "independence_intention",
+    "life_context",
+    "health_pace",
+    "money_context",
+    "sustainable_pace",
+    "effort_pace_observation_independence_life_health_money",
+    "effort_pace_reception_sustainable_pace_received",
+    "effort_pace_reception_not_overeffort_received",
+)
+PHASE17_6_ALLOWED_RELATION_MARKER_CODES: Tuple[str, ...] = (
+    "coexistence_narabimasu",
+    "coexistence_isshoni_nokoru",
+    "context_mi_nagara",
+    "sustainable_pace_shape",
+)
+PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES: Tuple[str, ...] = (
+    "future_guarantee_jiritsu_dekimasu",
+    "cause_assertion_money",
+    "overeffort_directive",
+)
+
 RAW_INPUT_META_KEYS = {
     "raw_text",
     "raw_input",
@@ -51,6 +77,14 @@ RAW_INPUT_META_KEYS = {
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
 
 
 def _dedupe(values: Iterable[Any] | Any | None) -> Tuple[str, ...]:
@@ -227,6 +261,105 @@ def _joined_text(rows: Sequence[Mapping[str, Any]]) -> str:
     return "".join(_clean(row.get("surface_text") or row.get("text") or row.get("sentence")) for row in rows)
 
 
+def _row_relation_type(row: Mapping[str, Any]) -> str:
+    return _clean(row.get("relation_type") or row.get("relation") or row.get("declared_relation_type")).lower()
+
+
+def _phase17_6_row_tokens(row: Mapping[str, Any]) -> Tuple[str, ...]:
+    source_line = _json_safe_mapping(row.get("source_sentence_plan_line") or {})
+    source_meta = _json_safe_mapping(source_line.get("meta") or {})
+    return _dedupe(
+        list(_as_list(row.get("role_phrase_keys")))
+        + list(_as_list(row.get("phrase_unit_roles")))
+        + list(_as_list(row.get("must_include_roles")))
+        + list(_as_list(source_line.get("role_phrase_keys")))
+        + list(_as_list(source_line.get("phrase_unit_roles")))
+        + list(_as_list(source_line.get("must_include_roles")))
+        + list(_as_list(source_meta.get("two_stage_mode_specific_surface_feature_families")))
+        + list(_as_list(source_meta.get("two_stage_mode_specific_surface_key")))
+    )
+
+
+def _phase17_6_row_mode_id(row: Mapping[str, Any]) -> str:
+    source_line = _json_safe_mapping(row.get("source_sentence_plan_line") or {})
+    source_meta = _json_safe_mapping(source_line.get("meta") or {})
+    return _clean(
+        row.get("two_stage_reception_mode_id")
+        or row.get("reception_mode_id")
+        or source_line.get("two_stage_reception_mode_id")
+        or source_meta.get("two_stage_reception_mode_id")
+        or source_meta.get("two_stage_mode_specific_surface_mode_id")
+    )
+
+
+def _phase17_6_is_effort_pace_row(row: Mapping[str, Any]) -> bool:
+    relation = _row_relation_type(row)
+    if relation and relation not in {"coexistence", "context", "recovery"}:
+        return False
+    mode_id = _phase17_6_row_mode_id(row)
+    if mode_id in PHASE17_6_EFFORT_PACE_TARGET_MODES:
+        return True
+    tokens = set(_phase17_6_row_tokens(row))
+    if tokens.intersection(PHASE17_6_EFFORT_PACE_BINDING_ROLES):
+        return True
+    return any(token.startswith("effort_pace_") for token in tokens)
+
+
+def _annotate_phase17_6_grounding_relation_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for row in rows:
+        next_row = dict(row)
+        if _phase17_6_is_effort_pace_row(next_row):
+            next_row.update(
+                {
+                    "phase17_6_grounding_relation_binding_applied": True,
+                    "phase17_6_grounding_relation_binding_schema_version": PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+                    "phase17_6_grounding_relation_binding_source_phase": PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
+                    "phase17_6_grounding_relation_binding_case_family": PHASE17_6_EFFORT_PACE_CASE_FAMILY,
+                    "phase17_6_grounding_relation_binding_target_modes": list(PHASE17_6_EFFORT_PACE_TARGET_MODES),
+                    "phase17_6_grounding_relation_binding_roles": list(PHASE17_6_EFFORT_PACE_BINDING_ROLES),
+                    "phase17_6_allowed_relation_marker_codes": list(PHASE17_6_ALLOWED_RELATION_MARKER_CODES),
+                    "phase17_6_forbidden_relation_marker_codes": list(PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES),
+                    "relation_expression_required": True,
+                    "unsupported_sentence_allowed": False,
+                    "relation_not_expressed_allowed": False,
+                    "grounding_gate_relaxed": False,
+                    "display_gate_relaxed": False,
+                    "raw_input_included": False,
+                    "comment_text_body_included": False,
+                }
+            )
+        annotated.append(next_row)
+    return annotated
+
+
+def _phase17_6_grounding_relation_binding_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    applied_rows = [dict(row) for row in rows if bool(row.get("phase17_6_grounding_relation_binding_applied"))]
+    sentence_ids = _dedupe(row.get("sentence_id") or row.get("id") for row in applied_rows)
+    relation_types = _dedupe(row.get("relation_type") or row.get("declared_relation_type") for row in applied_rows)
+    return {
+        "schema_version": PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+        "source_phase": PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
+        "applied": bool(applied_rows),
+        "case_family": PHASE17_6_EFFORT_PACE_CASE_FAMILY if applied_rows else "",
+        "target_modes": list(PHASE17_6_EFFORT_PACE_TARGET_MODES),
+        "binding_roles": list(PHASE17_6_EFFORT_PACE_BINDING_ROLES),
+        "allowed_relation_marker_codes": list(PHASE17_6_ALLOWED_RELATION_MARKER_CODES),
+        "forbidden_relation_marker_codes": list(PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES),
+        "row_count": len(applied_rows),
+        "sentence_ids": list(sentence_ids),
+        "relation_expression_required_sentence_ids": list(sentence_ids),
+        "relation_types": list(relation_types),
+        "unsupported_sentence_allowed": False,
+        "relation_not_expressed_allowed": False,
+        "grounding_gate_relaxed": False,
+        "display_gate_relaxed": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "public_response_key_added": False,
+    }
+
+
 def build_complete_grounding_binding_bundle(
     *,
     grounding_input: Mapping[str, Any] | CompleteSurfaceRealizationV2 | None = None,
@@ -242,7 +375,8 @@ def build_complete_grounding_binding_bundle(
     source_plan = sentence_plan or grounding.get("source_sentence_binding_bundle") or grounding.get("sentence_plan")
     surface_rows = _surface_rows_from_input(grounding)
     plan_rows = _plan_rows_from_sentence_plan(source_plan)
-    rows = _merge_rows(surface_rows, plan_rows)
+    rows = _annotate_phase17_6_grounding_relation_rows(_merge_rows(surface_rows, plan_rows))
+    phase17_6_relation_binding = _phase17_6_grounding_relation_binding_summary(rows)
     text = _clean(comment_text) or _clean(grounding.get("realized_text")) or _joined_text(rows)
     used_evidence = _dedupe(item for row in rows for item in (row.get("used_evidence_span_ids") or row.get("evidence_span_ids") or ()))
     used_phrase = _dedupe(item for row in rows for item in (row.get("used_phrase_unit_ids") or row.get("phrase_unit_ids") or ()))
@@ -267,6 +401,10 @@ def build_complete_grounding_binding_bundle(
         "complete_binding_aware_grounding": True,
         "product_quality_grounding": True,
         "grounding_relation_binding_v2": True,
+        "phase17_6_grounding_relation_binding": phase17_6_relation_binding,
+        "phase17_6_grounding_relation_binding_applied": bool(phase17_6_relation_binding.get("applied")),
+        "phase17_6_grounding_relation_binding_schema_version": PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+        "phase17_6_grounding_relation_binding_source_phase": PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
         "step8_binding_aware_grounding": True,
         "complete_binding_required": True,
         "binding_required": True,
@@ -307,6 +445,9 @@ def build_complete_grounding_binding_bundle(
         "fixed_sentence_template_used": False,
         "grounding_gate_relaxed": False,
         "display_gate_relaxed": False,
+        "phase17_6_grounding_gate_relaxed": False,
+        "phase17_6_relation_not_expressed_allowed": False,
+        "phase17_6_unsupported_sentence_allowed": False,
         "raw_text_included": False,
         "raw_input_included": False,
         "raw_input_required_for_debug": False,
@@ -374,6 +515,15 @@ def build_complete_binding_aware_grounding_contract_meta() -> dict[str, Any]:
         "binding_support_source_required": True,
         "unsupported_sentence_ids_reported": True,
         "relation_not_expressed_sentence_ids_reported": True,
+        "phase17_6_grounding_relation_binding_schema_version": PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION,
+        "phase17_6_grounding_relation_binding_source_phase": PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE,
+        "phase17_6_effort_pace_relation_binding_supported": True,
+        "phase17_6_effort_pace_target_modes": list(PHASE17_6_EFFORT_PACE_TARGET_MODES),
+        "phase17_6_effort_pace_binding_roles": list(PHASE17_6_EFFORT_PACE_BINDING_ROLES),
+        "phase17_6_allowed_relation_marker_codes": list(PHASE17_6_ALLOWED_RELATION_MARKER_CODES),
+        "phase17_6_forbidden_relation_marker_codes": list(PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES),
+        "phase17_6_unsupported_sentence_allowed": False,
+        "phase17_6_relation_not_expressed_allowed": False,
         "phrase_unit_quality_checked": True,
         "weak_material_reason_enabled": True,
         "binding_pass_rate_measurable": True,
@@ -410,6 +560,13 @@ __all__ = [
     "COMPLETE_PRODUCT_QUALITY_GROUNDING_VERSION",
     "COMPLETE_PRODUCT_QUALITY_GROUNDING_STEP",
     "GATE_BINDING_CONTRACT_VERSION",
+    "PHASE17_6_GROUNDING_RELATION_BINDING_SCHEMA_VERSION",
+    "PHASE17_6_GROUNDING_RELATION_BINDING_SOURCE_PHASE",
+    "PHASE17_6_EFFORT_PACE_CASE_FAMILY",
+    "PHASE17_6_EFFORT_PACE_TARGET_MODES",
+    "PHASE17_6_EFFORT_PACE_BINDING_ROLES",
+    "PHASE17_6_ALLOWED_RELATION_MARKER_CODES",
+    "PHASE17_6_FORBIDDEN_RELATION_MARKER_CODES",
     "build_complete_grounding_binding_bundle",
     "build_complete_grounding_binding_meta",
     "build_complete_binding_aware_grounding_meta",

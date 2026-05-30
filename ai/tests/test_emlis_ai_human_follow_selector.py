@@ -12,9 +12,11 @@ from emlis_ai_human_follow_selector import (
     EMLIS_AI_HUMAN_FOLLOW_SELECTOR_SCHEMA_VERSION,
     FOLLOW_EFFORT_RECEIVING,
     FOLLOW_EXISTENCE_RESPECT,
+    FOLLOW_EXPLICIT_REACTION_RECEIVING,
     FOLLOW_FEAR_OR_LOAD_UNDERSTANDING,
     FOLLOW_IDENTITY_COUNTER_WITH_EVIDENCE,
     FOLLOW_IMPORTANT_VALUE_RECEIVING,
+    FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT,
     FOLLOW_INTENTION_AFFIRMATION,
     FOLLOW_INTENTION_AND_FEAR,
     FOLLOW_REASON_VISIBILITY_RECEIVING,
@@ -26,6 +28,10 @@ from emlis_ai_human_follow_selector import (
     human_follow_selection_gate_report,
 )
 from emlis_ai_state_answer_surface_contract import build_emlis_state_answer_surface_contract
+from fixtures.emlis_ai_two_stage_reception_cases import (
+    current_input_for_two_stage_reception_case,
+    two_stage_reception_case_by_id,
+)
 
 
 def _input(
@@ -229,5 +235,75 @@ def test_phase3_selector_is_connected_into_state_answer_surface_contract() -> No
     assert len(follow_layer["secondary_follow_keys"]) == 2
     assert follow_layer["personality_claim_allowed"] is False
     assert follow_layer["human_follow_selector_gate_report"]["target_judgement_agreement_allowed"] is False
+    assert contract["completed_reply_generated"] is False
+    assert contract["public_response_key_added"] is False
+
+
+
+def _phase9_case_input(case_id: str) -> dict[str, object]:
+    return current_input_for_two_stage_reception_case(two_stage_reception_case_by_id(case_id))
+
+
+def test_phase9_daily_unpleasant_A_uses_explicit_reaction_receiving_without_heavy_anger_value_line() -> None:
+    current_input = _phase9_case_input("daily_unpleasant_encounter_A")
+
+    meta = build_emlis_ai_human_follow_selection(current_input).as_meta()
+    encoded = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+    all_follow_keys = [meta["primary_follow_key"], *meta["secondary_follow_keys"], meta["afterglow_follow_key"]]
+
+    assert meta["selection"]["input_type"] == "daily_unpleasant_reception"
+    assert meta["selector_input_summary"]["reception_mode_id"] == "daily_unpleasant_reception"
+    assert meta["selector_input_summary"]["phase9_daily_unpleasant_follow_allowed"] is True
+    assert meta["primary_follow_key"] == FOLLOW_EXPLICIT_REACTION_RECEIVING
+    assert FOLLOW_FEAR_OR_LOAD_UNDERSTANDING in meta["secondary_follow_keys"]
+    assert FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT in meta["secondary_follow_keys"]
+    assert FOLLOW_IMPORTANT_VALUE_RECEIVING not in all_follow_keys
+    assert meta["selection"]["daily_input_over_anger_structure_prevented"] is True
+    assert meta["selection"]["important_value_receiving_overweighted_allowed"] is False
+    assert meta["guard_policy"]["daily_input_over_anger_structure_prevented"] is True
+    assert meta["guard_policy"]["daily_reception_does_not_require_target_judgement"] is True
+    assert meta["guard_policy"]["target_judgement_agreement_allowed"] is False
+    assert meta["comment_text_generated"] is False
+    assert meta["public_response_key_added"] is False
+    assert current_input["memo"] not in encoded
+    assert current_input["memo_action"] not in encoded
+    assert '"comment_text":' not in encoded
+    assert '"raw_text":' not in encoded
+
+
+def test_phase9_self_confidence_uncertainty_B_is_not_daily_and_keeps_identity_effort_follow() -> None:
+    current_input = _phase9_case_input("self_confidence_uncertainty_B")
+
+    meta = build_emlis_ai_human_follow_selection(current_input).as_meta()
+    encoded = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+    all_follow_keys = [meta["primary_follow_key"], *meta["secondary_follow_keys"], meta["afterglow_follow_key"]]
+
+    assert meta["selection"]["input_type"] == "self_confidence_uncertainty"
+    assert meta["selector_input_summary"]["reception_mode_id"] in {"self_denial_support", "uncertainty_support"}
+    assert meta["selector_input_summary"]["phase9_daily_unpleasant_follow_allowed"] is False
+    assert meta["primary_follow_key"] == FOLLOW_IDENTITY_COUNTER_WITH_EVIDENCE
+    assert FOLLOW_IDENTITY_COUNTER_WITH_EVIDENCE in all_follow_keys
+    assert FOLLOW_EFFORT_RECEIVING in all_follow_keys
+    assert meta["guard_policy"]["self_denial_requires_evidence_for_counter_opinion"] is True
+    assert meta["guard_policy"]["limited_counter_opinion_allowed"] is True
+    assert meta["selection"]["daily_input_over_anger_structure_prevented"] is False
+    assert current_input["memo"] not in encoded
+    assert '"comment_text":' not in encoded
+    assert '"raw_text":' not in encoded
+
+
+def test_phase9_reception_section_material_uses_human_follow_primary_for_A() -> None:
+    current_input = _phase9_case_input("daily_unpleasant_encounter_A")
+
+    contract = build_emlis_state_answer_surface_contract(current_input).as_meta()
+    follow_layer = contract["human_follow_layer"]
+    reception_section = contract["reception_section_material"]
+
+    assert follow_layer["input_type"] == "daily_unpleasant_reception"
+    assert follow_layer["primary_follow_key"] == FOLLOW_EXPLICIT_REACTION_RECEIVING
+    assert reception_section["display_label"] == "Emlisから"
+    assert reception_section["primary_reception_key"] == FOLLOW_EXPLICIT_REACTION_RECEIVING
+    assert FOLLOW_NOT_OVER_EXPLAINING_DAILY_EVENT in reception_section["secondary_reception_keys"]
+    assert reception_section["reception_mode_id"] == "daily_unpleasant_reception"
     assert contract["completed_reply_generated"] is False
     assert contract["public_response_key_added"] is False

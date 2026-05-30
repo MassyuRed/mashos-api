@@ -24,6 +24,15 @@ from emlis_ai_state_answer_gate_boundary import (
     build_state_answer_gate_boundary_report,
     state_answer_gate_boundary_public_summary,
 )
+from emlis_ai_two_stage_reception_gate import (
+    build_two_stage_reception_gate_report,
+    two_stage_reception_gate_public_summary,
+)
+
+from emlis_ai_visible_readability_quality import (
+    build_visible_readability_quality_report,
+    visible_readability_quality_public_summary,
+)
 
 VISIBLE_SURFACE_ACCEPTANCE_GATE_VERSION = "emlis.visible_surface_acceptance_gate.v1"
 VISIBLE_SURFACE_ACCEPTANCE_GATE_SOURCE = "emlis_visible_surface_acceptance_gate"
@@ -173,11 +182,26 @@ _KOTO_SPLICE_CODES = {
     "long_clause_koto_attachment_risk",
 }
 
+_INTERNAL_ROLE_LABEL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("achievement", re.compile(r"\bachievement\b", re.IGNORECASE)),
+    ("positive_state", re.compile(r"positive[\s_]+state", re.IGNORECASE)),
+    ("perfection_fear", re.compile(r"perfection[\s_]+fear", re.IGNORECASE)),
+    ("pressure_or_limit", re.compile(r"pressure[\s_]+or[\s_]+limit", re.IGNORECASE)),
+    ("role_key", re.compile(r"role_", re.IGNORECASE)),
+)
+
 _RELATION_SKELETON_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("same_flow_same_place", re.compile(r"同じ流れが同じ場所")),
+    ("same_flow", re.compile(r"同じ流れ")),
+    ("same_place", re.compile(r"同じ場所")),
+    ("separate_directions", re.compile(r"別々の向き")),
+    ("not_reduced_to_one_side", re.compile(r"片方だけに減らさず")),
+    ("not_leaning_to_one_side", re.compile(r"片方だけに寄らず")),
+    ("overlap_kept", re.compile(r"重なりを保っています")),
+    ("not_decided_one_direction", re.compile(r"一方向には決まりきっていません")),
     ("state_not_one_color", re.compile(r"状態が一色ではありません")),
     ("visible_range_not_single_element", re.compile(r"今見えている範囲は一つの要素だけではありません")),
     ("not_single_element", re.compile(r"一つの要素だけではありません")),
-    ("not_reduced_to_one_side", re.compile(r"片方だけに減らさず")),
     ("overlap_as_aligned", re.compile(r"重なりとして並んで")),
 )
 
@@ -224,6 +248,10 @@ _FORBIDDEN_TEXT_PAYLOAD_KEYS = {
     "raw_quotes",
     "evidence_text",
     "matched_raw_quote_fragments",
+    "observation_text",
+    "observationText",
+    "reception_text",
+    "receptionText",
 }
 
 _CONTRACT_TRUE_FLAGS = (
@@ -363,6 +391,9 @@ def build_visible_surface_acceptance_gate_contract_schema() -> dict[str, Any]:
             "malformed_nominalization_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
             "koto_splice_detected": {"type": "boolean"},
             "koto_splice_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "internal_role_label_marker_count": {"type": "integer", "minimum": 0},
+            "internal_role_label_marker_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+            "internal_role_label_leak_detected": {"type": "boolean"},
             "relation_skeleton_marker_count": {"type": "integer", "minimum": 0},
             "relation_skeleton_marker_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
             "relation_skeleton_major": {"type": "boolean"},
@@ -589,11 +620,20 @@ def _malformed_nominalization_codes(comment_text: Any) -> list[str]:
     return _dedupe(code for code, pattern in _MALFORMED_NOMINALIZATION_PATTERNS if pattern.search(text))
 
 
+def _internal_role_label_marker_codes(comment_text: Any) -> list[str]:
+    text = _clean(comment_text)
+    if not text:
+        return []
+    return _dedupe(code for code, pattern in _INTERNAL_ROLE_LABEL_PATTERNS if pattern.search(text))
+
+
 def _relation_skeleton_marker_codes(comment_text: Any) -> list[str]:
     text = _clean(comment_text)
     if not text:
         return []
     codes = _dedupe(code for code, pattern in _RELATION_SKELETON_PATTERNS if pattern.search(text))
+    if "same_flow_same_place" in codes:
+        codes = [code for code in codes if code not in {"same_flow", "same_place"}]
     if "visible_range_not_single_element" in codes and "not_single_element" in codes:
         codes = [code for code in codes if code != "not_single_element"]
     return codes
@@ -735,6 +775,9 @@ def build_visible_surface_acceptance_gate_report(
     composer_meta: Mapping[str, Any] | None = None,
     state_answer_special_cases: Any = None,
     state_answer_surface_contract: Any = None,
+    two_stage_reception_gate_required: bool = False,
+    shared_reception_evidence: Any = None,
+    reception_mode: Any = None,
     rerender_allowed: bool = True,
     rerender_attempted: bool = False,
     low_information_reroute_allowed: bool = False,
@@ -785,6 +828,9 @@ def build_visible_surface_acceptance_gate_report(
     )
     malformed_codes = _malformed_nominalization_codes(comment_text)
     koto_splice_codes = [code for code in malformed_codes if code in _KOTO_SPLICE_CODES]
+    internal_role_label_codes = _internal_role_label_marker_codes(comment_text)
+    internal_role_label_marker_count = len(internal_role_label_codes)
+    internal_role_label_leak_detected = internal_role_label_marker_count > 0
     relation_skeleton_codes = _relation_skeleton_marker_codes(comment_text)
     relation_skeleton_marker_count = len(relation_skeleton_codes)
     relation_skeleton_major = relation_skeleton_marker_count >= 2
@@ -810,11 +856,46 @@ def build_visible_surface_acceptance_gate_report(
         composer_meta=composer_meta,
         current_input=current_input,
     )
+    # Phase16-1: do not activate the two-stage gate only when labels already
+    # exist in the body.  When composer_meta / state answer contract marks
+    # labelled_two_stage_text as required, leave ``two_stage_required`` unset so
+    # build_two_stage_reception_gate_report can derive the requirement from the
+    # meta and fail closed on missing labels.
+    two_stage_required_override = True if two_stage_reception_gate_required else None
+    two_stage_reception_gate_report = build_two_stage_reception_gate_report(
+        comment_text=comment_text,
+        state_answer_surface_contract=state_answer_surface_contract,
+        composer_meta=composer_meta,
+        shared_reception_evidence=shared_reception_evidence,
+        reception_mode=reception_mode,
+        current_input=current_input,
+        two_stage_required=two_stage_required_override,
+    )
+    two_stage_gate_active = bool(two_stage_reception_gate_report.get("evaluated"))
     special_case_blockers = _dedupe(special_case_surface_report.get("surface_blocker_reasons") or [])
     state_answer_gate_boundary_blockers = _dedupe(
         state_answer_gate_boundary_report.get("surface_blocker_reasons")
         or state_answer_gate_boundary_report.get("rejection_reasons")
         or []
+    )
+    two_stage_gate_blockers = _dedupe(
+        two_stage_reception_gate_report.get("surface_blocker_reasons")
+        or two_stage_reception_gate_report.get("rejection_reasons")
+        or []
+    )
+    two_stage_unavailable_reason_codes = _dedupe(
+        two_stage_reception_gate_report.get("two_stage_unavailable_reason_codes")
+        or two_stage_reception_gate_report.get("phase16_7_unavailable_reason_codes")
+        or []
+    )
+    visible_readability_quality_report = build_visible_readability_quality_report(
+        comment_text=comment_text,
+    )
+    visible_readability_hard_blockers = _dedupe(
+        visible_readability_quality_report.get("hard_block_reasons") or []
+    )
+    visible_readability_repair_reasons = _dedupe(
+        visible_readability_quality_report.get("soft_repair_reasons") or []
     )
 
     rejection_reasons: list[str] = []
@@ -824,6 +905,11 @@ def build_visible_surface_acceptance_gate_report(
 
     if malformed_codes:
         red_reasons.extend(["malformed_phrase_unit", *malformed_codes])
+    if internal_role_label_leak_detected:
+        red_reasons.extend([
+            "two_stage_internal_role_label_leak",
+            "two_stage_complete_surface_internal_label_leak",
+        ])
     if relation_skeleton_major:
         repair_reasons.append("surface_relation_skeleton_major")
         if relation_skeleton_marker_count >= 3:
@@ -845,6 +931,12 @@ def build_visible_surface_acceptance_gate_report(
         red_reasons.extend(special_case_blockers)
     if state_answer_gate_boundary_blockers:
         red_reasons.extend(state_answer_gate_boundary_blockers)
+    if two_stage_gate_blockers:
+        red_reasons.extend(two_stage_gate_blockers)
+    if visible_readability_hard_blockers:
+        red_reasons.extend(visible_readability_hard_blockers)
+    if visible_readability_repair_reasons:
+        repair_reasons.extend(visible_readability_repair_reasons)
 
     rejection_reasons.extend(red_reasons)
     rejection_reasons.extend(repair_reasons)
@@ -862,7 +954,7 @@ def build_visible_surface_acceptance_gate_report(
 
     action = _action_for_classification(
         classification=classification,
-        rerender_allowed=bool(rerender_allowed),
+        rerender_allowed=bool(rerender_allowed) and not bool(visible_readability_hard_blockers),
         rerender_attempted=bool(rerender_attempted),
         low_information_reroute_allowed=bool(low_information_reroute_allowed),
     )
@@ -904,12 +996,29 @@ def build_visible_surface_acceptance_gate_report(
         "malformed_nominalization_codes": list(malformed_codes),
         "koto_splice_detected": bool(koto_splice_codes),
         "koto_splice_codes": list(koto_splice_codes),
+        "internal_role_label_marker_count": int(internal_role_label_marker_count),
+        "internal_role_label_marker_codes": list(internal_role_label_codes),
+        "internal_role_label_leak_detected": bool(internal_role_label_leak_detected),
         "relation_skeleton_marker_count": int(relation_skeleton_marker_count),
         "relation_skeleton_marker_codes": list(relation_skeleton_codes),
         "relation_skeleton_major": bool(relation_skeleton_major),
         "analytic_register_leak_count": int(analytic_register_leak_count),
         "analytic_register_leak_codes": list(analytic_register_codes),
         "analytic_register_leak": bool(analytic_register_codes),
+        "visible_readability_quality": visible_readability_quality_public_summary(visible_readability_quality_report),
+        "visible_readability_quality_passed": bool(visible_readability_quality_report.get("passed")),
+        "visible_readability_quality_classification": visible_readability_quality_report.get("classification"),
+        "visible_readability_quality_action": visible_readability_quality_report.get("action"),
+        "visible_readability_quality_rejection_reasons": list(
+            visible_readability_quality_report.get("hard_block_reasons") or []
+        ),
+        "visible_readability_quality_repair_reasons": list(
+            visible_readability_quality_report.get("soft_repair_reasons") or []
+        ),
+        "visible_readability_quality_comment_text_body_included": False,
+        "visible_readability_quality_raw_input_included": False,
+        "visible_readability_quality_public_response_key_added": False,
+        "visible_readability_quality_rn_visible_contract_changed": False,
         "state_answer_special_case_surface_guard": _safe_mapping(special_case_surface_report),
         "state_answer_special_case_guard_reasons": list(special_case_blockers),
         "state_answer_special_case_allowed_exception_ids": list(special_case_surface_report.get("allowed_exception_ids_detected") or []),
@@ -930,6 +1039,19 @@ def build_visible_surface_acceptance_gate_report(
             or state_answer_gate_boundary_report.get("allowed_exception_ids")
             or []
         ),
+        "two_stage_reception_gate": two_stage_reception_gate_public_summary(two_stage_reception_gate_report),
+        "two_stage_reception_gate_rejection_reasons": list(two_stage_gate_blockers),
+        "phase16_7_unavailable_reason_codes": list(two_stage_unavailable_reason_codes),
+        "two_stage_unavailable_reason_codes": list(two_stage_unavailable_reason_codes),
+        "two_stage_required_but_unrealized": "two_stage_required_but_unrealized" in two_stage_gate_blockers,
+        "two_stage_complete_surface_blocked_by_gate": bool(
+            "two_stage_complete_surface_blocked_by_gate" in two_stage_gate_blockers
+        ),
+        "two_stage_reception_gate_terminal_surface_block": bool(
+            two_stage_reception_gate_report.get("terminal_surface_block") or two_stage_gate_blockers
+        ),
+        "two_stage_reception_gate_required": bool(two_stage_gate_active),
+        "two_stage_reception_gate_public_meta_summary_only": True,
         "state_answer_public_meta_summary_only": True,
         "state_answer_contract_body_returned": False,
         "state_answer_raw_evidence_included": False,
@@ -1004,12 +1126,25 @@ def build_visible_surface_acceptance_gate_contract_meta() -> dict[str, Any]:
         "malformed_nominalization_codes": [],
         "koto_splice_detected": False,
         "koto_splice_codes": [],
+        "internal_role_label_marker_count": 0,
+        "internal_role_label_marker_codes": [],
+        "internal_role_label_leak_detected": False,
         "relation_skeleton_marker_count": 0,
         "relation_skeleton_marker_codes": [],
         "relation_skeleton_major": False,
         "analytic_register_leak_count": 0,
         "analytic_register_leak_codes": [],
         "analytic_register_leak": False,
+        "visible_readability_quality": visible_readability_quality_public_summary({"evaluated": True, "passed": True}),
+        "visible_readability_quality_passed": True,
+        "visible_readability_quality_classification": "passed",
+        "visible_readability_quality_action": "allow",
+        "visible_readability_quality_rejection_reasons": [],
+        "visible_readability_quality_repair_reasons": [],
+        "visible_readability_quality_comment_text_body_included": False,
+        "visible_readability_quality_raw_input_included": False,
+        "visible_readability_quality_public_response_key_added": False,
+        "visible_readability_quality_rn_visible_contract_changed": False,
         "surface_repair_requested": False,
         "repair_reason_family": "none",
         "rerender_allowed": False,

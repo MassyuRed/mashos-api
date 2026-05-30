@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cocolon.local/schemas/emlis_reception_assistance_dictionary.v1.json",
+  "title": "Emlis Reception Assistance Dictionary V1",
+  "description": "EmlisAIのEmlisから sectionを補助する内部辞書。一般辞書でも完成返答テンプレでもない。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dictionary_id",
+    "dictionary_version",
+    "contract_step",
+    "purpose",
+    "non_goals",
+    "global_policies",
+    "unknown_word_policy",
+    "reaction_cues",
+    "event_hints",
+    "reception_modes",
+    "tone_families",
+    "follow_shape_families",
+    "contract_boundaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "emlis.reception_assistance_dictionary.v1"
+    },
+    "dictionary_id": {
+      "const": "emlis_reception_assistance_dictionary"
+    },
+    "dictionary_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "non_goals": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "global_policies": {
+      "$ref": "#/$defs/GlobalPolicies"
+    },
+    "unknown_word_policy": {
+      "$ref": "#/$defs/UnknownWordPolicy"
+    },
+    "reaction_cues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReactionCue"
+      },
+      "minItems": 1
+    },
+    "event_hints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EventHint"
+      },
+      "minItems": 1
+    },
+    "reception_modes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReceptionMode"
+      },
+      "minItems": 1
+    },
+    "tone_families": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ToneFamily"
+      },
+      "minItems": 1
+    },
+    "follow_shape_families": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FollowShapeFamily"
+      },
+      "minItems": 1
+    },
+    "contract_boundaries": {
+      "$ref": "#/$defs/ContractBoundaries"
+    },
+    "contract_step": {
+      "const": "Phase3_Reception_Assistance_Dictionary_Skeleton"
+    }
+  },
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "minLength": 3
+    },
+    "StringList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "GlobalPolicies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "not_general_dictionary",
+        "user_reaction_is_primary",
+        "event_hint_must_not_create_emotion",
+        "unknown_word_meaning_must_not_be_asserted",
+        "completed_reply_template_forbidden"
+      ],
+      "properties": {
+        "not_general_dictionary": {
+          "const": true
+        },
+        "user_reaction_is_primary": {
+          "const": true
+        },
+        "event_hint_must_not_create_emotion": {
+          "const": true
+        },
+        "unknown_word_meaning_must_not_be_asserted": {
+          "const": true
+        },
+        "completed_reply_template_forbidden": {
+          "const": true
+        }
+      }
+    },
+    "UnknownWordPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "general_dictionary_used",
+        "unknown_word_meaning_asserted",
+        "meaning_assertion_allowed",
+        "event_hint_can_support_mode_only",
+        "event_hint_must_not_create_emotion"
+      ],
+      "properties": {
+        "general_dictionary_used": {
+          "const": false
+        },
+        "unknown_word_meaning_asserted": {
+          "const": false
+        },
+        "meaning_assertion_allowed": {
+          "const": false
+        },
+        "event_hint_can_support_mode_only": {
+          "const": true
+        },
+        "event_hint_must_not_create_emotion": {
+          "const": true
+        }
+      }
+    },
+    "ReactionCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cue_id",
+        "surface_patterns",
+        "reaction_family",
+        "allowed_reception_modes",
+        "must_not_infer"
+      ],
+      "properties": {
+        "cue_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "surface_patterns": {
+          "$ref": "#/$defs/StringList"
+        },
+        "reaction_family": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "allowed_reception_modes": {
+          "$ref": "#/$defs/StringList"
+        },
+        "must_not_infer": {
+          "$ref": "#/$defs/StringList"
+        }
+      }
+    },
+    "EventHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hint_id",
+        "surface_patterns",
+        "event_family",
+        "can_support_modes",
+        "cannot_alone_infer"
+      ],
+      "properties": {
+        "hint_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "surface_patterns": {
+          "$ref": "#/$defs/StringList"
+        },
+        "event_family": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "can_support_modes": {
+          "$ref": "#/$defs/StringList"
+        },
+        "cannot_alone_infer": {
+          "$ref": "#/$defs/StringList"
+        }
+      }
+    },
+    "ReceptionMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode_id",
+        "activation",
+        "ratio_preset",
+        "observation_policy",
+        "reception_policy",
+        "forbidden"
+      ],
+      "properties": {
+        "mode_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "activation": {
+          "type": "object"
+        },
+        "ratio_preset": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "observation_policy": {
+          "type": "object"
+        },
+        "reception_policy": {
+          "type": "object"
+        },
+        "forbidden": {
+          "$ref": "#/$defs/StringList"
+        }
+      }
+    },
+    "ToneFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tone_family_id",
+        "description",
+        "allowed_surface_features",
+        "forbidden_surface_features"
+      ],
+      "properties": {
+        "tone_family_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_surface_features": {
+          "$ref": "#/$defs/StringList"
+        },
+        "forbidden_surface_features": {
+          "$ref": "#/$defs/StringList"
+        }
+      }
+    },
+    "FollowShapeFamily": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shape_family_id",
+        "mode_ids",
+        "allowed_intents",
+        "forbidden_intents",
+        "template_text_forbidden"
+      ],
+      "properties": {
+        "shape_family_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "mode_ids": {
+          "$ref": "#/$defs/StringList"
+        },
+        "allowed_intents": {
+          "$ref": "#/$defs/StringList"
+        },
+        "forbidden_intents": {
+          "$ref": "#/$defs/StringList"
+        },
+        "template_text_forbidden": {
+          "const": true
+        }
+      }
+    },
+    "ContractBoundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_response_key_added",
+        "comment_text_generated_by_dictionary",
+        "raw_input_included",
+        "raw_text_included",
+        "general_knowledge_primary",
+        "completed_reply_generated",
+        "observation_status_enum_extended",
+        "api_route_changed",
+        "db_physical_name_changed",
+        "rn_visible_contract_changed"
+      ],
+      "properties": {
+        "public_response_key_added": {
+          "const": false
+        },
+        "comment_text_generated_by_dictionary": {
+          "const": false
+        },
+        "raw_input_included": {
+          "const": false
+        },
+        "raw_text_included": {
+          "const": false
+        },
+        "general_knowledge_primary": {
+          "const": false
+        },
+        "completed_reply_generated": {
+          "const": false
+        },
+        "observation_status_enum_extended": {
+          "const": false
+        },
+        "api_route_changed": {
+          "const": false
+        },
+        "db_physical_name_changed": {
+          "const": false
+        },
+        "rn_visible_contract_changed": {
+          "const": false
+        }
+      }
+    }
+  }
+}

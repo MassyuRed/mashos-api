@@ -357,6 +357,56 @@ def _coerce_plan_line(value: CompleteSentencePlanLine | Mapping[str, Any]) -> Co
     return None
 
 
+def _two_stage_section_meta_summary(
+    *,
+    lines: Iterable[CompleteSentencePlanLine],
+    plan_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize Phase16 two-stage section line meta without body text."""
+
+    meta = _json_safe_mapping(plan_meta)
+    section_ids: list[str] = []
+    expected_shape = _clean_token(meta.get("two_stage_expected_comment_text_shape") or meta.get("two_stage_section_surface_plan_expected_comment_text_shape"))
+    schema_version = _clean_token(meta.get("two_stage_section_surface_plan_schema_version"))
+    material_id = _clean_token(meta.get("two_stage_section_surface_plan_material_id"))
+    labels_required = bool(meta.get("two_stage_section_labels_required"))
+    for line in lines:
+        line_meta = _json_safe_mapping(line.meta)
+        section_id = _clean_token(line_meta.get("two_stage_section_id"))
+        if not section_id:
+            continue
+        section_ids.append(section_id)
+        expected_shape = expected_shape or _clean_token(line_meta.get("two_stage_expected_comment_text_shape"))
+        schema_version = schema_version or _clean_token(line_meta.get("two_stage_section_surface_plan_schema_version"))
+        material_id = material_id or _clean_token(line_meta.get("two_stage_section_surface_plan_material_id"))
+        labels_required = labels_required or bool(line_meta.get("two_stage_section_label_required"))
+    if not section_ids and not bool(meta.get("two_stage_section_meta_propagated")):
+        return {}
+    line_counts = {
+        "observation": section_ids.count("observation"),
+        "reception": section_ids.count("reception"),
+    }
+    order = meta.get("two_stage_section_order") or ["observation", "reception"]
+    return {
+        "two_stage_section_surface_plan_connected": bool(meta.get("two_stage_section_surface_plan_connected") or section_ids),
+        "two_stage_section_meta_propagated": bool(section_ids),
+        "two_stage_section_surface_plan_required": bool(meta.get("two_stage_section_surface_plan_required", True)),
+        "two_stage_section_surface_plan_material_id": material_id,
+        "two_stage_section_surface_plan_schema_version": schema_version,
+        "two_stage_expected_comment_text_shape": expected_shape,
+        "two_stage_section_surface_plan_expected_comment_text_shape": expected_shape,
+        "two_stage_section_labels_required": labels_required,
+        "two_stage_section_order": list(order) if isinstance(order, (list, tuple)) else ["observation", "reception"],
+        "two_stage_section_ids": list(meta.get("two_stage_section_ids") or ["observation", "reception"]),
+        "two_stage_section_line_counts": line_counts,
+        "two_stage_observation_section_present": line_counts.get("observation", 0) > 0,
+        "two_stage_reception_section_present": line_counts.get("reception", 0) > 0,
+        "two_stage_section_meta_raw_input_included": False,
+        "two_stage_comment_text_generated": False,
+        "two_stage_completed_reply_template_used": False,
+    }
+
+
 @dataclass(frozen=True)
 class CompleteSentencePlanV2:
     """Binding-first sentence plan for Complete Composer initial version."""
@@ -423,6 +473,10 @@ class CompleteSentencePlanV2:
 
     def as_sentence_binding_bundle_meta(self) -> dict[str, Any]:
         rows = [line.as_binding_row() for line in self.usable_sentence_plans]
+        two_stage_summary = _two_stage_section_meta_summary(
+            lines=self.usable_sentence_plans,
+            plan_meta=self.meta,
+        )
         return {
             "version": COMPLETE_SENTENCE_BINDING_BUNDLE_SCHEMA_VERSION,
             "bundle_version": COMPLETE_SENTENCE_BINDING_BUNDLE_SCHEMA_VERSION,
@@ -449,6 +503,7 @@ class CompleteSentencePlanV2:
             "bindings": rows,
             "sentence_bindings": rows,
             "items": rows,
+            **two_stage_summary,
             "response_shape_changed": False,
             "raw_text_included": False,
             "raw_input_included": False,
@@ -456,6 +511,10 @@ class CompleteSentencePlanV2:
         }
 
     def as_meta(self) -> dict[str, Any]:
+        two_stage_summary = _two_stage_section_meta_summary(
+            lines=self.sentence_plans,
+            plan_meta=self.meta,
+        )
         return {
             "version": self.schema_version,
             "schema_version": self.schema_version,
@@ -472,6 +531,7 @@ class CompleteSentencePlanV2:
             "sentence_binding_bundle": self.as_sentence_binding_bundle_meta(),
             "usable": self.usable,
             "validation_errors": list(self.validation_errors),
+            **two_stage_summary,
             "api_response_shape_changed": False,
             "response_shape_changed": False,
             "raw_input_included": False,

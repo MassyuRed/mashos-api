@@ -77,6 +77,17 @@ REPAIR_REASON_TOO_LONG = "too_long"
 REPAIR_REASON_OVERCLAIM = "overclaim"
 REPAIR_REASON_UNSUPPORTED_OVERCLAIM = "unsupported_overclaim"
 REPAIR_REASON_MALFORMED_NOMINALIZATION = "malformed_nominalization"
+REPAIR_REASON_TWO_STAGE_LABEL_MISSING = "two_stage_complete_surface_realizer_label_missing"
+REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY = "two_stage_complete_surface_realizer_section_empty"
+
+PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SCHEMA_VERSION = "cocolon.emlis_two_stage.self_repair_unavailable_reason.v1"
+PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SOURCE_PHASE = "Phase17_7_self_repair_unavailable_reason"
+REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING = "phase17_surface_mode_policy_missing"
+REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK = "phase17_internal_role_label_leak"
+REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK = "phase17_relation_skeleton_leak"
+REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH = "phase17_section_budget_mismatch"
+REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING = "phase17_grounding_relation_binding_missing"
+REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED = "phase17_product_visible_fixture_not_reached"
 
 ALLOWED_REPAIR_REASONS = {
     REPAIR_REASON_UNSUPPORTED_SENTENCE,
@@ -88,6 +99,13 @@ ALLOWED_REPAIR_REASONS = {
     REPAIR_REASON_OVERCLAIM,
     REPAIR_REASON_UNSUPPORTED_OVERCLAIM,
     REPAIR_REASON_MALFORMED_NOMINALIZATION,
+    REPAIR_REASON_TWO_STAGE_LABEL_MISSING,
+    REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY,
+    REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING,
+    REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+    REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING,
 }
 
 REJECT_PREFERRED_REASONS = {REPAIR_REASON_OVERCLAIM, REPAIR_REASON_UNSUPPORTED_OVERCLAIM}
@@ -133,6 +151,26 @@ RELATION_ROLE_PHRASES = {
 }
 
 ROLE_KEY_REPAIR_PHRASES = {
+    # Phase17-7: product-visible repair vocabulary for internal role leaks.
+    # These are fragments, not completed reply templates.
+    "achievement": "気持ちが動いた変化",
+    "positive_change": "気持ちが動いた変化",
+    "positive_state": "少し整えようとする動き",
+    "perfection_fear": "完璧に元気でいようとする怖さ",
+    "pressure_or_limit": "圧力や限界に近い材料",
+    "self_confidence_uncertainty": "自信をつけたい気持ちと不安",
+    "self_denial": "自分を否定する言葉",
+    "attempt_to_change": "直したい気持ち",
+    "challenge_attempt": "試している動き",
+    "conversation_wish": "誰かと話したい気持ち",
+    "work_fatigue": "仕事後の疲れ",
+    "self_blame_flow": "自分を責める流れ",
+    "gentle_self_observation": "自分の気持ちを少し優しく見ようとする方向",
+    "independence_intention": "自立したい気持ち",
+    "life_context": "生活のこと",
+    "health_pace": "体調を見ながら続けるペース",
+    "money_context": "お金のこと",
+    "sustainable_pace": "長く続けられるペース",
     "approach_wish": "近づきたい気持ち",
     "burden_fear": "負担になる怖さ",
     "avoidance_wish": "避けたい気持ち",
@@ -150,6 +188,18 @@ ROLE_KEY_REPAIR_PHRASES = {
     "primary_phrase": "中心にある材料",
 }
 
+PHASE17_SAFE_RELATION_ROLE_PHRASES = {
+    "contrast": "向きの違い",
+    "coexistence": "気持ちや条件の重なり",
+    "pressure": "前に出ている圧力",
+    "approach_avoidance": "近づく動きと止まる動き",
+    "recovery": "戻ろうとする動き",
+    "residue": "あとに残る余韻",
+    "limit": "限界に近い圧力",
+    "context": "根拠のある背景",
+    "center": "中心にある材料",
+}
+
 ECHO_REPAIR_SUFFIXES = (
     "根拠のある範囲で置き直しました。",
     "文の中では短く残します。",
@@ -165,6 +215,54 @@ RELATION_CONNECTOR_KEYS = {
     "recovery": "repair_relation_recovery",
     "residue": "repair_relation_residue",
 }
+
+PHASE17_REPAIRABLE_REASON_ALIASES = {
+    "same_predicate_family_stack": REPAIR_REASON_TEMPLATE_LIKE,
+    "same_predicate_family": REPAIR_REASON_TEMPLATE_LIKE,
+    "predicate_family_stack": REPAIR_REASON_TEMPLATE_LIKE,
+    "ending_family_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+    "tone_guard_ending_family_repetition": REPAIR_REASON_TEMPLATE_LIKE,
+    "two_stage_internal_role_label_leak": REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    "two_stage_complete_surface_internal_label_leak": REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    "internal_role_label_leak": REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    "two_stage_relation_skeleton_leak": REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    "two_stage_relation_skeleton_leak_surface": REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    "relation_skeleton_leak": REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    "two_stage_section_budget_mismatch": REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+    "section_budget_mismatch": REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+    "complete_initial_surface_unavailable": REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING,
+    "complete_surface_mode_policy_missing": REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING,
+    "complete_initial_grounding_failed": REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING,
+    "grounding_relation_binding_missing": REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING,
+    "product_visible_fixture_not_reached": REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED,
+}
+
+PHASE17_SURFACE_REWRITE_REPAIR_REASONS = {
+    REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING,
+}
+
+PHASE17_DIAGNOSTIC_ONLY_REASONS = {
+    REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED,
+}
+
+PHASE17_PRODUCT_VISIBLE_REASON_CODES = (
+    REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING,
+    REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK,
+    REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK,
+    REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+    REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING,
+    REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED,
+)
+
+PHASE17_INTERNAL_ROLE_LABEL_RE = re.compile(
+    r"\b(?:achievement|positive[ _]state|perfection[ _]fear|pressure[ _]or[ _]limit|role_[0-9a-zA-Z_\-]+)\b",
+    re.IGNORECASE,
+)
+PHASE17_RELATION_SKELETON_RE = re.compile(
+    r"同じ流れ|同じ場所|片方だけに寄らず|別々の向き|重なりを保っています|一方向には決まりきっていません"
+)
 
 FORBIDDEN_REPAIR_OPERATIONS = {
     "add_rootless_material",
@@ -229,6 +327,54 @@ REPAIR_POLICY_TABLE: dict[str, dict[str, Any]] = {
         "allowed_repair": ("reject", "remove_optional_overclaim_sentence"),
         "forbidden": ("weaken_overclaim_only",),
         "trace_required_fields": ("removed_overclaim_sentence_ids", "abort_reason"),
+    },
+    REPAIR_REASON_TWO_STAGE_LABEL_MISSING: {
+        "source_gate": "display",
+        "allowed_repair": ("reapply_two_stage_section_labels", "rebuild_two_stage_section_boundary"),
+        "forbidden": ("swap_to_fixed_completed_sentence", "add_rootless_material"),
+        "trace_required_fields": ("section_ids_present", "comment_text_body_included", "display_gate_relaxed"),
+    },
+    REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY: {
+        "source_gate": "display",
+        "allowed_repair": ("rebuild_two_stage_section_boundary",),
+        "forbidden": ("swap_to_fixed_completed_sentence", "add_rootless_material"),
+        "trace_required_fields": ("section_ids_present", "comment_text_body_included", "display_gate_relaxed"),
+    },
+    REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING: {
+        "source_gate": "surface",
+        "allowed_repair": ("rerender_surface_from_existing_role_phrases",),
+        "forbidden": ("swap_to_fixed_completed_sentence", "add_rootless_material"),
+        "trace_required_fields": ("surface_signature_before", "surface_signature_after", "phase17_reason_code"),
+    },
+    REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK: {
+        "source_gate": "display",
+        "allowed_repair": ("rerender_surface_from_existing_role_phrases",),
+        "forbidden": ("swap_to_fixed_completed_sentence", "add_rootless_material"),
+        "trace_required_fields": ("surface_signature_before", "surface_signature_after", "phase17_reason_code"),
+    },
+    REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK: {
+        "source_gate": "display",
+        "allowed_repair": ("rerender_surface_from_existing_role_phrases",),
+        "forbidden": ("invent_relation", "swap_to_fixed_completed_sentence"),
+        "trace_required_fields": ("relation_type", "relation_ids_unchanged", "phase17_reason_code"),
+    },
+    REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH: {
+        "source_gate": "display",
+        "allowed_repair": ("normalize_two_stage_section_budget",),
+        "forbidden": ("delete_must_include", "swap_to_fixed_completed_sentence"),
+        "trace_required_fields": ("section_ids_present", "phase17_reason_code"),
+    },
+    REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING: {
+        "source_gate": "grounding",
+        "allowed_repair": ("make_declared_relation_surface_explicit", "rebind_to_existing_evidence"),
+        "forbidden": ("invent_relation", "add_rootless_material"),
+        "trace_required_fields": ("relation_type", "relation_ids_unchanged", "phase17_reason_code"),
+    },
+    REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED: {
+        "source_gate": "diagnostic",
+        "allowed_repair": ("classify_unavailable_reason",),
+        "forbidden": ("swap_to_fixed_completed_sentence", "relax_gate"),
+        "trace_required_fields": ("phase17_reason_code",),
     },
 }
 
@@ -378,6 +524,166 @@ def _source_plan_for(realization: CompleteSurfaceRealizationV2) -> CompleteSente
 
 def _line_plan_map(plan: CompleteSentencePlanV2) -> dict[str, CompleteSentencePlanLine]:
     return {line.sentence_id: line for line in plan.sentence_plans}
+
+
+def _line_two_stage_section_id(line: CompleteSurfaceLineV2) -> str:
+    for source in (line.meta, line.surface_signature, line.source_sentence_plan_line):
+        if isinstance(source, Mapping):
+            section_id = _clean(source.get("two_stage_section_id") or _json_safe_mapping(source.get("meta") or {}).get("two_stage_section_id"))
+            if section_id:
+                return section_id
+    return ""
+
+
+def _repair_two_stage_section_boundary(
+    realization: CompleteSurfaceRealizationV2,
+    original_plan: CompleteSentencePlanV2,
+    *,
+    attempt: int,
+    reason: str,
+) -> tuple[CompleteSurfaceRealizationV2 | None, str, bool, bool]:
+    """Rebuild labels/boundaries from existing section meta only.
+
+    Phase16-7 allows relabeling or reordering section boundaries, but not
+    Python-fixed body text and not empty sections merely to satisfy the Gate.
+    """
+
+    lines = tuple(realization.surface_lines)
+    observation_lines = tuple(line for line in lines if _line_two_stage_section_id(line) == "observation")
+    reception_lines = tuple(line for line in lines if _line_two_stage_section_id(line) == "reception")
+    if not observation_lines and not reception_lines:
+        return None, "two_stage_section_meta_missing_fail_closed", False, False
+    if not observation_lines or not reception_lines:
+        return None, "two_stage_section_missing_fail_closed", False, False
+
+    remaining_lines = tuple(
+        line for line in lines if _line_two_stage_section_id(line) not in {"observation", "reception"}
+    )
+    ordered_lines = (*observation_lines, *reception_lines, *remaining_lines)
+    operation = (
+        "rebuild_two_stage_section_boundary"
+        if reason == REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY
+        else "reapply_two_stage_section_labels"
+    )
+    repaired = _rebuild_realization(
+        realization,
+        original_plan,
+        ordered_lines,
+        attempt=attempt,
+        operation=operation,
+    )
+    repaired.meta.update({
+        "two_stage_self_repair_applied": True,
+        "two_stage_self_repair_reason": reason,
+        "two_stage_self_repair_operation": operation,
+        "two_stage_section_ids_present": ["observation", "reception"],
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "display_gate_relaxed": False,
+        "fixed_sentence_template_added": False,
+        "fixed_sentence_template_used": False,
+    })
+    return repaired, operation, True, False
+
+
+def _phase17_section_budget_trim_blocked(line: CompleteSurfaceLineV2, plan_line: CompleteSentencePlanLine | None) -> bool:
+    """Return True only for explicitly protected excess section rows.
+
+    Section-budget repair may drop an excess section row without adding body
+    text, but it must fail closed when a line is explicitly marked as protected
+    for this Phase17 boundary.  General role coverage remains enforced by the
+    grounding gate after repair.
+    """
+
+    meta = _json_safe_mapping(getattr(line, "meta", None))
+    source = line.source_sentence_plan_line if isinstance(line.source_sentence_plan_line, Mapping) else {}
+    if meta.get("phase17_7_section_budget_must_keep") is True:
+        return True
+    if meta.get("two_stage_section_budget_must_keep") is True:
+        return True
+    if source.get("phase17_7_section_budget_must_keep") is True:
+        return True
+    if plan_line is not None and isinstance(plan_line.meta, Mapping) and plan_line.meta.get("phase17_7_section_budget_must_keep") is True:
+        return True
+    return False
+
+
+def _repair_phase17_section_budget_mismatch(
+    realization: CompleteSurfaceRealizationV2,
+    original_plan: CompleteSentencePlanV2,
+    *,
+    attempt: int,
+) -> tuple[CompleteSurfaceRealizationV2 | None, str, bool, bool]:
+    """Normalize two-stage section counts without adding body text.
+
+    Phase17-7 may trim only optional excess rows.  If a must-include row would
+    need to be deleted to satisfy the display budget, the repair fails closed.
+    """
+
+    lines = tuple(realization.surface_lines)
+    plan_map = _line_plan_map(original_plan)
+    observation_lines = tuple(line for line in lines if _line_two_stage_section_id(line) == "observation")
+    reception_lines = tuple(line for line in lines if _line_two_stage_section_id(line) == "reception")
+    other_lines = tuple(line for line in lines if _line_two_stage_section_id(line) not in {"observation", "reception"})
+
+    if not observation_lines or not reception_lines:
+        return None, "phase17_section_budget_section_missing_fail_closed", False, False
+
+    kept_observation: list[CompleteSurfaceLineV2] = []
+    kept_reception: list[CompleteSurfaceLineV2] = []
+    removed: list[str] = []
+    blocked_must_keep: list[str] = []
+
+    for line in observation_lines:
+        if len(kept_observation) < 1:
+            kept_observation.append(line)
+            continue
+        if _phase17_section_budget_trim_blocked(line, plan_map.get(line.sentence_id)):
+            blocked_must_keep.append(line.sentence_id)
+        else:
+            removed.append(line.sentence_id)
+
+    for line in reception_lines:
+        if len(kept_reception) < 2:
+            kept_reception.append(line)
+            continue
+        if _phase17_section_budget_trim_blocked(line, plan_map.get(line.sentence_id)):
+            blocked_must_keep.append(line.sentence_id)
+        else:
+            removed.append(line.sentence_id)
+
+    if blocked_must_keep:
+        return None, "phase17_section_budget_must_include_trim_blocked", False, False
+    if not removed:
+        return None, "phase17_section_budget_already_normalized", False, False
+
+    kept_sentence_ids = {line.sentence_id for line in (*kept_observation, *kept_reception, *other_lines)}
+    normalized_lines = tuple(line for line in (*kept_observation, *kept_reception, *other_lines) if line.sentence_id in kept_sentence_ids)
+    if len(normalized_lines) < 2:
+        return None, "phase17_section_budget_minimum_lines_fail_closed", False, False
+
+    repaired = _rebuild_realization(
+        realization,
+        original_plan,
+        normalized_lines,
+        attempt=attempt,
+        operation="normalize_two_stage_section_budget",
+    )
+    repaired.meta.update({
+        "phase17_7_self_repair_applied": True,
+        "phase17_7_self_repair_reason": REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+        "phase17_7_self_repair_operation": "normalize_two_stage_section_budget",
+        "phase17_reason_code": REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH,
+        "phase17_removed_excess_section_sentence_ids": list(removed),
+        "phase17_observation_line_count_after": len(kept_observation),
+        "phase17_reception_line_count_after": len(kept_reception),
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "fixed_sentence_template_used": False,
+    })
+    return repaired, "normalize_two_stage_section_budget", True, False
 
 
 def _is_must_include(plan_line: CompleteSentencePlanLine | None, surface_line: CompleteSurfaceLineV2 | None = None) -> bool:
@@ -571,6 +877,13 @@ def _allowed_rebind_ids(*sources: Any) -> Tuple[str, ...]:
 def _normalize_reason(value: Any) -> str:
     reason = _clean_token(value)
     aliases = {
+        "two_stage_label_missing": REPAIR_REASON_TWO_STAGE_LABEL_MISSING,
+        "two_stage_labels_missing_or_duplicated": REPAIR_REASON_TWO_STAGE_LABEL_MISSING,
+        "two_stage_required_but_unrealized": REPAIR_REASON_TWO_STAGE_LABEL_MISSING,
+        "two_stage_complete_surface_realizer_label_missing": REPAIR_REASON_TWO_STAGE_LABEL_MISSING,
+        "two_stage_observation_section_empty": REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY,
+        "two_stage_reception_section_empty": REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY,
+        "two_stage_complete_surface_realizer_section_empty": REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY,
         "complete_relation_not_expressed": REPAIR_REASON_RELATION_NOT_EXPRESSED,
         "complete_over_echo": REPAIR_REASON_OVER_ECHO,
         "over_echo": REPAIR_REASON_OVER_ECHO,
@@ -623,8 +936,21 @@ def _normalize_reason(value: Any) -> str:
         "malformed_nominalization_missing_ru": REPAIR_REASON_MALFORMED_NOMINALIZATION,
         "malformed_nominalization_particle_before_koto": REPAIR_REASON_MALFORMED_NOMINALIZATION,
         "malformed_nominalization_auxiliary_fragment": REPAIR_REASON_MALFORMED_NOMINALIZATION,
+        **PHASE17_REPAIRABLE_REASON_ALIASES,
     }
     return aliases.get(reason, reason)
+
+
+def normalize_complete_self_repair_reason(value: Any) -> str:
+    """Return the bounded Complete self-repair reason used for handoff.
+
+    Phase17-7 keeps product-visible unavailable diagnostics internal, but the
+    handoff itself must still be normalized before filtering against
+    ``ALLOWED_REPAIR_REASONS``.  The helper is intentionally meta-only and does
+    not inspect or carry generated body text.
+    """
+
+    return _normalize_reason(value)
 
 
 def _reasons_from_gate_input(gate_reasons: Any = None, grounding_report: Any = None, gate_results: Any = None, meta: Mapping[str, Any] | None = None) -> Tuple[str, ...]:
@@ -667,6 +993,147 @@ def _reasons_from_gate_input(gate_reasons: Any = None, grounding_report: Any = N
     return tuple(reason for reason in _dedupe(reasons) if reason)
 
 
+
+_PHASE17_REASON_SOURCE_KEYS = (
+    "rejection_reasons",
+    "validation_errors",
+    "unavailable_reason_codes",
+    "two_stage_unavailable_reason_codes",
+    "phase16_7_unavailable_reason_codes",
+    "phase17_reason_codes",
+    "repair_targets",
+    "gate_reasons",
+    "self_repair_handoff_reasons",
+    "observed_repair_reasons",
+    "surface_aware_repair_reasons",
+    "blocked_reasons",
+    "binding_rejection_reasons",
+)
+
+
+def _collect_phase17_reason_values(value: Any, *, depth: int = 0) -> list[str]:
+    if value is None or depth > 4:
+        return []
+    reasons: list[str] = []
+    if isinstance(value, Mapping):
+        for key in _PHASE17_REASON_SOURCE_KEYS:
+            reasons.extend(_dedupe(value.get(key)))
+        for flag_key, reason in (
+            ("internal_role_label_leak_detected", REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK),
+            ("relation_skeleton_leak_detected", REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK),
+            ("two_stage_required_but_unrealized", REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING),
+            ("section_budget_valid", REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH),
+            ("grounding_passed", REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING),
+        ):
+            if flag_key not in value:
+                continue
+            flag_value = value.get(flag_key)
+            if flag_key.endswith("_valid") or flag_key.endswith("_passed"):
+                if flag_value is False:
+                    reasons.append(reason)
+            elif flag_value is True:
+                reasons.append(reason)
+        for key, item in value.items():
+            key_text = str(key or "")
+            if key_text in RAW_INPUT_META_KEYS or "text" in key_text or "body" in key_text or "surface_lines" == key_text:
+                continue
+            if isinstance(item, (Mapping, list, tuple)):
+                reasons.extend(_collect_phase17_reason_values(item, depth=depth + 1))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for item in value:
+            reasons.extend(_collect_phase17_reason_values(item, depth=depth + 1))
+    return list(_dedupe(reasons))
+
+
+def _phase17_product_visible_reason_codes(reasons: Iterable[Any]) -> Tuple[str, ...]:
+    codes: list[str] = []
+    normalized = [_normalize_reason(reason) for reason in _dedupe(reasons)]
+    for reason in normalized:
+        if reason in PHASE17_PRODUCT_VISIBLE_REASON_CODES:
+            codes.append(reason)
+        elif reason == REPAIR_REASON_TEMPLATE_LIKE:
+            codes.append(REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING)
+        elif reason == REPAIR_REASON_RELATION_NOT_EXPRESSED:
+            codes.append(REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING)
+    return _dedupe(codes)
+
+
+def build_phase17_self_repair_unavailable_reason_summary(
+    *,
+    primary_reason: Any = "",
+    candidate_status: Any = "",
+    surface_meta: Mapping[str, Any] | None = None,
+    grounding_meta: Mapping[str, Any] | None = None,
+    self_repair_meta: Mapping[str, Any] | None = None,
+    extra_meta: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return a meta-only Phase17-7 reason summary.
+
+    The summary is internal diagnostic material.  It classifies repairable
+    product-visible failures without carrying the generated body, raw input, or
+    public response changes.
+    """
+
+    raw_reasons: list[str] = []
+    if primary_reason:
+        raw_reasons.append(_clean(primary_reason))
+    for source in (surface_meta, grounding_meta, self_repair_meta, extra_meta):
+        raw_reasons.extend(_collect_phase17_reason_values(source))
+    normalized = tuple(_normalize_reason(reason) for reason in _dedupe(raw_reasons))
+    repair_handoff = tuple(reason for reason in normalized if reason in ALLOWED_REPAIR_REASONS)
+    phase17_codes_base = _phase17_product_visible_reason_codes(normalized)
+    status = _clean_token(candidate_status)
+    extra_map = _json_safe_mapping(extra_meta)
+    explicit_reached = bool(
+        extra_map.get("phase17_product_visible_fixture_reached") is True
+        or extra_map.get("product_visible_fixture_reached") is True
+        or _clean_token(extra_map.get("phase17_product_visible_fixture_reached")) in {"true", "yes", "1", "passed", "generated"}
+        or _clean_token(extra_map.get("product_visible_fixture_reached")) in {"true", "yes", "1", "passed", "generated"}
+    )
+    product_visible_reached = bool(explicit_reached or (status == "generated" and not phase17_codes_base))
+    diagnostic_only_codes: Tuple[str, ...] = tuple()
+    if not product_visible_reached:
+        diagnostic_only_codes = (REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED,)
+    phase17_codes = _dedupe([*phase17_codes_base, *diagnostic_only_codes])
+    repair_handoff = tuple(
+        reason
+        for reason in repair_handoff
+        if reason not in PHASE17_DIAGNOSTIC_ONLY_REASONS
+    )
+    return {
+        "schema_version": PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SCHEMA_VERSION,
+        "source_phase": PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SOURCE_PHASE,
+        "primary_reason": _clean(primary_reason),
+        "candidate_status": status,
+        "product_visible_fixture_reached": product_visible_reached,
+        "product_visible_fixture_not_reached": not product_visible_reached,
+        "phase17_reason_codes": list(phase17_codes),
+        "normalized_repair_reason_codes": list(normalized),
+        "self_repair_handoff_reason_codes": list(repair_handoff),
+        "self_repair_target_reason_codes": list(repair_handoff),
+        "repair_target_reason_codes": list(repair_handoff),
+        "repairable_reason_codes": list(repair_handoff),
+        "diagnostic_only_reason_codes": list(diagnostic_only_codes),
+        "release_blocker": bool(diagnostic_only_codes and not repair_handoff),
+        "surface_rerender_reason_codes": [reason for reason in repair_handoff if reason in PHASE17_SURFACE_REWRITE_REPAIR_REASONS or reason == REPAIR_REASON_TEMPLATE_LIKE],
+        "grounding_relation_binding_reason_codes": [reason for reason in repair_handoff if reason in {REPAIR_REASON_RELATION_NOT_EXPRESSED, REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING}],
+        "section_budget_reason_codes": [reason for reason in repair_handoff if reason in {REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH, REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY}],
+        "surface_mode_policy_missing": REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING in phase17_codes,
+        "internal_role_label_leak": REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK in phase17_codes,
+        "relation_skeleton_leak": REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK in phase17_codes,
+        "section_budget_mismatch": REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH in phase17_codes,
+        "grounding_relation_binding_missing": REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING in phase17_codes,
+        "product_visible_fixture_not_reached_reason_code": REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED in phase17_codes,
+        "reason_summary_only": True,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "fixed_sentence_template_used": False,
+        "public_response_key_added": False,
+    }
+
+
 def _operation_for(reason: str) -> str:
     return {
         REPAIR_REASON_UNSUPPORTED_SENTENCE: "remove_optional_or_rebind_evidence",
@@ -678,6 +1145,14 @@ def _operation_for(reason: str) -> str:
         REPAIR_REASON_OVERCLAIM: "reject_or_remove_overclaim_optional_line",
         REPAIR_REASON_UNSUPPORTED_OVERCLAIM: "reject_or_remove_overclaim_optional_line",
         REPAIR_REASON_MALFORMED_NOMINALIZATION: "remove_optional_malformed_sentence_or_fail_closed",
+        REPAIR_REASON_TWO_STAGE_LABEL_MISSING: "reapply_two_stage_section_labels",
+        REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY: "rebuild_two_stage_section_boundary",
+        REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING: "rerender_surface_from_existing_role_phrases",
+        REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK: "rerender_surface_from_existing_role_phrases",
+        REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK: "rerender_surface_from_existing_role_phrases",
+        REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH: "normalize_two_stage_section_budget",
+        REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING: "make_declared_relation_surface_explicit",
+        REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED: "classify_unavailable_reason",
     }.get(reason, "aborted_unknown_repair_reason")
 
 
@@ -787,6 +1262,62 @@ def build_complete_self_repair_policy_table_v2() -> dict[str, dict[str, Any]]:
             "meaning_added": False,
             "reject_preferred": True,
         },
+        REPAIR_REASON_TWO_STAGE_LABEL_MISSING: {
+            "source_gate": "display",
+            "allowed_operations": ["reapply_two_stage_section_labels", "rebuild_two_stage_section_boundary"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence", "add_rootless_material"],
+            "required_trace_fields": ["section_ids_present", "comment_text_body_included", "display_gate_relaxed"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY: {
+            "source_gate": "display",
+            "allowed_operations": ["rebuild_two_stage_section_boundary"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence", "add_rootless_material"],
+            "required_trace_fields": ["section_ids_present", "comment_text_body_included", "display_gate_relaxed"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING: {
+            "source_gate": "surface",
+            "allowed_operations": ["rerender_surface_from_existing_role_phrases"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence", "add_rootless_material"],
+            "required_trace_fields": ["surface_signature_before", "surface_signature_after", "phase17_reason_code"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK: {
+            "source_gate": "display",
+            "allowed_operations": ["rerender_surface_from_existing_role_phrases"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence", "add_rootless_material"],
+            "required_trace_fields": ["surface_signature_before", "surface_signature_after", "phase17_reason_code"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK: {
+            "source_gate": "display",
+            "allowed_operations": ["rerender_surface_from_existing_role_phrases"],
+            "forbidden_operations": ["invent_relation", "swap_to_fixed_completed_sentence"],
+            "required_trace_fields": ["relation_type", "relation_ids_preserved", "phase17_reason_code"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH: {
+            "source_gate": "display",
+            "allowed_operations": ["normalize_two_stage_section_budget"],
+            "forbidden_operations": ["delete_must_include", "swap_to_fixed_completed_sentence"],
+            "required_trace_fields": ["section_ids_present", "phase17_reason_code"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING: {
+            "source_gate": "grounding",
+            "allowed_operations": ["make_declared_relation_surface_explicit", "rebind_to_existing_evidence"],
+            "forbidden_operations": ["invent_relation", "add_rootless_material"],
+            "required_trace_fields": ["relation_type", "relation_ids_preserved", "phase17_reason_code"],
+            "meaning_added": False,
+        },
+        REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED: {
+            "source_gate": "diagnostic",
+            "allowed_operations": ["classify_unavailable_reason"],
+            "forbidden_operations": ["swap_to_fixed_completed_sentence", "relax_gate"],
+            "required_trace_fields": ["phase17_reason_code"],
+            "meaning_added": False,
+        },
     }
 
 
@@ -817,6 +1348,15 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
         "surface_aware_self_repair_policy_version": COMPLETE_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION,
         "step10_surface_aware_self_repair_ready": True,
         "surface_aware_repair_reason_handoff_ready": True,
+        "phase17_7_self_repair_unavailable_reason_supported": True,
+        "phase17_7_self_repair_unavailable_reason_schema_version": PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SCHEMA_VERSION,
+        "phase17_7_self_repair_unavailable_reason_source_phase": PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SOURCE_PHASE,
+        "phase17_7_product_visible_reason_codes": list(PHASE17_PRODUCT_VISIBLE_REASON_CODES),
+        "phase17_7_repairable_reason_aliases": sorted(PHASE17_REPAIRABLE_REASON_ALIASES),
+        "phase17_7_diagnostic_only_reasons": list(PHASE17_DIAGNOSTIC_ONLY_REASONS),
+        "phase17_7_product_visible_fixture_not_reached_repair_handoff_allowed": False,
+        "phase17_7_repair_targets_fixed_text_allowed": False,
+        "phase17_7_gate_relaxation_allowed": False,
         "self_repair_enabled": True,
         "max_repair_attempts": MAX_SELF_REPAIR_ATTEMPTS,
         "gate_relaxation_allowed": False,
@@ -841,6 +1381,11 @@ def build_complete_self_repair_contract_meta() -> dict[str, Any]:
             REPAIR_REASON_TOO_LONG: ["remove_optional_line", "shorten_closing"],
             REPAIR_REASON_OVERCLAIM: ["reject", "remove_optional_overclaim_line"],
             REPAIR_REASON_UNSUPPORTED_OVERCLAIM: ["reject", "remove_optional_overclaim_line"],
+            REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING: ["rerender_surface_from_existing_role_phrases"],
+            REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK: ["rerender_surface_from_existing_role_phrases"],
+            REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK: ["rerender_surface_from_existing_role_phrases"],
+            REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH: ["normalize_two_stage_section_budget"],
+            REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING: ["make_declared_relation_surface_explicit", "rebind_to_existing_evidence"],
         },
         "forbidden_operations": sorted(FORBIDDEN_REPAIR_OPERATIONS),
         "repair_trace_required": True,
@@ -1124,7 +1669,7 @@ def _relation_type_for_trace(realization: CompleteSurfaceRealizationV2 | None) -
 def _source_gate_for_reason(reason: str) -> str:
     policy = build_complete_self_repair_policy_table_v2().get(reason) or {}
     source_gate = _clean(policy.get("source_gate"))
-    return source_gate if source_gate in {"reader", "grounding", "template", "overclaim", "display"} else "grounding"
+    return source_gate if source_gate in {"reader", "grounding", "template", "overclaim", "display", "surface", "diagnostic"} else "grounding"
 
 
 def _repair_trace_v2_meta(
@@ -1198,6 +1743,9 @@ def _repair_trace_v2_meta(
         "release_blocker": bool(abort_reason and reason in REJECT_PREFERRED_REASONS),
         "operation": operation,
         "abort_reason": abort_reason,
+        "phase17_reason_code": reason if reason in PHASE17_PRODUCT_VISIBLE_REASON_CODES else "",
+        "phase17_7_self_repair_reason_summary_supported": True,
+        "comment_text_body_included": False,
         "raw_input_included": False,
     }
 
@@ -1361,12 +1909,99 @@ def _role_phrase_for_line(line: CompleteSurfaceLineV2) -> str:
         parts = [ROLE_KEY_REPAIR_PHRASES.get(_clean_token(key), "") for key in line.role_phrase_keys]
         parts = [part for part in parts if part]
         if parts:
-            return "と".join(parts)
+            phrase = "と".join(parts)
+            if not PHASE17_INTERNAL_ROLE_LABEL_RE.search(phrase) and not PHASE17_RELATION_SKELETON_RE.search(phrase):
+                return phrase
     for key in role_keys:
         key_text = _clean_token(key)
         if key_text and key_text not in {"unknown", "none"}:
-            return ROLE_KEY_REPAIR_PHRASES.get(key_text) or key_text.replace("_", " ")
-    return RELATION_ROLE_PHRASES.get(relation) or "根拠のある材料"
+            phrase = ROLE_KEY_REPAIR_PHRASES.get(key_text)
+            if phrase and not PHASE17_INTERNAL_ROLE_LABEL_RE.search(phrase) and not PHASE17_RELATION_SKELETON_RE.search(phrase):
+                return phrase
+    relation_phrase = PHASE17_SAFE_RELATION_ROLE_PHRASES.get(relation) or RELATION_ROLE_PHRASES.get(relation) or "根拠のある材料"
+    if PHASE17_RELATION_SKELETON_RE.search(relation_phrase):
+        return "根拠のある関係"
+    return relation_phrase
+
+
+def _phase17_safe_rerender_text(line: CompleteSurfaceLineV2, *, reason: str) -> str:
+    role_phrase = _role_phrase_for_line(line)
+    if PHASE17_INTERNAL_ROLE_LABEL_RE.search(role_phrase) or PHASE17_RELATION_SKELETON_RE.search(role_phrase):
+        role_phrase = "根拠のある材料"
+    relation = _clean_token(line.relation_type)
+    if reason == REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK or line.line_role == "relation":
+        relation_phrase = PHASE17_SAFE_RELATION_ROLE_PHRASES.get(relation) or RELATION_ROLE_PHRASES.get(relation) or "根拠のある関係"
+        if PHASE17_RELATION_SKELETON_RE.search(relation_phrase) or PHASE17_INTERNAL_ROLE_LABEL_RE.search(relation_phrase):
+            relation_phrase = "根拠のある関係"
+        return f"{relation_phrase}を、根拠のある範囲で言い換えています。"
+    return f"{role_phrase}を、根拠のある範囲で言い換えています。"
+
+
+def _phase17_surface_line_needs_rerender(line: CompleteSurfaceLineV2, *, reason: str) -> bool:
+    text = _clean(line.surface_text)
+    if reason == REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING:
+        return True
+    if reason == REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK:
+        joined_roles = " ".join([line.role_phrase_key, *tuple(line.role_phrase_keys or ())])
+        return bool(PHASE17_INTERNAL_ROLE_LABEL_RE.search(text) or PHASE17_INTERNAL_ROLE_LABEL_RE.search(joined_roles))
+    if reason == REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK:
+        return bool(PHASE17_RELATION_SKELETON_RE.search(text))
+    return False
+
+
+def _rerender_phase17_surface_from_existing_role_phrases(
+    realization: CompleteSurfaceRealizationV2,
+    plan: CompleteSentencePlanV2,
+    *,
+    reason: str,
+    attempt: int,
+) -> tuple[CompleteSurfaceRealizationV2 | None, str, bool]:
+    rebuilt: list[CompleteSurfaceLineV2] = []
+    changed = False
+    for index, line in enumerate(realization.surface_lines, start=1):
+        if _phase17_surface_line_needs_rerender(line, reason=reason):
+            rebuilt.append(
+                _clone_line(
+                    line,
+                    surface_text=_phase17_safe_rerender_text(line, reason=reason),
+                    connector_key=f"phase17_7_repair_connector_{attempt}_{index}",
+                    ending_key=f"phase17_7_repair_tail_{attempt}_{index}",
+                    variation_key=f"phase17_7_repair_v{attempt}_{index}",
+                    operation="rerender_surface_from_existing_role_phrases",
+                    attempt=attempt,
+                    meta_updates={
+                        "phase17_7_self_repair_applied": True,
+                        "phase17_7_self_repair_reason": reason,
+                        "phase17_7_self_repair_operation": "rerender_surface_from_existing_role_phrases",
+                        "phase17_reason_code": reason,
+                        "fixed_sentence_template_used": False,
+                        "comment_text_body_included": False,
+                        "raw_input_included": False,
+                        "display_gate_relaxed": False,
+                        "grounding_gate_relaxed": False,
+                    },
+                    signature_updates={
+                        "phase17_7_self_repair_reason": reason,
+                        "phase17_7_self_repair_operation": "rerender_surface_from_existing_role_phrases",
+                    },
+                )
+            )
+            changed = True
+        else:
+            rebuilt.append(line)
+    if not changed:
+        return None, "phase17_surface_rerender_target_unavailable", False
+    return (
+        _rebuild_realization(
+            realization,
+            plan,
+            rebuilt,
+            attempt=attempt,
+            operation="rerender_surface_from_existing_role_phrases",
+        ),
+        "rerender_surface_from_existing_role_phrases",
+        True,
+    )
 
 
 def _reduce_echo(
@@ -1511,6 +2146,26 @@ def _apply_one_repair(
     if reason in REJECT_PREFERRED_REASONS:
         repaired, op, changed = _remove_optional_overclaim_line(realization, plan, attempt=attempt)
         return repaired, op, changed, not changed
+    if reason in {REPAIR_REASON_TWO_STAGE_LABEL_MISSING, REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY}:
+        return _repair_two_stage_section_boundary(realization, plan, attempt=attempt, reason=reason)
+    if reason in PHASE17_SURFACE_REWRITE_REPAIR_REASONS:
+        repaired, op, changed = _rerender_phase17_surface_from_existing_role_phrases(
+            realization,
+            plan,
+            reason=reason,
+            attempt=attempt,
+        )
+        return repaired, op, changed, False
+    if reason == REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH:
+        return _repair_phase17_section_budget_mismatch(realization, plan, attempt=attempt)
+    if reason == REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING:
+        repaired, op, changed = _make_relation_explicit(realization, plan, attempt=attempt)
+        if changed:
+            return repaired, op, changed, False
+        repaired, op, changed = _rebind_missing_evidence(realization, plan, rebind_ids=rebind_ids, attempt=attempt)
+        return repaired, op, changed, False
+    if reason == REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED:
+        return None, "phase17_product_visible_fixture_not_reached_classified", False, False
     return None, "unsupported_repair_reason", False, False
 
 
@@ -1645,6 +2300,17 @@ class CompleteSelfRepairResult:
         term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
         repaired_meta = self.repaired_surface_realization.as_meta(include_realized_text=include_realized_text)
         surface_signature = build_complete_surface_signature(self.repaired_surface_realization)
+        phase17_reason_summary = build_phase17_self_repair_unavailable_reason_summary(
+            primary_reason=(self.gate_reasons[0] if self.gate_reasons else ""),
+            candidate_status=("generated" if self.ready and not self.aborted else self.status),
+            surface_meta=repaired_meta,
+            self_repair_meta={
+                "gate_reasons": list(self.gate_reasons),
+                "rejection_reasons": list(self.rejection_reasons),
+                "repair_trace": [trace.as_meta() for trace in self.repair_trace],
+            },
+            extra_meta=self.meta,
+        )
         return {
             "version": self.schema_version,
             "schema_version": self.schema_version,
@@ -1655,6 +2321,16 @@ class CompleteSelfRepairResult:
             "surface_aware_repair_reasons": list(self.meta.get("surface_aware_repair_reasons") or self.meta.get("gate_reasons_for_self_repair") or []),
             "surface_aware_repair_attempted": bool(self.meta.get("surface_aware_repair_reasons") or self.meta.get("gate_reasons_for_self_repair")) or any(t.reason_code in {REPAIR_REASON_TEMPLATE_LIKE, REPAIR_REASON_RAW_ECHO, REPAIR_REASON_MALFORMED_NOMINALIZATION} for t in self.repair_trace),
             "surface_aware_repair_fail_closed": self.aborted,
+            "phase17_7_self_repair_unavailable_reason": phase17_reason_summary,
+            "phase17_7_self_repair_reason_codes": phase17_reason_summary["phase17_reason_codes"],
+            "phase17_7_self_repair_handoff_reason_codes": phase17_reason_summary["self_repair_handoff_reason_codes"],
+            "phase17_diagnostic_only_reason_codes": phase17_reason_summary.get("diagnostic_only_reason_codes", []),
+            "phase17_7_diagnostic_only_reason_codes": phase17_reason_summary.get("diagnostic_only_reason_codes", []),
+            "phase17_7_product_visible_fixture_reached": phase17_reason_summary.get("product_visible_fixture_reached", False),
+            "phase17_7_self_repair_reason_summary_only": True,
+            "phase17_diagnostic_only_reason_codes": list(self.meta.get("phase17_diagnostic_only_reason_codes") or []),
+            "phase17_7_diagnostic_only_reason_codes": list(self.meta.get("phase17_diagnostic_only_reason_codes") or []),
+            "blocked_reasons": list(self.meta.get("blocked_reasons") or []),
             "service_version": COMPLETE_SELF_REPAIR_VERSION,
             "repair_policy_version": COMPLETE_SELF_REPAIR_POLICY_VERSION,
             "repair_trace_contract_version": COMPLETE_REPAIR_TRACE_V2_CONTRACT_VERSION,
@@ -1700,6 +2376,7 @@ class CompleteSelfRepairResult:
             "template_gate_relaxed": False,
             "display_gate_relaxed": False,
             "comment_text_generated": False,
+            "comment_text_body_included": False,
             "comment_text_key_written": False,
             "comment_text_publicly_assigned": False,
             "comment_text_contract": "passed_only",
@@ -1710,6 +2387,7 @@ class CompleteSelfRepairResult:
             "rn_visible_title_changed": False,
             "external_ai_used": False,
             "local_llm_used": False,
+            "fixed_sentence_template_added": False,
             "fixed_sentence_template_used": False,
             "raw_text_included": False,
             "raw_input_included": False,
@@ -1778,6 +2456,8 @@ def run_complete_self_repair_loop(
         if len(traces) >= attempts_allowed:
             blocked.append("max_repair_attempts_reached")
             break
+        if reason in PHASE17_DIAGNOSTIC_ONLY_REASONS:
+            continue
         if reason not in ALLOWED_REPAIR_REASONS:
             blocked.append(f"repair_reason_not_allowed:{reason}")
             continue
@@ -1876,6 +2556,7 @@ def run_complete_self_repair_loop(
             "step10_surface_aware_self_repair_request": surface_aware_request,
             "surface_aware_repair_reasons": list(surface_aware_request.get("surface_aware_repair_reasons") or []),
             "gate_reasons_for_self_repair": list(surface_aware_request.get("gate_reasons_for_self_repair") or []),
+            "phase17_diagnostic_only_reason_codes": [reason for reason in reasons if reason in PHASE17_DIAGNOSTIC_ONLY_REASONS],
             "surface_aware_repair_fail_closed": status == COMPLETE_SELF_REPAIR_STATUS_ABORTED,
             "allowed_rebind_evidence_span_ids": list(rebind_ids),
             "blocked_reasons": list(blocked),
@@ -1924,6 +2605,14 @@ __all__ = [
     "COMPLETE_SURFACE_AWARE_SELF_REPAIR_POLICY_VERSION",
     "COMPLETE_SURFACE_AWARE_SELF_REPAIR_STEP",
     "COMPLETE_SURFACE_AWARE_SELF_REPAIR_VERSION",
+    "PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SCHEMA_VERSION",
+    "PHASE17_SELF_REPAIR_UNAVAILABLE_REASON_SOURCE_PHASE",
+    "REPAIR_REASON_PHASE17_SURFACE_MODE_POLICY_MISSING",
+    "REPAIR_REASON_PHASE17_INTERNAL_ROLE_LABEL_LEAK",
+    "REPAIR_REASON_PHASE17_RELATION_SKELETON_LEAK",
+    "REPAIR_REASON_PHASE17_SECTION_BUDGET_MISMATCH",
+    "REPAIR_REASON_PHASE17_GROUNDING_RELATION_BINDING_MISSING",
+    "REPAIR_REASON_PHASE17_PRODUCT_VISIBLE_FIXTURE_NOT_REACHED",
     "CompleteSelfRepairControllerResult",
     "CompleteSelfRepairLoopResult",
     "CompleteSelfRepairResult",
@@ -1934,6 +2623,10 @@ __all__ = [
     "build_complete_self_repair_loop_meta",
     "build_complete_self_repair_meta",
     "build_complete_self_repair_result",
+    "build_phase17_self_repair_unavailable_reason_summary",
+    "normalize_complete_self_repair_reason",
     "REPAIR_REASON_MALFORMED_NOMINALIZATION",
+    "REPAIR_REASON_TWO_STAGE_LABEL_MISSING",
+    "REPAIR_REASON_TWO_STAGE_SECTION_BOUNDARY",
     "run_complete_self_repair_loop",
 ]

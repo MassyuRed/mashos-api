@@ -60,6 +60,7 @@ _STEP14_FORBIDDEN_SURFACE_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
 )
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*|\n+")
 _GREETING_RE = re.compile(r"^(?:[^。！？!?\n]{1,36}さん、)?(?:おはようございます|こんにちは|こんばんは|Emlisです|.+Emlisです)[。.!！]?$")
+_TWO_STAGE_LABEL_ONLY_RE = re.compile(r"^(?:見えたこと|Emlisから)[:：]$")
 
 _OLD_TEMPLATE_SIGNATURES = [
     "そこには、感覚もありました。",
@@ -134,7 +135,7 @@ def _sentences(text: Any) -> List[str]:
 def _body_sentences(text: Any) -> List[str]:
     out: List[str] = []
     for sentence in _sentences(text):
-        if _GREETING_RE.match(sentence):
+        if _GREETING_RE.match(sentence) or _TWO_STAGE_LABEL_ONLY_RE.match(sentence):
             continue
         out.append(sentence)
     return out

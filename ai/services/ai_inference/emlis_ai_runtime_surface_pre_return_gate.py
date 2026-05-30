@@ -202,6 +202,9 @@ _ENV_STATE_OUTPUT_RECOVERY_RE = re.compile(
     r"(?:回復方法|治る|治ります|解決策|こうすれば|すれば戻れ|戻りやすい|戻れます|必要があります|すべきです|するべきです)"
 )
 
+_TWO_STAGE_OBSERVATION_LABEL = "見えたこと："
+_TWO_STAGE_RECEPTION_LABEL = "Emlisから："
+
 _ENV_STATE_OUTPUT_TERMINAL_SURFACE_REASONS = {
     "environment_state_output_scope_marker_missing",
     "period_tendency_from_single_record_surface",
@@ -480,6 +483,15 @@ def _environment_state_output_surface_contract(composer_meta: Mapping[str, Any] 
     return {}
 
 
+def _two_stage_labelled_scope_marker_present(comment_text: Any) -> bool:
+    text = _clean(comment_text)
+    if not text:
+        return False
+    observation_index = text.find(_TWO_STAGE_OBSERVATION_LABEL)
+    reception_index = text.find(_TWO_STAGE_RECEPTION_LABEL)
+    return observation_index == 0 and reception_index > observation_index
+
+
 def _environment_state_output_surface_rejection_reasons(
     *,
     comment_text: Any,
@@ -493,7 +505,10 @@ def _environment_state_output_surface_rejection_reasons(
         if bool(contract.get("scope_marker_required", False)):
             return ["environment_state_output_scope_marker_missing"]
         return []
-    return _dedupe(_shared_environment_state_output_surface_rejection_reasons(text, contract))
+    reasons = _dedupe(_shared_environment_state_output_surface_rejection_reasons(text, contract))
+    if _two_stage_labelled_scope_marker_present(text):
+        reasons = [reason for reason in reasons if reason != "environment_state_output_scope_marker_missing"]
+    return reasons
 
 
 def _environment_state_output_terminal_surface_block(reasons: Sequence[str]) -> bool:
@@ -636,7 +651,10 @@ def build_runtime_surface_pre_return_gate_report(
     )
     environment_state_output_marker_present = bool(
         environment_state_output_contract.get("connected")
-        and _shared_environment_state_output_scope_marker_present(comment_text, environment_state_output_contract)
+        and (
+            _shared_environment_state_output_scope_marker_present(comment_text, environment_state_output_contract)
+            or _two_stage_labelled_scope_marker_present(comment_text)
+        )
     )
     reasons = _dedupe([*reasons, *environment_state_output_reasons, *special_case_reasons, *state_answer_gate_boundary_reasons])
     shallow_path = _is_shallow_observation_path(composer_meta)

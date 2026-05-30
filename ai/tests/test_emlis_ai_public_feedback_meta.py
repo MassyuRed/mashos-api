@@ -991,3 +991,104 @@ def test_phase10_public_feedback_meta_strips_state_answer_surface_contract_body(
     assert SECRET_RAW_INPUT not in dumped
     assert SECRET_EVIDENCE not in dumped
     assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+def _phase11_blocked_two_stage_gate_payload() -> dict[str, Any]:
+    return {
+        "schema_version": "cocolon.emlis_ai_two_stage_reception.cross_gate.v1",
+        "material_id": "emlis_ai_two_stage_reception_cross_gate",
+        "evaluated": True,
+        "active": True,
+        "connected": True,
+        "two_stage_required": True,
+        "passed": False,
+        "blocked": True,
+        "terminal_surface_block": True,
+        "labels_present": True,
+        "two_stage_labels_present": True,
+        "observation_label_present": True,
+        "reception_label_present": True,
+        "label_order_valid": True,
+        "observation_section_non_empty": True,
+        "reception_section_non_empty": True,
+        "reception_mode_id": "daily_unpleasant_reception",
+        "reception_mode_family": "daily_reception",
+        "daily_reception_question_escape_blocked": True,
+        "rejection_reasons": [
+            "daily_reception_question_escape_when_event_fact_present",
+            SECRET_RAW_INPUT,
+            "x" * 180,
+        ],
+        "surface_blocker_reasons": ["daily_reception_question_escape_when_event_fact_present"],
+        "comment_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "raw_text": SECRET_EVIDENCE,
+        "observation_text": SECRET_COMMENT,
+        "reception_text": SECRET_COMMENT,
+        "comment_text_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_change": False,
+        "rn_visible_contract_changed": False,
+        "db_physical_name_changed": False,
+        "display_gate_relaxed": False,
+    }
+
+
+def test_phase11_public_feedback_meta_downgrades_passed_when_two_stage_gate_blocks() -> None:
+    module = _public_meta_module()
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["two_stage_reception_gate"] = _phase11_blocked_two_stage_gate_payload()
+
+    public_meta = module.build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    dumped = _dump(public_meta)
+
+    assert public_meta["observation_status"] == "rejected"
+    assert public_meta["rejection_reasons"][0] == "public_feedback_two_stage_reception_gate_blocked"
+    assert public_meta["two_stage_reception_gate"]["passed"] is False
+    assert public_meta["two_stage_reception_gate"]["blocked"] is True
+    assert public_meta["two_stage_reception_gate"]["terminal_surface_block"] is True
+    assert public_meta["two_stage_reception_gate"]["daily_reception_question_escape_blocked"] is True
+    assert len(public_meta["two_stage_reception_gate"]["rejection_reasons"][0]) <= module.PUBLIC_EMLIS_FEEDBACK_META_MAX_REASON_LENGTH
+    assert module.should_include_public_input_feedback("見えたこと：\n...", public_meta) is False
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+def test_phase11_should_include_public_input_feedback_rejects_direct_two_stage_gate_block() -> None:
+    module = _public_meta_module()
+
+    comment_text = "見えたこと：\n入力内の出来事が見えます。\n\nEmlisから：\n受け取り文です。"
+
+    assert module.should_include_public_input_feedback(
+        comment_text,
+        {
+            "observation_status": "passed",
+            "two_stage_reception_gate": {
+                "evaluated": True,
+                "passed": False,
+                "blocked": True,
+                "terminal_surface_block": True,
+                "rejection_reasons": ["two_stage_section_order_invalid"],
+            },
+        },
+    ) is False
+
+    assert module.should_include_public_input_feedback(
+        comment_text,
+        {
+            "observation_status": "passed",
+            "two_stage_reception_gate": {
+                "evaluated": True,
+                "passed": True,
+                "blocked": False,
+                "terminal_surface_block": False,
+            },
+        },
+    ) is True

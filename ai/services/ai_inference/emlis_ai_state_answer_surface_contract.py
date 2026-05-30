@@ -60,6 +60,13 @@ from emlis_ai_safe_daily_metaphor_material import (
     safe_daily_metaphor_material_forward_meta,
     safe_daily_metaphor_material_gate_report,
 )
+from emlis_ai_reception_assistance_dictionary_loader import (
+    RECEPTION_ASSISTANCE_DICTIONARY_ID,
+    RECEPTION_ASSISTANCE_DICTIONARY_LOADER_PHASE,
+    RECEPTION_ASSISTANCE_DICTIONARY_MATERIAL_ID,
+    RECEPTION_ASSISTANCE_DICTIONARY_SCHEMA_VERSION,
+    load_reception_assistance_dictionary,
+)
 EMLIS_STATE_ANSWER_SURFACE_CONTRACT_SCHEMA_VERSION: Final = (
     "cocolon.emlis_state_answer_surface_contract.v1"
 )
@@ -68,6 +75,19 @@ EMLIS_STATE_ANSWER_SURFACE_CONTRACT_PHASE: Final = "Phase2_state_answer_surface_
 EMLIS_STATE_ANSWER_SURFACE_CONTRACT_INTERNAL_NAME: Final = (
     "EmlisAI状態回答・人間的フォローsurface contract"
 )
+EMLIS_META_ONLY_SANITIZER_SCHEMA_VERSION: Final = "cocolon.emlis.meta_only_sanitizer.v1"
+EMLIS_META_ONLY_SANITIZER_PHASE: Final = "Phase18_product_quality_stabilization"
+
+EMLIS_TWO_STAGE_RECEPTION_SCHEMA_VERSION: Final = "cocolon.emlis_two_stage_reception.v1"
+EMLIS_TWO_STAGE_RECEPTION_MATERIAL_ID: Final = "emlis_two_stage_reception_surface_contract"
+EMLIS_TWO_STAGE_RECEPTION_PHASE: Final = "Phase7_state_answer_surface_contract_two_stage_reception"
+EMLIS_RECEPTION_SECTION_MATERIAL_SCHEMA_VERSION: Final = "cocolon.emlis_reception_section_material.v1"
+EMLIS_RECEPTION_SECTION_MATERIAL_ID: Final = "emlis_reception_section_material"
+EMLIS_RECEPTION_MODE_SUMMARY_SCHEMA_VERSION: Final = "cocolon.emlis_reception_mode_contract_summary.v1"
+EMLIS_RECEPTION_MODE_SUMMARY_MATERIAL_ID: Final = "emlis_reception_mode_contract_summary"
+EMLIS_OBSERVATION_DISPLAY_LABEL: Final = "見えたこと"
+EMLIS_RECEPTION_DISPLAY_LABEL: Final = "Emlisから"
+EMLIS_TWO_STAGE_SECTION_ORDER: Final = ("observation", "reception")
 
 _DEFAULT_RATIO: Final = {"observation": 0.6, "human_follow": 0.4}
 _ALLOWED_RATIO_RANGES: Final = {
@@ -112,8 +132,20 @@ _FORBIDDEN_RAW_PAYLOAD_KEYS: Final = frozenset(
         "surface_text",
         "realized_text",
         "completed_reply_text",
+        "observation_text",
+        "observationText",
+        "reception_text",
+        "receptionText",
         "body",
         "text",
+        "surface_policy",
+        "definition",
+        "evidence_requirements",
+        "allowed_inference",
+        "forbidden_inference",
+        "default_direction",
+        "strong_hand_direction",
+        "notes",
     }
 )
 
@@ -148,6 +180,63 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
     }
 )
 
+_FORBIDDEN_META_ONLY_KEYS: Final = _FORBIDDEN_RAW_PAYLOAD_KEYS | frozenset(
+    {
+        "definition",
+        "evidence_requirements",
+        "allowed_inference",
+        "forbidden_inference",
+        "default_direction",
+        "strong_hand_direction",
+        "notes",
+    }
+)
+
+_STATE_ANSWER_SURFACE_POLICY_META_FLAG_KEYS: Final = frozenset(
+    {
+        "state_answer_surface_policy_material_only",
+        "state_answer_surface_policy_must_not_generate_completed_reply",
+        "state_answer_surface_policy_must_not_generate_comment_text",
+        "state_answer_surface_policy_forbidden_claim_count",
+        "state_answer_surface_policy_single_record_only",
+        "state_answer_surface_policy_scope_marker_required",
+        "state_answer_surface_policy_must_not_generate_cause_from_category",
+        "state_answer_surface_policy_must_not_generate_cause_from_emotion_strength",
+        "state_answer_surface_policy_must_not_generate_period_tendency_from_single_record",
+        "state_answer_surface_policy_public_response_key_added",
+        "state_answer_surface_policy_rn_visible_contract_changed",
+        "state_answer_surface_policy_display_gate_relaxed",
+    }
+)
+
+_RATIO_SURFACE_POLICY_META_FLAG_KEYS: Final = frozenset(
+    {
+        "state_answer_ratio_surface_policy_material_only",
+        "state_answer_ratio_surface_policy_must_not_generate_completed_reply",
+        "state_answer_ratio_surface_policy_must_not_generate_comment_text",
+        "state_answer_ratio_surface_policy_forbidden_claim_count",
+        "state_answer_ratio_surface_policy_observation_zero_allowed",
+        "state_answer_ratio_surface_policy_human_follow_zero_allowed",
+        "state_answer_ratio_surface_policy_comfort_only_allowed",
+        "state_answer_ratio_surface_policy_display_gate_relaxed",
+    }
+)
+
+
+_PHASE18_SURFACE_POLICY_FORWARD_FLAG_KEYS: Final = (
+    _STATE_ANSWER_SURFACE_POLICY_META_FLAG_KEYS
+    | frozenset({
+        "meta_only_sanitizer_schema_version",
+        "meta_only_sanitizer_source_phase",
+        "state_answer_surface_policy_cause_from_category",
+        "state_answer_surface_policy_cause_from_emotion_strength",
+        "state_answer_surface_policy_period_tendency_from_single_record",
+        "state_answer_surface_policy_personality_tendency_allowed",
+        "surface_policy_key_included",
+        "dictionary_text_key_included",
+    })
+)
+
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
@@ -177,6 +266,91 @@ def _as_mapping(value: Any) -> Mapping[str, Any]:
 
 def _deepcopy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return copy.deepcopy(dict(value or {}))
+
+
+def _phase18_meta_only_sanitize(value: Any) -> Any:
+    """Drop dictionary/policy bodies before meta leaves this contract.
+
+    Runtime builders may keep rich policy material internally.  Public-safe,
+    forward, composer, and gate payloads must expose only ids/counts/flags and
+    must not carry the policy object or dictionary text keys themselves.
+    """
+
+    if isinstance(value, Mapping):
+        return {
+            _clean(key): _phase18_meta_only_sanitize(child)
+            for key, child in value.items()
+            if _clean(key) not in _FORBIDDEN_META_ONLY_KEYS
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_phase18_meta_only_sanitize(item) for item in value]
+    return copy.deepcopy(value)
+
+
+def _state_answer_surface_policy_meta_flags(surface_policy: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return Phase18-6 safe flags without exposing the policy object itself."""
+
+    policy = _as_mapping(surface_policy)
+    forbidden_claims = _dedupe(policy.get("forbidden_claims") or [])
+    return {
+        "meta_only_sanitizer_schema_version": EMLIS_META_ONLY_SANITIZER_SCHEMA_VERSION,
+        "meta_only_sanitizer_source_phase": EMLIS_META_ONLY_SANITIZER_PHASE,
+        "state_answer_surface_policy_material_only": True,
+        "state_answer_surface_policy_must_not_generate_completed_reply": True,
+        "state_answer_surface_policy_must_not_generate_comment_text": True,
+        "state_answer_surface_policy_forbidden_claim_count": len(forbidden_claims),
+        "state_answer_surface_policy_single_record_only": bool(policy.get("single_record_only", True)),
+        "state_answer_surface_policy_scope_marker_required": bool(policy.get("must_use_scope_marker", True)),
+        "state_answer_surface_policy_must_not_generate_cause_from_category": bool(
+            policy.get("must_not_generate_cause_from_category", True)
+        ),
+        "state_answer_surface_policy_must_not_generate_cause_from_emotion_strength": bool(
+            policy.get("must_not_generate_cause_from_emotion_strength", True)
+        ),
+        "state_answer_surface_policy_must_not_generate_period_tendency_from_single_record": bool(
+            policy.get("must_not_generate_period_tendency_from_single_record", True)
+        ),
+        "state_answer_surface_policy_cause_from_category": False,
+        "state_answer_surface_policy_cause_from_emotion_strength": False,
+        "state_answer_surface_policy_period_tendency_from_single_record": False,
+        "state_answer_surface_policy_personality_tendency_allowed": False,
+        "surface_policy_key_included": False,
+        "dictionary_text_key_included": False,
+    }
+
+
+def _copy_phase18_surface_policy_flags(meta: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: copy.deepcopy(meta.get(key))
+        for key in _PHASE18_SURFACE_POLICY_FORWARD_FLAG_KEYS
+        if key in meta
+    }
+
+
+def _apply_phase18_public_contract_defaults(payload: dict[str, Any]) -> dict[str, Any]:
+    payload.setdefault("comment_text_body_included", False)
+    payload.setdefault("raw_input_included", False)
+    payload.setdefault("raw_text_included", False)
+    payload.setdefault("public_response_key_added", False)
+    payload.setdefault("rn_visible_contract_changed", False)
+    payload.setdefault("display_gate_relaxed", False)
+    return payload
+
+
+def _ratio_policy_meta_only_projection(value: Any) -> dict[str, Any]:
+    meta = state_answer_ratio_policy_forward_meta(value)
+    if not meta:
+        return {}
+    surface_policy = _as_mapping(meta.get("surface_policy"))
+    out = _phase18_meta_only_sanitize(meta)
+    out.update(
+        {
+            key.replace("state_answer_surface_policy_", "state_answer_ratio_policy_surface_policy_"): item
+            for key, item in _state_answer_surface_policy_meta_flags(surface_policy).items()
+            if key.startswith("state_answer_surface_policy_")
+        }
+    )
+    return out
 
 
 def _span_ids_for_fields(frame: Mapping[str, Any], *source_fields: str) -> list[str]:
@@ -395,7 +569,7 @@ def _ratio_policy(
         observation_structure_material=material_meta,
         human_follow_layer=human_follow_layer,
     )
-    return state_answer_ratio_policy_forward_meta(ratio_policy)
+    return _ratio_policy_meta_only_projection(ratio_policy)
 
 
 def _observation_step(
@@ -484,7 +658,14 @@ def _observation_layer(frame_projection: Mapping[str, Any], material_meta: Mappi
     steps.sort(key=lambda item: order_index.get(str(item.get("step_id")), 999))
 
     return {
+        "section_id": "observation",
         "section_role": "state_answer_observation",
+        "display_label": EMLIS_OBSERVATION_DISPLAY_LABEL,
+        "position": "front",
+        "section_order_index": 0,
+        "section_label_required": True,
+        "two_stage_reception_section": True,
+        "must_not_include_human_follow": True,
         "steps": steps,
         "step_ids": [item.get("step_id") for item in steps],
         "step_order": list(_OBSERVATION_STEP_ORDER),
@@ -522,7 +703,13 @@ def _human_follow_layer(
     selection = _as_mapping(selector_meta.get("selection"))
     guard_policy = _as_mapping(selector_meta.get("guard_policy"))
     return {
+        "section_id": "reception",
         "section_role": "human_follow",
+        "display_label": EMLIS_RECEPTION_DISPLAY_LABEL,
+        "position": "back",
+        "section_order_index": 1,
+        "section_label_required": True,
+        "two_stage_reception_section": True,
         "primary_follow_key": selection.get("primary_follow_key") or selector_meta.get("primary_follow_key") or "fear_or_load_understanding",
         "secondary_follow_keys": list(selection.get("secondary_follow_keys") or selector_meta.get("secondary_follow_keys") or ["intention_affirmation", "effort_receiving"]),
         "afterglow_follow_key": selection.get("afterglow_follow_key") or selector_meta.get("afterglow_follow_key") or "existence_respect",
@@ -759,6 +946,239 @@ def _material_summary(material_meta: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _reception_mode_material_from_ratio_policy(ratio_policy: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a Phase 7-safe reception-mode summary from Phase 6 Ratio Policy."""
+
+    resolver_context = _as_mapping(ratio_policy.get("resolver_context"))
+    summary = _as_mapping(resolver_context.get("reception_mode_summary"))
+    resolved_ratio = _as_mapping(ratio_policy.get("resolved_ratio"))
+    mode_id = _clean(
+        summary.get("reception_mode_id")
+        or resolver_context.get("reception_mode_id")
+        or resolver_context.get("reception_mode")
+    )
+    ratio_preset = _clean(
+        summary.get("ratio_preset")
+        or resolver_context.get("reception_mode_ratio_preset")
+        or resolved_ratio.get("reason")
+    )
+    primary_reason = _clean(
+        summary.get("primary_reason") or resolver_context.get("reception_mode_primary_reason")
+    )
+    event_fact_present = bool(
+        summary.get("event_fact_present") or resolver_context.get("reception_mode_event_fact_present")
+    )
+    reaction_present = bool(
+        summary.get("reaction_present") or resolver_context.get("reception_mode_reaction_present")
+    )
+    available = bool(summary.get("available") or resolver_context.get("reception_mode_resolution_connected") or mode_id)
+    return {
+        "schema_version": EMLIS_RECEPTION_MODE_SUMMARY_SCHEMA_VERSION,
+        "material_id": EMLIS_RECEPTION_MODE_SUMMARY_MATERIAL_ID,
+        "source_phase": EMLIS_TWO_STAGE_RECEPTION_PHASE,
+        "reception_mode_connected": available,
+        "reception_mode_resolution_connected": bool(
+            resolver_context.get("reception_mode_resolution_connected") or summary.get("available")
+        ),
+        "source": _clean(summary.get("source") or resolver_context.get("reception_mode_resolution_source")),
+        "mode_id": mode_id or "standard_state_answer",
+        "reception_mode_id": mode_id or "standard_state_answer",
+        "selected_reception_mode_id": mode_id or "standard_state_answer",
+        "primary_reason": primary_reason,
+        "reason_codes": _dedupe([primary_reason] if primary_reason else []),
+        "ratio_preset": ratio_preset,
+        "event_fact_present": event_fact_present,
+        "reaction_present": reaction_present,
+        "event_hint_ids": _dedupe(summary.get("event_hint_ids") or []),
+        "secondary_reception_mode_ids": _dedupe(
+            summary.get("secondary_reception_mode_ids")
+            or resolver_context.get("reception_mode_secondary_ids")
+            or []
+        ),
+        "eligible_dictionary_mode_ids": _dedupe(
+            summary.get("eligible_reception_mode_ids")
+            or resolver_context.get("reception_mode_eligible_dictionary_mode_ids")
+            or []
+        ),
+        "low_information_question_allowed": bool(summary.get("low_information_question_allowed")),
+        "low_information_question_required": bool(summary.get("low_information_question_required")),
+        "question_required": bool(summary.get("low_information_question_required")),
+        "safety_path_required": bool(summary.get("safety_path_required")),
+        "backend_internal_mode_only": True,
+        "user_selected_mode": False,
+        "general_dictionary_used": False,
+        "unknown_word_meaning_asserted": False,
+        "event_hint_created_emotion": False,
+        "event_hint_alone_activated_mode": False,
+        "target_judgement_agreement_allowed": False,
+        "identity_claim_accepted_as_fact": False,
+        "action_instruction_allowed": False,
+        "completed_reply_generated": False,
+        "comment_text_generated": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_added": False,
+        "public_status_extended": False,
+        "observation_status_enum_extended": False,
+        "api_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+    }
+
+
+def _reception_assistance_material() -> dict[str, Any]:
+    """Return a text-free reception-assistance dictionary connection summary."""
+
+    try:
+        dictionary_meta = load_reception_assistance_dictionary().as_meta()
+    except Exception:
+        dictionary_meta = {}
+    return {
+        "schema_version": dictionary_meta.get("schema_version") or RECEPTION_ASSISTANCE_DICTIONARY_SCHEMA_VERSION,
+        "material_id": dictionary_meta.get("material_id") or RECEPTION_ASSISTANCE_DICTIONARY_MATERIAL_ID,
+        "dictionary_id": dictionary_meta.get("dictionary_id") or RECEPTION_ASSISTANCE_DICTIONARY_ID,
+        "dictionary_version": _clean(dictionary_meta.get("dictionary_version")),
+        "loader_phase": dictionary_meta.get("loader_phase") or RECEPTION_ASSISTANCE_DICTIONARY_LOADER_PHASE,
+        "source_phase": dictionary_meta.get("loader_phase") or RECEPTION_ASSISTANCE_DICTIONARY_LOADER_PHASE,
+        "reception_assistance_dictionary_connected": bool(dictionary_meta),
+        "dictionary_material_only": True,
+        "dictionary_ready": bool(dictionary_meta),
+        "reaction_cue_ids": _dedupe(dictionary_meta.get("reaction_cue_ids") or []),
+        "event_hint_ids": _dedupe(dictionary_meta.get("event_hint_ids") or []),
+        "reception_mode_ids": _dedupe(dictionary_meta.get("reception_mode_ids") or []),
+        "tone_family_ids": _dedupe(dictionary_meta.get("tone_family_ids") or []),
+        "follow_shape_family_ids": _dedupe(dictionary_meta.get("follow_shape_family_ids") or []),
+        "not_general_dictionary": True,
+        "user_reaction_is_primary": True,
+        "event_hint_must_not_create_emotion": True,
+        "unknown_word_meaning_must_not_be_asserted": True,
+        "completed_reply_template_forbidden": True,
+        "dictionary_returns_completed_reply": False,
+        "completed_reply_generated": False,
+        "completed_reply_template_stored": False,
+        "comment_text_generated": False,
+        "comment_text_generated_by_dictionary": False,
+        "comment_text_body_included": False,
+        "general_dictionary_used": False,
+        "general_knowledge_primary": False,
+        "unknown_word_meaning_asserted": False,
+        "event_hint_created_emotion": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_added": False,
+        "public_status_extended": False,
+        "observation_status_enum_extended": False,
+        "api_route_changed": False,
+        "response_key_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+    }
+
+
+def _reception_section_material(
+    *,
+    human_follow_layer: Mapping[str, Any],
+    reception_mode: Mapping[str, Any],
+    reception_assistance: Mapping[str, Any],
+    ratio_policy: Mapping[str, Any],
+) -> dict[str, Any]:
+    resolved_ratio = _as_mapping(ratio_policy.get("resolved_ratio"))
+    mode_id = _clean(reception_mode.get("reception_mode_id") or reception_mode.get("mode_id"))
+    tone_family_ids = _dedupe(reception_assistance.get("tone_family_ids") or [])
+    allowed_tone_family = "natural_short_reception" if mode_id.startswith("daily_") else "state_answer_follow"
+    return {
+        "schema_version": EMLIS_RECEPTION_SECTION_MATERIAL_SCHEMA_VERSION,
+        "material_id": EMLIS_RECEPTION_SECTION_MATERIAL_ID,
+        "source_phase": EMLIS_TWO_STAGE_RECEPTION_PHASE,
+        "section_id": "reception",
+        "display_label": EMLIS_RECEPTION_DISPLAY_LABEL,
+        "section_role": "emlis_reception",
+        "source_layer": "human_follow_layer",
+        "position": "back",
+        "section_order_index": 1,
+        "reception_mode_id": mode_id,
+        "follow_mode": human_follow_layer.get("follow_mode") or "emlis_impression_not_fact",
+        "primary_reception_key": human_follow_layer.get("primary_follow_key") or "",
+        "secondary_reception_keys": _dedupe(human_follow_layer.get("secondary_follow_keys") or []),
+        "afterglow_reception_key": human_follow_layer.get("afterglow_follow_key") or "",
+        "allowed_tone_family": allowed_tone_family,
+        "allowed_tone_family_ids": tone_family_ids,
+        "follow_shape_family_ids": _dedupe(reception_assistance.get("follow_shape_family_ids") or []),
+        "sentence_plan_unit_count": int(resolved_ratio.get("human_follow_units") or 0),
+        "must_ground_to_input": True,
+        "grounding_source_span_ids": _dedupe(human_follow_layer.get("grounding_source_span_ids") or []),
+        "dictionary_id": reception_assistance.get("dictionary_id") or RECEPTION_ASSISTANCE_DICTIONARY_ID,
+        "dictionary_material_only": True,
+        "general_dictionary_used": False,
+        "personality_claim_allowed": False,
+        "target_judgement_agreement_allowed": False,
+        "target_attack_amplification_allowed": False,
+        "action_instruction_allowed": False,
+        "completed_reply_generated": False,
+        "comment_text_generated": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_added": False,
+        "public_status_extended": False,
+        "observation_status_enum_extended": False,
+        "api_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+    }
+
+
+def _two_stage_reception_material(
+    *,
+    reception_mode: Mapping[str, Any],
+    reception_assistance: Mapping[str, Any],
+    reception_section_material: Mapping[str, Any],
+) -> dict[str, Any]:
+    mode_id = _clean(reception_mode.get("reception_mode_id") or reception_mode.get("mode_id"))
+    return {
+        "schema_version": EMLIS_TWO_STAGE_RECEPTION_SCHEMA_VERSION,
+        "material_id": EMLIS_TWO_STAGE_RECEPTION_MATERIAL_ID,
+        "source_phase": EMLIS_TWO_STAGE_RECEPTION_PHASE,
+        "enabled": True,
+        "two_stage_reception_enabled": True,
+        "display_labels": {
+            "observation": EMLIS_OBSERVATION_DISPLAY_LABEL,
+            "reception": EMLIS_RECEPTION_DISPLAY_LABEL,
+        },
+        "section_order": list(EMLIS_TWO_STAGE_SECTION_ORDER),
+        "surface_joiner": "comment_text_two_stage_joiner",
+        "expected_comment_text_shape": "labelled_two_stage_text",
+        "joined_comment_text_required": True,
+        "public_response_key_added": False,
+        "rn_visible_contract_changed": False,
+        "observation_status_enum_extended": False,
+        "api_route_changed": False,
+        "response_key_changed": False,
+        "db_physical_name_changed": False,
+        "reception_mode_id": mode_id,
+        "reception_mode_material_id": reception_mode.get("material_id") or EMLIS_RECEPTION_MODE_SUMMARY_MATERIAL_ID,
+        "reception_section_material_id": reception_section_material.get("material_id")
+        or EMLIS_RECEPTION_SECTION_MATERIAL_ID,
+        "reception_assistance_dictionary_id": reception_assistance.get("dictionary_id")
+        or RECEPTION_ASSISTANCE_DICTIONARY_ID,
+        "reception_assistance_dictionary_material_id": reception_assistance.get("material_id")
+        or RECEPTION_ASSISTANCE_DICTIONARY_MATERIAL_ID,
+        "dictionary_material_only": True,
+        "general_dictionary_used": False,
+        "completed_reply_generated": False,
+        "comment_text_generated": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+    }
+
+
 @dataclass(frozen=True)
 class EmlisStateAnswerSurfaceContract:
     """Text-free Phase 2 material consumed by later Composer/Gate phases."""
@@ -780,6 +1200,19 @@ class EmlisStateAnswerSurfaceContract:
     rejection_reasons: tuple[str, ...] = field(default_factory=tuple)
 
     def as_meta(self) -> dict[str, Any]:
+        reception_mode = _reception_mode_material_from_ratio_policy(self.ratio_policy)
+        reception_assistance = _reception_assistance_material()
+        reception_section_material = _reception_section_material(
+            human_follow_layer=self.human_follow_layer,
+            reception_mode=reception_mode,
+            reception_assistance=reception_assistance,
+            ratio_policy=self.ratio_policy,
+        )
+        two_stage_reception = _two_stage_reception_material(
+            reception_mode=reception_mode,
+            reception_assistance=reception_assistance,
+            reception_section_material=reception_section_material,
+        )
         meta = {
             "schema_version": self.schema_version,
             "version": self.schema_version,
@@ -792,19 +1225,30 @@ class EmlisStateAnswerSurfaceContract:
             "status": "passed" if self.passed else "rejected",
             "rejection_reasons": list(self.rejection_reasons),
             "source": _deepcopy_mapping(self.source),
-            "ratio_policy": _deepcopy_mapping(self.ratio_policy),
-            "observation_layer": _deepcopy_mapping(self.observation_layer),
-            "human_follow_layer": _deepcopy_mapping(self.human_follow_layer),
-            "special_handling": _deepcopy_mapping(self.special_handling),
-            "metaphor_policy": _deepcopy_mapping(self.metaphor_policy),
-            "surface_policy": _deepcopy_mapping(self.surface_policy),
-            "environment_state_output_frame": _deepcopy_mapping(self.environment_state_output_frame),
-            "observation_structure_material": _deepcopy_mapping(self.observation_structure_material),
+            "two_stage_reception": _deepcopy_mapping(two_stage_reception),
+            "reception_mode": _deepcopy_mapping(reception_mode),
+            "reception_assistance": _deepcopy_mapping(reception_assistance),
+            "reception_section_material": _deepcopy_mapping(reception_section_material),
+            "ratio_policy": _ratio_policy_meta_only_projection(self.ratio_policy),
+            "observation_layer": _phase18_meta_only_sanitize(_deepcopy_mapping(self.observation_layer)),
+            "human_follow_layer": _phase18_meta_only_sanitize(_deepcopy_mapping(self.human_follow_layer)),
+            "special_handling": _phase18_meta_only_sanitize(_deepcopy_mapping(self.special_handling)),
+            "metaphor_policy": _phase18_meta_only_sanitize(_deepcopy_mapping(self.metaphor_policy)),
+            **_state_answer_surface_policy_meta_flags(self.surface_policy),
+            "environment_state_output_frame": _phase18_meta_only_sanitize(_deepcopy_mapping(self.environment_state_output_frame)),
+            "observation_structure_material": _phase18_meta_only_sanitize(_deepcopy_mapping(self.observation_structure_material)),
             "environment_state_output_frame_connected": bool(self.environment_state_output_frame),
             "observation_structure_material_connected": bool(self.observation_structure_material),
             "state_answer_observation_layer_connected": True,
             "observation_layer_connected": True,
             "human_follow_layer_connected": True,
+            "two_stage_reception_connected": True,
+            "reception_mode_connected": bool(reception_mode.get("reception_mode_connected")),
+            "reception_mode_resolution_connected": bool(reception_mode.get("reception_mode_resolution_connected")),
+            "reception_assistance_dictionary_connected": bool(
+                reception_assistance.get("reception_assistance_dictionary_connected")
+            ),
+            "reception_section_material_connected": True,
             "state_answer_surface_contract_connected": True,
             "state_answer_surface_contract_material_only": True,
             "material_is_completed_reply_template": False,
@@ -857,6 +1301,20 @@ class EmlisStateAnswerSurfaceContract:
             "primary_follow_key": _as_mapping(meta.get("human_follow_layer")).get("primary_follow_key") or "",
             "human_follow_primary_key": _as_mapping(meta.get("human_follow_layer")).get("primary_follow_key") or "",
             "human_follow_secondary_keys": list(_as_mapping(meta.get("human_follow_layer")).get("secondary_follow_keys") or []),
+            "two_stage_reception_connected": bool(meta.get("two_stage_reception_connected")),
+            "two_stage_display_enabled": bool(_as_mapping(meta.get("two_stage_reception")).get("enabled")),
+            "observation_display_label": _as_mapping(meta.get("observation_layer")).get("display_label") or "",
+            "reception_display_label": _as_mapping(meta.get("reception_section_material")).get("display_label") or "",
+            "two_stage_section_order": list(_as_mapping(meta.get("two_stage_reception")).get("section_order") or []),
+            "reception_section_material_connected": bool(meta.get("reception_section_material_connected")),
+            "reception_mode_connected": bool(meta.get("reception_mode_connected")),
+            "reception_mode_id": _as_mapping(meta.get("reception_mode")).get("reception_mode_id") or "",
+            "reception_mode_primary_reason": _as_mapping(meta.get("reception_mode")).get("primary_reason") or "",
+            "reception_assistance_dictionary_connected": bool(meta.get("reception_assistance_dictionary_connected")),
+            "reception_assistance_dictionary_id": _as_mapping(meta.get("reception_assistance")).get("dictionary_id") or "",
+            "reception_assistance_dictionary_material_only": bool(
+                _as_mapping(meta.get("reception_assistance")).get("dictionary_material_only")
+            ),
             "state_answer_ratio_policy_connected": bool(_as_mapping(meta.get("ratio_policy")).get("state_answer_ratio_policy_connected")),
             "state_answer_ratio_policy_material_id": _as_mapping(meta.get("ratio_policy")).get("material_id") or "",
             "state_answer_ratio_policy_schema_version": _as_mapping(meta.get("ratio_policy")).get("schema_version") or "",
@@ -922,6 +1380,14 @@ class EmlisStateAnswerSurfaceContract:
             "state_answer_ratio_policy_payload": state_answer_ratio_policy_composer_payload(meta.get("ratio_policy") or {}),
             "observation_layer": _deepcopy_mapping(meta.get("observation_layer")),
             "human_follow_layer": _deepcopy_mapping(meta.get("human_follow_layer")),
+            "reception_section_material": _deepcopy_mapping(meta.get("reception_section_material")),
+            "two_stage_reception": _deepcopy_mapping(meta.get("two_stage_reception")),
+            "reception_mode": _deepcopy_mapping(meta.get("reception_mode")),
+            "reception_assistance": _deepcopy_mapping(meta.get("reception_assistance")),
+            "two_stage_reception_connected": bool(meta.get("two_stage_reception_connected")),
+            "reception_section_material_connected": bool(meta.get("reception_section_material_connected")),
+            "reception_mode_connected": bool(meta.get("reception_mode_connected")),
+            "reception_assistance_dictionary_connected": bool(meta.get("reception_assistance_dictionary_connected")),
             "special_handling": _deepcopy_mapping(meta.get("special_handling")),
             "state_answer_special_cases_connected": bool(_as_mapping(meta.get("special_handling")).get("state_answer_special_cases_connected")),
             "state_answer_special_cases_material_id": _as_mapping(meta.get("special_handling")).get("material_id") or "",
@@ -1095,12 +1561,32 @@ def state_answer_surface_contract_forward_meta(value: Any) -> dict[str, Any]:
         "status",
         "rejection_reasons",
         "source",
+        "two_stage_reception",
+        "reception_mode",
+        "reception_assistance",
+        "reception_section_material",
         "ratio_policy",
         "observation_layer",
         "human_follow_layer",
         "special_handling",
         "metaphor_policy",
-        "surface_policy",
+        "meta_only_sanitizer_schema_version",
+        "meta_only_sanitizer_source_phase",
+        "state_answer_surface_policy_material_only",
+        "state_answer_surface_policy_must_not_generate_completed_reply",
+        "state_answer_surface_policy_must_not_generate_comment_text",
+        "state_answer_surface_policy_forbidden_claim_count",
+        "state_answer_surface_policy_single_record_only",
+        "state_answer_surface_policy_scope_marker_required",
+        "state_answer_surface_policy_must_not_generate_cause_from_category",
+        "state_answer_surface_policy_must_not_generate_cause_from_emotion_strength",
+        "state_answer_surface_policy_must_not_generate_period_tendency_from_single_record",
+        "state_answer_surface_policy_cause_from_category",
+        "state_answer_surface_policy_cause_from_emotion_strength",
+        "state_answer_surface_policy_period_tendency_from_single_record",
+        "state_answer_surface_policy_personality_tendency_allowed",
+        "surface_policy_key_included",
+        "dictionary_text_key_included",
         "environment_state_output_frame",
         "observation_structure_material",
         "environment_state_output_frame_connected",
@@ -1108,6 +1594,11 @@ def state_answer_surface_contract_forward_meta(value: Any) -> dict[str, Any]:
         "state_answer_observation_layer_connected",
         "observation_layer_connected",
         "human_follow_layer_connected",
+        "two_stage_reception_connected",
+        "reception_mode_connected",
+        "reception_mode_resolution_connected",
+        "reception_assistance_dictionary_connected",
+        "reception_section_material_connected",
         "state_answer_surface_contract_connected",
         "state_answer_surface_contract_material_only",
         "completed_reply_generated",
@@ -1135,17 +1626,27 @@ def state_answer_surface_contract_forward_meta(value: Any) -> dict[str, Any]:
         "recovery_prescription_allowed",
     }
     out = {key: copy.deepcopy(meta.get(key)) for key in keys if key in meta}
+    if "ratio_policy" in out:
+        out["ratio_policy"] = _ratio_policy_meta_only_projection(meta.get("ratio_policy") or {})
+    # Accept older/internal mappings that still carry the full policy object, but
+    # project it into Phase18-6 summary flags before anything leaves this layer.
+    if "surface_policy" in meta:
+        out.update(_state_answer_surface_policy_meta_flags(_as_mapping(meta.get("surface_policy"))))
+    out = _phase18_meta_only_sanitize(out)
     assert_state_answer_surface_contract(out)
     return out
 
 
 def state_answer_surface_contract_gate_report(value: Any) -> dict[str, Any]:
+    source_meta: Mapping[str, Any] = {}
     if isinstance(value, EmlisStateAnswerSurfaceContract):
+        source_meta = value.as_meta()
         report = value.gate_report()
     elif isinstance(value, Mapping):
         meta = state_answer_surface_contract_forward_meta(value)
         if not meta:
             return {}
+        source_meta = meta
         observation_layer = _as_mapping(meta.get("observation_layer"))
         human_follow_layer = _as_mapping(meta.get("human_follow_layer"))
         report = {
@@ -1168,6 +1669,20 @@ def state_answer_surface_contract_gate_report(value: Any) -> dict[str, Any]:
             "primary_follow_key": human_follow_layer.get("primary_follow_key") or "",
             "human_follow_primary_key": human_follow_layer.get("primary_follow_key") or "",
             "human_follow_secondary_keys": list(human_follow_layer.get("secondary_follow_keys") or []),
+            "two_stage_reception_connected": bool(meta.get("two_stage_reception_connected")),
+            "two_stage_display_enabled": bool(_as_mapping(meta.get("two_stage_reception")).get("enabled")),
+            "observation_display_label": observation_layer.get("display_label") or "",
+            "reception_display_label": _as_mapping(meta.get("reception_section_material")).get("display_label") or "",
+            "two_stage_section_order": list(_as_mapping(meta.get("two_stage_reception")).get("section_order") or []),
+            "reception_section_material_connected": bool(meta.get("reception_section_material_connected")),
+            "reception_mode_connected": bool(meta.get("reception_mode_connected")),
+            "reception_mode_id": _as_mapping(meta.get("reception_mode")).get("reception_mode_id") or "",
+            "reception_mode_primary_reason": _as_mapping(meta.get("reception_mode")).get("primary_reason") or "",
+            "reception_assistance_dictionary_connected": bool(meta.get("reception_assistance_dictionary_connected")),
+            "reception_assistance_dictionary_id": _as_mapping(meta.get("reception_assistance")).get("dictionary_id") or "",
+            "reception_assistance_dictionary_material_only": bool(
+                _as_mapping(meta.get("reception_assistance")).get("dictionary_material_only")
+            ),
             "state_answer_ratio_policy_connected": bool(_as_mapping(meta.get("ratio_policy")).get("state_answer_ratio_policy_connected")),
             "state_answer_ratio_policy_material_id": _as_mapping(meta.get("ratio_policy")).get("material_id") or "",
             "state_answer_ratio_policy_schema_version": _as_mapping(meta.get("ratio_policy")).get("schema_version") or "",
@@ -1220,17 +1735,23 @@ def state_answer_surface_contract_gate_report(value: Any) -> dict[str, Any]:
         }
     else:
         return {}
+    report.update(_copy_phase18_surface_policy_flags(source_meta))
+    _apply_phase18_public_contract_defaults(report)
+    report = _phase18_meta_only_sanitize(report)
     assert_state_answer_surface_contract(report)
     return report
 
 
 def state_answer_surface_contract_composer_payload(value: Any) -> dict[str, Any]:
+    source_meta: Mapping[str, Any] = {}
     if isinstance(value, EmlisStateAnswerSurfaceContract):
+        source_meta = value.as_meta()
         payload = value.composer_payload()
     elif isinstance(value, Mapping):
         meta = state_answer_surface_contract_forward_meta(value)
         if not meta:
             return {}
+        source_meta = meta
         payload = {
             "schema_version": meta.get("schema_version"),
             "material_id": meta.get("material_id"),
@@ -1243,6 +1764,14 @@ def state_answer_surface_contract_composer_payload(value: Any) -> dict[str, Any]
             "state_answer_ratio_policy_payload": state_answer_ratio_policy_composer_payload(meta.get("ratio_policy") or {}),
             "observation_layer": _deepcopy_mapping(_as_mapping(meta.get("observation_layer"))),
             "human_follow_layer": _deepcopy_mapping(_as_mapping(meta.get("human_follow_layer"))),
+            "reception_section_material": _deepcopy_mapping(_as_mapping(meta.get("reception_section_material"))),
+            "two_stage_reception": _deepcopy_mapping(_as_mapping(meta.get("two_stage_reception"))),
+            "reception_mode": _deepcopy_mapping(_as_mapping(meta.get("reception_mode"))),
+            "reception_assistance": _deepcopy_mapping(_as_mapping(meta.get("reception_assistance"))),
+            "two_stage_reception_connected": bool(meta.get("two_stage_reception_connected")),
+            "reception_section_material_connected": bool(meta.get("reception_section_material_connected")),
+            "reception_mode_connected": bool(meta.get("reception_mode_connected")),
+            "reception_assistance_dictionary_connected": bool(meta.get("reception_assistance_dictionary_connected")),
             "special_handling": _deepcopy_mapping(_as_mapping(meta.get("special_handling"))),
             "state_answer_special_cases_connected": bool(_as_mapping(meta.get("special_handling")).get("state_answer_special_cases_connected")),
             "state_answer_special_cases_payload": state_answer_special_cases_composer_payload(meta.get("special_handling") or {}),
@@ -1269,6 +1798,9 @@ def state_answer_surface_contract_composer_payload(value: Any) -> dict[str, Any]
         }
     else:
         return {}
+    payload.update(_copy_phase18_surface_policy_flags(source_meta))
+    _apply_phase18_public_contract_defaults(payload)
+    payload = _phase18_meta_only_sanitize(payload)
     assert_state_answer_surface_contract(payload)
     return payload
 
@@ -1276,7 +1808,7 @@ def state_answer_surface_contract_composer_payload(value: Any) -> dict[str, Any]
 def _contains_forbidden_payload_key(value: Any) -> bool:
     if isinstance(value, Mapping):
         for key, child in value.items():
-            if _clean(key) in _FORBIDDEN_RAW_PAYLOAD_KEYS:
+            if _clean(key) in _FORBIDDEN_META_ONLY_KEYS:
                 return True
             if _contains_forbidden_payload_key(child):
                 return True
@@ -1338,6 +1870,61 @@ def assert_state_answer_surface_contract(value: Any, *, source: str = "state_ans
         raise ValueError(f"{source} must not be a completed reply template")
     if value.get("state_answer_surface_contract_connected") is False:
         raise ValueError(f"{source} must keep state_answer_surface_contract_connected=true when present")
+
+    two_stage = _as_mapping(value.get("two_stage_reception"))
+    if two_stage:
+        if _clean(two_stage.get("schema_version")) != EMLIS_TWO_STAGE_RECEPTION_SCHEMA_VERSION:
+            raise ValueError(f"{source} has unexpected two_stage_reception schema_version")
+        if _clean(two_stage.get("material_id")) != EMLIS_TWO_STAGE_RECEPTION_MATERIAL_ID:
+            raise ValueError(f"{source} has unexpected two_stage_reception material_id")
+        labels = _as_mapping(two_stage.get("display_labels"))
+        if labels.get("observation") != EMLIS_OBSERVATION_DISPLAY_LABEL:
+            raise ValueError(f"{source} must keep observation display label")
+        if labels.get("reception") != EMLIS_RECEPTION_DISPLAY_LABEL:
+            raise ValueError(f"{source} must keep reception display label")
+        if list(two_stage.get("section_order") or []) != list(EMLIS_TWO_STAGE_SECTION_ORDER):
+            raise ValueError(f"{source} must keep two-stage section order")
+        if two_stage.get("public_response_key_added") is True or two_stage.get("rn_visible_contract_changed") is True:
+            raise ValueError(f"{source} must not change public/RN contract for two-stage reception")
+        if two_stage.get("completed_reply_generated") is True or two_stage.get("comment_text_generated") is True:
+            raise ValueError(f"{source} must not generate completed two-stage reply text in contract")
+
+    observation_layer = _as_mapping(value.get("observation_layer"))
+    if observation_layer and observation_layer.get("display_label") != EMLIS_OBSERVATION_DISPLAY_LABEL:
+        raise ValueError(f"{source} must keep observation_layer display label")
+
+    reception_section = _as_mapping(value.get("reception_section_material"))
+    if reception_section:
+        if _clean(reception_section.get("schema_version")) != EMLIS_RECEPTION_SECTION_MATERIAL_SCHEMA_VERSION:
+            raise ValueError(f"{source} has unexpected reception_section_material schema_version")
+        if _clean(reception_section.get("material_id")) != EMLIS_RECEPTION_SECTION_MATERIAL_ID:
+            raise ValueError(f"{source} has unexpected reception_section_material material_id")
+        if reception_section.get("display_label") != EMLIS_RECEPTION_DISPLAY_LABEL:
+            raise ValueError(f"{source} must keep reception_section_material display label")
+        for forbidden_flag in (
+            "completed_reply_generated",
+            "comment_text_generated",
+            "public_response_key_added",
+            "rn_visible_contract_changed",
+            "raw_input_included",
+            "raw_text_included",
+        ):
+            if reception_section.get(forbidden_flag) is True:
+                raise ValueError(f"{source} violates reception_section_material boundary: {forbidden_flag}=true")
+
+    reception_assistance = _as_mapping(value.get("reception_assistance"))
+    if reception_assistance:
+        if _clean(reception_assistance.get("schema_version")) != RECEPTION_ASSISTANCE_DICTIONARY_SCHEMA_VERSION:
+            raise ValueError(f"{source} has unexpected reception_assistance schema_version")
+        if _clean(reception_assistance.get("dictionary_id")) != RECEPTION_ASSISTANCE_DICTIONARY_ID:
+            raise ValueError(f"{source} has unexpected reception_assistance dictionary_id")
+        if reception_assistance.get("dictionary_material_only") is not True:
+            raise ValueError(f"{source} must keep reception_assistance as material only")
+        if reception_assistance.get("general_dictionary_used") is True:
+            raise ValueError(f"{source} must not use a general dictionary")
+        if reception_assistance.get("completed_reply_generated") is True:
+            raise ValueError(f"{source} must not generate completed replies from reception dictionary")
+
     try:
         json.dumps(value, ensure_ascii=False, sort_keys=True)
     except TypeError as exc:
@@ -1359,6 +1946,16 @@ __all__ = [
     "EMLIS_AI_SAFE_DAILY_METAPHOR_SCHEMA_VERSION",
     "EMLIS_AI_SAFE_DAILY_METAPHOR_MATERIAL_ID",
     "EMLIS_AI_SAFE_DAILY_METAPHOR_PHASE",
+    "EMLIS_TWO_STAGE_RECEPTION_SCHEMA_VERSION",
+    "EMLIS_TWO_STAGE_RECEPTION_MATERIAL_ID",
+    "EMLIS_TWO_STAGE_RECEPTION_PHASE",
+    "EMLIS_RECEPTION_SECTION_MATERIAL_SCHEMA_VERSION",
+    "EMLIS_RECEPTION_SECTION_MATERIAL_ID",
+    "EMLIS_RECEPTION_MODE_SUMMARY_SCHEMA_VERSION",
+    "EMLIS_RECEPTION_MODE_SUMMARY_MATERIAL_ID",
+    "EMLIS_OBSERVATION_DISPLAY_LABEL",
+    "EMLIS_RECEPTION_DISPLAY_LABEL",
+    "EMLIS_TWO_STAGE_SECTION_ORDER",
     "EmlisStateAnswerSurfaceContract",
     "build_emlis_state_answer_surface_contract",
     "build_state_answer_surface_contract",

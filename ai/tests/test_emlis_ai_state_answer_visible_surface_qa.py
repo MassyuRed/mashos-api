@@ -23,6 +23,16 @@ from emlis_ai_state_answer_gate_boundary import build_state_answer_gate_boundary
 from emlis_ai_state_answer_surface_contract import build_emlis_state_answer_surface_contract
 from emlis_ai_template_echo_guard import guard_template_echo
 from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_acceptance_gate_report
+from fixtures.emlis_ai_two_stage_reception_cases import (
+    current_input_for_two_stage_reception_case as current_input_for_two_stage_case,
+    evaluate_forbidden_surface_fragments as evaluate_two_stage_forbidden_surface_fragments,
+    split_two_stage_comment_text,
+    two_stage_reception_case_by_id,
+)
+from fixtures.emlis_ai_two_stage_reception_display_quality_cases import (
+    PHASE13_TWO_STAGE_DISPLAY_QA_CASES,
+    iter_phase13_blocked_surface_probes,
+)
 from fixtures.emlis_ai_state_answer_cases import (
     COMMON_FORBIDDEN_SURFACE_PROBES,
     STATE_ANSWER_FORBIDDEN_SURFACE_FRAGMENTS,
@@ -323,7 +333,7 @@ def test_phase9_common_forbidden_surfaces_are_blocked_by_state_answer_gate(probe
     [case for case in STATE_ANSWER_VISIBLE_SURFACE_QA_CASES if case["case_id"] in _GENERATED_QA_CASE_IDS],
     ids=[case["case_id"] for case in STATE_ANSWER_VISIBLE_SURFACE_QA_CASES if case["case_id"] in _GENERATED_QA_CASE_IDS],
 )
-def test_phase9_generated_visible_surfaces_pass_structure_not_exact_text(case):
+def test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate(case):
     candidate, evidence, scope, current_input, _payload = _composer_candidate(case)
     assert scope.scope_status == "eligible"
     assert candidate["composer_source"] == "ai_generated"
@@ -334,6 +344,9 @@ def test_phase9_generated_visible_surfaces_pass_structure_not_exact_text(case):
     for forbidden in STATE_ANSWER_FORBIDDEN_SURFACE_FRAGMENTS:
         assert _compact(forbidden) not in compact
 
+    # Phase16-1 changes the contract boundary: once composer_meta says
+    # labelled_two_stage_text is required, an otherwise generated state-answer
+    # surface must not pass public display without the two section labels.
     contract = _state_answer_contract(case)
     visible = build_visible_surface_acceptance_gate_report(
         comment_text=text,
@@ -341,7 +354,10 @@ def test_phase9_generated_visible_surfaces_pass_structure_not_exact_text(case):
         state_answer_surface_contract=contract,
         composer_meta=candidate.get("composer_meta") or {},
     )
-    assert visible["passed"] is True, visible["rejection_reasons"]
+    assert visible["passed"] is False
+    assert visible["two_stage_reception_gate_required"] is True
+    assert visible["two_stage_reception_gate_terminal_surface_block"] is True
+    assert "two_stage_label_missing" in visible["rejection_reasons"]
 
     gate = build_state_answer_gate_boundary_report(
         visible_surface=text,
@@ -349,7 +365,10 @@ def test_phase9_generated_visible_surfaces_pass_structure_not_exact_text(case):
         composer_meta=candidate.get("composer_meta") or {},
         current_input=current_input,
     )
-    assert gate["passed"] is True, gate["rejection_reasons"]
+    assert gate["passed"] is False
+    assert gate["two_stage_reception_gate_evaluated"] is True
+    assert gate["two_stage_reception_gate_terminal_surface_block"] is True
+    assert "two_stage_label_missing" in gate["rejection_reasons"]
 
     guard = guard_template_echo(
         comment_text=text,
@@ -373,8 +392,8 @@ def test_phase9_generated_visible_surfaces_pass_structure_not_exact_text(case):
         comment_text_present=True,
         subscription_tier="free",
     )
-    assert public_meta["observation_status"] == "passed"
-    assert should_include_public_input_feedback(text, public_meta) is True
+    assert public_meta["observation_status"] == "rejected"
+    assert should_include_public_input_feedback(text, public_meta) is False
     _assert_public_meta_does_not_contain_raw_text(public_meta, case, surface=text)
 
 
@@ -419,3 +438,147 @@ def test_phase9_qa_probe_surfaces_are_not_runtime_templates():
             continue
         first_sentence = surface.split("。")[0]
         assert first_sentence not in service_sources
+
+
+
+def _assert_phase13_public_meta_has_no_text_body(public_meta: dict, *, current_input: dict, surface: str) -> None:
+    dumped = _json(public_meta)
+    _assert_no_forbidden_public_payload_keys(public_meta)
+    for raw_fragment in (
+        str(current_input.get("memo") or "")[:24],
+        str(current_input.get("memo_action") or "")[:24],
+        str(surface or "")[:24],
+    ):
+        if raw_fragment:
+            assert raw_fragment not in dumped
+    assert '"comment_text":' not in dumped
+    assert '"observation_text":' not in dumped
+    assert '"reception_text":' not in dumped
+    assert '"current_input":' not in dumped
+
+
+@pytest.mark.parametrize(
+    "qa_case",
+    PHASE13_TWO_STAGE_DISPLAY_QA_CASES,
+    ids=[case["case_id"] for case in PHASE13_TWO_STAGE_DISPLAY_QA_CASES],
+)
+def test_phase13_two_stage_accepted_surfaces_pass_state_and_visible_gates_without_public_contract_change(qa_case: dict) -> None:
+    fixture_case = two_stage_reception_case_by_id(qa_case["case_id"])
+    current_input = current_input_for_two_stage_case(fixture_case)
+    contract = build_emlis_state_answer_surface_contract(current_input).as_meta()
+    surface = qa_case["accepted_surface_probe"]
+    sections = split_two_stage_comment_text(surface)
+
+    assert sections["labels_present"] is True
+    assert sections["label_order_valid"] is True
+    assert evaluate_two_stage_forbidden_surface_fragments(surface, fixture_case) == ()
+
+    state_gate = build_state_answer_gate_boundary_report(
+        visible_surface=surface,
+        state_answer_surface_contract=contract,
+        current_input=current_input,
+        reception_mode=qa_case["reception_mode"],
+        two_stage_reception_gate_required=True,
+    )
+    assert state_gate["passed"] is True, state_gate["rejection_reasons"]
+    assert state_gate["two_stage_reception_gate_connected"] is True
+    assert state_gate["two_stage_reception_gate_passed"] is True
+    assert state_gate["public_meta_summary_only"] is True
+
+    visible_gate = build_visible_surface_acceptance_gate_report(
+        comment_text=surface,
+        current_input=current_input,
+        state_answer_surface_contract=contract,
+        reception_mode=qa_case["reception_mode"],
+        two_stage_reception_gate_required=True,
+        rerender_allowed=False,
+    )
+    assert visible_gate["passed"] is True, visible_gate["rejection_reasons"]
+    assert visible_gate["classification"] == "pass"
+    assert visible_gate["two_stage_reception_gate_required"] is True
+    assert visible_gate["two_stage_reception_gate_terminal_surface_block"] is False
+    assert visible_gate["two_stage_reception_gate_public_meta_summary_only"] is True
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        {
+            "observation_status": "passed",
+            "state_answer_gate_boundary": state_gate,
+            "visible_surface_acceptance_gate": visible_gate,
+        },
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    assert public_meta["observation_status"] == "passed"
+    assert should_include_public_input_feedback(surface, public_meta) is True
+    _assert_phase13_public_meta_has_no_text_body(public_meta, current_input=current_input, surface=surface)
+
+
+@pytest.mark.parametrize(
+    "blocked_probe",
+    iter_phase13_blocked_surface_probes(),
+    ids=[probe["probe_id"] for probe in iter_phase13_blocked_surface_probes()],
+)
+def test_phase13_two_stage_blocked_surface_probes_never_become_passed_public_feedback(blocked_probe: dict) -> None:
+    fixture_case = two_stage_reception_case_by_id(blocked_probe["case_id"])
+    current_input = current_input_for_two_stage_case(fixture_case)
+    contract = build_emlis_state_answer_surface_contract(current_input).as_meta()
+    surface = blocked_probe["surface"]
+
+    state_gate = build_state_answer_gate_boundary_report(
+        visible_surface=surface,
+        state_answer_surface_contract=contract,
+        current_input=current_input,
+        reception_mode=blocked_probe["reception_mode"],
+        two_stage_reception_gate_required=True,
+    )
+    assert state_gate["passed"] is False, blocked_probe["probe_id"]
+    assert state_gate["two_stage_reception_gate_terminal_surface_block"] is True
+    assert set(blocked_probe["expected_reason_any"]).intersection(state_gate["rejection_reasons"])
+
+    visible_gate = build_visible_surface_acceptance_gate_report(
+        comment_text=surface,
+        current_input=current_input,
+        state_answer_surface_contract=contract,
+        reception_mode=blocked_probe["reception_mode"],
+        two_stage_reception_gate_required=True,
+        rerender_allowed=False,
+    )
+    assert visible_gate["passed"] is False, blocked_probe["probe_id"]
+    assert visible_gate["classification"] == "red"
+    assert visible_gate["two_stage_reception_gate_terminal_surface_block"] is True
+    assert set(blocked_probe["expected_reason_any"]).intersection(visible_gate["rejection_reasons"])
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        {
+            "observation_status": "passed",
+            "state_answer_gate_boundary": state_gate,
+            "visible_surface_acceptance_gate": visible_gate,
+        },
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+    assert public_meta["observation_status"] == "rejected"
+    assert should_include_public_input_feedback(surface, public_meta) is False
+    _assert_phase13_public_meta_has_no_text_body(public_meta, current_input=current_input, surface=surface)
+
+
+def test_phase13_two_stage_accepted_surface_probes_are_not_runtime_fixed_templates() -> None:
+    service_dir = Path(__file__).resolve().parents[1] / "services" / "ai_inference"
+    runtime_surface_paths = [
+        service_dir / "emlis_ai_conversation_composer_service.py",
+        service_dir / "emlis_ai_state_answer_composer_contract.py",
+        service_dir / "emlis_ai_state_answer_surface_contract.py",
+        service_dir / "emlis_ai_two_stage_reception_gate.py",
+        service_dir / "emlis_ai_visible_surface_acceptance_gate.py",
+        service_dir / "emlis_ai_public_feedback_meta.py",
+    ]
+    service_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in runtime_surface_paths
+        if path.exists()
+    )
+
+    for qa_case in PHASE13_TWO_STAGE_DISPLAY_QA_CASES:
+        sections = split_two_stage_comment_text(qa_case["accepted_surface_probe"])
+        assert sections["observation_text"] not in service_sources
+        assert sections["reception_text"] not in service_sources

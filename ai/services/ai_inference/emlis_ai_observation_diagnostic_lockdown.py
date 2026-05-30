@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from emlis_ai_runtime_surface_exit_criteria import build_runtime_surface_exit_criteria_report
+from emlis_ai_diagnostic_failure_taxonomy import build_diagnostic_failure_taxonomy_meta
 
 DIAGNOSTIC_LOCKDOWN_VERSION = "emlis.observation_diagnostic_lockdown.v1"
 DEFAULT_SOURCE = "backend_emotion_submit"
@@ -1019,11 +1020,24 @@ def _extract_display_absence_summary(
     public_feedback_not_included_non_passed = _to_bool(source.get("public_feedback_not_included_non_passed"))
     public_feedback_not_included_empty_comment_text = _to_bool(source.get("public_feedback_not_included_empty_comment_text"))
     public_feedback_not_included_visible_surface_gate = _to_bool(source.get("public_feedback_not_included_visible_surface_gate"))
+    public_feedback_not_included_reply_timeout_or_error = bool(
+        _to_bool(source.get("public_feedback_not_included_reply_timeout_or_error"))
+        or any(
+            reason in {"emlis_ai_timeout_or_error", "emlis_ai_reply_timeout", "emlis_ai_reply_error"}
+            for reason in reason_codes
+        )
+    )
     rn_payload_absent = _to_bool(source.get("rn_payload_absent"))
-    candidate_fail_closed_display_absent = _to_bool(source.get("candidate_fail_closed_display_absent")) or rn_payload_absent
+    candidate_fail_closed_display_absent = (
+        _to_bool(source.get("candidate_fail_closed_display_absent"))
+        or rn_payload_absent
+        or public_feedback_not_included_reply_timeout_or_error
+    )
     reason_family = _first_nonempty(source.get("reason_family"))
     if not reason_family:
-        if candidate_blocked_koto_splice:
+        if public_feedback_not_included_reply_timeout_or_error:
+            reason_family = "reply_timeout_or_error"
+        elif candidate_blocked_koto_splice:
             reason_family = "koto_splice"
         elif candidate_blocked_relation_skeleton:
             reason_family = "relation_skeleton"
@@ -1047,6 +1061,7 @@ def _extract_display_absence_summary(
         "public_feedback_not_included_non_passed": public_feedback_not_included_non_passed,
         "public_feedback_not_included_empty_comment_text": public_feedback_not_included_empty_comment_text,
         "public_feedback_not_included_visible_surface_gate": public_feedback_not_included_visible_surface_gate,
+        "public_feedback_not_included_reply_timeout_or_error": public_feedback_not_included_reply_timeout_or_error,
         "rn_payload_absent": rn_payload_absent,
         "reason_family": reason_family,
         "reason_codes": reason_codes,
@@ -1054,6 +1069,72 @@ def _extract_display_absence_summary(
         "comment_text_body_included": False,
         "display_gate_relaxed": False,
     }
+
+
+def _extract_submit_speed_regression(
+    input_feedback_meta: Mapping[str, Any],
+    diagnostic_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    source = _first_mapping(
+        input_feedback_meta.get("submit_speed_regression"),
+        diagnostic_summary.get("submit_speed_regression"),
+    )
+    if not source:
+        return {}
+
+    safe: dict[str, Any] = {}
+    for key in (
+        "schema_version",
+        "source_phase",
+        "trace_id",
+        "observation_status",
+        "fail_closed_reason_code",
+        "reception_mode_id",
+        "reception_mode_family",
+    ):
+        value = _clean(source.get(key))
+        if value:
+            safe[key] = value[:120]
+
+    for key in (
+        "reply_elapsed_ms",
+        "reply_timeout_budget_ms",
+        "eligibility_elapsed_ms",
+        "shared_evidence_elapsed_ms",
+        "reception_mode_elapsed_ms",
+        "composer_elapsed_ms",
+        "runtime_gate_elapsed_ms",
+        "visible_gate_elapsed_ms",
+        "public_meta_elapsed_ms",
+        "submit_elapsed_ms",
+        "reception_probe_elapsed_ms",
+    ):
+        safe[key] = max(0, _to_int(source.get(key)))
+
+    for key in (
+        "reply_completed_within_budget",
+        "reply_timeout",
+        "comment_text_present",
+        "public_feedback_included",
+        "saved_emotion_success",
+        "emlis_display_fail_closed",
+        "daily_reception_branch",
+        "reception_probe_succeeded",
+        "heavy_diagnostics_added_before_display",
+        "general_dictionary_lookup_used",
+        "raw_input_included",
+        "raw_text_included",
+        "comment_text_body_included",
+        "public_response_key_added",
+        "rn_visible_contract_changed",
+        "display_gate_relaxed",
+    ):
+        safe[key] = _to_bool(source.get(key))
+
+    reason_codes = _dedupe_strings(source.get("reason_codes"), limit=_MAX_REASON_COUNT)
+    if reason_codes:
+        safe["reason_codes"] = reason_codes
+    return safe
 
 
 def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
@@ -1067,22 +1148,15 @@ def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
     observation_status = _clean(record.get("observation_status"))
     comment_text_length = _to_int(record.get("comment_text_length"))
     display_absence = _safe_mapping(record.get("display_absence_summary"))
+
     if _to_bool(display_absence.get("rn_payload_absent")):
         if _to_bool(display_absence.get("candidate_blocked_koto_splice")):
             return "candidate_blocked_koto_splice"
         if _to_bool(display_absence.get("candidate_blocked_relation_skeleton")):
             return "candidate_blocked_relation_skeleton"
-        if _to_bool(display_absence.get("candidate_blocked_surface_grammar")):
-            return "candidate_blocked_surface_grammar"
-        if _to_bool(display_absence.get("public_feedback_not_included_empty_comment_text")):
-            return "public_feedback_not_included_empty_comment_text"
-        if _to_bool(display_absence.get("public_feedback_not_included_non_passed")):
-            return "public_feedback_not_included_non_passed"
-        if _to_bool(display_absence.get("candidate_fail_closed_display_absent")):
-            return "candidate_fail_closed_display_absent"
 
     frontend = _safe_mapping(record.get("frontend"))
-    if observation_status == "passed" and comment_text_length > 0:
+    if observation_status == "passed" and comment_text_length > 0 and not _to_bool(display_absence.get("rn_payload_absent")):
         if frontend and frontend.get("modal_opened") is False:
             return "passed_backend_frontend_hidden"
         return "passed_displayed"
@@ -1134,6 +1208,20 @@ def classify_observation_diagnostic(record: Mapping[str, Any]) -> str:
     )
     if runtime_surface_blocked:
         return "surface_quality_blocked"
+
+    if _to_bool(display_absence.get("rn_payload_absent")):
+        if _to_bool(display_absence.get("candidate_blocked_koto_splice")):
+            return "candidate_blocked_koto_splice"
+        if _to_bool(display_absence.get("candidate_blocked_relation_skeleton")):
+            return "candidate_blocked_relation_skeleton"
+        if _to_bool(display_absence.get("candidate_blocked_surface_grammar")):
+            return "candidate_generated_but_display_rejected"
+        if _to_bool(display_absence.get("public_feedback_not_included_empty_comment_text")):
+            return "public_feedback_not_included_empty_comment_text"
+        if _to_bool(display_absence.get("public_feedback_not_included_non_passed")):
+            return "public_feedback_not_included_non_passed"
+        if _to_bool(display_absence.get("candidate_fail_closed_display_absent")):
+            return "candidate_fail_closed_display_absent"
 
     display_gate = _safe_mapping(gate_results.get("display"))
     if display_gate.get("passed") is False:
@@ -1230,6 +1318,7 @@ def build_observation_diagnostic_lockdown(
         runtime_meta=runtime_meta,
     )
     display_absence_summary = _extract_display_absence_summary(meta, diagnostic_summary)
+    submit_speed_regression = _extract_submit_speed_regression(meta, diagnostic_summary)
 
     record: dict[str, Any] = {
         "version": DIAGNOSTIC_LOCKDOWN_VERSION,
@@ -1267,6 +1356,15 @@ def build_observation_diagnostic_lockdown(
         "gate_results": gate_results,
         "display_rejection_reasons": display_rejection_reasons,
         "display_absence_summary": display_absence_summary,
+        "submit_speed_regression": submit_speed_regression,
+        "reply_elapsed_ms": _to_int(submit_speed_regression.get("reply_elapsed_ms")),
+        "reply_timeout_budget_ms": _to_int(submit_speed_regression.get("reply_timeout_budget_ms")),
+        "reply_completed_within_budget": _to_bool(submit_speed_regression.get("reply_completed_within_budget")),
+        "reply_timeout": _to_bool(submit_speed_regression.get("reply_timeout")),
+        "emlis_display_fail_closed": _to_bool(submit_speed_regression.get("emlis_display_fail_closed")),
+        "fail_closed_reason_code": _first_nonempty(submit_speed_regression.get("fail_closed_reason_code")),
+        "daily_reception_branch": _to_bool(submit_speed_regression.get("daily_reception_branch")),
+        "reception_mode_id": _first_nonempty(submit_speed_regression.get("reception_mode_id")),
         "candidate_blocked_surface_grammar": _to_bool(display_absence_summary.get("candidate_blocked_surface_grammar")),
         "candidate_blocked_koto_splice": _to_bool(display_absence_summary.get("candidate_blocked_koto_splice")),
         "candidate_blocked_relation_skeleton": _to_bool(display_absence_summary.get("candidate_blocked_relation_skeleton")),
@@ -1317,7 +1415,25 @@ def build_observation_diagnostic_lockdown(
         "raw_input_included": False,
         "comment_text_included": False,
     }
-    record["classification"] = classify_observation_diagnostic(record)
+    legacy_classification = classify_observation_diagnostic(record)
+    taxonomy_meta = build_diagnostic_failure_taxonomy_meta(
+        observation_status=record.get("observation_status"),
+        stage=record.get("stage"),
+        primary_reason=record.get("primary_reason"),
+        secondary_reasons=record.get("secondary_reasons"),
+        composer_status=record.get("composer_status"),
+        gate_results=record.get("gate_results") if isinstance(record.get("gate_results"), Mapping) else {},
+        gate_failure_stage=record.get("gate_failure_stage"),
+        display_rejection_reasons=record.get("display_rejection_reasons"),
+        runtime_surface=record.get("runtime_surface") if isinstance(record.get("runtime_surface"), Mapping) else {},
+        display_absence_summary=record.get("display_absence_summary") if isinstance(record.get("display_absence_summary"), Mapping) else {},
+        comment_text_allowed=record.get("comment_text_present"),
+        comment_text_length=record.get("comment_text_length"),
+    )
+    record["classification"] = legacy_classification
+    record["diagnostic_failure_taxonomy"] = taxonomy_meta
+    record["canonical_classification"] = taxonomy_meta["canonical_classification"]
+    record["legacy_classification_aliases"] = list(taxonomy_meta.get("legacy_classification_aliases") or [])
     runtime_surface_exit_criteria = build_runtime_surface_exit_criteria_report(diagnostic_record=record)
     record["runtime_surface_exit_criteria"] = runtime_surface_exit_criteria
     record["step10_runtime_surface_exit_criteria_ready"] = _to_bool(runtime_surface_exit_criteria.get("step10_runtime_surface_exit_criteria_ready"))

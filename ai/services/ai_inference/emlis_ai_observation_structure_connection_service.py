@@ -58,7 +58,9 @@ _FORBIDDEN_PAYLOAD_KEYS: Final = frozenset({
     "input", "input_text", "inputText", "user_input", "userInput", "current_input", "currentInput",
     "memo", "memo_action", "memoText", "memoAction", "thought_text", "action_text",
     "comment_text", "commentText", "reply_text", "replyText", "surface_text", "realized_text",
-    "completed_reply_text", "body", "text", "definition", "default_direction", "receive_direction", "strong_hand_direction",
+    "completed_reply_text", "body", "text", "surface_policy", "definition", "evidence_requirements",
+    "allowed_inference", "forbidden_inference", "default_direction", "receive_direction",
+    "strong_hand_direction", "notes",
 })
 _FORBIDDEN_TRUE_FLAGS: Final = frozenset({
     "raw_input_included", "raw_text_included", "comment_text_included", "comment_text_body_included",

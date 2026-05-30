@@ -10,6 +10,7 @@ scorecard/diagnostics keep surface failures as blockers rather than promotions.
 """
 
 import json
+from pathlib import Path
 from typing import Any
 
 from emlis_ai_complete_reply_diagnostics_service import (
@@ -23,6 +24,11 @@ from emlis_ai_complete_scorecard_service import (
 from emlis_ai_display_gate import decide_emlis_observation_display, phase8_display_gate_contract_ready
 from emlis_ai_limited_composer_client import CocolonLimitedComposerClient
 from emlis_ai_low_information_observation_composer import build_emlis_ai_low_information_observation
+from emlis_ai_public_feedback_meta import (
+    build_public_emlis_input_feedback_meta,
+    should_include_public_input_feedback,
+)
+from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_acceptance_gate_report
 from emlis_ai_observation_reply_contract import (
     OBSERVATION_PUBLIC_STATUS_FOR_DISPLAY,
     OBSERVATION_REPLY_KIND_LOW_INFORMATION,
@@ -34,6 +40,13 @@ from emlis_ai_runtime_surface_pre_return_gate import (
 )
 from emlis_ai_types import GroundingReport, ListenerReaderReport, TemplateEchoReport
 from fixtures.emlis_ai_runtime_surface_red_fixtures import RUNTIME_SURFACE_BASELINE_RED_FIXTURES
+from fixtures.emlis_ai_two_stage_reception_cases import (
+    current_input_for_two_stage_reception_case,
+    two_stage_reception_case_by_id,
+)
+from fixtures.emlis_ai_two_stage_reception_display_quality_cases import (
+    PHASE13_TWO_STAGE_DISPLAY_QA_CASES,
+)
 
 
 _PASSING_READER = ListenerReaderReport(
@@ -334,3 +347,136 @@ def test_step9_scorecard_keeps_surface_block_as_release_blocker_not_public_comme
     _assert_no_public_contract_mutation(diagnostics)
     _assert_no_public_contract_mutation(diagnostic_summary)
     _assert_no_public_contract_mutation(phase_gate)
+
+
+_PHASE13_TWO_STAGE_RED_SURFACES = (
+    {
+        "case_id": "daily_unpleasant_encounter_A",
+        "reception_mode": "daily_unpleasant_reception",
+        "surface": (
+            "見えたこと：\n"
+            "まだ詳しい出来事までは見えません。\n\n"
+            "Emlisから：\n"
+            "何があったか残してみませんか。"
+        ),
+        "expected_rejection_reason": "daily_reception_question_escape_when_event_fact_present",
+    },
+    {
+        "case_id": "self_confidence_uncertainty_B",
+        "reception_mode": "self_denial_support",
+        "surface": (
+            "見えたこと：\n"
+            "自信をつけたいって気持ちになってことが見えます。\n\n"
+            "Emlisから：\n"
+            "直したい気持ちも残っています。"
+        ),
+        "expected_rejection_reason": "two_stage_bad_grammar_or_koto_splice_surface",
+    },
+    {
+        "case_id": "positive_change_after_work_streaming",
+        "reception_mode": "daily_positive_reception",
+        "surface": (
+            "見えたこと：\n"
+            "話したい気持ちが出ています。\n\n"
+            "Emlisから：\n"
+            "我慢しなくていいです。"
+        ),
+        "expected_rejection_reason": "reception_section_action_instruction_surface",
+    },
+    {
+        "case_id": "self_blame_to_gentle_self_observation",
+        "reception_mode": "self_understanding_follow",
+        "surface": (
+            "見えたこと：\n"
+            "自己責めを乗り越えて成長しています。\n\n"
+            "Emlisから：\n"
+            "もう大丈夫です。"
+        ),
+        "expected_rejection_reason": "reception_section_stable_growth_or_recovery_assertion",
+    },
+    {
+        "case_id": "independence_life_health_money_pace",
+        "reception_mode": "standard_state_answer",
+        "surface": (
+            "見えたこと：\n"
+            "自立したい気持ちが見えます。\n\n"
+            "Emlisから：\n"
+            "自立できます。"
+        ),
+        "expected_rejection_reason": "reception_section_stable_growth_or_recovery_assertion",
+    },
+)
+
+
+def test_phase13_two_stage_red_surfaces_do_not_bypass_public_display_contract() -> None:
+    for qa_case in _PHASE13_TWO_STAGE_RED_SURFACES:
+        fixture_case = two_stage_reception_case_by_id(qa_case["case_id"])
+        current_input = current_input_for_two_stage_reception_case(fixture_case)
+        surface = qa_case["surface"]
+
+        visible_gate = build_visible_surface_acceptance_gate_report(
+            comment_text=surface,
+            current_input=current_input,
+            reception_mode=qa_case["reception_mode"],
+            two_stage_reception_gate_required=True,
+            rerender_allowed=False,
+        )
+        assert visible_gate["passed"] is False, qa_case["case_id"]
+        assert visible_gate["classification"] == "red", qa_case["case_id"]
+        assert qa_case["expected_rejection_reason"] in visible_gate["rejection_reasons"]
+        assert visible_gate["two_stage_reception_gate_terminal_surface_block"] is True
+
+        public_meta = build_public_emlis_input_feedback_meta(
+            {"observation_status": "passed", "visible_surface_acceptance_gate": visible_gate},
+            comment_text_present=True,
+            subscription_tier="free",
+        )
+        assert public_meta["observation_status"] == "rejected", qa_case["case_id"]
+        assert should_include_public_input_feedback(surface, public_meta) is False
+
+        dumped_meta = json.dumps(public_meta, ensure_ascii=False, sort_keys=True)
+        for raw_value in (current_input.get("memo"), current_input.get("memo_action"), surface):
+            snippet = str(raw_value or "").strip()[:24]
+            if snippet:
+                assert snippet not in dumped_meta
+        assert '"comment_text"' not in dumped_meta
+        assert '"raw_input"' not in dumped_meta
+        _assert_no_public_contract_mutation(visible_gate)
+        _assert_no_public_contract_mutation(public_meta)
+
+
+def _accepted_phase13_surface_sentences() -> tuple[str, ...]:
+    sentences: list[str] = []
+    for case in PHASE13_TWO_STAGE_DISPLAY_QA_CASES:
+        surface = str(case["accepted_surface_probe"])
+        for raw_line in surface.splitlines():
+            line = raw_line.strip()
+            if not line or line in {"見えたこと：", "Emlisから："}:
+                continue
+            sentences.append(line)
+    return tuple(sentences)
+
+
+def test_phase13_two_stage_display_quality_probes_are_not_runtime_fixed_templates() -> None:
+    service_dir = Path(__file__).resolve().parents[1] / "services" / "ai_inference"
+    service_sources = "\n".join(
+        path.read_text(encoding="utf-8") for path in service_dir.glob("emlis_ai_*.py")
+    )
+
+    for sentence in _accepted_phase13_surface_sentences():
+        assert sentence not in service_sources
+
+
+def test_phase13_accepted_two_stage_surfaces_do_not_trip_runtime_pre_return_gate() -> None:
+    for case in PHASE13_TWO_STAGE_DISPLAY_QA_CASES:
+        report = build_runtime_surface_pre_return_gate_report(
+            comment_text=case["accepted_surface_probe"],
+            composer_meta={
+                "composer_source": "ai_generated",
+                "two_stage_reception_gate_required": True,
+                "phase13_display_quality_qa_probe": True,
+            },
+        )
+        assert report["passed"] is True, (case["case_id"], report.get("rejection_reasons"))
+        assert report["action"] == ACTION_ALLOW
+        _assert_no_public_contract_mutation(report)

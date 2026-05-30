@@ -268,6 +268,30 @@ def test_step4_visible_surface_acceptance_gate_keeps_actual_a_low_information_po
     assert_visible_surface_acceptance_gate_meta_only(report)
 
 
+def test_phase17_5_visible_gate_blocks_internal_role_label_leak_as_terminal_red() -> None:
+    report = build_visible_surface_acceptance_gate_report(
+        comment_text=(
+            "見えたこと：\n"
+            "achievement が表面に出ています。\n\n"
+            "Emlisから：\n"
+            "positive state として扱っています。"
+        ),
+        rerender_allowed=False,
+    )
+
+    assert report["passed"] is False
+    assert report["classification"] == CLASSIFICATION_RED
+    assert report["action"] == "block"
+    assert report["internal_role_label_leak_detected"] is True
+    assert report["internal_role_label_marker_count"] >= 2
+    assert "two_stage_internal_role_label_leak" in report["rejection_reasons"]
+    assert "two_stage_complete_surface_internal_label_leak" in report["rejection_reasons"]
+    assert report["comment_text_body_included"] is False
+    assert report["raw_input_included"] is False
+    assert report["display_gate_relaxed"] is False
+    assert_visible_surface_acceptance_gate_meta_only(report)
+
+
 @pytest.mark.parametrize(
     "safe_fragment",
     (

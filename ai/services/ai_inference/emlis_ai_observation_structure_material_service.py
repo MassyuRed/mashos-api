@@ -94,6 +94,14 @@ _FORBIDDEN_PAYLOAD_KEYS: Final = frozenset(
         "completed_reply_text",
         "body",
         "text",
+        "surface_policy",
+        "definition",
+        "evidence_requirements",
+        "allowed_inference",
+        "forbidden_inference",
+        "default_direction",
+        "strong_hand_direction",
+        "notes",
     }
 )
 _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
@@ -672,7 +680,9 @@ class ObservationStructureMaterial:
             "environment_state_output_frame_phase": (self.environment_state_output_frame or {}).get("phase") or "",
             "environment_state_output_frame_single_record_only": bool(((self.environment_state_output_frame or {}).get("frame_policy") or {}).get("single_record_only")),
             "environment_state_output_frame_safe_projection": bool(self.environment_state_output_frame),
-            "state_answer_surface_contract": copy.deepcopy(dict(self.state_answer_surface_contract or {})),
+            "state_answer_surface_contract": state_answer_surface_contract_forward_meta(self.state_answer_surface_contract)
+            if self.state_answer_surface_contract
+            else {},
             "state_answer_surface_contract_connected": bool(self.state_answer_surface_contract),
             "state_answer_surface_contract_material_id": (self.state_answer_surface_contract or {}).get("material_id") or "",
             "state_answer_surface_contract_schema_version": (self.state_answer_surface_contract or {}).get("schema_version") or "",

@@ -853,20 +853,22 @@ async def test_step06_limited_cases_scope_block_is_scope_not_rollout(monkeypatch
     b_plan = summary["b_plan_connection"]
     assert summary["rollout_stage"] == "limited_cases"
     assert summary["scope_status"] == "out_of_scope"
-    assert summary["stage"] == "display"
-    assert summary["primary_reason"] == "passed"
+    assert summary["observation_status"] == "unavailable"
+    assert summary["stage"] == "scope"
+    assert summary["primary_reason"] == "limited_scope_no_grounded_primary_state"
     assert summary["release_decision"]["reason_code"] == "scope_limited_case_not_eligible"
     assert summary["registry_resolution"]["connection_status"] == "blocked_scope"
     assert summary["registry_resolution"]["pre_connection_stop_stage"] == "scope"
     assert b_plan["decision"] == "blocked_scope"
     assert b_plan["registry_connection_status"] == "blocked_scope"
     assert b_plan["environment_blocked"] is False
-    assert b_plan["status_family"] == "passed"
+    assert b_plan["status_family"] == "scope_blocked"
     assert b_plan["blocked_before_composer"] is True
     assert summary["composer_connection_attempted"] is False
-    assert summary["comment_text_allowed"] is True
-    assert reply.comment_text
-    assert "詳しく残せそうなら" in reply.comment_text
+    assert summary["comment_text_allowed"] is False
+    assert summary["classification"] == "pre_connection_blocked_scope"
+    assert "pre_connection_stop" in summary["legacy_classification_aliases"]
+    assert reply.comment_text == ""
 
 
 @pytest.mark.asyncio
