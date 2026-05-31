@@ -60,9 +60,21 @@ logger = logging.getLogger(__name__)
 _PHASE14_SPEED_REGRESSION_SCHEMA_VERSION = "cocolon.emlis.submit_speed_regression.v1"
 _PHASE14_SPEED_REGRESSION_PHASE = "Phase14_speed_regression"
 _DAILY_RECEPTION_MODE_IDS = {"daily_unpleasant_reception", "daily_positive_reception"}
+_PHASE19_PUBLIC_SAFE_MODE_ID_ALIASES = {
+    "self_understanding_learning_shift": "self_understanding_follow",
+    "relationship_gratitude_recovery": "relationship_reception",
+}
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_CODES = 20
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_LENGTH = 96
 
+
+
+
+def _phase14_public_safe_reception_mode_id(value: Any) -> str:
+    mode_id = _phase14_clean_identifier(value, limit=80)
+    if not mode_id:
+        return ""
+    return _PHASE19_PUBLIC_SAFE_MODE_ID_ALIASES.get(mode_id, mode_id)
 
 def _phase14_perf_counter() -> float:
     return time.perf_counter()
@@ -184,11 +196,10 @@ def _build_phase14_reception_mode_timing_probe(current_input: Any) -> Dict[str, 
         )
         resolver_elapsed_ms = _phase14_elapsed_ms(resolver_started)
         resolution_meta = resolution.as_meta() if hasattr(resolution, "as_meta") else {}
-        reception_mode_id = _phase14_clean_identifier(
+        reception_mode_id = _phase14_public_safe_reception_mode_id(
             resolution_meta.get("reception_mode_id")
             or resolution_meta.get("reception_mode")
-            or resolution_meta.get("selected_reception_mode_id"),
-            limit=80,
+            or resolution_meta.get("selected_reception_mode_id")
         )
         return {
             "probe_succeeded": True,
@@ -288,11 +299,10 @@ def _build_submit_speed_regression_summary(
     reply_completed_within_budget = bool(
         not reply_timeout and reply_elapsed_ms <= max(0, int(reply_timeout_budget_ms))
     )
-    reception_mode_id = _phase14_clean_identifier(
+    reception_mode_id = _phase14_public_safe_reception_mode_id(
         probe.get("reception_mode_id")
         or internal_meta.get("reception_mode_id")
-        or _phase14_find_mapping(internal_meta, "reception_mode_resolution").get("reception_mode_id"),
-        limit=80,
+        or _phase14_find_mapping(internal_meta, "reception_mode_resolution").get("reception_mode_id")
     )
     reception_mode_family = _phase14_clean_identifier(
         probe.get("reception_mode_family")

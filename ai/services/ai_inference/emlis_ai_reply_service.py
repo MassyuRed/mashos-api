@@ -1534,6 +1534,99 @@ def _visible_surface_current_text(current_input: Mapping[str, Any] | None) -> st
     return ""
 
 
+_PHASE19_LOW_INFORMATION_SENTENCE_SPLIT_RE = re.compile(r"[。！？!?]+")
+_PHASE19_LOW_INFORMATION_STATE_SIGNAL_RE = re.compile(
+    r"(だる|何もしたくない|疲|つかれ|しんど|つら|辛|きつ|無理|不安|悲し|怖|こわ|焦|重い|重さ|消耗)",
+    re.IGNORECASE,
+)
+_PHASE19_LOW_INFORMATION_SAFETY_ADJACENT_RE = re.compile(
+    r"(自分を傷つけ|傷つけてるのは私|死にたい|消えたい|自傷|自殺|殺したい|絶対にない)",
+    re.IGNORECASE,
+)
+
+
+def _phase19_compact_low_information_sentence_count(text: str) -> int:
+    return len([part for part in (_clean(part) for part in _PHASE19_LOW_INFORMATION_SENTENCE_SPLIT_RE.split(text)) if part])
+
+
+def _phase19_current_input_action_text(current_input: Mapping[str, Any] | None) -> str:
+    current = current_input if isinstance(current_input, Mapping) else {}
+    for key in ("memo_action", "action_text", "action", "memoAction"):
+        value = str(current.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _phase19_safety_blocked_for_low_information_repair(
+    *,
+    safety_requires_block: bool = False,
+    safety_report: Any = None,
+    display_decision: Any = None,
+) -> bool:
+    if bool(safety_requires_block):
+        return True
+    if safety_report is not None and bool(getattr(safety_report, "requires_block", False)):
+        return True
+    if str(getattr(display_decision, "observation_status", "") or "") == "safety_blocked":
+        return True
+    reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) if display_decision is not None else [])
+    return any("safety" in reason or "self_harm" in reason or "harm" in reason for reason in reasons)
+
+
+def _phase19_complete_initial_low_information_repair_ownership_meta(
+    *,
+    complete_initial_default_requested: bool,
+    current_input: Mapping[str, Any] | None,
+    safety_requires_block: bool,
+    safety_report: Any = None,
+    display_decision: Any = None,
+) -> Dict[str, Any]:
+    """Return internal Phase19-2 ownership meta for compact low-info repair."""
+
+    current = current_input if isinstance(current_input, Mapping) else {}
+    memo_text = _visible_surface_current_text(current)
+    memo_action = _phase19_current_input_action_text(current)
+    sentence_count = _phase19_compact_low_information_sentence_count(memo_text)
+    safety_blocked = _phase19_safety_blocked_for_low_information_repair(
+        safety_requires_block=safety_requires_block,
+        safety_report=safety_report,
+        display_decision=display_decision,
+    )
+    self_harm_adjacent = bool(_PHASE19_LOW_INFORMATION_SAFETY_ADJACENT_RE.search(memo_text))
+    compact_signal = bool(memo_text and len(memo_text) <= 48 and sentence_count <= 2 and not memo_action)
+    state_signal = bool(_PHASE19_LOW_INFORMATION_STATE_SIGNAL_RE.search(memo_text))
+    has_specific_long_form_observation_material = bool(memo_action or len(memo_text) > 48 or sentence_count > 2)
+    repair_allowed = bool(
+        complete_initial_default_requested
+        and compact_signal
+        and state_signal
+        and not has_specific_long_form_observation_material
+        and not safety_blocked
+        and not self_harm_adjacent
+    )
+    repair_block_reason = "" if repair_allowed else "complete_initial_runtime_contract_owns_display_failure"
+    return {
+        "schema_version": "cocolon.emlis.phase19.complete_initial_low_information_repair_ownership.v1",
+        "source_phase": "Phase19-2_A_low_information_repair_ownership",
+        "complete_initial_default_requested": bool(complete_initial_default_requested),
+        "low_information_compact_signal_detected": bool(compact_signal),
+        "low_information_state_signal_detected": bool(state_signal),
+        "has_specific_long_form_observation_material": bool(has_specific_long_form_observation_material),
+        "repair_allowed_under_complete_initial": bool(repair_allowed),
+        "repair_block_reason": repair_block_reason or None,
+        "safety_blocked": bool(safety_blocked),
+        "self_harm_adjacent_signal_detected": bool(self_harm_adjacent),
+        "public_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+        "fixed_fallback_used": False,
+        "raw_input_included": False,
+        "reason": "compact_low_information_state_signal" if repair_allowed else repair_block_reason,
+    }
+
+
 def _build_visible_surface_acceptance_report_for_candidate(
     *,
     comment_text: str,
@@ -5660,8 +5753,18 @@ async def render_emlis_ai_reply(
         or composer_env.get("EMLIS_AI_DEFAULT_COMPOSER")
         or ""
     ).strip().lower() == "complete_initial"
+    complete_initial_low_information_repair_ownership = _phase19_complete_initial_low_information_repair_ownership_meta(
+        current_input=current_input,
+        complete_initial_default_requested=complete_initial_default_requested,
+        safety_requires_block=safety_requires_block,
+        safety_report=safety_report,
+        display_decision=display_decision,
+    )
+    complete_initial_low_information_repair_allowed = bool(
+        complete_initial_low_information_repair_ownership.get("repair_allowed_under_complete_initial")
+    )
     step10_repair_block_reason = ""
-    if complete_initial_default_requested:
+    if complete_initial_default_requested and not complete_initial_low_information_repair_allowed:
         step10_repair_block_reason = "complete_initial_runtime_contract_owns_display_failure"
     runtime_repair_block_reason = _step10_repair_runtime_block_reason(
         composer_client_resolution=composer_client_resolution,
@@ -5669,6 +5772,8 @@ async def render_emlis_ai_reply(
     )
     if runtime_repair_block_reason:
         step10_repair_block_reason = runtime_repair_block_reason
+        complete_initial_low_information_repair_ownership["repair_allowed_under_complete_initial"] = False
+        complete_initial_low_information_repair_ownership["repair_block_reason"] = runtime_repair_block_reason
     observation_display_repair_result = integrate_observation_display_repair(
         current_input=current_input,
         subscription_tier=subscription_tier,
@@ -5687,6 +5792,7 @@ async def render_emlis_ai_reply(
         original_composer_candidate=composer_candidate,
         repair_allowed=not bool(step10_repair_block_reason),
         repair_block_reason=step10_repair_block_reason,
+        repair_context=complete_initial_low_information_repair_ownership,
         runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
     )
     if observation_display_repair_result.applied:

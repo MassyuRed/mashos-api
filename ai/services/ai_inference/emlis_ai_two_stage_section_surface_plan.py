@@ -84,6 +84,18 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
         "reception_min": 2,
         "reception_max": 2,
     },
+    "self_understanding_learning_shift": {
+        "observation_min": 1,
+        "observation_max": 1,
+        "reception_min": 1,
+        "reception_max": 1,
+    },
+    "relationship_gratitude_recovery": {
+        "observation_min": 1,
+        "observation_max": 1,
+        "reception_min": 2,
+        "reception_max": 2,
+    },
     "standard_state_answer": {
         "observation_min": 1,
         "observation_max": 1,
@@ -106,6 +118,8 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
 # raw input or completed reply text.
 _RECEPTION_MODE_BY_RATIO_REASON: Final = {
     EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID,
+    "self_understanding_learning_shift": "self_understanding_learning_shift",
+    "relationship_end_gratitude_recovery": "relationship_gratitude_recovery",
 }
 
 
@@ -417,9 +431,12 @@ def _reception_section_plan(
     section_budget: Mapping[str, int],
 ) -> dict[str, Any]:
     display_label = labels["reception"]
-    sentence_units = _int_at_least(role_section.get("sentence_plan_unit_count"), default=2, minimum=1)
     reception_min = int(section_budget.get("reception_min", 1))
     reception_max = int(section_budget.get("reception_max", 2))
+    sentence_units = max(
+        _int_at_least(role_section.get("sentence_plan_unit_count"), default=2, minimum=1),
+        reception_min,
+    )
     follow_keys = _dedupe(
         [role_section.get("primary_follow_key")]
         + list(role_section.get("secondary_follow_keys") or [])

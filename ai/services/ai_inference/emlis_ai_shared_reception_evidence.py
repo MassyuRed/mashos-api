@@ -98,6 +98,35 @@ _REACTION_CUE_PATTERNS: Final = {
         "頑張りたい",
         "小さくても大事",
     ),
+    "self_understanding_learning_shift": (
+        "疑問の対象",
+        "人について考えすぎ",
+        "人への興味",
+        "人との話し方",
+        "すぐに行動",
+        "勇気",
+        "日常",
+        "傷",
+        "汚れ",
+        "メモ",
+        "進歩",
+        "大丈夫",
+    ),
+    "relationship_gratitude_recovery": (
+        "彼氏と別れ",
+        "別れた",
+        "関係の終わり",
+        "友達",
+        "変わらず",
+        "優しく",
+        "優しさ",
+        "私のために怒って",
+        "怒ってくれて",
+        "感謝",
+        "区切り",
+        "返していきたい",
+        "別の形で",
+    ),
     "effort_pace": (
         "自立",
         "動けるようになりたい",
@@ -123,12 +152,83 @@ _EMOTION_LABEL_IDS: Final = {
 _CATEGORY_TOPIC_IDS: Final = {
     "生活": "life",
     "人間関係": "relationship",
+    "恋愛": "relationship_love",
     "価値観": "values",
     "仕事": "work",
     "学校": "school",
+    "学習": "learning",
     "家族": "family",
     "体調": "health",
     "お金": "money",
+}
+
+
+_LEARNING_SHIFT_FEATURE_PATTERNS: Final = {
+    "object_focus_shift": (
+        "疑問の対象",
+        "対象が物",
+        "物を見る",
+        "人について考えすぎ",
+        "人への興味",
+    ),
+    "communication_load_reduced": (
+        "コミュニケーション",
+        "もやもや",
+        "人との話し方",
+        "話し方を思い出",
+    ),
+    "learning_observation_action": (
+        "授業",
+        "日常",
+        "傷",
+        "汚れ",
+        "メモ",
+    ),
+    "immediate_action_courage": (
+        "すぐに行動",
+        "勇気",
+    ),
+    "small_progress_self_reassurance": (
+        "少しずつ",
+        "進歩",
+        "大丈夫",
+    ),
+}
+
+_RELATIONSHIP_GRATITUDE_FEATURE_PATTERNS: Final = {
+    "relationship_end": (
+        "別れた",
+        "関係の終わり",
+        "区切り",
+    ),
+    "friend_support_remains": (
+        "友達",
+        "変わらず",
+        "優しく",
+        "優しさ",
+    ),
+    "friend_anger_for_user": (
+        "私のために怒って",
+        "怒ってくれて",
+    ),
+    "gratitude_for_care": (
+        "感謝",
+        "嬉しい",
+        "実感",
+    ),
+    "sadness_and_kindness_coexist": (
+        "悲しい",
+        "優しさ",
+        "見逃してしまいそう",
+    ),
+    "boundary_growth": (
+        "区切り",
+        "成長",
+    ),
+    "return_kindness_intent": (
+        "返していきたい",
+        "別の形で",
+    ),
 }
 
 _EVENT_HINT_PATTERNS: Final = {
@@ -166,6 +266,15 @@ _EVENT_HINT_PATTERNS: Final = {
         "体調のこと",
         "お金のこと",
         "長く続けていけるペース",
+    ),
+    "relationship_end_gratitude_recovery_context": (
+        "別れた",
+        "関係の終わり",
+        "私のために怒って",
+        "怒ってくれて",
+        "返していきたい",
+        "友達",
+        "優しさ",
     ),
 }
 
@@ -278,6 +387,22 @@ def _extract_event_hint_ids(text: str) -> tuple[str, ...]:
     )
 
 
+def _extract_learning_shift_feature_ids(text: str) -> tuple[str, ...]:
+    return _dedupe(
+        feature_id
+        for feature_id, patterns in _LEARNING_SHIFT_FEATURE_PATTERNS.items()
+        if _contains_any(text, patterns)
+    )
+
+
+def _extract_relationship_gratitude_feature_ids(text: str) -> tuple[str, ...]:
+    return _dedupe(
+        feature_id
+        for feature_id, patterns in _RELATIONSHIP_GRATITUDE_FEATURE_PATTERNS.items()
+        if _contains_any(text, patterns)
+    )
+
+
 def _source_fields_for_reaction(
     *,
     thought_text: str,
@@ -298,10 +423,44 @@ def _candidate_modes(
     reaction_cue_ids: Sequence[str],
     event_hint_ids: Sequence[str],
     category_topic_ids: Sequence[str],
+    emotion_label_ids: Sequence[str],
+    learning_shift_feature_ids: Sequence[str],
+    relationship_gratitude_feature_ids: Sequence[str],
 ) -> tuple[str, ...]:
     cues = set(reaction_cue_ids)
     hints = set(event_hint_ids)
+    categories = set(category_topic_ids)
+    emotion_labels = set(emotion_label_ids)
+    learning_shift_features = set(learning_shift_feature_ids)
+    relationship_gratitude_features = set(relationship_gratitude_feature_ids)
     modes: list[str] = []
+
+    relationship_categories = {"relationship", "relationship_love"}
+    relationship_support_features = {
+        "friend_support_remains",
+        "friend_anger_for_user",
+        "gratitude_for_care",
+        "sadness_and_kindness_coexist",
+        "boundary_growth",
+        "return_kindness_intent",
+    }
+    if (
+        event_fact_present
+        and reaction_present
+        and categories.intersection(relationship_categories)
+        and "relationship_end" in relationship_gratitude_features
+        and relationship_gratitude_features.intersection(relationship_support_features)
+    ):
+        modes.append("relationship_gratitude_recovery")
+        modes.append("self_understanding_follow")
+
+    if (
+        len(learning_shift_features) >= 2
+        and reaction_present
+        and ("self_understanding" in emotion_labels or "learning" in categories or event_fact_present)
+    ):
+        modes.append("self_understanding_learning_shift")
+        modes.append("self_understanding_follow")
 
     negative_daily_cues = {"disgust", "fear", "anger_irritation"}
     if event_fact_present and reaction_present and cues.intersection(negative_daily_cues):
@@ -315,6 +474,9 @@ def _candidate_modes(
         modes.append("self_denial_support")
     if "uncertainty" in cues:
         modes.append("uncertainty_support")
+    if "self_understanding_learning_shift" in cues and reaction_present:
+        modes.append("self_understanding_learning_shift")
+        modes.append("self_understanding_follow")
     if "self_understanding_effort" in cues or "self_blame_to_gentle_self_observation" in hints:
         modes.append("self_understanding_follow")
     if "effort_pace" in cues or "independence_life_health_money_pace" in hints:
@@ -337,12 +499,16 @@ def _candidate_modes(
 
 def _mode_reason(
     modes: Sequence[str], *, event_fact_present: bool, reaction_present: bool) -> str:
+    if "relationship_gratitude_recovery" in modes and event_fact_present and reaction_present:
+        return "relationship_end_gratitude_recovery"
     if "daily_unpleasant_reception" in modes and event_fact_present and reaction_present:
         return "event_fact_with_explicit_negative_reaction"
     if "self_denial_support" in modes and "uncertainty_support" in modes:
         return "self_denial_and_uncertainty_cues_present"
     if "daily_positive_reception" in modes:
         return "positive_change_or_surprise_cues_present"
+    if "self_understanding_learning_shift" in modes:
+        return "self_understanding_learning_shift_present"
     if "self_understanding_follow" in modes:
         return "self_understanding_direction_present"
     if "effort_support" in modes:
@@ -377,12 +543,16 @@ class EmlisSharedReceptionEvidence:
     explicit_emotion_label_ids: tuple[str, ...] = field(default_factory=tuple)
     category_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     event_hint_ids: tuple[str, ...] = field(default_factory=tuple)
+    learning_shift_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    relationship_gratitude_feature_ids: tuple[str, ...] = field(default_factory=tuple)
     reception_candidate_mode_ids: tuple[str, ...] = field(default_factory=tuple)
     primary_reason: str = "insufficient_shared_reception_evidence"
     event_fact_count: int = 0
     reaction_cue_count: int = 0
     emotion_label_count: int = 0
     event_hint_count: int = 0
+    learning_shift_feature_count: int = 0
+    relationship_gratitude_feature_count: int = 0
     schema_version: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SCHEMA_VERSION
     source_phase: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SOURCE_PHASE
     material_id: str = EMLIS_SHARED_RECEPTION_EVIDENCE_MATERIAL_ID
@@ -405,6 +575,14 @@ class EmlisSharedReceptionEvidence:
             "category_topic_ids": list(self.category_topic_ids),
             "event_hint_ids": list(self.event_hint_ids),
             "event_hint_count": int(self.event_hint_count),
+            "learning_shift_feature_family": "self_understanding_learning_shift" if self.learning_shift_feature_ids else "",
+            "learning_shift_feature_ids": list(self.learning_shift_feature_ids),
+            "learning_shift_feature_count": int(self.learning_shift_feature_count),
+            "self_understanding_learning_shift_detected": bool(self.learning_shift_feature_ids),
+            "relationship_gratitude_feature_family": "relationship_gratitude_recovery" if self.relationship_gratitude_feature_ids else "",
+            "relationship_gratitude_feature_ids": list(self.relationship_gratitude_feature_ids),
+            "relationship_gratitude_feature_count": int(self.relationship_gratitude_feature_count),
+            "relationship_gratitude_recovery_detected": bool(self.relationship_gratitude_feature_ids),
             "reception_candidate_mode_ids": list(self.reception_candidate_mode_ids),
             "primary_reason": self.primary_reason,
             "unknown_word_policy": {
@@ -463,12 +641,17 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
 
     category_topic_ids = _extract_category_topic_ids(bundle)
     event_hint_ids = _extract_event_hint_ids(text)
+    learning_shift_feature_ids = _extract_learning_shift_feature_ids(text)
+    relationship_gratitude_feature_ids = _extract_relationship_gratitude_feature_ids(text)
     mode_ids = _candidate_modes(
         event_fact_present=event_fact_present,
         reaction_present=reaction_present,
         reaction_cue_ids=reaction_cue_ids,
         event_hint_ids=event_hint_ids,
         category_topic_ids=category_topic_ids,
+        emotion_label_ids=emotion_label_ids,
+        learning_shift_feature_ids=learning_shift_feature_ids,
+        relationship_gratitude_feature_ids=relationship_gratitude_feature_ids,
     )
 
     return EmlisSharedReceptionEvidence(
@@ -480,12 +663,16 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         explicit_emotion_label_ids=emotion_label_ids,
         category_topic_ids=category_topic_ids,
         event_hint_ids=event_hint_ids,
+        learning_shift_feature_ids=learning_shift_feature_ids,
+        relationship_gratitude_feature_ids=relationship_gratitude_feature_ids,
         reception_candidate_mode_ids=mode_ids,
         primary_reason=_mode_reason(mode_ids, event_fact_present=event_fact_present, reaction_present=reaction_present),
         event_fact_count=event_fact_count,
         reaction_cue_count=len(reaction_cue_ids),
         emotion_label_count=len(emotion_label_ids),
         event_hint_count=len(event_hint_ids),
+        learning_shift_feature_count=len(learning_shift_feature_ids),
+        relationship_gratitude_feature_count=len(relationship_gratitude_feature_ids),
     )
 
 

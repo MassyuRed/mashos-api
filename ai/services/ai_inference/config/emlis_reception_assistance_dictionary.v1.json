@@ -206,6 +206,34 @@
       ]
     },
     {
+      "cue_id": "self_understanding_learning_shift",
+      "surface_patterns": [
+        "疑問の対象",
+        "人について考えすぎ",
+        "人への興味",
+        "人との話し方",
+        "すぐに行動",
+        "勇気",
+        "日常",
+        "傷",
+        "汚れ",
+        "メモ",
+        "進歩",
+        "大丈夫"
+      ],
+      "reaction_family": "self_understanding_learning_shift",
+      "allowed_reception_modes": [
+        "self_understanding_learning_shift",
+        "self_understanding_follow"
+      ],
+      "must_not_infer": [
+        "growth_complete",
+        "communication_problem_solved",
+        "future_success",
+        "advice_to_act"
+      ]
+    },
+    {
       "cue_id": "effort_pace",
       "surface_patterns": [
         "自立",
@@ -224,6 +252,34 @@
         "success_guarantee",
         "action_instruction",
         "money_is_cause"
+      ]
+    },
+    {
+      "cue_id": "relationship_gratitude_recovery",
+      "surface_patterns": [
+        "別れた",
+        "関係の終わり",
+        "友達",
+        "変わらず",
+        "優しく",
+        "優しさ",
+        "私のために怒って",
+        "怒ってくれて",
+        "感謝",
+        "区切り",
+        "返していきたい",
+        "別の形で"
+      ],
+      "reaction_family": "relationship_gratitude_recovery",
+      "allowed_reception_modes": [
+        "relationship_gratitude_recovery",
+        "self_understanding_follow"
+      ],
+      "must_not_infer": [
+        "ex_partner_judgement",
+        "anger_amplification",
+        "sadness_erased",
+        "next_action_advice"
       ]
     }
   ],
@@ -331,6 +387,30 @@
         "money_is_cause",
         "health_cause",
         "action_instruction"
+      ]
+    },
+    {
+      "hint_id": "relationship_end_gratitude_recovery_context",
+      "surface_patterns": [
+        "別れた",
+        "関係の終わり",
+        "友達",
+        "変わらず",
+        "怒ってくれて",
+        "区切り",
+        "返していきたい"
+      ],
+      "event_family": "relationship_end_support_context",
+      "can_support_modes": [
+        "relationship_gratitude_recovery"
+      ],
+      "cannot_alone_infer": [
+        "joy",
+        "safety",
+        "ex_partner_fault",
+        "anger_is_correct",
+        "stable_recovery",
+        "growth_complete"
       ]
     }
   ],
@@ -457,6 +537,36 @@
       ]
     },
     {
+      "mode_id": "self_understanding_learning_shift",
+      "activation": {
+        "requires_event_fact_present": true,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "self_understanding_learning_shift"
+        ],
+        "event_hint_alone_can_activate": false,
+        "excludes_safety_risk": true
+      },
+      "ratio_preset": "self_understanding_learning_shift",
+      "observation_policy": {
+        "max_sentences": 1,
+        "claim_strength": "single_input_soft"
+      },
+      "reception_policy": {
+        "allowed_tone_family": "self_understanding_observation",
+        "min_sentences": 1,
+        "max_sentences": 1,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "growth_complete_claim",
+        "communication_problem_solved_claim",
+        "future_success_claim",
+        "action_instruction",
+        "diagnosis"
+      ]
+    },
+    {
       "mode_id": "self_understanding_follow",
       "activation": {
         "requires_event_fact_present": false,
@@ -569,6 +679,39 @@
         "raw_detail_request",
         "public_status_extension"
       ]
+    },
+    {
+      "mode_id": "relationship_gratitude_recovery",
+      "ratio_preset": "relationship_end_gratitude_recovery",
+      "activation": {
+        "requires_event_fact_present": true,
+        "requires_reaction_present": true,
+        "requires_any_reaction_family": [
+          "relationship_gratitude_recovery"
+        ],
+        "excludes_structure_question": true,
+        "excludes_safety_risk": true,
+        "excludes_self_denial_primary": true,
+        "event_hint_alone_can_activate": false
+      },
+      "observation_policy": {
+        "max_sentences": 1,
+        "claim_strength": "current_input_soft",
+        "observation_thickened": false
+      },
+      "reception_policy": {
+        "allowed_tone_family": "relationship_gratitude_reception",
+        "min_sentences": 2,
+        "max_sentences": 2,
+        "must_ground_to_explicit_reaction": true
+      },
+      "forbidden": [
+        "ex_partner_judgement",
+        "anger_amplification",
+        "sadness_flattening",
+        "next_action_advice",
+        "public_status_extension"
+      ]
     }
   ],
   "tone_families": [
@@ -635,6 +778,24 @@
         "personality_claim",
         "cause_overclaim",
         "action_instruction"
+      ]
+    },
+    {
+      "tone_family_id": "relationship_gratitude_reception",
+      "description": "関係の終わり、残っている支え、感謝、区切りを、相手評価や助言にせず受け取る温度。",
+      "allowed_surface_features": [
+        "relationship_end_observed",
+        "kindness_received",
+        "gratitude_received",
+        "boundary_growth_soft",
+        "return_kindness_intent_received"
+      ],
+      "forbidden_surface_features": [
+        "ex_partner_judgement",
+        "anger_amplification",
+        "action_instruction",
+        "growth_completion_claim",
+        "sadness_flattening"
       ]
     }
   ],
@@ -724,6 +885,41 @@
         "もっと頑張るよう指示する",
         "自立できますと保証する",
         "お金の問題が原因と断定する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "self_understanding_learning_shift_receiving",
+      "mode_ids": [
+        "self_understanding_learning_shift"
+      ],
+      "allowed_intents": [
+        "疑問の向きが人から物や環境へ移った変化を受け取る",
+        "授業で得た視点が日常観察やメモに移った動きを扱う",
+        "考え込みすぎの負荷が少し軽くなる流れを断定せず扱う"
+      ],
+      "forbidden_intents": [
+        "成長が完了したと断定する",
+        "人への興味が不要になったと扱う",
+        "次に行動するよう指示する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "relationship_gratitude_recovery_receiving",
+      "mode_ids": [
+        "relationship_gratitude_recovery"
+      ],
+      "allowed_intents": [
+        "関係の終わりと友人の支えを同時に扱う",
+        "悲しさと優しさを片方に潰さず受け取る",
+        "返したい意図を行動指示にせず扱う"
+      ],
+      "forbidden_intents": [
+        "別れた相手を評価する",
+        "友人の怒りを煽る",
+        "悲しみを前向きに塗り替える",
+        "次の行動を指示する"
       ],
       "template_text_forbidden": true
     }

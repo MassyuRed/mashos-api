@@ -68,6 +68,12 @@ LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION: Final = (
     "cocolon.emlis.low_information_public_repair_contract.v1"
 )
 LOW_INFORMATION_PUBLIC_REPAIR_SOURCE_PHASE: Final = "Phase18_product_quality_stabilization"
+COMPLETE_INITIAL_RUNTIME_CONTRACT_OWNS_DISPLAY_FAILURE: Final = (
+    "complete_initial_runtime_contract_owns_display_failure"
+)
+COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.phase19.complete_initial_low_information_repair_ownership.v1"
+)
 
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
@@ -225,6 +231,39 @@ def _current_input_is_compact_low_information_signal(current_input: Mapping[str,
         return True
     return False
 
+
+
+def _complete_initial_low_information_repair_context_allowed(
+    repair_context: Mapping[str, Any] | None,
+    current_input: Mapping[str, Any] | None,
+    *,
+    safety_report: SafetyBoundaryReport | None = None,
+) -> bool:
+    context = repair_context if isinstance(repair_context, Mapping) else {}
+    if context.get("schema_version") != COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION:
+        return False
+    if context.get("repair_allowed_under_complete_initial") is not True:
+        return False
+    if context.get("safety_blocked") is True:
+        return False
+    if safety_report is not None and bool(getattr(safety_report, "requires_block", False)):
+        return False
+    if any(
+        bool(context.get(key))
+        for key in (
+            "public_contract_changed",
+            "public_response_key_added",
+            "display_gate_relaxed",
+            "visible_gate_relaxed",
+            "grounding_gate_relaxed",
+            "safety_gate_relaxed",
+            "fixed_fallback_used",
+            "raw_input_included",
+            "raw_text_included",
+        )
+    ):
+        return False
+    return _current_input_is_compact_low_information_signal(current_input)
 
 
 def _dedupe(values: Iterable[Any] | Any | None) -> list[str]:
@@ -1011,6 +1050,7 @@ class ObservationDisplayRepairIntegrationResult:
     repair_reasons: Sequence[str] = field(default_factory=tuple)
     blocked_reasons: Sequence[str] = field(default_factory=tuple)
     bounded_repair_reroute_decision: BoundedRepairRerouteDecision | None = None
+    repair_context: Mapping[str, Any] = field(default_factory=dict)
 
     def as_meta(self) -> dict[str, Any]:
         eligibility_meta = _meta(self.eligibility_decision)
@@ -1062,6 +1102,7 @@ class ObservationDisplayRepairIntegrationResult:
                 "display_gate_relaxed": False,
             }
         )
+        repair_context_meta = dict(self.repair_context or {})
         return {
             "version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
             "schema_version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
@@ -1072,6 +1113,11 @@ class ObservationDisplayRepairIntegrationResult:
             "step7_bounded_repair_reroute": bounded_meta,
             "bounded_repair_reroute": bounded_meta,
             "step7_bounded_repair_reroute_ready": True,
+            "complete_initial_low_information_repair_ownership": repair_context_meta,
+            "phase19_complete_initial_low_information_repair_ownership": repair_context_meta,
+            "complete_initial_low_information_repair_allowed": bool(
+                repair_context_meta.get("repair_allowed_under_complete_initial")
+            ),
             "bounded_repair_reroute_action": bounded_meta.get("action"),
             "bounded_repair_reroute_allowed": bool(bounded_meta.get("allowed")),
             "applied": bool(self.applied),
@@ -1139,10 +1185,17 @@ def integrate_observation_display_repair(
     original_composer_candidate: Any = None,
     repair_allowed: bool = True,
     repair_block_reason: str = "",
+    repair_context: Mapping[str, Any] | None = None,
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
 ) -> ObservationDisplayRepairIntegrationResult:
     """Apply the Step 10 low-information display repair, when appropriate."""
 
+    repair_context_meta = dict(repair_context or {}) if isinstance(repair_context, Mapping) else {}
+    complete_initial_low_information_repair_allowed = _complete_initial_low_information_repair_context_allowed(
+        repair_context_meta,
+        current_input if isinstance(current_input, Mapping) else {},
+        safety_report=safety_report,
+    )
     original_status = str(getattr(original_display_decision, "observation_status", "") or "")
     if not repair_allowed:
         runtime_block_reason = _clean(repair_block_reason) or "repair_disabled_by_runtime_contract"
@@ -1162,6 +1215,7 @@ def integrate_observation_display_repair(
             composer_candidate=original_composer_candidate,
             original_observation_status=original_status,
             blocked_reasons=tuple(runtime_block_reasons),
+            repair_context=repair_context_meta,
         )
 
     if original_status == "passed":
@@ -1201,7 +1255,12 @@ def integrate_observation_display_repair(
         or resolution_meta.get("pre_connection_stop")
         or _clean(resolution_meta.get("pre_connection_stop_stage")) in {"ap0", "flag", "rollout"}
     )
-    if complete_initial_requested and pre_connection_stop:
+    hard_pre_connection_stop = bool(
+        _clean(resolution_meta.get("pre_connection_stop_stage")) in {"ap0", "rollout"}
+        or bool(resolution_meta.get("blocked_by_ap0"))
+        or bool(resolution_meta.get("blocked_by_rollout"))
+    )
+    if complete_initial_requested and pre_connection_stop and (not complete_initial_low_information_repair_allowed or hard_pre_connection_stop):
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
             display_decision=original_display_decision,
@@ -1212,9 +1271,15 @@ def integrate_observation_display_repair(
             composer_candidate=original_composer_candidate,
             original_observation_status=original_status,
             blocked_reasons=("composer_resolution_pre_connection_stop",),
+            repair_context=repair_context_meta,
         )
 
     resolution_blockers = _composer_resolution_block_reasons(composer_client_resolution)
+    if complete_initial_low_information_repair_allowed:
+        resolution_blockers = [
+            reason for reason in resolution_blockers
+            if reason != "complete_initial_diagnostic_path"
+        ]
     if resolution_blockers:
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
@@ -1226,6 +1291,7 @@ def integrate_observation_display_repair(
             composer_candidate=original_composer_candidate,
             original_observation_status=original_status,
             blocked_reasons=tuple(resolution_blockers),
+            repair_context=repair_context_meta,
         )
 
     eligibility_decision = route_observation_eligibility(
@@ -1289,7 +1355,10 @@ def integrate_observation_display_repair(
             _current_input_is_compact_low_information_signal(
                 current_input if isinstance(current_input, Mapping) else {}
             )
-            and _clean(resolution_meta.get("connection_status")) != "provided_client"
+            and (
+                complete_initial_low_information_repair_allowed
+                or _clean(resolution_meta.get("connection_status")) != "provided_client"
+            )
         ),
     )
     if bounded_action == BOUNDED_ACTION_REROUTE_LOW_INFORMATION:
@@ -1307,6 +1376,7 @@ def integrate_observation_display_repair(
             eligibility_decision=eligibility_decision,
             original_observation_status=original_status,
             blocked_reasons=tuple(route_reasons),
+            repair_context=repair_context_meta,
             bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
         )
 
@@ -1392,7 +1462,14 @@ def integrate_observation_display_repair(
         for fragment in known_fragments
         if isinstance(fragment, Mapping) and bool(fragment.get("current_input_evidence"))
     ]
-    if not _dedupe(eligibility_meta.get("detected_signal_roles")) or not current_input_fragments:
+    phase19_compact_ownership_allows_current_input_signal = bool(
+        complete_initial_low_information_repair_allowed
+        and _dedupe(eligibility_meta.get("detected_signal_roles"))
+        and _current_input_is_compact_low_information_signal(current_input if isinstance(current_input, Mapping) else {})
+    )
+    if not _dedupe(eligibility_meta.get("detected_signal_roles")) or (
+        not current_input_fragments and not phase19_compact_ownership_allows_current_input_signal
+    ):
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
             display_decision=original_display_decision,
@@ -1504,6 +1581,7 @@ def integrate_observation_display_repair(
         ) if applied else tuple(),
         blocked_reasons=tuple(quality_reasons if quality_reasons else getattr(display_decision, "rejection_reasons", []) or []),
         bounded_repair_reroute_decision=bounded_reroute_decision if bounded_reroute_decision.runtime_surface_gate_evaluated else None,
+        repair_context=repair_context_meta,
     )
 
 
@@ -1563,6 +1641,8 @@ __all__ = [
     "OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION",
     "LOW_INFORMATION_PUBLIC_REPAIR_CONTRACT_SCHEMA_VERSION",
     "LOW_INFORMATION_PUBLIC_REPAIR_SOURCE_PHASE",
+    "COMPLETE_INITIAL_RUNTIME_CONTRACT_OWNS_DISPLAY_FAILURE",
+    "COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION",
     "OBSERVATION_DISPLAY_REPAIR_INTEGRATION_STEP",
     "ObservationDisplayRepairIntegrationResult",
     "assert_low_information_public_repair_contract_meta_only",

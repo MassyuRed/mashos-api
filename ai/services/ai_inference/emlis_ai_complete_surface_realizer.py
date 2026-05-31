@@ -126,6 +126,8 @@ EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID = "daily_unpleasant_reception
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON = "daily_unpleasant_reception_light"
 EMLIS_TWO_STAGE_MODE_ID_BY_RATIO_REASON: dict[str, str] = {
     EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID,
+    "self_understanding_learning_shift": "self_understanding_learning_shift",
+    "relationship_end_gratitude_recovery": "relationship_gratitude_recovery",
 }
 EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE = "labelled_two_stage_text"
 EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID = "observation"
@@ -148,6 +150,12 @@ EMLIS_TWO_STAGE_DAILY_POSITIVE_RECEPTION_MODE_IDS: frozenset[str] = frozenset({
 EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS: frozenset[str] = frozenset({
     "self_understanding_follow",
 })
+EMLIS_TWO_STAGE_SELF_UNDERSTANDING_LEARNING_SHIFT_MODE_IDS: frozenset[str] = frozenset({
+    "self_understanding_learning_shift",
+})
+EMLIS_TWO_STAGE_RELATIONSHIP_GRATITUDE_RECOVERY_MODE_IDS: frozenset[str] = frozenset({
+    "relationship_gratitude_recovery",
+})
 EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS: frozenset[str] = frozenset({
     "standard_state_answer",
     "effort_support",
@@ -157,12 +165,16 @@ EMLIS_TWO_STAGE_MODE_SPECIFIC_SURFACE_POLICY_MODE_IDS: frozenset[str] = frozense
     *EMLIS_TWO_STAGE_SELF_DENIAL_SUPPORT_MODE_IDS,
     *EMLIS_TWO_STAGE_DAILY_POSITIVE_RECEPTION_MODE_IDS,
     *EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS,
+    *EMLIS_TWO_STAGE_SELF_UNDERSTANDING_LEARNING_SHIFT_MODE_IDS,
+    *EMLIS_TWO_STAGE_RELATIONSHIP_GRATITUDE_RECOVERY_MODE_IDS,
     *EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS,
 })
 
 SELF_DENIAL_SUPPORT_MODE_IDS = EMLIS_TWO_STAGE_SELF_DENIAL_SUPPORT_MODE_IDS
 DAILY_POSITIVE_RECEPTION_MODE_IDS = EMLIS_TWO_STAGE_DAILY_POSITIVE_RECEPTION_MODE_IDS
 SELF_UNDERSTANDING_FOLLOW_MODE_IDS = EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS
+SELF_UNDERSTANDING_LEARNING_SHIFT_MODE_IDS = EMLIS_TWO_STAGE_SELF_UNDERSTANDING_LEARNING_SHIFT_MODE_IDS
+RELATIONSHIP_GRATITUDE_RECOVERY_MODE_IDS = EMLIS_TWO_STAGE_RELATIONSHIP_GRATITUDE_RECOVERY_MODE_IDS
 EFFORT_PACE_MODE_IDS = EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS
 TWO_STAGE_PRODUCT_VISIBLE_MODE_IDS = frozenset({
     EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID,
@@ -1784,6 +1796,119 @@ def _self_understanding_surface_text_for_line(
     }
 
 
+def _learning_shift_surface_text_for_line(
+    line: CompleteSentencePlanLine,
+    *,
+    section_id: str,
+    mode_id: str,
+    two_stage_meta: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    roles = set(_meaning_roles(line))
+    allowed_intents = set(_dedupe(two_stage_meta.get("allowed_surface_intents") or ()))
+    line_role = _clean_token(getattr(line, "line_role", ""))
+    line_index = _line_index_from_two_stage_meta(two_stage_meta)
+    if section_id == EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID:
+        if line_index <= 0 or line_role == "opening":
+            text = "人へ向いていた疑問が物や環境を見る方向へ移り、人とのやり取りで考え込みすぎていた負荷に少し余白が生まれているように見えます。"
+            surface_key = "learning_shift_observation_object_focus_load_margin"
+            ending_key = "learning_shift_load_margin_miemasu"
+        else:
+            text = "人への疑問だけに寄りすぎていた負荷が、物や環境を見る視点へ移って少し整理されています。"
+            surface_key = "learning_shift_observation_object_focus_rebalanced"
+            ending_key = "learning_shift_rebalanced_miemasu"
+    elif section_id == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID:
+        if line_index <= 1:
+            text = "その負荷を離れて、授業で得た視点を日常の観察やメモへ移す行動にもつながっています。"
+            surface_key = "learning_shift_reception_learning_observation_action"
+            ending_key = "learning_shift_observation_action_tsunarimasu"
+        else:
+            text = "少しずつ進んでいる実感も、考え込みすぎの重さから行動へ向き直る流れとして受け取れます。"
+            surface_key = "learning_shift_reception_small_progress_action_flow"
+            ending_key = "learning_shift_progress_flow_uketoremasu"
+    else:
+        return "", {}
+    return text, {
+        **_two_stage_mode_specific_surface_policy_meta(
+            mode_id=mode_id,
+            section_id=section_id,
+            surface_key=surface_key,
+            roles=roles,
+            allowed_intents=allowed_intents,
+        ),
+        **_two_stage_mode_context_meta(
+            two_stage_meta,
+            section_id=section_id,
+            resolved_mode_id=mode_id,
+        ),
+        "two_stage_mode_specific_surface_ending_key": ending_key,
+        "two_stage_mode_specific_surface_feature_families": [
+            "object_focus_shift",
+            "communication_load_reduced",
+            "learning_observation_action",
+            "immediate_action_courage",
+            "small_progress_self_reassurance",
+        ],
+        "two_stage_mode_specific_surface_family": "self_understanding_learning_shift",
+    }
+
+
+def _relationship_gratitude_surface_text_for_line(
+    line: CompleteSentencePlanLine,
+    *,
+    section_id: str,
+    mode_id: str,
+    two_stage_meta: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    roles = set(_meaning_roles(line))
+    allowed_intents = set(_dedupe(two_stage_meta.get("allowed_surface_intents") or ()))
+    line_role = _clean_token(getattr(line, "line_role", ""))
+    line_index = _line_index_from_two_stage_meta(two_stage_meta)
+    if section_id == EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID:
+        text = "少し戻る動きとして、その前の悲しさを残しながら、友達の優しさや自分のために怒ってくれる存在を受け取れているように見えます。"
+        surface_key = "relationship_gratitude_observation_recovery_load_support"
+        ending_key = "relationship_gratitude_recovery_sadness_support_miemasu"
+    elif section_id == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID:
+        if line_index <= 1 or line_role in {"opening", "core"}:
+            text = "形を取り直す感覚として、前の関係が終わった痛みを消すものではなく、友達とのつながりや区切りを見直す形として受け取れます。"
+            surface_key = "relationship_gratitude_reception_boundary_friend_connection"
+            ending_key = "relationship_gratitude_boundary_uketoremasu"
+        else:
+            text = "回復の入口として、前の痛みを残したまま、受け取った優しさを別の形で返したい意図も残っています。"
+            surface_key = "relationship_gratitude_reception_return_kindness_intent"
+            ending_key = "relationship_gratitude_return_kindness_recovery_nokoru"
+    else:
+        return "", {}
+    return text, {
+        **_two_stage_mode_specific_surface_policy_meta(
+            mode_id=mode_id,
+            section_id=section_id,
+            surface_key=surface_key,
+            roles=roles,
+            allowed_intents=allowed_intents,
+        ),
+        **_two_stage_mode_context_meta(
+            two_stage_meta,
+            section_id=section_id,
+            resolved_mode_id=mode_id,
+        ),
+        "two_stage_mode_specific_surface_ending_key": ending_key,
+        "two_stage_mode_specific_surface_feature_families": [
+            "relationship_end",
+            "friend_support_remains",
+            "friend_anger_for_user",
+            "gratitude_for_care",
+            "sadness_and_kindness_coexist",
+            "boundary_growth",
+            "return_kindness_intent",
+        ],
+        "two_stage_mode_specific_surface_family": "relationship_gratitude_recovery",
+        "two_stage_mode_specific_surface_no_ex_partner_judgement": True,
+        "two_stage_mode_specific_surface_no_anger_amplification": True,
+        "two_stage_mode_specific_surface_no_sadness_flattening": True,
+        "two_stage_mode_specific_surface_no_next_action_advice": True,
+    }
+
+
 def _effort_pace_surface_text_for_line(
     line: CompleteSentencePlanLine,
     *,
@@ -1899,6 +2024,10 @@ def _two_stage_mode_specific_surface_text_for_line(
         return _self_denial_support_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
     if mode_id in EMLIS_TWO_STAGE_DAILY_POSITIVE_RECEPTION_MODE_IDS:
         return _daily_positive_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
+    if mode_id in EMLIS_TWO_STAGE_SELF_UNDERSTANDING_LEARNING_SHIFT_MODE_IDS:
+        return _learning_shift_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
+    if mode_id in EMLIS_TWO_STAGE_RELATIONSHIP_GRATITUDE_RECOVERY_MODE_IDS:
+        return _relationship_gratitude_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
     if mode_id in EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS:
         return _self_understanding_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
     if mode_id in EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS:

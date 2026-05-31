@@ -520,6 +520,37 @@ def _bridge_opening_text(
     return f"{receive_surface}、状態が一色ではない{humility_surface}。"
 
 
+def _negative_multi_emotion_bridge_opening_text(
+    *,
+    current_input: Any,
+    receive_surface: str,
+    anchor_surface: str,
+    burden_surface: str,
+    humility_surface: str,
+) -> str:
+    """Bridge multiple selected negative labels without asserting a deep relation.
+
+    Visible Surface Gate treats the first selected emotion as the visible
+    dominant label.  When a low-information surface mentions only a secondary
+    negative label such as ``不安の重さ``, the gate correctly asks for a bridge.
+    This helper keeps the same low-information scope while explicitly holding
+    the visible dominant label and the bounded anchor together.
+    """
+
+    negative_labels = [label for label in _emotion_labels(current_input) if label in _NEGATIVE_EMOTIONS]
+    if len(negative_labels) < 2:
+        return ""
+    dominant_label = negative_labels[0]
+    secondary_surface = anchor_surface if anchor_surface and dominant_label not in anchor_surface else ""
+    if not secondary_surface:
+        for label in negative_labels[1:]:
+            if label != dominant_label:
+                secondary_surface = f"{label}の重さ"
+                break
+    secondary_surface = secondary_surface or burden_surface
+    return f"{receive_surface}、{dominant_label}だけではなく、{secondary_surface}も近くにある{humility_surface}。"
+
+
 def _apply_tone_profile_question_surface_kind(
     *,
     question_surface_kind: str,
@@ -1028,6 +1059,18 @@ def _build_lines(
         )
     elif tone_profile == LOW_INFORMATION_TONE_PROFILE_SELF_INSIGHT:
         opening_text = f"{receive_surface}、{_SELF_INSIGHT_OPENING_SURFACE}がある{humility_surface}。"
+    elif tone_profile == LOW_INFORMATION_TONE_PROFILE_NEGATIVE_ONLY and len(_emotion_labels(current_input)) > 1:
+        opening_text = _negative_multi_emotion_bridge_opening_text(
+            current_input=current_input,
+            receive_surface=receive_surface,
+            anchor_surface=anchor_surface,
+            burden_surface=burden_surface,
+            humility_surface=humility_surface,
+        ) or (
+            f"{receive_surface}、{anchor_surface}が先に出ています。"
+            if anchor_surface and anchor_role == "question"
+            else f"{receive_surface}、{anchor_surface or burden_surface}が先に出ている{humility_surface}。"
+        )
     elif anchor_surface:
         opening_text = f"{receive_surface}、{anchor_surface}が先に出ています。" if anchor_role == "question" else f"{receive_surface}、{anchor_surface}が先に出ている{humility_surface}。"
     elif humility_surface == "かもしれません":

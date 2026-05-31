@@ -45,6 +45,8 @@ MODE_DAILY_POSITIVE: Final = "daily_positive_reception"
 MODE_SELF_DENIAL: Final = "self_denial_support"
 MODE_UNCERTAINTY: Final = "uncertainty_support"
 MODE_SELF_UNDERSTANDING: Final = "self_understanding_follow"
+MODE_SELF_UNDERSTANDING_LEARNING_SHIFT: Final = "self_understanding_learning_shift"
+MODE_RELATIONSHIP_GRATITUDE_RECOVERY: Final = "relationship_gratitude_recovery"
 MODE_STANDARD: Final = "standard_state_answer"
 MODE_EFFORT: Final = "effort_support"
 MODE_STRUCTURE: Final = "structure_question_observation"
@@ -138,9 +140,11 @@ _FORBIDDEN_TRUE_FLAGS: Final = frozenset(
 _MODE_PRIORITY: Final = (
     MODE_SELF_DENIAL,
     MODE_UNCERTAINTY,
+    MODE_RELATIONSHIP_GRATITUDE_RECOVERY,
+    MODE_SELF_UNDERSTANDING_LEARNING_SHIFT,
+    MODE_SELF_UNDERSTANDING,
     MODE_DAILY_UNPLEASANT,
     MODE_DAILY_POSITIVE,
-    MODE_SELF_UNDERSTANDING,
     MODE_STANDARD,
     MODE_EFFORT,
     MODE_LOW_INFORMATION,
@@ -150,6 +154,8 @@ _RATIO_PRESET_BY_INTERNAL_MODE: Final = {
     MODE_STRUCTURE: "structure_question_observation_thickened",
     MODE_SAFETY_EXISTING_PATH: "safety_existing_path_no_reception_generation",
     MODE_LOW_INFORMATION: "low_information_light_prompt",
+    MODE_SELF_UNDERSTANDING_LEARNING_SHIFT: "self_understanding_learning_shift",
+    MODE_RELATIONSHIP_GRATITUDE_RECOVERY: "relationship_end_gratitude_recovery",
 }
 
 _OBSERVATION_REPLY_KIND_BY_INTERNAL_MODE: Final = {
@@ -394,21 +400,29 @@ def _choose_reception_mode(
         if MODE_UNCERTAINTY in eligible:
             return MODE_SELF_DENIAL, "self_denial_and_uncertainty_cues_present"
         return MODE_SELF_DENIAL, "self_denial_cues_present"
+    if MODE_RELATIONSHIP_GRATITUDE_RECOVERY in eligible:
+        return MODE_RELATIONSHIP_GRATITUDE_RECOVERY, "relationship_end_gratitude_recovery"
+    if MODE_SELF_UNDERSTANDING_LEARNING_SHIFT in eligible:
+        return MODE_SELF_UNDERSTANDING_LEARNING_SHIFT, "self_understanding_learning_shift_present"
     if structure_requested:
         return MODE_STRUCTURE, "explicit_structure_question_observation_thickened"
     for mode_id in (
+        MODE_RELATIONSHIP_GRATITUDE_RECOVERY,
         MODE_DAILY_UNPLEASANT,
         MODE_DAILY_POSITIVE,
         MODE_UNCERTAINTY,
+        MODE_SELF_UNDERSTANDING_LEARNING_SHIFT,
         MODE_SELF_UNDERSTANDING,
         MODE_STANDARD,
         MODE_EFFORT,
     ):
         if mode_id in eligible:
             reasons = {
+                MODE_RELATIONSHIP_GRATITUDE_RECOVERY: "relationship_end_gratitude_recovery",
                 MODE_DAILY_UNPLEASANT: "event_fact_with_explicit_negative_reaction",
                 MODE_DAILY_POSITIVE: "positive_change_or_surprise_cues_present",
                 MODE_UNCERTAINTY: "uncertainty_cues_present",
+                MODE_SELF_UNDERSTANDING_LEARNING_SHIFT: "self_understanding_learning_shift_present",
                 MODE_SELF_UNDERSTANDING: "self_understanding_direction_present",
                 MODE_EFFORT: "effort_pace_context_present",
                 MODE_STANDARD: "effort_pace_context_present" if "independence_life_health_money_pace" in hints or MODE_EFFORT in eligible else "standard_state_answer_material_present",
@@ -481,6 +495,7 @@ class EmlisReceptionModeResolution:
     explicit_emotion_label_ids: tuple[str, ...] = field(default_factory=tuple)
     event_hint_ids: tuple[str, ...] = field(default_factory=tuple)
     category_topic_ids: tuple[str, ...] = field(default_factory=tuple)
+    relationship_gratitude_feature_ids: tuple[str, ...] = field(default_factory=tuple)
     structure_question_requested: bool = False
     safety_path_required: bool = False
     safety_boundary_type_ids: tuple[str, ...] = field(default_factory=tuple)
@@ -525,6 +540,9 @@ class EmlisReceptionModeResolution:
             "explicit_emotion_label_ids": list(self.explicit_emotion_label_ids),
             "event_hint_ids": list(self.event_hint_ids),
             "category_topic_ids": list(self.category_topic_ids),
+            "relationship_gratitude_feature_ids": list(self.relationship_gratitude_feature_ids),
+            "relationship_gratitude_feature_count": len(self.relationship_gratitude_feature_ids),
+            "relationship_gratitude_recovery_detected": bool(self.relationship_gratitude_feature_ids),
             "structure_question_requested": bool(self.structure_question_requested),
             "safety_path_required": bool(self.safety_path_required),
             "existing_safety_path_required": bool(self.safety_path_required),
@@ -622,6 +640,7 @@ def resolve_emlis_reception_mode(
     emotion_label_ids = _list_from_meta(evidence_meta, "explicit_emotion_label_ids")
     event_hint_ids = _list_from_meta(evidence_meta, "event_hint_ids")
     category_topic_ids = _list_from_meta(evidence_meta, "category_topic_ids")
+    relationship_gratitude_feature_ids = _list_from_meta(evidence_meta, "relationship_gratitude_feature_ids")
     candidate_mode_ids = _list_from_meta(evidence_meta, "reception_candidate_mode_ids")
 
     reaction_families = _reaction_family_ids(dictionary, reaction_cue_ids)
@@ -679,6 +698,7 @@ def resolve_emlis_reception_mode(
         explicit_emotion_label_ids=emotion_label_ids,
         event_hint_ids=event_hint_ids,
         category_topic_ids=category_topic_ids,
+        relationship_gratitude_feature_ids=relationship_gratitude_feature_ids,
         structure_question_requested=structure_requested,
         safety_path_required=safety_required,
         safety_boundary_type_ids=safety_types,
@@ -912,10 +932,12 @@ __all__ = [
     "MODE_EFFORT",
     "MODE_EFFORT_SUPPORT",
     "MODE_LOW_INFORMATION",
+    "MODE_RELATIONSHIP_GRATITUDE_RECOVERY",
     "MODE_SAFETY_EXISTING_PATH",
     "MODE_SAFETY_BOUNDARY",
     "MODE_SELF_DENIAL",
     "MODE_SELF_UNDERSTANDING",
+    "MODE_SELF_UNDERSTANDING_LEARNING_SHIFT",
     "MODE_STANDARD",
     "MODE_STRUCTURE",
     "MODE_STRUCTURE_QUESTION",
