@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Step10 safety boundary policy for EmlisAI B-plan.
+"""Step10 safety boundary policy for EmlisAI.
 
-This helper is non-generative. It converts source-grounded safety evidence into
-stable reason codes so the B-plan can stop before Composer execution. It never
-creates user-facing observation text, advice, or fallback copy.
+Phase20-2 keeps this helper non-generative while delegating the first split to
+Safety Triage.  Non-emergency self-denial is not collapsed into the old
+pre-composer ``safety_blocked`` path.  Safety-support-required and emergency
+boundaries still fail closed before normal observation generation.
 """
 
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Sequence
 
+from emlis_ai_safety_triage import build_emlis_safety_triage_decision
 from emlis_ai_types import EvidenceSpan, ObservationGraph, SafetyBoundaryReport
 
 _POLICY_VERSION = "emlis.safety_boundary_policy.v1"
@@ -21,8 +23,12 @@ _KIND_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "self_harm",
         re.compile(
             r"(死にたい|消えたい|生きていたくない|生きたくない|いなくなりたい|終わりにしたい|"
-            r"自傷|自分を傷つけ|リスカ|OD|オーバードーズ|首を吊|首をつ|飛び降り|自殺)"
+            r"自殺|リスカ|OD|オーバードーズ|過量服薬|首を吊|首をつ|首吊|飛び降り)"
         ),
+    ),
+    (
+        "self_harm_support_required",
+        re.compile(r"(自傷したい|自傷しそう|自分を傷つけたい|自分を傷つけそう|傷つけたい衝動|傷つけそう|抑えられない|止められない)"),
     ),
     ("harm_to_others", re.compile(r"(殺したい|刺したい|殴り殺|火をつけたい|危害を加えたい)", re.IGNORECASE)),
 )
@@ -42,7 +48,12 @@ def _dedupe(values: Iterable[Any]) -> List[str]:
 
 
 def classify_safety_boundary_text(text: Any) -> List[str]:
-    """Classify safety evidence into stable developer-facing kind codes."""
+    """Classify pre-composer safety block evidence into stable codes.
+
+    Reflective non-emergency self-denial such as ``自分を傷つけている`` returns
+    no block code here; Safety Triage handles it as
+    ``self_denial_safe_state_answer``.
+    """
 
     value = _clean(text)
     if not value:
@@ -57,12 +68,7 @@ def classify_safety_boundary_text(text: Any) -> List[str]:
 
 
 def normalize_safety_boundary_codes(values: Iterable[Any]) -> List[str]:
-    """Normalize safety inputs to graph-safe codes, not raw source text.
-
-    Graph-level safety boundaries may already be raw unsafe source snippets or
-    older boundary labels.  Any non-empty graph boundary is normalized to the
-    stable code so raw user text never has to be carried through meta.
-    """
+    """Normalize graph-level safety inputs to stable codes, not raw source."""
 
     for value in values or []:
         item = _clean(value)
@@ -90,20 +96,25 @@ class EmlisSafetyBoundaryDecision:
     graph_boundary_count: int = 0
     evidence_span_count: int = 0
     boundary_sources: List[str] = field(default_factory=list)
+    safety_triage: Dict[str, Any] = field(default_factory=dict)
 
     def as_meta(self) -> Dict[str, Any]:
         requires = bool(self.requires_block)
+        triage = dict(self.safety_triage or {})
+        triage_kind = str(triage.get("safety_triage_kind") or ("safety_blocked_emergency" if requires else "safe_observation"))
+        normal_allowed = bool(triage.get("normal_observation_allowed") if triage else not requires)
+        public_allowed = bool(triage.get("public_emlis_observation_allowed") if triage else not requires)
         return {
             "version": "emlis.safety_boundary_decision.v1",
             "target_step": "Step10_safety_boundary",
-            "phase": "B-S1",
+            "phase": "Phase20-2_Safety_Triage",
             "requires_block": requires,
             "blocked_before_composer": requires,
             "composer_allowed": not requires,
             "composer_generation_allowed": not requires,
             "composer_must_not_run": requires,
-            "normal_observation_allowed": not requires,
-            "user_facing_text_allowed": not requires,
+            "normal_observation_allowed": normal_allowed,
+            "user_facing_text_allowed": public_allowed,
             "comment_text_allowed": False if requires else True,
             "primary_reason": "safety_boundary" if requires else "",
             "reason_codes": list(self.reason_codes or []),
@@ -116,22 +127,30 @@ class EmlisSafetyBoundaryDecision:
             "graph_boundary_count": int(self.graph_boundary_count or 0),
             "boundary_count": int(max(self.graph_boundary_count or 0, self.evidence_span_count or 0, 1 if requires else 0)),
             "boundary_sources": list(self.boundary_sources or []),
+            "safety_triage": triage,
+            "safety_triage_kind": triage_kind,
+            "safe_state_answer_allowed": bool(triage.get("safe_state_answer_allowed") or False),
+            "public_emlis_observation_allowed": public_allowed,
+            "requires_separate_safety_surface": bool(triage.get("requires_separate_safety_surface") or False),
+            "must_not_accept_identity_claim_as_fact": bool(triage.get("must_not_accept_identity_claim_as_fact") or False),
             "safety_pre_generation_block": {
                 "version": "emlis.safety_pre_generation_block.v1",
                 "target_step": "Step10_safety_boundary",
-                "phase": "B-S1",
+                "phase": "Phase20-2_Safety_Triage",
                 "blocked_before_composer": requires,
                 "composer_generation_allowed": not requires,
                 "comment_text_allowed": False if requires else True,
                 "fixed_reply_allowed": False,
                 "fallback_observation_allowed": False,
-                "normal_observation_allowed": not requires,
-                "user_facing_text_allowed": not requires,
+                "normal_observation_allowed": normal_allowed,
+                "safe_state_answer_allowed": bool(triage.get("safe_state_answer_allowed") or False),
+                "user_facing_text_allowed": public_allowed,
                 "raw_user_text_included": False,
                 "primary_reason": "safety_boundary" if requires else "",
+                "safety_triage_kind": triage_kind,
             },
             "raw_user_text_included": False,
-            "policy": "fail_closed_before_composer",
+            "policy": "phase20_2_triage_before_pre_composer_block",
         }
 
 
@@ -142,6 +161,12 @@ def build_emlis_safety_boundary_decision(
 ) -> EmlisSafetyBoundaryDecision:
     graph_values = list(getattr(graph, "safety_boundaries", []) or []) if graph is not None else []
     graph_codes = normalize_safety_boundary_codes(graph_values)
+    triage = build_emlis_safety_triage_decision(
+        graph=graph,
+        evidence_spans=evidence_spans,
+        graph_safety_boundaries=graph_codes,
+    )
+    triage_meta = triage.as_meta()
     boundary_types: List[str] = []
     source_fields: List[str] = []
     span_ids: List[str] = []
@@ -152,24 +177,27 @@ def build_emlis_safety_boundary_decision(
         raw_text = _clean(getattr(span, "raw_text", ""))
         detected_type = _clean(getattr(span, "detected_type", ""))
         types = classify_safety_boundary_text(raw_text)
-        if detected_type == "safety_risk" and not types:
+        if detected_type == "safety_risk" and not types and triage.safety_triage_kind != "self_denial_safe_state_answer":
             types = ["safety_risk"]
+        if not types and triage.safety_triage_kind == "self_denial_safe_state_answer":
+            types = ["self_denial_non_emergency"]
         if not types:
             continue
         span_ids.append(_clean(getattr(span, "span_id", "")))
         source_fields.append(_clean(getattr(span, "source_field", "")))
         boundary_types.extend(types)
         boundary_sources.append("evidence_ledger.detected_type.safety_risk" if detected_type == "safety_risk" else "evidence_text.safety_pattern")
-    requires = bool(graph_codes or span_ids)
+    requires = bool(triage.requires_block)
     return EmlisSafetyBoundaryDecision(
         requires_block=requires,
-        reason_codes=["safety_boundary"] if requires else [],
-        boundary_types=_dedupe(boundary_types),
-        evidence_span_ids=_dedupe(span_ids),
-        source_fields=_dedupe(source_fields),
+        reason_codes=list(triage.reason_codes or (["safety_boundary"] if requires else [])),
+        boundary_types=_dedupe(boundary_types or triage.boundary_types),
+        evidence_span_ids=_dedupe(span_ids or triage.evidence_span_ids),
+        source_fields=_dedupe(source_fields or triage.source_fields),
         graph_boundary_count=len(graph_codes),
-        evidence_span_count=len(_dedupe(span_ids)),
+        evidence_span_count=len(_dedupe(span_ids or triage.evidence_span_ids)),
         boundary_sources=_dedupe(boundary_sources),
+        safety_triage=triage_meta,
     )
 
 
@@ -183,15 +211,15 @@ def build_emlis_safety_boundary_report(
     requires = bool(meta.get("requires_block"))
     return SafetyBoundaryReport(
         requires_block=requires,
-        reasons=["safety_boundary"] if requires else [],
+        reasons=list(meta.get("reason_codes") or (["safety_boundary"] if requires else [])),
         boundary_count=int(meta.get("boundary_count") or 0),
         boundary_kinds=list(meta.get("boundary_types") or []),
         source_span_ids=list(meta.get("evidence_span_ids") or []),
         source_fields=list(meta.get("source_fields") or []),
         policy_version=_POLICY_VERSION,
         blocks_before_composer=requires,
-        normal_observation_allowed=not requires,
-        user_facing_text_allowed=not requires,
+        normal_observation_allowed=bool(meta.get("normal_observation_allowed") and not requires),
+        user_facing_text_allowed=bool(meta.get("user_facing_text_allowed") and not requires),
     )
 
 

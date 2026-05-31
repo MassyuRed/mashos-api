@@ -1,7 +1,7 @@
 {
   "schema_version": "emlis.reception_assistance_dictionary.v1",
   "dictionary_id": "emlis_reception_assistance_dictionary",
-  "dictionary_version": "emlis.reception_assistance_dictionary.initial_two_stage_reception.2026-05-26.phase3",
+  "dictionary_version": "emlis.reception_assistance_dictionary.initial_two_stage_reception.2026-05-26.phase20_9_phase19_withdrawn",
   "purpose": "EmlisAIのEmlisから sectionを、ユーザーの明示反応に基づいて自然に受け取るための内部補助辞書。一般辞書でも完成返答テンプレでもない。",
   "non_goals": [
     "一般辞書",
@@ -206,34 +206,6 @@
       ]
     },
     {
-      "cue_id": "self_understanding_learning_shift",
-      "surface_patterns": [
-        "疑問の対象",
-        "人について考えすぎ",
-        "人への興味",
-        "人との話し方",
-        "すぐに行動",
-        "勇気",
-        "日常",
-        "傷",
-        "汚れ",
-        "メモ",
-        "進歩",
-        "大丈夫"
-      ],
-      "reaction_family": "self_understanding_learning_shift",
-      "allowed_reception_modes": [
-        "self_understanding_learning_shift",
-        "self_understanding_follow"
-      ],
-      "must_not_infer": [
-        "growth_complete",
-        "communication_problem_solved",
-        "future_success",
-        "advice_to_act"
-      ]
-    },
-    {
       "cue_id": "effort_pace",
       "surface_patterns": [
         "自立",
@@ -252,34 +224,6 @@
         "success_guarantee",
         "action_instruction",
         "money_is_cause"
-      ]
-    },
-    {
-      "cue_id": "relationship_gratitude_recovery",
-      "surface_patterns": [
-        "別れた",
-        "関係の終わり",
-        "友達",
-        "変わらず",
-        "優しく",
-        "優しさ",
-        "私のために怒って",
-        "怒ってくれて",
-        "感謝",
-        "区切り",
-        "返していきたい",
-        "別の形で"
-      ],
-      "reaction_family": "relationship_gratitude_recovery",
-      "allowed_reception_modes": [
-        "relationship_gratitude_recovery",
-        "self_understanding_follow"
-      ],
-      "must_not_infer": [
-        "ex_partner_judgement",
-        "anger_amplification",
-        "sadness_erased",
-        "next_action_advice"
       ]
     }
   ],
@@ -390,7 +334,7 @@
       ]
     },
     {
-      "hint_id": "relationship_end_gratitude_recovery_context",
+      "hint_id": "relationship_boundary_support_context",
       "surface_patterns": [
         "別れた",
         "関係の終わり",
@@ -400,9 +344,10 @@
         "区切り",
         "返していきたい"
       ],
-      "event_family": "relationship_end_support_context",
+      "event_family": "relationship_boundary_support_context",
       "can_support_modes": [
-        "relationship_gratitude_recovery"
+        "self_understanding_follow",
+        "standard_state_answer"
       ],
       "cannot_alone_infer": [
         "joy",
@@ -537,36 +482,6 @@
       ]
     },
     {
-      "mode_id": "self_understanding_learning_shift",
-      "activation": {
-        "requires_event_fact_present": true,
-        "requires_reaction_present": true,
-        "requires_any_reaction_family": [
-          "self_understanding_learning_shift"
-        ],
-        "event_hint_alone_can_activate": false,
-        "excludes_safety_risk": true
-      },
-      "ratio_preset": "self_understanding_learning_shift",
-      "observation_policy": {
-        "max_sentences": 1,
-        "claim_strength": "single_input_soft"
-      },
-      "reception_policy": {
-        "allowed_tone_family": "self_understanding_observation",
-        "min_sentences": 1,
-        "max_sentences": 1,
-        "must_ground_to_explicit_reaction": true
-      },
-      "forbidden": [
-        "growth_complete_claim",
-        "communication_problem_solved_claim",
-        "future_success_claim",
-        "action_instruction",
-        "diagnosis"
-      ]
-    },
-    {
       "mode_id": "self_understanding_follow",
       "activation": {
         "requires_event_fact_present": false,
@@ -679,39 +594,6 @@
         "raw_detail_request",
         "public_status_extension"
       ]
-    },
-    {
-      "mode_id": "relationship_gratitude_recovery",
-      "ratio_preset": "relationship_end_gratitude_recovery",
-      "activation": {
-        "requires_event_fact_present": true,
-        "requires_reaction_present": true,
-        "requires_any_reaction_family": [
-          "relationship_gratitude_recovery"
-        ],
-        "excludes_structure_question": true,
-        "excludes_safety_risk": true,
-        "excludes_self_denial_primary": true,
-        "event_hint_alone_can_activate": false
-      },
-      "observation_policy": {
-        "max_sentences": 1,
-        "claim_strength": "current_input_soft",
-        "observation_thickened": false
-      },
-      "reception_policy": {
-        "allowed_tone_family": "relationship_gratitude_reception",
-        "min_sentences": 2,
-        "max_sentences": 2,
-        "must_ground_to_explicit_reaction": true
-      },
-      "forbidden": [
-        "ex_partner_judgement",
-        "anger_amplification",
-        "sadness_flattening",
-        "next_action_advice",
-        "public_status_extension"
-      ]
     }
   ],
   "tone_families": [
@@ -778,24 +660,6 @@
         "personality_claim",
         "cause_overclaim",
         "action_instruction"
-      ]
-    },
-    {
-      "tone_family_id": "relationship_gratitude_reception",
-      "description": "関係の終わり、残っている支え、感謝、区切りを、相手評価や助言にせず受け取る温度。",
-      "allowed_surface_features": [
-        "relationship_end_observed",
-        "kindness_received",
-        "gratitude_received",
-        "boundary_growth_soft",
-        "return_kindness_intent_received"
-      ],
-      "forbidden_surface_features": [
-        "ex_partner_judgement",
-        "anger_amplification",
-        "action_instruction",
-        "growth_completion_claim",
-        "sadness_flattening"
       ]
     }
   ],
@@ -889,9 +753,9 @@
       "template_text_forbidden": true
     },
     {
-      "shape_family_id": "self_understanding_learning_shift_receiving",
+      "shape_family_id": "self_understanding_change_receiving",
       "mode_ids": [
-        "self_understanding_learning_shift"
+        "self_understanding_follow"
       ],
       "allowed_intents": [
         "疑問の向きが人から物や環境へ移った変化を受け取る",
@@ -906,9 +770,10 @@
       "template_text_forbidden": true
     },
     {
-      "shape_family_id": "relationship_gratitude_recovery_receiving",
+      "shape_family_id": "relationship_boundary_support_receiving",
       "mode_ids": [
-        "relationship_gratitude_recovery"
+        "self_understanding_follow",
+        "standard_state_answer"
       ],
       "allowed_intents": [
         "関係の終わりと友人の支えを同時に扱う",
@@ -919,6 +784,23 @@
         "別れた相手を評価する",
         "友人の怒りを煽る",
         "悲しみを前向きに塗り替える",
+        "次の行動を指示する"
+      ],
+      "template_text_forbidden": true
+    },
+    {
+      "shape_family_id": "generic_relation_material_receiving",
+      "mode_ids": [
+        "self_understanding_follow",
+        "standard_state_answer"
+      ],
+      "allowed_intents": [
+        "関係の終わり・支援・返したい意図を汎用材料として扱う",
+        "自己理解や変化の材料をcase専用routeなしで扱う"
+      ],
+      "forbidden_intents": [
+        "例文語彙だけで専用modeに入れる",
+        "完成surface文として固定する",
         "次の行動を指示する"
       ],
       "template_text_forbidden": true

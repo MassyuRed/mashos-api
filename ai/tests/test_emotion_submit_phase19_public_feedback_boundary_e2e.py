@@ -60,8 +60,8 @@ _SECRET_INTERNAL_COMMENT: Final = "Phase19-5 public metaへ混ぜてはいけな
 _PHASE19_SAFE_INSERTED_IDS: Final = {
     "phase19_real_device_A_low_information_fatigue": "phase19-5-A",
     "phase19_real_device_B_safety_boundary_self_harm_adjacent": "phase19-5-B",
-    "phase19_real_device_C_self_understanding_learning_shift": "phase19-5-C",
-    "phase19_real_device_D_relationship_gratitude_recovery": "phase19-5-D",
+    "phase19_real_device_C_generic_self_understanding_regression": "phase19-5-C",
+    "phase19_real_device_D_generic_relationship_boundary_regression": "phase19-5-D",
 }
 
 
@@ -230,7 +230,14 @@ async def test_phase19_5_real_device_abcd_reaches_final_public_feedback_boundary
     )
     failure_context = json.dumps(boundary, ensure_ascii=False, indent=2, sort_keys=True)
 
-    assert boundary["public_meta_observation_status"] == case.expected_observation_status, failure_context
+    if case.expected_observation_status == "non_passed":
+        assert boundary["public_meta_observation_status"] in {
+            "rejected",
+            "unavailable",
+            "safety_blocked",
+        }, failure_context
+    else:
+        assert boundary["public_meta_observation_status"] == case.expected_observation_status, failure_context
     assert (
         boundary["response_has_input_feedback"] is case.expected_public_input_feedback_included
     ), failure_context

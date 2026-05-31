@@ -37,6 +37,11 @@ from emlis_ai_observation_dictionary_loader import (
     select_observation_dictionary_entries,
 )
 from emlis_ai_observation_eligibility_service import route_observation_eligibility
+from emlis_ai_input_material_bundle import (
+    EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY,
+    MATERIAL_QUALITY_LOW_INFORMATION,
+    build_emlis_input_material_bundle_meta,
+)
 from emlis_ai_observation_material_connector import build_material_focus_relation_connector
 from emlis_ai_observation_reply_contract import (
     OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION,
@@ -68,6 +73,8 @@ LOW_INFORMATION_OBSERVATION_COMPOSER_STEP: Final = "Step8_Low_Information_Observ
 LOW_INFORMATION_OBSERVATION_BODY_SCHEMA_VERSION: Final = "emlis.low_information_observation_body.v1"
 LOW_INFORMATION_SPECIFICITY_PLAN_VERSION: Final = "emlis.low_information_specificity_plan.v1"
 LOW_INFORMATION_SPECIFICITY_STEP: Final = "Step6_Low_Information_Specificity"
+LOW_INFORMATION_MATERIAL_SURFACE_PLAN_VERSION: Final = "cocolon.emlis.low_information_material_surface_plan.v1"
+LOW_INFORMATION_MATERIAL_SURFACE_STEP: Final = "Phase20-4_Low_Information_Material_Surface"
 
 QUESTION_SURFACE_WHAT_HAPPENED: Final = "what_happened"
 QUESTION_SURFACE_WHAT_CHANGED: Final = "what_changed"
@@ -437,6 +444,168 @@ def _unknown_marker_for_slots(unknown_slots: Sequence[str]) -> str:
     return "何が起きたか"
 
 
+_MATERIAL_UNKNOWN_TO_REPLY_UNKNOWN: Final = {
+    "event": UNKNOWN_SLOT_EVENT,
+    "target": UNKNOWN_SLOT_TARGET,
+    "cause": UNKNOWN_SLOT_CAUSE,
+    "relationship": UNKNOWN_SLOT_RELATION,
+    "duration": UNKNOWN_SLOT_TIME,
+    "user_intent": UNKNOWN_SLOT_DESIRED_DIRECTION,
+    "next_action": UNKNOWN_SLOT_DESIRED_DIRECTION,
+    "impact": UNKNOWN_SLOT_DESIRED_DIRECTION,
+}
+
+_VISIBLE_MATERIAL_SCOPE_LABELS: Final = {
+    "emotion_direction": "感情の向き",
+    "unresolved_weight": "言葉になる前の重さ",
+    "target": "置かれたカテゴリや対象の入口",
+    "relationship": "関係の入口",
+    "action": "行動の入口",
+    "change": "変化の入口",
+    "time": "時間の手がかり",
+    "value": "大切にしたい方向",
+    "event": "出来事の入口",
+}
+
+
+def _input_material_bundle_meta(input_material_bundle: Any = None, *, current_input: Any = None) -> dict[str, Any]:
+    candidate: Any = input_material_bundle
+    if isinstance(candidate, Mapping):
+        if isinstance(candidate.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY), Mapping):
+            candidate = candidate.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
+        elif isinstance(candidate.get("phase20_3_input_material_bundle"), Mapping):
+            candidate = candidate.get("phase20_3_input_material_bundle")
+        elif isinstance(candidate.get("phase20_4_input_material_bundle_meta"), Mapping):
+            candidate = candidate.get("phase20_4_input_material_bundle_meta")
+        return dict(candidate or {})
+    as_meta = getattr(candidate, "as_meta", None)
+    if callable(as_meta):
+        result = as_meta()
+        if isinstance(result, Mapping):
+            return dict(result)
+    if current_input is not None:
+        try:
+            return build_emlis_input_material_bundle_meta(current_input)
+        except Exception:  # pragma: no cover - defensive meta-only fallback
+            return {}
+    return {}
+
+
+_ALLOWED_REPLY_UNKNOWN_SLOTS: Final = frozenset(
+    {
+        UNKNOWN_SLOT_EVENT,
+        UNKNOWN_SLOT_TARGET,
+        UNKNOWN_SLOT_CAUSE,
+        UNKNOWN_SLOT_RELATION,
+        UNKNOWN_SLOT_TIME,
+        UNKNOWN_SLOT_DESIRED_DIRECTION,
+        UNKNOWN_SLOT_CURRENT_FEELING_TARGET,
+    }
+)
+
+
+def _normalize_material_unknown_slots(material_unknown_slots: Iterable[Any] | Any | None) -> list[str]:
+    out: list[str] = []
+    for slot in _dedupe(material_unknown_slots):
+        normalized = _MATERIAL_UNKNOWN_TO_REPLY_UNKNOWN.get(slot, slot)
+        if normalized not in _ALLOWED_REPLY_UNKNOWN_SLOTS:
+            continue
+        if normalized and normalized not in out:
+            out.append(normalized)
+    return out
+
+
+def _visible_scope_labels_from_material_slots(
+    visible_material_slots: Sequence[str],
+    *,
+    tone_profile: str,
+) -> list[str]:
+    labels: list[str] = []
+    for slot in visible_material_slots:
+        if slot == "unresolved_weight" and tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+            continue
+        label = _VISIBLE_MATERIAL_SCOPE_LABELS.get(slot)
+        if label and label not in labels:
+            labels.append(label)
+    return labels[:3]
+
+
+def _known_scope_text_from_material_slots(
+    *,
+    visible_material_slots: Sequence[str],
+    material_unknown_slots: Sequence[str],
+    tone_profile: str,
+) -> str:
+    labels = _visible_scope_labels_from_material_slots(
+        visible_material_slots,
+        tone_profile=tone_profile,
+    )
+    if not labels:
+        return ""
+    if tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
+        return _POSITIVE_KNOWN_SCOPE_SURFACE
+    if "event" in material_unknown_slots:
+        missing = "詳しい出来事"
+    elif "cause" in material_unknown_slots:
+        missing = "原因"
+    elif "target" in material_unknown_slots:
+        missing = "何に向いた感情なのか"
+    elif "relationship" in material_unknown_slots:
+        missing = "関係の詳しい形"
+    else:
+        missing = "詳しい背景"
+    visible_phrase = "、".join(labels)
+    return f"ここから見えているのは、{visible_phrase}までで、{missing}まではまだ見えていません。"
+
+
+def _low_information_material_surface_plan(
+    *,
+    input_material_bundle_meta: Mapping[str, Any],
+    fallback_unknown_slots: Sequence[str],
+    tone_profile: str,
+) -> dict[str, Any]:
+    bundle_meta = dict(input_material_bundle_meta or {})
+    visible_slots = _dedupe(bundle_meta.get("visible_material_slots"))
+    material_unknown_slots = _dedupe(bundle_meta.get("unknown_slots"))
+    reply_unknown_slots = _normalize_material_unknown_slots(material_unknown_slots) or list(_dedupe(fallback_unknown_slots))
+    if not reply_unknown_slots:
+        reply_unknown_slots = [UNKNOWN_SLOT_EVENT]
+    material_quality = _clean(bundle_meta.get("material_quality"))
+    labels = _visible_scope_labels_from_material_slots(visible_slots, tone_profile=tone_profile)
+    known_scope_text = _known_scope_text_from_material_slots(
+        visible_material_slots=visible_slots,
+        material_unknown_slots=material_unknown_slots,
+        tone_profile=tone_profile,
+    )
+    selected_by_bundle = bool(material_quality == MATERIAL_QUALITY_LOW_INFORMATION and (visible_slots or material_unknown_slots))
+    return {
+        "schema_version": LOW_INFORMATION_MATERIAL_SURFACE_PLAN_VERSION,
+        "source_phase": LOW_INFORMATION_MATERIAL_SURFACE_STEP,
+        "phase20_4_low_information_material_surface_ready": True,
+        "selected_by_input_material_bundle": selected_by_bundle,
+        "material_quality": material_quality,
+        "visible_material_slots": list(visible_slots),
+        "material_unknown_slots": list(material_unknown_slots),
+        "reply_unknown_slots": list(reply_unknown_slots),
+        "visible_scope_labels": labels,
+        "known_scope_text_selected": bool(known_scope_text),
+        "known_scope_surface_from_visible_material_slots": bool(known_scope_text),
+        "question_surface_from_unknown_slots": True,
+        "question_only": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_included": False,
+        "comment_text_generated": False,
+        "fixed_fallback_used": False,
+        "case_specific_route_used": False,
+        "phase19_case_specific_route_used": False,
+        "case_id_runtime_condition_used": False,
+        "phase_name_runtime_condition_used": False,
+        "known_scope_text": known_scope_text,
+        "input_material_bundle_meta": bundle_meta,
+    }
+
+
 def _line_hash(text: str, *, role: str) -> str:
     digest = hashlib.sha1(f"{role}:{text}".encode("utf-8")).hexdigest()[:10]
     return f"low_info_{role}_{digest}"
@@ -758,6 +927,8 @@ class LowInformationObservationDraft:
     eligible_for_full_observation: bool = False
     question_required: bool = True
     unknown_slots: Sequence[str] = field(default_factory=tuple)
+    visible_material_slots: Sequence[str] = field(default_factory=tuple)
+    material_unknown_slots: Sequence[str] = field(default_factory=tuple)
     observed_scope: Sequence[str] = field(default_factory=tuple)
     question_surface_kind: str = QUESTION_SURFACE_WHAT_HAPPENED
     user_fact_hint_mode: str = USER_FACT_GROUNDING_MODE_DISABLED
@@ -772,6 +943,8 @@ class LowInformationObservationDraft:
     forbidden_template_signature_ids: Sequence[str] = field(default_factory=tuple)
     low_information_specificity_plan: Mapping[str, Any] = field(default_factory=dict)
     low_information_tone_profile_plan: Mapping[str, Any] = field(default_factory=dict)
+    low_information_material_surface_plan: Mapping[str, Any] = field(default_factory=dict)
+    input_material_bundle_meta: Mapping[str, Any] = field(default_factory=dict)
     observation_reply_meta: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -810,6 +983,13 @@ class LowInformationObservationDraft:
             "contains_question": bool(_QUESTION_MARK_RE.search(self.body)),
             "question_not_only": _body_sentence_count(self.body) >= 2 and bool(_QUESTION_MARK_RE.search(self.body)),
             "unknown_slots": list(self.unknown_slots),
+            "visible_material_slots": list(self.visible_material_slots),
+            "material_unknown_slots": list(self.material_unknown_slots),
+            "phase20_4_low_information_material_surface_ready": bool((self.low_information_material_surface_plan or {}).get("phase20_4_low_information_material_surface_ready")),
+            "low_information_surface_from_visible_material_slots": bool((self.low_information_material_surface_plan or {}).get("known_scope_surface_from_visible_material_slots")),
+            "unknown_prompt_from_unknown_slots": bool((self.low_information_material_surface_plan or {}).get("question_surface_from_unknown_slots")),
+            "phase20_4_input_material_bundle_meta": dict(self.input_material_bundle_meta or {}),
+            "low_information_material_surface_plan": dict(self.low_information_material_surface_plan or {}),
             "observed_scope": list(self.observed_scope),
             "question_surface_kind": self.question_surface_kind,
             "question_targets_unknown_slots": list(self.unknown_slots[:2]),
@@ -922,6 +1102,27 @@ def _resolve_low_information_inputs(
             observation_graph=observation_graph,
         )
     eligibility_meta = _meta(eligibility_decision)
+    material_unknown_slots = _dedupe(eligibility_meta.get("unknown_slots"))
+    normalized_unknown_slots = _normalize_material_unknown_slots(material_unknown_slots)
+    if material_unknown_slots and normalized_unknown_slots != material_unknown_slots:
+        eligibility_meta = dict(eligibility_meta)
+        eligibility_meta.setdefault("material_unknown_slots", material_unknown_slots)
+        eligibility_meta["unknown_slots"] = normalized_unknown_slots
+        eligibility_meta["phase20_4_reply_unknown_slots_normalized"] = True
+    if (
+        _clean(eligibility_meta.get("response_kind")) == "low_information_observation"
+        or _clean(eligibility_meta.get("material_quality")) == MATERIAL_QUALITY_LOW_INFORMATION
+    ):
+        eligibility_meta = dict(eligibility_meta)
+        eligibility_meta.setdefault("status", OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION)
+        eligibility_meta.setdefault("eligibility_status", OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION)
+        eligibility_meta.setdefault("observation_reply_kind", OBSERVATION_REPLY_KIND_LOW_INFORMATION)
+        eligibility_meta.setdefault("eligible_for_full_observation", False)
+        eligibility_meta.setdefault("question_required", True)
+        eligibility_meta.setdefault("plan", "free")
+        eligibility_meta.setdefault("user_fact_allowed", False)
+        eligibility_meta.setdefault("facts_used", [])
+        eligibility_meta.setdefault("user_fact_may_promote_to_eligible", False)
 
     if user_fact_grounding_decision is None:
         user_fact_grounding_decision = resolve_user_fact_grounding_boundary(
@@ -1004,6 +1205,7 @@ def _build_lines(
     safe_anchor: Mapping[str, Any] | None = None,
     tone_profile: str = LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN,
     current_input: Any = None,
+    material_surface_plan: Mapping[str, Any] | None = None,
 ) -> tuple[LowInformationObservationLine, ...]:
     receive = _select_first_material(
         category=CATEGORY_RECEIVE_PHRASE,
@@ -1079,8 +1281,11 @@ def _build_lines(
         opening_text = f"{receive_surface}、{burden_surface}が先に出ている{humility_surface}。"
 
     unknown_surface = _clean(unknown_marker.get("surface")) or _unknown_marker_for_slots(unknown_slots)
+    material_known_scope_text = _clean((material_surface_plan or {}).get("known_scope_text"))
     if plan == "subscription" and facts_used and user_fact_mode == USER_FACT_GROUNDING_MODE_EXPLICIT_REFERENCE and surface_disclosure_required:
         known_scope_text = f"以前にも近い重さが残っていたことはありますが、今回{unknown_surface}まではまだ見えていません。"
+    elif material_known_scope_text:
+        known_scope_text = material_known_scope_text
     elif tone_profile == LOW_INFORMATION_TONE_PROFILE_POSITIVE_ONLY:
         known_scope_text = _POSITIVE_KNOWN_SCOPE_SURFACE
     elif tone_profile == LOW_INFORMATION_TONE_PROFILE_MIXED:
@@ -1148,6 +1353,7 @@ def compose_low_information_observation(
     source_bundle: Any = None,
     evidence_ledger: Any = None,
     observation_graph: Any = None,
+    input_material_bundle: Any = None,
     observation_dictionary: Any = None,  # reserved for future Step 9 dictionary injection; default loader is used for Step 8.
 ) -> LowInformationObservationDraft:
     """Build a low-information observation body candidate.
@@ -1177,10 +1383,26 @@ def compose_low_information_observation(
     if not low_information:
         raise ValueError("Step 8 Low Information Composer only accepts low-information routed inputs")
 
-    unknown_slots = _dedupe(material_meta.get("unknown_slots") or internal_meta.get("unknown_slots") or eligibility_meta.get("unknown_slots"))
-    if not unknown_slots:
-        unknown_slots = [UNKNOWN_SLOT_EVENT]
+    raw_fallback_unknown_slots = _dedupe(material_meta.get("unknown_slots") or internal_meta.get("unknown_slots") or eligibility_meta.get("unknown_slots"))
+    fallback_unknown_slots = _normalize_material_unknown_slots(raw_fallback_unknown_slots)
+    if not fallback_unknown_slots:
+        fallback_unknown_slots = [UNKNOWN_SLOT_EVENT]
     tone_profile = _low_information_tone_profile(current_input)
+    input_material_bundle_meta = _input_material_bundle_meta(
+        input_material_bundle,
+        current_input=current_input,
+    )
+    material_surface_plan = _low_information_material_surface_plan(
+        input_material_bundle_meta=input_material_bundle_meta,
+        fallback_unknown_slots=fallback_unknown_slots,
+        tone_profile=tone_profile,
+    )
+    # Phase20-4 uses the Input Material Bundle as the default production source
+    # for low-information unknowns, while still respecting explicit test/integration
+    # eligibility inputs unless the caller supplies a bundle for this step.
+    use_material_unknown_slots = bool(input_material_bundle is not None or eligibility_decision is None)
+    material_reply_unknown_slots = _dedupe(material_surface_plan.get("reply_unknown_slots"))
+    unknown_slots = material_reply_unknown_slots if use_material_unknown_slots and material_reply_unknown_slots else list(fallback_unknown_slots)
     base_question_surface_kind = _question_surface_kind_for_slots(unknown_slots)
     question_surface_kind = _apply_tone_profile_question_surface_kind(
         question_surface_kind=base_question_surface_kind,
@@ -1226,6 +1448,7 @@ def compose_low_information_observation(
         safe_anchor=safe_anchor,
         tone_profile=tone_profile,
         current_input=current_input,
+        material_surface_plan=material_surface_plan,
     )
     body = "".join(line.text for line in lines)
     selected_material_ids = _dedupe(line_id for line in lines for line_id in line.material_entry_ids)
@@ -1254,6 +1477,8 @@ def compose_low_information_observation(
         body=body,
         lines=lines,
         unknown_slots=tuple(unknown_slots),
+        visible_material_slots=tuple(_dedupe(material_surface_plan.get("visible_material_slots"))),
+        material_unknown_slots=tuple(_dedupe(material_surface_plan.get("material_unknown_slots"))),
         observed_scope=_observed_scope_for_tone_profile(tone_profile),
         question_surface_kind=question_surface_kind,
         user_fact_hint_mode=user_fact_mode,
@@ -1268,6 +1493,8 @@ def compose_low_information_observation(
         forbidden_template_signature_ids=tuple(forbidden_signature_ids),
         low_information_specificity_plan=specificity_plan,
         low_information_tone_profile_plan=tone_profile_plan,
+        low_information_material_surface_plan=material_surface_plan,
+        input_material_bundle_meta=input_material_bundle_meta,
         observation_reply_meta=observation_reply_meta,
     )
     assert_low_information_observation_composer_contract(draft, current_input=current_input)
@@ -1444,6 +1671,13 @@ def _draft_as_meta_without_assert(self: LowInformationObservationDraft) -> dict[
         "contains_question": bool(_QUESTION_MARK_RE.search(self.body)),
         "question_not_only": _body_sentence_count(self.body) >= 2 and bool(_QUESTION_MARK_RE.search(self.body)),
         "unknown_slots": list(self.unknown_slots),
+        "visible_material_slots": list(self.visible_material_slots),
+        "material_unknown_slots": list(self.material_unknown_slots),
+        "phase20_4_low_information_material_surface_ready": bool((self.low_information_material_surface_plan or {}).get("phase20_4_low_information_material_surface_ready")),
+        "low_information_surface_from_visible_material_slots": bool((self.low_information_material_surface_plan or {}).get("known_scope_surface_from_visible_material_slots")),
+        "unknown_prompt_from_unknown_slots": bool((self.low_information_material_surface_plan or {}).get("question_surface_from_unknown_slots")),
+        "phase20_4_input_material_bundle_meta": dict(self.input_material_bundle_meta or {}),
+        "low_information_material_surface_plan": dict(self.low_information_material_surface_plan or {}),
         "observed_scope": list(self.observed_scope),
         "question_surface_kind": self.question_surface_kind,
         "question_targets_unknown_slots": list(self.unknown_slots[:2]),

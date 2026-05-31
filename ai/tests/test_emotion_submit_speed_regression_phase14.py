@@ -156,7 +156,8 @@ async def test_phase14_persist_attaches_submit_speed_regression_summary_on_displ
     assert speed["saved_emotion_success"] is True
     assert speed["emlis_display_fail_closed"] is False
     assert speed["daily_reception_branch"] is True
-    assert speed["reception_mode_id"] == "daily_unpleasant_reception"
+    assert "reception_mode_id" not in speed
+    assert "reception_mode_family" not in speed
     assert speed["heavy_diagnostics_added_before_display"] is False
     assert speed["general_dictionary_lookup_used"] is False
     assert speed["raw_input_included"] is False

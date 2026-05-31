@@ -82,20 +82,30 @@ def _scope_safety_boundary_meta(*, graph: ObservationGraph, evidence_spans: Sequ
     detector_meta = decision.as_meta()
     requires_block = bool(detector_meta.get("requires_block"))
     graph_codes = normalize_safety_boundary_codes(getattr(graph, "safety_boundaries", []) or [])
+    safety_triage_kind = str(detector_meta.get("safety_triage_kind") or "safe_observation")
+    detected_types = ["safety_risk"] if requires_block and detector_meta.get("evidence_span_ids") else []
+    if not requires_block and safety_triage_kind == "self_denial_safe_state_answer":
+        detected_types = ["self_denial_non_emergency"]
     return {
         "version": _SCOPE_SAFETY_BOUNDARY_VERSION,
         "target_step": "Step10_safety_boundary",
-        "policy": "scope_pre_composer_block",
+        "policy": "phase20_2_scope_pre_composer_block",
         "requires_block": requires_block,
         "blocked_before_composer": requires_block,
         "reason_codes": [_SAFETY_BOUNDARY_REASON] if requires_block else [],
         "primary_reason": _SAFETY_BOUNDARY_REASON if requires_block else "",
-        "safety_boundaries": list(detector_meta.get("reason_codes") or []),
+        "safety_triage_kind": safety_triage_kind,
+        "safety_triage": dict(detector_meta.get("safety_triage") or {}),
+        "safe_state_answer_allowed": bool(detector_meta.get("safe_state_answer_allowed") or False),
+        "public_emlis_observation_allowed": bool(detector_meta.get("public_emlis_observation_allowed") if "public_emlis_observation_allowed" in detector_meta else not requires_block),
+        "must_not_accept_identity_claim_as_fact": bool(detector_meta.get("must_not_accept_identity_claim_as_fact") or False),
+        "safety_boundaries": ["safety_boundary"] if requires_block else [],
+        "safety_triage_reason_codes": list(detector_meta.get("reason_codes") or []),
         "graph_safety_boundaries": graph_codes,
         "evidence_safety_boundaries": list(detector_meta.get("boundary_types") or []),
         "evidence_span_ids": list(detector_meta.get("evidence_span_ids") or []),
         "source_fields": list(detector_meta.get("source_fields") or []),
-        "detected_types": ["safety_risk"] if detector_meta.get("evidence_span_ids") else [],
+        "detected_types": detected_types,
         "detected_categories": list(detector_meta.get("boundary_types") or []),
         "boundary_sources": list(detector_meta.get("boundary_sources") or []),
         "boundary_count": int(detector_meta.get("graph_boundary_count") or 0) + int(detector_meta.get("evidence_span_count") or 0),

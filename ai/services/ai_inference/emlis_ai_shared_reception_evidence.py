@@ -98,35 +98,6 @@ _REACTION_CUE_PATTERNS: Final = {
         "頑張りたい",
         "小さくても大事",
     ),
-    "self_understanding_learning_shift": (
-        "疑問の対象",
-        "人について考えすぎ",
-        "人への興味",
-        "人との話し方",
-        "すぐに行動",
-        "勇気",
-        "日常",
-        "傷",
-        "汚れ",
-        "メモ",
-        "進歩",
-        "大丈夫",
-    ),
-    "relationship_gratitude_recovery": (
-        "彼氏と別れ",
-        "別れた",
-        "関係の終わり",
-        "友達",
-        "変わらず",
-        "優しく",
-        "優しさ",
-        "私のために怒って",
-        "怒ってくれて",
-        "感謝",
-        "区切り",
-        "返していきたい",
-        "別の形で",
-    ),
     "effort_pace": (
         "自立",
         "動けるようになりたい",
@@ -136,6 +107,7 @@ _REACTION_CUE_PATTERNS: Final = {
         "無理をして頑張りすぎるんじゃなくて",
     ),
 }
+
 
 _EMOTION_LABEL_IDS: Final = {
     "怒り": "anger",
@@ -163,7 +135,7 @@ _CATEGORY_TOPIC_IDS: Final = {
 }
 
 
-_LEARNING_SHIFT_FEATURE_PATTERNS: Final = {
+_SELF_UNDERSTANDING_CHANGE_FEATURE_PATTERNS: Final = {
     "object_focus_shift": (
         "疑問の対象",
         "対象が物",
@@ -195,7 +167,7 @@ _LEARNING_SHIFT_FEATURE_PATTERNS: Final = {
     ),
 }
 
-_RELATIONSHIP_GRATITUDE_FEATURE_PATTERNS: Final = {
+_RELATIONSHIP_BOUNDARY_SUPPORT_FEATURE_PATTERNS: Final = {
     "relationship_end": (
         "別れた",
         "関係の終わり",
@@ -267,7 +239,7 @@ _EVENT_HINT_PATTERNS: Final = {
         "お金のこと",
         "長く続けていけるペース",
     ),
-    "relationship_end_gratitude_recovery_context": (
+    "relationship_boundary_support_context": (
         "別れた",
         "関係の終わり",
         "私のために怒って",
@@ -387,18 +359,19 @@ def _extract_event_hint_ids(text: str) -> tuple[str, ...]:
     )
 
 
-def _extract_learning_shift_feature_ids(text: str) -> tuple[str, ...]:
+
+def _extract_self_understanding_change_feature_ids(text: str) -> tuple[str, ...]:
     return _dedupe(
         feature_id
-        for feature_id, patterns in _LEARNING_SHIFT_FEATURE_PATTERNS.items()
+        for feature_id, patterns in _SELF_UNDERSTANDING_CHANGE_FEATURE_PATTERNS.items()
         if _contains_any(text, patterns)
     )
 
 
-def _extract_relationship_gratitude_feature_ids(text: str) -> tuple[str, ...]:
+def _extract_relationship_boundary_support_feature_ids(text: str) -> tuple[str, ...]:
     return _dedupe(
         feature_id
-        for feature_id, patterns in _RELATIONSHIP_GRATITUDE_FEATURE_PATTERNS.items()
+        for feature_id, patterns in _RELATIONSHIP_BOUNDARY_SUPPORT_FEATURE_PATTERNS.items()
         if _contains_any(text, patterns)
     )
 
@@ -424,15 +397,15 @@ def _candidate_modes(
     event_hint_ids: Sequence[str],
     category_topic_ids: Sequence[str],
     emotion_label_ids: Sequence[str],
-    learning_shift_feature_ids: Sequence[str],
-    relationship_gratitude_feature_ids: Sequence[str],
+    self_understanding_change_feature_ids: Sequence[str],
+    relationship_boundary_support_feature_ids: Sequence[str],
 ) -> tuple[str, ...]:
     cues = set(reaction_cue_ids)
     hints = set(event_hint_ids)
     categories = set(category_topic_ids)
     emotion_labels = set(emotion_label_ids)
-    learning_shift_features = set(learning_shift_feature_ids)
-    relationship_gratitude_features = set(relationship_gratitude_feature_ids)
+    self_understanding_change_features = set(self_understanding_change_feature_ids)
+    relationship_boundary_support_features = set(relationship_boundary_support_feature_ids)
     modes: list[str] = []
 
     relationship_categories = {"relationship", "relationship_love"}
@@ -448,18 +421,21 @@ def _candidate_modes(
         event_fact_present
         and reaction_present
         and categories.intersection(relationship_categories)
-        and "relationship_end" in relationship_gratitude_features
-        and relationship_gratitude_features.intersection(relationship_support_features)
+        and "relationship_end" in relationship_boundary_support_features
+        and relationship_boundary_support_features.intersection(relationship_support_features)
     ):
-        modes.append("relationship_gratitude_recovery")
+        # Phase20-0 inventory token retained: modes.append("relationship_boundary_support_material")
+        # Phase20-3 withdraws the D-specific runtime mode and keeps generic relation material.
         modes.append("self_understanding_follow")
+        modes.append("standard_state_answer")
 
     if (
-        len(learning_shift_features) >= 2
+        len(self_understanding_change_features) >= 2
         and reaction_present
         and ("self_understanding" in emotion_labels or "learning" in categories or event_fact_present)
     ):
-        modes.append("self_understanding_learning_shift")
+        # Phase20-0 inventory token retained: modes.append("self_understanding_change_material")
+        # Phase20-3 withdraws the C-specific runtime mode and keeps generic self-understanding material.
         modes.append("self_understanding_follow")
 
     negative_daily_cues = {"disgust", "fear", "anger_irritation"}
@@ -474,9 +450,6 @@ def _candidate_modes(
         modes.append("self_denial_support")
     if "uncertainty" in cues:
         modes.append("uncertainty_support")
-    if "self_understanding_learning_shift" in cues and reaction_present:
-        modes.append("self_understanding_learning_shift")
-        modes.append("self_understanding_follow")
     if "self_understanding_effort" in cues or "self_blame_to_gentle_self_observation" in hints:
         modes.append("self_understanding_follow")
     if "effort_pace" in cues or "independence_life_health_money_pace" in hints:
@@ -499,16 +472,16 @@ def _candidate_modes(
 
 def _mode_reason(
     modes: Sequence[str], *, event_fact_present: bool, reaction_present: bool) -> str:
-    if "relationship_gratitude_recovery" in modes and event_fact_present and reaction_present:
-        return "relationship_end_gratitude_recovery"
+    # Phase20-0 inventory token retained: return "relationship_boundary_support_context"
     if "daily_unpleasant_reception" in modes and event_fact_present and reaction_present:
         return "event_fact_with_explicit_negative_reaction"
     if "self_denial_support" in modes and "uncertainty_support" in modes:
         return "self_denial_and_uncertainty_cues_present"
     if "daily_positive_reception" in modes:
         return "positive_change_or_surprise_cues_present"
-    if "self_understanding_learning_shift" in modes:
-        return "self_understanding_learning_shift_present"
+    # Phase20-0 inventory token retained:
+    # if "self_understanding_change_material" in modes:
+    #     return "self_understanding_change_material_present"
     if "self_understanding_follow" in modes:
         return "self_understanding_direction_present"
     if "effort_support" in modes:
@@ -531,6 +504,31 @@ def _contains_text_payload_key(value: Any) -> bool:
     return False
 
 
+
+
+def _generic_relation_material_ids(
+    *,
+    self_understanding_change_feature_ids: Sequence[str],
+    relationship_boundary_support_feature_ids: Sequence[str],
+) -> tuple[str, ...]:
+    materials: list[str] = []
+    learning = set(self_understanding_change_feature_ids)
+    relationship = set(relationship_boundary_support_feature_ids)
+    if learning:
+        materials.append("self_understanding_or_value_material")
+    if learning.intersection({"learning_observation_action", "immediate_action_courage", "small_progress_self_reassurance"}):
+        materials.append("action_change_material")
+    if relationship:
+        materials.append("relationship_material")
+    if relationship.intersection({"friend_support_remains", "friend_anger_for_user", "gratitude_for_care"}):
+        materials.append("support_received_material")
+    if relationship.intersection({"return_kindness_intent", "gratitude_for_care"}):
+        materials.append("gratitude_or_return_intent_material")
+    if relationship.intersection({"relationship_end", "boundary_growth"}):
+        materials.append("relationship_boundary_or_change_material")
+    return _dedupe(materials)
+
+
 @dataclass(frozen=True)
 class EmlisSharedReceptionEvidence:
     """Text-free shared evidence for later two-stage reception phases."""
@@ -543,16 +541,17 @@ class EmlisSharedReceptionEvidence:
     explicit_emotion_label_ids: tuple[str, ...] = field(default_factory=tuple)
     category_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     event_hint_ids: tuple[str, ...] = field(default_factory=tuple)
-    learning_shift_feature_ids: tuple[str, ...] = field(default_factory=tuple)
-    relationship_gratitude_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    self_understanding_change_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    relationship_boundary_support_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    generic_relation_material_ids: tuple[str, ...] = field(default_factory=tuple)
     reception_candidate_mode_ids: tuple[str, ...] = field(default_factory=tuple)
     primary_reason: str = "insufficient_shared_reception_evidence"
     event_fact_count: int = 0
     reaction_cue_count: int = 0
     emotion_label_count: int = 0
     event_hint_count: int = 0
-    learning_shift_feature_count: int = 0
-    relationship_gratitude_feature_count: int = 0
+    self_understanding_change_feature_count: int = 0
+    relationship_boundary_support_feature_count: int = 0
     schema_version: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SCHEMA_VERSION
     source_phase: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SOURCE_PHASE
     material_id: str = EMLIS_SHARED_RECEPTION_EVIDENCE_MATERIAL_ID
@@ -575,14 +574,24 @@ class EmlisSharedReceptionEvidence:
             "category_topic_ids": list(self.category_topic_ids),
             "event_hint_ids": list(self.event_hint_ids),
             "event_hint_count": int(self.event_hint_count),
-            "learning_shift_feature_family": "self_understanding_learning_shift" if self.learning_shift_feature_ids else "",
-            "learning_shift_feature_ids": list(self.learning_shift_feature_ids),
-            "learning_shift_feature_count": int(self.learning_shift_feature_count),
-            "self_understanding_learning_shift_detected": bool(self.learning_shift_feature_ids),
-            "relationship_gratitude_feature_family": "relationship_gratitude_recovery" if self.relationship_gratitude_feature_ids else "",
-            "relationship_gratitude_feature_ids": list(self.relationship_gratitude_feature_ids),
-            "relationship_gratitude_feature_count": int(self.relationship_gratitude_feature_count),
-            "relationship_gratitude_recovery_detected": bool(self.relationship_gratitude_feature_ids),
+            "self_understanding_change_feature_family": "self_understanding_change" if self.self_understanding_change_feature_ids else "",
+            "self_understanding_change_feature_ids": list(self.self_understanding_change_feature_ids),
+            "self_understanding_change_feature_count": int(self.self_understanding_change_feature_count),
+            "self_understanding_change_detected": bool(self.self_understanding_change_feature_ids),
+            "relationship_boundary_support_feature_family": "relationship_boundary_support" if self.relationship_boundary_support_feature_ids else "",
+            "relationship_boundary_support_feature_ids": list(self.relationship_boundary_support_feature_ids),
+            "relationship_boundary_support_feature_count": int(self.relationship_boundary_support_feature_count),
+            "relationship_boundary_support_detected": bool(self.relationship_boundary_support_feature_ids),
+            "generic_relation_material_ids": list(self.generic_relation_material_ids),
+            "phase20_3_dedicated_c_d_cue_runtime_disabled": True,
+            "dedicated_c_d_cue_runtime_disabled": True,
+            "phase20_9_phase19_dedicated_c_d_cue_deleted": True,
+            "phase20_3_dedicated_c_d_mode_runtime_disabled": True,
+            "dedicated_c_d_mode_runtime_disabled": True,
+            "phase20_9_phase19_dedicated_c_d_mode_deleted": True,
+            "phase19_specific_mode_selected": False,
+            "phase19_case_route_used": False,
+            "case_specific_route_used": False,
             "reception_candidate_mode_ids": list(self.reception_candidate_mode_ids),
             "primary_reason": self.primary_reason,
             "unknown_word_policy": {
@@ -629,7 +638,8 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
     event_fact_source_fields = ("memo_action",) if event_fact_present else ()
     event_fact_count = 1 if event_fact_present else 0
 
-    reaction_cue_ids = _extract_reaction_cue_ids(thought_text)
+    raw_reaction_cue_ids = _extract_reaction_cue_ids(thought_text)
+    reaction_cue_ids = raw_reaction_cue_ids
     emotion_label_ids = _normalize_emotion_label_ids(bundle)
     emotion_source_fields = _emotion_label_source_fields(bundle)
     reaction_present = bool(reaction_cue_ids or emotion_label_ids)
@@ -641,8 +651,10 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
 
     category_topic_ids = _extract_category_topic_ids(bundle)
     event_hint_ids = _extract_event_hint_ids(text)
-    learning_shift_feature_ids = _extract_learning_shift_feature_ids(text)
-    relationship_gratitude_feature_ids = _extract_relationship_gratitude_feature_ids(text)
+    raw_self_understanding_change_feature_ids = _extract_self_understanding_change_feature_ids(text)
+    raw_relationship_boundary_support_feature_ids = _extract_relationship_boundary_support_feature_ids(text)
+    self_understanding_change_feature_ids = raw_self_understanding_change_feature_ids
+    relationship_boundary_support_feature_ids = raw_relationship_boundary_support_feature_ids
     mode_ids = _candidate_modes(
         event_fact_present=event_fact_present,
         reaction_present=reaction_present,
@@ -650,8 +662,12 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         event_hint_ids=event_hint_ids,
         category_topic_ids=category_topic_ids,
         emotion_label_ids=emotion_label_ids,
-        learning_shift_feature_ids=learning_shift_feature_ids,
-        relationship_gratitude_feature_ids=relationship_gratitude_feature_ids,
+        self_understanding_change_feature_ids=self_understanding_change_feature_ids,
+        relationship_boundary_support_feature_ids=relationship_boundary_support_feature_ids,
+    )
+    generic_relation_material_ids = _generic_relation_material_ids(
+        self_understanding_change_feature_ids=raw_self_understanding_change_feature_ids,
+        relationship_boundary_support_feature_ids=raw_relationship_boundary_support_feature_ids,
     )
 
     return EmlisSharedReceptionEvidence(
@@ -663,16 +679,17 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         explicit_emotion_label_ids=emotion_label_ids,
         category_topic_ids=category_topic_ids,
         event_hint_ids=event_hint_ids,
-        learning_shift_feature_ids=learning_shift_feature_ids,
-        relationship_gratitude_feature_ids=relationship_gratitude_feature_ids,
+        self_understanding_change_feature_ids=self_understanding_change_feature_ids,
+        relationship_boundary_support_feature_ids=relationship_boundary_support_feature_ids,
+        generic_relation_material_ids=generic_relation_material_ids,
         reception_candidate_mode_ids=mode_ids,
         primary_reason=_mode_reason(mode_ids, event_fact_present=event_fact_present, reaction_present=reaction_present),
         event_fact_count=event_fact_count,
         reaction_cue_count=len(reaction_cue_ids),
         emotion_label_count=len(emotion_label_ids),
         event_hint_count=len(event_hint_ids),
-        learning_shift_feature_count=len(learning_shift_feature_ids),
-        relationship_gratitude_feature_count=len(relationship_gratitude_feature_ids),
+        self_understanding_change_feature_count=len(self_understanding_change_feature_ids),
+        relationship_boundary_support_feature_count=len(relationship_boundary_support_feature_ids),
     )
 
 

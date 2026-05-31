@@ -93,14 +93,17 @@ async def test_phase18_3_complete_initial_generates_candidate_before_display_gat
     assert runtime["used_phrase_unit_count"] >= 1
     assert runtime["complete_initial_candidate_generation_display_gate_separated"] is True
 
-    # Phase18-3 restores generation visibility only. The public passed-only
-    # display contract remains owned by Reader/Grounding/Template/Display gates.
+    # Phase18-3 still verifies generation visibility and gate separation.
+    # After Phase20 low-information recovery, a displayable low-information
+    # observation may pass publicly; the body must still stay out of diagnostic
+    # meta and remain owned by the public comment_text contract.
     assert step5["display_gate_relaxed"] is False
     assert step5["grounding_gate_relaxed"] is False
-    assert step5["public_comment_text_present"] is False
+    assert step5["public_comment_text_present"] is True
     assert step5["non_passed_comment_text_empty"] is True
     assert step5["passed_only_comment_text_contract_preserved"] is True
-    assert reply.comment_text == ""
+    assert reply.comment_text.strip()
+    assert _SAMPLE_MEMO not in reply.comment_text
     assert step6["scorecard_candidate_generated"] is True
     assert step6["passed_only_comment_text_contract_preserved"] is True
 

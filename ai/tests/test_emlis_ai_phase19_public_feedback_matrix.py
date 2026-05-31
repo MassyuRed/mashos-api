@@ -18,7 +18,7 @@ from helpers.emlis_ai_phase19_public_feedback_matrix import (
 
 def test_phase19_1_public_feedback_recovery_matrix_records_backend_blocker_without_public_body_leak() -> None:
     matrix = build_phase19_public_feedback_recovery_matrix(
-        case_id="phase19_real_device_C_self_understanding_learning_shift",
+        case_id="phase19_real_device_C_generic_self_understanding_regression",
         expected_public_feedback=True,
         current_input={
             "memo": "これはmatrixに含めてはいけない入力本文です。",
@@ -139,7 +139,7 @@ def test_phase19_1_public_feedback_recovery_matrix_records_passed_public_contrac
 
 def test_phase19_1_public_feedback_recovery_matrix_records_not_reached_candidate_failure() -> None:
     matrix = build_phase19_public_feedback_recovery_matrix(
-        case_id="phase19_real_device_D_relationship_gratitude_recovery",
+        case_id="phase19_real_device_D_generic_relationship_boundary_regression",
         expected_public_feedback=True,
         current_input={"memo": "D raw memo", "memo_action": "D raw action", "emotions": ["喜び"], "category": ["恋愛"]},
         public_meta={

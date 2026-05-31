@@ -15,6 +15,7 @@ from uuid import uuid4
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_response_contract import attach_emlis_internal_response_contract
 from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
 from emlis_ai_style_profile_service import build_style_profile
@@ -92,10 +93,31 @@ from emlis_ai_coverage_matrix_service import build_emlis_coverage_matrix, build_
 from emlis_ai_limited_composer_e2e_contract import build_limited_composer_e2e_display_contract
 from emlis_ai_limited_composer_extension_exit_gate import build_limited_composer_extension_e2e_exit_gate
 from emlis_ai_safety_boundary_service import build_emlis_safety_boundary_report
+from emlis_ai_safety_triage import (
+    EMLIS_SAFETY_TRIAGE_META_KEY,
+    TRIAGE_SAFE_OBSERVATION,
+    TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER,
+    build_emlis_safety_triage_decision,
+)
+from emlis_ai_self_denial_safe_state_answer import (
+    SELF_DENIAL_SAFE_STATE_OBSERVATION_REPLY_KIND,
+    build_self_denial_safe_state_answer_result,
+)
+from emlis_ai_input_material_bundle import EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY
+from emlis_ai_observation_eligibility_router import (
+    EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY,
+    attach_phase20_3_observation_eligibility_route_meta,
+    route_emlis_observation_material_eligibility,
+)
 from emlis_ai_perspective_observers import phase4_observer_contract_ready, run_perspective_observers
 from emlis_ai_perspective_board import build_perspective_board, phase5_board_contract_ready, validate_perspective_board
 from emlis_ai_observation_integrator_service import integrate_perspective_board, phase5_observation_graph_ready, validate_observation_graph
 from emlis_ai_observation_display_repair_integration import attach_observation_display_repair_meta, integrate_observation_display_repair
+from emlis_ai_gate_recovery_loop import (
+    attach_gate_recovery_loop_meta,
+    build_gate_recovery_loop_decision,
+    recover_emlis_gate_failure,
+)
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_limited_relation_taxonomy import allowed_relation_types, canonical_relation_type
 from emlis_ai_relation_surface_contract import normalize_relation_surface_type
@@ -2498,6 +2520,12 @@ def _build_step5_complete_initial_candidate_generation_meta(
         composer_meta.get("used_phrase_unit_ids")
         or binding_source.get("used_phrase_unit_ids")
     )
+    if not used_phrase_unit_ids and sentence_bindings:
+        used_phrase_unit_ids = _dedupe_reason_codes(
+            phrase_id
+            for binding in sentence_bindings
+            for phrase_id in _safe_step5_list(binding.get("used_phrase_unit_ids"))
+        )
     used_evidence_span_ids = _safe_step5_list(
         getattr(composer_candidate, "used_evidence_span_ids", [])
         or composer_meta.get("used_evidence_span_ids")
@@ -5488,10 +5516,24 @@ async def render_emlis_ai_reply(
     board = build_perspective_board(evidence_spans=evidence_spans, reports=reports)
     graph = integrate_perspective_board(board=board, display_name=bundle.display_name or display_name)
 
-    safety_requires_block = has_limited_scope_safety_boundary(graph=graph, evidence_spans=evidence_spans)
+    safety_triage_decision = build_emlis_safety_triage_decision(
+        current_input=current_input,
+        graph=graph,
+        evidence_spans=evidence_spans,
+    )
+    safety_requires_block = bool(
+        safety_triage_decision.requires_block
+        or has_limited_scope_safety_boundary(graph=graph, evidence_spans=evidence_spans)
+    )
     safety_report = None
     if safety_requires_block:
         safety_report = build_emlis_safety_boundary_report(graph=graph, evidence_spans=evidence_spans)
+    safety_triage_meta = safety_triage_decision.as_meta()
+    phase20_3_material_route = route_emlis_observation_material_eligibility(
+        current_input=current_input,
+        safety_triage_decision=safety_triage_decision,
+    )
+    phase20_3_material_route_meta = phase20_3_material_route.as_meta()
 
     composer_env = dict(os.environ)
     composer_flag_state = default_composer_flag_state(composer_env)
@@ -5619,6 +5661,7 @@ async def render_emlis_ai_reply(
     )
     max_attempts = 0 if safety_requires_block else (1 if complete_initial_default_client else 2 if resolved_composer_client is not None else 1)
     regeneration_reasons: List[str] = []
+    last_bounded_reroute_decision = None
     for attempt in range(1, max_attempts + 1):
         composer_candidate = compose_emlis_conversation_candidate(
             graph=composer_graph,
@@ -5713,6 +5756,7 @@ async def render_emlis_ai_reply(
             visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
             repair_allowed=True,
         )
+        last_bounded_reroute_decision = bounded_reroute_decision
         if (
             bounded_reroute_decision.action in {BOUNDED_ACTION_RERENDER_SHALLOW_V2, BOUNDED_ACTION_RERENDER_SURFACE}
             and resolved_composer_client is not None
@@ -5742,10 +5786,14 @@ async def render_emlis_ai_reply(
             break
         regeneration_reasons = next_regeneration_reasons
 
+    phase20_5_original_display_decision = display_decision
+
     # Step 10: low-information display/repair integration.  This does not
-    # loosen Display Gate and does not expose non-passed text.  It only routes
-    # inputs that Step 2 classifies as low_information into the dedicated
-    # low-information observation branch, then re-runs the existing passed-only
+    # loosen Display Gate and does not expose non-passed text.  It now uses
+    # Phase20-3 material_quality rather than Phase19 compact case signals to
+    # route. Phase20-0 inventory token retained for audit only:
+    # complete_initial_low_information_repair_ownership = _phase19_complete_initial_low_information_repair_ownership_meta
+    # route into the low-information observation branch, then re-runs the existing passed-only
     # Display Gate with branch-specific reader/grounding/template reports.
     complete_initial_default_requested = str(
         composer_env.get("COCOLON_EMLIS_DEFAULT_COMPOSER")
@@ -5753,12 +5801,8 @@ async def render_emlis_ai_reply(
         or composer_env.get("EMLIS_AI_DEFAULT_COMPOSER")
         or ""
     ).strip().lower() == "complete_initial"
-    complete_initial_low_information_repair_ownership = _phase19_complete_initial_low_information_repair_ownership_meta(
-        current_input=current_input,
+    complete_initial_low_information_repair_ownership = phase20_3_material_route.as_low_information_repair_context(
         complete_initial_default_requested=complete_initial_default_requested,
-        safety_requires_block=safety_requires_block,
-        safety_report=safety_report,
-        display_decision=display_decision,
     )
     complete_initial_low_information_repair_allowed = bool(
         complete_initial_low_information_repair_ownership.get("repair_allowed_under_complete_initial")
@@ -5806,6 +5850,40 @@ async def render_emlis_ai_reply(
         grounding_scope = "low_information_known_scope"
         grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
+    gate_recovery_loop_result = None
+    if (
+        str(getattr(display_decision, "observation_status", "") or "") != "passed"
+        and not bool(getattr(safety_report, "requires_block", False))
+        and safety_triage_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+    ):
+        gate_recovery_loop_result = recover_emlis_gate_failure(
+            current_input=current_input if isinstance(current_input, Mapping) else {},
+            display_decision=display_decision,
+            reader_report=reader_report,
+            grounding_report=grounding_report,
+            template_echo_report=template_echo_report,
+            material_route=phase20_3_material_route,
+            safety_triage_kind=safety_triage_decision.safety_triage_kind,
+            safety_report=safety_report,
+            runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
+            trace_id=trace_id,
+        )
+        if gate_recovery_loop_result.applied:
+            display_decision = gate_recovery_loop_result.display_decision
+            reader_report = gate_recovery_loop_result.reader_report
+            grounding_report = gate_recovery_loop_result.grounding_report
+            template_echo_report = gate_recovery_loop_result.template_echo_report
+            composer_source = gate_recovery_loop_result.composer_source
+            composer_candidate = gate_recovery_loop_result.composer_candidate
+            runtime_surface_pre_return_gate_report = dict(gate_recovery_loop_result.runtime_surface_pre_return_gate_report or {})
+            visible_surface_acceptance_gate_report = dict(gate_recovery_loop_result.visible_surface_acceptance_gate_report or {})
+            grounding_graph = graph
+            grounding_scope = "current_input_material_bundle_recovery"
+            grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+
+    self_denial_safe_state_answer_result = None
+
     # Step 2 final pre-return enforcement.  Low-information repair may replace
     # the candidate after the first display decision, so the exact final public
     # candidate is re-checked by the runtime surface gate before returning.
@@ -5850,6 +5928,44 @@ async def render_emlis_ai_reply(
             visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
         )
 
+    if (
+        str(getattr(display_decision, "observation_status", "") or "") != "passed"
+        and safety_triage_decision.safety_triage_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and safety_triage_decision.safe_state_answer_allowed
+        and not safety_requires_block
+    ):
+        self_denial_safe_state_answer_result = build_self_denial_safe_state_answer_result(
+            current_input=current_input,
+            safety_triage_decision=safety_triage_decision,
+            evidence_spans=evidence_spans,
+            trace_id=trace_id,
+        )
+        self_denial_binding_meta = build_limited_composer_binding_presence_meta(
+            composer_candidate=self_denial_safe_state_answer_result.candidate,
+        )
+        display_decision = decide_emlis_observation_display(
+            comment_text=str(self_denial_safe_state_answer_result.candidate.comment_text or "").strip(),
+            reader_report=self_denial_safe_state_answer_result.reader_report,
+            grounding_report=self_denial_safe_state_answer_result.grounding_report,
+            template_echo_report=self_denial_safe_state_answer_result.template_echo_report,
+            safety_report=None,
+            trace_id=trace_id,
+            composer_source=str(self_denial_safe_state_answer_result.candidate.composer_source or ""),
+            phase_completion_ready=True,
+            binding_meta=self_denial_binding_meta,
+            observation_reply_kind=SELF_DENIAL_SAFE_STATE_OBSERVATION_REPLY_KIND,
+            observation_structure_gate_report=observation_structure_gate_report,
+        )
+        if str(getattr(display_decision, "observation_status", "") or "") == "passed":
+            reader_report = self_denial_safe_state_answer_result.reader_report
+            grounding_report = self_denial_safe_state_answer_result.grounding_report
+            template_echo_report = self_denial_safe_state_answer_result.template_echo_report
+            composer_candidate = self_denial_safe_state_answer_result.candidate
+            composer_source = str(composer_candidate.composer_source or "")
+            grounding_graph = graph
+            grounding_scope = "current_input_self_denial_safe_state"
+            grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+
     # No fixed fallback. The display gate is fail-closed.
     final_text = str(display_decision.comment_text or "").strip()
     meta = _multi_perspective_meta(
@@ -5874,7 +5990,70 @@ async def render_emlis_ai_reply(
         grounding_allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
         complete_initial_pre_generation_seed=complete_initial_pre_generation_seed,
     )
+    meta[EMLIS_SAFETY_TRIAGE_META_KEY] = dict(safety_triage_meta)
+    meta = attach_phase20_3_observation_eligibility_route_meta(meta, phase20_3_material_route)
+    if isinstance(meta.get("diagnostic_summary"), dict):
+        meta["diagnostic_summary"][EMLIS_SAFETY_TRIAGE_META_KEY] = dict(safety_triage_meta)
+        meta["diagnostic_summary"][EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY] = dict(phase20_3_material_route_meta)
+        meta["diagnostic_summary"]["phase20_3_input_material_bundle"] = dict(
+            phase20_3_material_route_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY) or {}
+        )
+    if isinstance(meta.get("phase_gate"), dict):
+        meta["phase_gate"].update(
+            {
+                "phase20_2_safety_triage_ready": True,
+                "phase20_2_safety_triage_kind": str(safety_triage_meta.get("safety_triage_kind") or ""),
+                "phase20_2_response_kind": str(safety_triage_meta.get("response_kind") or ""),
+                "phase20_2_emergency_not_converted_to_observation": not bool(
+                    safety_triage_meta.get("safety_triage_kind") == "safety_blocked_emergency"
+                    and safety_triage_meta.get("public_emlis_observation_allowed") is True
+                ),
+                "phase20_2_self_denial_identity_fact_rejected": bool(
+                    safety_triage_meta.get("safety_triage_kind") != "self_denial_safe_state_answer"
+                    or safety_triage_meta.get("must_not_accept_identity_claim_as_fact") is True
+                ),
+                "phase20_3_input_material_bundle_ready": True,
+                "phase20_3_material_quality": str(phase20_3_material_route_meta.get("material_quality") or ""),
+                "phase20_3_response_kind": str(phase20_3_material_route_meta.get("response_kind") or ""),
+                "phase20_3_case_specific_route_used": bool(
+                    phase20_3_material_route_meta.get("case_specific_route_used")
+                ),
+                "phase20_3_c_d_specific_runtime_cue_used": bool(
+                    phase20_3_material_route_meta.get("c_d_specific_runtime_cue_used")
+                ),
+            }
+        )
+    if self_denial_safe_state_answer_result is not None:
+        meta["self_denial_safe_state_answer"] = self_denial_safe_state_answer_result.as_meta()
+        if str(getattr(display_decision, "observation_status", "") or "") == "passed":
+            meta["observation_reply_kind"] = SELF_DENIAL_SAFE_STATE_OBSERVATION_REPLY_KIND
     meta = attach_observation_display_repair_meta(meta, observation_display_repair_result)
+    phase20_5_gate_recovery_loop = build_gate_recovery_loop_decision(
+        original_display_decision=phase20_5_original_display_decision,
+        final_display_decision=display_decision,
+        safety_report=safety_report,
+        safety_triage_kind=str(safety_triage_meta.get("safety_triage_kind") or ""),
+        material_quality=phase20_3_material_route_meta,
+        observation_display_repair_result=observation_display_repair_result,
+        bounded_repair_reroute_decision=last_bounded_reroute_decision,
+    )
+    meta = attach_gate_recovery_loop_meta(meta, phase20_5_gate_recovery_loop)
+    meta = attach_emlis_internal_response_contract(
+        meta,
+        observation_status=str(getattr(display_decision, "observation_status", "") or "unavailable"),
+        observation_reply_kind=str(
+            meta.get("observation_reply_kind")
+            or (
+                meta.get("step10_observation_display_repair_integration", {})
+                if isinstance(meta.get("step10_observation_display_repair_integration"), Mapping)
+                else {}
+            ).get("observation_reply_kind")
+            or ""
+        ),
+        rejection_reasons=list(getattr(display_decision, "rejection_reasons", []) or []),
+        reason="phase20_5_gate_recovery_loop_bridge",
+        repair_attempts=phase20_5_gate_recovery_loop.repair_attempts_for_internal_contract(),
+    )
     meta["emlis_observation_structure_dictionary"] = observation_structure_meta
     meta["observation_structure_gate"] = observation_structure_gate_report
     if isinstance(meta.get("phase_gate"), dict):

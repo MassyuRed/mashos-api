@@ -48,6 +48,12 @@ from emlis_ai_public_feedback_meta import (
     build_public_emlis_input_feedback_meta,
     should_include_public_input_feedback,
 )
+from emlis_ai_response_contract import (
+    EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY,
+    EMLIS_INTERNAL_RESPONSE_CONTRACT_VERSION_META_KEY,
+    EMLIS_INTERNAL_RESPONSE_CONTRACT_SCHEMA_VERSION,
+    build_emlis_internal_response_contract,
+)
 from emlis_ai_reply_service import render_emlis_ai_reply
 from response_microcache import invalidate_prefix
 from subscription import SubscriptionTier
@@ -60,10 +66,7 @@ logger = logging.getLogger(__name__)
 _PHASE14_SPEED_REGRESSION_SCHEMA_VERSION = "cocolon.emlis.submit_speed_regression.v1"
 _PHASE14_SPEED_REGRESSION_PHASE = "Phase14_speed_regression"
 _DAILY_RECEPTION_MODE_IDS = {"daily_unpleasant_reception", "daily_positive_reception"}
-_PHASE19_PUBLIC_SAFE_MODE_ID_ALIASES = {
-    "self_understanding_learning_shift": "self_understanding_follow",
-    "relationship_gratitude_recovery": "relationship_reception",
-}
+_PUBLIC_SAFE_MODE_ID_ALIASES: dict[str, str] = {}
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_CODES = 20
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_LENGTH = 96
 
@@ -74,7 +77,7 @@ def _phase14_public_safe_reception_mode_id(value: Any) -> str:
     mode_id = _phase14_clean_identifier(value, limit=80)
     if not mode_id:
         return ""
-    return _PHASE19_PUBLIC_SAFE_MODE_ID_ALIASES.get(mode_id, mode_id)
+    return _PUBLIC_SAFE_MODE_ID_ALIASES.get(mode_id, mode_id)
 
 def _phase14_perf_counter() -> float:
     return time.perf_counter()
@@ -361,15 +364,33 @@ def _build_submit_speed_regression_summary(
     return summary
 
 
+def _public_submit_speed_regression_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the RN-safe speed summary without internal routing mode names.
+
+    The full summary stays available in backend/internal diagnostics.  Public
+    ``input_feedback.emlis_ai`` keeps timings and display inclusion booleans, but
+    Phase20-7 prevents runtime mode identifiers from becoming RN-facing display
+    or contract material.
+    """
+
+    public_summary = dict(summary or {}) if isinstance(summary, dict) else {}
+    public_summary.pop("reception_mode_id", None)
+    public_summary.pop("reception_mode_family", None)
+    return public_summary
+
+
 def _attach_submit_speed_regression_summary(
     meta: Dict[str, Any],
     summary: Dict[str, Any],
+    *,
+    public_boundary: bool = False,
 ) -> Dict[str, Any]:
     if not isinstance(meta, dict) or not isinstance(summary, dict) or not summary:
         return meta if isinstance(meta, dict) else {}
-    meta["submit_speed_regression"] = dict(summary)
+    safe_summary = _public_submit_speed_regression_summary(summary) if public_boundary else dict(summary)
+    meta["submit_speed_regression"] = safe_summary
     diagnostic_summary = dict(meta.get("diagnostic_summary") or {}) if isinstance(meta.get("diagnostic_summary"), dict) else {}
-    diagnostic_summary["submit_speed_regression"] = dict(summary)
+    diagnostic_summary["submit_speed_regression"] = dict(safe_summary)
     meta["diagnostic_summary"] = diagnostic_summary
     return meta
 
@@ -987,6 +1008,12 @@ async def persist_emotion_submission(
             "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
             "observation_status": "unavailable",
             "rejection_reasons": ["emlis_ai_timeout_or_error", "emlis_ai_reply_timeout"],
+            EMLIS_INTERNAL_RESPONSE_CONTRACT_VERSION_META_KEY: EMLIS_INTERNAL_RESPONSE_CONTRACT_SCHEMA_VERSION,
+            EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY: build_emlis_internal_response_contract(
+                "infrastructure_error",
+                reason="emlis_ai_reply_timeout",
+                public_observation_status="unavailable",
+            ),
             "multi_perspective": {
                 "fail_closed": True,
                 "fail_closed_reason_code": "emlis_ai_reply_timeout",
@@ -1010,6 +1037,12 @@ async def persist_emotion_submission(
             "tier": str(getattr(subscription_tier, "value", subscription_tier) or "free"),
             "observation_status": "unavailable",
             "rejection_reasons": ["emlis_ai_timeout_or_error", "emlis_ai_reply_error"],
+            EMLIS_INTERNAL_RESPONSE_CONTRACT_VERSION_META_KEY: EMLIS_INTERNAL_RESPONSE_CONTRACT_SCHEMA_VERSION,
+            EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY: build_emlis_internal_response_contract(
+                "infrastructure_error",
+                reason="emlis_ai_reply_error",
+                public_observation_status="unavailable",
+            ),
             "multi_perspective": {
                 "fail_closed": True,
                 "fail_closed_reason_code": "emlis_ai_reply_error",
@@ -1061,6 +1094,7 @@ async def persist_emotion_submission(
     public_input_feedback_meta = _attach_submit_speed_regression_summary(
         public_input_feedback_meta,
         submit_speed_regression_summary,
+        public_boundary=True,
     )
     internal_input_feedback_meta = _attach_submit_speed_regression_summary(
         internal_input_feedback_meta,

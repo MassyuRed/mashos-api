@@ -78,3 +78,10 @@ async def test_low_information_inputs_should_eventually_return_passed_low_inform
     assert step10["rn_visible_contract_changed"] is False
     assert step10["fixed_fallback_used"] is False
     assert step10["external_ai_used"] is False
+    assert step10["phase20_3_input_material_bundle"]
+    composer_meta = step10["low_information_observation_composer_meta"]
+    assert composer_meta["phase20_4_low_information_material_surface_ready"] is True
+    assert composer_meta["low_information_surface_from_visible_material_slots"] is True
+    assert composer_meta["unknown_prompt_from_unknown_slots"] is True
+    assert composer_meta["visible_material_slots"]
+    assert composer_meta["material_unknown_slots"]

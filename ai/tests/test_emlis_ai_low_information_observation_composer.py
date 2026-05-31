@@ -4,6 +4,10 @@ from typing import Any
 
 import pytest
 
+from emlis_ai_input_material_bundle import (
+    MATERIAL_QUALITY_LOW_INFORMATION,
+    build_emlis_input_material_bundle,
+)
 from emlis_ai_low_information_observation_composer import (
     LOW_INFORMATION_OBSERVATION_COMPOSER_STEP,
     OBSERVED_SCOPE_EMOTION_WEIGHT,
@@ -102,6 +106,34 @@ def test_step8_free_short_low_information_input_gets_observation_body_and_questi
     assert meta["display_gate_relaxed"] is False
     assert _has_raw_or_comment_key(meta) is False
     assert_low_information_observation_composer_contract(draft, current_input=_input("疲れた"))
+
+
+def test_phase20_4_low_information_surface_uses_input_material_bundle_visible_and_unknown_slots() -> None:
+    current_input = _input("疲れた")
+    bundle = build_emlis_input_material_bundle(current_input)
+
+    draft = compose_low_information_observation(
+        current_input=current_input,
+        input_material_bundle=bundle,
+        subscription_tier="free",
+    )
+    meta = draft.as_meta()
+
+    assert bundle.material_quality == MATERIAL_QUALITY_LOW_INFORMATION
+    assert meta["phase20_4_low_information_material_surface_ready"] is True
+    assert meta["low_information_surface_from_visible_material_slots"] is True
+    assert meta["unknown_prompt_from_unknown_slots"] is True
+    assert meta["visible_material_slots"] == list(bundle.visible_material_slots)
+    assert meta["material_unknown_slots"] == list(bundle.unknown_slots)
+    assert set(meta["unknown_slots"]).issuperset({"event", "cause"})
+    assert "ここから見えているのは" in draft.body
+    assert "詳しい出来事まではまだ見えていません" in draft.body
+    assert "疲れた" not in draft.body
+    assert meta["question_not_only"] is True
+    assert meta["fixed_fallback_used"] is False
+    assert meta["fixed_sentence_template_used"] is False
+    assert _has_raw_or_comment_key(meta) is False
+    assert_low_information_observation_composer_contract(draft, current_input=current_input)
 
 
 def test_step8_long_ambiguous_input_stays_low_information_without_asserting_target() -> None:

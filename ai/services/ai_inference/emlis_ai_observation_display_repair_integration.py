@@ -34,6 +34,14 @@ from emlis_ai_low_information_observation_composer import (
     compose_low_information_observation,
 )
 from emlis_ai_observation_eligibility_service import route_observation_eligibility
+from emlis_ai_input_material_bundle import (
+    EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY,
+    MATERIAL_QUALITY_LOW_INFORMATION,
+)
+from emlis_ai_observation_eligibility_router import (
+    EMLIS_OBSERVATION_ELIGIBILITY_ROUTE_SCHEMA_VERSION,
+    EMLIS_OBSERVATION_ELIGIBILITY_ROUTE_SOURCE_PHASE,
+)
 from emlis_ai_observation_reply_contract import (
     OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION,
     OBSERVATION_REPLY_KIND_LOW_INFORMATION,
@@ -74,6 +82,7 @@ COMPLETE_INITIAL_RUNTIME_CONTRACT_OWNS_DISPLAY_FAILURE: Final = (
 COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION: Final = (
     "cocolon.emlis.phase19.complete_initial_low_information_repair_ownership.v1"
 )
+PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION: Final = EMLIS_OBSERVATION_ELIGIBILITY_ROUTE_SCHEMA_VERSION
 
 _SENTENCE_SPLIT_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(
@@ -240,7 +249,11 @@ def _complete_initial_low_information_repair_context_allowed(
     safety_report: SafetyBoundaryReport | None = None,
 ) -> bool:
     context = repair_context if isinstance(repair_context, Mapping) else {}
-    if context.get("schema_version") != COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION:
+    schema_version = _clean(context.get("schema_version"))
+    if schema_version not in {
+        COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION,
+        PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION,
+    }:
         return False
     if context.get("repair_allowed_under_complete_initial") is not True:
         return False
@@ -260,9 +273,29 @@ def _complete_initial_low_information_repair_context_allowed(
             "fixed_fallback_used",
             "raw_input_included",
             "raw_text_included",
+            "comment_text_included",
+            "comment_text_body_included",
         )
     ):
         return False
+
+    if schema_version == PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION:
+        if context.get("source_phase") != EMLIS_OBSERVATION_ELIGIBILITY_ROUTE_SOURCE_PHASE:
+            return False
+        if context.get("material_quality") != MATERIAL_QUALITY_LOW_INFORMATION:
+            return False
+        if context.get("response_kind") != "low_information_observation":
+            return False
+        if context.get("safety_triage_kind") not in {"", "safe_observation"}:
+            return False
+        if not context.get("visible_material_slots"):
+            return False
+        if context.get("phase19_compact_signal_used") is True:
+            return False
+        if context.get("phase19_case_specific_route_used") is True:
+            return False
+        return _current_input_has_user_signal(current_input)
+
     return _current_input_is_compact_low_information_signal(current_input)
 
 
@@ -1103,6 +1136,11 @@ class ObservationDisplayRepairIntegrationResult:
             }
         )
         repair_context_meta = dict(self.repair_context or {})
+        phase20_3_bundle_meta = dict(
+            repair_context_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
+            or draft_meta.get("phase20_4_input_material_bundle_meta")
+            or {}
+        )
         return {
             "version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
             "schema_version": OBSERVATION_DISPLAY_REPAIR_INTEGRATION_VERSION,
@@ -1114,10 +1152,38 @@ class ObservationDisplayRepairIntegrationResult:
             "bounded_repair_reroute": bounded_meta,
             "step7_bounded_repair_reroute_ready": True,
             "complete_initial_low_information_repair_ownership": repair_context_meta,
-            "phase19_complete_initial_low_information_repair_ownership": repair_context_meta,
+            "phase20_3_low_information_repair_context": repair_context_meta
+            if repair_context_meta.get("schema_version") == PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION
+            else {},
+            "phase19_complete_initial_low_information_repair_ownership": repair_context_meta
+            if repair_context_meta.get("schema_version") == COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION
+            else {},
             "complete_initial_low_information_repair_allowed": bool(
                 repair_context_meta.get("repair_allowed_under_complete_initial")
             ),
+            "phase20_3_low_information_repair_allowed": bool(
+                repair_context_meta.get("schema_version") == PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION
+                and repair_context_meta.get("repair_allowed_under_complete_initial") is True
+            ),
+            "phase20_3_input_material_bundle": phase20_3_bundle_meta,
+            "phase20_4_low_information_observation_ready": bool(
+                draft_meta.get("phase20_4_low_information_material_surface_ready")
+            ),
+            "phase20_4_visible_material_slots_used": list(
+                draft_meta.get("visible_material_slots") or []
+            ),
+            "phase20_4_unknown_slots_used": list(
+                draft_meta.get("unknown_slots") or []
+            ),
+            "phase20_4_surface_built_from_visible_material_slots": bool(
+                draft_meta.get("low_information_surface_from_visible_material_slots")
+            ),
+            "phase20_4_question_built_from_unknown_slots": bool(
+                draft_meta.get("unknown_prompt_from_unknown_slots")
+            ),
+            "phase20_4_question_not_only": bool(draft_meta.get("question_not_only")),
+            "phase20_4_fixed_fallback_used": False,
+            "phase19_compact_signal_used": bool(repair_context_meta.get("phase19_compact_signal_used") is True),
             "bounded_repair_reroute_action": bounded_meta.get("action"),
             "bounded_repair_reroute_allowed": bool(bounded_meta.get("allowed")),
             "applied": bool(self.applied),
@@ -1462,13 +1528,24 @@ def integrate_observation_display_repair(
         for fragment in known_fragments
         if isinstance(fragment, Mapping) and bool(fragment.get("current_input_evidence"))
     ]
+    detected_signal_roles = _dedupe(eligibility_meta.get("detected_signal_roles"))
+    phase20_3_material_context_allows_current_input_signal = bool(
+        complete_initial_low_information_repair_allowed
+        and repair_context_meta.get("schema_version") == PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION
+        and repair_context_meta.get("material_quality") == MATERIAL_QUALITY_LOW_INFORMATION
+        and detected_signal_roles
+        and _current_input_has_user_signal(current_input if isinstance(current_input, Mapping) else {})
+    )
     phase19_compact_ownership_allows_current_input_signal = bool(
         complete_initial_low_information_repair_allowed
-        and _dedupe(eligibility_meta.get("detected_signal_roles"))
+        and repair_context_meta.get("schema_version") == COMPLETE_INITIAL_LOW_INFORMATION_REPAIR_OWNERSHIP_SCHEMA_VERSION
+        and detected_signal_roles
         and _current_input_is_compact_low_information_signal(current_input if isinstance(current_input, Mapping) else {})
     )
-    if not _dedupe(eligibility_meta.get("detected_signal_roles")) or (
-        not current_input_fragments and not phase19_compact_ownership_allows_current_input_signal
+    if not detected_signal_roles or (
+        not current_input_fragments
+        and not phase20_3_material_context_allows_current_input_signal
+        and not phase19_compact_ownership_allows_current_input_signal
     ):
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
@@ -1485,6 +1562,17 @@ def integrate_observation_display_repair(
         )
 
     try:
+        phase20_4_input_material_bundle = (
+            eligibility_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
+            or eligibility_meta.get("phase20_3_input_material_bundle")
+            or repair_context_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
+            or repair_context_meta.get("phase20_3_input_material_bundle")
+            or (
+                repair_context_meta
+                if repair_context_meta.get("visible_material_slots") or repair_context_meta.get("unknown_slots")
+                else None
+            )
+        )
         draft = compose_low_information_observation(
             current_input=current_input,
             eligibility_decision=eligibility_for_composer,
@@ -1493,6 +1581,7 @@ def integrate_observation_display_repair(
             source_bundle=source_bundle,
             evidence_ledger=evidence_ledger,
             observation_graph=observation_graph,
+            input_material_bundle=phase20_4_input_material_bundle,
         )
         surface = realize_low_information_observation_surface(draft, current_input=current_input)
     except Exception as exc:  # pragma: no cover - defensive fail-closed path

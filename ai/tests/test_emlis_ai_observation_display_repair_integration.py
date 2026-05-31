@@ -71,6 +71,13 @@ def test_step10_low_information_branch_passes_existing_display_contract() -> Non
     assert meta["rn_visible_contract_changed"] is False
     assert meta["fixed_fallback_used"] is False
     assert meta["external_ai_used"] is False
+    assert meta["phase20_3_input_material_bundle"]
+    composer_meta = meta["low_information_observation_composer_meta"]
+    assert composer_meta["phase20_4_low_information_material_surface_ready"] is True
+    assert composer_meta["low_information_surface_from_visible_material_slots"] is True
+    assert composer_meta["unknown_prompt_from_unknown_slots"] is True
+    assert composer_meta["visible_material_slots"]
+    assert composer_meta["material_unknown_slots"]
 
 
 def test_step10_feature_flag_disabled_does_not_block_low_information_by_itself() -> None:

@@ -31,12 +31,12 @@ EMLIS_TWO_STAGE_MODE_CONTEXT_SCHEMA_VERSION: Final = "cocolon.emlis.two_stage.mo
 EMLIS_TWO_STAGE_MODE_CONTEXT_SOURCE_PHASE: Final = "Phase18_product_quality_stabilization"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID: Final = "daily_unpleasant_reception"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: Final = "daily_unpleasant_reception_light"
+EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_MODE_ID: Final = "generic_sentence_plan_surface"
+EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_SOURCE_PHASE: Final = "Phase20-6_Generic_SentencePlan_Surface_Realizer"
 EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL: Final = "見えたこと"
 EMLIS_TWO_STAGE_RECEPTION_DISPLAY_LABEL: Final = "Emlisから"
 EMLIS_TWO_STAGE_COMMENT_TEXT_SHAPE: Final = "labelled_two_stage_text"
 EMLIS_TWO_STAGE_SECTION_ORDER: Final = ("observation", "reception")
-
-
 _PUBLIC_CONTRACT_UNCHANGED: Final = {
     "public_response_key_added": False,
     "observation_text_public_response_key_added": False,
@@ -84,18 +84,7 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
         "reception_min": 2,
         "reception_max": 2,
     },
-    "self_understanding_learning_shift": {
-        "observation_min": 1,
-        "observation_max": 1,
-        "reception_min": 1,
-        "reception_max": 1,
-    },
-    "relationship_gratitude_recovery": {
-        "observation_min": 1,
-        "observation_max": 1,
-        "reception_min": 2,
-        "reception_max": 2,
-    },
+    "generic_sentence_plan_surface": dict(_MODE_SECTION_BUDGET_DEFAULT),
     "standard_state_answer": {
         "observation_min": 1,
         "observation_max": 1,
@@ -116,12 +105,16 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
 # SurfaceRealizer dispatch is mode-specific and daily_unpleasant must stay in
 # its own surface policy.  This map is internal material only; it does not carry
 # raw input or completed reply text.
+_PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON: Final = "generic_relation_material"
 _RECEPTION_MODE_BY_RATIO_REASON: Final = {
     EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID,
-    "self_understanding_learning_shift": "self_understanding_learning_shift",
-    "relationship_end_gratitude_recovery": "relationship_gratitude_recovery",
+    _PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON: EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_MODE_ID,
 }
 
+
+def _phase20_9_normalize_reception_mode(mode_id: Any) -> tuple[str, bool]:
+    mode = _clean(mode_id)
+    return mode, False
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
@@ -266,7 +259,7 @@ def _role_section_by_id(role_plan: Mapping[str, Any], section_id: str) -> Mappin
     return {}
 
 
-def _ratio_reason(surface_contract: Mapping[str, Any], role_plan: Mapping[str, Any]) -> str:
+def _raw_ratio_reason(surface_contract: Mapping[str, Any], role_plan: Mapping[str, Any]) -> str:
     role_ratio = _as_mapping(role_plan.get("resolved_ratio"))
     surface_ratio_policy = _as_mapping(surface_contract.get("ratio_policy"))
     surface_resolved = _as_mapping(surface_ratio_policy.get("resolved_ratio"))
@@ -275,6 +268,14 @@ def _ratio_reason(surface_contract: Mapping[str, Any], role_plan: Mapping[str, A
         or _clean(surface_resolved.get("reason"))
         or "standard_state_answer"
     )
+
+
+def _phase20_9_sanitize_ratio_reason(ratio_reason: Any) -> str:
+    return _clean(ratio_reason)
+
+
+def _ratio_reason(surface_contract: Mapping[str, Any], role_plan: Mapping[str, Any]) -> str:
+    return _phase20_9_sanitize_ratio_reason(_raw_ratio_reason(surface_contract, role_plan))
 
 
 def _reception_mode_info(
@@ -295,11 +296,20 @@ def _reception_mode_info(
     for value, source in candidates:
         mode_id = _clean(value)
         if mode_id:
-            return mode_id, True, source
-    ratio_reason = _ratio_reason(surface_contract, role_plan)
-    mode_from_ratio = _RECEPTION_MODE_BY_RATIO_REASON.get(ratio_reason)
+            active_mode, withdrawn = _phase20_9_normalize_reception_mode(mode_id)
+            active_source = source
+            if withdrawn:
+                active_source = f"{source}.phase20_9_legacy_dedicated_mode_absent"
+            return active_mode, True, active_source
+    raw_ratio_reason = _raw_ratio_reason(surface_contract, role_plan)
+    ratio_reason = _phase20_9_sanitize_ratio_reason(raw_ratio_reason)
+    mode_from_ratio = _RECEPTION_MODE_BY_RATIO_REASON.get(ratio_reason) or _RECEPTION_MODE_BY_RATIO_REASON.get(raw_ratio_reason)
     if mode_from_ratio:
-        return mode_from_ratio, True, "role_or_surface.resolved_ratio.reason"
+        active_mode, withdrawn = _phase20_9_normalize_reception_mode(mode_from_ratio)
+        active_source = "role_or_surface.resolved_ratio.reason"
+        if withdrawn:
+            active_source = "role_or_surface.resolved_ratio.reason.phase20_9_legacy_dedicated_mode_absent"
+        return active_mode, True, active_source
     return "standard_state_answer", False, "fallback.standard_state_answer"
 
 
@@ -533,18 +543,31 @@ def build_two_stage_section_surface_plan(
     )
     reception_mode, reception_mode_explicit, reception_mode_source = _reception_mode_info(surface_contract, role_plan, composition)
     ratio_reason = _ratio_reason(surface_contract, role_plan)
+    phase20_generic_relation_surface = False
+    generic_sentence_surface_expected = (
+        reception_mode == EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_MODE_ID
+        or ratio_reason == _PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON
+    )
     mode_context = {
         "schema_version": EMLIS_TWO_STAGE_MODE_CONTEXT_SCHEMA_VERSION,
         "source_phase": EMLIS_TWO_STAGE_MODE_CONTEXT_SOURCE_PHASE,
         "section_ids": list(EMLIS_TWO_STAGE_SECTION_ORDER),
         "reception_mode_id": reception_mode,
         "ratio_reason": ratio_reason,
+        "phase20_9_generic_relation_ratio_reason_used": ratio_reason == _PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON,
         "mode_context_source": reception_mode_source or "two_stage_section_surface_plan",
         "mode_context_propagated_to_sentence_line": True,
         "mode_context_propagated_to_surface_realizer": True,
         "coverage_group_only_mode_selection_used": False,
         "case_id_branch_used": False,
+        "phase20_generic_relation_surface_legacy_mode_normalized": phase20_generic_relation_surface,
+        "phase20_6_generic_sentence_surface_expected": generic_sentence_surface_expected,
+        "phase20_9_mode_specific_c_d_bank_used": False,
         "public_contract": dict(_PUBLIC_CONTRACT_UNCHANGED),
+        "phase20_6_generic_sentence_plan_surface_enabled": True,
+        "phase20_9_legacy_dedicated_mode_absent": phase20_generic_relation_surface,
+        "phase20_6_surface_source": EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_SOURCE_PHASE if generic_sentence_surface_expected else "",
+        "phase20_6_mode_specific_completed_surface_bank_used": False,
         "comment_text_body_included": False,
         "raw_input_included": False,
         "public_response_key_added": False,
@@ -601,6 +624,10 @@ def build_two_stage_section_surface_plan(
         "reception_mode_id": reception_mode,
         "reception_mode_explicit": reception_mode_explicit,
         "reception_mode_source": reception_mode_source,
+        "phase20_6_generic_sentence_plan_surface_enabled": True,
+        "phase20_9_legacy_dedicated_mode_absent": phase20_generic_relation_surface,
+        "phase20_6_surface_source": EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_SOURCE_PHASE if generic_sentence_surface_expected else "",
+        "phase20_6_mode_specific_completed_surface_bank_used": False,
         "ratio_reason": ratio_reason,
         "mode_context_schema_version": EMLIS_TWO_STAGE_MODE_CONTEXT_SCHEMA_VERSION,
         "mode_context_source_phase": EMLIS_TWO_STAGE_MODE_CONTEXT_SOURCE_PHASE,

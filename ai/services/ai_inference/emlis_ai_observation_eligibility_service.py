@@ -53,6 +53,15 @@ from emlis_ai_reception_mode_resolver import (
     resolve_emlis_reception_mode,
 )
 from emlis_ai_shared_reception_evidence import build_emlis_shared_reception_evidence
+from emlis_ai_input_material_bundle import (
+    EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY,
+    build_emlis_input_material_bundle,
+)
+from emlis_ai_observation_eligibility_router import (
+    EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY,
+    assert_emlis_observation_eligibility_route_meta,
+    route_emlis_observation_material_eligibility,
+)
 
 OBSERVATION_ELIGIBILITY_ROUTER_VERSION: Final = "emlis.observation_eligibility_router.v1"
 OBSERVATION_ELIGIBILITY_ROUTER_STEP: Final = "Step2_Observation_Eligibility_Router"
@@ -433,6 +442,8 @@ class ObservationEligibilityDecision:
     user_fact_raw_text_stripped: bool = False
     observation_structure_connection: Mapping[str, Any] = field(default_factory=dict)
     daily_reception_router_material: Mapping[str, Any] = field(default_factory=dict)
+    input_material_bundle: Mapping[str, Any] = field(default_factory=dict)
+    phase20_3_observation_eligibility_router: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def version(self) -> str:
@@ -508,6 +519,23 @@ class ObservationEligibilityDecision:
             "reception_mode_primary_reason": _clean(
                 (self.daily_reception_router_material or {}).get("reception_mode_primary_reason")
             ),
+            "phase20_3_material_router_connected": bool(self.input_material_bundle),
+            EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY: dict(self.input_material_bundle or {}),
+            "phase20_3_input_material_bundle": dict(self.input_material_bundle or {}),
+            EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY: dict(self.phase20_3_observation_eligibility_router or {}),
+            "phase20_3_observation_eligibility_router_ready": bool(
+                (self.phase20_3_observation_eligibility_router or {}).get("phase20_3_observation_eligibility_router_ready")
+            ),
+            "phase20_3_response_kind": _clean((self.phase20_3_observation_eligibility_router or {}).get("response_kind")),
+            "phase20_3_public_input_feedback_allowed": bool(
+                (self.phase20_3_observation_eligibility_router or {}).get("public_input_feedback_allowed")
+            ),
+            "material_quality": _clean((self.input_material_bundle or {}).get("material_quality")),
+            "visible_material_slots": list((self.input_material_bundle or {}).get("visible_material_slots") or []),
+            "phase20_3_visible_material_slots": list((self.input_material_bundle or {}).get("visible_material_slots") or []),
+            "phase20_3_unknown_slots": list((self.input_material_bundle or {}).get("unknown_slots") or []),
+            "phase20_3_case_specific_route_used": bool((self.input_material_bundle or {}).get("case_specific_route_used")),
+            "phase20_3_c_d_specific_runtime_cue_used": bool((self.input_material_bundle or {}).get("c_d_specific_runtime_cue_used")),
             "current_input_only_eligibility": True,
             "user_fact_used_for_current_event_assertion": False,
             "raw_input_included": False,
@@ -815,6 +843,8 @@ def _build_decision(
     user_fact_raw_text_stripped: bool = False,
     observation_structure_connection: Mapping[str, Any] | None = None,
     daily_reception_router_material: Mapping[str, Any] | None = None,
+    input_material_bundle: Mapping[str, Any] | None = None,
+    phase20_3_observation_eligibility_router: Mapping[str, Any] | None = None,
 ) -> ObservationEligibilityDecision:
     eligible = observation_reply_kind == OBSERVATION_REPLY_KIND_ELIGIBLE
     low_info = observation_reply_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION
@@ -874,6 +904,8 @@ def _build_decision(
         user_fact_raw_text_stripped=bool(user_fact_raw_text_stripped),
         observation_structure_connection=dict(observation_structure_connection or {}),
         daily_reception_router_material=dict(daily_reception_router_material or {}),
+        input_material_bundle=dict(input_material_bundle or {}),
+        phase20_3_observation_eligibility_router=dict(phase20_3_observation_eligibility_router or {}),
     )
 
 
@@ -1000,6 +1032,15 @@ def route_observation_eligibility(
     facts_ignored = sanitized_facts if plan == "free" else []
     free_user_fact_blocked = bool(plan == "free" and sanitized_facts)
 
+    phase20_3_input_material_bundle_obj = build_emlis_input_material_bundle(current_input)
+    phase20_3_input_material_bundle = phase20_3_input_material_bundle_obj.as_meta()
+    phase20_3_material_route = route_emlis_observation_material_eligibility(
+        current_input=current_input,
+        input_material_bundle=phase20_3_input_material_bundle_obj,
+    )
+    phase20_3_observation_eligibility_router = phase20_3_material_route.as_meta()
+    assert_emlis_observation_eligibility_route_meta(phase20_3_observation_eligibility_router)
+
     signals, known_fragments, text, _spans = _analyze_current_input(current_input, evidence_ledger)
     structure_connection = observation_structure_connection or build_observation_structure_connection(
         current_input=current_input,
@@ -1063,6 +1104,8 @@ def route_observation_eligibility(
             free_user_fact_blocked=free_user_fact_blocked,
             observation_reply_meta={},
             observation_structure_connection=structure_connection_meta,
+            input_material_bundle=phase20_3_input_material_bundle,
+            phase20_3_observation_eligibility_router=phase20_3_observation_eligibility_router,
         )
 
     daily_reception_router_material = _build_daily_reception_router_material(current_input)
@@ -1119,6 +1162,8 @@ def route_observation_eligibility(
             user_fact_raw_text_stripped=user_fact_raw_text_stripped,
             observation_structure_connection=structure_connection_meta,
             daily_reception_router_material=daily_reception_router_material,
+            input_material_bundle=phase20_3_input_material_bundle,
+            phase20_3_observation_eligibility_router=phase20_3_observation_eligibility_router,
         )
 
     if has_strong_relation and not high_ambiguity and evidence_score >= LOW_INFORMATION_EVIDENCE_THRESHOLD:
@@ -1141,6 +1186,8 @@ def route_observation_eligibility(
             user_fact_raw_text_stripped=user_fact_raw_text_stripped,
             observation_structure_connection=structure_connection_meta,
             daily_reception_router_material=daily_reception_router_material,
+            input_material_bundle=phase20_3_input_material_bundle,
+            phase20_3_observation_eligibility_router=phase20_3_observation_eligibility_router,
         )
 
     if not low_information and evidence_score >= ELIGIBLE_EVIDENCE_THRESHOLD and relation_confidence >= RELATION_CONFIDENCE_THRESHOLD:
@@ -1163,6 +1210,8 @@ def route_observation_eligibility(
             user_fact_raw_text_stripped=user_fact_raw_text_stripped,
             observation_structure_connection=structure_connection_meta,
             daily_reception_router_material=daily_reception_router_material,
+            input_material_bundle=phase20_3_input_material_bundle,
+            phase20_3_observation_eligibility_router=phase20_3_observation_eligibility_router,
         )
 
     reason = "insufficient_current_input_evidence"
@@ -1188,6 +1237,8 @@ def route_observation_eligibility(
         free_user_fact_blocked=free_user_fact_blocked,
         observation_structure_connection=structure_connection_meta,
         daily_reception_router_material=daily_reception_router_material,
+        input_material_bundle=phase20_3_input_material_bundle,
+        phase20_3_observation_eligibility_router=phase20_3_observation_eligibility_router,
     )
 
 def route_emlis_observation_eligibility(

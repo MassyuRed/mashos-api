@@ -3,10 +3,12 @@ from __future__ import annotations
 
 """Phase19 test-only public-feedback recovery matrix for EmlisAI.
 
-The helper is intentionally scoped to tests. It summarizes where a real-device
-ABCD fixture currently fails to reach the public ``input_feedback`` contract
-without adding any public response keys, carrying raw user input, or exposing
-candidate/comment bodies.
+Phase20-0 keeps this helper quarantined as regression/test material.  The
+real-device ABCD fixtures are not implementation targets and their example
+wording must not become runtime cues.  This helper only summarizes where a
+fixture reaches or misses the public ``input_feedback`` contract without adding
+public response keys, carrying raw user input, or exposing candidate/comment
+bodies.
 """
 
 from collections.abc import Mapping, Sequence

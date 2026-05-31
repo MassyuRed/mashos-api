@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+"""Phase19 ABCD real-device regression fixtures for the public feedback contract.
+
+Phase20-0 redefines these exact inputs as failure-reproduction and regression
+fixtures only.  They must not become runtime conditions, and this module must
+not add an expected exact generated ``comment_text`` for A/C/D.  The assertions
+remain limited to public shape, modal eligibility, non-leakage, safety boundary,
+and the current Phase20 recovery behavior.  C/D may recover through the generic
+Phase20-5 Gate Recovery Loop, but must not use the withdrawn Phase19 dedicated
+mode/cue/surface route.
+"""
+
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -73,8 +84,8 @@ _INTERNAL_MODE_NAMES_NOT_PUBLIC = (
 _PHASE19_SAFE_INSERTED_IDS = {
     "phase19_real_device_A_low_information_fatigue": "phase19-0-A",
     "phase19_real_device_B_safety_boundary_self_harm_adjacent": "phase19-0-B",
-    "phase19_real_device_C_self_understanding_learning_shift": "phase19-0-C",
-    "phase19_real_device_D_relationship_gratitude_recovery": "phase19-0-D",
+    "phase19_real_device_C_generic_self_understanding_regression": "phase19-0-C",
+    "phase19_real_device_D_generic_relationship_boundary_regression": "phase19-0-D",
 }
 
 
@@ -116,13 +127,13 @@ PHASE19_REAL_DEVICE_ABCD_CASES: tuple[Phase19RealDeviceCase, ...] = (
         memo_action="",
         emotions=("悲しみ",),
         categories=("人生", "価値観"),
-        expected_public_input_feedback_included=False,
-        expected_observation_status="safety_blocked",
-        expected_comment_text_non_empty=False,
-        expected_rn_modal_opened=False,
+        expected_public_input_feedback_included=True,
+        expected_observation_status="passed",
+        expected_comment_text_non_empty=True,
+        expected_rn_modal_opened=True,
     ),
     Phase19RealDeviceCase(
-        case_id="phase19_real_device_C_self_understanding_learning_shift",
+        case_id="phase19_real_device_C_generic_self_understanding_regression",
         memo=(
             "今までは、人に対して何故？と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする。\n"
             "何故それを聞くの？とか聞く意味があるの？と考えてしまってうまくコミュニケーションが取れなくてもやもやしていたけど、物を見ることで人への興味が薄れた。\n"
@@ -137,16 +148,19 @@ PHASE19_REAL_DEVICE_ABCD_CASES: tuple[Phase19RealDeviceCase, ...] = (
         ),
         emotions=("自己理解",),
         categories=("学習",),
+        # Phase20-5 restores this long-input fixture through the generic Gate
+        # Recovery Loop.  It must not use the old C-specific runtime route/cue,
+        # and the generated text is still checked by shape/behavior, not exact text.
         expected_public_input_feedback_included=True,
         expected_observation_status="passed",
         expected_comment_text_non_empty=True,
-        expected_candidate_generated=True,
+        expected_candidate_generated=None,
         expected_not_low_information=True,
-        expected_visible_surface_acceptance_gate="passed",
+        expected_visible_surface_acceptance_gate=None,
         expected_rn_modal_opened=True,
     ),
     Phase19RealDeviceCase(
-        case_id="phase19_real_device_D_relationship_gratitude_recovery",
+        case_id="phase19_real_device_D_generic_relationship_boundary_regression",
         memo=(
             "悲しい気持ちばかりで身の回りにある優しさを見逃してしまいそうになるが、"
             "ちゃんと優しさに触れてそれを実感出来ていることが嬉しい。"
@@ -161,9 +175,8 @@ PHASE19_REAL_DEVICE_ABCD_CASES: tuple[Phase19RealDeviceCase, ...] = (
         expected_public_input_feedback_included=True,
         expected_observation_status="passed",
         expected_comment_text_non_empty=True,
-        expected_candidate_generated=True,
-        expected_internal_mode="relationship_gratitude_recovery",
-        expected_evidence_span_count_min=1,
+        expected_candidate_generated=None,
+        expected_evidence_span_count_min=None,
         expected_rn_modal_opened=True,
     ),
 )
@@ -310,6 +323,23 @@ def _find_mapping(value: Mapping[str, Any] | None, *keys: str) -> Mapping[str, A
     return current if isinstance(current, Mapping) else {}
 
 
+def _find_first_mapping_by_key(value: Any, key_name: str) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        child = value.get(key_name)
+        if isinstance(child, Mapping):
+            return child
+        for nested in value.values():
+            found = _find_first_mapping_by_key(nested, key_name)
+            if found:
+                return found
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for nested in value:
+            found = _find_first_mapping_by_key(nested, key_name)
+            if found:
+                return found
+    return {}
+
+
 def _all_reason_codes(public_meta: Mapping[str, Any], diagnostic_meta: Mapping[str, Any] | None = None) -> set[str]:
     reasons: set[str] = set()
 
@@ -389,6 +419,26 @@ def _max_evidence_span_count(meta: Mapping[str, Any] | None) -> int:
     return max_count
 
 
+def _selected_reception_modes(meta: Mapping[str, Any] | None) -> set[str]:
+    selected: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                if key in {"reception_mode", "reception_mode_id", "selected_reception_mode_id"}:
+                    if isinstance(child, str) and child.strip():
+                        selected.add(child)
+                else:
+                    collect(child)
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for child in value:
+                collect(child)
+
+    if isinstance(meta, Mapping):
+        collect(meta)
+    return selected
+
+
 def _build_public_feedback_boundary_assertion(
     *,
     case: Phase19RealDeviceCase,
@@ -466,7 +516,10 @@ def _assert_phase19_expectations(
 
     assert boundary["public_feedback"]["input_feedback_included"] is case.expected_public_input_feedback_included, failure_context
     assert bool(str(result.get("input_feedback_comment") or "").strip()) is case.expected_comment_text_non_empty, failure_context
-    assert public_meta.get("observation_status") == case.expected_observation_status, failure_context
+    if case.expected_observation_status == "non_passed":
+        assert public_meta.get("observation_status") in {"rejected", "unavailable", "safety_blocked"}, failure_context
+    else:
+        assert public_meta.get("observation_status") == case.expected_observation_status, failure_context
 
     if case.expected_rn_modal_opened is not None:
         assert boundary["rn_contract"]["modal_should_open"] is case.expected_rn_modal_opened, failure_context
@@ -505,8 +558,78 @@ def _assert_phase19_expectations(
         assert _contains_text_recursive(diagnostic_meta, case.expected_internal_mode), failure_context
         assert not _contains_text_recursive(body, case.expected_internal_mode), failure_context
 
+    selected_modes = _selected_reception_modes(diagnostic_meta)
+    assert "relationship_gratitude_recovery" not in selected_modes, failure_context
+    assert "self_understanding_learning_shift" not in selected_modes, failure_context
+
+    if case.case_id in {
+        "phase19_real_device_C_generic_self_understanding_regression",
+        "phase19_real_device_D_generic_relationship_boundary_regression",
+    }:
+        internal_reply_meta = captured.get("reply_meta") if isinstance(captured.get("reply_meta"), Mapping) else {}
+        gate_recovery_loop = (
+            internal_reply_meta.get("phase20_5_gate_recovery_loop")
+            if isinstance(internal_reply_meta.get("phase20_5_gate_recovery_loop"), Mapping)
+            else internal_reply_meta.get("gate_recovery_loop")
+        )
+        internal_contract = internal_reply_meta.get("internal_response_contract") if isinstance(internal_reply_meta.get("internal_response_contract"), Mapping) else {}
+        assert isinstance(gate_recovery_loop, Mapping), failure_context
+        assert gate_recovery_loop.get("final_observation_status") == "passed", failure_context
+        assert gate_recovery_loop.get("recovery_applied") is True, failure_context
+        assert gate_recovery_loop.get("non_terminal_recovery_available") is True, failure_context
+        assert gate_recovery_loop.get("first_reaction_empty_comment_text") is False, failure_context
+        assert gate_recovery_loop.get("final_empty_comment_text_allowed") is False, failure_context
+        assert gate_recovery_loop.get("display_gate_relaxed") is False, failure_context
+        assert gate_recovery_loop.get("fixed_fallback_used") is False, failure_context
+        assert gate_recovery_loop.get("case_specific_route_used") is False, failure_context
+        assert gate_recovery_loop.get("case_id_runtime_condition_used") is False, failure_context
+        assert gate_recovery_loop.get("phase_name_runtime_condition_used") is False, failure_context
+        assert any(
+            isinstance(attempt, Mapping) and attempt.get("result") == "passed"
+            for attempt in gate_recovery_loop.get("internal_response_repair_attempts", [])
+        ), failure_context
+        assert internal_contract.get("response_kind") in {
+            "normal_observation",
+            "limited_grounding_observation",
+        }, failure_context
+        assert "_に関する記録" not in str(result.get("input_feedback_comment") or ""), failure_context
+
     if case.expected_evidence_span_count_min is not None:
         assert _max_evidence_span_count(diagnostic_meta) >= case.expected_evidence_span_count_min, failure_context
+
+    if case.case_id == "phase19_real_device_B_safety_boundary_self_harm_adjacent":
+        internal_reply_meta = captured.get("reply_meta") if isinstance(captured.get("reply_meta"), Mapping) else {}
+        safety_triage = internal_reply_meta.get("emlis_safety_triage") if isinstance(internal_reply_meta.get("emlis_safety_triage"), Mapping) else {}
+        internal_contract = internal_reply_meta.get("internal_response_contract") if isinstance(internal_reply_meta.get("internal_response_contract"), Mapping) else {}
+        assert safety_triage.get("safety_triage_kind") == "self_denial_safe_state_answer", failure_context
+        assert safety_triage.get("must_not_accept_identity_claim_as_fact") is True, failure_context
+        assert internal_contract.get("response_kind") == "self_denial_safe_state_answer", failure_context
+        assert " ".join(case.memo.split()) not in json.dumps(safety_triage, ensure_ascii=False), failure_context
+
+    if case.case_id in {
+        "phase19_real_device_C_generic_self_understanding_regression",
+        "phase19_real_device_D_generic_relationship_boundary_regression",
+    }:
+        internal_reply_meta = captured.get("reply_meta") if isinstance(captured.get("reply_meta"), Mapping) else {}
+        gate_recovery = _find_first_mapping_by_key(internal_reply_meta, "phase20_5_gate_recovery_loop")
+        assert gate_recovery.get("phase20_5_gate_recovery_loop_ready") is True, failure_context
+        assert gate_recovery.get("first_reaction_empty_comment_text") is False, failure_context
+        assert gate_recovery.get("final_empty_comment_text_allowed") is False, failure_context
+        assert gate_recovery.get("non_terminal_recovery_available") is True, failure_context
+        assert gate_recovery.get("recovered_to_public_observation") is True, failure_context
+        assert gate_recovery.get("recovery_applied") is True, failure_context
+        assert gate_recovery.get("gate_threshold_relaxed") is False, failure_context
+        assert gate_recovery.get("fixed_fallback_used") is False, failure_context
+        assert gate_recovery.get("case_specific_route_used") is False, failure_context
+        assert gate_recovery.get("c_d_specific_runtime_cue_used") is False, failure_context
+        assert gate_recovery.get("comment_text_absent_allowed_only_for_emergency_or_infra") is True, failure_context
+        internal_contract = internal_reply_meta.get("internal_response_contract") if isinstance(internal_reply_meta.get("internal_response_contract"), Mapping) else {}
+        assert internal_contract.get("response_kind") in {"normal_observation", "limited_grounding_observation"}, failure_context
+        assert internal_contract.get("repair_attempts"), failure_context
+        comment_text = str(result.get("input_feedback_comment") or "")
+        assert "見えたこと：" in comment_text, failure_context
+        assert "Emlisから：" in comment_text, failure_context
+        assert "_に関する記録" not in comment_text, failure_context
 
 
 def test_phase19_0_real_device_abcd_fixture_definition_is_exact_and_contract_intent_is_fixed() -> None:
@@ -514,20 +637,22 @@ def test_phase19_0_real_device_abcd_fixture_definition_is_exact_and_contract_int
     assert [case.case_id for case in PHASE19_REAL_DEVICE_ABCD_CASES] == [
         "phase19_real_device_A_low_information_fatigue",
         "phase19_real_device_B_safety_boundary_self_harm_adjacent",
-        "phase19_real_device_C_self_understanding_learning_shift",
-        "phase19_real_device_D_relationship_gratitude_recovery",
+        "phase19_real_device_C_generic_self_understanding_regression",
+        "phase19_real_device_D_generic_relationship_boundary_regression",
     ]
     assert PHASE19_REAL_DEVICE_ABCD_CASES[0].memo == "なんか今日は全部だるい。\n何もしたくない。"
     assert PHASE19_REAL_DEVICE_ABCD_CASES[1].memo == "1番自分を傷つけてるのは私だ\nずっとそれを続けて、いい事なんて絶対にない"
     assert PHASE19_REAL_DEVICE_ABCD_CASES[2].memo_action.endswith("傷や汚れの場所、自分のこうかな？という憶測をメモしていった。")
     assert PHASE19_REAL_DEVICE_ABCD_CASES[3].categories == ("恋愛", "人間関係", "価値観")
-    assert [case.expected_public_input_feedback_included for case in PHASE19_REAL_DEVICE_ABCD_CASES] == [True, False, True, True]
+    assert [case.expected_public_input_feedback_included for case in PHASE19_REAL_DEVICE_ABCD_CASES] == [True, True, True, True]
     assert [case.expected_observation_status for case in PHASE19_REAL_DEVICE_ABCD_CASES] == [
         "passed",
-        "safety_blocked",
+        "passed",
         "passed",
         "passed",
     ]
+    assert not any(hasattr(case, "expected_comment_text") for case in PHASE19_REAL_DEVICE_ABCD_CASES)
+    assert not any(hasattr(case, "expected_exact_comment_text") for case in PHASE19_REAL_DEVICE_ABCD_CASES)
 
 
 @pytest.mark.asyncio

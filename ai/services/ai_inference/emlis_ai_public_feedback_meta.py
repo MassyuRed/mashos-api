@@ -15,6 +15,10 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
+from emlis_ai_response_contract import (
+    internal_response_contract_from_meta,
+    public_status_from_internal_response_contract,
+)
 from emlis_ai_state_answer_gate_boundary import state_answer_gate_boundary_public_summary
 from emlis_ai_two_stage_reception_gate import two_stage_reception_gate_public_summary
 
@@ -110,6 +114,54 @@ _VISIBLE_SURFACE_ACCEPTANCE_UNSAFE_CONTRACT_FLAGS = (
     "rn_visible_contract_changed",
     "template_gate_relaxed",
 )
+_INTERNAL_RESPONSE_CONTRACT_PUBLIC_FORBIDDEN_KEYS = frozenset(
+    {
+        "internal_response_contract",
+        "internal_response_contract_schema_version",
+        "response_kind",
+        "public_input_feedback_allowed",
+        "comment_text_required",
+        "safety_triage_kind",
+        "grounding_scope",
+        "repair_attempts",
+        "visible_material_slots",
+        "unknown_slots",
+        "material_quality",
+        "generic_relation_material_ids",
+        "reception_mode_id",
+        "selected_reception_mode_id",
+        "two_stage_reception_mode_id",
+        "reception_mode_family",
+        "mode_id",
+        "mode",
+        "mode_specific_rejection_reasons",
+        "observation_text",
+        "observationText",
+        "reception_text",
+        "receptionText",
+        "evidence_text",
+        "evidenceText",
+    }
+)
+_INTERNAL_RUNTIME_MODE_PUBLIC_FORBIDDEN_VALUES = frozenset(
+    {
+        "normal_observation",
+        "low_information_observation",
+        "limited_grounding_observation",
+        "self_denial_safe_state_answer",
+        "safety_support_required",
+        "safety_blocked_emergency",
+        "infrastructure_error",
+        "generic_sentence_plan_surface",
+    }
+)
+_INTERNAL_RUNTIME_IDENTIFIER_FORBIDDEN_MARKERS = (
+    "_runtime_mode",
+    "_case_route",
+    "_case_specific_route",
+    "_learning_shift",
+    "_gratitude_recovery",
+)
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.:/\-]+$")
 
 
@@ -164,6 +216,27 @@ def _safe_identifier(value: Any, *, max_length: int, default: Optional[str] = No
     return text
 
 
+def _safe_public_identifier(value: Any, *, max_length: int, default: Optional[str] = None) -> Optional[str]:
+    """Return a public-safe identifier without leaking internal routing names.
+
+    Phase20-7 keeps RN display owned by ``input_feedback.comment_text`` plus
+    public ``observation_status``.  Internal response contracts, response_kind
+    and backend runtime mode names are useful inside diagnostics, but they must
+    not become public response fields or RN-visible display sources.
+    """
+
+    text = _safe_identifier(value, max_length=max_length, default=default)
+    if text is None:
+        return default
+    if text in _INTERNAL_RESPONSE_CONTRACT_PUBLIC_FORBIDDEN_KEYS:
+        return default
+    if text in _INTERNAL_RUNTIME_MODE_PUBLIC_FORBIDDEN_VALUES:
+        return default
+    if any(marker in text for marker in _INTERNAL_RUNTIME_IDENTIFIER_FORBIDDEN_MARKERS):
+        return default
+    return text
+
+
 def _safe_trace(value: Any) -> Optional[str]:
     return _safe_identifier(value, max_length=120, default=None)
 
@@ -197,7 +270,7 @@ def _safe_visible_surface_acceptance_action(value: Any) -> Optional[str]:
 
 
 def _safe_reason(value: Any) -> Optional[str]:
-    return _safe_identifier(
+    return _safe_public_identifier(
         value,
         max_length=PUBLIC_EMLIS_FEEDBACK_META_MAX_REASON_LENGTH,
         default=None,
@@ -228,6 +301,18 @@ def _safe_mapping(value: Any) -> Optional[Mapping[str, Any]]:
 
 def _safe_get(meta: Mapping[str, Any], key: str, default: Any = None) -> Any:
     return meta.get(key, default)
+
+
+def _internal_response_contract_or_none(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    # Phase20-1: the internal response contract may guide the public status
+    # bridge, but it is never copied into public RN-facing meta.
+    return internal_response_contract_from_meta(internal_meta)
+
+
+def _contract_comment_required(contract: Mapping[str, Any] | None) -> Optional[bool]:
+    if contract is None or not isinstance(contract.get("comment_text_required"), bool):
+        return None
+    return bool(contract.get("comment_text_required"))
 
 
 def _safe_rejection_reasons(values: Any) -> list[str]:
@@ -375,7 +460,7 @@ def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any
         ("composer_status", 80),
         ("composer_source", 80),
     ):
-        value = _safe_identifier(_safe_get(source, key), max_length=max_length, default=None)
+        value = _safe_public_identifier(_safe_get(source, key), max_length=max_length, default=None)
         if value:
             public_summary[key] = value
 
@@ -463,13 +548,18 @@ def _sanitize_gate_summary_reason_lists(summary: Dict[str, Any]) -> Dict[str, An
             else:
                 summary.pop(key, None)
 
-    for key in ("reception_mode_id", "reception_mode_family"):
-        if key in summary:
-            safe = _safe_identifier(summary.get(key), max_length=80, default=None)
-            if safe:
-                summary[key] = safe
-            else:
-                summary.pop(key, None)
+    # Phase20-7: public gate meta may describe pass/block status, but runtime
+    # mode names and internal routing identifiers remain backend-only.
+    for key in (
+        "reception_mode_id",
+        "selected_reception_mode_id",
+        "two_stage_reception_mode_id",
+        "reception_mode_family",
+        "mode_id",
+        "mode",
+        "mode_specific_rejection_reasons",
+    ):
+        summary.pop(key, None)
 
     nested = _safe_mapping(summary.get("two_stage_reception_gate"))
     if nested is not None:
@@ -826,6 +916,20 @@ def _build_step10_repair_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     return public_meta
 
 
+def _strip_internal_public_boundary_keys(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        stripped: Dict[str, Any] = {}
+        for raw_key, raw_child in value.items():
+            key = str(raw_key)
+            if key in _INTERNAL_RESPONSE_CONTRACT_PUBLIC_FORBIDDEN_KEYS:
+                continue
+            stripped[key] = _strip_internal_public_boundary_keys(raw_child)
+        return stripped
+    if isinstance(value, list):
+        return [_strip_internal_public_boundary_keys(item) for item in value]
+    return value
+
+
 def _mark_trimmed(meta: Dict[str, Any]) -> Dict[str, Any]:
     boundary = meta.get("public_feedback_meta_boundary")
     if isinstance(boundary, dict):
@@ -912,13 +1016,39 @@ def build_public_emlis_input_feedback_meta(
             _safe_get(internal_meta, "step10_observation_display_repair_integration")
         )
         comment_body_present = bool(comment_text_present)
-        observation_status = _safe_status(_safe_get(internal_meta, "observation_status"))
-        if observation_status is None and step10_meta is not None:
-            observation_status = _safe_status(_safe_get(step10_meta, "final_observation_status"))
+        try:
+            internal_response_contract = _internal_response_contract_or_none(internal_meta)
+        except Exception:
+            return _minimal_unavailable_meta(
+                subscription_tier=tier_source,
+                reason="public_feedback_response_contract_invalid",
+            )
+        contract_status = _safe_status(
+            public_status_from_internal_response_contract(internal_response_contract)
+            if internal_response_contract is not None
+            else None
+        )
+        # Phase20-7: once an internal response contract is present, the
+        # response_kind -> public observation_status mapping is the public
+        # boundary source of truth.  Legacy status fields remain as fallback for
+        # older meta that has not been bridged yet, but they may not keep
+        # normal / low-information / limited-grounding observations rejected
+        # after Phase20 recovery has produced a displayable comment_text.
+        if internal_response_contract is not None and contract_status:
+            observation_status = contract_status
+        else:
+            observation_status = _safe_status(_safe_get(internal_meta, "observation_status"))
+            if observation_status is None and step10_meta is not None:
+                observation_status = _safe_status(_safe_get(step10_meta, "final_observation_status"))
+            if observation_status is None and contract_status:
+                observation_status = contract_status
         observation_status = observation_status or "unavailable"
 
         rejection_reasons = _safe_rejection_reasons(_safe_get(internal_meta, "rejection_reasons"))
-        if observation_status == "passed" and not comment_body_present:
+        comment_required = _contract_comment_required(internal_response_contract)
+        if comment_required is None:
+            comment_required = True
+        if observation_status == "passed" and comment_required and not comment_body_present:
             observation_status = "unavailable"
             rejection_reasons = _prepend_public_rejection_reason(
                 rejection_reasons,
@@ -993,6 +1123,7 @@ def build_public_emlis_input_feedback_meta(
             )
 
         public_meta["public_feedback_meta_boundary"] = _boundary_marker(trimmed=False)
+        public_meta = _strip_internal_public_boundary_keys(public_meta)
         return _fit_hard_byte_limit(public_meta, subscription_tier=tier_source)
     except Exception:
         return _minimal_unavailable_meta(subscription_tier=subscription_tier)
