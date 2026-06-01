@@ -299,6 +299,106 @@ def _complete_initial_low_information_repair_context_allowed(
     return _current_input_is_compact_low_information_signal(current_input)
 
 
+def _phase20_3_low_information_material_context_allows_repair(
+    repair_context: Mapping[str, Any] | None,
+    current_input: Mapping[str, Any] | None,
+    *,
+    safety_report: SafetyBoundaryReport | None = None,
+) -> bool:
+    """Return whether Phase20-3 low-information material may bypass scope-only composer stops.
+
+    Phase20-10 real-device verification showed that A-like low-information
+    inputs can reach a Phase7 scope/pre-generation stop while still having a
+    valid Phase20-3 material bundle.  Scope stops are not infrastructure,
+    rollout, AP0, or safety failures; they must not be allowed to turn genuine
+    low-information material into an empty public response.
+    """
+
+    context = repair_context if isinstance(repair_context, Mapping) else {}
+    if _clean(context.get("schema_version")) != PHASE20_3_LOW_INFORMATION_REPAIR_CONTEXT_SCHEMA_VERSION:
+        return False
+    if context.get("source_phase") != EMLIS_OBSERVATION_ELIGIBILITY_ROUTE_SOURCE_PHASE:
+        return False
+    if context.get("material_quality") != MATERIAL_QUALITY_LOW_INFORMATION:
+        return False
+    if context.get("response_kind") != OBSERVATION_REPLY_KIND_LOW_INFORMATION:
+        return False
+    if context.get("safety_triage_kind") not in {"", "safe_observation"}:
+        return False
+    if safety_report is not None and bool(getattr(safety_report, "requires_block", False)):
+        return False
+    if not context.get("public_input_feedback_allowed") or not context.get("comment_text_required"):
+        return False
+    if not context.get("visible_material_slots"):
+        return False
+    if not _current_input_has_user_signal(current_input):
+        return False
+    if any(
+        bool(context.get(key))
+        for key in (
+            "phase19_compact_signal_used",
+            "phase19_case_specific_route_used",
+            "case_specific_route_used",
+            "case_id_runtime_condition_used",
+            "phase_name_runtime_condition_used",
+            "c_d_specific_runtime_cue_used",
+            "fixed_fallback_used",
+            "raw_input_included",
+            "raw_text_included",
+            "comment_text_included",
+            "comment_text_body_included",
+            "public_response_key_added",
+            "public_status_extended",
+            "observation_status_enum_extended",
+            "api_route_changed",
+            "db_physical_name_changed",
+            "rn_visible_contract_changed",
+        )
+    ):
+        return False
+    return True
+
+
+_PHASE20_10_SCOPE_ONLY_LOW_INFORMATION_REPAIR_BLOCKERS: Final = frozenset(
+    {
+        "composer_resolution_blocked_scope",
+        "limited_composer_scope_not_allowed",
+        "phase7_scope_gate_blocked",
+    }
+)
+
+
+def _filter_scope_only_blockers_for_phase20_10_low_information(
+    blockers: Sequence[str],
+    *,
+    repair_context: Mapping[str, Any] | None,
+    current_input: Mapping[str, Any] | None,
+    safety_report: SafetyBoundaryReport | None = None,
+) -> list[str]:
+    """Keep hard blockers while allowing safe low-information observation repair.
+
+    This does not relax AP0, rollout, feature-flag, safety, or display gates.
+    It only prevents a scope-only composer stop from precluding the dedicated
+    Phase20 low-information observation branch, which still has to build a
+    grounded surface and pass the existing public display gate.
+    """
+
+    items = _dedupe(blockers)
+    if not items:
+        return []
+    if not _phase20_3_low_information_material_context_allows_repair(
+        repair_context,
+        current_input,
+        safety_report=safety_report,
+    ):
+        return items
+    return [
+        reason
+        for reason in items
+        if reason not in _PHASE20_10_SCOPE_ONLY_LOW_INFORMATION_REPAIR_BLOCKERS
+    ]
+
+
 def _dedupe(values: Iterable[Any] | Any | None) -> list[str]:
     if values is None:
         return []
@@ -1346,6 +1446,12 @@ def integrate_observation_display_repair(
             reason for reason in resolution_blockers
             if reason != "complete_initial_diagnostic_path"
         ]
+    resolution_blockers = _filter_scope_only_blockers_for_phase20_10_low_information(
+        resolution_blockers,
+        repair_context=repair_context_meta,
+        current_input=current_input if isinstance(current_input, Mapping) else {},
+        safety_report=safety_report,
+    )
     if resolution_blockers:
         return ObservationDisplayRepairIntegrationResult(
             applied=False,
