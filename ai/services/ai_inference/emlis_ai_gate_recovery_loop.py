@@ -34,7 +34,14 @@ from emlis_ai_visible_surface_acceptance_gate import build_visible_surface_accep
 GATE_RECOVERY_EVENT_SCHEMA_VERSION: Final = "cocolon.emlis.gate_recovery_event.v1"
 GATE_RECOVERY_LOOP_SCHEMA_VERSION: Final = "cocolon.emlis.gate_recovery_loop.v1"
 GATE_RECOVERY_LOOP_SOURCE_PHASE: Final = "Phase20-5_Gate_Recovery_Loop"
+POST_FINAL_GATE_RECOVERY_SOURCE_PHASE: Final = "Phase20-13_Post_Final_Gate_Recovery"
+POST_FINAL_GATE_RECOVERY_CONTEXT: Final = "post_final_pre_return_gate"
 GATE_RECOVERY_LOOP_META_KEY: Final = "phase20_5_gate_recovery_loop"
+GATE_RECOVERY_SURFACE_BINDING_SCHEMA_VERSION: Final = "cocolon.emlis.gate_recovery_surface_binding.v1"
+GATE_RECOVERY_SURFACE_BINDING_SOURCE_PHASE: Final = "Phase20-15_Gate_Recovery_Surface_Binding"
+GATE_RECOVERY_SURFACE_BINDING_META_KEY: Final = "phase20_15_gate_recovery_surface_binding"
+GATE_RECOVERY_SURFACE_REPETITION_QA_SCHEMA_VERSION: Final = "cocolon.emlis.gate_recovery_surface_repetition_qa.v1"
+GATE_RECOVERY_SURFACE_REPETITION_QA_SOURCE_PHASE: Final = "Phase20-15_Gate_Recovery_Surface_Repetition_QA"
 
 GATE_VISIBLE_SURFACE_ACCEPTANCE: Final = "visible_surface_acceptance_gate"
 GATE_GROUNDING: Final = "grounding_gate"
@@ -858,8 +865,10 @@ class GateRecoveryLoopResult:
     loop_decision: GateRecoveryLoopDecision | None = None
     recovery_policy: str = ""
     blocked_reasons: Sequence[str] = field(default_factory=tuple)
+    surface_binding_meta: Mapping[str, Any] = field(default_factory=dict)
 
     def as_meta(self) -> dict[str, Any]:
+        surface_binding = dict(self.surface_binding_meta or {}) if isinstance(self.surface_binding_meta, Mapping) else {}
         return {
             "schema_version": "cocolon.emlis.gate_recovery_loop_result.v1",
             "applied": bool(self.applied),
@@ -875,6 +884,8 @@ class GateRecoveryLoopResult:
             "case_specific_route_used": False,
             "raw_input_included": False,
             "comment_text_body_included": False,
+            GATE_RECOVERY_SURFACE_BINDING_META_KEY: surface_binding,
+            "gate_recovery_surface_binding": surface_binding,
         }
 
 
@@ -948,6 +959,278 @@ def _material_phrase_from_route(*, visible_slots: Sequence[str], relation_ids: S
     return "、".join(_dedupe_visible_text(pieces)[:4])
 
 
+def _gate_recovery_surface_family_ids(
+    *,
+    material_quality: str,
+    visible_slots: Sequence[str],
+    relation_ids: Sequence[str],
+) -> tuple[str, str]:
+    slots = set(_dedupe(visible_slots))
+    relations = set(_dedupe(relation_ids))
+    quality = _clean(material_quality)
+    if quality == MATERIAL_QUALITY_LOW_INFORMATION:
+        return ("low_information_current_input_material", "low_information_humility_question_current_input_only")
+    if "relationship" in slots or relations.intersection(
+        {"relationship_end", "support_from_other", "support_received_material", "relationship_material", "gratitude_or_return_intent"}
+    ):
+        return ("relationship_current_input_material", "relationship_evaluation_blocked_current_input_only")
+    if quality == MATERIAL_QUALITY_LIMITED_GROUNDING:
+        return ("limited_grounding_current_input_material", "assertion_softened_current_input_only")
+    if relations.intersection({"self_understanding_learning", "value_or_self_understanding_material"}):
+        return ("self_understanding_current_input_material", "self_understanding_non_conclusive_current_input_only")
+    return ("generic_current_input_material", "assertion_softened_current_input_only")
+
+
+def build_gate_recovery_surface_binding_meta(
+    *,
+    material_quality: str,
+    visible_slots: Sequence[str] = (),
+    unknown_slots: Sequence[str] = (),
+    relation_ids: Sequence[str] = (),
+    policy: str = "",
+    recovery_context: str = "pre_public_display_gate",
+    post_final_gate_failure: bool = False,
+) -> dict[str, Any]:
+    """Build meta-only evidence that a Gate Recovery surface is material-bound.
+
+    The generated comment body is intentionally not stored here.  Phase20-15
+    uses only counts and family identifiers so later QA can detect fixed
+    fallback drift without exact surface-text matching.
+    """
+
+    relation_family_ids = _dedupe(relation_ids)
+    surface_family_id, closing_family_id = _gate_recovery_surface_family_ids(
+        material_quality=material_quality,
+        visible_slots=visible_slots,
+        relation_ids=relation_ids,
+    )
+    meta = {
+        "schema_version": GATE_RECOVERY_SURFACE_BINDING_SCHEMA_VERSION,
+        "source_phase": GATE_RECOVERY_SURFACE_BINDING_SOURCE_PHASE,
+        "surface_binding_ready": True,
+        "evaluated": True,
+        "surface_generation_method": "material_bound_generic_surface",
+        "generic_sentence_plan_used": True,
+        "material_bound_generic_surface_used": True,
+        "visible_material_slot_count": len(_dedupe(visible_slots)),
+        "unknown_slot_count": len(_dedupe(unknown_slots)),
+        "relation_material_id_count": len(relation_family_ids),
+        "relation_family_ids": relation_family_ids,
+        "surface_family_id": surface_family_id,
+        "closing_family_id": closing_family_id,
+        "surface_pattern_family_id": f"{surface_family_id}:{closing_family_id}",
+        "material_quality": _clean(material_quality),
+        "recovery_policy": _clean(policy),
+        "recovery_context": _clean(recovery_context) or "pre_public_display_gate",
+        "post_final_gate_failure": bool(post_final_gate_failure),
+        "same_closing_family_repetition_check_ready": True,
+        "same_surface_pattern_repetition_check_ready": True,
+        "consecutive_recovery_usage_rate_check_ready": True,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "input_text_included": False,
+        "comment_text_body_included": False,
+        "comment_text_included": False,
+        "public_response_key_change": False,
+        "rn_visible_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+        "fixed_fallback_used": False,
+        "fixed_sentence_template_used": False,
+        "case_specific_route_used": False,
+        "exact_fixture_surface_used": False,
+    }
+    assert_gate_recovery_surface_binding_meta(meta)
+    return meta
+
+def assert_gate_recovery_surface_binding_meta(meta: Mapping[str, Any]) -> None:
+    if not isinstance(meta, Mapping):
+        raise ValueError("gate recovery surface binding meta must be a mapping")
+    if meta.get("schema_version") != GATE_RECOVERY_SURFACE_BINDING_SCHEMA_VERSION:
+        raise ValueError("unexpected gate recovery surface binding schema version")
+    if meta.get("source_phase") != GATE_RECOVERY_SURFACE_BINDING_SOURCE_PHASE:
+        raise ValueError("unexpected gate recovery surface binding source phase")
+    if _clean(meta.get("surface_generation_method")) not in {
+        "material_bound_generic_surface",
+        "generic_sentence_plan_surface",
+        "complete_surface_realizer",
+    }:
+        raise ValueError("invalid gate recovery surface generation method")
+    if meta.get("generic_sentence_plan_used") is not True:
+        raise ValueError("gate recovery surface binding requires generic_sentence_plan_used=true")
+    for key in ("visible_material_slot_count", "unknown_slot_count", "relation_material_id_count"):
+        value = meta.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"gate recovery surface binding {key} must be a non-negative integer")
+    for key in ("surface_family_id", "closing_family_id", "surface_pattern_family_id"):
+        if not _clean(meta.get(key)):
+            raise ValueError(f"gate recovery surface binding requires {key}")
+    if not isinstance(meta.get("relation_family_ids"), list):
+        raise ValueError("gate recovery surface binding relation_family_ids must be a list")
+    for flag in (
+        "raw_input_included",
+        "raw_text_included",
+        "input_text_included",
+        "comment_text_body_included",
+        "comment_text_included",
+        "public_response_key_change",
+        "rn_visible_contract_changed",
+        "display_gate_relaxed",
+        "grounding_gate_relaxed",
+        "template_gate_relaxed",
+        "safety_gate_relaxed",
+        "fixed_fallback_used",
+        "fixed_sentence_template_used",
+        "case_specific_route_used",
+        "exact_fixture_surface_used",
+    ):
+        if meta.get(flag) is not False:
+            raise ValueError(f"gate recovery surface binding violates fixed contract: {flag}=true")
+    if _contains_text_payload_key(meta):
+        raise ValueError("gate recovery surface binding meta must stay meta-only and text-free")
+    json.dumps(dict(meta), ensure_ascii=False, sort_keys=True)
+
+def _longest_same_value_run(values: Sequence[str]) -> int:
+    longest = 0
+    current = 0
+    previous = ""
+    for value in values:
+        normalized = _identifier(value, default="unspecified")
+        if normalized == previous:
+            current += 1
+        else:
+            previous = normalized
+            current = 1
+        longest = max(longest, current)
+    return longest
+
+
+def build_gate_recovery_surface_repetition_qa_report(bindings: Sequence[Mapping[str, Any]] | None) -> dict[str, Any]:
+    normalized: list[dict[str, Any]] = []
+    for binding in bindings or []:
+        if not isinstance(binding, Mapping):
+            continue
+        meta = dict(binding)
+        assert_gate_recovery_surface_binding_meta(meta)
+        normalized.append(meta)
+    surface_families = [_identifier(item.get("surface_family_id"), default="unspecified") for item in normalized]
+    closing_families = [_identifier(item.get("closing_family_id"), default="unspecified") for item in normalized]
+    surface_patterns = [
+        _identifier(item.get("surface_pattern_family_id"), default=f"{surface_family}:{closing_family}")
+        for item, surface_family, closing_family in zip(normalized, surface_families, closing_families, strict=True)
+    ]
+    count = len(normalized)
+
+    def repeat_rate(values: Sequence[str]) -> float:
+        if not values:
+            return 0.0
+        return round((len(values) - len(set(values))) / len(values), 4)
+
+    repeated_closing_run = _longest_same_value_run(closing_families)
+    repeated_surface_run = _longest_same_value_run(surface_families)
+    repeated_surface_pattern_run = _longest_same_value_run(surface_patterns)
+    same_closing_family_repetition_detected = bool(repeated_closing_run >= 3 and count >= 3)
+    same_surface_family_repetition_detected = bool(repeated_surface_run >= 3 and count >= 3)
+    same_surface_pattern_repetition_detected = bool(repeated_surface_pattern_run >= 3 and count >= 3)
+    fixed_flags_present = any(
+        bool(item.get("fixed_fallback_used") or item.get("fixed_sentence_template_used") or item.get("exact_fixture_surface_used"))
+        for item in normalized
+    )
+    report = {
+        "schema_version": GATE_RECOVERY_SURFACE_REPETITION_QA_SCHEMA_VERSION,
+        "source_phase": GATE_RECOVERY_SURFACE_REPETITION_QA_SOURCE_PHASE,
+        "evaluated": True,
+        "surface_count": count,
+        "unique_surface_family_count": len(set(surface_families)),
+        "unique_closing_family_count": len(set(closing_families)),
+        "unique_surface_pattern_family_count": len(set(surface_patterns)),
+        "surface_family_ids": _dedupe(surface_families),
+        "closing_family_ids": _dedupe(closing_families),
+        "surface_pattern_family_ids": _dedupe(surface_patterns),
+        "longest_same_surface_family_run": repeated_surface_run,
+        "longest_same_closing_family_run": repeated_closing_run,
+        "longest_same_surface_pattern_family_run": repeated_surface_pattern_run,
+        "same_surface_family_repeat_rate": repeat_rate(surface_families),
+        "same_closing_family_repeat_rate": repeat_rate(closing_families),
+        "same_surface_pattern_family_repeat_rate": repeat_rate(surface_patterns),
+        "same_surface_family_repetition_detected": same_surface_family_repetition_detected,
+        "same_closing_family_repetition_detected": same_closing_family_repetition_detected,
+        "same_surface_pattern_repetition_detected": same_surface_pattern_repetition_detected,
+        "requires_surface_quality_review": bool(
+            same_surface_family_repetition_detected
+            or same_closing_family_repetition_detected
+            or same_surface_pattern_repetition_detected
+            or fixed_flags_present
+        ),
+        "fixed_fallback_repetition_detected": bool(fixed_flags_present),
+        "fixed_fallback_used": False,
+        "fixed_sentence_template_used": False,
+        "exact_fixture_surface_used": False,
+        "exact_comment_text_matching_used": False,
+        "case_specific_route_used": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "comment_text_included": False,
+        "raw_text_included": False,
+        "public_response_key_change": False,
+        "rn_visible_contract_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+    }
+    assert_gate_recovery_surface_repetition_qa_report(report)
+    return report
+
+
+def assert_gate_recovery_surface_repetition_qa_report(meta: Mapping[str, Any]) -> None:
+    if not isinstance(meta, Mapping):
+        raise ValueError("gate recovery surface repetition QA must be a mapping")
+    if meta.get("schema_version") != GATE_RECOVERY_SURFACE_REPETITION_QA_SCHEMA_VERSION:
+        raise ValueError("unexpected gate recovery surface repetition QA schema version")
+    if meta.get("source_phase") != GATE_RECOVERY_SURFACE_REPETITION_QA_SOURCE_PHASE:
+        raise ValueError("unexpected gate recovery surface repetition QA source phase")
+    for key in (
+        "surface_count",
+        "unique_surface_family_count",
+        "unique_closing_family_count",
+        "unique_surface_pattern_family_count",
+        "longest_same_surface_family_run",
+        "longest_same_closing_family_run",
+        "longest_same_surface_pattern_family_run",
+    ):
+        value = meta.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"gate recovery surface repetition QA {key} must be a non-negative integer")
+    for key in ("surface_family_ids", "closing_family_ids", "surface_pattern_family_ids"):
+        if not isinstance(meta.get(key), list):
+            raise ValueError(f"gate recovery surface repetition QA {key} must be a list")
+    for flag in (
+        "fixed_fallback_used",
+        "fixed_sentence_template_used",
+        "exact_fixture_surface_used",
+        "exact_comment_text_matching_used",
+        "case_specific_route_used",
+        "raw_input_included",
+        "comment_text_body_included",
+        "comment_text_included",
+        "raw_text_included",
+        "public_response_key_change",
+        "rn_visible_contract_changed",
+        "display_gate_relaxed",
+        "grounding_gate_relaxed",
+        "template_gate_relaxed",
+        "safety_gate_relaxed",
+    ):
+        if meta.get(flag) is not False:
+            raise ValueError(f"gate recovery surface repetition QA violates fixed contract: {flag}=true")
+    if _contains_text_payload_key(meta):
+        raise ValueError("gate recovery surface repetition QA must stay meta-only and text-free")
+    json.dumps(dict(meta), ensure_ascii=False, sort_keys=True)
+
+
 def _join_labels(labels: Sequence[str], *, fallback: str) -> str:
     values = _dedupe_visible_text(labels)
     if not values:
@@ -969,15 +1252,19 @@ def _build_recovery_comment_text(
     category_phrase = _join_labels(categories, fallback="今回の記録")
     emotion_phrase = _join_labels(emotions, fallback="いまの感情")
     material_phrase = _material_phrase_from_route(visible_slots=visible_slots, relation_ids=relation_ids)
-    relations = set(_dedupe(relation_ids))
-    if material_quality == MATERIAL_QUALITY_LIMITED_GROUNDING:
-        closing = "原因や結論までは決めず、いま置かれた材料だけで受け取ります。"
-    elif relations.intersection({"relationship_end", "support_from_other", "support_received_material", "gratitude_or_return_intent"}):
+    _, closing_family_id = _gate_recovery_surface_family_ids(
+        material_quality=material_quality,
+        visible_slots=visible_slots,
+        relation_ids=relation_ids,
+    )
+    if closing_family_id == "low_information_humility_question_current_input_only":
+        closing = "原因や結論までは決めず、いま見えている重さだけで受け取ります。詳しく残せそうなら、どのあたりが重くなっているか残してみませんか。"
+    elif closing_family_id == "relationship_evaluation_blocked_current_input_only":
         closing = "誰かを良い悪いで決めず、そのつながりの動きを受け取ります。"
-    elif relations.intersection({"self_understanding_learning", "value_or_self_understanding_material"}):
+    elif closing_family_id == "self_understanding_non_conclusive_current_input_only":
         closing = "結論を急がず、変わり始めている感覚を受け取ります。"
     else:
-        closing = "原因を決めつけず、いま見えているつながりだけを受け取ります。"
+        closing = "原因や結論までは決めず、いま置かれた材料だけで受け取ります。"
     observation = (
         f"今回の入力では、{category_phrase}に関する記録として、{emotion_phrase}の向きが出ています。"
         f"{material_phrase}が一緒に置かれています。"
@@ -993,17 +1280,51 @@ def _gate_recovery_composer_meta(
     unknown_slots: Sequence[str],
     relation_ids: Sequence[str],
     policy: str,
+    recovery_context: str = "pre_public_display_gate",
+    post_final_gate_failure: bool = False,
 ) -> dict[str, Any]:
     relation_types = _dedupe(relation_ids) or ["current_input_material_bundle_recovery"]
+    response_kind = _response_kind_from_material_quality(_clean(material_quality)).value
+    source_phase = POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE
+    low_information = _clean(material_quality) == MATERIAL_QUALITY_LOW_INFORMATION
+    surface_binding = build_gate_recovery_surface_binding_meta(
+        material_quality=material_quality,
+        visible_slots=visible_slots,
+        unknown_slots=unknown_slots,
+        relation_ids=relation_ids,
+        policy=policy,
+        recovery_context=recovery_context,
+        post_final_gate_failure=post_final_gate_failure,
+    )
     return {
         "schema_version": "cocolon.emlis.phase20_5.gate_recovery_surface.v1",
-        "source_phase": GATE_RECOVERY_LOOP_SOURCE_PHASE,
-        "observation_reply_kind": ResponseKind.LIMITED_GROUNDING_OBSERVATION.value,
-        "response_kind": ResponseKind.LIMITED_GROUNDING_OBSERVATION.value,
+        "source_phase": source_phase,
+        "recovery_context": _clean(recovery_context) or "pre_public_display_gate",
+        "post_final_gate_failure": bool(post_final_gate_failure),
+        "observation_reply_kind": response_kind,
+        "response_kind": response_kind,
         "material_quality": _clean(material_quality),
+        "body_non_empty": True,
+        "comment_text_non_empty": True,
+        "known_scope_observation_present": True,
+        "low_info_known_scope_present": low_information,
+        "contains_humility_marker": low_information,
+        "humility_marker_present": low_information,
+        "contains_question": low_information,
+        "question_present": low_information,
+        "low_info_question_present": low_information,
+        "question_not_only": True,
+        "question_only": False,
+        "question_only_surface": False,
         "visible_material_slots": _dedupe(visible_slots),
         "unknown_slots": _dedupe(unknown_slots),
         "generic_relation_material_ids": relation_types,
+        GATE_RECOVERY_SURFACE_BINDING_META_KEY: surface_binding,
+        "gate_recovery_surface_binding": surface_binding,
+        "surface_generation_method": surface_binding["surface_generation_method"],
+        "surface_family_id": surface_binding["surface_family_id"],
+        "closing_family_id": surface_binding["closing_family_id"],
+        "gate_recovery_surface_binding_ready": True,
         "recovery_policy": _clean(policy),
         "coverage_scope": "current_input_material_bundle_recovery",
         "generation_scope": "current_input_only",
@@ -1017,7 +1338,10 @@ def _gate_recovery_composer_meta(
         },
         "surface_quality_signature": {
             "schema_version": "emlis.surface_quality_signature.v1",
-            "surface_signature_id": "phase20_5_gate_recovery_material_surface",
+            "surface_signature_id": f"phase20_5_gate_recovery_material_surface:{surface_binding['surface_pattern_family_id']}",
+            "surface_family_id": surface_binding["surface_family_id"],
+            "closing_family_id": surface_binding["closing_family_id"],
+            "surface_pattern_family_id": surface_binding["surface_pattern_family_id"],
             "surface_template_major": False,
             "template_major": False,
             "generic_center_phrase_count": 0,
@@ -1065,6 +1389,9 @@ def recover_emlis_gate_failure(
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
     visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
     trace_id: str = "",
+    recovery_context: str = "pre_public_display_gate",
+    post_final_gate_failure: bool = False,
+    allow_low_information_post_final_recovery: bool = False,
 ) -> GateRecoveryLoopResult:
     """Try one bounded Phase20-5 recovery without relaxing existing gates."""
 
@@ -1080,7 +1407,10 @@ def recover_emlis_gate_failure(
 
     route_meta = _material_route_meta(material_route)
     material_quality = _material_quality_from_meta(route_meta) or _clean(getattr(material_route, "material_quality", ""))
-    if material_quality not in {MATERIAL_QUALITY_ELIGIBLE, MATERIAL_QUALITY_LIMITED_GROUNDING}:
+    observable_material_qualities = {MATERIAL_QUALITY_ELIGIBLE, MATERIAL_QUALITY_LIMITED_GROUNDING}
+    if bool(post_final_gate_failure) and bool(allow_low_information_post_final_recovery):
+        observable_material_qualities.add(MATERIAL_QUALITY_LOW_INFORMATION)
+    if material_quality not in observable_material_qualities:
         return GateRecoveryLoopResult(False, display_decision, reader_report, grounding_report, template_echo_report, blocked_reasons=("material_quality_not_observable_for_gate_recovery",))
 
     planning_decision = build_gate_recovery_loop_decision(
@@ -1113,6 +1443,8 @@ def recover_emlis_gate_failure(
         unknown_slots=unknown_slots,
         relation_ids=relation_ids,
         policy=policy,
+        recovery_context=recovery_context,
+        post_final_gate_failure=post_final_gate_failure,
     )
     candidate = ConversationComposerCandidate(
         comment_text=comment,
@@ -1126,8 +1458,8 @@ def recover_emlis_gate_failure(
         rejection_reasons=[],
         response_schema_version="cocolon.emlis.phase20_5.gate_recovery.response.v1",
         fixed_string_renderer_used=False,
-        composer_model="phase20_5_gate_recovery_material_surface",
-        generation_method="phase20_5_gate_recovery_loop",
+        composer_model="phase20_13_post_final_gate_recovery_material_surface" if post_final_gate_failure else "phase20_5_gate_recovery_material_surface",
+        generation_method="phase20_13_post_final_gate_recovery_loop" if post_final_gate_failure else "phase20_5_gate_recovery_loop",
         coverage_scope="current_input_material_bundle_recovery",
         generation_scope="current_input_only",
         composer_meta=composer_meta,
@@ -1150,7 +1482,7 @@ def recover_emlis_gate_failure(
         reader_relation_signal_keys=relation_values,
         reader_relation_signal_relation_types=relation_values,
         expected_relation_types=relation_values,
-        reader_relation_signal_meta={"source_phase": GATE_RECOVERY_LOOP_SOURCE_PHASE, "raw_input_included": False},
+        reader_relation_signal_meta={"source_phase": POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE, "raw_input_included": False},
         raw_input_included=False,
     )
     claims = [
@@ -1192,7 +1524,7 @@ def recover_emlis_gate_failure(
         binding_version="cocolon.emlis.phase20_5.sentence_binding_bundle.v1",
         relation_types=relation_values,
         binding_supported_sentence_count=2,
-        binding_diagnostics={"source_phase": GATE_RECOVERY_LOOP_SOURCE_PHASE, "raw_input_included": False},
+        binding_diagnostics={"source_phase": POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE, "raw_input_included": False},
         declared_relation_types=relation_values,
         grounding_report_contract_version="cocolon.emlis.phase20_5.grounding_report.v1",
         gate_binding_contract_version="cocolon.emlis.phase20_5.binding_gate.v1",
@@ -1239,8 +1571,27 @@ def recover_emlis_gate_failure(
         composer_source="ai_generated",
         phase_completion_ready=True,
         binding_meta=composer_meta.get("sentence_binding_bundle"),
-        observation_reply_kind=ResponseKind.LIMITED_GROUNDING_OBSERVATION.value,
-        observation_quality_meta={"source_phase": GATE_RECOVERY_LOOP_SOURCE_PHASE, "material_quality": material_quality, "public_response_key_change": False},
+        observation_reply_kind=_response_kind_from_material_quality(material_quality).value,
+        observation_quality_meta={
+            "source_phase": POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE,
+            "material_quality": material_quality,
+            "public_response_key_change": False,
+            "body_non_empty": True,
+            "comment_text_non_empty": True,
+            "known_scope_observation_present": True,
+            "low_info_known_scope_present": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "contains_humility_marker": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "humility_marker_present": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "contains_question": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "question_present": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "low_info_question_present": material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
+            "question_not_only": True,
+            "question_only": False,
+            "question_only_surface": False,
+            "unknown_slots": _dedupe(unknown_slots),
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
         runtime_surface_pre_return_gate_report=runtime_gate,
         visible_surface_acceptance_gate_report=visible_gate,
     )
@@ -1275,6 +1626,7 @@ def recover_emlis_gate_failure(
         loop_decision=final_decision,
         recovery_policy=policy,
         blocked_reasons=(),
+        surface_binding_meta=composer_meta.get(GATE_RECOVERY_SURFACE_BINDING_META_KEY, {}),
     )
 
 def assert_gate_recovery_event_meta(meta: Mapping[str, Any]) -> None:
@@ -1410,6 +1762,11 @@ __all__ = [
     "GATE_RECOVERY_LOOP_META_KEY",
     "GATE_RECOVERY_LOOP_SCHEMA_VERSION",
     "GATE_RECOVERY_LOOP_SOURCE_PHASE",
+    "GATE_RECOVERY_SURFACE_BINDING_META_KEY",
+    "GATE_RECOVERY_SURFACE_BINDING_SCHEMA_VERSION",
+    "GATE_RECOVERY_SURFACE_BINDING_SOURCE_PHASE",
+    "GATE_RECOVERY_SURFACE_REPETITION_QA_SCHEMA_VERSION",
+    "GATE_RECOVERY_SURFACE_REPETITION_QA_SOURCE_PHASE",
     "GATE_VISIBLE_SURFACE_ACCEPTANCE",
     "GATE_GROUNDING",
     "GATE_TEMPLATE",
@@ -1431,10 +1788,14 @@ __all__ = [
     "assert_gate_recovery_event_meta",
     "assert_gate_recovery_loop_meta",
     "assert_gate_recovery_loop_meta_only",
+    "assert_gate_recovery_surface_binding_meta",
+    "assert_gate_recovery_surface_repetition_qa_report",
     "attach_gate_recovery_loop_meta",
     "build_gate_recovery_event",
     "build_gate_recovery_loop_decision",
     "build_gate_recovery_loop_report",
+    "build_gate_recovery_surface_binding_meta",
+    "build_gate_recovery_surface_repetition_qa_report",
     "dump_gate_recovery_loop_report",
     "recover_emlis_gate_failure",
     "gate_recovery_repair_attempts_from_events",

@@ -15,7 +15,7 @@ from uuid import uuid4
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
-from emlis_ai_response_contract import attach_emlis_internal_response_contract
+from emlis_ai_response_contract import ResponseKind, attach_emlis_internal_response_contract
 from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
 from emlis_ai_style_profile_service import build_style_profile
@@ -143,6 +143,17 @@ _STEP10_PHASE7_ROLLOUT_REJECTION_REASONS = {
 }
 _STEP10_PHASE7_ROLLOUT_REASON_CODES = {"rollout_stage_off", "rollout_stage_not_matched"}
 
+_PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY = "phase20_13_post_final_gate_recovery"
+_PHASE20_13_POST_FINAL_GATE_RECOVERY_SCHEMA_VERSION = "cocolon.emlis.post_final_gate_recovery.v1"
+_PHASE20_13_POST_FINAL_GATE_RECOVERY_SOURCE_PHASE = "Phase20-13_Post_Final_Gate_Recovery"
+_PHASE20_13_DISPLAYABLE_RESPONSE_KINDS = {
+    ResponseKind.NORMAL_OBSERVATION.value,
+    ResponseKind.LOW_INFORMATION_OBSERVATION.value,
+    ResponseKind.LIMITED_GROUNDING_OBSERVATION.value,
+    ResponseKind.SELF_DENIAL_SAFE_STATE_ANSWER.value,
+}
+_PHASE20_13_RECOVERABLE_MATERIAL_QUALITIES = {"eligible", "low_information", "limited_grounding"}
+
 
 _EMOTION_STRENGTH_DISPLAY_RE = re.compile(r"(喜び|悲しみ|怒り|不安|平穏|自己理解|恐れ|焦り)（(?:弱|中|強)）")
 
@@ -233,6 +244,131 @@ def _previous_emlis_outputs_from_bundle(bundle: SourceBundle) -> List[Dict[str, 
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _phase20_13_response_kind_from_route(
+    route_meta: Mapping[str, Any] | None,
+    *,
+    material_quality: str = "",
+    safety_triage_kind: str = "",
+) -> str:
+    triage = _clean(safety_triage_kind)
+    if triage == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        return ResponseKind.SELF_DENIAL_SAFE_STATE_ANSWER.value
+    meta = route_meta if isinstance(route_meta, Mapping) else {}
+    quality = _clean(material_quality) or _clean(meta.get("material_quality"))
+    if quality == "low_information":
+        return ResponseKind.LOW_INFORMATION_OBSERVATION.value
+    if quality == "limited_grounding":
+        return ResponseKind.LIMITED_GROUNDING_OBSERVATION.value
+    response_kind = _clean(meta.get("response_kind"))
+    if response_kind in _PHASE20_13_DISPLAYABLE_RESPONSE_KINDS:
+        return response_kind
+    return ResponseKind.NORMAL_OBSERVATION.value
+
+
+def _phase20_13_observation_quality_meta(*, material_quality: str, unknown_slots: Iterable[Any] | None = None) -> Dict[str, Any]:
+    unknown = _dedupe_reason_codes([str(v) for v in list(unknown_slots or []) if str(v or "").strip()]) or ["event"]
+    low_information = _clean(material_quality) == "low_information"
+    return {
+        "source_phase": _PHASE20_13_POST_FINAL_GATE_RECOVERY_SOURCE_PHASE,
+        "material_quality": _clean(material_quality),
+        "public_response_key_change": False,
+        "body_non_empty": True,
+        "comment_text_non_empty": True,
+        "known_scope_observation_present": True,
+        "low_info_known_scope_present": True,
+        "contains_humility_marker": True,
+        "humility_marker_present": True,
+        "contains_question": low_information,
+        "question_present": low_information,
+        "low_info_question_present": low_information,
+        "question_not_only": True,
+        "question_only": False,
+        "question_only_surface": False,
+        "unknown_slots": unknown,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _phase20_13_final_gate_name(
+    *,
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
+    visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
+) -> str:
+    visible = visible_surface_acceptance_gate_report if isinstance(visible_surface_acceptance_gate_report, Mapping) else {}
+    runtime = runtime_surface_pre_return_gate_report if isinstance(runtime_surface_pre_return_gate_report, Mapping) else {}
+    if visible and bool(visible.get("passed")) is False:
+        return "final_visible_surface_acceptance_gate"
+    if runtime and bool(runtime.get("passed")) is False:
+        return "final_pre_return_gate"
+    return "final_pre_return_gate"
+
+
+def _should_attempt_post_final_gate_recovery(
+    *,
+    display_decision: Any,
+    final_candidate_text: str,
+    safety_requires_block: bool,
+    safety_report: Any = None,
+    safety_triage_kind: str = "",
+    material_quality: str = "",
+    response_kind: str = "",
+    post_final_recovery_already_attempted: bool = False,
+) -> bool:
+    if bool(post_final_recovery_already_attempted):
+        return False
+    if str(getattr(display_decision, "observation_status", "") or "") == "passed":
+        return False
+    if not _clean(final_candidate_text):
+        return False
+    if bool(safety_requires_block) or bool(getattr(safety_report, "requires_block", False)):
+        return False
+    if _clean(safety_triage_kind) != TRIAGE_SAFE_OBSERVATION:
+        return False
+    if _clean(material_quality) not in _PHASE20_13_RECOVERABLE_MATERIAL_QUALITIES:
+        return False
+    if _clean(response_kind) not in _PHASE20_13_DISPLAYABLE_RESPONSE_KINDS:
+        return False
+    return True
+
+
+def _build_phase20_13_post_final_gate_recovery_meta(
+    *,
+    attempted: bool,
+    applied: bool,
+    original_final_status: str,
+    final_status_after_recovery: str,
+    response_kind: str,
+    material_quality: str,
+    recovery_policy: str,
+    from_gate: str,
+    blocked_reasons: Iterable[Any] | None = None,
+) -> Dict[str, Any]:
+    return {
+        "schema_version": _PHASE20_13_POST_FINAL_GATE_RECOVERY_SCHEMA_VERSION,
+        "source_phase": _PHASE20_13_POST_FINAL_GATE_RECOVERY_SOURCE_PHASE,
+        "attempted": bool(attempted),
+        "applied": bool(applied),
+        "attempt_count": 1 if attempted else 0,
+        "original_final_status": _clean(original_final_status),
+        "final_status_after_recovery": _clean(final_status_after_recovery),
+        "response_kind": _clean(response_kind),
+        "material_quality": _clean(material_quality),
+        "recovery_policy": _clean(recovery_policy),
+        "from_gate": _clean(from_gate) or "final_pre_return_gate",
+        "display_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "fixed_fallback_used": False,
+        "public_response_key_change": False,
+        "comment_text_body_included": False,
+        "raw_input_included": False,
+        "empty_comment_text_exit_allowed": False,
+        "blocked_reasons": _dedupe_reason_codes(blocked_reasons or []),
+    }
 
 
 def _evidence_ids_from_observation_graph(graph: Any) -> List[str]:
@@ -5487,9 +5623,14 @@ async def render_emlis_ai_reply(
     """Render an immediate Emlis observation using the multi-perspective pipeline.
 
     This path deliberately does not call the legacy observation kernel, legacy
-    safe fallback, or input_feedback_text_templates. If the generated text does
-    not pass the reader/grounding/template gates, it returns an empty
-    ``comment_text`` with ``observation_status`` set to rejected/safety_blocked.
+    safe fallback, or input_feedback_text_templates. Display, safety, grounding,
+    template, runtime-surface, and visible-surface gates remain fail-closed.
+
+    For displayable response kinds, gate failures are routed through bounded
+    repair before any public empty exit is accepted: surface shortening,
+    grounding narrowing, assertion softening, low-information observation, or a
+    safe state answer. Empty ``comment_text`` is reserved for emergency safety,
+    infrastructure failure, or unrecoverable non-displayable terminal states.
     """
 
     trace_id = f"emlisobs-{uuid4().hex[:16]}"
@@ -5617,11 +5758,13 @@ async def render_emlis_ai_reply(
         grounding_allowed_evidence_span_ids = _evidence_ids_from_observation_graph(grounding_graph)
 
 
-    # Phase 8: run Display Gate as the final fail-closed boundary.  The gate may
+    # Phase 8: run Display Gate as a fail-closed candidate boundary.  The gate may
     # allow a Composer AI candidate only when every judge passes, the source is
     # ai_generated, and the pipeline phases through Judge are structurally ready.
-    # On judge rejection, a single regeneration attempt may be requested with
-    # rejection reason codes only.  No sample text or fallback observation is sent.
+    # On judge rejection, this boundary may request regeneration with rejection
+    # reason codes only.  It never emits sample text or fixed fallback observation;
+    # later Phase20 bounded repair / gate recovery decides whether a displayable
+    # response kind can still reach a safe ``passed + comment_text`` surface.
     phase5_ready = bool(phase4_observer_contract_ready(reports, evidence_spans) and phase5_board_contract_ready(board) and phase5_observation_graph_ready(board, graph))
     phase6_contract_ready = bool(phase5_ready and phase6_composer_contract_ready())
     composer_candidate = None
@@ -5883,11 +6026,20 @@ async def render_emlis_ai_reply(
             grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
     self_denial_safe_state_answer_result = None
+    phase20_13_post_final_gate_recovery_meta: Dict[str, Any] | None = None
+    phase20_13_post_final_response_kind = ""
+    phase20_13_post_final_gate_recovery_attempted = False
 
     # Step 2 final pre-return enforcement.  Low-information repair may replace
     # the candidate after the first display decision, so the exact final public
     # candidate is re-checked by the runtime surface gate before returning.
     final_candidate_text = str(display_decision.comment_text or "").strip()
+    post_final_recovery_candidate_text = final_candidate_text
+    post_final_precheck_reader_report = reader_report
+    post_final_precheck_grounding_report = grounding_report
+    post_final_precheck_template_echo_report = template_echo_report
+    post_final_precheck_composer_candidate = composer_candidate
+    post_final_precheck_composer_source = composer_source
     if final_candidate_text and str(display_decision.observation_status or "") == "passed":
         runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
             comment_text=final_candidate_text,
@@ -5928,6 +6080,163 @@ async def render_emlis_ai_reply(
             visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
         )
 
+    phase20_13_material_quality = str(phase20_3_material_route_meta.get("material_quality") or "").strip()
+    phase20_13_response_kind = _phase20_13_response_kind_from_route(
+        phase20_3_material_route_meta,
+        material_quality=phase20_13_material_quality,
+        safety_triage_kind=safety_triage_decision.safety_triage_kind,
+    )
+    phase20_13_original_final_status = str(getattr(display_decision, "observation_status", "") or "")
+    phase20_13_original_final_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
+    phase20_13_from_gate = _phase20_13_final_gate_name(
+        runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+        visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
+    )
+    if _should_attempt_post_final_gate_recovery(
+        display_decision=display_decision,
+        final_candidate_text=post_final_recovery_candidate_text,
+        safety_requires_block=safety_requires_block,
+        safety_report=safety_report,
+        safety_triage_kind=safety_triage_decision.safety_triage_kind,
+        material_quality=phase20_13_material_quality,
+        response_kind=phase20_13_response_kind,
+        post_final_recovery_already_attempted=phase20_13_post_final_gate_recovery_attempted,
+    ):
+        phase20_13_post_final_gate_recovery_attempted = True
+        phase20_13_recovery_policy = (
+            "low_information_post_final_recheck"
+            if phase20_13_material_quality == "low_information"
+            else "limited_grounding_post_final_recheck"
+            if phase20_13_material_quality == "limited_grounding"
+            else "normal_observation_post_final_recheck"
+        )
+        phase20_13_unknown_slots = []
+        phase20_3_input_bundle = phase20_3_material_route_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
+        if isinstance(phase20_3_input_bundle, Mapping):
+            phase20_13_unknown_slots = list(phase20_3_input_bundle.get("unknown_slots") or [])
+        recovered_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+            comment_text=post_final_recovery_candidate_text,
+            composer_candidate=post_final_precheck_composer_candidate,
+            composer_source=post_final_precheck_composer_source,
+            rerender_attempted=True,
+        )
+        recovered_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+            comment_text=post_final_recovery_candidate_text,
+            current_input=current_input,
+            composer_candidate=post_final_precheck_composer_candidate,
+            composer_source=post_final_precheck_composer_source,
+            rerender_attempted=True,
+        )
+        post_final_binding_meta = build_limited_composer_binding_presence_meta(
+            composer_candidate=post_final_precheck_composer_candidate,
+        )
+        post_final_recovered_display_decision = decide_emlis_observation_display(
+            comment_text=post_final_recovery_candidate_text,
+            reader_report=post_final_precheck_reader_report,
+            grounding_report=post_final_precheck_grounding_report,
+            template_echo_report=post_final_precheck_template_echo_report,
+            safety_report=safety_report,
+            trace_id=trace_id,
+            composer_source=post_final_precheck_composer_source,
+            phase_completion_ready=True,
+            binding_meta=post_final_binding_meta,
+            observation_reply_kind=phase20_13_response_kind,
+            observation_quality_meta=_phase20_13_observation_quality_meta(
+                material_quality=phase20_13_material_quality,
+                unknown_slots=phase20_13_unknown_slots,
+            ),
+            observation_structure_gate_report=observation_structure_gate_report,
+            runtime_surface_pre_return_gate_report=recovered_runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=recovered_visible_surface_acceptance_gate_report,
+        )
+        if (
+            phase20_13_material_quality != "low_information"
+            and str(getattr(post_final_recovered_display_decision, "observation_status", "") or "") == "passed"
+        ):
+            display_decision = post_final_recovered_display_decision
+            reader_report = post_final_precheck_reader_report
+            grounding_report = post_final_precheck_grounding_report
+            template_echo_report = post_final_precheck_template_echo_report
+            composer_candidate = post_final_precheck_composer_candidate
+            composer_source = post_final_precheck_composer_source
+            runtime_surface_pre_return_gate_report = dict(recovered_runtime_surface_pre_return_gate_report or {})
+            visible_surface_acceptance_gate_report = dict(recovered_visible_surface_acceptance_gate_report or {})
+            phase20_13_post_final_response_kind = phase20_13_response_kind
+            phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                attempted=True,
+                applied=True,
+                original_final_status=phase20_13_original_final_status,
+                final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                response_kind=phase20_13_response_kind,
+                material_quality=phase20_13_material_quality,
+                recovery_policy=phase20_13_recovery_policy,
+                from_gate=phase20_13_from_gate,
+                blocked_reasons=phase20_13_original_final_reasons,
+            )
+        else:
+            post_final_gate_recovery_seed_decision = (
+                display_decision
+                if phase20_13_material_quality == "low_information"
+                and str(getattr(post_final_recovered_display_decision, "observation_status", "") or "") == "passed"
+                else post_final_recovered_display_decision
+            )
+            post_final_gate_recovery_result = recover_emlis_gate_failure(
+                current_input=current_input if isinstance(current_input, Mapping) else {},
+                display_decision=post_final_gate_recovery_seed_decision,
+                reader_report=post_final_precheck_reader_report,
+                grounding_report=post_final_precheck_grounding_report,
+                template_echo_report=post_final_precheck_template_echo_report,
+                material_route=phase20_3_material_route,
+                safety_triage_kind=safety_triage_decision.safety_triage_kind,
+                safety_report=safety_report,
+                runtime_surface_pre_return_gate_report=recovered_runtime_surface_pre_return_gate_report,
+                visible_surface_acceptance_gate_report=recovered_visible_surface_acceptance_gate_report,
+                trace_id=trace_id,
+                recovery_context="post_final_pre_return_gate",
+                post_final_gate_failure=True,
+                allow_low_information_post_final_recovery=True,
+            )
+            if post_final_gate_recovery_result.applied:
+                display_decision = post_final_gate_recovery_result.display_decision
+                reader_report = post_final_gate_recovery_result.reader_report
+                grounding_report = post_final_gate_recovery_result.grounding_report
+                template_echo_report = post_final_gate_recovery_result.template_echo_report
+                composer_candidate = post_final_gate_recovery_result.composer_candidate
+                composer_source = post_final_gate_recovery_result.composer_source
+                runtime_surface_pre_return_gate_report = dict(post_final_gate_recovery_result.runtime_surface_pre_return_gate_report or {})
+                visible_surface_acceptance_gate_report = dict(post_final_gate_recovery_result.visible_surface_acceptance_gate_report or {})
+                grounding_graph = graph
+                grounding_scope = "post_final_current_input_material_bundle_recovery"
+                grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+                phase20_13_post_final_response_kind = phase20_13_response_kind
+                phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                    attempted=True,
+                    applied=True,
+                    original_final_status=phase20_13_original_final_status,
+                    final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                    response_kind=phase20_13_response_kind,
+                    material_quality=phase20_13_material_quality,
+                    recovery_policy=str(post_final_gate_recovery_result.recovery_policy or "post_final_gate_recovery_loop"),
+                    from_gate=phase20_13_from_gate,
+                    blocked_reasons=phase20_13_original_final_reasons,
+                )
+            else:
+                phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                    attempted=True,
+                    applied=False,
+                    original_final_status=phase20_13_original_final_status,
+                    final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                    response_kind=phase20_13_response_kind,
+                    material_quality=phase20_13_material_quality,
+                    recovery_policy=phase20_13_recovery_policy,
+                    from_gate=phase20_13_from_gate,
+                    blocked_reasons=(
+                        _dedupe_reason_codes(getattr(post_final_recovered_display_decision, "rejection_reasons", []) or [])
+                        or _dedupe_reason_codes(getattr(post_final_gate_recovery_result, "blocked_reasons", []) or [])
+                        or phase20_13_original_final_reasons
+                    ),
+                )
+
     if (
         str(getattr(display_decision, "observation_status", "") or "") != "passed"
         and safety_triage_decision.safety_triage_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
@@ -5966,7 +6275,9 @@ async def render_emlis_ai_reply(
             grounding_scope = "current_input_self_denial_safe_state"
             grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
-    # No fixed fallback. The display gate is fail-closed.
+    # No fixed fallback. Display gates remain fail-closed; displayable response
+    # kinds must pass bounded repair / recovery before any empty public exit is
+    # accepted.
     final_text = str(display_decision.comment_text or "").strip()
     meta = _multi_perspective_meta(
         trace_id=trace_id,
@@ -6028,6 +6339,27 @@ async def render_emlis_ai_reply(
         if str(getattr(display_decision, "observation_status", "") or "") == "passed":
             meta["observation_reply_kind"] = SELF_DENIAL_SAFE_STATE_OBSERVATION_REPLY_KIND
     meta = attach_observation_display_repair_meta(meta, observation_display_repair_result)
+    if phase20_13_post_final_gate_recovery_meta is not None:
+        meta[_PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY] = dict(phase20_13_post_final_gate_recovery_meta)
+        if phase20_13_post_final_response_kind:
+            meta["observation_reply_kind"] = phase20_13_post_final_response_kind
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"][_PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY] = dict(
+                phase20_13_post_final_gate_recovery_meta
+            )
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "phase20_13_post_final_gate_recovery_attempted": bool(
+                        phase20_13_post_final_gate_recovery_meta.get("attempted")
+                    ),
+                    "phase20_13_post_final_gate_recovery_applied": bool(
+                        phase20_13_post_final_gate_recovery_meta.get("applied")
+                    ),
+                    "phase20_13_post_final_gate_recovery_public_response_key_change": False,
+                    "phase20_13_post_final_gate_recovery_fixed_fallback_used": False,
+                }
+            )
     phase20_5_gate_recovery_loop = build_gate_recovery_loop_decision(
         original_display_decision=phase20_5_original_display_decision,
         final_display_decision=display_decision,
