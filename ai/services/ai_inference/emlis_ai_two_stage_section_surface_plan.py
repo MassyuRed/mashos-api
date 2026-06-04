@@ -31,6 +31,13 @@ EMLIS_TWO_STAGE_MODE_CONTEXT_SCHEMA_VERSION: Final = "cocolon.emlis.two_stage.mo
 EMLIS_TWO_STAGE_MODE_CONTEXT_SOURCE_PHASE: Final = "Phase18_product_quality_stabilization"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID: Final = "daily_unpleasant_reception"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: Final = "daily_unpleasant_reception_light"
+EMLIS_TWO_STAGE_DAILY_POSITIVE_RATIO_REASON: Final = "daily_positive_reception_light"
+EMLIS_TWO_STAGE_SELF_DENIAL_RATIO_REASON: Final = "self_denial_follow_thickened"
+EMLIS_TWO_STAGE_UNCERTAINTY_RATIO_REASON: Final = "self_confidence_uncertainty_follow_thickened"
+EMLIS_TWO_STAGE_LOW_INFORMATION_RATIO_REASON: Final = "low_information_light_prompt"
+EMLIS_TWO_STAGE_STRUCTURE_QUESTION_RATIO_REASON: Final = "structure_question_observation_thickened"
+EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID: Final = "structure_question_observation"
+EMLIS_TWO_STAGE_SELF_UNDERSTANDING_MODE_ID: Final = "self_understanding_follow"
 EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_MODE_ID: Final = "generic_sentence_plan_surface"
 EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_SOURCE_PHASE: Final = "Phase20-6_Generic_SentencePlan_Surface_Realizer"
 EMLIS_TWO_STAGE_OBSERVATION_DISPLAY_LABEL: Final = "見えたこと"
@@ -84,6 +91,18 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
         "reception_min": 2,
         "reception_max": 2,
     },
+    EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID: {
+        "observation_min": 1,
+        "observation_max": 1,
+        "reception_min": 2,
+        "reception_max": 2,
+    },
+    "low_information_question": {
+        "observation_min": 1,
+        "observation_max": 1,
+        "reception_min": 1,
+        "reception_max": 1,
+    },
     "generic_sentence_plan_surface": dict(_MODE_SECTION_BUDGET_DEFAULT),
     "standard_state_answer": {
         "observation_min": 1,
@@ -108,6 +127,11 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
 _PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON: Final = "generic_relation_material"
 _RECEPTION_MODE_BY_RATIO_REASON: Final = {
     EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RATIO_REASON: EMLIS_TWO_STAGE_DAILY_UNPLEASANT_RECEPTION_MODE_ID,
+    EMLIS_TWO_STAGE_DAILY_POSITIVE_RATIO_REASON: "daily_positive_reception",
+    EMLIS_TWO_STAGE_SELF_DENIAL_RATIO_REASON: "self_denial_support",
+    EMLIS_TWO_STAGE_UNCERTAINTY_RATIO_REASON: "uncertainty_support",
+    EMLIS_TWO_STAGE_LOW_INFORMATION_RATIO_REASON: "low_information_question",
+    EMLIS_TWO_STAGE_STRUCTURE_QUESTION_RATIO_REASON: EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID,
     _PHASE20_GENERIC_RELATION_MATERIAL_RATIO_REASON: EMLIS_TWO_STAGE_GENERIC_SENTENCE_PLAN_SURFACE_MODE_ID,
 }
 
@@ -354,12 +378,104 @@ def build_two_stage_section_budget_policy(
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_body_included": False,
+        "phase10_structure_insight_surface_connection_supported": True,
+        "phase10_structure_insight_surface_limited_family_only": True,
+        "phase10_structure_insight_surface_deep_insight_for_daily_unpleasant": False,
+        "phase10_structure_insight_surface_deep_insight_for_low_information": False,
         "comment_text_generated": False,
         "completed_reply_template_used": False,
         "fixed_sentence_template_used": False,
         "display_gate_relaxed": False,
         "grounding_gate_relaxed": False,
     }
+
+def _default_observation_surface_intents(reception_mode_id: str) -> list[str]:
+    mode = _clean(reception_mode_id)
+    if mode == "daily_positive_reception":
+        return [
+            "brief_current_input_observation",
+            "positive_change_seen_without_heavy_analysis",
+            "joy_or_relief_temperature_kept",
+        ]
+    if mode == "daily_unpleasant_reception":
+        return [
+            "brief_current_input_observation",
+            "event_and_reaction_seen_without_over_explaining",
+            "target_judgement_agreement_forbidden",
+            "structure_insight_deep_surface_suppressed",
+        ]
+    if mode in {"self_denial_support", "uncertainty_support"}:
+        return [
+            "brief_current_input_observation",
+            "felt_state_seen_without_identity_claim",
+            "attempt_or_uncertainty_not_lost",
+        ]
+    if mode == "low_information_question":
+        return [
+            "visible_scope_only_observation",
+            "light_detail_prompt_kept_for_reception",
+            "structure_insight_deep_surface_suppressed",
+        ]
+    if mode in {EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID, EMLIS_TWO_STAGE_SELF_UNDERSTANDING_MODE_ID}:
+        return [
+            "brief_current_input_observation",
+            "structure_insight_surface_limited_family",
+            "observation_insight_seed",
+            "soft_inference_surface_required",
+            "single_record_scope_only",
+        ]
+    return [
+        "brief_current_input_observation",
+        "reaction_and_event_seen_without_over_explaining",
+    ]
+
+
+def _default_reception_surface_intents(reception_mode_id: str) -> list[str]:
+    mode = _clean(reception_mode_id)
+    if mode == "daily_positive_reception":
+        return [
+            "positive_emotion_received",
+            "positive_change_not_over_analyzed",
+            "restriction_not_action_instruction",
+        ]
+    if mode == "daily_unpleasant_reception":
+        return [
+            "explicit_reaction_receiving",
+            "fear_or_anger_temperature_kept",
+            "not_over_explaining_daily_event",
+            "structure_insight_deep_surface_suppressed",
+        ]
+    if mode == "self_denial_support":
+        return [
+            "self_denial_not_accepted_as_fact",
+            "felt_state_received",
+            "effort_or_attempt_received",
+        ]
+    if mode == "uncertainty_support":
+        return [
+            "uncertainty_received",
+            "effort_or_attempt_received",
+            "future_failure_claim_forbidden",
+        ]
+    if mode == "low_information_question":
+        return [
+            "visible_scope_only_reception",
+            "light_detail_prompt_if_possible",
+            "structure_insight_deep_surface_suppressed",
+        ]
+    if mode in {EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID, EMLIS_TWO_STAGE_SELF_UNDERSTANDING_MODE_ID}:
+        return [
+            "structure_insight_temperature_support",
+            "soft_observation_not_fact_claim",
+            "overclaim_diagnosis_personality_forbidden",
+            "fixed_template_reception_forbidden",
+        ]
+    return [
+        "explicit_reaction_receiving",
+        "fear_or_load_understanding",
+        "not_over_explaining_daily_event",
+    ]
+
 
 def _observation_section_plan(
     *,
@@ -419,10 +535,7 @@ def _observation_section_plan(
                 "action_instruction",
             ]
         ),
-        "allowed_surface_intents": [
-            "brief_current_input_observation",
-            "reaction_and_event_seen_without_over_explaining",
-        ],
+        "allowed_surface_intents": _default_observation_surface_intents(reception_mode_id),
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_generated": False,
@@ -497,11 +610,7 @@ def _reception_section_plan(
         "allowed_surface_intents": _dedupe(
             role_section.get("allowed_surface_intents")
             or follow_keys
-            or [
-                "explicit_reaction_receiving",
-                "fear_or_load_understanding",
-                "not_over_explaining_daily_event",
-            ]
+            or _default_reception_surface_intents(reception_mode_id)
         ),
         "raw_input_included": False,
         "raw_text_included": False,

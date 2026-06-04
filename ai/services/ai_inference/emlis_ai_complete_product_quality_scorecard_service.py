@@ -55,6 +55,38 @@ from emlis_ai_observation_exit_gate_handoff import (
     build_observation_exit_gate_handoff,
     normalize_observation_exit_gate_handoff_to_scorecard_fields,
 )
+from emlis_ai_product_readfeel_current_output_inventory import (
+    PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_STEP,
+    PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_VERSION,
+    build_product_readfeel_current_output_inventory,
+    normalize_product_readfeel_current_output_inventory_to_scorecard_fields,
+)
+from emlis_ai_product_readfeel_rubric import (
+    PRODUCT_READFEEL_RUBRIC_STEP,
+    PRODUCT_READFEEL_RUBRIC_VERSION,
+    aggregate_product_readfeel_blind_qa_reviews,
+    build_product_readfeel_rubric,
+    normalize_product_readfeel_rubric_to_scorecard_fields,
+)
+from emlis_ai_product_readfeel_scorecard import (
+    PRODUCT_READFEEL_SCORECARD_STEP,
+    PRODUCT_READFEEL_SCORECARD_VERSION,
+    build_product_readfeel_scorecard,
+    normalize_product_readfeel_scorecard_to_scorecard_fields,
+)
+from emlis_ai_product_readfeel_long_run_product_gate import (
+    PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP,
+    PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION,
+    build_product_readfeel_long_run_product_gate,
+    normalize_product_readfeel_long_run_product_gate_to_scorecard_fields,
+)
+from emlis_ai_mirror_only_surface_detector import (
+    MIRROR_ONLY_SURFACE_DETECTOR_STEP,
+    MIRROR_ONLY_SURFACE_DETECTOR_VERSION,
+    build_mirror_only_surface_detector_summary,
+    enrich_events_with_mirror_only_surface_detection,
+    normalize_mirror_only_surface_detector_summary_to_scorecard_fields,
+)
 
 COMPLETE_PRODUCT_QUALITY_SCORECARD_VERSION = "emlis.complete_product_quality_scorecard.v1"
 COMPLETE_PRODUCT_QUALITY_SCORECARD_STAGE = "Step6_Scorecard_Blind_QA"
@@ -76,6 +108,8 @@ COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_SELF_REPAIR_VERSION = RUNTIME_SURFACE_S
 COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_SELF_REPAIR_STEP = RUNTIME_SURFACE_SELF_REPAIR_STEP
 COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION = RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION
 COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP = RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP
+COMPLETE_PRODUCT_QUALITY_PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION = PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION
+COMPLETE_PRODUCT_QUALITY_PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP = PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP
 
 COMPLETE_PRODUCT_QUALITY_CONNECTION_DISPLAY_TARGET = 0.80
 COMPLETE_PRODUCT_GATE_DISPLAY_TARGET = 0.90
@@ -83,6 +117,41 @@ COMPLETE_PRODUCT_QUALITY_BINDING_TARGET = 0.98
 COMPLETE_PRODUCT_QUALITY_READ_FEELING_INITIAL_TARGET = 0.85
 COMPLETE_PRODUCT_QUALITY_READ_FEELING_PRODUCT_TARGET = 0.90
 COMPLETE_PRODUCT_QUALITY_REASON_COVERAGE_TARGET = 1.0
+
+_PRODUCT_QUALITY_META_ONLY_TEXT_PAYLOAD_KEYS = frozenset({
+    "raw_input",
+    "raw_text",
+    "memo",
+    "memo_body",
+    "memo_action",
+    "memo_action_body",
+    "emotion_details",
+    "emotion_details_body",
+    "evidence_text",
+    "comment_text",
+    "comment_text_body",
+    "surface_text",
+    "display_body",
+    "observation_text",
+    "reception_text",
+    "response_body",
+    "text_body",
+    "body",
+})
+
+
+def _strip_product_quality_text_payload_keys(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _strip_product_quality_text_payload_keys(item)
+            for key, item in value.items()
+            if str(key) not in _PRODUCT_QUALITY_META_ONLY_TEXT_PAYLOAD_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_product_quality_text_payload_keys(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_product_quality_text_payload_keys(item) for item in value)
+    return value
 
 _PRODUCT_QUALITY_DIMENSIONS: Sequence[str] = (
     "read_feeling",
@@ -928,7 +997,7 @@ def _normalize_records(
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
     for record in raw_records:
-        item = _normalize_product_quality_event(record)
+        item = _normalize_product_quality_event(_strip_product_quality_text_payload_keys(record))
         if not item:
             continue
         signature = repr(sorted((k, v) for k, v in item.items() if k != "reason_counter"))
@@ -1371,6 +1440,57 @@ def build_complete_product_quality_scorecard(
     observation_exit_gate_handoff_fields = normalize_observation_exit_gate_handoff_to_scorecard_fields(
         observation_exit_gate_handoff
     )
+    product_readfeel_source_events = list(observation_scorecard_source_events or events)
+    product_readfeel_mirror_only_surface_detector_summary = build_mirror_only_surface_detector_summary(
+        events=product_readfeel_source_events,
+    )
+    product_readfeel_mirror_only_surface_detector_fields = (
+        normalize_mirror_only_surface_detector_summary_to_scorecard_fields(
+            product_readfeel_mirror_only_surface_detector_summary
+        )
+    )
+    product_readfeel_events_with_phase6_mirror_detector = enrich_events_with_mirror_only_surface_detection(
+        product_readfeel_source_events,
+    )
+    product_readfeel_current_output_inventory = build_product_readfeel_current_output_inventory(
+        events=product_readfeel_events_with_phase6_mirror_detector,
+        blind_qa_reviews=blind_qa_review_records,
+    )
+    product_readfeel_current_output_inventory_fields = (
+        normalize_product_readfeel_current_output_inventory_to_scorecard_fields(
+            product_readfeel_current_output_inventory
+        )
+    )
+    product_readfeel_rubric = build_product_readfeel_rubric()
+    product_readfeel_blind_qa = aggregate_product_readfeel_blind_qa_reviews(blind_qa_review_records)
+    product_readfeel_rubric_fields = normalize_product_readfeel_rubric_to_scorecard_fields(
+        product_readfeel_rubric,
+        product_readfeel_blind_qa,
+    )
+    product_readfeel_scorecard_current_output_inventory = build_product_readfeel_current_output_inventory(
+        events=product_readfeel_events_with_phase6_mirror_detector,
+    )
+    product_readfeel_scorecard = build_product_readfeel_scorecard(
+        events=product_readfeel_events_with_phase6_mirror_detector,
+        blind_qa_reviews=blind_qa_review_records,
+        machine_metrics=machine,
+        current_output_inventory=product_readfeel_scorecard_current_output_inventory,
+        blind_qa_aggregate=product_readfeel_blind_qa,
+    )
+    product_readfeel_scorecard_fields = normalize_product_readfeel_scorecard_to_scorecard_fields(
+        product_readfeel_scorecard
+    )
+    product_readfeel_long_run_product_gate = build_product_readfeel_long_run_product_gate(
+        events=product_readfeel_events_with_phase6_mirror_detector,
+        product_readfeel_scorecard=product_readfeel_scorecard,
+        runtime_long_run_summary=runtime_surface_blind_qa_long_run,
+        blind_qa_aggregate=product_readfeel_blind_qa,
+    )
+    product_readfeel_long_run_product_gate_fields = (
+        normalize_product_readfeel_long_run_product_gate_to_scorecard_fields(
+            product_readfeel_long_run_product_gate
+        )
+    )
     rubric = build_complete_product_quality_blind_qa_rubric()
 
     display_reach_rate = float(machine.get("display_reach_rate") or 0.0)
@@ -1533,6 +1653,317 @@ def build_complete_product_quality_scorecard(
         "blind_qa_missing_count": runtime_surface_blind_qa_long_run_fields.get("blind_qa_missing_count"),
         "step11_qa_gaps": list(runtime_surface_blind_qa_long_run_fields.get("qa_gaps") or []),
         "step11_release_blockers": list(runtime_surface_blind_qa_long_run_fields.get("step11_release_blockers") or []),
+        "product_readfeel_current_output_inventory_version": PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_VERSION,
+        "product_readfeel_current_output_inventory_step": PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_STEP,
+        "phase1_product_readfeel_current_output_inventory": product_readfeel_current_output_inventory,
+        "phase1_product_readfeel_current_output_inventory_fields": product_readfeel_current_output_inventory_fields,
+        "phase1_product_readfeel_current_output_inventory_ready": bool(
+            product_readfeel_current_output_inventory_fields.get(
+                "phase1_product_readfeel_current_output_inventory_ready"
+            )
+        ),
+        "product_readfeel_phase1_ready": bool(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_phase1_ready")
+        ),
+        "product_readfeel_family_verdicts": dict(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_family_verdicts") or {}
+        ),
+        "product_readfeel_observed_families": list(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_observed_families") or []
+        ),
+        "product_readfeel_missing_families": list(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_missing_families") or []
+        ),
+        "product_readfeel_failure_bucket_counts": dict(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_failure_bucket_counts") or {}
+        ),
+        "product_readfeel_display_not_reached_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_display_not_reached_count"
+        ),
+        "product_readfeel_contract_violation_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_contract_violation_count"
+        ),
+        "product_readfeel_surface_breakage_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_surface_breakage_count"
+        ),
+        "product_readfeel_readfeel_gap_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_readfeel_gap_count"
+        ),
+        "product_readfeel_structure_insight_gap_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_structure_insight_gap_count"
+        ),
+        "product_readfeel_mirror_only_detected_count": product_readfeel_current_output_inventory_fields.get(
+            "product_readfeel_mirror_only_detected_count"
+        ),
+        "product_readfeel_v1_fix_families": list(
+            product_readfeel_current_output_inventory_fields.get("product_readfeel_v1_fix_families") or []
+        ),
+        "product_readfeel_v2_structure_insight_backlog_families": list(
+            product_readfeel_current_output_inventory_fields.get(
+                "product_readfeel_v2_structure_insight_backlog_families"
+            )
+            or []
+        ),
+        "product_readfeel_mirror_only_surface_detector_version": MIRROR_ONLY_SURFACE_DETECTOR_VERSION,
+        "product_readfeel_mirror_only_surface_detector_step": MIRROR_ONLY_SURFACE_DETECTOR_STEP,
+        "phase6_product_readfeel_mirror_only_surface_detector": product_readfeel_mirror_only_surface_detector_summary,
+        "phase6_product_readfeel_mirror_only_surface_detector_fields": product_readfeel_mirror_only_surface_detector_fields,
+        "phase6_mirror_only_detector_ready": bool(
+            product_readfeel_mirror_only_surface_detector_fields.get("phase6_mirror_only_detector_ready")
+        ),
+        "phase6_product_readfeel_mirror_only_detector_ready": bool(
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "phase6_product_readfeel_mirror_only_detector_ready"
+            )
+        ),
+        "product_readfeel_phase6_ready": bool(
+            product_readfeel_mirror_only_surface_detector_fields.get("product_readfeel_phase6_ready")
+        ),
+        "product_readfeel_mirror_only_report_count": product_readfeel_mirror_only_surface_detector_fields.get(
+            "product_readfeel_mirror_only_report_count"
+        ),
+        "product_readfeel_mirror_only_evaluated_count": product_readfeel_mirror_only_surface_detector_fields.get(
+            "product_readfeel_mirror_only_evaluated_count"
+        ),
+        "product_readfeel_mirror_only_surface_detected_count": product_readfeel_mirror_only_surface_detector_fields.get(
+            "product_readfeel_mirror_only_detected_count"
+        ),
+        "product_readfeel_mirror_only_v1_yellow_or_repair_connected_count": (
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "product_readfeel_mirror_only_v1_yellow_or_repair_connected_count"
+            )
+        ),
+        "product_readfeel_mirror_only_v1_repair_required_count": (
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "product_readfeel_mirror_only_v1_repair_required_count"
+            )
+        ),
+        "product_readfeel_mirror_only_v2_insight_delta_gap_count": (
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "product_readfeel_mirror_only_v2_insight_delta_gap_count"
+            )
+        ),
+        "product_readfeel_mirror_only_detected_families": list(
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "product_readfeel_mirror_only_detected_families"
+            )
+            or []
+        ),
+        "product_readfeel_mirror_only_family_detected_counts": dict(
+            product_readfeel_mirror_only_surface_detector_fields.get(
+                "product_readfeel_mirror_only_family_detected_counts"
+            )
+            or {}
+        ),
+        "product_readfeel_rubric_version": PRODUCT_READFEEL_RUBRIC_VERSION,
+        "product_readfeel_rubric_step": PRODUCT_READFEEL_RUBRIC_STEP,
+        "phase2_product_readfeel_rubric": product_readfeel_rubric,
+        "phase2_product_readfeel_blind_qa_metrics": product_readfeel_blind_qa,
+        "phase2_product_readfeel_rubric_fields": product_readfeel_rubric_fields,
+        "phase2_product_readfeel_rubric_ready": bool(
+            product_readfeel_rubric_fields.get("phase2_product_readfeel_rubric_ready")
+        ),
+        "product_readfeel_phase2_ready": bool(
+            product_readfeel_rubric_fields.get("product_readfeel_phase2_ready")
+        ),
+        "product_readfeel_rubric_implementation_decision": (
+            product_readfeel_rubric_fields.get("product_readfeel_rubric_implementation_decision")
+            or product_readfeel_rubric.get("implementation_decision")
+        ),
+        "product_readfeel_machine_metrics_separated_from_blind_qa": product_readfeel_rubric_fields.get(
+            "product_readfeel_machine_metrics_separated_from_blind_qa"
+        ),
+        "product_readfeel_read_feeling_requires_blind_qa": product_readfeel_rubric_fields.get(
+            "product_readfeel_read_feeling_requires_blind_qa"
+        ),
+        "product_readfeel_read_feeling_source": product_readfeel_rubric_fields.get(
+            "product_readfeel_read_feeling_source"
+        ),
+        "product_readfeel_read_feeling_score": product_readfeel_rubric_fields.get(
+            "product_readfeel_read_feeling_score"
+        ),
+        "product_readfeel_v1_score": product_readfeel_rubric_fields.get("product_readfeel_v1_score"),
+        "product_readfeel_v1_pass_rate": product_readfeel_rubric_fields.get("product_readfeel_v1_pass_rate"),
+        "product_readfeel_v1_product_pass_candidate_rate": product_readfeel_rubric_fields.get(
+            "product_readfeel_v1_product_pass_candidate_rate"
+        ),
+        "product_readfeel_v2_structure_insight_ready_candidate_rate": product_readfeel_rubric_fields.get(
+            "product_readfeel_v2_structure_insight_ready_candidate_rate"
+        ),
+        "product_readfeel_required_dimensions": list(
+            product_readfeel_rubric_fields.get("product_readfeel_required_dimensions") or []
+        ),
+        "product_readfeel_optional_v2_dimensions": list(
+            product_readfeel_rubric_fields.get("product_readfeel_optional_v2_dimensions") or []
+        ),
+        "product_readfeel_dimension_scores": dict(
+            product_readfeel_rubric_fields.get("product_readfeel_dimension_scores") or {}
+        ),
+        "product_readfeel_missing_required_dimension_counts": dict(
+            product_readfeel_rubric_fields.get("product_readfeel_missing_required_dimension_counts") or {}
+        ),
+        "product_readfeel_machine_metrics_used_for_read_feeling": product_readfeel_rubric_fields.get(
+            "product_readfeel_machine_metrics_used_for_read_feeling"
+        ),
+        "product_readfeel_read_feeling_auto_filled_from_machine_metrics": product_readfeel_rubric_fields.get(
+            "product_readfeel_read_feeling_auto_filled_from_machine_metrics"
+        ),
+        "product_readfeel_blind_qa_review_count": product_readfeel_rubric_fields.get(
+            "product_readfeel_blind_qa_review_count"
+        ),
+        "product_readfeel_blind_qa_ready": bool(
+            product_readfeel_rubric_fields.get("product_readfeel_blind_qa_ready")
+        ),
+        "product_readfeel_scorecard_version": PRODUCT_READFEEL_SCORECARD_VERSION,
+        "product_readfeel_scorecard_step": PRODUCT_READFEEL_SCORECARD_STEP,
+        "phase4_product_readfeel_scorecard": product_readfeel_scorecard,
+        "phase4_product_readfeel_scorecard_fields": product_readfeel_scorecard_fields,
+        "phase4_product_readfeel_scorecard_ready": bool(
+            product_readfeel_scorecard_fields.get("phase4_product_readfeel_scorecard_ready")
+        ),
+        "product_readfeel_phase4_ready": bool(
+            product_readfeel_scorecard_fields.get("product_readfeel_phase4_ready")
+        ),
+        "product_readfeel_scorecard_ready": bool(
+            product_readfeel_scorecard_fields.get("product_readfeel_scorecard_ready")
+        ),
+        "product_readfeel_aggregate_verdict": product_readfeel_scorecard_fields.get(
+            "product_readfeel_aggregate_verdict"
+        ),
+        "product_readfeel_scorecard_aggregate_verdict": product_readfeel_scorecard_fields.get(
+            "product_readfeel_scorecard_aggregate_verdict"
+        ),
+        "product_readfeel_scorecard_verdict": product_readfeel_scorecard_fields.get(
+            "product_readfeel_scorecard_verdict"
+        ),
+        "product_readfeel_scorecard_family_verdict_counts": dict(
+            product_readfeel_scorecard_fields.get("product_readfeel_scorecard_family_verdict_counts") or {}
+        ),
+        "product_readfeel_verdict_counts": dict(
+            product_readfeel_scorecard_fields.get("product_readfeel_verdict_counts") or {}
+        ),
+        "product_readfeel_scorecard_release_blockers": list(
+            product_readfeel_scorecard_fields.get("product_readfeel_scorecard_release_blockers") or []
+        ),
+        "product_readfeel_scorecard_v2_readiness_gaps": list(
+            product_readfeel_scorecard_fields.get("product_readfeel_scorecard_v2_readiness_gaps") or []
+        ),
+        "product_readfeel_v2_readiness_gaps": list(
+            product_readfeel_scorecard_fields.get("product_readfeel_v2_readiness_gaps") or []
+        ),
+        "product_readfeel_scorecard_next_action": product_readfeel_scorecard_fields.get(
+            "product_readfeel_scorecard_next_action"
+        ),
+        "product_readfeel_aggregate_verdict_counts": dict(
+            product_readfeel_scorecard_fields.get("product_readfeel_aggregate_verdict_counts") or {}
+        ),
+        "product_readfeel_family_verdict_counts": dict(
+            product_readfeel_scorecard_fields.get("product_readfeel_family_verdict_counts") or {}
+        ),
+        "product_readfeel_required_family_verdict_counts": dict(
+            product_readfeel_scorecard_fields.get("product_readfeel_required_family_verdict_counts") or {}
+        ),
+        "product_readfeel_family_results": list(
+            product_readfeel_scorecard_fields.get("product_readfeel_family_results") or []
+        ),
+        "product_readfeel_family_coverage_rate": product_readfeel_scorecard_fields.get(
+            "product_readfeel_family_coverage_rate"
+        ),
+        "product_readfeel_family_pass_rate": product_readfeel_scorecard_fields.get(
+            "product_readfeel_family_pass_rate"
+        ),
+        "product_readfeel_red_family_count": product_readfeel_scorecard_fields.get(
+            "product_readfeel_red_family_count"
+        ),
+        "product_readfeel_repair_required_family_count": product_readfeel_scorecard_fields.get(
+            "product_readfeel_repair_required_family_count"
+        ),
+        "product_readfeel_yellow_family_count": product_readfeel_scorecard_fields.get(
+            "product_readfeel_yellow_family_count"
+        ),
+        "product_readfeel_pass_family_count": product_readfeel_scorecard_fields.get(
+            "product_readfeel_pass_family_count"
+        ),
+        "product_readfeel_product_pass_count": product_readfeel_scorecard_fields.get(
+            "product_readfeel_product_pass_count"
+        ),
+        "product_readfeel_v1_product_pass_candidate": bool(
+            product_readfeel_scorecard_fields.get("product_readfeel_v1_product_pass_candidate")
+        ),
+        "product_readfeel_v2_structure_insight_ready_candidate": bool(
+            product_readfeel_scorecard_fields.get("product_readfeel_v2_structure_insight_ready_candidate")
+        ),
+        "product_readfeel_v2_readiness_not_release_blocker": True,
+        "product_readfeel_insight_delta_release_blocker": False,
+        "product_readfeel_release_blockers_include_insight_delta": False,
+        "product_readfeel_phase4_internal_gaps": list(
+            product_readfeel_scorecard_fields.get("product_readfeel_phase4_internal_gaps") or []
+        ),
+        "product_readfeel_phase11_long_run_product_gate_version": PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION,
+        "product_readfeel_phase11_long_run_product_gate_step": PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP,
+        "phase11_product_readfeel_long_run_product_gate": product_readfeel_long_run_product_gate,
+        "phase11_product_readfeel_long_run_product_gate_fields": product_readfeel_long_run_product_gate_fields,
+        "phase11_product_readfeel_long_run_product_gate_ready": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "phase11_product_readfeel_long_run_product_gate_ready"
+            )
+        ),
+        "product_readfeel_phase11_ready": bool(
+            product_readfeel_long_run_product_gate_fields.get("product_readfeel_phase11_ready")
+        ),
+        "product_readfeel_phase11_v1_product_pass_candidate": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_v1_product_pass_candidate"
+            )
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_v2_structure_insight_ready"
+            )
+        ),
+        "product_readfeel_phase11_v1_product_pass_blockers": list(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_v1_product_pass_blockers"
+            ) or []
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready_blockers": list(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_v2_structure_insight_ready_blockers"
+            ) or []
+        ),
+        "product_readfeel_phase11_max_consecutive_v1_product_pass_count": (
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_max_consecutive_v1_product_pass_count"
+            )
+        ),
+        "product_readfeel_phase11_max_consecutive_v2_structure_insight_ready_count": (
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_max_consecutive_v2_structure_insight_ready_count"
+            )
+        ),
+        "product_readfeel_phase11_consecutive_5_v1_product_pass_ready": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_consecutive_5_v1_product_pass_ready"
+            )
+        ),
+        "product_readfeel_phase11_consecutive_10_v1_product_pass_ready": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_consecutive_10_v1_product_pass_ready"
+            )
+        ),
+        "product_readfeel_phase11_family_cross_surface_repetition_detected": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_family_cross_surface_repetition_detected"
+            )
+        ),
+        "product_readfeel_phase11_insight_surface_same_syntax_repetition_detected": bool(
+            product_readfeel_long_run_product_gate_fields.get(
+                "product_readfeel_phase11_insight_surface_same_syntax_repetition_detected"
+            )
+        ),
+        "product_readfeel_phase11_release_judgment_deferred": True,
+        "product_readfeel_phase11_product_gate_ready": False,
+        "product_readfeel_phase11_public_release_applied": False,
         "observation_scorecard_blind_qa_version": OBSERVATION_SCORECARD_BLIND_QA_VERSION,
         "observation_reply_scorecard_blind_qa_version": OBSERVATION_SCORECARD_BLIND_QA_VERSION,
         "observation_scorecard_blind_qa_step": OBSERVATION_SCORECARD_BLIND_QA_STEP,
@@ -1717,6 +2148,16 @@ __all__ = [
     "COMPLETE_PRODUCT_QUALITY_COVERAGE_RUNTIME_BASELINE_STEP",
     "COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION",
     "COMPLETE_PRODUCT_QUALITY_RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP",
+    "COMPLETE_PRODUCT_QUALITY_PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION",
+    "COMPLETE_PRODUCT_QUALITY_PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP",
+    "PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION",
+    "PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP",
+    "PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_VERSION",
+    "PRODUCT_READFEEL_CURRENT_OUTPUT_INVENTORY_STEP",
+    "PRODUCT_READFEEL_RUBRIC_VERSION",
+    "PRODUCT_READFEEL_RUBRIC_STEP",
+    "PRODUCT_READFEEL_SCORECARD_VERSION",
+    "PRODUCT_READFEEL_SCORECARD_STEP",
     "OBSERVATION_SCORECARD_BLIND_QA_VERSION",
     "OBSERVATION_SCORECARD_BLIND_QA_STEP",
     "OBSERVATION_EXIT_GATE_HANDOFF_VERSION",

@@ -40,6 +40,19 @@ from emlis_ai_user_model_store import (
     new_empty_derived_user_model,
     save_emlis_ai_user_model_for_user,
 )
+from emlis_ai_user_label_connection_public_meta import (
+    USER_LABEL_CONNECTION_META_ONLY_META_KEY,
+    USER_LABEL_CONNECTION_PUBLIC_META_KEY,
+    USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY,
+    attach_user_label_connection_meta_only_integration,
+    build_user_label_connection_meta_only_integration,
+    user_label_connection_public_summary,
+)
+from emlis_ai_user_label_connection_surface import (
+    build_user_label_connection_limited_visible_surface_connection,
+    build_user_label_connection_visible_surface_binding_meta,
+    user_label_connection_visible_surface_public_summary,
+)
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
@@ -6279,6 +6292,189 @@ async def render_emlis_ai_reply(
     # kinds must pass bounded repair / recovery before any empty public exit is
     # accepted.
     final_text = str(display_decision.comment_text or "").strip()
+
+    user_label_connection_phase8_visible_meta: Dict[str, Any] = {}
+    user_label_connection_phase8_binding_meta: Dict[str, Any] = {}
+
+    def _phase8_passed_report(report: Any, *, default: bool = False) -> bool:
+        if isinstance(report, Mapping):
+            if report.get("passed") is True:
+                return True
+            if report.get("blocked") is True:
+                return False
+            action = str(report.get("action") or "").strip().lower()
+            if action in {"allow", "pass", "passed", "accept"}:
+                return True
+            classification = str(report.get("classification") or "").strip().lower()
+            if classification in {"green", "safe", "accepted", "passed"}:
+                return True
+            status = str(report.get("status") or "").strip().lower()
+            if status in {"passed", "pass", "ok", "accepted"}:
+                return True
+            return default
+        return default
+
+    def _phase8_existing_gate_reports_for(
+        *,
+        display_status: str,
+        reader: Any,
+        grounding: Any,
+        runtime_report: Mapping[str, Any] | None,
+        visible_report: Mapping[str, Any] | None,
+    ) -> Dict[str, Any]:
+        display_passed = str(display_status or "") == "passed"
+        return {
+            "tone_guard": {
+                "passed": bool(display_passed and not list(getattr(reader, "rejection_reasons", []) or [])),
+                "primary_reason": "" if display_passed else "display_gate_not_passed",
+            },
+            "grounding": {
+                "passed": bool(getattr(grounding, "passed", False)),
+                "primary_reason": "" if bool(getattr(grounding, "passed", False)) else "grounding_not_passed",
+            },
+            "runtime_surface_pre_return_gate": {
+                "passed": _phase8_passed_report(runtime_report or {}, default=False),
+                "primary_reason": "" if _phase8_passed_report(runtime_report or {}, default=False) else "runtime_surface_pre_return_gate_not_passed",
+            },
+            "visible_surface_acceptance_gate": {
+                "passed": _phase8_passed_report(visible_report or {}, default=False),
+                "primary_reason": "" if _phase8_passed_report(visible_report or {}, default=False) else "visible_surface_acceptance_gate_not_passed",
+            },
+        }
+
+    if final_text and str(getattr(display_decision, "observation_status", "") or "") == "passed":
+        try:
+            user_label_connection_phase8_reply_meta = {
+                "observation_reply_kind": str(
+                    phase20_13_post_final_response_kind
+                    or phase20_3_material_route_meta.get("response_kind")
+                    or ""
+                ),
+                "eligibility_status": str(phase20_3_material_route_meta.get("material_quality") or ""),
+                "material_quality": str(phase20_3_material_route_meta.get("material_quality") or ""),
+                "safety_triage_kind": str(safety_triage_meta.get("safety_triage_kind") or ""),
+                "observation_status": str(getattr(display_decision, "observation_status", "") or ""),
+                "eligible_for_full_observation": phase20_3_material_route_meta.get("eligible_for_full_observation"),
+                "question_required": phase20_3_material_route_meta.get("question_required"),
+            }
+            phase8_meta_only = build_user_label_connection_meta_only_integration(
+                current_input,
+                source_bundle=bundle,
+                capability=capability,
+                subscription_tier=subscription_tier,
+                observation_reply_meta=user_label_connection_phase8_reply_meta,
+                material_quality=phase20_3_material_route_meta.get("material_quality"),
+                safety_triage_kind=safety_triage_meta.get("safety_triage_kind"),
+                reply_flow_meta_only_connected=True,
+            )
+            phase8_surface_plan = phase8_meta_only.get("surface_plan_meta") if isinstance(phase8_meta_only, Mapping) else {}
+            initial_phase8_reports = _phase8_existing_gate_reports_for(
+                display_status=str(getattr(display_decision, "observation_status", "") or ""),
+                reader=reader_report,
+                grounding=grounding_report,
+                runtime_report=runtime_surface_pre_return_gate_report,
+                visible_report=visible_surface_acceptance_gate_report,
+            )
+            tentative_phase8_connection = build_user_label_connection_limited_visible_surface_connection(
+                final_text,
+                phase8_surface_plan if isinstance(phase8_surface_plan, Mapping) else {},
+                existing_gate_reports=initial_phase8_reports,
+                safety_context=safety_triage_meta.get("safety_triage_kind"),
+            )
+            if tentative_phase8_connection.applied:
+                phase8_candidate_text = tentative_phase8_connection.comment_text
+                phase8_reader_report = _judge_listener_readability_for_reply(phase8_candidate_text, composer_candidate)
+                phase8_composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
+                phase8_grounding_report = judge_grounding(
+                    comment_text=phase8_candidate_text,
+                    graph=grounding_graph,
+                    evidence_spans=evidence_spans,
+                    allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
+                    grounding_scope=grounding_scope,
+                    sentence_bindings=(
+                        phase8_composer_meta_for_grounding.get("sentence_bindings")
+                        if isinstance(phase8_composer_meta_for_grounding, dict)
+                        else None
+                    ),
+                    binding_meta=phase8_composer_meta_for_grounding if isinstance(phase8_composer_meta_for_grounding, dict) else None,
+                )
+                phase8_template_echo_report = guard_template_echo(
+                    comment_text=phase8_candidate_text,
+                    evidence_spans=evidence_spans,
+                    composer_source=composer_source,
+                    composer_model=getattr(composer_candidate, "composer_model", ""),
+                    generation_method=getattr(composer_candidate, "generation_method", ""),
+                    generation_scope=getattr(composer_candidate, "generation_scope", ""),
+                    coverage_scope=getattr(composer_candidate, "coverage_scope", ""),
+                    composer_meta=getattr(composer_candidate, "composer_meta", {}),
+                    used_evidence_span_ids=getattr(composer_candidate, "used_evidence_span_ids", []),
+                )
+                phase8_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+                    comment_text=phase8_candidate_text,
+                    composer_candidate=composer_candidate,
+                    composer_source=composer_source,
+                    rerender_attempted=True,
+                )
+                phase8_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+                    comment_text=phase8_candidate_text,
+                    current_input=current_input,
+                    composer_candidate=composer_candidate,
+                    composer_source=composer_source,
+                    rerender_attempted=True,
+                )
+                phase8_binding_meta = build_limited_composer_binding_presence_meta(
+                    composer_candidate=composer_candidate,
+                )
+                phase8_display_decision = decide_emlis_observation_display(
+                    comment_text=phase8_candidate_text,
+                    reader_report=phase8_reader_report,
+                    grounding_report=phase8_grounding_report,
+                    template_echo_report=phase8_template_echo_report,
+                    safety_report=safety_report,
+                    trace_id=trace_id,
+                    composer_source=composer_source,
+                    phase_completion_ready=True,
+                    binding_meta=phase8_binding_meta,
+                    observation_structure_gate_report=observation_structure_gate_report,
+                    runtime_surface_pre_return_gate_report=phase8_runtime_surface_pre_return_gate_report,
+                    visible_surface_acceptance_gate_report=phase8_visible_surface_acceptance_gate_report,
+                )
+                final_phase8_reports = _phase8_existing_gate_reports_for(
+                    display_status=str(getattr(phase8_display_decision, "observation_status", "") or ""),
+                    reader=phase8_reader_report,
+                    grounding=phase8_grounding_report,
+                    runtime_report=phase8_runtime_surface_pre_return_gate_report,
+                    visible_report=phase8_visible_surface_acceptance_gate_report,
+                )
+                final_phase8_connection = build_user_label_connection_limited_visible_surface_connection(
+                    final_text,
+                    phase8_surface_plan if isinstance(phase8_surface_plan, Mapping) else {},
+                    existing_gate_reports=final_phase8_reports,
+                    safety_context=safety_triage_meta.get("safety_triage_kind"),
+                )
+                if (
+                    final_phase8_connection.applied
+                    and str(getattr(phase8_display_decision, "observation_status", "") or "") == "passed"
+                ):
+                    final_text = final_phase8_connection.comment_text
+                    display_decision = phase8_display_decision
+                    reader_report = phase8_reader_report
+                    grounding_report = phase8_grounding_report
+                    template_echo_report = phase8_template_echo_report
+                    runtime_surface_pre_return_gate_report = dict(phase8_runtime_surface_pre_return_gate_report or {})
+                    visible_surface_acceptance_gate_report = dict(phase8_visible_surface_acceptance_gate_report or {})
+                    user_label_connection_phase8_visible_meta = final_phase8_connection.as_meta()
+                    user_label_connection_phase8_binding_meta = build_user_label_connection_visible_surface_binding_meta(
+                        user_label_connection_phase8_visible_meta,
+                        evidence_span_ids=grounding_allowed_evidence_span_ids,
+                    )
+                else:
+                    user_label_connection_phase8_visible_meta = final_phase8_connection.as_meta()
+            else:
+                user_label_connection_phase8_visible_meta = tentative_phase8_connection.as_meta()
+        except Exception:
+            user_label_connection_phase8_visible_meta = {}
+
     meta = _multi_perspective_meta(
         trace_id=trace_id,
         capability=capability,
@@ -6403,6 +6599,74 @@ async def render_emlis_ai_reply(
         meta["diagnostic_summary"]["emlis_observation_structure_dictionary"] = observation_structure_meta
         meta["diagnostic_summary"]["observation_structure_gate"] = observation_structure_gate_report
         meta["diagnostic_summary"] = attach_diagnostic_failure_taxonomy_meta(meta["diagnostic_summary"])
+    user_label_connection_observation_reply_meta = {
+        "observation_reply_kind": str(
+            meta.get("observation_reply_kind")
+            or phase20_3_material_route_meta.get("response_kind")
+            or ""
+        ),
+        "eligibility_status": str(phase20_3_material_route_meta.get("material_quality") or ""),
+        "material_quality": str(phase20_3_material_route_meta.get("material_quality") or ""),
+        "safety_triage_kind": str(safety_triage_meta.get("safety_triage_kind") or ""),
+        "observation_status": str(getattr(display_decision, "observation_status", "") or ""),
+        "eligible_for_full_observation": phase20_3_material_route_meta.get("eligible_for_full_observation"),
+        "question_required": phase20_3_material_route_meta.get("question_required"),
+    }
+    meta = attach_user_label_connection_meta_only_integration(
+        meta,
+        current_input=current_input,
+        source_bundle=bundle,
+        capability=capability,
+        subscription_tier=subscription_tier,
+        observation_reply_meta=user_label_connection_observation_reply_meta,
+        material_quality=phase20_3_material_route_meta.get("material_quality"),
+        safety_triage_kind=safety_triage_meta.get("safety_triage_kind"),
+    )
+
+    if user_label_connection_phase8_visible_meta:
+        meta[USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(user_label_connection_phase8_visible_meta)
+        if user_label_connection_phase8_binding_meta:
+            meta["user_label_connection_visible_surface_binding"] = dict(user_label_connection_phase8_binding_meta)
+        phase8_public_summary = user_label_connection_visible_surface_public_summary(user_label_connection_phase8_visible_meta)
+        meta_only_payload = meta.get(USER_LABEL_CONNECTION_META_ONLY_META_KEY)
+        if isinstance(meta_only_payload, dict):
+            meta_only_payload[USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(user_label_connection_phase8_visible_meta)
+            meta_only_payload["phase8_limited_visible_surface_connection"] = dict(user_label_connection_phase8_visible_meta)
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"][USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(phase8_public_summary)
+            if isinstance(meta_only_payload, Mapping):
+                meta["diagnostic_summary"][USER_LABEL_CONNECTION_PUBLIC_META_KEY] = user_label_connection_public_summary(meta_only_payload)
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "phase8_user_label_connection_limited_visible_surface_evaluated": True,
+                    "phase8_user_label_connection_limited_visible_surface_connected": bool(
+                        phase8_public_summary.get("limited_visible_surface_connection_applied") is True
+                    ),
+                    "phase8_user_label_connection_history_connection_applied": bool(
+                        phase8_public_summary.get("history_connection_applied") is True
+                    ),
+                    "phase8_user_label_connection_comment_text_connected": bool(
+                        phase8_public_summary.get("comment_text_connected") is True
+                    ),
+                    "phase8_user_label_connection_visible_surface_connected": bool(
+                        phase8_public_summary.get("visible_surface_connected") is True
+                    ),
+                    "phase8_user_label_connection_runtime_surface_connected": bool(
+                        phase8_public_summary.get("runtime_surface_connected") is True
+                    ),
+                    "phase8_user_label_connection_public_response_key_added": False,
+                    "phase8_user_label_connection_raw_text_included": False,
+                    "phase8_user_label_connection_comment_text_body_included": False,
+                    "phase8_user_label_connection_scope_marker_present": bool(
+                        phase8_public_summary.get("scope_marker_present") is True
+                    ),
+                    "phase8_user_label_connection_soft_marker_present": bool(
+                        phase8_public_summary.get("soft_marker_present") is True
+                    ),
+                }
+            )
+
     multi_perspective_meta = meta.get("multi_perspective")
     if isinstance(multi_perspective_meta, dict) and isinstance(meta.get("diagnostic_summary"), dict):
         # Keep the nested diagnostic summary in lockstep with the top-level

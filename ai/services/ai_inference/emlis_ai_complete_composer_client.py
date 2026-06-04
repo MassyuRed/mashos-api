@@ -1028,6 +1028,7 @@ class CocolonCompleteComposerClient:
             )
 
         surface_meta = final_realization.as_meta(include_realized_text=False)
+        structure_insight_surface_meta = _json_safe_mapping(surface_meta.get("structure_insight_surface"))
         tone_guard_report = build_complete_tone_guard_report(
             surface_realization=final_realization,
             tone_policy=tone_policy,
@@ -1095,6 +1096,16 @@ class CocolonCompleteComposerClient:
             "two_stage_required_but_unrealized": False,
             "two_stage_complete_surface_blocked_by_gate": False,
             "daily_unpleasant_reception_surface_quality": _json_safe_mapping(surface_meta.get("daily_unpleasant_reception_surface_quality")),
+            "structure_insight_surface": structure_insight_surface_meta,
+            "structure_insight_surface_applied": bool(surface_meta.get("structure_insight_surface_applied")),
+            "phase10_structure_insight_surface_connected": bool(surface_meta.get("phase10_structure_insight_surface_connected")),
+            "structure_insight_surface_insight_delta_blind_qa_floor_candidate": _clean(surface_meta.get("structure_insight_surface_insight_delta_blind_qa_floor_candidate")),
+            "structure_insight_surface_overclaim_count": int(surface_meta.get("structure_insight_surface_overclaim_count") or 0),
+            "structure_insight_surface_diagnosis_count": int(surface_meta.get("structure_insight_surface_diagnosis_count") or 0),
+            "structure_insight_surface_personality_claim_count": int(surface_meta.get("structure_insight_surface_personality_claim_count") or 0),
+            "structure_insight_surface_public_response_key_added": False,
+            "structure_insight_surface_comment_text_body_included": False,
+            "structure_insight_surface_raw_input_included": False,
             "surface_signature": build_complete_surface_signature(final_realization),
             "initial_grounding_report": build_complete_grounding_report_meta(initial_grounding_report),
             "final_grounding_report": final_grounding_meta,

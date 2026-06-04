@@ -20,6 +20,15 @@ from emlis_ai_long_term_quality_service import (
     build_runtime_surface_long_run_signature_report,
 )
 
+from emlis_ai_product_readfeel_long_run_product_gate import (
+    PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP,
+    PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION,
+    build_product_readfeel_long_run_product_gate,
+    normalize_product_readfeel_long_run_product_gate_to_scorecard_fields,
+)
+from emlis_ai_product_readfeel_rubric import aggregate_product_readfeel_blind_qa_reviews
+from emlis_ai_product_readfeel_scorecard import build_product_readfeel_scorecard
+
 RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION = "emlis.runtime_surface_blind_qa_long_run.v1"
 RUNTIME_SURFACE_BLIND_QA_CANDIDATE_VERSION = "emlis.runtime_surface_blind_qa_candidate.v1"
 RUNTIME_SURFACE_LONG_RUN_SIGNATURE_DIVERSITY_VERSION = "emlis.runtime_surface_long_run_signature_diversity.v1"
@@ -185,6 +194,47 @@ def _rate(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
     return round(max(0.0, min(1.0, numerator / denominator)), 4)
+
+
+def _phase11_product_readfeel_machine_metrics(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    eligible = 0
+    displayed = 0
+    expected_binding = 0
+    supported_binding = 0
+    reason_required = 0
+    reason_covered = 0
+    template_major = 0
+    safety_major = 0
+    signatures: list[str] = []
+    for event in events:
+        eligible += _int(event.get("eligible_count") or 1)
+        if (
+            event.get("display_confirmed") is True
+            or event.get("public_passed") is True
+            or event.get("backend_public_passed") is True
+            or _clean(event.get("observation_status")).lower() == "passed"
+            or _int(event.get("passed_display_count")) > 0
+        ):
+            displayed += max(1, _int(event.get("passed_display_count") or 1))
+        expected_binding += _int(event.get("expected_binding_count") or event.get("binding_count"))
+        supported_binding += _int(event.get("binding_supported_sentence_count") or event.get("binding_count"))
+        reason_required += _int(event.get("reason_required_count"))
+        reason_covered += _int(event.get("reason_covered_count"))
+        template_major += _int(event.get("template_major_count")) + _int(event.get("surface_template_major_count"))
+        safety_major += _int(event.get("safety_major_count"))
+        signature = _surface_signature_family_key(event)
+        if signature:
+            signatures.append(signature)
+    repeat_count = sum(max(0, signatures.count(signature) - 1) for signature in set(signatures))
+    return {
+        "display_reach_rate": _rate(displayed, eligible),
+        "binding_pass_rate": _rate(supported_binding, expected_binding) if expected_binding else 1.0,
+        "reason_coverage_rate": _rate(reason_covered, reason_required) if reason_required else 1.0,
+        "template_major_count": template_major,
+        "safety_major_count": safety_major,
+        "surface_signature_repeat_rate": _rate(repeat_count, len(signatures)),
+        "surface_signature_repeat_count": repeat_count,
+    }
 
 
 def _avg(values: Iterable[Any]) -> float | None:
@@ -477,6 +527,23 @@ def build_runtime_surface_blind_qa_long_run_report(
         events=events_list,
         previous_signature_records=previous_signature_records,
     )
+    product_readfeel_blind_qa = aggregate_product_readfeel_blind_qa_reviews(reviews_list)
+    product_readfeel_scorecard = build_product_readfeel_scorecard(
+        events=events_list,
+        blind_qa_reviews=reviews_list,
+        blind_qa_aggregate=product_readfeel_blind_qa,
+        machine_metrics=_phase11_product_readfeel_machine_metrics(events_list),
+        run_id=run_id,
+    )
+    product_readfeel_phase11_gate = build_product_readfeel_long_run_product_gate(
+        events=events_list,
+        product_readfeel_scorecard=product_readfeel_scorecard,
+        runtime_long_run_summary=long_run,
+        blind_qa_aggregate=product_readfeel_blind_qa,
+    )
+    product_readfeel_phase11_gate_fields = normalize_product_readfeel_long_run_product_gate_to_scorecard_fields(
+        product_readfeel_phase11_gate
+    )
     blockers: list[str] = []
     if unreviewed_ids:
         blockers.append("blind_qa_missing")
@@ -539,6 +606,45 @@ def build_runtime_surface_blind_qa_long_run_report(
         "long_run_groups_needing_attention": list(long_run.get("long_run_groups_needing_attention") or []),
         "surface_signature_repeat_rate": float(long_run.get("long_run_surface_signature_repeat_rate") or 0.0),
         "surface_signature_repeat_count": _int(long_run.get("long_run_surface_signature_repeat_count")),
+        "product_readfeel_phase11_long_run_product_gate_version": PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION,
+        "product_readfeel_phase11_long_run_product_gate_step": PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP,
+        "phase11_product_readfeel_long_run_product_gate": product_readfeel_phase11_gate,
+        "phase11_product_readfeel_long_run_product_gate_fields": product_readfeel_phase11_gate_fields,
+        "phase11_product_readfeel_long_run_product_gate_ready": bool(
+            product_readfeel_phase11_gate_fields.get("phase11_product_readfeel_long_run_product_gate_ready")
+        ),
+        "product_readfeel_phase11_ready": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_ready")
+        ),
+        "product_readfeel_phase11_v1_product_pass_candidate": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_v1_product_pass_candidate")
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_v2_structure_insight_ready")
+        ),
+        "product_readfeel_phase11_v1_product_pass_blockers": list(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_v1_product_pass_blockers") or []
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready_blockers": list(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_v2_structure_insight_ready_blockers") or []
+        ),
+        "product_readfeel_phase11_consecutive_5_v1_product_pass_ready": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_consecutive_5_v1_product_pass_ready")
+        ),
+        "product_readfeel_phase11_consecutive_10_v1_product_pass_ready": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_consecutive_10_v1_product_pass_ready")
+        ),
+        "product_readfeel_phase11_family_cross_surface_repetition_detected": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_family_cross_surface_repetition_detected")
+        ),
+        "product_readfeel_phase11_insight_surface_same_syntax_repetition_detected": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_insight_surface_same_syntax_repetition_detected")
+        ),
+        "product_readfeel_phase11_release_judgment_deferred": bool(
+            product_readfeel_phase11_gate_fields.get("product_readfeel_phase11_release_judgment_deferred")
+        ),
+        "product_readfeel_phase11_product_gate_ready": False,
+        "product_readfeel_phase11_public_release_applied": False,
         "qa_gaps": blockers,
         "step11_qa_gaps": blockers,
         "step11_release_blockers": blockers,
@@ -617,6 +723,48 @@ def normalize_runtime_surface_blind_qa_long_run_to_scorecard_fields(summary: Map
         "read_feeling_product_target_met": bool(data.get("read_feeling_product_target_met")),
         "qa_gaps": _dedupe(data.get("qa_gaps")),
         "step11_release_blockers": _dedupe(data.get("step11_release_blockers") or data.get("release_blockers")),
+        "product_readfeel_phase11_long_run_product_gate_version": _clean(
+            data.get("product_readfeel_phase11_long_run_product_gate_version")
+        ) or PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION,
+        "product_readfeel_phase11_long_run_product_gate_step": _clean(
+            data.get("product_readfeel_phase11_long_run_product_gate_step")
+        ) or PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP,
+        "phase11_product_readfeel_long_run_product_gate_ready": bool(
+            data.get("phase11_product_readfeel_long_run_product_gate_ready")
+        ),
+        "product_readfeel_phase11_ready": bool(data.get("product_readfeel_phase11_ready")),
+        "product_readfeel_phase11_v1_product_pass_candidate": bool(
+            data.get("product_readfeel_phase11_v1_product_pass_candidate")
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready": bool(
+            data.get("product_readfeel_phase11_v2_structure_insight_ready")
+        ),
+        "product_readfeel_phase11_v1_product_pass_blockers": _dedupe(
+            data.get("product_readfeel_phase11_v1_product_pass_blockers")
+        ),
+        "product_readfeel_phase11_v2_structure_insight_ready_blockers": _dedupe(
+            data.get("product_readfeel_phase11_v2_structure_insight_ready_blockers")
+        ),
+        "product_readfeel_phase11_consecutive_5_v1_product_pass_ready": bool(
+            data.get("product_readfeel_phase11_consecutive_5_v1_product_pass_ready")
+        ),
+        "product_readfeel_phase11_consecutive_10_v1_product_pass_ready": bool(
+            data.get("product_readfeel_phase11_consecutive_10_v1_product_pass_ready")
+        ),
+        "product_readfeel_phase11_family_cross_surface_repetition_detected": bool(
+            data.get("product_readfeel_phase11_family_cross_surface_repetition_detected")
+        ),
+        "product_readfeel_phase11_insight_surface_same_syntax_repetition_detected": bool(
+            data.get("product_readfeel_phase11_insight_surface_same_syntax_repetition_detected")
+        ),
+        "product_readfeel_phase11_release_judgment_deferred": bool(
+            data.get("product_readfeel_phase11_release_judgment_deferred")
+        ),
+        "product_readfeel_phase11_product_gate_ready": False,
+        "product_readfeel_phase11_public_release_applied": False,
+        "phase11_product_readfeel_long_run_product_gate_fields": _safe_mapping(
+            data.get("phase11_product_readfeel_long_run_product_gate_fields")
+        ),
         "machine_metrics_used_for_read_feeling": False,
         "read_feeling_auto_filled_from_machine_metrics": False,
         "product_gate_ready": False,
@@ -646,6 +794,8 @@ __all__ = [
     "RUNTIME_SURFACE_BLIND_QA_LONG_RUN_STEP",
     "RUNTIME_SURFACE_BLIND_QA_LONG_RUN_VERSION",
     "RUNTIME_SURFACE_LONG_RUN_SIGNATURE_DIVERSITY_VERSION",
+    "PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_VERSION",
+    "PRODUCT_READFEEL_LONG_RUN_PRODUCT_GATE_STEP",
     "assert_runtime_surface_blind_qa_long_run_meta_only",
     "build_runtime_surface_blind_qa_candidates",
     "build_runtime_surface_blind_qa_long_run_report",

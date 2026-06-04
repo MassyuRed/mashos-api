@@ -28,6 +28,12 @@ from emlis_ai_observation_regression_fixture_coverage import (
     build_observation_regression_fixture_coverage,
     normalize_observation_regression_fixture_coverage_to_scorecard_fields,
 )
+from emlis_ai_mirror_only_surface_detector import (
+    MIRROR_ONLY_SURFACE_DETECTOR_STEP,
+    MIRROR_ONLY_SURFACE_DETECTOR_VERSION,
+    detect_mirror_only_surface,
+    normalize_mirror_only_surface_to_scorecard_event,
+)
 
 OBSERVATION_SCORECARD_BLIND_QA_VERSION: Final = "emlis.observation_scorecard_blind_qa.v1"
 OBSERVATION_SCORECARD_BLIND_QA_STEP: Final = "Step12_Scorecard_Blind_QA"
@@ -551,7 +557,11 @@ def _false_eligible(meta: Mapping[str, Any], event: Mapping[str, Any], expected_
 
 
 def normalize_observation_scorecard_event(event: Mapping[str, Any] | None) -> dict[str, Any]:
-    data = _strip_forbidden_text_payload_keys(_safe_mapping(event))
+    source = _safe_mapping(event)
+    mirror_detector_fields = normalize_mirror_only_surface_to_scorecard_event(
+        detect_mirror_only_surface(source)
+    )
+    data = _strip_forbidden_text_payload_keys({**source, **mirror_detector_fields})
     assert_observation_scorecard_blind_qa_contract(data, source="observation_scorecard_event_source")
     meta = extract_observation_reply_meta(data)
     reasons = _event_reasons(data)
@@ -585,6 +595,13 @@ def normalize_observation_scorecard_event(event: Mapping[str, Any] | None) -> di
         "overclaim": _overclaim(data, reasons),
         "template_skeleton_repeat": _template_repeat(data, reasons),
         "template_skeleton_key": _template_skeleton_key(data),
+        "phase6_mirror_only_detector_ready": bool(mirror_detector_fields.get("phase6_mirror_only_detector_ready")),
+        "mirror_only_detector_ready": bool(mirror_detector_fields.get("mirror_only_detector_ready")),
+        "mirror_only_detected": bool(mirror_detector_fields.get("mirror_only_detected")),
+        "self_report_only_detected": bool(mirror_detector_fields.get("self_report_only_detected")),
+        "mirror_only_v1_verdict_hint": _clean(mirror_detector_fields.get("mirror_only_v1_verdict_hint")),
+        "mirror_only_v2_insight_delta_gap": bool(mirror_detector_fields.get("mirror_only_v2_insight_delta_gap")),
+        "mirror_only_reason_codes": _dedupe(mirror_detector_fields.get("mirror_only_reason_codes")),
         "question_required": bool(meta.get("question_required") or data.get("question_required")),
         "unknown_slots": _dedupe(meta.get("unknown_slots") or data.get("unknown_slots")),
         "user_fact_grounding_mode": _clean(meta.get("user_fact_grounding_mode") or data.get("user_fact_grounding_mode")) or USER_FACT_GROUNDING_MODE_DISABLED,
@@ -743,6 +760,8 @@ def build_observation_scorecard_blind_qa(
     )
     repeated_skeleton_count = sum(max(0, count - 1) for count in skeleton_counter.values())
     template_skeleton_repeat_count = max(explicit_template_repeat_count, repeated_skeleton_count)
+    mirror_only_detected_count = sum(1 for event in normalized_events if event.get("mirror_only_detected") is True)
+    mirror_only_v2_gap_count = sum(1 for event in normalized_events if event.get("mirror_only_v2_insight_delta_gap") is True)
     blind_qa = aggregate_observation_blind_qa_reviews(blind_qa_reviews)
     regression_fixture_coverage = build_observation_regression_fixture_coverage(
         scorecard_events=source_events,
@@ -776,6 +795,8 @@ def build_observation_scorecard_blind_qa(
         qa_gaps.append("overclaim_detected")
     if template_skeleton_repeat_count > 0:
         qa_gaps.append("template_skeleton_repeat_detected")
+    if mirror_only_detected_count > 0:
+        qa_gaps.append("mirror_only_surface_detected")
     if not blind_qa.get("blind_qa_ready"):
         qa_gaps.append("observation_blind_qa_missing")
     if blind_qa.get("blind_qa_ready") and not (read_score is not None and float(read_score) >= OBSERVATION_BLIND_QA_READ_FEELING_TARGET):
@@ -812,6 +833,12 @@ def build_observation_scorecard_blind_qa(
         "overclaim_count": overclaim_count,
         "template_skeleton_repeat_count": template_skeleton_repeat_count,
         "template_skeleton_repeat_rate": template_skeleton_repeat_rate,
+        "mirror_only_surface_detector_version": MIRROR_ONLY_SURFACE_DETECTOR_VERSION,
+        "mirror_only_surface_detector_step": MIRROR_ONLY_SURFACE_DETECTOR_STEP,
+        "phase6_mirror_only_detector_ready": any(event.get("phase6_mirror_only_detector_ready") for event in normalized_events),
+        "mirror_only_detector_ready": any(event.get("mirror_only_detector_ready") for event in normalized_events),
+        "mirror_only_detected_count": mirror_only_detected_count,
+        "mirror_only_v2_insight_delta_gap_count": mirror_only_v2_gap_count,
         "machine_metrics": {
             "version": OBSERVATION_SCORECARD_EVENT_VERSION,
             "source_step": OBSERVATION_SCORECARD_BLIND_QA_STEP,
@@ -824,6 +851,8 @@ def build_observation_scorecard_blind_qa(
             "free_user_fact_violation_count": free_user_fact_violation_count,
             "overclaim_count": overclaim_count,
             "template_skeleton_repeat_rate": template_skeleton_repeat_rate,
+            "mirror_only_detected_count": mirror_only_detected_count,
+            "mirror_only_v2_insight_delta_gap_count": mirror_only_v2_gap_count,
             "machine_metrics_used_for_read_feeling": False,
             "read_feeling_auto_filled_from_machine_metrics": False,
             "raw_input_included": False,
@@ -918,6 +947,10 @@ def normalize_observation_scorecard_blind_qa_to_scorecard_fields(summary: Mappin
         "free_user_fact_violation_count": data.get("free_user_fact_violation_count", 0),
         "overclaim_count": data.get("overclaim_count", 0),
         "template_skeleton_repeat_rate": data.get("template_skeleton_repeat_rate", 0.0),
+        "phase6_mirror_only_detector_ready": bool(data.get("phase6_mirror_only_detector_ready") or data.get("mirror_only_detector_ready")),
+        "observation_mirror_only_detector_ready": bool(data.get("mirror_only_detector_ready") or data.get("phase6_mirror_only_detector_ready")),
+        "observation_mirror_only_detected_count": data.get("mirror_only_detected_count", 0),
+        "observation_mirror_only_v2_insight_delta_gap_count": data.get("mirror_only_v2_insight_delta_gap_count", 0),
         "observation_read_feeling_score": data.get("read_feeling_score"),
         "observation_regression_fixture_coverage_version": _clean(data.get("observation_regression_fixture_coverage_version")) or OBSERVATION_REGRESSION_FIXTURE_COVERAGE_VERSION,
         "observation_regression_fixture_coverage_step": _clean(data.get("observation_regression_fixture_coverage_step")) or OBSERVATION_REGRESSION_FIXTURE_COVERAGE_STEP,

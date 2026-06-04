@@ -107,6 +107,14 @@ _RATIO_PRESETS: Final = {
         "observation_units": 1,
         "human_follow_units": 3,
     },
+    "low_information_light_prompt": {
+        "observation": 0.25,
+        "human_follow": 0.75,
+        "reason": "low_information_light_prompt",
+        "range_key": "low_information",
+        "observation_units": 1,
+        "human_follow_units": 1,
+    },
     "self_confidence_uncertainty_follow_thickened": {
         "observation": 0.35,
         "human_follow": 0.65,
@@ -123,6 +131,7 @@ _ALLOWED_RATIO_RANGES: Final = {
     "structure_question": {"observation_min": 0.65, "observation_max": 0.75},
     "exhaustion": {"observation_min": 0.45, "observation_max": 0.55},
     "daily_reception": {"observation_min": 0.10, "observation_max": 0.30},
+    "low_information": {"observation_min": 0.15, "observation_max": 0.35},
     "self_negative_or_uncertainty": {"observation_min": 0.30, "observation_max": 0.45},
 }
 
@@ -132,6 +141,7 @@ _RATIO_PRESET_BY_RECEPTION_MODE: Final = {
     "self_denial_support": "self_denial_follow_thickened",
     "uncertainty_support": "self_confidence_uncertainty_follow_thickened",
     "structure_question_observation": "structure_question_observation_thickened",
+    "low_information_question": "low_information_light_prompt",
 }
 
 _PHASE6_AUTO_RECEPTION_MODE_HINT_IDS: Final = frozenset(
@@ -483,12 +493,14 @@ def _coerce_reception_mode_summary(
 def _reason_from_reception_mode_summary(summary: Mapping[str, Any]) -> str:
     if not summary.get("available"):
         return ""
-    if summary.get("safety_path_required") or summary.get("low_information_question_required"):
+    if summary.get("safety_path_required"):
         return ""
 
     preset = _clean(summary.get("ratio_preset"))
     if preset not in _RATIO_PRESETS:
         return ""
+    if summary.get("low_information_question_required"):
+        return preset if preset == "low_information_light_prompt" else ""
 
     source = _clean(summary.get("source"))
     mode_id = _clean(summary.get("reception_mode_id"))

@@ -160,7 +160,7 @@ async def test_render_uses_default_limited_composer_when_feature_flag_enabled(mo
 
 
 @pytest.mark.asyncio
-async def test_render_keeps_fail_closed_when_feature_flag_disabled(monkeypatch):
+async def test_render_keeps_default_composer_connection_fail_closed_when_feature_flag_disabled(monkeypatch):
     _clear_flags(monkeypatch)
     from emlis_ai_reply_service import render_emlis_ai_reply
 
@@ -181,10 +181,24 @@ async def test_render_keeps_fail_closed_when_feature_flag_disabled(monkeypatch):
     )
 
     multi = reply.meta["multi_perspective"]
-    assert multi["composer_client_resolution"]["default_client_used"] is False
-    assert multi["composer_client_resolution"]["source"] == "none"
-    assert reply.comment_text == ""
-    assert multi["composer_source"] == "unavailable"
+    client_meta = multi["composer_client_resolution"]
+    visibility = client_meta["connection_visibility"]
+
+    # Composer itself must remain fail-closed when the feature flag is disabled.
+    # A later bounded recovery path may still produce a safe observation, so this
+    # contract must not require an empty comment_text as proof of Composer block.
+    assert client_meta["default_client_used"] is False
+    assert client_meta["source"] == "none"
+    assert client_meta["connection_status"] == "blocked_feature_flag"
+    assert client_meta["pre_connection_stop_stage"] == "flag"
+    assert client_meta["composer_attempted"] is False
+    assert "default_limited_composer_feature_disabled" in client_meta["rejection_reasons"]
+    assert visibility["blocked_before_composer"] is True
+    assert visibility["composer_generation_attempted"] is False
+    assert multi["limited_composer_release"]["enabled"] is False
+    assert multi["limited_composer_release"]["reason_code"] == "feature_flag_disabled"
+    assert multi["composer_source"] in {"ai_generated", "unavailable"}
+    assert reply.meta["observation_status"] in {"passed", "rejected", "unavailable", "safety_blocked"}
 
 
 def test_step06_default_registry_marks_scope_block_before_composer(monkeypatch):

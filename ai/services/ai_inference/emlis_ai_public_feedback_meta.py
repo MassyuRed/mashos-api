@@ -21,6 +21,12 @@ from emlis_ai_response_contract import (
 )
 from emlis_ai_state_answer_gate_boundary import state_answer_gate_boundary_public_summary
 from emlis_ai_two_stage_reception_gate import two_stage_reception_gate_public_summary
+from emlis_ai_user_label_connection_public_meta import (
+    USER_LABEL_CONNECTION_META_ONLY_META_KEY,
+    USER_LABEL_CONNECTION_PUBLIC_META_KEY,
+    USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY,
+    user_label_connection_public_summary,
+)
 
 
 PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION = "emlis.public_input_feedback_meta.v1"
@@ -916,6 +922,70 @@ def _build_step10_repair_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     return public_meta
 
 
+def _pick_user_label_connection_source(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    direct_meta_only = _safe_mapping(_safe_get(internal_meta, USER_LABEL_CONNECTION_META_ONLY_META_KEY))
+    direct_visible = _safe_mapping(_safe_get(internal_meta, USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY))
+    if direct_meta_only is not None:
+        if direct_visible is not None:
+            merged = dict(direct_meta_only)
+            merged[USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(direct_visible)
+            return merged
+        return direct_meta_only
+    if direct_visible is not None:
+        return direct_visible
+
+    for container_key in ("diagnostic_summary", "phase_gate", "multi_perspective"):
+        container = _safe_mapping(_safe_get(internal_meta, container_key))
+        if container is None:
+            continue
+        nested_meta_only = _safe_mapping(_safe_get(container, USER_LABEL_CONNECTION_META_ONLY_META_KEY))
+        nested_visible = _safe_mapping(_safe_get(container, USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY))
+        if nested_meta_only is not None:
+            if nested_visible is not None:
+                merged = dict(nested_meta_only)
+                merged[USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(nested_visible)
+                return merged
+            return nested_meta_only
+        if nested_visible is not None:
+            return nested_visible
+    return None
+
+
+def _build_user_label_connection_public_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_user_label_connection_source(internal_meta)
+    if source is None:
+        return {}
+    try:
+        summary = user_label_connection_public_summary(source)
+    except Exception:
+        return {
+            "schema_version": "cocolon.emlis.user_label_connection_meta_only_public_summary.v1",
+            "phase": "phase7_meta_only_integration",
+            "meta_only_connected": False,
+            "history_connection_applied": False,
+            "history_connection_blocked": True,
+            "history_connection_edge_family_count": 0,
+            "history_connection_evidence_record_count": 0,
+            "scope_marker_required": True,
+            "soft_marker_required": True,
+            "public_response_key_added": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "history_raw_text_included": False,
+            "comment_text_body_included": False,
+            "candidate_body_included": False,
+            "surface_body_included": False,
+            "comment_text_generated": False,
+            "comment_text_connected": False,
+            "visible_text_generated": False,
+            "visible_surface_connected": False,
+            "runtime_surface_connected": False,
+            "public_release_applied": False,
+            "rejection_reasons": ["meta_only_integration_exception"],
+        }
+    return dict(summary)
+
+
 def _strip_internal_public_boundary_keys(value: Any) -> Any:
     if isinstance(value, Mapping):
         stripped: Dict[str, Any] = {}
@@ -1093,6 +1163,10 @@ def build_public_emlis_input_feedback_meta(
         step10_public_meta = _build_step10_repair_meta(internal_meta)
         if step10_public_meta:
             public_meta["step10_observation_display_repair_integration"] = step10_public_meta
+
+        user_label_connection_meta = _build_user_label_connection_public_meta(internal_meta)
+        if user_label_connection_meta:
+            public_meta[USER_LABEL_CONNECTION_PUBLIC_META_KEY] = user_label_connection_meta
 
         visible_surface_gate = _build_visible_surface_acceptance_gate_meta(internal_meta)
         if visible_surface_gate:
