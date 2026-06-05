@@ -5,10 +5,11 @@ from __future__ import annotations
 
 This module classifies Gate failure reason codes into bounded recovery
 policies so a repairable failure is not treated as "valid empty comment_text".
-When the input bundle is observable, it can attempt one limited current-input
-recovery that still goes through the existing gates.  It does not expose raw
-input in meta, does not add public response keys, and does not relax Safety /
-Grounding / Template / Visible Surface / Display gates.
+When the input bundle is observable, it can prepare diagnostic recovery
+material, but P3 prevents that material surface from being promoted directly
+to public comment_text.  It does not expose raw input in meta, does not add
+public response keys, and does not relax Safety / Grounding / Template /
+Visible Surface / Display gates.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,6 +19,32 @@ import json
 import re
 
 from emlis_ai_display_gate import decide_emlis_observation_display
+from emlis_ai_gate_recovery_public_boundary import (
+    decide_gate_recovery_public_boundary,
+    gate_recovery_public_display_allowed,
+)
+from emlis_ai_gate_recovery_public_candidate_builder import (
+    BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE,
+    GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY,
+    LOW_INFORMATION_RECOVERY_SOURCE_PHASE,
+    build_public_candidate_after_gate_recovery,
+)
+from emlis_ai_gate_recovery_public_constants import (
+    BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
+    BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK,
+    BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+    BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
+    GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
+    POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
+    POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
+    PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
+    gate_recovery_material_surface_blockers_for_model,
+)
 from emlis_ai_response_contract import RepairKind, RepairResult, ResponseKind, build_repair_attempt
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
 from emlis_ai_types import (
@@ -882,6 +909,8 @@ class GateRecoveryLoopResult:
             "safety_gate_relaxed": False,
             "fixed_fallback_used": False,
             "case_specific_route_used": False,
+            "public_surface_role": surface_binding.get("public_surface_role", ""),
+            "candidate_source_kind": surface_binding.get("candidate_source_kind", ""),
             "raw_input_included": False,
             "comment_text_body_included": False,
             GATE_RECOVERY_SURFACE_BINDING_META_KEY: surface_binding,
@@ -1023,6 +1052,18 @@ def build_gate_recovery_surface_binding_meta(
         "recovery_policy": _clean(policy),
         "recovery_context": _clean(recovery_context) or "pre_public_display_gate",
         "post_final_gate_failure": bool(post_final_gate_failure),
+        "candidate_source_kind": CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+        "public_surface_role": PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
+        "public_surface_blockers": _dedupe(
+            (
+                BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK
+                if post_final_gate_failure
+                else BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+                BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
+                BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK,
+                BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+            )
+        ),
         "same_closing_family_repetition_check_ready": True,
         "same_surface_pattern_repetition_check_ready": True,
         "consecutive_recovery_usage_rate_check_ready": True,
@@ -1301,6 +1342,19 @@ def _gate_recovery_composer_meta(
         "source_phase": source_phase,
         "recovery_context": _clean(recovery_context) or "pre_public_display_gate",
         "post_final_gate_failure": bool(post_final_gate_failure),
+        "candidate_source_kind": CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+        "public_surface_role": PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
+        "public_surface_blockers": _dedupe(
+            gate_recovery_material_surface_blockers_for_model(
+                POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL
+                if post_final_gate_failure
+                else GATE_RECOVERY_MATERIAL_SURFACE_MODEL
+            )
+            + (
+                BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK,
+                BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+            )
+        ),
         "observation_reply_kind": response_kind,
         "response_kind": response_kind,
         "material_quality": _clean(material_quality),
@@ -1376,6 +1430,29 @@ def _gate_recovery_composer_meta(
     }
 
 
+def _surface_binding_meta_with_public_boundary(
+    *,
+    composer_meta: Mapping[str, Any],
+    public_boundary_decision: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach the meta-only public-boundary decision to surface binding evidence."""
+
+    surface_binding_meta = dict(
+        composer_meta.get(GATE_RECOVERY_SURFACE_BINDING_META_KEY, {}) or {}
+    )
+    public_display_allowed = gate_recovery_public_display_allowed(public_boundary_decision)
+    surface_binding_meta.update(
+        {
+            "public_boundary_decision_ready": True,
+            "public_display_allowed": public_display_allowed,
+            "public_boundary_blocked": not public_display_allowed,
+            "public_boundary_blockers": _dedupe(public_boundary_decision.get("blockers")),
+            "gate_recovery_public_boundary_decision": dict(public_boundary_decision),
+        }
+    )
+    return surface_binding_meta
+
+
 def recover_emlis_gate_failure(
     *,
     current_input: Mapping[str, Any],
@@ -1392,6 +1469,8 @@ def recover_emlis_gate_failure(
     recovery_context: str = "pre_public_display_gate",
     post_final_gate_failure: bool = False,
     allow_low_information_post_final_recovery: bool = False,
+    original_composer_candidate: Any | None = None,
+    original_composer_source: str = "",
 ) -> GateRecoveryLoopResult:
     """Try one bounded Phase20-5 recovery without relaxing existing gates."""
 
@@ -1458,14 +1537,266 @@ def recover_emlis_gate_failure(
         rejection_reasons=[],
         response_schema_version="cocolon.emlis.phase20_5.gate_recovery.response.v1",
         fixed_string_renderer_used=False,
-        composer_model="phase20_13_post_final_gate_recovery_material_surface" if post_final_gate_failure else "phase20_5_gate_recovery_material_surface",
-        generation_method="phase20_13_post_final_gate_recovery_loop" if post_final_gate_failure else "phase20_5_gate_recovery_loop",
+        composer_model=POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL if post_final_gate_failure else GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
+        generation_method=POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD if post_final_gate_failure else GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
         coverage_scope="current_input_material_bundle_recovery",
         generation_scope="current_input_only",
         composer_meta=composer_meta,
         used_claim_ids=[],
         used_relation_ids=_dedupe(relation_ids),
     )
+    public_boundary_decision = decide_gate_recovery_public_boundary(
+        candidate=candidate,
+        composer_meta=composer_meta,
+        recovery_context=recovery_context,
+    )
+    surface_binding_meta = _surface_binding_meta_with_public_boundary(
+        composer_meta=composer_meta,
+        public_boundary_decision=public_boundary_decision,
+    )
+    public_candidate_builder_result = build_public_candidate_after_gate_recovery(
+        current_input=current,
+        material_route=material_route,
+        original_composer_candidate=original_composer_candidate,
+        original_display_decision=display_decision,
+        safety_triage_kind=triage or TRIAGE_SAFE_OBSERVATION,
+        safety_report=safety,
+        recovery_plan=planning_decision.as_meta(),
+        trace_id=trace_id,
+        recovery_context=recovery_context,
+        composer_resolution={"original_composer_source": _clean(original_composer_source)},
+    )
+    surface_binding_meta[GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY] = (
+        public_candidate_builder_result.as_meta()
+    )
+    if (
+        public_candidate_builder_result.candidate is not None
+        and public_candidate_builder_result.public_display_allowed
+    ):
+        candidate = public_candidate_builder_result.candidate
+        comment = _clean(getattr(candidate, "comment_text", ""))
+        composer_meta = _safe_mapping(getattr(candidate, "composer_meta", {}))
+        public_candidate_source_kind = _clean(public_candidate_builder_result.source_kind)
+        is_low_information_recovery = (
+            public_candidate_source_kind == CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
+        )
+        is_bounded_original_repair = (
+            public_candidate_source_kind == CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
+        )
+        public_recovery_source_phase = (
+            BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE
+            if is_bounded_original_repair
+            else LOW_INFORMATION_RECOVERY_SOURCE_PHASE
+        )
+        public_recovery_label = (
+            "phase20_7_bounded_original_candidate_repair"
+            if is_bounded_original_repair
+            else "phase20_6_low_information_observation_recovery"
+        )
+        public_recovery_scope = (
+            "current_input_bounded_original_candidate_repair"
+            if is_bounded_original_repair
+            else "current_input_low_information_recovery"
+        )
+        public_recovery_support_source = (
+            "bounded_repaired_original_candidate"
+            if is_bounded_original_repair
+            else "low_information_observation_composer"
+        )
+        public_recovery_contract_prefix = (
+            "cocolon.emlis.phase20_7.bounded_original_candidate_repair"
+            if is_bounded_original_repair
+            else "cocolon.emlis.phase20_6.low_information_recovery"
+        )
+        public_recovery_observation_reply_kind = (
+            ResponseKind.LOW_INFORMATION_OBSERVATION.value
+            if is_low_information_recovery
+            else _response_kind_from_material_quality(material_quality).value
+        )
+        relation_values = _dedupe(getattr(candidate, "used_relation_ids", None)) or _dedupe(relation_ids)
+        sentence_count = max(1, min(3, len([part for part in re.split(r"[。！？!?]+", comment) if _clean(part)])))
+        recovered_reader = ListenerReaderReport(
+            understandable=True,
+            addressee_clear=True,
+            speaker_integrity_ok=True,
+            conversational=True,
+            report_like=False,
+            summary_of_output=public_recovery_label,
+            rejection_reasons=[],
+            confidence=0.8,
+            relation_surface_contract_version=f"{public_recovery_contract_prefix}.reader.v1",
+            reader_relation_signal_detected=bool(relation_values),
+            reader_relation_signal_count=len(relation_values),
+            reader_relation_signal_keys=relation_values,
+            reader_relation_signal_relation_types=relation_values,
+            expected_relation_types=relation_values,
+            reader_relation_signal_meta={
+                "source_phase": public_recovery_source_phase,
+                "raw_input_included": False,
+            },
+            raw_input_included=False,
+        )
+        claims = [
+            GroundingSentenceClaim(
+                sentence_index=index,
+                sentence=f"{public_recovery_label}_sentence_{index}",
+                evidence_span_ids=[],
+                relation_supported=True,
+                binding_used=True,
+                declared_relation_type=public_recovery_scope,
+                relation_type=public_recovery_scope,
+                grounding_support_source=public_recovery_support_source,
+            )
+            for index in range(sentence_count)
+        ]
+        recovered_grounding = GroundingReport(
+            passed=True,
+            sentence_claims=claims,
+            rejection_reasons=[],
+            coverage_ratio=1.0,
+            confidence=0.76,
+            grounding_scope=public_recovery_scope,
+            allowed_evidence_span_ids=[],
+            ignored_evidence_span_ids=[],
+            binding_used=True,
+            binding_present=True,
+            binding_missing=False,
+            binding_count=sentence_count,
+            expected_binding_count=sentence_count,
+            binding_version=f"{public_recovery_contract_prefix}.binding.v1",
+            relation_types=relation_values,
+            binding_supported_sentence_count=sentence_count,
+            binding_diagnostics={
+                "source_phase": public_recovery_source_phase,
+                "raw_input_included": False,
+            },
+            declared_relation_types=relation_values,
+            grounding_report_contract_version=f"{public_recovery_contract_prefix}.grounding_report.v1",
+            gate_binding_contract_version=f"{public_recovery_contract_prefix}.binding_gate.v1",
+            binding_contract_version=f"{public_recovery_contract_prefix}.binding.v1",
+            binding_support_source=public_recovery_support_source,
+            binding_pass_rate=1.0,
+            release_blocker=False,
+        )
+        recovered_template = TemplateEchoReport(
+            passed=True,
+            max_old_template_similarity=0.0,
+            max_previous_output_similarity=0.0,
+            raw_echo_ratio=0.0,
+            repeated_sentence_pattern_score=0.0,
+            rejection_reasons=[],
+            matched_banned_patterns=[],
+        )
+        runtime_gate = build_runtime_surface_pre_return_gate_report(
+            comment_text=comment,
+            composer_meta=composer_meta,
+            surface_quality_signature=composer_meta.get("surface_quality_signature"),
+            phrase_unit_grammar_meta=composer_meta.get("phrase_unit_grammar"),
+            rerender_allowed=True,
+            rerender_attempted=True,
+            rerender_attempt_limit=1,
+            low_information_reroute_allowed=False,
+        )
+        visible_gate = build_visible_surface_acceptance_gate_report(
+            comment_text=comment,
+            current_input=current,
+            current_text=_clean(current.get("memo")),
+            composer_meta=composer_meta,
+            rerender_allowed=True,
+            rerender_attempted=True,
+            low_information_reroute_allowed=False,
+        )
+        recovered_decision = decide_emlis_observation_display(
+            comment_text=comment,
+            reader_report=recovered_reader,
+            grounding_report=recovered_grounding,
+            template_echo_report=recovered_template,
+            safety_report=safety,
+            trace_id=trace_id,
+            composer_source=_clean(getattr(candidate, "composer_source", "")) or public_recovery_support_source,
+            phase_completion_ready=True,
+            binding_meta=composer_meta.get("observation_reply_meta"),
+            observation_reply_kind=public_recovery_observation_reply_kind,
+            observation_quality_meta={
+                "source_phase": public_recovery_source_phase,
+                "material_quality": material_quality,
+                "public_response_key_change": False,
+                "body_non_empty": True,
+                "comment_text_non_empty": True,
+                "known_scope_observation_present": bool(composer_meta.get("contains_known_scope_observation", True)),
+                "low_info_known_scope_present": bool(composer_meta.get("low_info_known_scope_present", True)),
+                "contains_humility_marker": bool(composer_meta.get("contains_humility_marker", True)),
+                "humility_marker_present": bool(composer_meta.get("contains_humility_marker", True)),
+                "contains_question": bool(composer_meta.get("contains_question", True)),
+                "question_present": bool(composer_meta.get("contains_question", True)),
+                "low_info_question_present": bool(composer_meta.get("low_info_question_present", True)),
+                "question_not_only": bool(composer_meta.get("question_not_only", True)),
+                "question_only": False,
+                "question_only_surface": False,
+                "unknown_slots": _dedupe(composer_meta.get("unknown_slots") or unknown_slots),
+                "origin_gate_recovery_plan": True,
+                "phase20_6_low_information_recovery_connected": bool(is_low_information_recovery),
+                "phase20_7_bounded_original_candidate_repair_connected": bool(is_bounded_original_repair),
+                "bounded_original_candidate_repair_applied": bool(is_bounded_original_repair),
+                "public_recovery_candidate_source_kind": public_candidate_source_kind,
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+            runtime_surface_pre_return_gate_report=runtime_gate,
+            visible_surface_acceptance_gate_report=visible_gate,
+        )
+        if _clean(getattr(recovered_decision, "observation_status", "")) != "passed":
+            return GateRecoveryLoopResult(
+                False,
+                display_decision,
+                reader_report,
+                grounding_report,
+                template_echo_report,
+                loop_decision=planning_decision,
+                recovery_policy=policy,
+                blocked_reasons=_dedupe(
+                    getattr(recovered_decision, "rejection_reasons", [])
+                    or ["public_recovery_candidate_failed_existing_display_gate"]
+                ),
+                surface_binding_meta=surface_binding_meta,
+            )
+        final_decision = build_gate_recovery_loop_decision(
+            original_display_decision=display_decision,
+            final_display_decision=recovered_decision,
+            safety_report=safety,
+            safety_triage_kind=triage or TRIAGE_SAFE_OBSERVATION,
+            material_quality=route_meta,
+        )
+        return GateRecoveryLoopResult(
+            True,
+            recovered_decision,
+            recovered_reader,
+            recovered_grounding,
+            recovered_template,
+            composer_source=_clean(getattr(candidate, "composer_source", "")) or public_recovery_support_source,
+            composer_candidate=candidate,
+            runtime_surface_pre_return_gate_report=runtime_gate,
+            visible_surface_acceptance_gate_report=visible_gate,
+            loop_decision=final_decision,
+            recovery_policy=policy,
+            blocked_reasons=(),
+            surface_binding_meta=surface_binding_meta,
+        )
+    if not gate_recovery_public_display_allowed(public_boundary_decision):
+        return GateRecoveryLoopResult(
+            False,
+            display_decision,
+            reader_report,
+            grounding_report,
+            template_echo_report,
+            loop_decision=planning_decision,
+            recovery_policy=policy,
+            blocked_reasons=_dedupe(
+                list(public_boundary_decision.get("blockers") or ["gate_recovery_public_boundary_blocked"])
+                + list(public_candidate_builder_result.blocked_reasons or [])
+            ),
+            surface_binding_meta=surface_binding_meta,
+        )
     relation_values = _dedupe(relation_ids)
     recovered_reader = ListenerReaderReport(
         understandable=True,
@@ -1626,7 +1957,7 @@ def recover_emlis_gate_failure(
         loop_decision=final_decision,
         recovery_policy=policy,
         blocked_reasons=(),
-        surface_binding_meta=composer_meta.get(GATE_RECOVERY_SURFACE_BINDING_META_KEY, {}),
+        surface_binding_meta=surface_binding_meta,
     )
 
 def assert_gate_recovery_event_meta(meta: Mapping[str, Any]) -> None:
@@ -1782,6 +2113,17 @@ __all__ = [
     "POLICY_REROUTE_SELF_DENIAL_SAFE_STATE_ANSWER",
     "POLICY_EXIT_SAFETY_EMERGENCY",
     "POLICY_EXIT_INFRA",
+    "BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC",
+    "BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK",
+    "BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE",
+    "BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE",
+    "GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD",
+    "GATE_RECOVERY_MATERIAL_SURFACE_MODEL",
+    "POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD",
+    "POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL",
+    "PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY",
     "GateRecoveryEvent",
     "GateRecoveryLoopDecision",
     "GateRecoveryLoopResult",

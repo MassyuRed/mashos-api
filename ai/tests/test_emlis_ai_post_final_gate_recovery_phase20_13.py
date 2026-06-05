@@ -3,13 +3,11 @@ from __future__ import annotations
 
 """Phase20-13 post-final gate recovery regression tests.
 
-These tests pin the remaining Phase20 display-reliability hole described in
-``Cocolon_EmlisAI_Phase20_DisplayReliability_FinalGateRecovery``: after a
-candidate has reached a displayable ``passed + comment_text`` state, the final
-pre-return visible-surface recheck can still fail closed and return an empty
-public observation.  Phase20-13 intentionally adds the regression coverage before
-Phase20-14 implements the recovery branch, so the displayable-path tests are red
-against the pre-Phase20-14 implementation.
+These tests pin the P3/P6 public-boundary behavior for the Phase20-13
+post-final recovery path: Gate Recovery material surfaces may be recorded as
+meta-only diagnostic recovery evidence, but they must not be promoted directly
+to public ``passed + comment_text``.  When P6 rebuilds an allowed
+low-information candidate, that candidate may pass as public observation.
 """
 
 from collections.abc import Mapping
@@ -255,50 +253,53 @@ def _assert_public_contract_unchanged(reply: Any) -> None:
     assert public_meta.get("reception_text") is None
 
 
-def _assert_post_final_recovery_contract(
+def _assert_gate_recovery_material_surface_not_public(
     reply: Any,
     *,
     expected_material_quality: str,
     expected_response_kinds: set[str],
 ) -> None:
     comment_text = str(getattr(reply, "comment_text", "") or "").strip()
-    meta = _mapping(getattr(reply, "meta", {}))
+    public_meta = _public_meta(reply)
     internal = _internal_contract(reply)
     material_route = _material_route(reply)
     post_final = _post_final_recovery_meta(reply)
 
-    assert comment_text
-    assert meta.get("observation_status") == "passed"
+    assert comment_text == ""
+    assert should_include_public_input_feedback(comment_text, public_meta) is False
+    assert public_meta.get("observation_status") != "passed"
     assert internal.get("response_kind") in expected_response_kinds
     assert material_route.get("material_quality") == expected_material_quality
-    assert should_include_public_input_feedback(comment_text, _public_meta(reply)) is True
-    assert _public_meta(reply).get("observation_status") == "passed"
+    assert "今回の入力では" not in comment_text
+    assert "Emlisから：" not in comment_text
 
-    assert post_final.get("schema_version") == "cocolon.emlis.post_final_gate_recovery.v1"
-    assert post_final.get("source_phase") == "Phase20-13_Post_Final_Gate_Recovery"
-    assert post_final.get("attempted") is True
-    assert post_final.get("applied") is True
-    assert post_final.get("attempt_count") == 1
-    assert post_final.get("original_final_status") in {"rejected", "unavailable"}
-    assert post_final.get("final_status_after_recovery") == "passed"
-    assert post_final.get("from_gate") in {
-        "final_pre_return_gate",
-        "final_visible_surface_acceptance_gate",
-    }
-    assert post_final.get("display_gate_relaxed") is False
-    assert post_final.get("safety_gate_relaxed") is False
-    assert post_final.get("grounding_gate_relaxed") is False
-    assert post_final.get("template_gate_relaxed") is False
-    assert post_final.get("fixed_fallback_used") is False
-    assert post_final.get("public_response_key_change") is False
-    assert post_final.get("comment_text_body_included") is False
-    assert post_final.get("raw_input_included") is False
-    assert post_final.get("empty_comment_text_exit_allowed") is False
+    if post_final:
+        assert post_final.get("schema_version") == "cocolon.emlis.post_final_gate_recovery.v1"
+        assert post_final.get("source_phase") == "Phase20-13_Post_Final_Gate_Recovery"
+        assert post_final.get("attempted") is True
+        assert post_final.get("applied") is False
+        assert post_final.get("attempt_count") == 1
+        assert post_final.get("final_status_after_recovery") != "passed"
+        assert post_final.get("from_gate") in {
+            "final_pre_return_gate",
+            "final_visible_surface_acceptance_gate",
+        }
+        assert "post_final_gate_recovery_material_surface_public_leak" in post_final.get("blocked_reasons", [])
+        assert "gate_recovery_diagnostic_surface_promoted_to_public" in post_final.get("blocked_reasons", [])
+        assert post_final.get("display_gate_relaxed") is False
+        assert post_final.get("safety_gate_relaxed") is False
+        assert post_final.get("grounding_gate_relaxed") is False
+        assert post_final.get("template_gate_relaxed") is False
+        assert post_final.get("fixed_fallback_used") is False
+        assert post_final.get("public_response_key_change") is False
+        assert post_final.get("comment_text_body_included") is False
+        assert post_final.get("raw_input_included") is False
+        assert post_final.get("empty_comment_text_exit_allowed") is False
     _assert_public_contract_unchanged(reply)
 
 
 @pytest.mark.asyncio
-async def test_phase20_13_normal_observation_recovers_when_final_visible_gate_fails(
+async def test_phase20_13_normal_observation_does_not_promote_gate_recovery_surface(
     phase20_13_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -312,17 +313,16 @@ async def test_phase20_13_normal_observation_recovers_when_final_visible_gate_fa
         timezone_name="Asia/Tokyo",
     )
 
-    assert forced_gate["nonempty_candidate_seen"] is True
-    assert forced_gate["forced"] is True
-    _assert_post_final_recovery_contract(
+    assert forced_gate["forced"] is False
+    _assert_gate_recovery_material_surface_not_public(
         reply,
         expected_material_quality=MATERIAL_QUALITY_ELIGIBLE,
-        expected_response_kinds={ResponseKind.NORMAL_OBSERVATION.value},
+        expected_response_kinds={ResponseKind.INFRASTRUCTURE_ERROR.value},
     )
 
 
 @pytest.mark.asyncio
-async def test_phase20_13_low_information_observation_recovers_when_final_visible_gate_fails(
+async def test_phase20_13_low_information_post_final_recovery_uses_p6_low_information_composer(
     phase20_13_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -336,19 +336,45 @@ async def test_phase20_13_low_information_observation_recovers_when_final_visibl
         timezone_name="Asia/Tokyo",
     )
 
+    comment_text = str(getattr(reply, "comment_text", "") or "").strip()
+    public_meta = _public_meta(reply)
+    internal = _internal_contract(reply)
+    material_route = _material_route(reply)
+    post_final = _post_final_recovery_meta(reply)
+
     assert forced_gate["nonempty_candidate_seen"] is True
     assert forced_gate["forced"] is True
-    _assert_post_final_recovery_contract(
-        reply,
-        expected_material_quality=MATERIAL_QUALITY_LOW_INFORMATION,
-        expected_response_kinds={ResponseKind.LOW_INFORMATION_OBSERVATION.value},
-    )
-    assert "何があったか" not in str(getattr(reply, "comment_text", "") or "")
-    assert _LOW_INFORMATION_INPUT["memo"].split("\n", maxsplit=1)[0] not in str(getattr(reply, "comment_text", "") or "")
+    assert comment_text
+    assert should_include_public_input_feedback(comment_text, public_meta) is True
+    assert public_meta.get("observation_status") == "passed"
+    assert internal.get("response_kind") == ResponseKind.LOW_INFORMATION_OBSERVATION.value
+    assert material_route.get("material_quality") == MATERIAL_QUALITY_LOW_INFORMATION
+    assert post_final.get("schema_version") == "cocolon.emlis.post_final_gate_recovery.v1"
+    assert post_final.get("attempted") is True
+    assert post_final.get("applied") is True
+    assert post_final.get("final_status_after_recovery") == "passed"
+    assert post_final.get("public_boundary_checked") is True
+    assert post_final.get("public_boundary_blocked") is False
+    assert post_final.get("public_display_allowed_by_boundary") is True
+    boundary = _mapping(post_final.get("gate_recovery_public_boundary_decision"))
+    assert boundary.get("candidate_source_kind") == "low_information_observation_composer"
+    assert boundary.get("composer_model") == "low_information_observation_composer_recovery"
+    assert boundary.get("public_surface_role") == "public_observation_candidate"
+    assert boundary.get("public_display_allowed") is True
+    assert boundary.get("blockers") == []
+    assert "post_final_gate_recovery_material_surface_public_leak" not in post_final.get("blocked_reasons", [])
+    assert "gate_recovery_diagnostic_surface_promoted_to_public" not in post_final.get("blocked_reasons", [])
+    assert "今回の入力では" not in comment_text
+    assert "Emlisから：" not in comment_text
+    assert "原因や結論までは" not in comment_text
+    assert "誰かを良い悪い" not in comment_text
+    assert "何があったか" in comment_text
+    assert _LOW_INFORMATION_INPUT["memo"].split("\n", maxsplit=1)[0] not in comment_text
+    _assert_public_contract_unchanged(reply)
 
 
 @pytest.mark.asyncio
-async def test_phase20_13_limited_grounding_observation_recovers_by_narrowing_scope_when_final_gate_fails(
+async def test_phase20_13_limited_grounding_uses_p6_low_information_composer_not_material_surface(
     phase20_13_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,20 +388,41 @@ async def test_phase20_13_limited_grounding_observation_recovers_by_narrowing_sc
         timezone_name="Asia/Tokyo",
     )
 
+    comment_text = str(getattr(reply, "comment_text", "") or "").strip()
+    public_meta = _public_meta(reply)
+    internal = _internal_contract(reply)
+    material_route = _material_route(reply)
+    post_final = _post_final_recovery_meta(reply)
+
     assert forced_gate["nonempty_candidate_seen"] is True
     assert forced_gate["forced"] is True
-    _assert_post_final_recovery_contract(
-        reply,
-        expected_material_quality=MATERIAL_QUALITY_LIMITED_GROUNDING,
-        expected_response_kinds={
-            ResponseKind.NORMAL_OBSERVATION.value,
-            ResponseKind.LIMITED_GROUNDING_OBSERVATION.value,
-        },
-    )
-    comment_text = str(getattr(reply, "comment_text", "") or "")
+    assert comment_text
+    assert should_include_public_input_feedback(comment_text, public_meta) is True
+    assert public_meta.get("observation_status") == "passed"
+    assert internal.get("response_kind") == ResponseKind.LIMITED_GROUNDING_OBSERVATION.value
+    assert material_route.get("material_quality") == MATERIAL_QUALITY_LIMITED_GROUNDING
+    assert post_final.get("attempted") is True
+    assert post_final.get("applied") is True
+    assert post_final.get("final_status_after_recovery") == "passed"
+    if post_final.get("public_boundary_checked") is not None:
+        assert post_final.get("public_boundary_blocked") is False
+        assert post_final.get("public_display_allowed_by_boundary") is True
+        boundary = _mapping(post_final.get("gate_recovery_public_boundary_decision"))
+        assert boundary.get("candidate_source_kind") == "low_information_observation_composer"
+        assert boundary.get("composer_model") == "low_information_observation_composer_recovery"
+        assert boundary.get("public_display_allowed") is True
+        assert boundary.get("blockers") == []
+    assert "post_final_gate_recovery_material_surface_public_leak" not in post_final.get("blocked_reasons", [])
+    assert "gate_recovery_diagnostic_surface_promoted_to_public" not in post_final.get("blocked_reasons", [])
+    assert "今回の入力では" not in comment_text
+    assert "Emlisから：" not in comment_text
+    assert "原因や結論までは" not in comment_text
+    assert "誰かを良い悪い" not in comment_text
+    assert "何があったか" in comment_text
     assert "原因は" not in comment_text
     assert "あなたは" not in comment_text
     assert "診断" not in comment_text
+    _assert_public_contract_unchanged(reply)
 
 
 @pytest.mark.asyncio

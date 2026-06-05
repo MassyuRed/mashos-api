@@ -127,28 +127,36 @@ def test_phase20_15_builds_meta_only_surface_binding_from_material_and_relation_
     assert meta["exact_fixture_surface_used"] is False
 
 
-def test_phase20_15_recovery_candidate_carries_surface_binding_without_fixed_fallback_or_raw_echo() -> None:
+def test_phase20_15_recovery_surface_binding_stays_diagnostic_after_public_boundary_block() -> None:
     result = _result_for_route(_MaterialRoute())
 
-    assert result.applied is True
-    assert result.composer_candidate is not None
-    composer_meta = result.composer_candidate.composer_meta
-    binding = composer_meta[GATE_RECOVERY_SURFACE_BINDING_META_KEY]
+    assert result.applied is False
+    assert result.composer_candidate is None
+    binding = dict(result.surface_binding_meta)
 
+    public_boundary = binding.pop("gate_recovery_public_boundary_decision")
+    public_boundary_blockers = binding.pop("public_boundary_blockers")
+    public_boundary_decision_ready = binding.pop("public_boundary_decision_ready")
+    public_display_allowed = binding.pop("public_display_allowed")
+    public_boundary_blocked = binding.pop("public_boundary_blocked")
     assert_gate_recovery_surface_binding_meta(binding)
-    assert composer_meta["gate_recovery_surface_binding"] == binding
-    assert composer_meta["gate_recovery_surface_binding_ready"] is True
-    assert composer_meta["surface_generation_method"] == "material_bound_generic_surface"
-    assert composer_meta["surface_family_id"] == binding["surface_family_id"]
-    assert composer_meta["closing_family_id"] == binding["closing_family_id"]
+    assert binding["surface_generation_method"] == "material_bound_generic_surface"
+    assert binding["surface_family_id"] == "self_understanding_current_input_material"
+    assert binding["closing_family_id"] == "self_understanding_non_conclusive_current_input_only"
     assert binding["relation_family_ids"] == ["self_understanding_learning", "value_or_self_understanding_material"]
     assert binding["fixed_fallback_used"] is False
     assert binding["fixed_sentence_template_used"] is False
     assert binding["exact_fixture_surface_used"] is False
+    assert public_boundary_decision_ready is True
+    assert public_display_allowed is False
+    assert public_boundary_blocked is True
+    assert "gate_recovery_material_surface_public_leak" in public_boundary_blockers
+    assert public_boundary["public_display_allowed"] is False
+    assert public_boundary["contract_flags"]["comment_text_body_included"] is False
 
     comment_text = result.display_decision.comment_text
-    assert "見えたこと：" in comment_text
-    assert "Emlisから：" in comment_text
+    assert "見えたこと：" not in comment_text
+    assert "Emlisから：" not in comment_text
     assert "これはraw inputとしてそのまま出してはいけない本文" not in comment_text
     assert "これも本文へechoしない行動欄" not in comment_text
 

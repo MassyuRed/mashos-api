@@ -31,6 +31,46 @@ PRODUCT_QUALITY_ACCEPTANCE_CRITERION_ROW_SCHEMA_VERSION: Final = (
 PRODUCT_QUALITY_VALIDATION_PLAN_PHASE: Final = "Phase8_ValidationPlan"
 PRODUCT_QUALITY_VALIDATION_PLAN_TARGET_STEP: Final = "EmlisAI_ProductQuality_ValidationPlan"
 
+GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.gate_recovery_public_surface_leak_repair.validation_plan.v1"
+)
+GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_PHASE: Final = (
+    "GateRecoveryPublicSurfaceLeakRepair_P12_ValidationPlan"
+)
+P12_BACKEND_VALIDATION_COMMANDS: Final[tuple[str, ...]] = (
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_gate_recovery_public_surface_boundary.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_gate_recovery_surface_phase20_15.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_product_quality_measurement_event.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_product_quality_measurement_runner.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_product_quality_blocker_matrix.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emlis_ai_product_quality_generation_repair_design.py",
+    "PYTHONPATH=services/ai_inference pytest -q tests/test_emotion_submit_phase18_product_quality_e2e.py",
+)
+P12_FRONTEND_VALIDATION_COMMANDS: Final[tuple[str, ...]] = (
+    "cd Cocolon && npm run test:rn-screens",
+)
+P12_REAL_DEVICE_VALIDATION_CHECKS: Final[tuple[str, ...]] = (
+    "composer_disabled_does_not_public_display_gate_recovery_template",
+    "composer_enabled_public_observation_uses_allowed_source",
+    "feg_inputs_do_not_emit_gate_recovery_template_fragments",
+    "gate_failure_public_display_lineage_is_low_info_repaired_original_or_safe_state",
+    "product_quality_measurement_keeps_blockers_until_all_p12_criteria_pass",
+)
+P12_FORBIDDEN_PUBLIC_SURFACE_FRAGMENTS: Final[tuple[str, ...]] = (
+    "今回の入力では",
+    "原因や結論までは決めず",
+    "誰かを良い悪いで決めず",
+)
+P12_ALLOWED_PUBLIC_CANDIDATE_SOURCES: Final[tuple[str, ...]] = (
+    "complete_initial_composer",
+    "limited_composer",
+    "low_information_observation_composer",
+    "self_denial_safe_state_answer",
+    "bounded_repaired_original_candidate",
+    "complete_self_repair_candidate",
+)
+
 VALIDATION_STATUS_PASSED: Final = "passed"
 VALIDATION_STATUS_FAILED: Final = "failed"
 VALIDATION_STATUS_NOT_EXECUTED: Final = "not_executed"
@@ -202,6 +242,81 @@ _EXECUTION_ORDER: Final[tuple[dict[str, Any], ...]] = (
             "ai/tests/test_emlis_ai_public_boundary_phase20_7.py",
         ],
         "owner_area": "emotion_submit_public_boundary",
+    },
+    {
+        "order": 11,
+        "validation_item_id": "p12_gate_recovery_public_boundary_regression_tests",
+        "validation_group": VALIDATION_GROUP_REGRESSION,
+        "source_artifacts": [
+            "ai/tests/test_emlis_ai_gate_recovery_public_surface_boundary.py",
+            "ai/tests/test_emlis_ai_gate_recovery_public_boundary_decision.py",
+        ],
+        "owner_area": "gate_recovery_public_boundary",
+    },
+    {
+        "order": 12,
+        "validation_item_id": "p12_gate_recovery_phase20_surface_regression_tests",
+        "validation_group": VALIDATION_GROUP_REGRESSION,
+        "source_artifacts": [
+            "ai/tests/test_emlis_ai_gate_recovery_loop_phase20_5.py",
+            "ai/tests/test_emlis_ai_gate_recovery_surface_phase20_15.py",
+        ],
+        "owner_area": "gate_recovery_loop_surface_boundary",
+    },
+    {
+        "order": 13,
+        "validation_item_id": "p12_post_final_gate_recovery_boundary_regression_tests",
+        "validation_group": VALIDATION_GROUP_REGRESSION,
+        "source_artifacts": ["ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py"],
+        "owner_area": "post_final_gate_recovery_boundary",
+    },
+    {
+        "order": 14,
+        "validation_item_id": "p12_allowed_recovery_source_regression_tests",
+        "validation_group": VALIDATION_GROUP_REGRESSION,
+        "source_artifacts": [
+            "ai/tests/test_emlis_ai_gate_recovery_public_candidate_builder_p5.py",
+            "ai/tests/test_emlis_ai_gate_recovery_low_information_recovery_p6.py",
+            "ai/tests/test_emlis_ai_gate_recovery_original_candidate_repair_p7.py",
+            "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py",
+        ],
+        "owner_area": "gate_recovery_allowed_public_candidate_builder",
+    },
+    {
+        "order": 15,
+        "validation_item_id": "p12_surface_origin_measurement_regression_tests",
+        "validation_group": VALIDATION_GROUP_PRODUCT_QUALITY,
+        "source_artifacts": [
+            "ai/tests/test_emlis_ai_product_quality_surface_origin_p8.py",
+            "ai/tests/test_emlis_ai_product_quality_measurement_event.py",
+            "ai/tests/test_emlis_ai_product_quality_measurement_runner.py",
+        ],
+        "owner_area": "product_quality_surface_origin",
+    },
+    {
+        "order": 16,
+        "validation_item_id": "p12_gate_recovery_repair_design_queue_tests",
+        "validation_group": VALIDATION_GROUP_PRODUCT_QUALITY,
+        "source_artifacts": [
+            "ai/tests/test_emlis_ai_product_quality_gate_recovery_repair_design_p9.py",
+            "ai/tests/test_emlis_ai_product_quality_blocker_matrix.py",
+            "ai/tests/test_emlis_ai_product_quality_generation_repair_design.py",
+        ],
+        "owner_area": "gate_recovery_blocker_repair_design",
+    },
+    {
+        "order": 17,
+        "validation_item_id": "p12_real_device_regression_fixture_handling_tests",
+        "validation_group": VALIDATION_GROUP_REGRESSION,
+        "source_artifacts": ["ai/tests/test_emlis_ai_real_device_gate_recovery_regression_p11.py"],
+        "owner_area": "real_device_regression_fixture_handling",
+    },
+    {
+        "order": 18,
+        "validation_item_id": "p12_emotion_submit_product_quality_e2e_tests",
+        "validation_group": VALIDATION_GROUP_E2E_PUBLIC_BOUNDARY,
+        "source_artifacts": ["ai/tests/test_emotion_submit_phase18_product_quality_e2e.py"],
+        "owner_area": "emotion_submit_product_quality_e2e",
     },
 )
 
@@ -546,6 +661,117 @@ def _required_family_coverage_rate(
     return 0.0
 
 
+def _p12_surface_origin_counts(
+    *,
+    measurement_run: Mapping[str, Any],
+    summary_metrics: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    run_metrics = _safe_mapping(measurement_run.get("summary_metrics"))
+    explicit_metrics = _safe_mapping(summary_metrics)
+    machine_metrics = _safe_mapping(measurement_run.get("machine_metrics"))
+    surface_origin_summary = _safe_mapping(measurement_run.get("surface_origin_summary"))
+
+    def pick_int(*keys: str) -> int:
+        for key in keys:
+            for source in (machine_metrics, surface_origin_summary, explicit_metrics, run_metrics):
+                if key in source:
+                    return _int(source.get(key))
+        return 0
+
+    event_count = _int(measurement_run.get("event_count"))
+    if event_count <= 0:
+        event_count = pick_int("event_count")
+    surface_origin_event_count = pick_int("surface_origin_event_count")
+    return {
+        "event_count": event_count,
+        "surface_origin_event_count": surface_origin_event_count,
+        "surface_origin_coverage_rate": _rate(surface_origin_event_count, event_count) if event_count else 0.0,
+        "public_display_reached_via_gate_recovery_material_surface_count": pick_int(
+            "public_display_reached_via_gate_recovery_material_surface_count",
+        ),
+        "public_display_reached_via_post_final_gate_recovery_material_surface_count": pick_int(
+            "public_display_reached_via_post_final_gate_recovery_material_surface_count",
+        ),
+        "public_display_reached_via_diagnostic_recovery_surface_count": pick_int(
+            "public_display_reached_via_diagnostic_recovery_surface_count",
+            "public_diagnostic_recovery_surface_event_count",
+        ),
+        "template_meta_false_negative_risk_count": pick_int("template_meta_false_negative_risk_count"),
+    }
+
+
+def _p12_validation_bundle(
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    criteria: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    p12_rows = [
+        row for row in rows
+        if str(row.get("validation_item_id") or "").startswith("p12_")
+    ]
+    p12_criteria = [
+        criterion for criterion in criteria
+        if str(criterion.get("criterion_id") or "").startswith("p12_")
+    ]
+    required = [row for row in p12_rows if row.get("required") is True]
+    passed_required = [row for row in required if row.get("status") == VALIDATION_STATUS_PASSED]
+    failed_required = [row for row in required if row.get("status") == VALIDATION_STATUS_FAILED]
+    blocked_or_pending = [
+        row for row in required
+        if row.get("status") in {VALIDATION_STATUS_BLOCKED, VALIDATION_STATUS_NOT_EXECUTED}
+    ]
+    failed_criteria = [criterion for criterion in p12_criteria if criterion.get("passed") is not True]
+    bundle = {
+        "schema_version": GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_SCHEMA_VERSION,
+        "version": GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_SCHEMA_VERSION,
+        "phase": GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_PHASE,
+        "validation_plan_ready": True,
+        "validation_internal_only": True,
+        "backend_validation_commands": list(P12_BACKEND_VALIDATION_COMMANDS),
+        "frontend_validation_commands": list(P12_FRONTEND_VALIDATION_COMMANDS),
+        "real_device_validation_checks": list(P12_REAL_DEVICE_VALIDATION_CHECKS),
+        "forbidden_public_surface_fragments": list(P12_FORBIDDEN_PUBLIC_SURFACE_FRAGMENTS),
+        "allowed_public_candidate_sources": list(P12_ALLOWED_PUBLIC_CANDIDATE_SOURCES),
+        "p12_validation_item_count": len(p12_rows),
+        "p12_required_validation_item_count": len(required),
+        "p12_required_validation_passed_count": len(passed_required),
+        "p12_required_validation_failed_count": len(failed_required),
+        "p12_required_validation_pending_or_blocked_count": len(blocked_or_pending),
+        "p12_acceptance_criterion_count": len(p12_criteria),
+        "p12_acceptance_criterion_failed_count": len(failed_criteria),
+        "p12_validation_passed": bool(required and len(passed_required) == len(required) and not failed_criteria),
+        "case_specific_runtime_branch_allowed": False,
+        "runtime_fixture_branch_allowed": False,
+        "exact_comment_text_required": False,
+        "gate_recovery_material_surface_public_fallback_allowed": False,
+        "diagnostic_recovery_surface_public_display_allowed": False,
+        "public_contract_changed": False,
+        "rn_contract_changed": False,
+        "db_schema_changed": False,
+        "api_route_changed": False,
+        "response_shape_changed": False,
+        "public_response_key_added": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "rn_visible_title_changed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "product_gate_ready": False,
+        "public_release_applied": False,
+    }
+    assert_product_quality_validation_plan_meta_only(
+        bundle,
+        source="gate_recovery_public_surface_leak_repair_p12_validation",
+        require_root_schema=False,
+    )
+    return bundle
+
+
 def _criterion_row(
     *,
     criterion_id: str,
@@ -600,6 +826,10 @@ def _acceptance_criteria(
         family_counts=family_counts,
         required_families=required_families,
         missing_required_families=missing_required_families,
+    )
+    p12_surface_origin_counts = _p12_surface_origin_counts(
+        measurement_run=measurement_run,
+        summary_metrics=summary_metrics,
     )
 
     rows = [
@@ -722,6 +952,46 @@ def _acceptance_criteria(
             target=False,
             comparator="equals_false",
             passed=not _bool(metrics.get("unsafe_insight_surface_detected"), False),
+        ),
+        _criterion_row(
+            criterion_id="p12_gate_recovery_public_leak_count_zero",
+            owner_area="gate_recovery_public_boundary",
+            observed=p12_surface_origin_counts["public_display_reached_via_gate_recovery_material_surface_count"],
+            target=0,
+            comparator="==",
+            passed=p12_surface_origin_counts["public_display_reached_via_gate_recovery_material_surface_count"] == 0,
+        ),
+        _criterion_row(
+            criterion_id="p12_post_final_gate_recovery_public_leak_count_zero",
+            owner_area="post_final_gate_recovery_boundary",
+            observed=p12_surface_origin_counts["public_display_reached_via_post_final_gate_recovery_material_surface_count"],
+            target=0,
+            comparator="==",
+            passed=p12_surface_origin_counts["public_display_reached_via_post_final_gate_recovery_material_surface_count"] == 0,
+        ),
+        _criterion_row(
+            criterion_id="p12_diagnostic_recovery_surface_public_count_zero",
+            owner_area="gate_recovery_public_boundary",
+            observed=p12_surface_origin_counts["public_display_reached_via_diagnostic_recovery_surface_count"],
+            target=0,
+            comparator="==",
+            passed=p12_surface_origin_counts["public_display_reached_via_diagnostic_recovery_surface_count"] == 0,
+        ),
+        _criterion_row(
+            criterion_id="p12_gate_recovery_template_meta_false_negative_count_zero",
+            owner_area="product_quality_surface_origin",
+            observed=p12_surface_origin_counts["template_meta_false_negative_risk_count"],
+            target=0,
+            comparator="==",
+            passed=p12_surface_origin_counts["template_meta_false_negative_risk_count"] == 0,
+        ),
+        _criterion_row(
+            criterion_id="p12_surface_origin_present_for_measured_events",
+            owner_area="product_quality_surface_origin",
+            observed=p12_surface_origin_counts["surface_origin_coverage_rate"],
+            target=1.0,
+            comparator=">=",
+            passed=bool(p12_surface_origin_counts["surface_origin_coverage_rate"] >= 1.0),
         ),
     ]
     return rows
@@ -920,6 +1190,7 @@ def build_product_quality_validation_plan(
         for row in rows
         for artifact in _listify(row.get("source_artifacts"))
     )
+    p12_validation = _p12_validation_bundle(rows=rows, criteria=criteria)
 
     plan = {
         "schema_version": PRODUCT_QUALITY_VALIDATION_PLAN_SCHEMA_VERSION,
@@ -935,6 +1206,14 @@ def build_product_quality_validation_plan(
         "validation_passed": validation_ready,
         "release_allowed_by_validation_plan": validation_ready,
         "validation_plan_internal_only": True,
+        "gate_recovery_public_surface_leak_repair_validation": p12_validation,
+        "p12_gate_recovery_public_leak_validation_plan_ready": bool(p12_validation.get("validation_plan_ready")),
+        "p12_gate_recovery_public_leak_validation_passed": bool(p12_validation.get("p12_validation_passed")),
+        "p12_backend_validation_commands": list(P12_BACKEND_VALIDATION_COMMANDS),
+        "p12_frontend_validation_commands": list(P12_FRONTEND_VALIDATION_COMMANDS),
+        "p12_real_device_validation_checks": list(P12_REAL_DEVICE_VALIDATION_CHECKS),
+        "p12_forbidden_public_surface_fragments": list(P12_FORBIDDEN_PUBLIC_SURFACE_FRAGMENTS),
+        "p12_allowed_public_candidate_sources": list(P12_ALLOWED_PUBLIC_CANDIDATE_SOURCES),
         "contract_freeze": contract_freeze,
         "contract_assertions": _contract_assertions(),
         "source_contract_violation_paths": contract_violation_paths,
@@ -1038,6 +1317,9 @@ def build_product_quality_validation_plan(
             "required_validation_pass_rate": _rate(len(passed_rows), len(required_rows)),
             "acceptance_criterion_failed_count": len(failed_criteria),
             "validation_blocker_count": len(blockers),
+            "p12_gate_recovery_public_leak_validation_passed": bool(p12_validation.get("p12_validation_passed")),
+            "p12_required_validation_pending_or_blocked_count": p12_validation.get("p12_required_validation_pending_or_blocked_count"),
+            "p12_acceptance_criterion_failed_count": p12_validation.get("p12_acceptance_criterion_failed_count"),
             "release_decision_candidate_or_all_green": bool(not release_blockers),
             "product_gate_ready": False,
             "public_release_applied": False,
@@ -1108,6 +1390,13 @@ __all__ = [
     "BLOCKER_VALIDATION_EXECUTION_REQUIRED",
     "PRODUCT_QUALITY_VALIDATION_PLAN_PHASE",
     "PRODUCT_QUALITY_VALIDATION_PLAN_SCHEMA_VERSION",
+    "GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_PHASE",
+    "GATE_RECOVERY_PUBLIC_SURFACE_LEAK_REPAIR_P12_SCHEMA_VERSION",
+    "P12_ALLOWED_PUBLIC_CANDIDATE_SOURCES",
+    "P12_BACKEND_VALIDATION_COMMANDS",
+    "P12_FORBIDDEN_PUBLIC_SURFACE_FRAGMENTS",
+    "P12_FRONTEND_VALIDATION_COMMANDS",
+    "P12_REAL_DEVICE_VALIDATION_CHECKS",
     "PRODUCT_QUALITY_VALIDATION_PLAN_TARGET_STEP",
     "PRODUCT_QUALITY_VALIDATION_PLAN_VERSION",
     "VALIDATION_GROUP_CONTRACT",

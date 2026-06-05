@@ -15,6 +15,9 @@ from collections.abc import Iterable, Mapping, Sequence
 import json
 from typing import Any, Final, NamedTuple
 
+from emlis_ai_gate_recovery_public_constants import (
+    GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS,
+)
 from emlis_ai_product_quality_blocker_matrix import (
     PRODUCT_QUALITY_BLOCKER_MATRIX_VERSION,
     assert_product_quality_blocker_matrix_meta_only,
@@ -48,6 +51,7 @@ FAMILY_ALL: Final = "all"
 FAMILY_UNKNOWN: Final = "unknown"
 
 _CORE_PHASE5_TRACKS: Final[tuple[str, ...]] = (
+    "gate_recovery_public_surface_boundary_repair",
     "display_reach_repair",
     "low_information_repair",
     "daily_mixed_state_answer",
@@ -278,6 +282,18 @@ _COMMON_ACCEPTANCE: Final[tuple[str, ...]] = (
     "raw_or_comment_body_absent_from_material",
 )
 
+_GATE_RECOVERY_REPAIR_BLOCKER_SORT_ORDER: Final[dict[str, int]] = {
+    "gate_recovery_material_surface_public_leak": 0,
+    "post_final_gate_recovery_material_surface_public_leak": 1,
+    "gate_recovery_diagnostic_surface_promoted_to_public": 2,
+    "gate_recovery_internal_policy_sentence_leak": 3,
+    "gate_recovery_template_meta_false_negative": 4,
+    "composer_disabled_recovery_surface_public_substitution": 5,
+    "recovery_surface_source_lineage_missing": 6,
+    "public_candidate_source_not_open": 7,
+    "bounded_recovery_public_candidate_missing": 8,
+}
+
 _TRACKS: Final[dict[str, _Track]] = {
     "contract_boundary_repair": _Track(
         "contract_boundary_repair",
@@ -315,6 +331,64 @@ _TRACKS: Final[dict[str, _Track]] = {
         phase5_applicable=False,
         generation_logic_change_required=False,
         precondition_or_followup="precondition_composer_bootstrap",
+    ),
+    "gate_recovery_public_surface_boundary_repair": _Track(
+        "gate_recovery_public_surface_boundary_repair",
+        "surface_quality_gate_recovery_boundary",
+        8,
+        "surface_quality_gate_and_recovery_boundary",
+        (
+            "emlis_ai_gate_recovery_loop.py",
+            "emlis_ai_gate_recovery_public_constants.py",
+            "emlis_ai_gate_recovery_public_boundary.py",
+            "emlis_ai_gate_recovery_public_candidate_builder.py",
+            "emlis_ai_reply_service.py",
+            "emlis_ai_low_information_observation_composer.py",
+            "emlis_ai_self_denial_safe_state_answer.py",
+            "emlis_ai_runtime_surface_self_repair.py",
+            "emlis_ai_product_quality_measurement_event.py",
+            "emlis_ai_product_quality_measurement_runner.py",
+            "emlis_ai_product_quality_blocker_matrix.py",
+            "emlis_ai_product_quality_generation_repair_design.py",
+        ),
+        (
+            "gate_recovery_material_surface_public_promotion",
+            "diagnostic_recovery_surface_promoted_to_public",
+            "post_final_gate_recovery_material_surface_public_promotion",
+            "composer_disabled_recovery_surface_substitution",
+            "recovery_template_meta_false_negative",
+            "public_candidate_source_missing_after_recovery",
+            "public_candidate_source_not_open",
+            "bounded_recovery_public_candidate_missing",
+        ),
+        (
+            "enforce_gate_recovery_public_boundary_before_display_gate",
+            "route_low_information_recovery_to_low_information_observation_composer",
+            "route_original_candidate_to_bounded_repair",
+            "route_self_denial_to_safe_state_answer_when_applicable",
+            "stop_post_final_direct_material_surface_promotion",
+            "record_surface_origin_and_rerun_long_run_repetition_check",
+        ),
+        _COMMON_FORBIDDEN
+        + (
+            "gate_recovery_material_surface_public_fallback",
+            "diagnostic_recovery_surface_to_comment_text",
+            "internal_policy_sentence_public_display",
+            "_build_recovery_comment_text_public_fallback",
+            "composer_disabled_success_via_recovery_surface",
+            "post_final_direct_surface_promotion",
+        ),
+        _COMMON_ACCEPTANCE
+        + (
+            "gate_recovery_public_leak_count_zero",
+            "post_final_gate_recovery_public_leak_count_zero",
+            "diagnostic_recovery_surface_public_count_zero",
+            "surface_origin_present_for_displayed_candidates",
+            "display_reached_only_from_allowed_public_candidate_source",
+            "self_denial_safe_state_answer_route_used_only_when_applicable",
+            "long_run_surface_family_repetition_absent",
+        ),
+        depends_on_tracks=("contract_boundary_repair",),
     ),
     "display_reach_repair": _Track(
         "display_reach_repair",
@@ -609,7 +683,23 @@ def _track_id_for_matrix_row(row: Mapping[str, Any]) -> str:
     if group == "contract_leakage" or "contract" in blocker or "forbidden" in blocker or "schema" in blocker:
         return "contract_boundary_repair"
     if group == "composer_bootstrap" or "composer" in blocker or "composer" in owner:
+        if blocker in GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS or owner == "surface_quality_gate_and_recovery_boundary":
+            return "gate_recovery_public_surface_boundary_repair"
         return "composer_bootstrap_precondition"
+    if (
+        blocker in GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS
+        or owner == "surface_quality_gate_and_recovery_boundary"
+        or (
+            group == "surface_quality"
+            and (
+                "gate_recovery" in blocker
+                or "recovery_surface" in blocker
+                or "public_candidate_source" in blocker
+                or "bounded_recovery_public_candidate" in blocker
+            )
+        )
+    ):
+        return "gate_recovery_public_surface_boundary_repair"
     if group == "blind_qa" or "blind_qa" in blocker or "read_feeling" in blocker:
         return "blind_qa_followup_required"
     if group == "phase11_long_run" or "phase11" in blocker or "consecutive" in blocker or "family_coverage" in blocker:
@@ -645,6 +735,17 @@ def _track_for_matrix_row(row: Mapping[str, Any]) -> _Track:
     return _TRACKS[_track_id_for_matrix_row(row)]
 
 
+def _repair_design_sort_key(row: Mapping[str, Any]) -> tuple[int, str, int, str, str]:
+    source_blocker_id = str(row.get("source_blocker_id") or "")
+    return (
+        int(row.get("priority_rank") or 0),
+        str(row.get("repair_track") or ""),
+        _GATE_RECOVERY_REPAIR_BLOCKER_SORT_ORDER.get(source_blocker_id, 100),
+        source_blocker_id,
+        str(row.get("family") or ""),
+    )
+
+
 def _target_metric(row: Mapping[str, Any], track: _Track) -> tuple[str, float | int]:
     metric = _safe_identifier(row.get("target_metric"), max_length=96, default="")
     value = row.get("target_metric_value")
@@ -657,6 +758,8 @@ def _target_metric(row: Mapping[str, Any], track: _Track) -> tuple[str, float | 
             return metric, float(value)
         except (TypeError, ValueError):
             pass
+    if track.repair_track == "gate_recovery_public_surface_boundary_repair":
+        return "gate_recovery_public_leak_count", 0
     if track.repair_track == "display_reach_repair":
         return "display_reach_rate", 0.9
     if track.repair_track == "low_information_repair":
@@ -765,7 +868,7 @@ def build_product_quality_generation_repair_design(
         default="product_quality_run",
     )
     design_rows = [_build_design_row(run_id=run_id_value, row=row, index=index) for index, row in enumerate(source_rows, start=1)]
-    design_rows.sort(key=lambda item: (int(item["priority_rank"]), str(item["repair_track"]), str(item["source_blocker_id"]), str(item["family"])))
+    design_rows.sort(key=_repair_design_sort_key)
     for index, row in enumerate(design_rows, start=1):
         row["implementation_order"] = index
         assert_product_quality_generation_repair_design_row_meta_only(row)

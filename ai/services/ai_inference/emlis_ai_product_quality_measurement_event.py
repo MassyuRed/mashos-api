@@ -14,6 +14,29 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from emlis_ai_gate_recovery_public_constants import (
+    ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS,
+    BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION,
+    BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
+    BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+    BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
+    CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
+    CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
+    CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NONE,
+    CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
+    GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHODS,
+    GATE_RECOVERY_MATERIAL_SURFACE_MODELS,
+    POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
+    POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
+    PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
+    PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+)
 from emlis_ai_product_quality_contract_freeze import (
     assert_emlis_ai_product_quality_contract_freeze_meta_only,
     build_emlis_ai_product_quality_contract_freeze,
@@ -22,6 +45,9 @@ from emlis_ai_public_feedback_meta import should_include_public_input_feedback
 
 PRODUCT_QUALITY_EVENT_SCHEMA_VERSION: Final = (
     "cocolon.emlis.product_quality.measurement_event.v1"
+)
+PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.product_quality.surface_origin.v1"
 )
 PRODUCT_QUALITY_EVENT_PHASE: Final = "Phase2_ProductQualityEventV1_Normalizer"
 
@@ -72,6 +98,7 @@ _ALLOWED_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
         "surface_quality",
         "safety",
         "composer_resolution",
+        "surface_origin",
         "user_label_connection",
         "blockers",
         "warnings",
@@ -199,6 +226,7 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
         "surface_quality",
         "safety",
         "composer_resolution",
+        "surface_origin",
         "blockers",
     ],
     "properties": {
@@ -299,6 +327,38 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "complete_initial_client_used": {"type": "boolean"},
                 "rejection_reasons": {"type": "array", "items": {"type": "string"}},
                 "qa_profile": {"type": "string"},
+            },
+        },
+        "surface_origin": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "schema_version",
+                "candidate_source_kind",
+                "composer_model",
+                "generation_method",
+                "public_surface_role",
+                "public_display_allowed_by_boundary",
+                "gate_recovery_material_surface_detected",
+                "post_final_gate_recovery_material_surface_detected",
+                "internal_policy_sentence_leak_risk",
+                "template_meta_false_negative_risk",
+                "raw_input_included",
+                "comment_text_body_included",
+            ],
+            "properties": {
+                "schema_version": {"const": PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION},
+                "candidate_source_kind": {"type": "string", "maxLength": 128},
+                "composer_model": {"type": "string", "maxLength": 128},
+                "generation_method": {"type": "string", "maxLength": 128},
+                "public_surface_role": {"type": "string", "maxLength": 128},
+                "public_display_allowed_by_boundary": {"type": "boolean"},
+                "gate_recovery_material_surface_detected": {"type": "boolean"},
+                "post_final_gate_recovery_material_surface_detected": {"type": "boolean"},
+                "internal_policy_sentence_leak_risk": {"type": "boolean"},
+                "template_meta_false_negative_risk": {"type": "boolean"},
+                "raw_input_included": {"const": False},
+                "comment_text_body_included": {"const": False},
             },
         },
         "user_label_connection": {
@@ -827,6 +887,283 @@ def _extract_composer_resolution(*sources: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _extract_boundary_decision(*sources: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = _first(
+        (
+            "surface_origin.gate_recovery_public_boundary_decision",
+            "gate_recovery_public_boundary_decision",
+            "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision",
+            "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision",
+            "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision",
+            "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision",
+            "reply_service_public_boundary.gate_recovery_public_boundary_decision",
+            "gate_recovery_public_boundary.gate_recovery_public_boundary_decision",
+        ),
+        *sources,
+    )
+    return _as_mapping(value)
+
+
+def _infer_surface_origin_candidate_source_kind(
+    *,
+    explicit_source_kind: str,
+    composer_model: str,
+    generation_method: str,
+    public_surface_role: str,
+    requested_composer: str,
+    default_client_used: bool,
+    complete_initial_client_used: bool,
+) -> str:
+    if explicit_source_kind:
+        return explicit_source_kind
+    model_lower = composer_model.lower()
+    generation_lower = generation_method.lower()
+    if composer_model in GATE_RECOVERY_MATERIAL_SURFACE_MODELS or generation_method in GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHODS:
+        return CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE
+    if public_surface_role == PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY:
+        return CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE
+    if "bounded_repaired_original" in model_lower or generation_method == "bounded_repair_after_gate_recovery":
+        return CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
+    if "low_information_observation_composer" in model_lower or "low_information_observation" in generation_lower:
+        return CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
+    if "self_denial_safe_state_answer" in model_lower or "self_denial_safe_state_answer" in generation_lower:
+        return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
+    if "complete_self_repair" in model_lower or "complete_self_repair" in generation_lower:
+        return CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE
+    if complete_initial_client_used or requested_composer == "complete_initial" or "complete_initial" in model_lower:
+        return CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER
+    if default_client_used or requested_composer == "limited" or "limited" in model_lower:
+        return CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER
+    return CANDIDATE_SOURCE_KIND_NONE
+
+
+def _infer_surface_origin_public_role(*, explicit_role: str, candidate_source_kind: str) -> str:
+    if explicit_role:
+        return explicit_role
+    if candidate_source_kind in ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS:
+        return PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+    if candidate_source_kind in {
+        CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+        CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
+    }:
+        return PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
+    return ""
+
+
+def _surface_origin_template_false_negative_risk(
+    *,
+    recovery_surface_detected: bool,
+    public_meta: Mapping[str, Any],
+    internal_meta: Mapping[str, Any],
+    composer_resolution: Mapping[str, Any],
+    machine_metrics: Mapping[str, Any],
+) -> bool:
+    if not recovery_surface_detected:
+        return False
+    sources = (public_meta, internal_meta, composer_resolution, machine_metrics)
+    for path in (
+        "surface_origin.template_meta_false_negative_risk",
+        "template_meta_false_negative_risk",
+    ):
+        explicit = _first_bool((path,), *sources, default=None)
+        if explicit is not None:
+            return bool(explicit)
+    for path in (
+        "surface_quality_signature.surface_template_major",
+        "surface_quality_signature.template_major",
+        "phase20_15_gate_recovery_surface_binding.surface_quality_signature.surface_template_major",
+        "phase20_15_gate_recovery_surface_binding.surface_quality_signature.template_major",
+        "surface_origin.surface_template_major",
+        "surface_origin.template_major",
+        "surface_template_major",
+        "template_major",
+    ):
+        flag = _first_bool((path,), *sources, default=None)
+        if flag is False:
+            return True
+    return False
+
+
+def _extract_surface_origin(
+    *,
+    public_display_reached: bool,
+    public_meta: Mapping[str, Any],
+    internal_meta: Mapping[str, Any],
+    composer_resolution: Mapping[str, Any],
+    machine_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return P8 meta-only surface origin for ProductQualityEventV1.
+
+    The extraction is lineage-only.  It never copies public body text, raw input,
+    or candidate bodies into QA material.
+    """
+
+    sources = (public_meta, internal_meta, composer_resolution, machine_metrics)
+    boundary_decision = _extract_boundary_decision(*sources)
+    composer_model = _safe_id(
+        _first(
+            (
+                "surface_origin.composer_model",
+                "composer_model",
+                "composer_resolution.composer_model",
+                "candidate.composer_model",
+                "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.composer_model",
+                "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.composer_model",
+                "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.composer_model",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.composer_model",
+            ),
+            *sources,
+            boundary_decision,
+        ),
+        max_length=128,
+        default="",
+    )
+    generation_method = _safe_id(
+        _first(
+            (
+                "surface_origin.generation_method",
+                "generation_method",
+                "composer_resolution.generation_method",
+                "candidate.generation_method",
+                "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.generation_method",
+                "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.generation_method",
+                "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.generation_method",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.generation_method",
+            ),
+            *sources,
+            boundary_decision,
+        ),
+        max_length=128,
+        default="",
+    )
+    explicit_source_kind = _safe_id(
+        _first(
+            (
+                "surface_origin.candidate_source_kind",
+                "candidate_source_kind",
+                "composer_resolution.candidate_source_kind",
+                "candidate.candidate_source_kind",
+                "phase20_5_gate_recovery_public_candidate_builder.source_kind",
+                "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.candidate_source_kind",
+                "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.candidate_source_kind",
+                "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.candidate_source_kind",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.candidate_source_kind",
+            ),
+            *sources,
+            boundary_decision,
+        ),
+        max_length=128,
+        default="",
+    )
+    explicit_role = _safe_id(
+        _first(
+            (
+                "surface_origin.public_surface_role",
+                "public_surface_role",
+                "candidate.public_surface_role",
+                "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.public_surface_role",
+                "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.public_surface_role",
+                "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.public_surface_role",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.public_surface_role",
+            ),
+            *sources,
+            boundary_decision,
+        ),
+        max_length=128,
+        default="",
+    )
+    requested_composer = _safe_id(
+        _first(("requested_composer", "composer_resolution.requested_composer"), composer_resolution, internal_meta, public_meta),
+        max_length=64,
+        default="",
+    )
+    candidate_source_kind = _infer_surface_origin_candidate_source_kind(
+        explicit_source_kind=explicit_source_kind,
+        composer_model=composer_model,
+        generation_method=generation_method,
+        public_surface_role=explicit_role,
+        requested_composer=requested_composer,
+        default_client_used=bool(_to_bool(_first(("default_client_used", "composer_resolution.default_client_used"), composer_resolution, internal_meta, public_meta), False)),
+        complete_initial_client_used=bool(_to_bool(_first(("complete_initial_client_used", "composer_resolution.complete_initial_client_used"), composer_resolution, internal_meta, public_meta), False)),
+    )
+    public_surface_role = _infer_surface_origin_public_role(
+        explicit_role=explicit_role,
+        candidate_source_kind=candidate_source_kind,
+    )
+    gate_recovery_surface_detected = bool(
+        composer_model in GATE_RECOVERY_MATERIAL_SURFACE_MODELS
+        or generation_method in GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHODS
+        or candidate_source_kind
+        in {CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE, CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE}
+        or public_surface_role == PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
+    )
+    post_final_surface_detected = bool(
+        gate_recovery_surface_detected
+        and (
+            composer_model == POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL
+            or generation_method == POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD
+            or _first_bool(
+                (
+                    "surface_origin.post_final_gate_recovery_material_surface_detected",
+                    "post_final_gate_recovery_material_surface_detected",
+                ),
+                *sources,
+                default=False,
+            )
+            is True
+        )
+    )
+    boundary_allowed = _first_bool(
+        (
+            "surface_origin.public_display_allowed_by_boundary",
+            "surface_origin.public_display_allowed",
+            "public_display_allowed_by_boundary",
+            "public_display_allowed",
+            "phase20_5_gate_recovery_public_boundary.public_display_allowed",
+            "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.public_display_allowed",
+            "phase20_13_post_final_gate_recovery.public_display_allowed_by_boundary",
+            "phase20_13_post_final_gate_recovery.reply_service_public_boundary.public_display_allowed",
+        ),
+        *sources,
+        boundary_decision,
+        default=None,
+    )
+    if boundary_allowed is None:
+        boundary_allowed = bool(
+            public_surface_role == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+            and candidate_source_kind in ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS
+            and not gate_recovery_surface_detected
+        )
+    template_false_negative_risk = _surface_origin_template_false_negative_risk(
+        recovery_surface_detected=gate_recovery_surface_detected,
+        public_meta=public_meta,
+        internal_meta=internal_meta,
+        composer_resolution=composer_resolution,
+        machine_metrics=machine_metrics,
+    )
+    internal_policy_sentence_leak_risk = bool(
+        gate_recovery_surface_detected
+        and (
+            public_surface_role == PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
+            or bool(public_display_reached)
+        )
+    )
+    return {
+        "schema_version": PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION,
+        "candidate_source_kind": candidate_source_kind,
+        "composer_model": composer_model,
+        "generation_method": generation_method,
+        "public_surface_role": public_surface_role,
+        "public_display_allowed_by_boundary": bool(boundary_allowed),
+        "gate_recovery_material_surface_detected": bool(gate_recovery_surface_detected),
+        "post_final_gate_recovery_material_surface_detected": bool(post_final_surface_detected),
+        "internal_policy_sentence_leak_risk": bool(internal_policy_sentence_leak_risk),
+        "template_meta_false_negative_risk": bool(template_false_negative_risk),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
 def _extract_user_label_connection(*sources: Mapping[str, Any]) -> dict[str, Any]:
     user_label = _as_mapping(
         _first(
@@ -847,6 +1184,60 @@ def _extract_user_label_connection(*sources: Mapping[str, Any]) -> dict[str, Any
         "evidence_record_count": _to_int(user_label.get("evidence_record_count"), 0),
         "existing_surface_gates_passed": bool(_to_bool(user_label.get("existing_surface_gates_passed"), False)),
     }
+
+
+def _detect_gate_recovery_public_leak_blockers(
+    *,
+    public_display_reached: bool,
+    public_meta: Mapping[str, Any],
+    internal_meta: Mapping[str, Any],
+    composer_resolution: Mapping[str, Any],
+    machine_metrics: Mapping[str, Any],
+    surface_origin: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """Return meta-only blockers when a diagnostic recovery surface reached public display.
+
+    This P0/P1 detector does not add new event keys and does not inspect body
+    text.  It only looks at candidate lineage/source-kind metadata that P1 makes
+    explicit.  P2/P3 still have to block the runtime promotion itself.
+    """
+
+    origin = _as_mapping(surface_origin) or _extract_surface_origin(
+        public_display_reached=public_display_reached,
+        public_meta=public_meta,
+        internal_meta=internal_meta,
+        composer_resolution=composer_resolution,
+        machine_metrics=machine_metrics,
+    )
+    sources = (public_meta, internal_meta, composer_resolution, machine_metrics, origin)
+    composer_model = _safe_id(origin.get("composer_model"), max_length=128, default="")
+    generation_method = _safe_id(origin.get("generation_method"), max_length=128, default="")
+    candidate_source_kind = _safe_id(origin.get("candidate_source_kind"), max_length=128, default="")
+    public_surface_role = _safe_id(origin.get("public_surface_role"), max_length=128, default="")
+    rejection_reasons = _dedupe(
+        _first(("rejection_reasons", "composer_resolution.rejection_reasons"), *sources)
+    )
+
+    recovery_surface_detected = bool(origin.get("gate_recovery_material_surface_detected"))
+    if not recovery_surface_detected:
+        return []
+
+    blockers: list[str] = []
+    if bool(public_display_reached):
+        if (
+            composer_model == POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_MODEL
+            or generation_method == POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD
+        ):
+            blockers.append(BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK)
+        else:
+            blockers.append(BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK)
+        if public_surface_role == PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY:
+            blockers.append(BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC)
+        if "default_limited_composer_feature_disabled" in rejection_reasons:
+            blockers.append(BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION)
+    if bool(origin.get("template_meta_false_negative_risk")):
+        blockers.append(BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE)
+    return _dedupe(blockers)
 
 
 def _forbidden_source_findings(
@@ -954,6 +1345,23 @@ def normalize_product_quality_event(
     surface_quality = _extract_surface_quality(*sources_for_metrics)
     safety = _extract_safety(*sources_for_metrics)
     extracted_composer = _extract_composer_resolution(composer_map, internal_meta_map, public_meta_map)
+    surface_origin = _extract_surface_origin(
+        public_display_reached=bool(public_display_reached),
+        public_meta=public_meta_map,
+        internal_meta=internal_meta_map,
+        composer_resolution=composer_map,
+        machine_metrics=machine_metrics_map,
+    )
+    event_blockers.extend(
+        _detect_gate_recovery_public_leak_blockers(
+            public_display_reached=bool(public_display_reached),
+            public_meta=public_meta_map,
+            internal_meta=internal_meta_map,
+            composer_resolution=composer_map,
+            machine_metrics=machine_metrics_map,
+            surface_origin=surface_origin,
+        )
+    )
     user_label_connection = _extract_user_label_connection(public_meta_map, internal_meta_map, machine_metrics_map)
 
     if not binding["binding_passed"]:
@@ -990,6 +1398,7 @@ def normalize_product_quality_event(
         "surface_quality": surface_quality,
         "safety": safety,
         "composer_resolution": extracted_composer,
+        "surface_origin": surface_origin,
         "user_label_connection": user_label_connection,
         "blockers": _dedupe(event_blockers),
         "warnings": _dedupe(event_warnings),
@@ -1015,6 +1424,7 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
     surface = _as_mapping(event.get("surface_quality"))
     safety = _as_mapping(event.get("safety"))
     gate = _as_mapping(event.get("gate_results"))
+    surface_origin = _as_mapping(event.get("surface_origin"))
     row = {
         "schema_version": "cocolon.emlis.product_quality.scorecard_event_from_measurement_event.v1",
         "source_schema_version": event.get("schema_version"),
@@ -1036,6 +1446,26 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
         "template_major_count": _to_int(surface.get("template_major_count"), 0),
         "surface_signature_key": _safe_text_token(surface.get("surface_signature_key"), max_length=128),
         "unsafe_insight_surface_detected": bool(surface.get("unsafe_insight_surface_detected")),
+        "surface_origin_candidate_source_kind": _safe_id(
+            surface_origin.get("candidate_source_kind"), max_length=128, default=""
+        ),
+        "surface_origin_composer_model": _safe_id(surface_origin.get("composer_model"), max_length=128, default=""),
+        "surface_origin_generation_method": _safe_id(surface_origin.get("generation_method"), max_length=128, default=""),
+        "surface_origin_public_surface_role": _safe_id(
+            surface_origin.get("public_surface_role"), max_length=128, default=""
+        ),
+        "surface_origin_public_display_allowed_by_boundary": bool(
+            surface_origin.get("public_display_allowed_by_boundary")
+        ),
+        "gate_recovery_material_surface_detected": bool(
+            surface_origin.get("gate_recovery_material_surface_detected")
+        ),
+        "post_final_gate_recovery_material_surface_detected": bool(
+            surface_origin.get("post_final_gate_recovery_material_surface_detected")
+        ),
+        "gate_recovery_template_meta_false_negative_risk": bool(
+            surface_origin.get("template_meta_false_negative_risk")
+        ),
         "safety_major_count": _to_int(safety.get("safety_major_count"), 0),
         "blockers": _dedupe(event.get("blockers")),
         "product_gate_ready": False,
@@ -1071,6 +1501,39 @@ def assert_product_quality_measurement_event_meta_only(
         raise ValueError(f"{source} has unsupported family")
     if value.get("observation_status") not in _ALLOWED_OBSERVATION_STATUSES:
         raise ValueError(f"{source} has unsupported observation_status")
+
+    surface_origin = _as_mapping(value.get("surface_origin"))
+    required_surface_origin_keys = {
+        "schema_version",
+        "candidate_source_kind",
+        "composer_model",
+        "generation_method",
+        "public_surface_role",
+        "public_display_allowed_by_boundary",
+        "gate_recovery_material_surface_detected",
+        "post_final_gate_recovery_material_surface_detected",
+        "internal_policy_sentence_leak_risk",
+        "template_meta_false_negative_risk",
+        "raw_input_included",
+        "comment_text_body_included",
+    }
+    if set(surface_origin.keys()) != required_surface_origin_keys:
+        raise ValueError(f"{source} surface_origin key set changed")
+    if surface_origin.get("schema_version") != PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION:
+        raise ValueError(f"{source} has invalid surface_origin schema_version")
+    for key in (
+        "public_display_allowed_by_boundary",
+        "gate_recovery_material_surface_detected",
+        "post_final_gate_recovery_material_surface_detected",
+        "internal_policy_sentence_leak_risk",
+        "template_meta_false_negative_risk",
+    ):
+        if not isinstance(surface_origin.get(key), bool):
+            raise ValueError(f"{source} surface_origin.{key} must be boolean")
+    if surface_origin.get("raw_input_included") is not False:
+        raise ValueError(f"{source} surface_origin.raw_input_included must be false")
+    if surface_origin.get("comment_text_body_included") is not False:
+        raise ValueError(f"{source} surface_origin.comment_text_body_included must be false")
 
     src = _as_mapping(value.get("source"))
     if src.get("source_type") not in _ALLOWED_SOURCE_TYPES:
@@ -1125,7 +1588,14 @@ def build_product_quality_event_schema_material() -> dict[str, Any]:
 __all__ = [
     "PRODUCT_QUALITY_EVENT_PHASE",
     "PRODUCT_QUALITY_EVENT_SCHEMA_VERSION",
+    "PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION",
     "PRODUCT_QUALITY_EVENT_V1_SCHEMA",
+    "BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION",
+    "BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC",
+    "BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE",
+    "PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY",
     "assert_product_quality_measurement_event_meta_only",
     "build_product_quality_event_from_reply",
     "build_product_quality_event_schema_material",

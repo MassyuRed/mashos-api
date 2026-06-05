@@ -131,6 +131,12 @@ from emlis_ai_gate_recovery_loop import (
     build_gate_recovery_loop_decision,
     recover_emlis_gate_failure,
 )
+from emlis_ai_gate_recovery_public_boundary import (
+    RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
+    RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
+    decide_gate_recovery_public_boundary,
+    gate_recovery_public_display_allowed,
+)
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_limited_relation_taxonomy import allowed_relation_types, canonical_relation_type
 from emlis_ai_relation_surface_contract import normalize_relation_surface_type
@@ -159,6 +165,13 @@ _STEP10_PHASE7_ROLLOUT_REASON_CODES = {"rollout_stage_off", "rollout_stage_not_m
 _PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY = "phase20_13_post_final_gate_recovery"
 _PHASE20_13_POST_FINAL_GATE_RECOVERY_SCHEMA_VERSION = "cocolon.emlis.post_final_gate_recovery.v1"
 _PHASE20_13_POST_FINAL_GATE_RECOVERY_SOURCE_PHASE = "Phase20-13_Post_Final_Gate_Recovery"
+_PHASE20_5_GATE_RECOVERY_PUBLIC_BOUNDARY_META_KEY = "phase20_5_gate_recovery_public_boundary"
+_REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SCHEMA_VERSION = (
+    "cocolon.emlis.reply_service_gate_recovery_public_boundary.v1"
+)
+_REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SOURCE_PHASE = (
+    "ReplyService_GateRecovery_PublicBoundary_Insurance_P4"
+)
 _PHASE20_13_DISPLAYABLE_RESPONSE_KINDS = {
     ResponseKind.NORMAL_OBSERVATION.value,
     ResponseKind.LOW_INFORMATION_OBSERVATION.value,
@@ -358,8 +371,9 @@ def _build_phase20_13_post_final_gate_recovery_meta(
     recovery_policy: str,
     from_gate: str,
     blocked_reasons: Iterable[Any] | None = None,
+    public_boundary_meta: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    return {
+    meta = {
         "schema_version": _PHASE20_13_POST_FINAL_GATE_RECOVERY_SCHEMA_VERSION,
         "source_phase": _PHASE20_13_POST_FINAL_GATE_RECOVERY_SOURCE_PHASE,
         "attempted": bool(attempted),
@@ -382,6 +396,131 @@ def _build_phase20_13_post_final_gate_recovery_meta(
         "empty_comment_text_exit_allowed": False,
         "blocked_reasons": _dedupe_reason_codes(blocked_reasons or []),
     }
+    if isinstance(public_boundary_meta, Mapping):
+        boundary = dict(public_boundary_meta)
+        decision = boundary.get("gate_recovery_public_boundary_decision")
+        meta["reply_service_public_boundary"] = boundary
+        meta["public_boundary_checked"] = True
+        meta["public_boundary_blocked"] = bool(boundary.get("blocked"))
+        meta["public_display_allowed_by_boundary"] = bool(boundary.get("public_display_allowed"))
+        meta["public_boundary_blockers"] = _dedupe_reason_codes(boundary.get("blocked_reasons") or [])
+        if isinstance(decision, Mapping):
+            meta["gate_recovery_public_boundary_decision"] = dict(decision)
+    return meta
+
+
+def _composer_resolution_public_boundary_meta(composer_client_resolution: Any) -> Dict[str, Any]:
+    """Return the minimal, text-free composer-resolution material for P4 boundary checks."""
+
+    if isinstance(composer_client_resolution, Mapping):
+        reasons = composer_client_resolution.get("rejection_reasons") or []
+        return {"rejection_reasons": _dedupe_reason_codes(reasons)}
+    reasons = getattr(composer_client_resolution, "rejection_reasons", ()) if composer_client_resolution is not None else ()
+    as_meta = getattr(composer_client_resolution, "as_meta", None)
+    if callable(as_meta):
+        try:
+            payload = as_meta()
+            if isinstance(payload, Mapping):
+                reasons = payload.get("rejection_reasons") or reasons
+        except Exception:
+            pass
+    return {"rejection_reasons": _dedupe_reason_codes(reasons)}
+
+
+def _reply_service_gate_recovery_public_boundary_decision(
+    gate_recovery_loop_result: Any,
+    *,
+    recovery_context: str,
+    composer_client_resolution: Any = None,
+) -> Dict[str, Any]:
+    """P4 insurance boundary before reply_service adopts a recovered candidate.
+
+    The Gate Recovery Loop owns P3 blocking, but reply_service is the final place
+    where a recovery candidate can replace the public candidate.  This check is
+    intentionally body-free: it passes only candidate lineage/meta and a minimal
+    composer-resolution reason list into the P2 boundary decision.
+    """
+
+    candidate = getattr(gate_recovery_loop_result, "composer_candidate", None)
+    composer_meta: Dict[str, Any] = {}
+    candidate_meta = getattr(candidate, "composer_meta", {}) if candidate is not None else {}
+    if isinstance(candidate_meta, Mapping):
+        composer_meta.update(dict(candidate_meta))
+    surface_binding_meta = getattr(gate_recovery_loop_result, "surface_binding_meta", None)
+    if isinstance(surface_binding_meta, Mapping):
+        surface_binding_copy = dict(surface_binding_meta)
+        candidate_public_role = str(composer_meta.get("public_surface_role") or "").strip()
+        candidate_source_kind = str(composer_meta.get("candidate_source_kind") or "").strip()
+        # P6 allows Gate Recovery to rebuild a public candidate through the
+        # low-information composer.  The Gate Recovery loop still carries the
+        # diagnostic material-surface binding as meta-only evidence, but that
+        # diagnostic binding must not overwrite the rebuilt candidate lineage at
+        # the final reply_service adoption boundary.
+        if (
+            candidate is not None
+            and candidate_public_role == "public_observation_candidate"
+            and candidate_source_kind
+        ):
+            composer_meta.setdefault("diagnostic_gate_recovery_surface_binding_meta", surface_binding_copy)
+        else:
+            composer_meta.update(surface_binding_copy)
+    decision_candidate = candidate if candidate is not None else {"composer_meta": composer_meta}
+    return decide_gate_recovery_public_boundary(
+        candidate=decision_candidate,
+        composer_meta=composer_meta,
+        recovery_context=recovery_context,
+        composer_resolution=_composer_resolution_public_boundary_meta(composer_client_resolution),
+    )
+
+
+def _build_reply_service_gate_recovery_public_boundary_meta(
+    *,
+    recovery_context: str,
+    gate_recovery_loop_result: Any,
+    public_boundary_decision: Mapping[str, Any],
+    adopted: bool,
+) -> Dict[str, Any]:
+    """Build meta-only P4 evidence without storing the candidate body."""
+
+    result_meta = (
+        gate_recovery_loop_result.as_meta()
+        if gate_recovery_loop_result is not None and hasattr(gate_recovery_loop_result, "as_meta")
+        else {}
+    )
+    if not isinstance(result_meta, Mapping):
+        result_meta = {}
+    return {
+        "schema_version": _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SCHEMA_VERSION,
+        "source_phase": _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SOURCE_PHASE,
+        "recovery_context": _clean(recovery_context),
+        "attempted": gate_recovery_loop_result is not None,
+        "gate_recovery_loop_applied": bool(getattr(gate_recovery_loop_result, "applied", False)),
+        "public_display_allowed": gate_recovery_public_display_allowed(public_boundary_decision),
+        "adopted": bool(adopted),
+        "blocked": bool(not adopted),
+        "blocked_reasons": _dedupe_reason_codes(
+            public_boundary_decision.get("blockers") if isinstance(public_boundary_decision, Mapping) else []
+        ),
+        "gate_recovery_public_boundary_decision": dict(public_boundary_decision or {}),
+        "gate_recovery_loop_result": dict(result_meta),
+        "public_response_key_change": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _reply_service_gate_recovery_public_boundary_allows(meta: Mapping[str, Any] | None) -> bool:
+    return bool(isinstance(meta, Mapping) and meta.get("public_display_allowed") is True)
+
+
+def _reply_service_gate_recovery_public_boundary_blockers(meta: Mapping[str, Any] | None) -> List[str]:
+    if not isinstance(meta, Mapping):
+        return []
+    return _dedupe_reason_codes(meta.get("blocked_reasons") or [])
 
 
 def _evidence_ids_from_observation_graph(graph: Any) -> List[str]:
@@ -6007,6 +6146,7 @@ async def render_emlis_ai_reply(
         grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
     gate_recovery_loop_result = None
+    phase20_5_gate_recovery_public_boundary_meta: Dict[str, Any] | None = None
     if (
         str(getattr(display_decision, "observation_status", "") or "") != "passed"
         and not bool(getattr(safety_report, "requires_block", False))
@@ -6024,19 +6164,34 @@ async def render_emlis_ai_reply(
             runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
             visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
             trace_id=trace_id,
+            original_composer_candidate=composer_candidate,
+            original_composer_source=composer_source,
         )
         if gate_recovery_loop_result.applied:
-            display_decision = gate_recovery_loop_result.display_decision
-            reader_report = gate_recovery_loop_result.reader_report
-            grounding_report = gate_recovery_loop_result.grounding_report
-            template_echo_report = gate_recovery_loop_result.template_echo_report
-            composer_source = gate_recovery_loop_result.composer_source
-            composer_candidate = gate_recovery_loop_result.composer_candidate
-            runtime_surface_pre_return_gate_report = dict(gate_recovery_loop_result.runtime_surface_pre_return_gate_report or {})
-            visible_surface_acceptance_gate_report = dict(gate_recovery_loop_result.visible_surface_acceptance_gate_report or {})
-            grounding_graph = graph
-            grounding_scope = "current_input_material_bundle_recovery"
-            grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+            pre_public_boundary_decision = _reply_service_gate_recovery_public_boundary_decision(
+                gate_recovery_loop_result,
+                recovery_context=RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
+                composer_client_resolution=composer_client_resolution,
+            )
+            pre_public_boundary_allowed = gate_recovery_public_display_allowed(pre_public_boundary_decision)
+            phase20_5_gate_recovery_public_boundary_meta = _build_reply_service_gate_recovery_public_boundary_meta(
+                recovery_context=RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
+                gate_recovery_loop_result=gate_recovery_loop_result,
+                public_boundary_decision=pre_public_boundary_decision,
+                adopted=pre_public_boundary_allowed,
+            )
+            if pre_public_boundary_allowed:
+                display_decision = gate_recovery_loop_result.display_decision
+                reader_report = gate_recovery_loop_result.reader_report
+                grounding_report = gate_recovery_loop_result.grounding_report
+                template_echo_report = gate_recovery_loop_result.template_echo_report
+                composer_source = gate_recovery_loop_result.composer_source
+                composer_candidate = gate_recovery_loop_result.composer_candidate
+                runtime_surface_pre_return_gate_report = dict(gate_recovery_loop_result.runtime_surface_pre_return_gate_report or {})
+                visible_surface_acceptance_gate_report = dict(gate_recovery_loop_result.visible_surface_acceptance_gate_report or {})
+                grounding_graph = graph
+                grounding_scope = "current_input_material_bundle_recovery"
+                grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
     self_denial_safe_state_answer_result = None
     phase20_13_post_final_gate_recovery_meta: Dict[str, Any] | None = None
@@ -6208,31 +6363,66 @@ async def render_emlis_ai_reply(
                 recovery_context="post_final_pre_return_gate",
                 post_final_gate_failure=True,
                 allow_low_information_post_final_recovery=True,
+                original_composer_candidate=post_final_precheck_composer_candidate,
+                original_composer_source=post_final_precheck_composer_source,
             )
             if post_final_gate_recovery_result.applied:
-                display_decision = post_final_gate_recovery_result.display_decision
-                reader_report = post_final_gate_recovery_result.reader_report
-                grounding_report = post_final_gate_recovery_result.grounding_report
-                template_echo_report = post_final_gate_recovery_result.template_echo_report
-                composer_candidate = post_final_gate_recovery_result.composer_candidate
-                composer_source = post_final_gate_recovery_result.composer_source
-                runtime_surface_pre_return_gate_report = dict(post_final_gate_recovery_result.runtime_surface_pre_return_gate_report or {})
-                visible_surface_acceptance_gate_report = dict(post_final_gate_recovery_result.visible_surface_acceptance_gate_report or {})
-                grounding_graph = graph
-                grounding_scope = "post_final_current_input_material_bundle_recovery"
-                grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
-                phase20_13_post_final_response_kind = phase20_13_response_kind
-                phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
-                    attempted=True,
-                    applied=True,
-                    original_final_status=phase20_13_original_final_status,
-                    final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
-                    response_kind=phase20_13_response_kind,
-                    material_quality=phase20_13_material_quality,
-                    recovery_policy=str(post_final_gate_recovery_result.recovery_policy or "post_final_gate_recovery_loop"),
-                    from_gate=phase20_13_from_gate,
-                    blocked_reasons=phase20_13_original_final_reasons,
+                post_final_public_boundary_decision = _reply_service_gate_recovery_public_boundary_decision(
+                    post_final_gate_recovery_result,
+                    recovery_context=RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
+                    composer_client_resolution=composer_client_resolution,
                 )
+                post_final_public_boundary_allowed = gate_recovery_public_display_allowed(
+                    post_final_public_boundary_decision
+                )
+                post_final_public_boundary_meta = _build_reply_service_gate_recovery_public_boundary_meta(
+                    recovery_context=RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
+                    gate_recovery_loop_result=post_final_gate_recovery_result,
+                    public_boundary_decision=post_final_public_boundary_decision,
+                    adopted=post_final_public_boundary_allowed,
+                )
+                if post_final_public_boundary_allowed:
+                    display_decision = post_final_gate_recovery_result.display_decision
+                    reader_report = post_final_gate_recovery_result.reader_report
+                    grounding_report = post_final_gate_recovery_result.grounding_report
+                    template_echo_report = post_final_gate_recovery_result.template_echo_report
+                    composer_candidate = post_final_gate_recovery_result.composer_candidate
+                    composer_source = post_final_gate_recovery_result.composer_source
+                    runtime_surface_pre_return_gate_report = dict(post_final_gate_recovery_result.runtime_surface_pre_return_gate_report or {})
+                    visible_surface_acceptance_gate_report = dict(post_final_gate_recovery_result.visible_surface_acceptance_gate_report or {})
+                    grounding_graph = graph
+                    grounding_scope = "post_final_current_input_material_bundle_recovery"
+                    grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+                    phase20_13_post_final_response_kind = phase20_13_response_kind
+                    phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                        attempted=True,
+                        applied=True,
+                        original_final_status=phase20_13_original_final_status,
+                        final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                        response_kind=phase20_13_response_kind,
+                        material_quality=phase20_13_material_quality,
+                        recovery_policy=str(post_final_gate_recovery_result.recovery_policy or "post_final_gate_recovery_loop"),
+                        from_gate=phase20_13_from_gate,
+                        blocked_reasons=phase20_13_original_final_reasons,
+                        public_boundary_meta=post_final_public_boundary_meta,
+                    )
+                else:
+                    phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                        attempted=True,
+                        applied=False,
+                        original_final_status=phase20_13_original_final_status,
+                        final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                        response_kind=phase20_13_response_kind,
+                        material_quality=phase20_13_material_quality,
+                        recovery_policy=str(post_final_gate_recovery_result.recovery_policy or "post_final_gate_recovery_loop"),
+                        from_gate=phase20_13_from_gate,
+                        blocked_reasons=(
+                            _reply_service_gate_recovery_public_boundary_blockers(post_final_public_boundary_meta)
+                            or _dedupe_reason_codes(getattr(post_final_gate_recovery_result, "blocked_reasons", []) or [])
+                            or phase20_13_original_final_reasons
+                        ),
+                        public_boundary_meta=post_final_public_boundary_meta,
+                    )
             else:
                 phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
                     attempted=True,
@@ -6535,6 +6725,29 @@ async def render_emlis_ai_reply(
         if str(getattr(display_decision, "observation_status", "") or "") == "passed":
             meta["observation_reply_kind"] = SELF_DENIAL_SAFE_STATE_OBSERVATION_REPLY_KIND
     meta = attach_observation_display_repair_meta(meta, observation_display_repair_result)
+    if phase20_5_gate_recovery_public_boundary_meta is not None:
+        meta[_PHASE20_5_GATE_RECOVERY_PUBLIC_BOUNDARY_META_KEY] = dict(
+            phase20_5_gate_recovery_public_boundary_meta
+        )
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"][_PHASE20_5_GATE_RECOVERY_PUBLIC_BOUNDARY_META_KEY] = dict(
+                phase20_5_gate_recovery_public_boundary_meta
+            )
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "phase20_5_reply_service_gate_recovery_public_boundary_checked": True,
+                    "phase20_5_reply_service_gate_recovery_public_boundary_blocked": bool(
+                        phase20_5_gate_recovery_public_boundary_meta.get("blocked")
+                    ),
+                    "phase20_5_reply_service_gate_recovery_public_display_allowed": bool(
+                        phase20_5_gate_recovery_public_boundary_meta.get("public_display_allowed")
+                    ),
+                    "phase20_5_reply_service_gate_recovery_adopted": bool(
+                        phase20_5_gate_recovery_public_boundary_meta.get("adopted")
+                    ),
+                }
+            )
     if phase20_13_post_final_gate_recovery_meta is not None:
         meta[_PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY] = dict(phase20_13_post_final_gate_recovery_meta)
         if phase20_13_post_final_response_kind:

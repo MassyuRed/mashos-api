@@ -197,7 +197,7 @@ class _MaterialRoute:
         }
 
 
-def test_phase20_5_recover_emlis_gate_failure_builds_bounded_surface_through_existing_gates() -> None:
+def test_phase20_5_recover_emlis_gate_failure_blocks_diagnostic_surface_before_public_display() -> None:
     current_input = {
         "memo": "長い入力本文は公開本文へそのまま写さない",
         "memo_action": "具体的な行動本文もそのまま写さない",
@@ -223,18 +223,23 @@ def test_phase20_5_recover_emlis_gate_failure_builds_bounded_surface_through_exi
         trace_id="phase20-5-recovery-actual",
     )
 
-    assert result.applied is True
-    assert result.display_decision.observation_status == "passed"
-    assert result.composer_source == "ai_generated"
-    assert result.runtime_surface_pre_return_gate_report["passed"] is True
-    assert result.visible_surface_acceptance_gate_report["passed"] is True
-    assert "見えたこと：" in result.display_decision.comment_text
-    assert "Emlisから：" in result.display_decision.comment_text
-    assert "学習" in result.display_decision.comment_text
-    assert "自己理解" in result.display_decision.comment_text
+    assert result.applied is False
+    assert result.display_decision.observation_status != "passed"
+    assert result.composer_candidate is None
+    assert result.runtime_surface_pre_return_gate_report == {}
+    assert result.visible_surface_acceptance_gate_report == {}
+    assert "gate_recovery_material_surface_public_leak" in result.blocked_reasons
+    assert "gate_recovery_diagnostic_surface_promoted_to_public" in result.blocked_reasons
+    assert result.surface_binding_meta["public_surface_role"] == "diagnostic_recovery_surface"
+    assert result.surface_binding_meta["public_display_allowed"] is False
+    assert result.surface_binding_meta["public_boundary_blocked"] is True
+    boundary = result.surface_binding_meta["gate_recovery_public_boundary_decision"]
+    assert boundary["public_display_allowed"] is False
+    assert boundary["contract_flags"]["comment_text_body_included"] is False
+    assert "見えたこと：" not in result.display_decision.comment_text
+    assert "Emlisから：" not in result.display_decision.comment_text
     assert "長い入力本文は公開本文へそのまま写さない" not in result.display_decision.comment_text
     assert "具体的な行動本文もそのまま写さない" not in result.display_decision.comment_text
-    assert "_に関する記録" not in result.display_decision.comment_text
 
 def test_phase20_5_attach_meta_keeps_internal_boundaries_and_phase_gate_flags() -> None:
     decision = build_gate_recovery_loop_decision(

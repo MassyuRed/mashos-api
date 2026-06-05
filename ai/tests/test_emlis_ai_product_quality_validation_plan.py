@@ -50,6 +50,27 @@ def _green_measurement_run() -> dict[str, object]:
             "ten_consecutive_product_pass": True,
             "family_cross_surface_repetition_detected": False,
             "unsafe_insight_surface_detected": False,
+            "surface_origin_event_count": 12,
+            "public_display_reached_via_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_post_final_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_diagnostic_recovery_surface_count": 0,
+            "template_meta_false_negative_risk_count": 0,
+        },
+        "machine_metrics": {
+            "event_count": 12,
+            "surface_origin_event_count": 12,
+            "public_display_reached_via_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_post_final_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_diagnostic_recovery_surface_count": 0,
+            "template_meta_false_negative_risk_count": 0,
+        },
+        "surface_origin_summary": {
+            "event_count": 12,
+            "surface_origin_event_count": 12,
+            "public_display_reached_via_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_post_final_gate_recovery_material_surface_count": 0,
+            "public_display_reached_via_diagnostic_recovery_surface_count": 0,
+            "template_meta_false_negative_risk_count": 0,
         },
         "contract_assertions": {
             "api_route_changed": False,
@@ -93,10 +114,11 @@ def test_phase8_validation_plan_materializes_required_order_as_pending_internal_
     assert plan["validation_ready"] is False
     assert plan["validation_execution_required"] is True
     assert BLOCKER_VALIDATION_EXECUTION_REQUIRED in plan["validation_blockers"]
-    assert len(plan["validation_items"]) == 10
-    assert [row["execution_order"] for row in plan["validation_items"]] == list(range(1, 11))
+    assert len(plan["validation_items"]) == 18
+    assert [row["execution_order"] for row in plan["validation_items"]] == list(range(1, 19))
     assert plan["validation_items"][0]["validation_item_id"] == "public_boundary_and_rn_contract_tests"
-    assert plan["validation_items"][-1]["validation_item_id"] == "emotion_submit_public_boundary_e2e_tests"
+    assert plan["validation_items"][10]["validation_item_id"] == "p12_gate_recovery_public_boundary_regression_tests"
+    assert plan["validation_items"][-1]["validation_item_id"] == "p12_emotion_submit_product_quality_e2e_tests"
     assert plan["regression_policy"]["abcd_fixture_is_regression_only"] is True
     assert plan["regression_policy"]["runtime_fixture_branch_allowed"] is False
     assert plan["product_gate_ready"] is False
@@ -176,7 +198,12 @@ def test_phase8_measurement_runner_connects_validation_plan_without_changing_pub
     assert run["phase8_public_response_changed"] is False
     assert run["phase8_rn_contract_changed"] is False
     assert run["phase8_db_schema_changed"] is False
-    assert len(run["validation_execution_order"]) == 10
+    assert len(run["validation_execution_order"]) == 18
+    assert run["phase12_gate_recovery_public_surface_validation_plan_ready"] is True
+    assert run["phase12_gate_recovery_public_surface_validation_status"] == "blocked"
+    assert run["phase12_gate_recovery_public_surface_validation_execution_required"] is True
+    assert run["phase12_gate_recovery_public_surface_validation_passed"] is False
+    assert run["phase12_release_allowed_by_gate_recovery_public_surface_validation_plan"] is False
     assert run["product_gate_ready"] is False
     assert run["public_release_applied"] is False
     dumped = dump_product_quality_measurement_run(run)

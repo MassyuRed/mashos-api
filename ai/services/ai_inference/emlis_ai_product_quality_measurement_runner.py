@@ -11,6 +11,9 @@ Phase 5 adds a blocker-specific generation repair design queue from the Phase 4
 Blocker Matrix, without editing generated bodies or relaxing gates.
 Phase 8 adds a deterministic validation plan that orders contract, schema,
 runner, Blind QA, long-run, blocker, release, and /emotion/submit checks.
+P12 adds the Gate Recovery public-surface leak post-implementation validation
+plan, keeping it internal/meta-only and release-closed until all P0-P11 checks
+and source-origin criteria pass.
 
 The runner never mutates ``os.environ`` and never changes public/RN/DB
 contracts.  Raw input and comment bodies are used only as transient renderer
@@ -29,6 +32,12 @@ from uuid import uuid4
 from emlis_ai_composer_client_registry import (
     default_composer_flag_state,
     resolve_emlis_ai_composer_client,
+)
+from emlis_ai_gate_recovery_public_constants import (
+    BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
+    BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+    BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
 )
 from emlis_ai_limited_release_service import evaluate_limited_composer_release
 from emlis_ai_product_quality_blocker_matrix import (
@@ -57,6 +66,11 @@ from emlis_ai_product_quality_validation_plan import (
     PRODUCT_QUALITY_VALIDATION_PLAN_PHASE,
     assert_product_quality_validation_plan_meta_only,
     build_product_quality_validation_plan,
+)
+from emlis_ai_gate_recovery_public_surface_validation_plan import (
+    GATE_RECOVERY_PUBLIC_SURFACE_P12_VALIDATION_PHASE,
+    assert_gate_recovery_public_surface_p12_validation_plan_meta_only,
+    build_gate_recovery_public_surface_p12_validation_plan,
 )
 from emlis_ai_product_quality_measurement_event import (
     assert_product_quality_measurement_event_meta_only,
@@ -98,6 +112,9 @@ PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE5_CONNECTION: Final = "Phase5_BlockerSpecif
 PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE6_CONNECTION: Final = PRODUCT_QUALITY_BLIND_QA_INTEGRATION_PHASE
 PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE7_CONNECTION: Final = PRODUCT_RELEASE_DECISION_PHASE
 PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE8_CONNECTION: Final = PRODUCT_QUALITY_VALIDATION_PLAN_PHASE
+PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE12_CONNECTION: Final = (
+    GATE_RECOVERY_PUBLIC_SURFACE_P12_VALIDATION_PHASE
+)
 PRODUCT_QUALITY_MEASUREMENT_RUN_TARGET_DISPLAY_REACH_RATE: Final = 0.90
 PRODUCT_QUALITY_MEASUREMENT_RUN_TARGET_BINDING_PASS_RATE: Final = 0.98
 PRODUCT_QUALITY_MEASUREMENT_RUN_TARGET_REASON_COVERAGE_RATE: Final = 1.0
@@ -620,6 +637,7 @@ def _event_to_qa_bridge_row(event: Mapping[str, Any]) -> dict[str, Any]:
     binding = event.get("binding") if isinstance(event.get("binding"), Mapping) else {}
     reason = event.get("reason_coverage") if isinstance(event.get("reason_coverage"), Mapping) else {}
     surface = event.get("surface_quality") if isinstance(event.get("surface_quality"), Mapping) else {}
+    surface_origin = event.get("surface_origin") if isinstance(event.get("surface_origin"), Mapping) else {}
     safety = event.get("safety") if isinstance(event.get("safety"), Mapping) else {}
     user_label = event.get("user_label_connection") if isinstance(event.get("user_label_connection"), Mapping) else {}
     public_passed = bool(event.get("public_display_reached"))
@@ -654,6 +672,37 @@ def _event_to_qa_bridge_row(event: Mapping[str, Any]) -> dict[str, Any]:
         "surface_signature_key": _safe_identifier(surface.get("surface_signature_key"), max_length=128, default=""),
         "surface_signature_id": _safe_identifier(surface.get("surface_signature_key"), max_length=128, default=""),
         "surface_signature_family_key": _safe_identifier(surface.get("surface_signature_key"), max_length=128, default=""),
+        "surface_origin": {
+            "candidate_source_kind": _safe_identifier(surface_origin.get("candidate_source_kind"), max_length=128, default=""),
+            "composer_model": _safe_identifier(surface_origin.get("composer_model"), max_length=128, default=""),
+            "generation_method": _safe_identifier(surface_origin.get("generation_method"), max_length=128, default=""),
+            "public_surface_role": _safe_identifier(surface_origin.get("public_surface_role"), max_length=128, default=""),
+            "public_display_allowed_by_boundary": bool(surface_origin.get("public_display_allowed_by_boundary")),
+            "gate_recovery_material_surface_detected": bool(surface_origin.get("gate_recovery_material_surface_detected")),
+            "post_final_gate_recovery_material_surface_detected": bool(surface_origin.get("post_final_gate_recovery_material_surface_detected")),
+            "internal_policy_sentence_leak_risk": bool(surface_origin.get("internal_policy_sentence_leak_risk")),
+            "template_meta_false_negative_risk": bool(surface_origin.get("template_meta_false_negative_risk")),
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        "surface_origin_candidate_source_kind": _safe_identifier(
+            surface_origin.get("candidate_source_kind"), max_length=128, default=""
+        ),
+        "surface_origin_public_surface_role": _safe_identifier(
+            surface_origin.get("public_surface_role"), max_length=128, default=""
+        ),
+        "surface_origin_public_display_allowed_by_boundary": bool(
+            surface_origin.get("public_display_allowed_by_boundary")
+        ),
+        "gate_recovery_material_surface_detected": bool(
+            surface_origin.get("gate_recovery_material_surface_detected")
+        ),
+        "post_final_gate_recovery_material_surface_detected": bool(
+            surface_origin.get("post_final_gate_recovery_material_surface_detected")
+        ),
+        "gate_recovery_template_meta_false_negative_risk": bool(
+            surface_origin.get("template_meta_false_negative_risk")
+        ),
         "generic_comfort_detected": bool(surface.get("generic_comfort_detected")),
         "mirror_only_detected": bool(surface.get("mirror_only_detected")),
         "unsafe_insight_surface_detected": bool(surface.get("unsafe_insight_surface_detected")),
@@ -697,6 +746,40 @@ def _summary_machine_metrics(events: Sequence[Mapping[str, Any]], qa_rows: Seque
     safety_major_count = sum(_to_int((event.get("safety") or {}).get("safety_major_count")) for event in events)
     signatures = [_clean(row.get("surface_signature_key")) for row in qa_rows if _clean(row.get("surface_signature_key"))]
     repeat_count = max(0, len(signatures) - len(set(signatures)))
+    surface_origins = [event.get("surface_origin") for event in events if isinstance(event.get("surface_origin"), Mapping)]
+    gate_recovery_surface_count = sum(
+        1 for origin in surface_origins if bool(origin.get("gate_recovery_material_surface_detected"))
+    )
+    post_final_gate_recovery_surface_count = sum(
+        1 for origin in surface_origins if bool(origin.get("post_final_gate_recovery_material_surface_detected"))
+    )
+    diagnostic_surface_count = sum(
+        1 for origin in surface_origins if _clean(origin.get("public_surface_role")) == "diagnostic_recovery_surface"
+    )
+    template_false_negative_count = sum(
+        1 for origin in surface_origins if bool(origin.get("template_meta_false_negative_risk"))
+    )
+    public_gate_recovery_surface_count = sum(
+        1
+        for event in events
+        if event.get("public_display_reached") is True
+        and isinstance(event.get("surface_origin"), Mapping)
+        and bool((event.get("surface_origin") or {}).get("gate_recovery_material_surface_detected"))
+    )
+    public_post_final_gate_recovery_surface_count = sum(
+        1
+        for event in events
+        if event.get("public_display_reached") is True
+        and isinstance(event.get("surface_origin"), Mapping)
+        and bool((event.get("surface_origin") or {}).get("post_final_gate_recovery_material_surface_detected"))
+    )
+    public_diagnostic_surface_count = sum(
+        1
+        for event in events
+        if event.get("public_display_reached") is True
+        and isinstance(event.get("surface_origin"), Mapping)
+        and _clean((event.get("surface_origin") or {}).get("public_surface_role")) == "diagnostic_recovery_surface"
+    )
     return {
         "machine_metrics_ready": bool(events),
         "event_count": event_count,
@@ -707,6 +790,14 @@ def _summary_machine_metrics(events: Sequence[Mapping[str, Any]], qa_rows: Seque
         "safety_major_count": safety_major_count,
         "surface_signature_repeat_count": repeat_count,
         "surface_signature_repeat_rate": _rate(repeat_count, len(signatures)),
+        "surface_origin_event_count": len(surface_origins),
+        "gate_recovery_material_surface_event_count": gate_recovery_surface_count,
+        "post_final_gate_recovery_material_surface_event_count": post_final_gate_recovery_surface_count,
+        "diagnostic_recovery_surface_event_count": diagnostic_surface_count,
+        "template_meta_false_negative_risk_count": template_false_negative_count,
+        "public_display_reached_via_gate_recovery_material_surface_count": public_gate_recovery_surface_count,
+        "public_display_reached_via_post_final_gate_recovery_material_surface_count": public_post_final_gate_recovery_surface_count,
+        "public_display_reached_via_diagnostic_recovery_surface_count": public_diagnostic_surface_count,
         "read_feeling_score": None,
         "read_feeling_source": "blind_qa_required_not_machine_metric",
         "machine_metrics_used_for_read_feeling": False,
@@ -723,6 +814,45 @@ def _family_counts(events: Sequence[Mapping[str, Any]]) -> dict[str, int]:
         family = normalize_product_quality_family(event.get("family"))
         counts[family] = counts.get(family, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _surface_origin_summary(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    candidate_source_kind_counts: dict[str, int] = {}
+    public_surface_role_counts: dict[str, int] = {}
+    gate_recovery_count = 0
+    post_final_count = 0
+    diagnostic_public_count = 0
+    template_false_negative_count = 0
+    for event in events:
+        origin = event.get("surface_origin") if isinstance(event.get("surface_origin"), Mapping) else {}
+        if not origin:
+            continue
+        source_kind = _safe_identifier(origin.get("candidate_source_kind"), max_length=128, default="unknown")
+        public_role = _safe_identifier(origin.get("public_surface_role"), max_length=128, default="unknown")
+        candidate_source_kind_counts[source_kind] = candidate_source_kind_counts.get(source_kind, 0) + 1
+        public_surface_role_counts[public_role] = public_surface_role_counts.get(public_role, 0) + 1
+        if bool(origin.get("gate_recovery_material_surface_detected")):
+            gate_recovery_count += 1
+        if bool(origin.get("post_final_gate_recovery_material_surface_detected")):
+            post_final_count += 1
+        if event.get("public_display_reached") is True and public_role == "diagnostic_recovery_surface":
+            diagnostic_public_count += 1
+        if bool(origin.get("template_meta_false_negative_risk")):
+            template_false_negative_count += 1
+    return {
+        "schema_version": "cocolon.emlis.product_quality.surface_origin_summary.v1",
+        "event_count": len(events),
+        "surface_origin_event_count": sum(1 for event in events if isinstance(event.get("surface_origin"), Mapping)),
+        "candidate_source_kind_counts": dict(sorted(candidate_source_kind_counts.items())),
+        "public_surface_role_counts": dict(sorted(public_surface_role_counts.items())),
+        "gate_recovery_material_surface_event_count": gate_recovery_count,
+        "post_final_gate_recovery_material_surface_event_count": post_final_count,
+        "public_diagnostic_recovery_surface_event_count": diagnostic_public_count,
+        "template_meta_false_negative_risk_count": template_false_negative_count,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+    }
 
 
 def _runtime_blind_qa_coverage_rate(summary: Mapping[str, Any]) -> float:
@@ -765,6 +895,14 @@ def _collect_measurement_blockers(
         blockers.append("template_major_detected")
     if _to_int(machine_metrics.get("safety_major_count")) > 0:
         blockers.append("safety_major_detected")
+    if _to_int(machine_metrics.get("public_display_reached_via_gate_recovery_material_surface_count")) > 0:
+        blockers.append(BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK)
+    if _to_int(machine_metrics.get("public_display_reached_via_post_final_gate_recovery_material_surface_count")) > 0:
+        blockers.append(BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK)
+    if _to_int(machine_metrics.get("public_display_reached_via_diagnostic_recovery_surface_count")) > 0:
+        blockers.append(BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC)
+    if _to_int(machine_metrics.get("template_meta_false_negative_risk_count")) > 0:
+        blockers.append(BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE)
     blockers.extend(blocker for event in events for blocker in _dedupe(event.get("blockers")))
     blockers.extend(_dedupe(runtime_summary.get("release_blockers") or runtime_summary.get("step11_release_blockers")))
     blockers.extend(_dedupe(user_label_summary.get("release_blockers") or user_label_summary.get("qa_blockers")))
@@ -944,6 +1082,7 @@ async def run_product_quality_measurement_async(
     qa_bridge_rows = [_event_to_qa_bridge_row(event) for event in events]
     scorecard_rows = [product_quality_event_to_scorecard_row(event) for event in events]
     machine_metrics = _summary_machine_metrics(events, qa_bridge_rows)
+    surface_origin_summary = _surface_origin_summary(events)
     product_readfeel_scorecard = build_product_readfeel_scorecard(
         events=qa_bridge_rows,
         machine_metrics=machine_metrics,
@@ -998,6 +1137,16 @@ async def run_product_quality_measurement_async(
         "template_major_count": machine_metrics["template_major_count"],
         "safety_major_count": machine_metrics["safety_major_count"],
         "surface_signature_repeat_rate": machine_metrics["surface_signature_repeat_rate"],
+        "gate_recovery_material_surface_event_count": machine_metrics[
+            "gate_recovery_material_surface_event_count"
+        ],
+        "post_final_gate_recovery_material_surface_event_count": machine_metrics[
+            "post_final_gate_recovery_material_surface_event_count"
+        ],
+        "public_display_reached_via_gate_recovery_material_surface_count": machine_metrics[
+            "public_display_reached_via_gate_recovery_material_surface_count"
+        ],
+        "template_meta_false_negative_risk_count": machine_metrics["template_meta_false_negative_risk_count"],
         "read_feeling_score": None,
         "read_feeling_source": "blind_qa_required_not_machine_metric",
         "machine_metrics_used_for_read_feeling": False,
@@ -1045,6 +1194,7 @@ async def run_product_quality_measurement_async(
         "missing_required_families": missing_required_families,
         "summary_metrics": summary_metrics,
         "machine_metrics": machine_metrics,
+        "surface_origin_summary": surface_origin_summary,
         "blockers": blockers,
         "contract_assertions": _measurement_contract_assertions(),
         "product_gate_ready": False,
@@ -1091,6 +1241,19 @@ async def run_product_quality_measurement_async(
     )
     assert_product_quality_validation_plan_meta_only(validation_plan)
     validation_plan_summary = validation_plan.get("summary", {}) if isinstance(validation_plan.get("summary"), Mapping) else {}
+    gate_recovery_public_surface_validation_plan = build_gate_recovery_public_surface_p12_validation_plan(
+        run_id=run_id_value,
+        measurement_run=release_decision_measurement_context,
+        product_quality_validation_plan=validation_plan,
+    )
+    assert_gate_recovery_public_surface_p12_validation_plan_meta_only(
+        gate_recovery_public_surface_validation_plan
+    )
+    gate_recovery_public_surface_validation_plan_summary = (
+        gate_recovery_public_surface_validation_plan.get("summary", {})
+        if isinstance(gate_recovery_public_surface_validation_plan.get("summary"), Mapping)
+        else {}
+    )
     run_status = pending_run_status
 
     run = {
@@ -1113,6 +1276,7 @@ async def run_product_quality_measurement_async(
         "missing_required_families": missing_required_families,
         "summary_metrics": summary_metrics,
         "machine_metrics": machine_metrics,
+        "surface_origin_summary": surface_origin_summary,
         "measurement_events": events,
         "scorecard_rows": scorecard_rows,
         "product_readfeel_scorecard": product_readfeel_scorecard,
@@ -1182,6 +1346,33 @@ async def run_product_quality_measurement_async(
         "phase8_public_response_changed": False,
         "phase8_rn_contract_changed": False,
         "phase8_db_schema_changed": False,
+        "gate_recovery_public_surface_validation_plan": gate_recovery_public_surface_validation_plan,
+        "phase12_gate_recovery_public_surface_validation_plan": gate_recovery_public_surface_validation_plan,
+        "gate_recovery_public_surface_validation_plan_summary": gate_recovery_public_surface_validation_plan_summary,
+        "phase12_gate_recovery_public_surface_validation_plan_ready": bool(
+            gate_recovery_public_surface_validation_plan.get("validation_plan_ready")
+        ),
+        "phase12_gate_recovery_public_surface_validation_status": (
+            gate_recovery_public_surface_validation_plan.get("validation_status")
+        ),
+        "phase12_gate_recovery_public_surface_validation_execution_required": bool(
+            gate_recovery_public_surface_validation_plan.get("validation_execution_required")
+        ),
+        "phase12_gate_recovery_public_surface_validation_passed": bool(
+            gate_recovery_public_surface_validation_plan.get("validation_passed")
+        ),
+        "phase12_release_allowed_by_gate_recovery_public_surface_validation_plan": bool(
+            gate_recovery_public_surface_validation_plan.get("release_allowed_by_p12_validation_plan")
+        ),
+        "phase12_gate_recovery_public_surface_validation_blockers": (
+            gate_recovery_public_surface_validation_plan.get("validation_blockers", [])
+        ),
+        "phase12_gate_recovery_public_surface_validation_required_test_files": (
+            gate_recovery_public_surface_validation_plan.get("required_test_files", [])
+        ),
+        "phase12_public_response_changed": False,
+        "phase12_rn_contract_changed": False,
+        "phase12_db_schema_changed": False,
         "release_decision_applied": False,
         "release_rollout_applied": False,
         "rollout_config_changed": False,
@@ -1262,11 +1453,13 @@ __all__ = [
     "PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE6_CONNECTION",
     "PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE7_CONNECTION",
     "PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE8_CONNECTION",
+    "PRODUCT_QUALITY_MEASUREMENT_RUN_PHASE12_CONNECTION",
     "PRODUCT_QUALITY_MEASUREMENT_REQUIRED_FAMILIES",
     "build_product_quality_blocker_matrix",
     "build_product_quality_generation_repair_design",
     "build_product_quality_blind_qa_integration",
     "build_product_quality_validation_plan",
+    "build_gate_recovery_public_surface_p12_validation_plan",
     "assert_product_quality_measurement_runner_bootstrap_meta_only",
     "assert_product_quality_measurement_run_meta_only",
     "build_local_product_qa_composer_env",

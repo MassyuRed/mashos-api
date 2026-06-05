@@ -13,6 +13,18 @@ from collections.abc import Iterable, Mapping, Sequence
 import json
 from typing import Any, Final, NamedTuple
 
+from emlis_ai_gate_recovery_public_constants import (
+    BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING,
+    BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION,
+    BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
+    BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK,
+    BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
+    BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN,
+    BLOCKER_RECOVERY_SURFACE_SOURCE_LINEAGE_MISSING,
+    GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS,
+)
 from emlis_ai_product_quality_contract_freeze import (
     assert_emlis_ai_product_quality_contract_freeze_meta_only,
     build_emlis_ai_product_quality_contract_freeze,
@@ -158,6 +170,27 @@ _GROUP_CONTRACT = _Taxonomy(
     ("emlis_ai_product_quality_contract_freeze.py", "emlis_ai_product_quality_measurement_event.py", "emlis_ai_public_feedback_meta.py", "api_emotion_submit.py"),
     "raw input/comment body/candidate body/public key変更をrelease blockerにし、public/RN/DB契約を変えずmeta-only materialへ戻す。", "critical",
 )
+_GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY = _Taxonomy(
+    "surface_quality",
+    "surface_quality_gate_and_recovery_boundary",
+    (
+        "emlis_ai_gate_recovery_loop.py",
+        "emlis_ai_gate_recovery_public_constants.py",
+        "emlis_ai_gate_recovery_public_boundary.py",
+        "emlis_ai_gate_recovery_public_candidate_builder.py",
+        "emlis_ai_low_information_observation_composer.py",
+        "emlis_ai_self_denial_safe_state_answer.py",
+        "emlis_ai_runtime_surface_self_repair.py",
+        "emlis_ai_reply_service.py",
+        "emlis_ai_product_quality_measurement_event.py",
+        "emlis_ai_product_quality_measurement_runner.py",
+        "emlis_ai_product_quality_blocker_matrix.py",
+        "emlis_ai_product_quality_generation_repair_design.py",
+    ),
+    "Gate Recovery material surfaceをpublic comment_textへ昇格しない。修正順は、1) gate_recovery_public_boundaryを先に通す、2) low_information_observation_composer recoveryへ回す、3) original composer candidateのbounded repairへ回す、4) post-final direct surface promotionを止める、5) product QA long-runでsurface family repetitionを確認する。不可ならdiagnostic blockerのみで止める。",
+    "critical",
+    True,
+)
 _GROUP_UNKNOWN = _Taxonomy(
     "unmapped_product_quality_blocker", "product_quality_measurement_triage",
     ("emlis_ai_product_quality_measurement_event.py", "emlis_ai_product_quality_measurement_runner.py"),
@@ -168,6 +201,15 @@ _EXACT_TAXONOMY: Final[dict[str, _Taxonomy]] = {
     "composer_generation_path_not_open_for_product_qa": _GROUP_COMPOSER,
     "composer_feature_flag_disabled_for_product_qa": _GROUP_COMPOSER,
     "default_limited_composer_feature_disabled": _GROUP_COMPOSER,
+    BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_RECOVERY_SURFACE_SOURCE_LINEAGE_MISSING: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
+    BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING: _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY,
     "composer_rollout_not_open_for_local_product_qa": _GROUP_COMPOSER,
     "complete_initial_not_ready_for_product_qa": _GROUP_COMPOSER,
     "complete_initial_rollout_not_allowed_for_product_qa": _GROUP_COMPOSER,
@@ -335,6 +377,8 @@ def _taxonomy_for(blocker_id: str) -> _Taxonomy:
         return _GROUP_REASON
     if "low_information" in text or "low_info" in text:
         return _GROUP_LOW_INFORMATION
+    if "gate_recovery" in text or "recovery_surface" in text or "public_candidate_source" in text:
+        return _GROUP_GATE_RECOVERY_PUBLIC_BOUNDARY
     if "repeat" in text or "repetition" in text or "template" in text or "mirror_only" in text or "shallow" in text:
         return _GROUP_SURFACE
     if "history_connection" in text or "overclaim" in text or "self_blame" in text or "user_label" in text or "creepy" in text or "accumulation" in text:
@@ -361,6 +405,8 @@ def _target_metric_for(blocker_id: str, taxonomy: _Taxonomy) -> tuple[str, float
         return "reason_coverage_rate", 1.0
     if group == "surface_repetition_template":
         return "surface_repetition_count", 0
+    if group == "surface_quality":
+        return "gate_recovery_public_leak_count", 0
     if group == "self_denial_safety":
         return "safety_major_count", 0
     if group == "blind_qa":
@@ -434,8 +480,28 @@ def _event_safety_detected(event: Mapping[str, Any]) -> bool:
     safety = event.get("safety") if isinstance(event.get("safety"), Mapping) else event
     return _to_int(safety.get("safety_major_count")) > 0 or surface.get("unsafe_insight_surface_detected") is True
 
+def _event_surface_origin(event: Mapping[str, Any]) -> Mapping[str, Any]:
+    origin = event.get("surface_origin")
+    return origin if isinstance(origin, Mapping) else {}
+
+def _event_gate_recovery_public_leak(event: Mapping[str, Any]) -> bool:
+    origin = _event_surface_origin(event)
+    blockers = set(_event_blockers(event))
+    return (
+        bool(origin.get("gate_recovery_material_surface_detected"))
+        or bool(origin.get("post_final_gate_recovery_material_surface_detected"))
+        or str(origin.get("public_surface_role") or "") == "diagnostic_recovery_surface"
+        or bool(origin.get("template_meta_false_negative_risk"))
+        or bool(blockers.intersection(GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS))
+    )
+
 def _matching_events_for_run_blocker(blocker_id: str, events: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    explicit_matches = [event for event in events if blocker_id in _event_blockers(event)]
+    if explicit_matches:
+        return explicit_matches
     text = blocker_id.lower()
+    if blocker_id in GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS or "gate_recovery" in text or "recovery_surface" in text or "public_candidate_source" in text:
+        return [event for event in events if _event_gate_recovery_public_leak(event)]
     if "display" in text or blocker_id in {"comment_text_missing", "observation_status_not_passed"}:
         return [event for event in events if event.get("public_display_reached") is not True]
     if "binding" in text:
@@ -709,6 +775,16 @@ __all__ = [
     "PRODUCT_QUALITY_BLOCKER_MATRIX_SCHEMA_VERSION",
     "PRODUCT_QUALITY_BLOCKER_MATRIX_TARGET_STEP",
     "PRODUCT_QUALITY_BLOCKER_MATRIX_VERSION",
+    "BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",
+    "BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC",
+    "BLOCKER_GATE_RECOVERY_INTERNAL_POLICY_SENTENCE_LEAK",
+    "BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE",
+    "BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION",
+    "BLOCKER_RECOVERY_SURFACE_SOURCE_LINEAGE_MISSING",
+    "BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN",
+    "BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING",
+    "GATE_RECOVERY_PUBLIC_LEAK_BLOCKERS",
     "assert_product_quality_blocker_matrix_meta_only",
     "assert_product_quality_blocker_matrix_row_meta_only",
     "build_product_quality_blocker_matrix",
