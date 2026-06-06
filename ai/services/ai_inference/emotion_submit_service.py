@@ -48,6 +48,15 @@ from emlis_ai_public_feedback_meta import (
     build_public_emlis_input_feedback_meta,
     should_include_public_input_feedback,
 )
+from emlis_ai_complete_initial_surface_availability import (
+    COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,
+)
+from emlis_ai_product_surface_validation import (
+    PRODUCT_SURFACE_BLOCKER_NONE,
+    PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,
+    build_product_surface_validation_summary,
+    product_surface_validation_public_summary,
+)
 from emlis_ai_response_contract import (
     EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY,
     EMLIS_INTERNAL_RESPONSE_CONTRACT_VERSION_META_KEY,
@@ -69,7 +78,15 @@ _DAILY_RECEPTION_MODE_IDS = {"daily_unpleasant_reception", "daily_positive_recep
 _PUBLIC_SAFE_MODE_ID_ALIASES: dict[str, str] = {}
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_CODES = 20
 _SUBMIT_SPEED_REGRESSION_MAX_REASON_LENGTH = 96
-
+_PUBLIC_OBSERVATION_RECOVERY_SUMMARY_SCHEMA_VERSION = (
+    "cocolon.emlis.public_observation_recovery_summary.v1"
+)
+_PUBLIC_OBSERVATION_RECOVERY_SUMMARY_SOURCE_PHASE = (
+    "PublicObservationRecovery_P7_PublicFeedbackInclusionSummary"
+)
+_PUBLIC_OBSERVATION_RECOVERY_SUMMARY_VERSION = (
+    "emlis.public_feedback_inclusion_summary.three_stage.v1"
+)
 
 
 
@@ -482,10 +499,12 @@ def _safe_reason_codes(values: Any, *, limit: int = 20) -> list[str]:
         source = [values]
     out: list[str] = []
     for raw in source:
-        text = str(raw or "").strip()
+        text = str(raw or "").strip()[:96]
         if not text or text in out:
             continue
-        out.append(text[:96])
+        if not all(char.isascii() and (char.isalnum() or char in {"_", "-", ".", ":", "/"}) for char in text):
+            continue
+        out.append(text)
         if len(out) >= limit:
             break
     return out
@@ -604,6 +623,210 @@ def _existing_step7_public_feedback_summary(internal_meta: Dict[str, Any]) -> Di
     return {}
 
 
+
+
+def _p7_safe_identifier(value: Any, *, limit: int = 128) -> str:
+    text = str(value or "").strip()[:limit]
+    if not text:
+        return ""
+    if not all(char.isascii() and (char.isalnum() or char in {"_", "-", ".", ":", "/"}) for char in text):
+        return ""
+    return text
+
+
+def _p7_find_mapping_by_keys(source: Any, keys: Sequence[str], *, max_depth: int = 6) -> Dict[str, Any]:
+    """Return the first mapping under ``keys`` without copying text payloads.
+
+    The search is only for diagnostic/code maps.  The returned mapping is still
+    sanitized by the caller before it is serialized into P7 output.
+    """
+
+    wanted = tuple(str(key) for key in keys if str(key or "").strip())
+    if not wanted:
+        return {}
+    visited: set[int] = set()
+
+    def visit(value: Any, depth: int) -> Dict[str, Any]:
+        if depth > max_depth or not isinstance(value, dict):
+            return {}
+        marker = id(value)
+        if marker in visited:
+            return {}
+        visited.add(marker)
+        for key in wanted:
+            nested = value.get(key)
+            if isinstance(nested, dict):
+                return dict(nested)
+        for nested_key in (
+            "diagnostic_summary",
+            "phase_gate",
+            "multi_perspective",
+            "public_feedback_diagnostic_summary",
+            "step7_public_feedback_diagnostic_summary",
+            "display_absence_summary",
+            "recovery_plan",
+            "reply_service_public_boundary",
+            "gate_recovery_public_boundary_decision",
+            "complete_initial_surface_recomposition",
+            "labelled_two_stage_surface_recomposition",
+        ):
+            nested = value.get(nested_key)
+            found = visit(nested, depth + 1)
+            if found:
+                return found
+        return {}
+
+    return visit(source, 0)
+
+
+def _p7_first_mapping(sources: Sequence[Any], keys: Sequence[str]) -> Dict[str, Any]:
+    for source in sources:
+        found = _p7_find_mapping_by_keys(source, keys)
+        if found:
+            return found
+    return {}
+
+
+def _p7_surface_requirement_summary(sources: Sequence[Any]) -> Dict[str, Any]:
+    source = _p7_first_mapping(
+        sources,
+        (
+            "surface_requirement",
+            "public_surface_requirement",
+            "surface_requirement_decision",
+            "surface_requirement_summary",
+        ),
+    )
+    if not source:
+        return {}
+    return {
+        "surface_requirement_family": _p7_safe_identifier(
+            source.get("surface_requirement_family"), limit=96
+        ),
+        "two_stage_required": bool(source.get("two_stage_required")),
+        "plain_state_answer_allowed": bool(source.get("plain_state_answer_allowed")),
+        "low_information_allowed": bool(source.get("low_information_allowed")),
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _p7_candidate_generation_summary(sources: Sequence[Any]) -> Dict[str, Any]:
+    source = _p7_first_mapping(
+        sources,
+        (
+            "candidate_generation_summary",
+            "candidate_generation",
+            "complete_initial_candidate_generation_path",
+            "step5_candidate_generation_path",
+            "complete_initial_surface_recomposition_summary",
+            "complete_initial_surface_recomposition_candidate",
+            "labelled_two_stage_surface_recomposition_summary",
+            "labelled_two_stage_surface_recomposition_candidate",
+        ),
+    )
+    availability = _p7_first_mapping(sources, (COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,))
+    product_surface = _p7_first_mapping(sources, (PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,))
+    candidate_source_kind = (
+        source.get("candidate_source_kind")
+        or source.get("source_kind")
+        or source.get("public_candidate_source_kind")
+        or source.get("adopted_candidate_source_kind")
+        or product_surface.get("candidate_source_kind")
+    )
+    composer_source = (
+        source.get("composer_source")
+        or source.get("source")
+        or product_surface.get("composer_source")
+        or availability.get("composer_source")
+    )
+    candidate_status = (
+        source.get("candidate_status")
+        or source.get("status")
+        or product_surface.get("candidate_status")
+        or availability.get("candidate_status")
+    )
+    generated = source.get("candidate_generated_before_display_gate")
+    if generated is None:
+        generated = source.get("generated_before_display_gate")
+    if generated is None and availability:
+        generated = availability.get("candidate_generated_before_display_gate")
+    return {
+        "candidate_source_kind": _p7_safe_identifier(candidate_source_kind, limit=128),
+        "composer_source": _p7_safe_identifier(composer_source, limit=96),
+        "candidate_status": _p7_safe_identifier(candidate_status, limit=96),
+        "candidate_generated_before_display_gate": bool(generated),
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _p7_product_surface_validation_summary(
+    *,
+    input_feedback_comment: str,
+    public_feedback_included: bool,
+    public_meta: Dict[str, Any],
+    internal_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    sources: list[Any] = [public_meta, internal_meta]
+    diagnostic_summary = internal_meta.get("diagnostic_summary") if isinstance(internal_meta, dict) else {}
+    if isinstance(diagnostic_summary, dict):
+        sources.append(diagnostic_summary)
+    raw = _p7_first_mapping(sources, (PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,))
+    if raw:
+        try:
+            return product_surface_validation_public_summary(raw)
+        except Exception:
+            return {}
+    try:
+        surface_requirement = _p7_surface_requirement_summary(sources)
+        candidate_generation = _p7_candidate_generation_summary(sources)
+        summary = build_product_surface_validation_summary(
+            input_feedback_included=bool(public_feedback_included),
+            comment_text=input_feedback_comment,
+            emlis_ai_public_meta=public_meta,
+            surface_requirement=surface_requirement,
+            candidate_generation_summary=candidate_generation,
+        )
+        return product_surface_validation_public_summary(summary)
+    except Exception:
+        return {}
+
+
+def _p7_first_blocker_from_sources(
+    *,
+    product_surface_validation: Dict[str, Any],
+    availability_summary: Dict[str, Any],
+    reason_family: str,
+    reason_codes: Sequence[str],
+    public_feedback_included: bool,
+) -> tuple[str, str]:
+    product_valid = bool(product_surface_validation.get("product_surface_valid"))
+    product_blocker_code = _p7_safe_identifier(
+        product_surface_validation.get("blocker_code"), limit=128
+    )
+    product_blocker_family = _p7_safe_identifier(
+        product_surface_validation.get("blocker_family"), limit=96
+    )
+    if (
+        public_feedback_included
+        and not product_valid
+        and product_blocker_code
+        and product_blocker_code != PRODUCT_SURFACE_BLOCKER_NONE
+    ):
+        return product_blocker_family or "product_surface", product_blocker_code
+
+    availability_code = _p7_safe_identifier(availability_summary.get("first_blocker_code"), limit=128)
+    availability_family = _p7_safe_identifier(availability_summary.get("first_blocker_family"), limit=96)
+    if not public_feedback_included and (availability_code or availability_family):
+        return availability_family or reason_family, availability_code or (reason_codes[0] if reason_codes else "")
+
+    if not public_feedback_included:
+        return reason_family, reason_codes[0] if reason_codes else ""
+    return "", ""
+
 def _build_public_feedback_inclusion_summary(
     *,
     input_feedback_comment: str,
@@ -687,6 +910,17 @@ def _build_public_feedback_inclusion_summary(
         or public_feedback_not_included_two_stage_reception_gate
         or public_feedback_not_included_reply_timeout_or_error
     )
+    product_surface_validation = _p7_product_surface_validation_summary(
+        input_feedback_comment=input_feedback_comment,
+        public_feedback_included=public_feedback_included,
+        public_meta=public_meta,
+        internal_meta=internal_meta,
+    )
+    availability_summary = _p7_first_mapping(
+        [public_meta, internal_meta, internal_meta.get("diagnostic_summary")],
+        (COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,),
+    )
+
     if public_feedback_not_included_reply_timeout_or_error:
         reason_family = "reply_timeout_or_error"
     elif public_feedback_not_included_two_stage_reception_gate:
@@ -710,9 +944,68 @@ def _build_public_feedback_inclusion_summary(
     else:
         reason_family = "display_absent"
 
+    legacy_reason_family = reason_family
+    public_reached = bool(product_surface_validation.get("public_reached", public_feedback_included))
+    rn_visible = bool(product_surface_validation.get("rn_visible", public_feedback_included))
+    product_surface_valid = bool(
+        product_surface_validation.get(
+            "product_surface_valid",
+            public_feedback_included and not candidate_fail_closed_display_absent,
+        )
+    )
+    availability_surface_requirement_family = _p7_safe_identifier(
+        availability_summary.get("surface_requirement_family"),
+        limit=96,
+    )
+    product_surface_requirement_family = _p7_safe_identifier(
+        product_surface_validation.get("surface_requirement_family"),
+        limit=96,
+    )
+    surface_requirement_family = (
+        availability_surface_requirement_family
+        if not public_feedback_included and availability_surface_requirement_family
+        else product_surface_requirement_family or availability_surface_requirement_family
+    )
+    two_stage_required = bool(product_surface_validation.get("two_stage_required")) or surface_requirement_family == "labelled_two_stage"
+    plain_surface_allowed = bool(
+        product_surface_validation.get("plain_surface_allowed")
+        or product_surface_validation.get("plain_state_answer_allowed")
+    )
+    candidate_source_kind = _p7_safe_identifier(
+        product_surface_validation.get("candidate_source_kind")
+        or availability_summary.get("candidate_source_kind"),
+        limit=128,
+    )
+    first_blocker_family, first_blocker_code = _p7_first_blocker_from_sources(
+        product_surface_validation=product_surface_validation,
+        availability_summary=availability_summary,
+        reason_family=legacy_reason_family,
+        reason_codes=reason_codes,
+        public_feedback_included=public_feedback_included,
+    )
+    if public_feedback_included and not product_surface_valid:
+        reason_family = first_blocker_family or "product_surface_invalid"
+    elif public_feedback_included and product_surface_valid:
+        reason_family = "product_surface_valid"
+    public_feedback_absence_reason_family = (
+        "" if public_feedback_included else (first_blocker_family or legacy_reason_family)
+    )
+
     return {
-        "version": "emlis.step7.public_feedback_inclusion_summary.v1",
+        "schema_version": _PUBLIC_OBSERVATION_RECOVERY_SUMMARY_SCHEMA_VERSION,
+        "source_phase": _PUBLIC_OBSERVATION_RECOVERY_SUMMARY_SOURCE_PHASE,
+        "version": _PUBLIC_OBSERVATION_RECOVERY_SUMMARY_VERSION,
         "public_feedback_included": public_feedback_included,
+        "public_reached": public_reached,
+        "rn_visible": rn_visible,
+        "product_surface_valid": product_surface_valid,
+        "surface_requirement_family": surface_requirement_family,
+        "two_stage_required": two_stage_required,
+        "plain_surface_allowed": plain_surface_allowed,
+        "candidate_source_kind": candidate_source_kind,
+        "first_blocker_family": first_blocker_family,
+        "first_blocker_code": first_blocker_code,
+        "public_feedback_absence_reason_family": public_feedback_absence_reason_family,
         "public_feedback_not_included_non_passed": public_feedback_not_included_non_passed,
         "public_feedback_not_included_empty_comment_text": public_feedback_not_included_empty_comment_text,
         "public_feedback_not_included_visible_surface_gate": public_feedback_not_included_visible_surface_gate,
@@ -747,10 +1040,14 @@ def _with_public_feedback_inclusion_summary(
     diagnostic_summary = dict(meta.get("diagnostic_summary") or {}) if isinstance(meta.get("diagnostic_summary"), dict) else {}
     diagnostic_summary["step7_public_feedback_diagnostic_summary"] = summary
     diagnostic_summary["public_feedback_diagnostic_summary"] = summary
+    diagnostic_summary["public_observation_recovery_summary"] = summary
+    diagnostic_summary["public_feedback_inclusion_summary"] = summary
     diagnostic_summary["display_absence_summary"] = summary
     meta["diagnostic_summary"] = diagnostic_summary
     meta["step7_public_feedback_diagnostic_summary"] = summary
     meta["public_feedback_diagnostic_summary"] = summary
+    meta["public_observation_recovery_summary"] = summary
+    meta["public_feedback_inclusion_summary"] = summary
     meta["display_absence_summary"] = summary
     return meta
 

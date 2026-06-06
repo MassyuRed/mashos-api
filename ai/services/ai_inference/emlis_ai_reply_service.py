@@ -15,6 +15,15 @@ from uuid import uuid4
 from emlis_ai_capability import resolve_emlis_ai_capability_for_tier
 from emlis_ai_context_service import build_emlis_ai_source_bundle
 from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_complete_initial_surface_availability import (
+    COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,
+    build_complete_initial_surface_availability_summary,
+)
+from emlis_ai_complete_initial_surface_recomposition import (
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
+    build_complete_initial_surface_recomposition_candidate,
+)
+from emlis_ai_public_surface_requirement import resolve_public_surface_requirement
 from emlis_ai_response_contract import ResponseKind, attach_emlis_internal_response_contract
 from emlis_ai_quality_gate import attach_emlis_ai_quality_gate_meta, evaluate_emlis_ai_quality_gate
 from emlis_ai_reply_final_review_service import review_emlis_ai_reply_text
@@ -3048,6 +3057,28 @@ def _build_step5_complete_initial_candidate_generation_meta(
     }
 
 
+
+def _attach_p4_complete_initial_surface_availability_summary(
+    *,
+    diagnostic_summary: Dict[str, Any],
+    phase_gate_meta: Dict[str, Any],
+) -> None:
+    """Attach P4 body-free source-availability summary.
+
+    This is diagnostic-only.  It does not generate comment_text, does not relax
+    gates, and keeps source-unavailable out of the normal rebuild lane.
+    """
+
+    try:
+        summary = build_complete_initial_surface_availability_summary(
+            diagnostic_summary=diagnostic_summary,
+            phase_gate=phase_gate_meta,
+        )
+    except Exception:
+        return
+    diagnostic_summary[COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY] = dict(summary)
+    phase_gate_meta[COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY] = dict(summary)
+
 def _attach_step5_complete_initial_candidate_generation_meta(
     *,
     diagnostic_summary: Dict[str, Any],
@@ -5018,6 +5049,11 @@ def _multi_perspective_meta(
         display_decision=display_decision,
         gate_trace=gate_trace,
     )
+
+    _attach_p4_complete_initial_surface_availability_summary(
+        diagnostic_summary=diagnostic_summary,
+        phase_gate_meta=phase_gate_meta,
+    )
     step16_rollout_metrics = build_step16_rollout_metrics(
         release_meta=release_meta,
         diagnostic_summary=diagnostic_summary,
@@ -6293,6 +6329,60 @@ async def render_emlis_ai_reply(
         grounding_scope = "low_information_known_scope"
         grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
 
+    pre_public_complete_initial_availability_summary: Dict[str, Any] = {}
+    pre_public_surface_requirement_decision: Dict[str, Any] = {}
+    try:
+        pre_public_binding_meta = build_limited_composer_binding_presence_meta(
+            composer_candidate=composer_candidate,
+        )
+        pre_public_gate_trace = getattr(display_decision, "gate_trace", {}) or build_emlis_gate_trace(
+            reader_report=reader_report,
+            grounding_report=grounding_report,
+            template_echo_report=template_echo_report,
+            safety_report=safety_report,
+            composer_source=composer_source,
+            phase_completion_ready=str(getattr(display_decision, "observation_status", "") or "") == "passed",
+            binding_meta=pre_public_binding_meta,
+            observation_structure_gate_report=observation_structure_gate_report,
+            runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
+            visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
+        )
+        pre_public_resolution_meta = _as_meta_dict(composer_client_resolution)
+        pre_public_candidate_generation_summary = _build_step5_complete_initial_candidate_generation_meta(
+            resolution_meta=pre_public_resolution_meta,
+            composer_candidate=composer_candidate,
+            display_decision=display_decision,
+            gate_trace=pre_public_gate_trace if isinstance(pre_public_gate_trace, dict) else {},
+        )
+        pre_public_diagnostic_summary = {
+            "complete_initial_candidate_generation_path": pre_public_candidate_generation_summary,
+            "step5_candidate_generation_path": pre_public_candidate_generation_summary,
+            "complete_initial_runtime": dict(pre_public_candidate_generation_summary.get("runtime") or {}),
+            "display_rejection_reasons": list(getattr(display_decision, "rejection_reasons", []) or []),
+            "runtime_surface_pre_return_gate": dict(runtime_surface_pre_return_gate_report or {}),
+            "visible_surface_acceptance_gate": dict(visible_surface_acceptance_gate_report or {}),
+        }
+        pre_public_surface_requirement_decision = resolve_public_surface_requirement(
+            current_input=current_input if isinstance(current_input, Mapping) else {},
+            material_route=phase20_3_material_route,
+            composer_meta=getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {},
+            diagnostic_summary=pre_public_diagnostic_summary,
+            comment_text_present=bool(str(getattr(composer_candidate, "comment_text", "") or "").strip()),
+        )
+        pre_public_complete_initial_availability_summary = build_complete_initial_surface_availability_summary(
+            diagnostic_summary=pre_public_diagnostic_summary,
+            phase_gate={
+                "complete_initial_candidate_generation_path": pre_public_candidate_generation_summary,
+                "step5_candidate_generation_path": pre_public_candidate_generation_summary,
+            },
+            candidate_generation_summary=pre_public_candidate_generation_summary,
+            surface_requirement=pre_public_surface_requirement_decision,
+            material_route=phase20_3_material_route_meta,
+        )
+    except Exception:
+        pre_public_complete_initial_availability_summary = {}
+        pre_public_surface_requirement_decision = {}
+
     gate_recovery_loop_result = None
     phase20_5_gate_recovery_public_boundary_meta: Dict[str, Any] | None = None
     if (
@@ -6314,6 +6404,7 @@ async def render_emlis_ai_reply(
             trace_id=trace_id,
             original_composer_candidate=composer_candidate,
             original_composer_source=composer_source,
+            complete_initial_surface_availability_summary=pre_public_complete_initial_availability_summary,
         )
         if gate_recovery_loop_result.applied:
             pre_public_boundary_decision = _reply_service_gate_recovery_public_boundary_decision(
@@ -6340,6 +6431,148 @@ async def render_emlis_ai_reply(
                 grounding_graph = graph
                 grounding_scope = "current_input_material_bundle_recovery"
                 grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+
+    complete_initial_surface_recomposition_result = None
+    if (
+        str(getattr(display_decision, "observation_status", "") or "") != "passed"
+        and not bool(getattr(safety_report, "requires_block", False))
+        and safety_triage_decision.safety_triage_kind == TRIAGE_SAFE_OBSERVATION
+    ):
+        (
+            recomposition_candidate,
+            recomposition_build_reasons,
+        ) = build_complete_initial_surface_recomposition_candidate(
+            current_input=current_input if isinstance(current_input, Mapping) else {},
+            availability_summary=pre_public_complete_initial_availability_summary,
+            surface_requirement=pre_public_surface_requirement_decision,
+            material_route=phase20_3_material_route_meta,
+            trace_id=trace_id,
+            recovery_context=RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
+            safety_requires_block=safety_requires_block,
+            reply_timeout_or_error=False,
+            composer_disabled=resolved_composer_client is None and not bool(complete_initial_default_client),
+        )
+        recomposition_candidate_meta = (
+            getattr(recomposition_candidate, "composer_meta", {})
+            if recomposition_candidate is not None
+            else {}
+        )
+        if not isinstance(recomposition_candidate_meta, Mapping):
+            recomposition_candidate_meta = {}
+        complete_initial_surface_recomposition_result = {
+            "schema_version": "cocolon.emlis.complete_initial_surface_recomposition.reply_service_result.v1",
+            "source_phase": "PublicObservationRecovery_P5_ReplyServiceConnection",
+            "attempted": True,
+            "applied": recomposition_candidate is not None,
+            "candidate_generated": recomposition_candidate is not None,
+            "candidate_source_kind": str(
+                recomposition_candidate_meta.get("candidate_source_kind")
+                or "complete_initial_surface_recomposition_candidate"
+            ),
+            "build_reasons": list(recomposition_build_reasons or []),
+            "normal_observation_rebuild_used": False,
+            "gate_recovery_material_surface_used": False,
+            "display_gate_relaxed": False,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        }
+        if recomposition_candidate is not None:
+            recomposed_candidate = recomposition_candidate
+            recomposed_comment_text = str(getattr(recomposed_candidate, "comment_text", "") or "").strip()
+            recomposed_composer_source = str(getattr(recomposed_candidate, "composer_source", "") or "")
+            recomposed_reader_report = _judge_listener_readability_for_reply(
+                recomposed_comment_text,
+                recomposed_candidate,
+            )
+            recomposed_composer_meta = (
+                getattr(recomposed_candidate, "composer_meta", {})
+                if recomposed_candidate is not None
+                else {}
+            )
+            if not isinstance(recomposed_composer_meta, dict):
+                recomposed_composer_meta = {}
+            recomposed_allowed_evidence_span_ids = list(
+                getattr(recomposed_candidate, "used_evidence_span_ids", []) or grounding_allowed_evidence_span_ids
+            )
+            recomposed_grounding_report = judge_grounding(
+                comment_text=recomposed_comment_text,
+                graph=graph,
+                evidence_spans=evidence_spans,
+                allowed_evidence_span_ids=recomposed_allowed_evidence_span_ids,
+                grounding_scope="complete_initial_surface_recomposition",
+                sentence_bindings=recomposed_composer_meta.get("sentence_bindings"),
+                binding_meta=recomposed_composer_meta,
+            )
+            recomposed_template_echo_report = guard_template_echo(
+                comment_text=recomposed_comment_text,
+                evidence_spans=evidence_spans,
+                composer_source=recomposed_composer_source,
+                composer_model=getattr(recomposed_candidate, "composer_model", ""),
+                generation_method=getattr(recomposed_candidate, "generation_method", ""),
+                generation_scope=getattr(recomposed_candidate, "generation_scope", ""),
+                coverage_scope=getattr(recomposed_candidate, "coverage_scope", ""),
+                composer_meta=recomposed_composer_meta,
+                used_evidence_span_ids=getattr(recomposed_candidate, "used_evidence_span_ids", []),
+            )
+            recomposed_binding_presence = build_limited_composer_binding_presence_meta(
+                composer_candidate=recomposed_candidate,
+            )
+            recomposed_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+                comment_text=recomposed_comment_text,
+                composer_candidate=recomposed_candidate,
+                composer_source=recomposed_composer_source,
+                rerender_attempted=False,
+            )
+            recomposed_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+                comment_text=recomposed_comment_text,
+                current_input=current_input,
+                composer_candidate=recomposed_candidate,
+                composer_source=recomposed_composer_source,
+                rerender_attempted=False,
+            )
+            recomposed_phase6_ready = bool(recomposed_composer_source == "ai_generated" and recomposed_comment_text)
+            recomposed_phase7_ready = bool(
+                recomposed_phase6_ready
+                and phase7_judge_contract_ready(
+                    reader_report=recomposed_reader_report,
+                    grounding_report=recomposed_grounding_report,
+                    template_echo_report=recomposed_template_echo_report,
+                    composer_source=recomposed_composer_source,
+                )
+            )
+            recomposed_display_decision = decide_emlis_observation_display(
+                comment_text=recomposed_comment_text,
+                reader_report=recomposed_reader_report,
+                grounding_report=recomposed_grounding_report,
+                template_echo_report=recomposed_template_echo_report,
+                safety_report=safety_report,
+                trace_id=trace_id,
+                composer_source=recomposed_composer_source,
+                phase_completion_ready=recomposed_phase7_ready,
+                binding_meta=recomposed_binding_presence,
+                observation_structure_gate_report=observation_structure_gate_report,
+                runtime_surface_pre_return_gate_report=recomposed_runtime_surface_pre_return_gate_report,
+                visible_surface_acceptance_gate_report=recomposed_visible_surface_acceptance_gate_report,
+            )
+            if str(getattr(recomposed_display_decision, "observation_status", "") or "") == "passed":
+                display_decision = recomposed_display_decision
+                reader_report = recomposed_reader_report
+                grounding_report = recomposed_grounding_report
+                template_echo_report = recomposed_template_echo_report
+                composer_source = recomposed_composer_source
+                composer_candidate = recomposed_candidate
+                runtime_surface_pre_return_gate_report = dict(
+                    recomposed_runtime_surface_pre_return_gate_report or {}
+                )
+                visible_surface_acceptance_gate_report = dict(
+                    recomposed_visible_surface_acceptance_gate_report or {}
+                )
+                grounding_graph = graph
+                grounding_scope = "complete_initial_surface_recomposition"
+                grounding_allowed_evidence_span_ids = list(
+                    getattr(recomposed_grounding_report, "allowed_evidence_span_ids", [])
+                    or recomposed_allowed_evidence_span_ids
+                )
 
     self_denial_safe_state_answer_result = None
     phase20_13_post_final_gate_recovery_meta: Dict[str, Any] | None = None
@@ -6517,6 +6750,7 @@ async def render_emlis_ai_reply(
                 allow_low_information_post_final_recovery=True,
                 original_composer_candidate=post_final_precheck_composer_candidate,
                 original_composer_source=post_final_precheck_composer_source,
+                complete_initial_surface_availability_summary=pre_public_complete_initial_availability_summary,
             )
             if post_final_gate_recovery_result.applied:
                 post_final_public_boundary_decision = _reply_service_gate_recovery_public_boundary_decision(
@@ -6943,6 +7177,37 @@ async def render_emlis_ai_reply(
                     ),
                 }
             )
+    if complete_initial_surface_recomposition_result is not None:
+        complete_initial_surface_recomposition_meta = dict(complete_initial_surface_recomposition_result)
+        meta[COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY] = dict(
+            complete_initial_surface_recomposition_meta
+        )
+        if bool(complete_initial_surface_recomposition_meta.get("applied")):
+            meta["observation_reply_kind"] = "complete_initial_surface_recomposition"
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"][COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY] = dict(
+                complete_initial_surface_recomposition_meta
+            )
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "p5_complete_initial_surface_recomposition_attempted": bool(
+                        complete_initial_surface_recomposition_meta.get("attempted")
+                    ),
+                    "p5_complete_initial_surface_recomposition_applied": bool(
+                        complete_initial_surface_recomposition_meta.get("applied")
+                    ),
+                    "p5_complete_initial_surface_recomposition_candidate_generated": bool(
+                        complete_initial_surface_recomposition_meta.get("candidate_generated")
+                    ),
+                    "p5_complete_initial_surface_recomposition_normal_rebuild_used": False,
+                    "p5_complete_initial_surface_recomposition_gate_recovery_material_surface_used": False,
+                    "p5_complete_initial_surface_recomposition_display_gate_relaxed": False,
+                    "p5_complete_initial_surface_recomposition_comment_text_body_included": False,
+                    "p5_complete_initial_surface_recomposition_raw_input_included": False,
+                }
+            )
+
     if phase20_13_post_final_gate_recovery_meta is not None:
         meta[_PHASE20_13_POST_FINAL_GATE_RECOVERY_META_KEY] = dict(phase20_13_post_final_gate_recovery_meta)
         if phase20_13_post_final_response_kind:

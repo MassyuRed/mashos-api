@@ -15,10 +15,43 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
+from emlis_ai_complete_initial_surface_availability import (
+    COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,
+    build_complete_initial_surface_availability_summary,
+    complete_initial_surface_availability_public_summary,
+)
+from emlis_ai_complete_initial_surface_recomposition import (
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
+    complete_initial_surface_recomposition_public_summary,
+)
 from emlis_ai_gate_recovery_public_constants import (
+    ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
+    CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
+    CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
     CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
+    FORBIDDEN_PUBLIC_CANDIDATE_SOURCE_KINDS,
+    PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
 )
+from emlis_ai_labelled_two_stage_surface_recomposition import (
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
+    labelled_two_stage_surface_recomposition_public_summary,
+)
+from emlis_ai_product_surface_validation import (
+    PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,
+    product_surface_validation_public_summary,
+)
+from emlis_ai_public_surface_requirement import public_surface_requirement_public_summary
 from emlis_ai_response_contract import (
     internal_response_contract_from_meta,
     public_status_from_internal_response_contract,
@@ -35,6 +68,9 @@ from emlis_ai_user_label_connection_public_meta import (
 
 PUBLIC_EMLIS_FEEDBACK_META_SCHEMA_VERSION = "emlis.public_input_feedback_meta.v1"
 PUBLIC_EMLIS_FEEDBACK_META_BOUNDARY_VERSION = "emlis.public_feedback_meta_boundary.v1"
+PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY = "public_surface_lineage"
+PUBLIC_SURFACE_LINEAGE_SCHEMA_VERSION = "cocolon.emlis.public_surface_lineage.v1"
+PUBLIC_SURFACE_LINEAGE_SOURCE_PHASE = "PublicObservationRecovery_P8_PublicMetaBoundaryProductQualityMeta"
 PUBLIC_EMLIS_FEEDBACK_META_TARGET_BYTES = 8 * 1024
 PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES = 12 * 1024
 PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS = 20
@@ -593,6 +629,354 @@ def _build_normal_observation_rebuild_public_summary(internal_meta: Mapping[str,
     return summary
 
 
+
+def _public_surface_lineage_sources(internal_meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Return possible P8 lineage sources without reading text/body fields."""
+
+    sources: list[Mapping[str, Any]] = []
+
+    def add(value: Any) -> None:
+        mapping = _safe_mapping(value)
+        if mapping is None:
+            return
+        sources.append(mapping)
+        for nested_key in (
+            "surface_origin",
+            PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY,
+            "public_observation_surface_lineage",
+            "public_candidate_builder",
+            "candidate_lineage",
+            "gate_recovery_public_boundary_decision",
+            "reply_service_public_boundary",
+            COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
+            LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
+            "normal_observation_rebuild",
+            "product_surface_validation",
+            "surface_requirement",
+        ):
+            nested = _safe_mapping(_safe_get(mapping, nested_key))
+            if nested is not None:
+                sources.append(nested)
+
+    add(internal_meta)
+    add(_safe_get(internal_meta, PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY))
+    add(_safe_get(internal_meta, "public_observation_surface_lineage"))
+    add(_safe_get(internal_meta, "surface_origin"))
+    add(_safe_get(internal_meta, "reply_service_public_boundary"))
+    add(_safe_get(internal_meta, "phase20_5_gate_recovery_public_boundary"))
+    add(_safe_get(internal_meta, "phase20_5_gate_recovery_public_candidate_builder"))
+    add(_safe_get(internal_meta, "phase20_13_post_final_gate_recovery"))
+    add(_safe_get(internal_meta, COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+    add(_safe_get(internal_meta, LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+    phase_gate = _safe_mapping(_safe_get(internal_meta, "phase_gate"))
+    if phase_gate is not None:
+        add(phase_gate)
+    diagnostic_summary = _pick_diagnostic_summary(internal_meta)
+    if diagnostic_summary is not None:
+        add(diagnostic_summary)
+        add(_safe_get(diagnostic_summary, PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY))
+        add(_safe_get(diagnostic_summary, "public_observation_surface_lineage"))
+        add(_safe_get(diagnostic_summary, COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+        add(_safe_get(diagnostic_summary, LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+        add(_safe_get(diagnostic_summary, "normal_observation_rebuild"))
+        add(_safe_get(diagnostic_summary, "product_surface_validation"))
+        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
+        add(_safe_get(diagnostic_summary, "phase20_13_post_final_gate_recovery"))
+    return sources
+
+
+def _first_safe_public_identifier_from_sources(
+    sources: Iterable[Mapping[str, Any]],
+    keys: Iterable[str],
+    *,
+    max_length: int = 128,
+) -> str:
+    for source in sources:
+        for key in keys:
+            value = _safe_public_identifier(_safe_get(source, key), max_length=max_length, default=None)
+            if value:
+                return value
+    return ""
+
+
+def _first_safe_bool_from_sources_default(
+    sources: Iterable[Mapping[str, Any]],
+    keys: Iterable[str],
+    *,
+    default: Optional[bool] = None,
+) -> Optional[bool]:
+    value = _first_safe_bool_from_sources(sources, keys)
+    return default if value is None else value
+
+
+def _infer_public_surface_lineage_source_kind(sources: Iterable[Mapping[str, Any]]) -> str:
+    source_kind = _first_safe_public_identifier_from_sources(
+        sources,
+        (
+            "candidate_source_kind",
+            "source_kind",
+            "public_candidate_source_kind",
+            "adopted_candidate_source_kind",
+            "final_surface_origin_candidate_source_kind",
+            "public_recovery_candidate_source_kind",
+            "normal_observation_rebuild_source_kind",
+        ),
+    )
+    if source_kind:
+        return source_kind
+
+    composer_model = _first_safe_public_identifier_from_sources(
+        sources,
+        ("composer_model", "surface_origin_composer_model"),
+    ).lower()
+    generation_method = _first_safe_public_identifier_from_sources(
+        sources,
+        ("generation_method", "surface_generation_method", "surface_origin_generation_method"),
+    ).lower()
+    composer_source = _first_safe_public_identifier_from_sources(sources, ("composer_source",)).lower()
+    if (
+        COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL in composer_model
+        or COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD in generation_method
+        or "complete_initial_surface_recomposition" in composer_model
+        or "complete_initial_surface_recomposition" in generation_method
+        or "complete_initial_surface_recomposition" in composer_source
+    ):
+        return CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+    if (
+        LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL in composer_model
+        or LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD in generation_method
+        or "labelled_two_stage_surface_recomposition" in composer_model
+        or "labelled_two_stage_surface_recomposition" in generation_method
+        or "labelled_two_stage_surface_recomposition" in composer_source
+    ):
+        return CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+    if "normal_observation_rebuild" in composer_model or "normal_observation_rebuild" in generation_method:
+        return CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    if "low_information" in composer_model or "low_information" in generation_method:
+        return CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
+    if "self_denial_safe_state_answer" in composer_model or "self_denial_safe_state_answer" in generation_method:
+        return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
+    if "complete_initial" in composer_model or "complete_initial" in generation_method:
+        return CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER
+    if "limited" in composer_model or "limited" in generation_method:
+        return CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER
+    if "gate_recovery" in composer_model or "gate_recovery" in generation_method:
+        return CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE
+    return ""
+
+
+def _public_surface_lineage_surface_requirement(sources: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    for source in sources:
+        for key in ("surface_requirement", "required_surface", "public_surface_requirement"):
+            summary = public_surface_requirement_public_summary(_safe_mapping(_safe_get(source, key)))
+            if summary:
+                return summary
+    family = _first_safe_public_identifier_from_sources(
+        sources,
+        ("surface_requirement_family", "product_surface_requirement_family"),
+        max_length=96,
+    )
+    if not family:
+        return {}
+    return public_surface_requirement_public_summary(
+        {
+            "surface_requirement_family": family,
+            "two_stage_required": _first_safe_bool_from_sources_default(
+                sources,
+                ("two_stage_required", "product_surface_two_stage_required"),
+                default=False,
+            ),
+            "plain_state_answer_allowed": _first_safe_bool_from_sources_default(
+                sources,
+                ("plain_state_answer_allowed", "plain_surface_allowed"),
+                default=False,
+            ),
+            "low_information_allowed": _first_safe_bool_from_sources_default(
+                sources,
+                ("low_information_allowed",),
+                default=False,
+            ),
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        }
+    )
+
+
+def _build_public_surface_lineage_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return P8 public-safe lineage for public observation candidate sources.
+
+    The summary is intentionally additive and diagnostic only. It distinguishes
+    normal rebuild, P5 complete-initial recomposition, and P6 labelled two-stage
+    recomposition without exposing raw input, original candidate body, or public
+    ``comment_text``.
+    """
+
+    sources = _public_surface_lineage_sources(internal_meta)
+    if not sources:
+        return None
+
+    source_kind = _infer_public_surface_lineage_source_kind(sources)
+    if not source_kind:
+        return None
+
+    public_role = _first_safe_public_identifier_from_sources(sources, ("public_surface_role", "surface_role"))
+    if not public_role and source_kind in ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS:
+        public_role = PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+    if not public_role and source_kind in FORBIDDEN_PUBLIC_CANDIDATE_SOURCE_KINDS:
+        public_role = PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
+
+    complete_initial_used = bool(
+        source_kind == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+        or _first_safe_bool_from_sources_default(
+            sources,
+            (
+                "complete_initial_surface_recomposition_used",
+                "complete_initial_surface_recomposition_applied",
+                "p5_complete_initial_surface_recomposition_applied",
+                "p5_complete_initial_surface_recomposition_connected",
+            ),
+            default=False,
+        ) is True
+    )
+    labelled_two_stage_used = bool(
+        source_kind == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+        or _first_safe_bool_from_sources_default(
+            sources,
+            (
+                "labelled_two_stage_recomposition_used",
+                "labelled_two_stage_surface_recomposition_used",
+                "labelled_two_stage_surface_recomposition_applied",
+                "p6_labelled_two_stage_surface_recomposition_connected",
+            ),
+            default=False,
+        ) is True
+    )
+    normal_rebuild_used = bool(
+        source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or _first_safe_bool_from_sources_default(
+            sources,
+            ("normal_observation_rebuild_used", "normal_observation_rebuild_applied", "normal_observation_rebuild_attempted"),
+            default=False,
+        ) is True
+    )
+    gate_recovery_material_used = bool(
+        source_kind == CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE
+        or _first_safe_bool_from_sources_default(
+            sources,
+            ("gate_recovery_material_surface_used", "gate_recovery_material_surface_used_as_public_body"),
+            default=False,
+        ) is True
+    )
+    diagnostic_recovery_used = bool(source_kind == CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE)
+    allowed_source = bool(source_kind in ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS)
+    forbidden_source = bool(source_kind in FORBIDDEN_PUBLIC_CANDIDATE_SOURCE_KINDS)
+    public_allowed = _first_safe_bool_from_sources_default(
+        sources,
+        ("public_display_allowed_by_boundary", "public_display_allowed"),
+        default=None,
+    )
+    if public_allowed is None:
+        public_allowed = bool(allowed_source and not gate_recovery_material_used and not diagnostic_recovery_used)
+
+    requirement = _public_surface_lineage_surface_requirement(sources)
+    family = _safe_public_identifier(
+        requirement.get("surface_requirement_family") or _first_safe_public_identifier_from_sources(
+            sources,
+            ("surface_requirement_family", "product_surface_requirement_family"),
+            max_length=96,
+        ),
+        max_length=96,
+        default=None,
+    )
+    product_surface_valid = _first_safe_bool_from_sources_default(
+        sources,
+        ("product_surface_valid",),
+        default=None,
+    )
+    blocked_reasons: list[str] = []
+    for source in sources:
+        blocked_reasons = _safe_rejection_reasons(
+            _safe_get(source, "blocked_reasons")
+            or _safe_get(source, "public_boundary_blockers")
+            or _safe_get(source, "blockers")
+        )
+        if blocked_reasons:
+            break
+
+    summary: Dict[str, Any] = {
+        "schema_version": PUBLIC_SURFACE_LINEAGE_SCHEMA_VERSION,
+        "source_phase": PUBLIC_SURFACE_LINEAGE_SOURCE_PHASE,
+        "candidate_source_kind": source_kind,
+        "public_candidate_source_allowed": allowed_source,
+        "public_candidate_source_forbidden": forbidden_source,
+        "public_surface_role": public_role or "",
+        "public_display_allowed_by_boundary": bool(public_allowed),
+        "normal_observation_rebuild_used": bool(normal_rebuild_used),
+        "complete_initial_surface_recomposition_used": bool(complete_initial_used),
+        "labelled_two_stage_surface_recomposition_used": bool(labelled_two_stage_used),
+        "gate_recovery_material_surface_used_as_public_body": bool(gate_recovery_material_used),
+        "diagnostic_recovery_surface_used_as_public_body": bool(diagnostic_recovery_used),
+        "surface_requirement_family": family or "",
+        "two_stage_required": bool(requirement.get("two_stage_required", False)),
+        "plain_surface_allowed": bool(requirement.get("plain_state_answer_allowed", False)),
+        "low_information_allowed": bool(requirement.get("low_information_allowed", False)),
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "original_comment_text_body_included": False,
+        "candidate_body_included": False,
+        "display_gate_relaxed": False,
+        "runtime_surface_gate_relaxed": False,
+        "visible_surface_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+    }
+    if product_surface_valid is not None:
+        summary["product_surface_valid"] = bool(product_surface_valid)
+    if blocked_reasons and not public_allowed:
+        summary["blocked_reasons"] = blocked_reasons
+    return summary
+
+
+def _build_complete_initial_surface_recomposition_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    sources = _public_surface_lineage_sources(internal_meta)
+    for source in sources:
+        direct = _safe_mapping(_safe_get(source, COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+        if direct is not None:
+            try:
+                summary = complete_initial_surface_recomposition_public_summary(direct)
+            except Exception:
+                return None
+            if summary and summary.get("candidate_source_kind") == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE:
+                return summary
+        if _safe_public_identifier(_safe_get(source, "candidate_source_kind"), max_length=128, default=None) == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE:
+            try:
+                return complete_initial_surface_recomposition_public_summary(source)
+            except Exception:
+                return None
+    return None
+
+
+def _build_labelled_two_stage_surface_recomposition_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    sources = _public_surface_lineage_sources(internal_meta)
+    for source in sources:
+        direct = _safe_mapping(_safe_get(source, LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
+        if direct is not None:
+            try:
+                summary = labelled_two_stage_surface_recomposition_public_summary(direct)
+            except Exception:
+                return None
+            if summary and summary.get("candidate_source_kind") == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE:
+                return summary
+        if _safe_public_identifier(_safe_get(source, "candidate_source_kind"), max_length=128, default=None) == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE:
+            try:
+                return labelled_two_stage_surface_recomposition_public_summary(source)
+            except Exception:
+                return None
+    return None
+
+
 def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
     source = _pick_diagnostic_summary(internal_meta)
     if source is None:
@@ -621,6 +1005,10 @@ def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     normal_observation_rebuild = _build_normal_observation_rebuild_public_summary(internal_meta)
     if normal_observation_rebuild:
         public_summary["normal_observation_rebuild"] = normal_observation_rebuild
+
+    public_surface_lineage = _build_public_surface_lineage_meta(internal_meta)
+    if public_surface_lineage:
+        public_summary[PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY] = public_surface_lineage
 
     return public_summary
 
@@ -1095,6 +1483,111 @@ def _pick_user_label_connection_source(internal_meta: Mapping[str, Any]) -> Opti
     return None
 
 
+
+def _build_complete_initial_surface_availability_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return body-free P4 complete-initial availability public summary.
+
+    P4 is diagnostic/additive only. It names source availability before P5 can
+    decide whether recomposition is safe; it never changes observation_status,
+    never serializes body text, and never relabels source-unavailable cases as
+    normal observation rebuild.
+    """
+
+    sources: list[Mapping[str, Any]] = []
+
+    def add(value: Any) -> None:
+        mapping = _safe_mapping(value)
+        if mapping is None:
+            return
+        sources.append(mapping)
+
+    add(internal_meta)
+    add(_safe_get(internal_meta, COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY))
+    add(_safe_get(internal_meta, "public_observation_complete_initial_surface_availability"))
+    add(_safe_get(internal_meta, "complete_initial_availability_summary"))
+    diagnostic_summary = _pick_diagnostic_summary(internal_meta)
+    add(diagnostic_summary)
+    phase_gate = _safe_mapping(_safe_get(internal_meta, "phase_gate"))
+    add(phase_gate)
+    if diagnostic_summary is not None:
+        add(_safe_get(diagnostic_summary, COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY))
+        add(_safe_get(diagnostic_summary, "complete_initial_candidate_generation_path"))
+        add(_safe_get(diagnostic_summary, "step5_candidate_generation_path"))
+        add(_safe_get(diagnostic_summary, "complete_initial_runtime"))
+        add(_safe_get(diagnostic_summary, "step5_complete_initial_runtime"))
+    if phase_gate is not None:
+        add(_safe_get(phase_gate, COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY))
+        add(_safe_get(phase_gate, "complete_initial_candidate_generation_path"))
+        add(_safe_get(phase_gate, "step5_candidate_generation_path"))
+
+    for source in sources:
+        direct = _safe_mapping(_safe_get(source, COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY))
+        if direct is None:
+            continue
+        try:
+            summary = complete_initial_surface_availability_public_summary(direct)
+        except Exception:
+            return None
+        if summary:
+            return summary
+
+    try:
+        summary = build_complete_initial_surface_availability_summary(
+            internal_meta=internal_meta,
+            diagnostic_summary=diagnostic_summary,
+            phase_gate=phase_gate,
+        )
+    except Exception:
+        return None
+    try:
+        public_summary = complete_initial_surface_availability_public_summary(summary)
+    except Exception:
+        return None
+    # Avoid adding an empty/default diagnostic for meta with no complete-initial
+    # signal at all.  Existing complete-initial step3/step5 fields make it useful.
+    if not any(
+        bool(_safe_get(source, key))
+        for source in sources
+        for key in (
+            "complete_initial_client_resolved",
+            "step3_complete_initial_client_resolved",
+            "complete_initial_candidate_generation_attempted",
+            "step5_complete_initial_candidate_generation_attempted",
+            "complete_initial_candidate_status",
+            "step5_complete_initial_candidate_status",
+            "complete_initial_candidate_generation_path",
+            "step5_candidate_generation_path",
+        )
+    ):
+        return None
+    return public_summary
+
+def _build_product_surface_validation_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return a body-free P3 product-surface validation public summary.
+
+    P3 is diagnostic/additive only: it must not change ``observation_status`` or
+    the public inclusion decision.  It exists so rn-visible-but-not-product-valid
+    cases can be detected without copying comment text or raw input into public
+    meta.
+    """
+
+    for key in (
+        PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,
+        "public_observation_product_surface_validation",
+        "product_surface_validation_summary",
+    ):
+        raw = _safe_mapping(_safe_get(internal_meta, key))
+        if raw is None:
+            continue
+        try:
+            summary = product_surface_validation_public_summary(raw)
+        except Exception:
+            return None
+        if summary:
+            return summary
+    return None
+
+
 def _build_user_label_connection_public_meta(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
     source = _pick_user_label_connection_source(internal_meta)
     if source is None:
@@ -1323,6 +1816,26 @@ def build_public_emlis_input_feedback_meta(
         state_answer_gate_boundary = _build_state_answer_gate_boundary_meta(internal_meta)
         if state_answer_gate_boundary:
             public_meta["state_answer_gate_boundary"] = state_answer_gate_boundary
+
+        complete_initial_surface_availability = _build_complete_initial_surface_availability_meta(internal_meta)
+        if complete_initial_surface_availability:
+            public_meta[COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY] = complete_initial_surface_availability
+
+        complete_initial_surface_recomposition = _build_complete_initial_surface_recomposition_meta(internal_meta)
+        if complete_initial_surface_recomposition:
+            public_meta[COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY] = complete_initial_surface_recomposition
+
+        labelled_two_stage_surface_recomposition = _build_labelled_two_stage_surface_recomposition_meta(internal_meta)
+        if labelled_two_stage_surface_recomposition:
+            public_meta[LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY] = labelled_two_stage_surface_recomposition
+
+        public_surface_lineage = _build_public_surface_lineage_meta(internal_meta)
+        if public_surface_lineage:
+            public_meta[PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY] = public_surface_lineage
+
+        product_surface_validation = _build_product_surface_validation_meta(internal_meta)
+        if product_surface_validation:
+            public_meta[PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY] = product_surface_validation
 
         if public_meta.get("observation_status") == "passed" and _two_stage_reception_gate_blocks_public_feedback(public_meta):
             public_meta["observation_status"] = "rejected"

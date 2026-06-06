@@ -81,6 +81,11 @@ _INTERNAL_MODE_NAMES_NOT_PUBLIC = (
     "self_understanding_learning_shift",
 )
 
+_PHASE19_META_WALK_MAX_DEPTH = 12
+_PHASE19_META_WALK_MAX_NODES = 6000
+_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS = 200
+
+
 _PHASE19_SAFE_INSERTED_IDS = {
     "phase19_real_device_A_low_information_fatigue": "phase19-0-A",
     "phase19_real_device_B_safety_boundary_self_harm_adjacent": "phase19-0-B",
@@ -287,21 +292,72 @@ def _public_response_body(result: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _walk_values(value: Any) -> list[Any]:
-    out: list[Any] = []
+def _is_walkable_sequence(value: Any) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
-    def rec(item: Any) -> None:
+
+def _walk_values(value: Any) -> list[Any]:
+    """Return scalar values from nested diagnostic meta without unbounded recursion."""
+    out: list[Any] = []
+    visited: set[int] = set()
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    visited_nodes = 0
+
+    while stack and visited_nodes < _PHASE19_META_WALK_MAX_NODES:
+        item, depth = stack.pop()
+        visited_nodes += 1
         if isinstance(item, Mapping):
-            for child in item.values():
-                rec(child)
-        elif isinstance(item, Sequence) and not isinstance(item, (str, bytes, bytearray)):
-            for child in item:
-                rec(child)
+            marker = id(item)
+            if marker in visited:
+                continue
+            visited.add(marker)
+            if depth >= _PHASE19_META_WALK_MAX_DEPTH:
+                continue
+            for child in reversed(list(item.values())[:_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS]):
+                stack.append((child, depth + 1))
+        elif _is_walkable_sequence(item):
+            marker = id(item)
+            if marker in visited:
+                continue
+            visited.add(marker)
+            if depth >= _PHASE19_META_WALK_MAX_DEPTH:
+                continue
+            for child in reversed(list(item)[:_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS]):
+                stack.append((child, depth + 1))
         else:
             out.append(item)
-
-    rec(value)
     return out
+
+
+def _walk_mappings(value: Any) -> list[Mapping[str, Any]]:
+    mappings: list[Mapping[str, Any]] = []
+    visited: set[int] = set()
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    visited_nodes = 0
+
+    while stack and visited_nodes < _PHASE19_META_WALK_MAX_NODES:
+        item, depth = stack.pop()
+        visited_nodes += 1
+        if isinstance(item, Mapping):
+            marker = id(item)
+            if marker in visited:
+                continue
+            visited.add(marker)
+            mappings.append(item)
+            if depth >= _PHASE19_META_WALK_MAX_DEPTH:
+                continue
+            for child in reversed(list(item.values())[:_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS]):
+                stack.append((child, depth + 1))
+        elif _is_walkable_sequence(item):
+            marker = id(item)
+            if marker in visited:
+                continue
+            visited.add(marker)
+            if depth >= _PHASE19_META_WALK_MAX_DEPTH:
+                continue
+            for child in reversed(list(item)[:_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS]):
+                stack.append((child, depth + 1))
+    return mappings
 
 
 def _contains_text_recursive(value: Any, needle: str) -> bool:
@@ -324,41 +380,23 @@ def _find_mapping(value: Mapping[str, Any] | None, *keys: str) -> Mapping[str, A
 
 
 def _find_first_mapping_by_key(value: Any, key_name: str) -> Mapping[str, Any]:
-    if isinstance(value, Mapping):
-        child = value.get(key_name)
+    for mapping in _walk_mappings(value):
+        child = mapping.get(key_name)
         if isinstance(child, Mapping):
             return child
-        for nested in value.values():
-            found = _find_first_mapping_by_key(nested, key_name)
-            if found:
-                return found
-    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        for nested in value:
-            found = _find_first_mapping_by_key(nested, key_name)
-            if found:
-                return found
     return {}
 
 
 def _all_reason_codes(public_meta: Mapping[str, Any], diagnostic_meta: Mapping[str, Any] | None = None) -> set[str]:
     reasons: set[str] = set()
-
-    def collect(value: Any) -> None:
-        if isinstance(value, Mapping):
-            for key, child in value.items():
-                if key in {"rejection_reasons", "reason_codes", "surface_issue_codes"} and isinstance(child, Sequence) and not isinstance(child, (str, bytes, bytearray)):
-                    reasons.update(str(item) for item in child if str(item or "").strip())
+    sources: tuple[Any, ...] = (public_meta, diagnostic_meta) if diagnostic_meta is not None else (public_meta,)
+    for source in sources:
+        for mapping in _walk_mappings(source):
+            for key, child in mapping.items():
+                if key in {"rejection_reasons", "reason_codes", "surface_issue_codes"} and _is_walkable_sequence(child):
+                    reasons.update(str(item) for item in list(child)[:_PHASE19_META_WALK_MAX_SEQUENCE_ITEMS] if str(item or "").strip())
                 elif key in {"primary_reason", "first_failure_reason", "fail_closed_reason_code"} and str(child or "").strip():
                     reasons.add(str(child))
-                else:
-                    collect(child)
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for child in value:
-                collect(child)
-
-    collect(public_meta)
-    if diagnostic_meta is not None:
-        collect(diagnostic_meta)
     return reasons
 
 
@@ -399,43 +437,25 @@ def _max_evidence_span_count(meta: Mapping[str, Any] | None) -> int:
         "current_input_evidence_span_count",
     }
 
-    def rec(value: Any) -> None:
-        nonlocal max_count
-        if isinstance(value, Mapping):
-            for key, child in value.items():
+    if isinstance(meta, Mapping):
+        for mapping in _walk_mappings(meta):
+            for key, child in mapping.items():
                 if key in keys and not isinstance(child, bool):
                     try:
                         max_count = max(max_count, int(child))
                     except Exception:
                         pass
-                else:
-                    rec(child)
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for child in value:
-                rec(child)
-
-    if isinstance(meta, Mapping):
-        rec(meta)
     return max_count
 
 
 def _selected_reception_modes(meta: Mapping[str, Any] | None) -> set[str]:
     selected: set[str] = set()
-
-    def collect(value: Any) -> None:
-        if isinstance(value, Mapping):
-            for key, child in value.items():
+    if isinstance(meta, Mapping):
+        for mapping in _walk_mappings(meta):
+            for key, child in mapping.items():
                 if key in {"reception_mode", "reception_mode_id", "selected_reception_mode_id"}:
                     if isinstance(child, str) and child.strip():
                         selected.add(child)
-                else:
-                    collect(child)
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for child in value:
-                collect(child)
-
-    if isinstance(meta, Mapping):
-        collect(meta)
     return selected
 
 

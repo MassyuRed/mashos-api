@@ -23,9 +23,11 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
     CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
     CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
     CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
@@ -38,9 +40,23 @@ from emlis_ai_gate_recovery_public_constants import (
     PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
 )
+from emlis_ai_complete_initial_surface_recomposition import (
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+)
+from emlis_ai_labelled_two_stage_surface_recomposition import (
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+)
 from emlis_ai_product_quality_contract_freeze import (
     assert_emlis_ai_product_quality_contract_freeze_meta_only,
     build_emlis_ai_product_quality_contract_freeze,
+)
+from emlis_ai_product_surface_validation import (
+    PRODUCT_SURFACE_BLOCKER_NONE,
+    build_product_surface_validation_summary,
+    product_surface_validation_public_summary,
+    resolve_product_surface_requirement_from_sources,
 )
 from emlis_ai_public_feedback_meta import should_include_public_input_feedback
 
@@ -352,6 +368,8 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "template_meta_false_negative_risk",
                 "normal_observation_rebuild_attempted",
                 "normal_observation_rebuild_applied",
+                "complete_initial_surface_recomposition_used",
+                "labelled_two_stage_surface_recomposition_used",
                 "raw_input_included",
                 "comment_text_body_included",
             ],
@@ -368,6 +386,8 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "template_meta_false_negative_risk": {"type": "boolean"},
                 "normal_observation_rebuild_attempted": {"type": "boolean"},
                 "normal_observation_rebuild_applied": {"type": "boolean"},
+                "complete_initial_surface_recomposition_used": {"type": "boolean"},
+                "labelled_two_stage_surface_recomposition_used": {"type": "boolean"},
                 "raw_input_included": {"const": False},
                 "comment_text_body_included": {"const": False},
             },
@@ -968,6 +988,20 @@ def _infer_surface_origin_candidate_source_kind(
     if "self_denial_safe_state_answer" in model_lower or "self_denial_safe_state_answer" in generation_lower:
         return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
     if (
+        composer_model == COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL
+        or generation_method == COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD
+        or "complete_initial_surface_recomposition" in model_lower
+        or "complete_initial_surface_recomposition" in generation_lower
+    ):
+        return CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+    if (
+        composer_model == LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL
+        or generation_method == LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD
+        or "labelled_two_stage_surface_recomposition" in model_lower
+        or "labelled_two_stage_surface_recomposition" in generation_lower
+    ):
+        return CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+    if (
         composer_model == NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL
         or generation_method == NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD
         or "normal_observation_rebuild" in model_lower
@@ -1050,6 +1084,9 @@ def _extract_surface_origin(
         _first(
             (
                 "surface_origin.composer_model",
+                "public_surface_lineage.composer_model",
+                "complete_initial_surface_recomposition_summary.composer_model",
+                "labelled_two_stage_surface_recomposition_summary.composer_model",
                 "composer_model",
                 "composer_resolution.composer_model",
                 "candidate.composer_model",
@@ -1070,6 +1107,9 @@ def _extract_surface_origin(
         _first(
             (
                 "surface_origin.generation_method",
+                "public_surface_lineage.generation_method",
+                "complete_initial_surface_recomposition_summary.generation_method",
+                "labelled_two_stage_surface_recomposition_summary.generation_method",
                 "generation_method",
                 "composer_resolution.generation_method",
                 "candidate.generation_method",
@@ -1090,6 +1130,9 @@ def _extract_surface_origin(
         _first(
             (
                 "surface_origin.candidate_source_kind",
+                "public_surface_lineage.candidate_source_kind",
+                "complete_initial_surface_recomposition_summary.candidate_source_kind",
+                "labelled_two_stage_surface_recomposition_summary.candidate_source_kind",
                 "candidate_source_kind",
                 "composer_resolution.candidate_source_kind",
                 "candidate.candidate_source_kind",
@@ -1124,6 +1167,9 @@ def _extract_surface_origin(
         _first(
             (
                 "surface_origin.public_surface_role",
+                "public_surface_lineage.public_surface_role",
+                "complete_initial_surface_recomposition_summary.public_surface_role",
+                "labelled_two_stage_surface_recomposition_summary.public_surface_role",
                 "public_surface_role",
                 "candidate.public_surface_role",
                 "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.public_surface_role",
@@ -1185,6 +1231,10 @@ def _extract_surface_origin(
         (
             "surface_origin.public_display_allowed_by_boundary",
             "surface_origin.public_display_allowed",
+            "public_surface_lineage.public_display_allowed_by_boundary",
+            "public_surface_lineage.public_display_allowed",
+            "complete_initial_surface_recomposition_summary.public_display_allowed_by_boundary",
+            "labelled_two_stage_surface_recomposition_summary.public_display_allowed_by_boundary",
             "public_display_allowed_by_boundary",
             "public_display_allowed",
             "phase20_5_gate_recovery_public_boundary.public_display_allowed",
@@ -1259,6 +1309,39 @@ def _extract_surface_origin(
             and bool(public_display_reached)
         )
     )
+    complete_initial_recomposition_used = bool(
+        candidate_source_kind == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+        or _first_bool(
+            (
+                "complete_initial_surface_recomposition_used",
+                "complete_initial_surface_recomposition_applied",
+                "surface_origin.complete_initial_surface_recomposition_used",
+                "public_surface_lineage.complete_initial_surface_recomposition_used",
+                "complete_initial_surface_recomposition_summary.source_unavailable_recovered",
+                "complete_initial_surface_recomposition_summary.public_display_allowed_by_boundary",
+            ),
+            *sources,
+            boundary_decision,
+            default=False,
+        )
+    )
+    labelled_two_stage_recomposition_used = bool(
+        candidate_source_kind == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+        or _first_bool(
+            (
+                "labelled_two_stage_recomposition_used",
+                "labelled_two_stage_surface_recomposition_used",
+                "labelled_two_stage_surface_recomposition_applied",
+                "surface_origin.labelled_two_stage_surface_recomposition_used",
+                "public_surface_lineage.labelled_two_stage_surface_recomposition_used",
+                "labelled_two_stage_surface_recomposition_summary.two_stage_required",
+                "labelled_two_stage_surface_recomposition_summary.public_display_allowed_by_boundary",
+            ),
+            *sources,
+            boundary_decision,
+            default=False,
+        )
+    )
     return {
         "schema_version": PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION,
         "candidate_source_kind": candidate_source_kind,
@@ -1272,9 +1355,79 @@ def _extract_surface_origin(
         "template_meta_false_negative_risk": bool(template_false_negative_risk),
         "normal_observation_rebuild_attempted": bool(normal_rebuild_attempted),
         "normal_observation_rebuild_applied": bool(normal_rebuild_applied),
+        "complete_initial_surface_recomposition_used": bool(complete_initial_recomposition_used),
+        "labelled_two_stage_surface_recomposition_used": bool(labelled_two_stage_recomposition_used),
         "raw_input_included": False,
         "comment_text_body_included": False,
     }
+
+
+def _extract_product_surface_validation(
+    *,
+    comment_text: Any,
+    public_meta: Mapping[str, Any],
+    internal_meta: Mapping[str, Any],
+    composer_resolution: Mapping[str, Any],
+    machine_metrics: Mapping[str, Any],
+    surface_origin: Mapping[str, Any],
+    public_display_reached: bool,
+) -> dict[str, Any]:
+    existing = product_surface_validation_public_summary(
+        _first(
+            (
+                "product_surface_validation",
+                "surface_quality.product_surface_validation",
+                "diagnostic_summary.product_surface_validation",
+            ),
+            public_meta,
+            internal_meta,
+            machine_metrics,
+        )
+    )
+    if existing:
+        return existing
+
+    surface_requirement = resolve_product_surface_requirement_from_sources(
+        public_meta,
+        internal_meta,
+        machine_metrics,
+        composer_resolution,
+    )
+    candidate_generation = dict(_as_mapping(surface_origin))
+    candidate_generation.update(
+        {
+            "composer_source": _first(
+                (
+                    "composer_source",
+                    "composer_resolution.composer_source",
+                    "candidate.composer_source",
+                ),
+                public_meta,
+                internal_meta,
+                composer_resolution,
+                machine_metrics,
+            ),
+            "candidate_status": _first(
+                (
+                    "candidate_status",
+                    "status",
+                    "composer_resolution.candidate_status",
+                    "candidate.status",
+                ),
+                public_meta,
+                internal_meta,
+                composer_resolution,
+                machine_metrics,
+            ),
+        }
+    )
+    return build_product_surface_validation_summary(
+        input_feedback_included=bool(public_display_reached),
+        comment_text=comment_text,
+        emlis_ai_public_meta=public_meta,
+        surface_requirement=surface_requirement,
+        candidate_generation_summary=candidate_generation,
+    )
 
 
 def _extract_user_label_connection(*sources: Mapping[str, Any]) -> dict[str, Any]:
@@ -1465,6 +1618,31 @@ def normalize_product_quality_event(
         composer_resolution=composer_map,
         machine_metrics=machine_metrics_map,
     )
+    product_surface_validation = _extract_product_surface_validation(
+        comment_text=comment_stripped,
+        public_meta=public_meta_map,
+        internal_meta=internal_meta_map,
+        composer_resolution=composer_map,
+        machine_metrics=machine_metrics_map,
+        surface_origin=surface_origin,
+        public_display_reached=bool(public_display_reached),
+    )
+    surface_quality = dict(surface_quality)
+    surface_quality["product_surface_validation"] = product_surface_validation
+    surface_quality["product_surface_valid"] = bool(product_surface_validation.get("product_surface_valid"))
+    surface_quality["product_surface_requirement_family"] = _safe_id(
+        product_surface_validation.get("surface_requirement_family"), max_length=96, default=""
+    )
+    surface_quality["product_surface_two_stage_required"] = bool(product_surface_validation.get("two_stage_required"))
+    surface_quality["product_surface_blocker_code"] = _safe_id(
+        product_surface_validation.get("blocker_code"), max_length=160, default=""
+    )
+    if (
+        public_display_reached
+        and product_surface_validation.get("blocker_code")
+        and product_surface_validation.get("blocker_code") != PRODUCT_SURFACE_BLOCKER_NONE
+    ):
+        event_blockers.append(str(product_surface_validation.get("blocker_code")))
     event_blockers.extend(
         _detect_gate_recovery_public_leak_blockers(
             public_display_reached=bool(public_display_reached),
@@ -1538,6 +1716,7 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
     safety = _as_mapping(event.get("safety"))
     gate = _as_mapping(event.get("gate_results"))
     surface_origin = _as_mapping(event.get("surface_origin"))
+    product_surface_validation = _as_mapping(surface.get("product_surface_validation"))
     row = {
         "schema_version": "cocolon.emlis.product_quality.scorecard_event_from_measurement_event.v1",
         "source_schema_version": event.get("schema_version"),
@@ -1570,11 +1749,25 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
         "surface_origin_public_display_allowed_by_boundary": bool(
             surface_origin.get("public_display_allowed_by_boundary")
         ),
+        "product_surface_valid": bool(product_surface_validation.get("product_surface_valid")),
+        "product_surface_requirement_family": _safe_id(
+            product_surface_validation.get("surface_requirement_family"), max_length=96, default=""
+        ),
+        "product_surface_two_stage_required": bool(product_surface_validation.get("two_stage_required")),
+        "product_surface_blocker_code": _safe_id(
+            product_surface_validation.get("blocker_code"), max_length=160, default=""
+        ),
         "surface_origin_normal_observation_rebuild_attempted": bool(
             surface_origin.get("normal_observation_rebuild_attempted")
         ),
         "surface_origin_normal_observation_rebuild_applied": bool(
             surface_origin.get("normal_observation_rebuild_applied")
+        ),
+        "surface_origin_complete_initial_surface_recomposition_used": bool(
+            surface_origin.get("complete_initial_surface_recomposition_used")
+        ),
+        "surface_origin_labelled_two_stage_surface_recomposition_used": bool(
+            surface_origin.get("labelled_two_stage_surface_recomposition_used")
         ),
         "gate_recovery_material_surface_detected": bool(
             surface_origin.get("gate_recovery_material_surface_detected")
@@ -1635,6 +1828,8 @@ def assert_product_quality_measurement_event_meta_only(
         "template_meta_false_negative_risk",
         "normal_observation_rebuild_attempted",
         "normal_observation_rebuild_applied",
+        "complete_initial_surface_recomposition_used",
+        "labelled_two_stage_surface_recomposition_used",
         "raw_input_included",
         "comment_text_body_included",
     }
@@ -1650,6 +1845,8 @@ def assert_product_quality_measurement_event_meta_only(
         "template_meta_false_negative_risk",
         "normal_observation_rebuild_attempted",
         "normal_observation_rebuild_applied",
+        "complete_initial_surface_recomposition_used",
+        "labelled_two_stage_surface_recomposition_used",
     ):
         if not isinstance(surface_origin.get(key), bool):
             raise ValueError(f"{source} surface_origin.{key} must be boolean")

@@ -25,10 +25,14 @@ from emlis_ai_gate_recovery_public_boundary import (
 )
 from emlis_ai_gate_recovery_public_candidate_builder import (
     BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE,
     GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY,
     LOW_INFORMATION_RECOVERY_SOURCE_PHASE,
     NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE,
     build_public_candidate_after_gate_recovery,
+)
+from emlis_ai_labelled_two_stage_surface_recomposition import (
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SOURCE_PHASE,
 )
 from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
@@ -37,6 +41,8 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
     BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
     CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
@@ -1473,6 +1479,7 @@ def recover_emlis_gate_failure(
     allow_low_information_post_final_recovery: bool = False,
     original_composer_candidate: Any | None = None,
     original_composer_source: str = "",
+    complete_initial_surface_availability_summary: Mapping[str, Any] | None = None,
 ) -> GateRecoveryLoopResult:
     """Try one bounded Phase20-5 recovery without relaxing existing gates."""
 
@@ -1566,6 +1573,7 @@ def recover_emlis_gate_failure(
         recovery_plan=planning_decision.as_meta(),
         trace_id=trace_id,
         recovery_context=recovery_context,
+        complete_initial_surface_availability_summary=complete_initial_surface_availability_summary,
         composer_resolution={"original_composer_source": _clean(original_composer_source)},
     )
     surface_binding_meta[GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY] = (
@@ -1585,10 +1593,30 @@ def recover_emlis_gate_failure(
         is_bounded_original_repair = (
             public_candidate_source_kind == CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
         )
+        is_complete_initial_surface_recomposition = (
+            public_candidate_source_kind
+            == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+        )
+        is_labelled_two_stage_surface_recomposition = (
+            public_candidate_source_kind
+            == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+        )
         is_normal_observation_rebuild = (
             public_candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
         )
-        if is_normal_observation_rebuild:
+        if is_labelled_two_stage_surface_recomposition:
+            public_recovery_source_phase = LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SOURCE_PHASE
+            public_recovery_label = "p6_labelled_two_stage_surface_recomposition"
+            public_recovery_scope = "current_input_labelled_two_stage_surface_recomposition"
+            public_recovery_support_source = CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+            public_recovery_contract_prefix = "cocolon.emlis.public_observation_recovery.p6.labelled_two_stage_surface_recomposition"
+        elif is_complete_initial_surface_recomposition:
+            public_recovery_source_phase = COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE
+            public_recovery_label = "p5_complete_initial_surface_recomposition"
+            public_recovery_scope = "current_input_complete_initial_surface_recomposition"
+            public_recovery_support_source = CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+            public_recovery_contract_prefix = "cocolon.emlis.public_observation_recovery.p5.complete_initial_surface_recomposition"
+        elif is_normal_observation_rebuild:
             public_recovery_source_phase = NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE
             public_recovery_label = "phase20_8_normal_observation_rebuild"
             public_recovery_scope = "current_input_normal_observation_rebuild"
@@ -1736,8 +1764,12 @@ def recover_emlis_gate_failure(
                 "phase20_6_low_information_recovery_connected": bool(is_low_information_recovery),
                 "phase20_7_bounded_original_candidate_repair_connected": bool(is_bounded_original_repair),
                 "phase20_8_normal_observation_rebuild_connected": bool(is_normal_observation_rebuild),
+                "p5_complete_initial_surface_recomposition_connected": bool(is_complete_initial_surface_recomposition),
+                "p6_labelled_two_stage_surface_recomposition_connected": bool(is_labelled_two_stage_surface_recomposition),
                 "bounded_original_candidate_repair_applied": bool(is_bounded_original_repair),
                 "normal_observation_rebuild_applied": bool(is_normal_observation_rebuild),
+                "complete_initial_surface_recomposition_applied": bool(is_complete_initial_surface_recomposition),
+                "labelled_two_stage_surface_recomposition_applied": bool(is_labelled_two_stage_surface_recomposition),
                 "public_recovery_candidate_source_kind": public_candidate_source_kind,
                 "raw_input_included": False,
                 "comment_text_body_included": False,

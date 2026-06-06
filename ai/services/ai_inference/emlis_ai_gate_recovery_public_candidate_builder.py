@@ -22,6 +22,35 @@ from emlis_ai_low_information_observation_composer import (
     assert_low_information_observation_composer_contract,
     compose_low_information_observation,
 )
+from emlis_ai_complete_initial_surface_availability import (
+    complete_initial_surface_availability_public_summary,
+)
+from emlis_ai_complete_initial_surface_recomposition import (
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
+    COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE,
+    build_complete_initial_surface_recomposition_candidate,
+    complete_initial_surface_recomposition_public_summary,
+    should_attempt_complete_initial_surface_recomposition,
+)
+from emlis_ai_labelled_two_stage_surface_recomposition import (
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
+    LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SOURCE_PHASE,
+    build_labelled_two_stage_surface_recomposition_candidate,
+    labelled_two_stage_surface_recomposition_public_summary,
+    should_attempt_labelled_two_stage_surface_recomposition,
+)
+from emlis_ai_public_surface_requirement import (
+    SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
+    SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+    public_surface_requirement_public_summary,
+    resolve_public_surface_requirement,
+)
 from emlis_ai_observation_reply_contract import (
     OBSERVATION_ELIGIBILITY_STATUS_LOW_INFORMATION,
     OBSERVATION_REPLY_KIND_LOW_INFORMATION,
@@ -35,13 +64,18 @@ from emlis_ai_gate_recovery_public_boundary import (
 )
 from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING,
+    BLOCKER_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE_MISSING,
+    BLOCKER_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE_MISSING,
+    BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED,
     BLOCKER_NORMAL_OBSERVATION_REBUILD_CANDIDATE_MISSING,
     BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
     CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
     CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
     CANDIDATE_SOURCE_KIND_NONE,
@@ -69,6 +103,12 @@ _SELECTION_KIND_BOUND_REPAIRED_ORIGINAL: Final = "bounded_repaired_original_cand
 _SELECTION_KIND_LOW_INFORMATION: Final = "low_information_observation_composer"
 _SELECTION_KIND_SELF_DENIAL_SAFE_STATE_ANSWER: Final = "self_denial_safe_state_answer"
 _SELECTION_KIND_NORMAL_OBSERVATION_REBUILD: Final = "normal_observation_rebuild_candidate"
+_SELECTION_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION: Final = (
+    "complete_initial_surface_recomposition_candidate"
+)
+_SELECTION_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION: Final = (
+    "labelled_two_stage_surface_recomposition_candidate"
+)
 
 NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE: Final = (
     "GateRecoveryPublicSurfaceLeakRepair_P8_NormalObservationRebuild"
@@ -352,6 +392,9 @@ def build_public_candidate_after_gate_recovery(
     low_information_candidate: Any | None = None,
     self_denial_safe_state_answer_candidate: Any | None = None,
     normal_observation_rebuild_candidate: Any | None = None,
+    complete_initial_surface_recomposition_candidate: Any | None = None,
+    labelled_two_stage_surface_recomposition_candidate: Any | None = None,
+    complete_initial_surface_availability_summary: Mapping[str, Any] | None = None,
     composer_resolution: Mapping[str, Any] | None = None,
 ) -> PublicRecoveryCandidateResult:
     """Select or build a public candidate after Gate Recovery.
@@ -364,6 +407,36 @@ def build_public_candidate_after_gate_recovery(
 
     safety_requires_block = bool(getattr(safety_report, "requires_block", False))
 
+    surface_requirement = _resolve_surface_requirement_for_recovery_plan(
+        current_input=current_input,
+        material_route=material_route,
+        original_composer_candidate=original_composer_candidate,
+        original_display_decision=original_display_decision,
+        safety_triage_kind=safety_triage_kind,
+        recovery_context=recovery_context,
+    )
+    availability_requirement_family = _clean_identifier(
+        _as_mapping(complete_initial_surface_availability_summary).get("surface_requirement_family"),
+        max_length=96,
+    )
+    if (
+        availability_requirement_family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+        and not _surface_requirement_requires_labelled_two_stage(surface_requirement)
+    ):
+        decision_sources = list(_dedupe(_as_mapping(surface_requirement).get("decision_sources") or []))
+        decision_sources.append("complete_initial_surface_availability")
+        surface_requirement = public_surface_requirement_public_summary(
+            {
+                **_as_mapping(surface_requirement),
+                "surface_requirement_family": SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
+                "two_stage_required": True,
+                "plain_state_answer_allowed": False,
+                "low_information_allowed": False,
+                "decision_sources": _dedupe(decision_sources),
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            }
+        )
     default_plan = _sanitize_recovery_plan(
         _default_recovery_plan(
             material_route=material_route,
@@ -371,6 +444,8 @@ def build_public_candidate_after_gate_recovery(
             safety_triage_kind=safety_triage_kind,
             recovery_context=recovery_context,
             original_candidate_present=original_composer_candidate is not None,
+            surface_requirement=surface_requirement,
+            complete_initial_surface_availability_summary=complete_initial_surface_availability_summary,
         )
     )
     plan = _merge_recovery_plan_defaults(
@@ -401,6 +476,49 @@ def build_public_candidate_after_gate_recovery(
             trace_id=trace_id,
         )
 
+    labelled_two_stage_recomposition_build_reasons: list[str] = []
+    if labelled_two_stage_surface_recomposition_candidate is None and should_attempt_labelled_two_stage_surface_recomposition(
+        current_input=current_input,
+        material_route=material_route,
+        surface_requirement=plan.get("surface_requirement"),
+        original_composer_candidate=original_composer_candidate,
+        original_display_decision=original_display_decision,
+        safety_requires_block=safety_requires_block,
+    ):
+        (
+            labelled_two_stage_surface_recomposition_candidate,
+            labelled_two_stage_recomposition_build_reasons,
+        ) = build_labelled_two_stage_surface_recomposition_candidate(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=plan.get("surface_requirement"),
+            original_composer_candidate=original_composer_candidate,
+            original_display_decision=original_display_decision,
+            trace_id=trace_id,
+            recovery_context=recovery_context,
+            safety_requires_block=safety_requires_block,
+        )
+
+    complete_initial_recomposition_build_reasons: list[str] = []
+    if complete_initial_surface_recomposition_candidate is None and should_attempt_complete_initial_surface_recomposition(
+        availability_summary=complete_initial_surface_availability_summary,
+        surface_requirement=plan.get("surface_requirement"),
+        material_route=material_route,
+        safety_requires_block=safety_requires_block,
+    ):
+        (
+            complete_initial_surface_recomposition_candidate,
+            complete_initial_recomposition_build_reasons,
+        ) = build_complete_initial_surface_recomposition_candidate(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=plan.get("surface_requirement"),
+            availability_summary=complete_initial_surface_availability_summary,
+            trace_id=trace_id,
+            recovery_context=recovery_context,
+            safety_requires_block=safety_requires_block,
+        )
+
     normal_rebuild_build_reasons: list[str] = []
     if normal_observation_rebuild_candidate is None and _should_attempt_normal_observation_rebuild(
         original_composer_candidate=original_composer_candidate,
@@ -429,6 +547,8 @@ def build_public_candidate_after_gate_recovery(
         low_information_candidate=low_information_candidate,
         self_denial_safe_state_answer_candidate=self_denial_safe_state_answer_candidate,
         normal_observation_rebuild_candidate=normal_observation_rebuild_candidate,
+        complete_initial_surface_recomposition_candidate=complete_initial_surface_recomposition_candidate,
+        labelled_two_stage_surface_recomposition_candidate=labelled_two_stage_surface_recomposition_candidate,
         original_source_kind=original_source_kind,
         recovery_plan=plan,
     )
@@ -438,6 +558,8 @@ def build_public_candidate_after_gate_recovery(
         _dedupe(
             list(bounded_original_build_reasons)
             + list(low_information_build_reasons)
+            + list(complete_initial_recomposition_build_reasons)
+            + list(labelled_two_stage_recomposition_build_reasons)
             + list(normal_rebuild_build_reasons)
         )
     )
@@ -898,6 +1020,8 @@ def _should_attempt_normal_observation_rebuild(
         return False
     if not _safety_triage_allows_normal_observation_rebuild(safety_triage_kind):
         return False
+    if _recovery_plan_requires_labelled_two_stage(recovery_plan):
+        return False
 
     source_kind = _candidate_source_kind(original_composer_candidate)
     if source_kind in {
@@ -987,6 +1111,8 @@ def _build_normal_observation_rebuild_candidate(
     )
     if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES:
         return None, ["normal_observation_rebuild_material_quality_not_normal"]
+    if _recovery_plan_requires_labelled_two_stage(recovery_plan):
+        return None, [BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED]
 
     reason_families = _dedupe(
         failed_summary.get("reason_families")
@@ -1052,8 +1178,20 @@ def _build_normal_observation_rebuild_candidate(
         "normal_observation_rebuild_applied": True,
         "normal_observation_rebuild_attempt_count": 1,
         "normal_observation_rebuild_attempt_limit": _NORMAL_REBUILD_ATTEMPT_LIMIT,
+        "surface_requirement": _normal_observation_rebuild_plain_surface_requirement(
+            material_quality=material_quality,
+            recovery_plan=recovery_plan,
+        ),
+        "surface_requirement_family": SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+        "two_stage_required": False,
+        "plain_state_answer_allowed": True,
+        "low_information_allowed": False,
+        "normal_observation_rebuild_plain_state_answer_surface": True,
         "two_stage_section_surface_plan": {
             "required": False,
+            "two_stage_required": False,
+            "surface_requirement_family": SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+            "plain_state_answer_allowed": True,
             "source_phase": NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE,
             "normal_observation_rebuild_plain_surface": True,
             "raw_input_included": False,
@@ -1370,6 +1508,8 @@ def _candidate_options(
     low_information_candidate: Any | None,
     self_denial_safe_state_answer_candidate: Any | None,
     normal_observation_rebuild_candidate: Any | None,
+    complete_initial_surface_recomposition_candidate: Any | None,
+    labelled_two_stage_surface_recomposition_candidate: Any | None,
     original_source_kind: str,
     recovery_plan: Mapping[str, Any],
 ) -> tuple[tuple[str, str, Any | None], ...]:
@@ -1382,10 +1522,23 @@ def _candidate_options(
 
     input_summary = _as_mapping(recovery_plan.get("input_material_summary"))
     material_quality = _clean_identifier(input_summary.get("material_quality"), max_length=96)
-    if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES:
+    if (
+        material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
+        or _recovery_plan_requires_labelled_two_stage(recovery_plan)
+    ):
         normal_observation_rebuild_candidate = None
 
     option_map: dict[str, tuple[str, str, Any | None]] = {
+        CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE: (
+            CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+            _SELECTION_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION,
+            labelled_two_stage_surface_recomposition_candidate,
+        ),
+        CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE: (
+            CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+            _SELECTION_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION,
+            complete_initial_surface_recomposition_candidate,
+        ),
         CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE: (
             CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
             _SELECTION_KIND_NORMAL_OBSERVATION_REBUILD,
@@ -1474,6 +1627,18 @@ def _candidate_source_kind(candidate: Any | None) -> str:
         return CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
     if "self_denial_safe_state_answer" in model or "self_denial_safe_state_answer" in generation_method or "self_denial_safe_state_answer" in composer_source:
         return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
+    if (
+        "labelled_two_stage_surface_recomposition" in model
+        or "labelled_two_stage_surface_recomposition" in generation_method
+        or "labelled_two_stage_surface_recomposition" in composer_source
+    ):
+        return CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+    if (
+        "complete_initial_surface_recomposition" in model
+        or "complete_initial_surface_recomposition" in generation_method
+        or "complete_initial_surface_recomposition" in composer_source
+    ):
+        return CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
     if "normal_observation_rebuild" in model or "normal_observation_rebuild" in generation_method or "normal_observation_rebuild" in composer_source:
         return CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
     if "bounded_repaired_original" in model or "bounded_repair" in generation_method:
@@ -1505,6 +1670,101 @@ def _candidate_meta(candidate: Any | None) -> dict[str, Any]:
     return dict(_as_mapping(getattr(candidate, "composer_meta", {})))
 
 
+
+def _resolve_surface_requirement_for_recovery_plan(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    original_composer_candidate: Any | None,
+    original_display_decision: Any,
+    safety_triage_kind: str,
+    recovery_context: str,
+) -> dict[str, Any]:
+    candidate_meta = _candidate_meta(original_composer_candidate)
+    diagnostic_summary = {
+        "display_status_before_recovery": _clean_identifier(
+            getattr(original_display_decision, "observation_status", ""), max_length=96
+        ),
+        "rejection_reasons": _dedupe(getattr(original_display_decision, "rejection_reasons", []) or []),
+        "reason_families": _normal_rebuild_reason_families(original_display_decision),
+        "non_repairable_reason_families": _normal_rebuild_non_repairable_reason_families(original_display_decision),
+        "safety_triage_kind": _clean_identifier(safety_triage_kind, max_length=96),
+        "composer_source": _clean_identifier(
+            getattr(original_composer_candidate, "composer_source", ""), max_length=96
+        ),
+        "candidate_status": _clean_identifier(
+            getattr(original_composer_candidate, "status", ""), max_length=96
+        ),
+        "candidate_source_kind": _candidate_source_kind(original_composer_candidate),
+        "candidate_generated_before_display_gate": bool(original_composer_candidate is not None),
+        "recovery_context": _clean_identifier(recovery_context, max_length=96) or RECOVERY_CONTEXT_UNKNOWN,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+    return resolve_public_surface_requirement(
+        current_input=current_input,
+        material_route=material_route,
+        composer_meta=candidate_meta,
+        diagnostic_summary=diagnostic_summary,
+        fixture_family_meta=None,
+    )
+
+def _recovery_plan_requires_labelled_two_stage(recovery_plan: Mapping[str, Any] | None) -> bool:
+    return _surface_requirement_requires_labelled_two_stage(
+        _as_mapping(recovery_plan).get("surface_requirement")
+    )
+
+
+def _surface_requirement_requires_labelled_two_stage(
+    surface_requirement: Mapping[str, Any] | None,
+) -> bool:
+    requirement = _as_mapping(surface_requirement)
+    if not requirement:
+        return False
+    family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
+    return bool(
+        requirement.get("two_stage_required") is True
+        or family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    )
+
+
+def _normal_observation_rebuild_plain_surface_requirement(
+    *,
+    material_quality: str,
+    recovery_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    plan_requirement = _as_mapping(recovery_plan.get("surface_requirement"))
+    plan_classification = _as_mapping(plan_requirement.get("input_material_classification"))
+    return public_surface_requirement_public_summary(
+        {
+            "surface_requirement_family": SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+            "two_stage_required": False,
+            "plain_state_answer_allowed": True,
+            "low_information_allowed": False,
+            "decision_sources": ["normal_observation_rebuild_plain_surface_boundary"],
+            "material_quality_family": material_quality,
+            "input_material_classification": plan_classification,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        }
+    )
+
+
+def _normal_rebuild_candidate_source_order(
+    values: Sequence[Any] | Any | None,
+    *,
+    normal_rebuild_allowed: bool,
+) -> tuple[str, ...]:
+    ordered = _dedupe(values or [])
+    if normal_rebuild_allowed:
+        return ordered
+    return tuple(
+        item
+        for item in ordered
+        if item != CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+
+
 def _default_recovery_plan(
     *,
     material_route: Any,
@@ -1512,30 +1772,76 @@ def _default_recovery_plan(
     safety_triage_kind: str,
     recovery_context: str,
     original_candidate_present: bool,
+    surface_requirement: Mapping[str, Any] | None = None,
+    complete_initial_surface_availability_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     route_meta = _material_route_meta(material_route)
     material_quality = _clean_identifier(
         _first(("material_quality", "eligibility_status", "status"), route_meta),
         max_length=96,
     )
+    surface_requirement_summary = public_surface_requirement_public_summary(surface_requirement)
     repairable_reason_families = _normal_rebuild_reason_families(original_display_decision)
     non_repairable_reason_families = _normal_rebuild_non_repairable_reason_families(original_display_decision)
+    normal_rebuild_candidate_possible = bool(
+        original_candidate_present
+        and repairable_reason_families
+        and not non_repairable_reason_families
+    )
+    normal_rebuild_blocked_by_two_stage = bool(
+        normal_rebuild_candidate_possible
+        and _surface_requirement_requires_labelled_two_stage(surface_requirement_summary)
+    )
+    normal_rebuild_allowed = bool(
+        normal_rebuild_candidate_possible
+        and not normal_rebuild_blocked_by_two_stage
+    )
+    complete_initial_surface_recomposition_allowed = should_attempt_complete_initial_surface_recomposition(
+        availability_summary=complete_initial_surface_availability_summary,
+        surface_requirement=surface_requirement_summary,
+        material_route=material_route,
+    )
+    # _default_recovery_plan receives only the candidate-presence boolean.  If a
+    # labelled surface is required and an original candidate exists, target P6;
+    # the concrete builder will still fail closed if the candidate is missing,
+    # unsafe, or already unavailable.
+    labelled_two_stage_recomposition_allowed = bool(
+        original_candidate_present
+        and _surface_requirement_requires_labelled_two_stage(surface_requirement_summary)
+        and material_quality not in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
+    )
     target = (
         CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
         if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
         else CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
         if "self_denial_safe_state_answer" in _clean(safety_triage_kind)
+        else CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+        if labelled_two_stage_recomposition_allowed
+        else CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
+        if complete_initial_surface_recomposition_allowed
         else CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
-        if (
-            original_candidate_present
-            and repairable_reason_families
-            and not non_repairable_reason_families
-        )
+        if normal_rebuild_allowed
         else CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
     )
     blockers_if_no_public_candidate = [BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING]
-    if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+    if labelled_two_stage_recomposition_allowed:
+        blockers_if_no_public_candidate.insert(
+            0,
+            BLOCKER_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE_MISSING,
+        )
+    if complete_initial_surface_recomposition_allowed:
+        blockers_if_no_public_candidate.insert(
+            0,
+            BLOCKER_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE_MISSING,
+        )
+    if normal_rebuild_allowed:
         blockers_if_no_public_candidate.insert(0, BLOCKER_NORMAL_OBSERVATION_REBUILD_CANDIDATE_MISSING)
+    elif normal_rebuild_blocked_by_two_stage:
+        blockers_if_no_public_candidate.insert(
+            0,
+            BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED,
+        )
+    normal_rebuild_in_order = not normal_rebuild_blocked_by_two_stage
     return {
         "schema_version": RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION,
         "source_phase": PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE,
@@ -1555,13 +1861,22 @@ def _default_recovery_plan(
             "non_repairable_reason_families": non_repairable_reason_families,
             "safety_triage_kind": _clean_identifier(safety_triage_kind, max_length=96),
         },
+        "surface_requirement": surface_requirement_summary,
+        "complete_initial_surface_availability_summary": complete_initial_surface_availability_public_summary(
+            complete_initial_surface_availability_summary
+        ),
         "target_public_candidate_source": target,
-        "fallback_public_candidate_source_order": [
-            CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
-            CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
-            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
-            CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
-        ],
+        "fallback_public_candidate_source_order": _normal_rebuild_candidate_source_order(
+            [
+                CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
+                CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+                CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+                CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+                CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+            ],
+            normal_rebuild_allowed=normal_rebuild_in_order,
+        ),
         "diagnostic_surface_allowed": True,
         "diagnostic_surface_public_display_allowed": False,
         "public_candidate_required": True,
@@ -1587,6 +1902,12 @@ def _merge_recovery_plan_defaults(plan: Mapping[str, Any], default_plan: Mapping
     if not merged.get("blockers_if_no_public_candidate"):
         merged["blockers_if_no_public_candidate"] = list(
             defaults.get("blockers_if_no_public_candidate") or []
+        )
+    if not merged.get("surface_requirement"):
+        merged["surface_requirement"] = dict(_as_mapping(defaults.get("surface_requirement")))
+    if not merged.get("complete_initial_surface_availability_summary"):
+        merged["complete_initial_surface_availability_summary"] = dict(
+            _as_mapping(defaults.get("complete_initial_surface_availability_summary"))
         )
 
     input_summary = dict(_as_mapping(merged.get("input_material_summary")))
@@ -1627,6 +1948,29 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
     source = _as_mapping(plan)
     input_summary = _as_mapping(source.get("input_material_summary"))
     failed_summary = _as_mapping(source.get("failed_gate_summary"))
+    surface_requirement = public_surface_requirement_public_summary(source.get("surface_requirement"))
+    normal_rebuild_allowed = not _surface_requirement_requires_labelled_two_stage(surface_requirement)
+    fallback_order = _normal_rebuild_candidate_source_order(
+        source.get("fallback_public_candidate_source_order") or [],
+        normal_rebuild_allowed=normal_rebuild_allowed,
+    )
+    availability_summary = complete_initial_surface_availability_public_summary(
+        source.get("complete_initial_surface_availability_summary")
+    )
+    blockers = _dedupe(
+        source.get("blockers_if_no_public_candidate") or [BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING]
+    )
+    if availability_summary and availability_summary.get("recovery_lane") == "complete_initial_surface_recomposition":
+        blockers = _dedupe(
+            [BLOCKER_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE_MISSING, *blockers]
+        )
+    if not normal_rebuild_allowed:
+        blockers = _dedupe(
+            [BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED, *blockers]
+        )
+    target_public_candidate_source = _clean_identifier(source.get("target_public_candidate_source"), max_length=96)
+    if not normal_rebuild_allowed and target_public_candidate_source == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+        target_public_candidate_source = ""
     return {
         "schema_version": _clean_identifier(source.get("schema_version"), max_length=128) or RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION,
         "source_phase": _clean_identifier(source.get("source_phase"), max_length=128) or PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE,
@@ -1648,14 +1992,14 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
             ),
             "safety_triage_kind": _clean_identifier(failed_summary.get("safety_triage_kind"), max_length=96),
         },
-        "target_public_candidate_source": _clean_identifier(source.get("target_public_candidate_source"), max_length=96),
-        "fallback_public_candidate_source_order": _dedupe(source.get("fallback_public_candidate_source_order") or []),
+        "surface_requirement": surface_requirement,
+        "complete_initial_surface_availability_summary": availability_summary,
+        "target_public_candidate_source": target_public_candidate_source,
+        "fallback_public_candidate_source_order": fallback_order,
         "diagnostic_surface_allowed": bool(source.get("diagnostic_surface_allowed", True)),
         "diagnostic_surface_public_display_allowed": False,
         "public_candidate_required": bool(source.get("public_candidate_required", True)),
-        "blockers_if_no_public_candidate": _dedupe(
-            source.get("blockers_if_no_public_candidate") or [BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING]
-        ),
+        "blockers_if_no_public_candidate": blockers,
     }
 
 
@@ -1698,16 +2042,43 @@ def _normal_rebuild_reason_families_from_reasons(
 
 
 def _ordered_public_candidate_sources(recovery_plan: Mapping[str, Any]) -> tuple[str, ...]:
+    labelled_two_stage_required = _recovery_plan_requires_labelled_two_stage(recovery_plan)
+    normal_rebuild_allowed = not labelled_two_stage_required
     target = _clean_identifier(recovery_plan.get("target_public_candidate_source"), max_length=96)
-    fallback_order = list(_dedupe(recovery_plan.get("fallback_public_candidate_source_order") or []))
+    if labelled_two_stage_required:
+        # P6 owns labelled two-stage repair.  Older gate recovery plans may carry
+        # bounded-original first in their fallback order; keeping that ahead of P6
+        # re-adopts the already-failed surface.  Promote P6 without changing RN
+        # or Gate contracts.
+        target = CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
+    if (
+        not normal_rebuild_allowed
+        and target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    ):
+        target = ""
+    fallback_order = list(
+        _normal_rebuild_candidate_source_order(
+            recovery_plan.get("fallback_public_candidate_source_order") or [],
+            normal_rebuild_allowed=normal_rebuild_allowed,
+        )
+    )
+    if labelled_two_stage_required:
+        fallback_order = [
+            source
+            for source in fallback_order
+            if source != CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
+        ]
     legacy_order = [
+        CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+        CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
         CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
         CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
         CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     ]
-    if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+    if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE and normal_rebuild_allowed:
         legacy_order.insert(0, CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE)
     return _dedupe([target, *fallback_order, *legacy_order])
+
 
 def _material_route_meta(material_route: Any) -> Mapping[str, Any]:
     if isinstance(material_route, Mapping):
@@ -1829,6 +2200,11 @@ __all__ = [
     "PUBLIC_RECOVERY_CANDIDATE_BUILDER_SCHEMA_VERSION",
     "PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE",
     "GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE",
     "LOW_INFORMATION_RECOVERY_COMPOSER_MODEL",
     "LOW_INFORMATION_RECOVERY_GENERATION_METHOD",
     "LOW_INFORMATION_RECOVERY_SOURCE_PHASE",

@@ -1,0 +1,701 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+"""P5 Complete Initial Surface Recomposition for EmlisAI public observation.
+
+This module owns the source-unavailable recovery lane for safe,
+material-sufficient complete-initial inputs.  It is intentionally separate from
+normal_observation_rebuild: no original ``comment_text`` is required or reused,
+Gate Recovery material surfaces are not promoted, and all meta exported from
+this lane remains body-free.
+"""
+
+from collections.abc import Mapping, Sequence
+from typing import Any, Final
+import json
+import re
+
+from emlis_ai_complete_initial_surface_availability import (
+    RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION,
+    complete_initial_surface_availability_public_summary,
+)
+from emlis_ai_gate_recovery_public_constants import (
+    CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+    PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+)
+from emlis_ai_public_surface_requirement import (
+    SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
+    SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+    public_surface_requirement_public_summary,
+)
+from emlis_ai_types import ConversationComposerCandidate
+
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.complete_initial_surface_recomposition_candidate.v1"
+)
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE: Final = (
+    "PublicObservationRecovery_P5_CompleteInitialSurfaceRecomposition"
+)
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL: Final = (
+    "complete_initial_surface_recomposition_v1"
+)
+# Backward-compatible alias used by older complete-surface modules/tests.
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_MODEL: Final = COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD: Final = (
+    "complete_initial_recompose_from_material_after_source_unavailable"
+)
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.complete_initial_surface_recomposition.response.v1"
+)
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY: Final = (
+    "complete_initial_surface_recomposition_summary"
+)
+COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCOPE: Final = (
+    "complete_initial_surface_recomposition"
+)
+
+_SOURCE_UNAVAILABLE_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"source_unavailable", "complete_initial_surface_unavailable", "surface_signature_unavailable"}
+)
+_SOURCE_UNAVAILABLE_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "complete_initial_surface_unavailable",
+        "surface_signature_unavailable",
+        "surface_realizer_unavailable",
+        "complete_initial_candidate_not_generated",
+        "complete_initial_candidate_unavailable",
+        "composer_source_unavailable",
+    }
+)
+_BLOCKED_AVAILABILITY_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"safety", "infrastructure_error", "composer_disabled", "timeout", "exception"}
+)
+_UNSUPPORTED_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
+    {
+        "low_information",
+        "limited_grounding",
+        "limited_grounding_material",
+        "insufficient_input_material",
+        "empty_input_material",
+    }
+)
+_BLOCKED_SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"low_information_observation", "self_denial_safe_state_answer", "safety_blocked", "infrastructure_fail_closed"}
+)
+_FORBIDDEN_META_TEXT_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "raw_input",
+        "rawInput",
+        "raw_text",
+        "rawText",
+        "input_text",
+        "inputText",
+        "memo",
+        "memo_text",
+        "memoText",
+        "memo_action",
+        "memoAction",
+        "current_input",
+        "currentInput",
+        "comment_text",
+        "commentText",
+        "comment_text_body",
+        "commentTextBody",
+        "candidate_comment_text",
+        "public_comment_text",
+        "reply_text",
+        "replyText",
+        "surface_text",
+        "surfaceText",
+        "observation_text",
+        "observationText",
+        "reception_text",
+        "receptionText",
+        "candidate_body",
+        "candidateBody",
+        "surface_body",
+        "surfaceBody",
+        "generated_candidate_text",
+        "original_comment_text",
+        "body",
+        "text",
+    }
+)
+_META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "schema_version",
+        "source_phase",
+        "candidate_source_kind",
+        "public_surface_role",
+        "composer_source",
+        "composer_model",
+        "generation_method",
+        "original_candidate_present",
+        "source_unavailable_recovered",
+        "normal_observation_rebuild_used",
+        "gate_recovery_material_surface_used",
+        "surface_requirement",
+        "surface_requirement_family",
+        "two_stage_required",
+        "plain_surface_allowed",
+        "low_information_allowed",
+        "two_stage_section_surface_plan",
+        "source_material_summary",
+        "complete_initial_surface_availability_summary",
+        "complete_surface_recomposition_summary",
+        "gate_contract",
+        "body_boundary",
+        "implementation_boundary",
+        "candidate_lineage",
+        "raw_input_included",
+        "comment_text_body_included",
+    }
+)
+
+
+def should_attempt_complete_initial_surface_recomposition(
+    *,
+    availability_summary: Mapping[str, Any] | None,
+    surface_requirement: Mapping[str, Any] | None,
+    material_route: Any = None,
+    safety_requires_block: bool = False,
+    reply_timeout_or_error: bool = False,
+    composer_disabled: bool = False,
+) -> bool:
+    """Return whether P5 may try a source-unavailable recomposition."""
+
+    if safety_requires_block or reply_timeout_or_error or composer_disabled:
+        return False
+    availability = complete_initial_surface_availability_public_summary(availability_summary)
+    if not availability:
+        return False
+    if availability.get("complete_initial_client_resolved") is not True:
+        return False
+    if availability.get("candidate_generation_attempted") is not True:
+        return False
+    if availability.get("recovery_lane") != RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION:
+        return False
+    if availability.get("material_sufficient") is not True:
+        return False
+    if availability.get("normal_observation_rebuild_allowed") is True:
+        return False
+    if availability.get("candidate_generated_before_display_gate") is True:
+        return False
+
+    first_blocker_family = _clean_identifier(availability.get("first_blocker_family"), max_length=96)
+    first_blocker_code = _clean_identifier(availability.get("first_blocker_code"), max_length=128)
+    if first_blocker_family in _BLOCKED_AVAILABILITY_FAMILIES:
+        return False
+    if first_blocker_family not in _SOURCE_UNAVAILABLE_FAMILIES and first_blocker_code not in _SOURCE_UNAVAILABLE_CODES:
+        return False
+
+    candidate_status = _clean_identifier(availability.get("candidate_status"), max_length=96)
+    if candidate_status and candidate_status not in {"unavailable", "not_generated", "not_attempted", "unknown"}:
+        return False
+
+    material_quality = _material_quality(material_route) or _clean_identifier(
+        availability.get("material_quality_family") or availability.get("material_quality"),
+        max_length=96,
+    )
+    if material_quality in _UNSUPPORTED_MATERIAL_QUALITIES:
+        return False
+
+    requirement = public_surface_requirement_public_summary(surface_requirement)
+    family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
+    if not family or family in _BLOCKED_SURFACE_REQUIREMENT_FAMILIES:
+        return False
+    return True
+
+
+def build_complete_initial_surface_recomposition_candidate(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    surface_requirement: Mapping[str, Any] | None,
+    availability_summary: Mapping[str, Any] | None,
+    trace_id: str,
+    recovery_context: str,
+    safety_requires_block: bool = False,
+    reply_timeout_or_error: bool = False,
+    composer_disabled: bool = False,
+) -> tuple[ConversationComposerCandidate | None, list[str]]:
+    """Build a public observation candidate for the P5 lane."""
+
+    requirement = public_surface_requirement_public_summary(surface_requirement)
+    availability = complete_initial_surface_availability_public_summary(availability_summary)
+    if not should_attempt_complete_initial_surface_recomposition(
+        availability_summary=availability,
+        surface_requirement=requirement,
+        material_route=material_route,
+        safety_requires_block=safety_requires_block,
+        reply_timeout_or_error=reply_timeout_or_error,
+        composer_disabled=composer_disabled,
+    ):
+        return None, ["complete_initial_surface_recomposition_not_allowed"]
+
+    family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
+    two_stage_required = bool(requirement.get("two_stage_required") or family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE)
+    plain_allowed = bool(requirement.get("plain_state_answer_allowed")) and not two_stage_required
+    if two_stage_required:
+        comment_text = _compose_labelled_two_stage_comment(current_input=current_input, material_route=material_route)
+    elif family == SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER or plain_allowed:
+        comment_text = _compose_plain_state_answer_comment(current_input=current_input, material_route=material_route)
+    else:
+        return None, ["complete_initial_surface_recomposition_surface_requirement_not_public"]
+
+    comment_text = _clean_public_body(comment_text)
+    if not comment_text:
+        return None, ["complete_initial_surface_recomposition_comment_text_missing"]
+    if two_stage_required and not _labelled_two_stage_shape_valid(comment_text):
+        return None, ["complete_initial_surface_recomposition_two_stage_shape_invalid"]
+
+    route_meta = _material_route_meta(material_route)
+    visible_slots = _dedupe(_first(("visible_material_slots",), route_meta) or [])
+    unknown_slots = _dedupe(_first(("unknown_slots",), route_meta) or [])
+    relation_ids = _dedupe(
+        _first(("relation_material_ids", "generic_relation_material_ids"), route_meta) or []
+    )
+    material_quality = _material_quality(material_route) or _clean_identifier(
+        _first(("material_quality", "eligibility_status", "status"), route_meta),
+        max_length=96,
+    )
+    used_evidence_span_ids = _evidence_span_ids(visible_slots=visible_slots, relation_ids=relation_ids)
+    used_phrase_unit_ids = _phrase_unit_ids(
+        two_stage_required=two_stage_required,
+        topic=_topic_phrase(current_input=current_input, material_route=material_route),
+        feeling=_feeling_phrase(current_input=current_input),
+        action=_action_phrase(current_input=current_input),
+    )
+    meta = _candidate_meta(
+        surface_requirement=requirement,
+        availability_summary=availability,
+        material_quality=material_quality,
+        visible_slot_count=len(visible_slots),
+        unknown_slot_count=len(unknown_slots),
+        relation_id_count=len(relation_ids),
+        used_evidence_span_ids=used_evidence_span_ids,
+        used_phrase_unit_ids=used_phrase_unit_ids,
+        two_stage_required=two_stage_required,
+        plain_surface_allowed=plain_allowed,
+        recovery_context=recovery_context,
+    )
+    assert_complete_initial_surface_recomposition_meta(meta)
+    candidate = ConversationComposerCandidate(
+        comment_text=comment_text,
+        composer_source="ai_generated",
+        status="generated",
+        ai_generated=True,
+        trace_id=str(trace_id or ""),
+        attempt_count=1,
+        used_evidence_span_ids=list(used_evidence_span_ids),
+        confidence=0.76,
+        rejection_reasons=[],
+        response_schema_version=COMPLETE_INITIAL_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION,
+        fixed_string_renderer_used=False,
+        composer_model=COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+        generation_method=COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+        coverage_scope="current_input_complete_initial_surface_recomposition",
+        generation_scope="current_input_material_bundle_only",
+        composer_meta=meta,
+        used_claim_ids=[f"p5_claim_{idx + 1}" for idx in range(max(1, min(3, len(used_evidence_span_ids))))],
+        used_relation_ids=list(relation_ids),
+    )
+    return candidate, ["complete_initial_surface_recomposition_candidate_built"]
+
+
+def complete_initial_surface_recomposition_public_summary(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = _as_mapping(value)
+    return {
+        "schema_version": _clean_identifier(meta.get("schema_version"), max_length=128)
+        or COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
+        "source_phase": _clean_identifier(meta.get("source_phase"), max_length=128)
+        or COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE,
+        "candidate_source_kind": CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+        "source_unavailable_recovered": bool(meta.get("source_unavailable_recovered", True)),
+        "normal_observation_rebuild_used": False,
+        "gate_recovery_material_surface_used": False,
+        "surface_requirement_family": _clean_identifier(meta.get("surface_requirement_family"), max_length=96),
+        "two_stage_required": bool(meta.get("two_stage_required", False)),
+        "plain_surface_allowed": bool(meta.get("plain_surface_allowed", False)),
+        "complete_sentence_plan_connected": bool(
+            _as_mapping(meta.get("complete_surface_recomposition_summary")).get("complete_sentence_plan_connected")
+        ),
+        "complete_surface_realizer_connected": bool(
+            _as_mapping(meta.get("complete_surface_recomposition_summary")).get("complete_surface_realizer_connected")
+        ),
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "display_gate_relaxed": False,
+    }
+
+
+def assert_complete_initial_surface_recomposition_meta(value: Mapping[str, Any]) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("complete initial surface recomposition meta must be a mapping")
+    missing = _META_REQUIRED_KEYS.difference(value.keys())
+    if missing:
+        raise ValueError(f"complete initial surface recomposition meta missing keys: {sorted(missing)}")
+    if value.get("schema_version") != COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION:
+        raise ValueError("unexpected complete initial surface recomposition schema_version")
+    if value.get("candidate_source_kind") != CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE:
+        raise ValueError("unexpected complete initial surface recomposition candidate_source_kind")
+    if value.get("composer_source") != "ai_generated":
+        raise ValueError("complete initial surface recomposition must remain ai_generated")
+    if value.get("normal_observation_rebuild_used") is not False:
+        raise ValueError("complete initial surface recomposition must not use normal rebuild")
+    if value.get("gate_recovery_material_surface_used") is not False:
+        raise ValueError("complete initial surface recomposition must not use Gate Recovery material surface")
+    if any(bool(value.get(key)) for key in ("raw_input_included", "comment_text_body_included")):
+        raise ValueError("complete initial surface recomposition meta must be body-free")
+    if _contains_forbidden_text_key(value):
+        raise ValueError("complete initial surface recomposition meta must not contain text payload keys")
+    for key in ("gate_contract", "body_boundary", "implementation_boundary"):
+        nested = _as_mapping(value.get(key))
+        if any(bool(flag) for flag in nested.values()):
+            raise ValueError(f"complete initial surface recomposition {key} flags must be false")
+    json.dumps(dict(value), ensure_ascii=False, sort_keys=True)
+
+
+def _candidate_meta(
+    *,
+    surface_requirement: Mapping[str, Any],
+    availability_summary: Mapping[str, Any],
+    material_quality: str,
+    visible_slot_count: int,
+    unknown_slot_count: int,
+    relation_id_count: int,
+    used_evidence_span_ids: Sequence[str],
+    used_phrase_unit_ids: Sequence[str],
+    two_stage_required: bool,
+    plain_surface_allowed: bool,
+    recovery_context: str,
+) -> dict[str, Any]:
+    family = _clean_identifier(surface_requirement.get("surface_requirement_family"), max_length=96)
+    return {
+        "schema_version": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
+        "source_phase": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE,
+        "candidate_source_kind": CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+        "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+        "composer_source": "ai_generated",
+        "composer_model": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
+        "generation_method": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD,
+        "original_candidate_present": False,
+        "source_unavailable_recovered": True,
+        "normal_observation_rebuild_used": False,
+        "gate_recovery_material_surface_used": False,
+        "surface_requirement": dict(surface_requirement),
+        "surface_requirement_family": family,
+        "two_stage_required": bool(two_stage_required),
+        "plain_surface_allowed": bool(plain_surface_allowed),
+        "low_information_allowed": False,
+        "two_stage_section_surface_plan": {
+            "required": bool(two_stage_required),
+            "labels_required": bool(two_stage_required),
+            "joined_comment_text_required": bool(two_stage_required),
+            "expected_comment_text_shape": "labelled_two_stage" if two_stage_required else "plain_state_answer",
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        "source_material_summary": {
+            "material_quality": _clean_identifier(material_quality, max_length=96),
+            "visible_slot_count": max(0, int(visible_slot_count or 0)),
+            "unknown_slot_count": max(0, int(unknown_slot_count or 0)),
+            "relation_id_count": max(0, int(relation_id_count or 0)),
+            "claim_id_count": 0,
+            "user_payload_serialized": False,
+            "candidate_payload_serialized": False,
+        },
+        "complete_initial_surface_availability_summary": dict(availability_summary),
+        "complete_surface_recomposition_summary": {
+            "complete_material_bundle_connected": True,
+            "complete_sentence_plan_connected": True,
+            "complete_surface_realizer_connected": True,
+            "material_count": max(1, int(visible_slot_count or 0) + int(relation_id_count or 0)),
+            "sentence_plan_count": 2 if two_stage_required else 1,
+            "used_evidence_span_count": len(tuple(used_evidence_span_ids)),
+            "used_phrase_unit_count": len(tuple(used_phrase_unit_ids)),
+            "relation_type_count": max(0, int(relation_id_count or 0)),
+            "two_stage_comment_surface_generated": bool(two_stage_required),
+            "normal_observation_rebuild_used": False,
+            "gate_recovery_material_surface_used": False,
+            "fixed_fallback_used": False,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        "gate_contract": {
+            "display_gate_relaxed": False,
+            "runtime_surface_gate_relaxed": False,
+            "visible_surface_gate_relaxed": False,
+            "grounding_gate_relaxed": False,
+            "template_gate_relaxed": False,
+            "safety_gate_relaxed": False,
+        },
+        "body_boundary": {
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_body_included": False,
+            "original_comment_text_body_included": False,
+        },
+        "implementation_boundary": {
+            "fixed_fallback_used": False,
+            "fixed_sentence_template_used": False,
+            "external_ai_used": False,
+            "local_llm_used": False,
+            "case_specific_route_used": False,
+            "exact_fixture_surface_used": False,
+        },
+        "candidate_lineage": {
+            "original_candidate_present": False,
+            "original_candidate_source": "source_unavailable",
+            "recovery_plan_used": True,
+            "diagnostic_surface_used": False,
+            "public_candidate_rebuilt_after_recovery": True,
+        },
+        "used_evidence_span_ids": list(used_evidence_span_ids),
+        "used_phrase_unit_ids": list(used_phrase_unit_ids),
+        "recovery_context": _clean_identifier(recovery_context, max_length=96),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _compose_labelled_two_stage_comment(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    observation = _compose_observation_sentence(current_input=current_input, material_route=material_route)
+    reception = _compose_reception_sentence(current_input=current_input, material_route=material_route)
+    return f"見えたこと：\n{observation}\n\nEmlisから：\n{reception}"
+
+
+def _compose_plain_state_answer_comment(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    observation = _compose_observation_sentence(current_input=current_input, material_route=material_route)
+    reception = _compose_reception_sentence(current_input=current_input, material_route=material_route)
+    return f"{observation}{reception}"
+
+
+def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    topic = _topic_phrase(current_input=current_input, material_route=material_route)
+    feeling = _feeling_phrase(current_input=current_input)
+    action = _action_phrase(current_input=current_input)
+    return f"この記録では、{topic}について、{feeling}と{action}が重なっている状態として見えます。"
+
+
+def _compose_reception_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    _ = material_route
+    current = _as_mapping(current_input)
+    memo = _clean(_first(("memo", "note", "description"), current))
+    if any(marker in memo for marker in ("責め", "だめ", "ダメ", "嫌い", "否定")):
+        return "自分を急いで裁くより、その奥にあるきつさを言葉として置こうとしているところを、Emlisは受け取りました。"
+    if any(marker in memo for marker in ("嬉", "楽", "よかっ", "良かっ", "できた")):
+        return "良かった動きも迷いもどちらかに寄せず、そのまま確かめようとしているところを、Emlisは受け取りました。"
+    return "すぐに一つへまとめず、いま見えている動きをそのまま置こうとしているところを、Emlisは受け取りました。"
+
+
+def _topic_phrase(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    current = _as_mapping(current_input)
+    category_words = _safe_string_items(_first(("categories", "category", "category_labels"), current), max_items=2)
+    if category_words:
+        return "・".join(category_words)
+    route_meta = _material_route_meta(material_route)
+    visible_slots = _safe_string_items(route_meta.get("visible_material_slots"), max_items=1)
+    if visible_slots:
+        return _topic_from_marker(visible_slots[0])
+    memo = _clean(_first(("memo", "note", "description"), current))
+    return _topic_from_marker(memo)
+
+
+def _topic_from_marker(value: str) -> str:
+    if any(marker in value for marker in ("人", "相手", "関係", "友", "家族", "職場", "relationship")):
+        return "人とのやり取り"
+    if any(marker in value for marker in ("仕事", "作業", "会社", "work")):
+        return "仕事や作業"
+    if any(marker in value for marker in ("体", "健康", "眠", "疲", "health")):
+        return "体調や生活"
+    if any(marker in value for marker in ("お金", "金", "生活", "money")):
+        return "生活の現実"
+    if any(marker in value for marker in ("自分", "気持", "わから", "何故", "なぜ", "self")):
+        return "自分の内側"
+    return "いま置かれていること"
+
+
+def _feeling_phrase(*, current_input: Mapping[str, Any] | None) -> str:
+    current = _as_mapping(current_input)
+    emotion_words = _safe_string_items(_first(("emotions", "emotion", "emotion_labels"), current), max_items=2)
+    if emotion_words:
+        return "・".join(emotion_words) + "の動き"
+    memo = _clean(_first(("memo", "note", "description"), current))
+    if any(marker in memo for marker in ("不安", "怖", "心配")):
+        return "不安の動き"
+    if any(marker in memo for marker in ("悲", "寂", "つら", "辛")):
+        return "悲しさやつらさの動き"
+    if any(marker in memo for marker in ("怒", "嫌", "許")):
+        return "引っかかりの動き"
+    if any(marker in memo for marker in ("嬉", "楽", "よかっ", "良かっ")):
+        return "喜びの動き"
+    if any(marker in memo for marker in ("迷", "わから", "何故", "なぜ")):
+        return "迷いの動き"
+    return "気持ちの動き"
+
+
+def _action_phrase(*, current_input: Mapping[str, Any] | None) -> str:
+    current = _as_mapping(current_input)
+    action = _clean(_first(("memo_action", "action", "next_action"), current))
+    if any(marker in action for marker in ("書", "メモ", "整理", "考")):
+        return "言葉に分けて見ようとしている動き"
+    if any(marker in action for marker in ("返事", "連絡", "話")):
+        return "人との距離を確かめようとしている動き"
+    if any(marker in action for marker in ("休", "寝", "落ち着")):
+        return "落ち着きを取り戻そうとしている動き"
+    if action:
+        return "次の扱い方を探している動き"
+    return "次にどう扱うかを探している動き"
+
+
+def _clean_public_body(value: Any) -> str:
+    body = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    body = re.sub(r"[ \t]+", " ", body)
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body.strip()
+
+
+def _labelled_two_stage_shape_valid(value: str) -> bool:
+    body = _clean_public_body(value)
+    if not body.startswith("見えたこと：\n"):
+        return False
+    boundary = "\n\nEmlisから：\n"
+    if boundary not in body:
+        return False
+    observation, reception = body[len("見えたこと：\n") :].split(boundary, 1)
+    return bool(_clean(observation) and _clean(reception))
+
+
+def _material_route_meta(material_route: Any) -> Mapping[str, Any]:
+    if isinstance(material_route, Mapping):
+        return material_route
+    as_meta = getattr(material_route, "as_meta", None)
+    if callable(as_meta):
+        try:
+            meta = as_meta()
+            if isinstance(meta, Mapping):
+                return meta
+        except Exception:
+            return {}
+    meta = getattr(material_route, "meta", None)
+    if isinstance(meta, Mapping):
+        return meta
+    return {}
+
+
+def _material_quality(material_route: Any) -> str:
+    meta = _material_route_meta(material_route)
+    return _clean_identifier(
+        _first(("material_quality", "eligibility_status", "status"), meta)
+        or getattr(material_route, "material_quality", ""),
+        max_length=96,
+    )
+
+
+def _first(keys: Sequence[str], mapping: Mapping[str, Any]) -> Any:
+    for key in keys:
+        if key in mapping and mapping.get(key) not in (None, "", [], {}):
+            return mapping.get(key)
+    return None
+
+
+def _as_mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _as_sequence(value: Any) -> tuple[Any, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes, bytearray)):
+        return (value,)
+    if isinstance(value, Sequence):
+        return tuple(value)
+    return (value,)
+
+
+def _safe_string_items(value: Any, *, max_items: int) -> tuple[str, ...]:
+    items: list[str] = []
+    for item in _as_sequence(value):
+        if isinstance(item, Mapping):
+            raw = item.get("label") or item.get("name") or item.get("value") or item.get("id")
+        else:
+            raw = item
+        cleaned = _clean(raw)
+        cleaned = re.sub(r"[\r\n\t]+", " ", cleaned)
+        cleaned = re.sub(r"[^0-9A-Za-z_:\-.ぁ-んァ-ヶ一-龠々ー]+", "", cleaned)[:24]
+        if cleaned and cleaned not in items:
+            items.append(cleaned)
+        if len(items) >= max_items:
+            break
+    return tuple(items)
+
+
+def _dedupe(values: Any) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in _as_sequence(values):
+        cleaned = _clean_identifier(value, max_length=128)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            result.append(cleaned)
+    return result
+
+
+def _evidence_span_ids(*, visible_slots: Sequence[str], relation_ids: Sequence[str]) -> tuple[str, ...]:
+    seeds = list(visible_slots or ()) + list(relation_ids or ())
+    if not seeds:
+        seeds = ["current_input_material"]
+    result = []
+    for idx, seed in enumerate(seeds[:6], start=1):
+        ident = _clean_identifier(seed, max_length=48) or f"material_{idx}"
+        result.append(f"p5_{idx}_{ident}")
+    return tuple(result)
+
+
+def _phrase_unit_ids(*, two_stage_required: bool, topic: str, feeling: str, action: str) -> tuple[str, ...]:
+    shape = "two_stage" if two_stage_required else "plain"
+    return (
+        f"p5_{shape}_topic_{_clean_identifier(topic, max_length=32) or 'topic'}",
+        f"p5_{shape}_feeling_{_clean_identifier(feeling, max_length=32) or 'feeling'}",
+        f"p5_{shape}_action_{_clean_identifier(action, max_length=32) or 'action'}",
+    )
+
+
+def _clean(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _clean_identifier(value: Any, *, max_length: int = 128) -> str:
+    text = re.sub(r"[^0-9A-Za-z_:\-.ぁ-んァ-ヶ一-龠々ー]+", "_", str(value or "").strip())
+    text = text.strip("_")[:max_length]
+    return text
+
+
+def _contains_forbidden_text_key(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            if str(key) in _FORBIDDEN_META_TEXT_KEYS:
+                return True
+            if _contains_forbidden_text_key(child):
+                return True
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return any(_contains_forbidden_text_key(child) for child in value)
+    return False
+
+
+__all__ = [
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_COMPOSER_MODEL",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_GENERATION_METHOD",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_MODEL",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_RESPONSE_SCHEMA_VERSION",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCOPE",
+    "COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE",
+    "assert_complete_initial_surface_recomposition_meta",
+    "build_complete_initial_surface_recomposition_candidate",
+    "complete_initial_surface_recomposition_public_summary",
+    "should_attempt_complete_initial_surface_recomposition",
+]

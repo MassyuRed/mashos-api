@@ -388,6 +388,7 @@ PRODUCT_READFEEL_V1_SELF_DENIAL_ATTEMPT_ROLE_KEYS = {
 PRODUCT_READFEEL_V1_POSITIVE_WARM_ROLE_KEYS = {
     "achievement",
     "positive_change",
+    "positive_change_movement",
     "joy_or_surprise",
     "positive_state",
     "relieved_weight",
@@ -397,6 +398,9 @@ PRODUCT_READFEEL_V1_POSITIVE_WARM_ROLE_KEYS = {
 PRODUCT_READFEEL_V1_POSITIVE_CONTEXT_ROLE_KEYS = {
     "work_fatigue",
     "conversation_wish",
+    "load_accumulation",
+    "fatigue_accumulation",
+    "recovery_load_bridge",
 }
 
 TECHNICAL_ROLE_KEYS = {
@@ -1930,10 +1934,18 @@ def _daily_positive_surface_text_for_line(
             surface_key = "daily_positive_observation_light_positive_state"
             ending_key = "daily_positive_light_positive_miemasu"
     elif section_id == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID:
-        if has_context_load and line_role == "relation" and canonical_relation_type(line.relation_type) == "recovery":
-            text = "嬉しさやびっくりする動きが、重く分析しすぎないまま、気持ちが動いた変化として受け取れます。"
-            surface_key = "daily_positive_reception_positive_change_not_overanalyzed"
-            ending_key = "daily_positive_change_uketoremasu"
+        if (
+            line_role == "core"
+            and canonical_relation_type(line.relation_type) == "recovery"
+            and has_positive_warmth
+        ):
+            text = "嬉しい反応やほっとした変化が、前の疲れから少し戻る動きとして受け取れます。"
+            surface_key = "daily_positive_reception_recovery_bridge_core"
+            ending_key = "daily_positive_recovery_bridge_core_uketoremasu"
+        elif has_context_load and line_role == "relation" and canonical_relation_type(line.relation_type) == "recovery":
+            text = "嬉しさやびっくりする動きが、前の疲れから少し戻る流れとして受け取れます。"
+            surface_key = "daily_positive_reception_recovery_bridge_relation"
+            ending_key = "daily_positive_recovery_bridge_relation_uketoremasu"
         elif has_context_load and not has_positive_warmth:
             text = "気持ちが動いた変化や嬉しさを、前の重さに戻しすぎず、明るい反応として受け取れます。"
             surface_key = "daily_positive_reception_joy_without_overweight"
@@ -2322,14 +2334,28 @@ def _two_stage_mode_specific_surface_text_for_line(
             two_stage_meta=two_stage_meta,
             tone_constraint=None,
         )
-    if mode_id in EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_IDS or mode_id in EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS or _clean_token(_json_safe_mapping(getattr(line, "meta", {}) or {}).get("coverage_group")) == "long_meaning_arc":
+    if mode_id in EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS:
+        text, meta = _self_understanding_surface_text_for_line(
+            line,
+            section_id=section_id,
+            mode_id=mode_id,
+            two_stage_meta=two_stage_meta,
+        )
+        if text:
+            return text, meta
+    if mode_id in EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS:
+        text, meta = _effort_pace_surface_text_for_line(
+            line,
+            section_id=section_id,
+            mode_id=mode_id,
+            two_stage_meta=two_stage_meta,
+        )
+        if text:
+            return text, meta
+    if mode_id in EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_IDS or _clean_token(_json_safe_mapping(getattr(line, "meta", {}) or {}).get("coverage_group")) == "long_meaning_arc":
         text, meta = _structure_insight_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
         if text:
             return text, meta
-    if mode_id in EMLIS_TWO_STAGE_SELF_UNDERSTANDING_FOLLOW_MODE_IDS:
-        return _self_understanding_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
-    if mode_id in EMLIS_TWO_STAGE_EFFORT_PACE_MODE_IDS:
-        return _effort_pace_surface_text_for_line(line, section_id=section_id, mode_id=mode_id, two_stage_meta=two_stage_meta)
     return "", {}
 
 

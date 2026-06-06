@@ -14,6 +14,11 @@ bodies.
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from helpers.emlis_ai_public_observation_recovery_p0 import (
+    build_public_observation_recovery_p0_summary,
+    validate_public_observation_recovery_p0_summary,
+)
+
 PHASE19_PUBLIC_FEEDBACK_MATRIX_SCHEMA_VERSION: Final = (
     "cocolon.emlis.phase19.public_feedback_recovery_matrix.v1"
 )
@@ -48,6 +53,7 @@ _REQUIRED_TOP_LEVEL_KEYS: Final = frozenset(
         "surface_gate",
         "public_feedback",
         "rn_contract",
+        "recovery_stage",
     }
 )
 _REQUIRED_CURRENT_INPUT_KEYS: Final = frozenset(
@@ -191,6 +197,13 @@ def build_phase19_public_feedback_recovery_matrix(
             "modal_title": PHASE19_PUBLIC_FEEDBACK_RN_MODAL_TITLE,
         },
     }
+    matrix["recovery_stage"] = build_public_observation_recovery_p0_summary(
+        current_input=safe_current_input,
+        public_meta=safe_public_meta,
+        diagnostic_meta=safe_diagnostic_meta,
+        reply_comment_text=reply_comment_text,
+        response_body=safe_response_body,
+    )
     validate_phase19_public_feedback_recovery_matrix(matrix)
     return matrix
 
@@ -214,6 +227,9 @@ def validate_phase19_public_feedback_recovery_matrix(matrix: Mapping[str, Any]) 
         "public_feedback",
     )
     _assert_exact_keys(_require_mapping(matrix["rn_contract"], "rn_contract"), _REQUIRED_RN_CONTRACT_KEYS, "rn_contract")
+    validate_public_observation_recovery_p0_summary(
+        _require_mapping(matrix["recovery_stage"], "recovery_stage")
+    )
 
     current_input = _require_mapping(matrix["current_input"], "current_input")
     for key in _REQUIRED_CURRENT_INPUT_KEYS:
@@ -433,14 +449,23 @@ def _rn_modal_should_open(feedback: Mapping[str, Any] | None) -> bool:
 
 def _all_reason_codes(*sources: Mapping[str, Any]) -> set[str]:
     reasons: set[str] = set()
+    visited: set[int] = set()
+    max_nodes = 4096
+    max_sequence_items = 256
 
     def collect(value: Any) -> None:
+        if len(visited) >= max_nodes:
+            return
         if isinstance(value, Mapping):
+            marker = id(value)
+            if marker in visited:
+                return
+            visited.add(marker)
             for key, child in value.items():
                 if key in {"rejection_reasons", "reason_codes", "surface_issue_codes"} and isinstance(
                     child, Sequence
                 ) and not isinstance(child, (str, bytes, bytearray)):
-                    reasons.update(str(item) for item in child if str(item or "").strip())
+                    reasons.update(str(item) for item in list(child)[:max_sequence_items] if str(item or "").strip())
                 elif key in {
                     "primary_reason",
                     "first_failure_reason",
@@ -452,7 +477,11 @@ def _all_reason_codes(*sources: Mapping[str, Any]) -> set[str]:
                 else:
                     collect(child)
         elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for child in value:
+            marker = id(value)
+            if marker in visited:
+                return
+            visited.add(marker)
+            for child in list(value)[:max_sequence_items]:
                 collect(child)
 
     for source in sources:
@@ -472,9 +501,18 @@ def _find_mapping(value: Mapping[str, Any] | None, *keys: str) -> Mapping[str, A
 
 def _first_non_empty_recursive(values: Sequence[Any], keys: Sequence[str]) -> str | None:
     key_set = set(keys)
+    visited: set[int] = set()
+    max_nodes = 4096
+    max_sequence_items = 256
 
     def rec(value: Any) -> str | None:
+        if len(visited) >= max_nodes:
+            return None
         if isinstance(value, Mapping):
+            marker = id(value)
+            if marker in visited:
+                return None
+            visited.add(marker)
             for key, child in value.items():
                 if str(key) in key_set:
                     text = _optional_str(child)
@@ -484,7 +522,11 @@ def _first_non_empty_recursive(values: Sequence[Any], keys: Sequence[str]) -> st
                 if nested:
                     return nested
         elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            for child in value:
+            marker = id(value)
+            if marker in visited:
+                return None
+            visited.add(marker)
+            for child in list(value)[:max_sequence_items]:
                 nested = rec(child)
                 if nested:
                     return nested
@@ -548,24 +590,47 @@ def _assert_exact_keys(value: Mapping[str, Any], required: frozenset[str], name:
     assert actual == set(required), f"{name}: missing={sorted(required - actual)}, extra={sorted(actual - required)}"
 
 
-def _assert_no_forbidden_exact_keys(value: Any) -> None:
+def _assert_no_forbidden_exact_keys(value: Any, *, _seen: set[int] | None = None) -> None:
+    seen = _seen if _seen is not None else set()
+    max_sequence_items = 256
     if isinstance(value, Mapping):
+        marker = id(value)
+        if marker in seen:
+            return
+        seen.add(marker)
         for key, item in value.items():
             assert str(key) not in _FORBIDDEN_EXACT_KEYS, key
-            _assert_no_forbidden_exact_keys(item)
+            _assert_no_forbidden_exact_keys(item, _seen=seen)
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        for item in value:
-            _assert_no_forbidden_exact_keys(item)
+        marker = id(value)
+        if marker in seen:
+            return
+        seen.add(marker)
+        for item in list(value)[:max_sequence_items]:
+            _assert_no_forbidden_exact_keys(item, _seen=seen)
 
 
-def _contains_text_recursive(value: Any, needle: str) -> bool:
+def _contains_text_recursive(value: Any, needle: str, *, _seen: set[int] | None = None) -> bool:
     target = " ".join(str(needle or "").split())
     if not target:
         return False
+    seen = _seen if _seen is not None else set()
+    max_sequence_items = 256
     if isinstance(value, Mapping):
-        return any(_contains_text_recursive(child, target) for child in value.values())
+        marker = id(value)
+        if marker in seen:
+            return False
+        seen.add(marker)
+        return any(_contains_text_recursive(child, target, _seen=seen) for child in value.values())
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return any(_contains_text_recursive(child, target) for child in value)
+        marker = id(value)
+        if marker in seen:
+            return False
+        seen.add(marker)
+        for child in list(value)[:max_sequence_items]:
+            if _contains_text_recursive(child, target, _seen=seen):
+                return True
+        return False
     if isinstance(value, str):
         return target in " ".join(value.split())
     return False
