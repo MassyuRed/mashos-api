@@ -69,6 +69,7 @@ P12_ALLOWED_PUBLIC_CANDIDATE_SOURCES: Final[tuple[str, ...]] = (
     "self_denial_safe_state_answer",
     "bounded_repaired_original_candidate",
     "complete_self_repair_candidate",
+    "normal_observation_rebuild_candidate",
 )
 
 VALIDATION_STATUS_PASSED: Final = "passed"

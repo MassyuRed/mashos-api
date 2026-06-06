@@ -27,6 +27,7 @@ from emlis_ai_gate_recovery_public_candidate_builder import (
     BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE,
     GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY,
     LOW_INFORMATION_RECOVERY_SOURCE_PHASE,
+    NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE,
     build_public_candidate_after_gate_recovery,
 )
 from emlis_ai_gate_recovery_public_constants import (
@@ -38,6 +39,7 @@ from emlis_ai_gate_recovery_public_constants import (
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
     POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
@@ -1583,31 +1585,27 @@ def recover_emlis_gate_failure(
         is_bounded_original_repair = (
             public_candidate_source_kind == CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
         )
-        public_recovery_source_phase = (
-            BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE
-            if is_bounded_original_repair
-            else LOW_INFORMATION_RECOVERY_SOURCE_PHASE
+        is_normal_observation_rebuild = (
+            public_candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
         )
-        public_recovery_label = (
-            "phase20_7_bounded_original_candidate_repair"
-            if is_bounded_original_repair
-            else "phase20_6_low_information_observation_recovery"
-        )
-        public_recovery_scope = (
-            "current_input_bounded_original_candidate_repair"
-            if is_bounded_original_repair
-            else "current_input_low_information_recovery"
-        )
-        public_recovery_support_source = (
-            "bounded_repaired_original_candidate"
-            if is_bounded_original_repair
-            else "low_information_observation_composer"
-        )
-        public_recovery_contract_prefix = (
-            "cocolon.emlis.phase20_7.bounded_original_candidate_repair"
-            if is_bounded_original_repair
-            else "cocolon.emlis.phase20_6.low_information_recovery"
-        )
+        if is_normal_observation_rebuild:
+            public_recovery_source_phase = NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE
+            public_recovery_label = "phase20_8_normal_observation_rebuild"
+            public_recovery_scope = "current_input_normal_observation_rebuild"
+            public_recovery_support_source = CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            public_recovery_contract_prefix = "cocolon.emlis.phase20_8.normal_observation_rebuild"
+        elif is_bounded_original_repair:
+            public_recovery_source_phase = BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE
+            public_recovery_label = "phase20_7_bounded_original_candidate_repair"
+            public_recovery_scope = "current_input_bounded_original_candidate_repair"
+            public_recovery_support_source = "bounded_repaired_original_candidate"
+            public_recovery_contract_prefix = "cocolon.emlis.phase20_7.bounded_original_candidate_repair"
+        else:
+            public_recovery_source_phase = LOW_INFORMATION_RECOVERY_SOURCE_PHASE
+            public_recovery_label = "phase20_6_low_information_observation_recovery"
+            public_recovery_scope = "current_input_low_information_recovery"
+            public_recovery_support_source = "low_information_observation_composer"
+            public_recovery_contract_prefix = "cocolon.emlis.phase20_6.low_information_recovery"
         public_recovery_observation_reply_kind = (
             ResponseKind.LOW_INFORMATION_OBSERVATION.value
             if is_low_information_recovery
@@ -1737,7 +1735,9 @@ def recover_emlis_gate_failure(
                 "origin_gate_recovery_plan": True,
                 "phase20_6_low_information_recovery_connected": bool(is_low_information_recovery),
                 "phase20_7_bounded_original_candidate_repair_connected": bool(is_bounded_original_repair),
+                "phase20_8_normal_observation_rebuild_connected": bool(is_normal_observation_rebuild),
                 "bounded_original_candidate_repair_applied": bool(is_bounded_original_repair),
+                "normal_observation_rebuild_applied": bool(is_normal_observation_rebuild),
                 "public_recovery_candidate_source_kind": public_candidate_source_kind,
                 "raw_input_included": False,
                 "comment_text_body_included": False,

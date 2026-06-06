@@ -137,6 +137,9 @@ from emlis_ai_gate_recovery_public_boundary import (
     decide_gate_recovery_public_boundary,
     gate_recovery_public_display_allowed,
 )
+from emlis_ai_gate_recovery_public_constants import (
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+)
 from emlis_ai_listener_reader_judge import judge_listener_readability
 from emlis_ai_limited_relation_taxonomy import allowed_relation_types, canonical_relation_type
 from emlis_ai_relation_surface_contract import normalize_relation_surface_type
@@ -404,6 +407,39 @@ def _build_phase20_13_post_final_gate_recovery_meta(
         meta["public_boundary_blocked"] = bool(boundary.get("blocked"))
         meta["public_display_allowed_by_boundary"] = bool(boundary.get("public_display_allowed"))
         meta["public_boundary_blockers"] = _dedupe_reason_codes(boundary.get("blocked_reasons") or [])
+        candidate_source_kind = _clean(
+            boundary.get("candidate_source_kind")
+            or boundary.get("adopted_candidate_source_kind")
+            or boundary.get("final_surface_origin_candidate_source_kind")
+        )
+        if candidate_source_kind:
+            meta["candidate_source_kind"] = candidate_source_kind
+            meta["public_candidate_source_kind"] = candidate_source_kind
+            meta["final_surface_origin_candidate_source_kind"] = (
+                candidate_source_kind if bool(applied) else ""
+            )
+        if boundary.get("public_candidate_rebuilt_after_recovery") is not None:
+            meta["public_candidate_rebuilt_after_recovery"] = bool(
+                boundary.get("public_candidate_rebuilt_after_recovery")
+            )
+        if boundary.get("diagnostic_surface_used") is not None:
+            meta["diagnostic_surface_used"] = bool(boundary.get("diagnostic_surface_used"))
+        normal_rebuild_attempted = bool(
+            boundary.get("normal_observation_rebuild_attempted")
+            or candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        )
+        if normal_rebuild_attempted:
+            meta["normal_observation_rebuild_attempted"] = True
+            meta["normal_observation_rebuild_applied"] = bool(
+                applied and boundary.get("normal_observation_rebuild_applied") is not False
+            )
+            meta["normal_observation_rebuild_source_kind"] = (
+                CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            )
+            meta["normal_observation_rebuild_blocked_reasons"] = _dedupe_reason_codes(
+                boundary.get("normal_observation_rebuild_blocked_reasons")
+                or ([] if applied else boundary.get("blocked_reasons") or [])
+            )
         if isinstance(decision, Mapping):
             meta["gate_recovery_public_boundary_decision"] = dict(decision)
     return meta
@@ -480,7 +516,7 @@ def _build_reply_service_gate_recovery_public_boundary_meta(
     public_boundary_decision: Mapping[str, Any],
     adopted: bool,
 ) -> Dict[str, Any]:
-    """Build meta-only P4 evidence without storing the candidate body."""
+    """Build meta-only P4/P6 evidence without storing the candidate body."""
 
     result_meta = (
         gate_recovery_loop_result.as_meta()
@@ -489,20 +525,51 @@ def _build_reply_service_gate_recovery_public_boundary_meta(
     )
     if not isinstance(result_meta, Mapping):
         result_meta = {}
+    blocked_reasons = _dedupe_reason_codes(
+        public_boundary_decision.get("blockers") if isinstance(public_boundary_decision, Mapping) else []
+    )
+    public_display_allowed = gate_recovery_public_display_allowed(public_boundary_decision)
+    candidate_summary = _reply_service_gate_recovery_candidate_summary(gate_recovery_loop_result)
+    candidate_source_kind = _clean(candidate_summary.get("candidate_source_kind"))
+    normal_rebuild_attempted = bool(candidate_summary.get("normal_observation_rebuild_attempted"))
+    normal_rebuild_applied = bool(adopted and normal_rebuild_attempted and public_display_allowed)
     return {
         "schema_version": _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SCHEMA_VERSION,
         "source_phase": _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SOURCE_PHASE,
         "recovery_context": _clean(recovery_context),
         "attempted": gate_recovery_loop_result is not None,
         "gate_recovery_loop_applied": bool(getattr(gate_recovery_loop_result, "applied", False)),
-        "public_display_allowed": gate_recovery_public_display_allowed(public_boundary_decision),
+        "public_display_allowed": public_display_allowed,
         "adopted": bool(adopted),
         "blocked": bool(not adopted),
-        "blocked_reasons": _dedupe_reason_codes(
-            public_boundary_decision.get("blockers") if isinstance(public_boundary_decision, Mapping) else []
-        ),
+        "blocked_reasons": blocked_reasons,
         "gate_recovery_public_boundary_decision": dict(public_boundary_decision or {}),
         "gate_recovery_loop_result": dict(result_meta),
+        # P6: classify the actual public candidate selected by the loop.  The
+        # loop-result meta still contains diagnostic material-surface evidence;
+        # these fields keep reply_service/post-final diagnostics pointed at the
+        # adopted public candidate without serializing any candidate body.
+        "candidate_source_kind": candidate_source_kind,
+        "public_candidate_source_kind": candidate_source_kind,
+        "adopted_candidate_source_kind": candidate_source_kind if bool(adopted) else "",
+        "final_surface_origin_candidate_source_kind": candidate_source_kind if bool(adopted) else "",
+        "composer_model": _clean(candidate_summary.get("composer_model")),
+        "generation_method": _clean(candidate_summary.get("generation_method")),
+        "public_surface_role": _clean(candidate_summary.get("public_surface_role")),
+        "public_candidate_rebuilt_after_recovery": bool(
+            candidate_summary.get("public_candidate_rebuilt_after_recovery")
+        ),
+        "diagnostic_surface_used": bool(candidate_summary.get("diagnostic_surface_used")),
+        "normal_observation_rebuild_attempted": normal_rebuild_attempted,
+        "normal_observation_rebuild_applied": normal_rebuild_applied,
+        "normal_observation_rebuild_source_kind": (
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            if normal_rebuild_attempted
+            else ""
+        ),
+        "normal_observation_rebuild_blocked_reasons": (
+            [] if normal_rebuild_applied else list(blocked_reasons if normal_rebuild_attempted else [])
+        ),
         "public_response_key_change": False,
         "display_gate_relaxed": False,
         "grounding_gate_relaxed": False,
@@ -521,6 +588,57 @@ def _reply_service_gate_recovery_public_boundary_blockers(meta: Mapping[str, Any
     if not isinstance(meta, Mapping):
         return []
     return _dedupe_reason_codes(meta.get("blocked_reasons") or [])
+
+
+def _reply_service_gate_recovery_candidate_summary(gate_recovery_loop_result: Any) -> Dict[str, Any]:
+    """Return body-free public candidate lineage selected by Gate Recovery.
+
+    ``GateRecoveryLoopResult.as_meta()`` still carries the diagnostic material
+    surface binding as meta-only evidence.  Reply service needs a separate
+    source summary for the actual adopted public candidate so post-final
+    diagnostics do not classify a rebuilt public observation as the blocked
+    diagnostic surface.
+    """
+
+    candidate = getattr(gate_recovery_loop_result, "composer_candidate", None)
+    candidate_meta = getattr(candidate, "composer_meta", {}) if candidate is not None else {}
+    if not isinstance(candidate_meta, Mapping):
+        candidate_meta = {}
+    lineage = candidate_meta.get("candidate_lineage")
+    if not isinstance(lineage, Mapping):
+        lineage = {}
+    candidate_source_kind = _clean(candidate_meta.get("candidate_source_kind"))
+    composer_model = _clean(candidate_meta.get("composer_model") or getattr(candidate, "composer_model", ""))
+    generation_method = _clean(
+        candidate_meta.get("generation_method") or getattr(candidate, "generation_method", "")
+    )
+    normal_rebuild_attempted = bool(
+        candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or candidate_meta.get("normal_observation_rebuild_connected") is True
+        or candidate_meta.get("normal_observation_rebuild_ready") is True
+    )
+    return {
+        "candidate_source_kind": candidate_source_kind,
+        "composer_model": composer_model,
+        "generation_method": generation_method,
+        "public_surface_role": _clean(candidate_meta.get("public_surface_role")),
+        "public_candidate_rebuilt_after_recovery": bool(
+            lineage.get("public_candidate_rebuilt_after_recovery") is True
+            or candidate_meta.get("public_candidate_rebuilt_after_recovery") is True
+        ),
+        "diagnostic_surface_used": bool(
+            lineage.get("diagnostic_surface_used") is True
+            or candidate_meta.get("diagnostic_surface_used") is True
+        ),
+        "normal_observation_rebuild_attempted": normal_rebuild_attempted,
+        "normal_observation_rebuild_source_kind": (
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            if normal_rebuild_attempted
+            else ""
+        ),
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
 
 
 def _evidence_ids_from_observation_graph(graph: Any) -> List[str]:
@@ -4147,7 +4265,30 @@ def _build_step7_public_feedback_diagnostic_summary(
         or "bounded_visible_surface_rerender_required" in reason_codes
         or "bounded_shallow_v2_rerender_required" in reason_codes
     )
-    candidate_repair_succeeded = bool(candidate_repair_attempted and observation_status == "passed" and comment_present)
+    normal_observation_rebuild_attempted = bool(
+        phase_gate_meta.get("normal_observation_rebuild_attempted")
+        or phase_gate_meta.get("normal_observation_rebuild_source_kind")
+        == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or phase_gate_meta.get("candidate_source_kind")
+        == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or phase_gate_meta.get("final_surface_origin_candidate_source_kind")
+        == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    normal_observation_rebuild_applied = bool(
+        normal_observation_rebuild_attempted
+        and (
+            phase_gate_meta.get("normal_observation_rebuild_applied") is True
+            or phase_gate_meta.get("applied") is True
+            or phase_gate_meta.get("public_display_allowed_by_boundary") is True
+        )
+    )
+    if normal_observation_rebuild_attempted:
+        candidate_repair_attempted = True
+    candidate_repair_succeeded = bool(
+        (candidate_repair_attempted or normal_observation_rebuild_attempted)
+        and observation_status == "passed"
+        and comment_present
+    )
     candidate_repair_failed = bool(candidate_repair_attempted and not candidate_repair_succeeded)
     public_feedback_not_included_non_passed = bool(observation_status != "passed")
     public_feedback_not_included_empty_comment_text = bool(not comment_present)
@@ -4188,6 +4329,13 @@ def _build_step7_public_feedback_diagnostic_summary(
         "rn_payload_absent": candidate_fail_closed_display_absent,
         "reason_family": reason_family,
         "reason_codes": reason_codes[:20],
+        "normal_observation_rebuild_attempted": normal_observation_rebuild_attempted,
+        "normal_observation_rebuild_applied": normal_observation_rebuild_applied,
+        "normal_observation_rebuild_source_kind": (
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            if normal_observation_rebuild_attempted
+            else ""
+        ),
         "raw_input_included": False,
         "comment_text_body_included": False,
         "display_gate_relaxed": False,
@@ -6260,6 +6408,17 @@ async def render_emlis_ai_reply(
         runtime_surface_pre_return_gate_report=runtime_surface_pre_return_gate_report,
         visible_surface_acceptance_gate_report=visible_surface_acceptance_gate_report,
     )
+    # P6: a pre-public normal-observation rebuild can survive final pre-return
+    # enforcement without running a second post-final recovery attempt.  The
+    # post-final origin meta still needs a stable recovery_policy in that
+    # one-shot path, so compute the policy before the optional retry branch.
+    phase20_13_recovery_policy = (
+        "low_information_post_final_recheck"
+        if phase20_13_material_quality == "low_information"
+        else "limited_grounding_post_final_recheck"
+        if phase20_13_material_quality == "limited_grounding"
+        else "normal_observation_post_final_recheck"
+    )
     if _should_attempt_post_final_gate_recovery(
         display_decision=display_decision,
         final_candidate_text=post_final_recovery_candidate_text,
@@ -6271,13 +6430,6 @@ async def render_emlis_ai_reply(
         post_final_recovery_already_attempted=phase20_13_post_final_gate_recovery_attempted,
     ):
         phase20_13_post_final_gate_recovery_attempted = True
-        phase20_13_recovery_policy = (
-            "low_information_post_final_recheck"
-            if phase20_13_material_quality == "low_information"
-            else "limited_grounding_post_final_recheck"
-            if phase20_13_material_quality == "limited_grounding"
-            else "normal_observation_post_final_recheck"
-        )
         phase20_13_unknown_slots = []
         phase20_3_input_bundle = phase20_3_material_route_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY)
         if isinstance(phase20_3_input_bundle, Mapping):
@@ -6439,6 +6591,49 @@ async def render_emlis_ai_reply(
                         or phase20_13_original_final_reasons
                     ),
                 )
+
+    if (
+        phase20_13_post_final_gate_recovery_meta is None
+        and gate_recovery_loop_result is not None
+        and bool(getattr(gate_recovery_loop_result, "applied", False))
+        and str(getattr(display_decision, "observation_status", "") or "") == "passed"
+        and _clean(phase20_13_response_kind) in _PHASE20_13_DISPLAYABLE_RESPONSE_KINDS
+        and _clean(
+            _reply_service_gate_recovery_candidate_summary(gate_recovery_loop_result).get("candidate_source_kind")
+        ) == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    ):
+        # P6: a normal-observation rebuild may be selected by the pre-public
+        # Gate Recovery loop and then survive the final pre-return enforcement.
+        # Record the final-surface origin as post-final diagnostic evidence
+        # without running a second recovery attempt or serializing any body.
+        final_public_boundary_decision = _reply_service_gate_recovery_public_boundary_decision(
+            gate_recovery_loop_result,
+            recovery_context=RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
+            composer_client_resolution=composer_client_resolution,
+        )
+        final_public_boundary_allowed = gate_recovery_public_display_allowed(
+            final_public_boundary_decision
+        )
+        final_public_boundary_meta = _build_reply_service_gate_recovery_public_boundary_meta(
+            recovery_context=RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
+            gate_recovery_loop_result=gate_recovery_loop_result,
+            public_boundary_decision=final_public_boundary_decision,
+            adopted=final_public_boundary_allowed,
+        )
+        if final_public_boundary_allowed:
+            phase20_13_post_final_response_kind = phase20_13_response_kind
+            phase20_13_post_final_gate_recovery_meta = _build_phase20_13_post_final_gate_recovery_meta(
+                attempted=True,
+                applied=True,
+                original_final_status=phase20_13_original_final_status,
+                final_status_after_recovery=str(getattr(display_decision, "observation_status", "") or ""),
+                response_kind=phase20_13_response_kind,
+                material_quality=phase20_13_material_quality,
+                recovery_policy=phase20_13_recovery_policy,
+                from_gate=phase20_13_from_gate,
+                blocked_reasons=phase20_13_original_final_reasons,
+                public_boundary_meta=final_public_boundary_meta,
+            )
 
     if (
         str(getattr(display_decision, "observation_status", "") or "") != "passed"

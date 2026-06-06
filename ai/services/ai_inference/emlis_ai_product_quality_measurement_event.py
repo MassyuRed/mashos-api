@@ -28,6 +28,7 @@ from emlis_ai_gate_recovery_public_constants import (
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     CANDIDATE_SOURCE_KIND_NONE,
     CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHODS,
@@ -50,6 +51,10 @@ PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION: Final = (
     "cocolon.emlis.product_quality.surface_origin.v1"
 )
 PRODUCT_QUALITY_EVENT_PHASE: Final = "Phase2_ProductQualityEventV1_Normalizer"
+NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL: Final = "normal_observation_rebuild_candidate_v1"
+NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD: Final = (
+    "normal_observation_rebuild_after_surface_gate_failure"
+)
 
 _ALLOWED_SOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -270,6 +275,8 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "public_feedback_boundary_included": {"type": "boolean"},
                 "bounded_repair_attempted": {"type": "boolean"},
                 "post_final_gate_recovery_attempted": {"type": "boolean"},
+                "normal_observation_rebuild_attempted": {"type": "boolean"},
+                "normal_observation_rebuild_applied": {"type": "boolean"},
                 "final_empty_exit": {"type": "boolean"},
             },
         },
@@ -343,6 +350,8 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "post_final_gate_recovery_material_surface_detected",
                 "internal_policy_sentence_leak_risk",
                 "template_meta_false_negative_risk",
+                "normal_observation_rebuild_attempted",
+                "normal_observation_rebuild_applied",
                 "raw_input_included",
                 "comment_text_body_included",
             ],
@@ -357,6 +366,8 @@ PRODUCT_QUALITY_EVENT_V1_SCHEMA: Final[dict[str, Any]] = {
                 "post_final_gate_recovery_material_surface_detected": {"type": "boolean"},
                 "internal_policy_sentence_leak_risk": {"type": "boolean"},
                 "template_meta_false_negative_risk": {"type": "boolean"},
+                "normal_observation_rebuild_attempted": {"type": "boolean"},
+                "normal_observation_rebuild_applied": {"type": "boolean"},
                 "raw_input_included": {"const": False},
                 "comment_text_body_included": {"const": False},
             },
@@ -673,8 +684,36 @@ def _extract_gate_results(
         internal_meta,
         default=False,
     )
+    normal_rebuild_attempted = _first_bool(
+        (
+            "normal_observation_rebuild_attempted",
+            "normal_observation_rebuild.attempted",
+            "diagnostic_summary.normal_observation_rebuild.attempted",
+            "reply_service_public_boundary.normal_observation_rebuild_attempted",
+            "phase20_13_post_final_gate_recovery.normal_observation_rebuild_attempted",
+            "phase20_5_gate_recovery_public_boundary.normal_observation_rebuild_attempted",
+        ),
+        public_meta,
+        internal_meta,
+        default=False,
+    )
+    normal_rebuild_applied = _first_bool(
+        (
+            "normal_observation_rebuild_applied",
+            "normal_observation_rebuild.applied",
+            "diagnostic_summary.normal_observation_rebuild.applied",
+            "reply_service_public_boundary.normal_observation_rebuild_applied",
+            "phase20_13_post_final_gate_recovery.normal_observation_rebuild_applied",
+            "phase20_5_gate_recovery_public_boundary.normal_observation_rebuild_applied",
+        ),
+        public_meta,
+        internal_meta,
+        default=False,
+    )
     gate_results["bounded_repair_attempted"] = bool(bounded_repair)
     gate_results["post_final_gate_recovery_attempted"] = bool(post_final_recovery)
+    gate_results["normal_observation_rebuild_attempted"] = bool(normal_rebuild_attempted)
+    gate_results["normal_observation_rebuild_applied"] = bool(normal_rebuild_applied)
     return gate_results
 
 
@@ -928,6 +967,13 @@ def _infer_surface_origin_candidate_source_kind(
         return CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
     if "self_denial_safe_state_answer" in model_lower or "self_denial_safe_state_answer" in generation_lower:
         return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
+    if (
+        composer_model == NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL
+        or generation_method == NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD
+        or "normal_observation_rebuild" in model_lower
+        or "normal_observation_rebuild" in generation_lower
+    ):
+        return CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
     if "complete_self_repair" in model_lower or "complete_self_repair" in generation_lower:
         return CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE
     if complete_initial_client_used or requested_composer == "complete_initial" or "complete_initial" in model_lower:
@@ -1011,6 +1057,8 @@ def _extract_surface_origin(
                 "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.composer_model",
                 "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.composer_model",
                 "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.composer_model",
+                "reply_service_public_boundary.composer_model",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.composer_model",
             ),
             *sources,
             boundary_decision,
@@ -1029,6 +1077,8 @@ def _extract_surface_origin(
                 "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.generation_method",
                 "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.generation_method",
                 "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.generation_method",
+                "reply_service_public_boundary.generation_method",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.generation_method",
             ),
             *sources,
             boundary_decision,
@@ -1048,6 +1098,21 @@ def _extract_surface_origin(
                 "phase20_5_gate_recovery_public_boundary.gate_recovery_public_boundary_decision.candidate_source_kind",
                 "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.candidate_source_kind",
                 "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.candidate_source_kind",
+                "public_candidate_source_kind",
+                "adopted_candidate_source_kind",
+                "final_surface_origin_candidate_source_kind",
+                "normal_observation_rebuild_source_kind",
+                "reply_service_public_boundary.candidate_source_kind",
+                "reply_service_public_boundary.public_candidate_source_kind",
+                "reply_service_public_boundary.adopted_candidate_source_kind",
+                "reply_service_public_boundary.final_surface_origin_candidate_source_kind",
+                "reply_service_public_boundary.normal_observation_rebuild_source_kind",
+                "phase20_13_post_final_gate_recovery.public_candidate_source_kind",
+                "phase20_13_post_final_gate_recovery.adopted_candidate_source_kind",
+                "phase20_13_post_final_gate_recovery.final_surface_origin_candidate_source_kind",
+                "phase20_13_post_final_gate_recovery.normal_observation_rebuild_source_kind",
+                "diagnostic_summary.normal_observation_rebuild.source_kind",
+                "diagnostic_summary.normal_observation_rebuild.candidate_source_kind",
             ),
             *sources,
             boundary_decision,
@@ -1065,6 +1130,9 @@ def _extract_surface_origin(
                 "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.public_surface_role",
                 "phase20_13_post_final_gate_recovery.gate_recovery_public_boundary_decision.public_surface_role",
                 "phase20_13_post_final_gate_recovery.reply_service_public_boundary.gate_recovery_public_boundary_decision.public_surface_role",
+                "reply_service_public_boundary.public_surface_role",
+                "phase20_13_post_final_gate_recovery.reply_service_public_boundary.public_surface_role",
+                "diagnostic_summary.normal_observation_rebuild.public_surface_role",
             ),
             *sources,
             boundary_decision,
@@ -1123,6 +1191,8 @@ def _extract_surface_origin(
             "phase20_5_gate_recovery_public_candidate_builder.gate_recovery_public_boundary_decision.public_display_allowed",
             "phase20_13_post_final_gate_recovery.public_display_allowed_by_boundary",
             "phase20_13_post_final_gate_recovery.reply_service_public_boundary.public_display_allowed",
+            "reply_service_public_boundary.public_display_allowed",
+            "diagnostic_summary.normal_observation_rebuild.public_boundary.public_display_allowed",
         ),
         *sources,
         boundary_decision,
@@ -1148,6 +1218,47 @@ def _extract_surface_origin(
             or bool(public_display_reached)
         )
     )
+    normal_rebuild_attempted = bool(
+        candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or _first_bool(
+            (
+                "normal_observation_rebuild_attempted",
+                "normal_observation_rebuild.attempted",
+                "surface_origin.normal_observation_rebuild_attempted",
+                "reply_service_public_boundary.normal_observation_rebuild_attempted",
+                "phase20_13_post_final_gate_recovery.normal_observation_rebuild_attempted",
+                "phase20_5_gate_recovery_public_boundary.normal_observation_rebuild_attempted",
+                "diagnostic_summary.normal_observation_rebuild.attempted",
+            ),
+            *sources,
+            boundary_decision,
+            default=False,
+        )
+    )
+    explicit_normal_rebuild_applied = _first_bool(
+        (
+            "normal_observation_rebuild_applied",
+            "normal_observation_rebuild.applied",
+            "surface_origin.normal_observation_rebuild_applied",
+            "reply_service_public_boundary.normal_observation_rebuild_applied",
+            "phase20_13_post_final_gate_recovery.normal_observation_rebuild_applied",
+            "phase20_5_gate_recovery_public_boundary.normal_observation_rebuild_applied",
+            "diagnostic_summary.normal_observation_rebuild.applied",
+        ),
+        *sources,
+        boundary_decision,
+        default=None,
+    )
+    normal_rebuild_applied = bool(
+        explicit_normal_rebuild_applied
+        if explicit_normal_rebuild_applied is not None
+        else (
+            normal_rebuild_attempted
+            and candidate_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            and bool(boundary_allowed)
+            and bool(public_display_reached)
+        )
+    )
     return {
         "schema_version": PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION,
         "candidate_source_kind": candidate_source_kind,
@@ -1159,6 +1270,8 @@ def _extract_surface_origin(
         "post_final_gate_recovery_material_surface_detected": bool(post_final_surface_detected),
         "internal_policy_sentence_leak_risk": bool(internal_policy_sentence_leak_risk),
         "template_meta_false_negative_risk": bool(template_false_negative_risk),
+        "normal_observation_rebuild_attempted": bool(normal_rebuild_attempted),
+        "normal_observation_rebuild_applied": bool(normal_rebuild_applied),
         "raw_input_included": False,
         "comment_text_body_included": False,
     }
@@ -1457,6 +1570,12 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
         "surface_origin_public_display_allowed_by_boundary": bool(
             surface_origin.get("public_display_allowed_by_boundary")
         ),
+        "surface_origin_normal_observation_rebuild_attempted": bool(
+            surface_origin.get("normal_observation_rebuild_attempted")
+        ),
+        "surface_origin_normal_observation_rebuild_applied": bool(
+            surface_origin.get("normal_observation_rebuild_applied")
+        ),
         "gate_recovery_material_surface_detected": bool(
             surface_origin.get("gate_recovery_material_surface_detected")
         ),
@@ -1514,6 +1633,8 @@ def assert_product_quality_measurement_event_meta_only(
         "post_final_gate_recovery_material_surface_detected",
         "internal_policy_sentence_leak_risk",
         "template_meta_false_negative_risk",
+        "normal_observation_rebuild_attempted",
+        "normal_observation_rebuild_applied",
         "raw_input_included",
         "comment_text_body_included",
     }
@@ -1527,6 +1648,8 @@ def assert_product_quality_measurement_event_meta_only(
         "post_final_gate_recovery_material_surface_detected",
         "internal_policy_sentence_leak_risk",
         "template_meta_false_negative_risk",
+        "normal_observation_rebuild_attempted",
+        "normal_observation_rebuild_applied",
     ):
         if not isinstance(surface_origin.get(key), bool):
             raise ValueError(f"{source} surface_origin.{key} must be boolean")
@@ -1590,6 +1713,8 @@ __all__ = [
     "PRODUCT_QUALITY_EVENT_SCHEMA_VERSION",
     "PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION",
     "PRODUCT_QUALITY_EVENT_V1_SCHEMA",
+    "NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL",
+    "NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD",
     "BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION",
     "BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC",
     "BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK",

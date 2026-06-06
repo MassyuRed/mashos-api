@@ -35,14 +35,17 @@ from emlis_ai_gate_recovery_public_boundary import (
 )
 from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING,
+    BLOCKER_NORMAL_OBSERVATION_REBUILD_CANDIDATE_MISSING,
     BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
     CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_LIMITED_COMPOSER,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
     CANDIDATE_SOURCE_KIND_NONE,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     PUBLIC_SURFACE_ROLE_BLOCKED_NO_PUBLIC_CANDIDATE,
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
@@ -65,6 +68,21 @@ _SELECTION_KIND_NO_PUBLIC_CANDIDATE: Final = "no_public_candidate"
 _SELECTION_KIND_BOUND_REPAIRED_ORIGINAL: Final = "bounded_repaired_original_candidate"
 _SELECTION_KIND_LOW_INFORMATION: Final = "low_information_observation_composer"
 _SELECTION_KIND_SELF_DENIAL_SAFE_STATE_ANSWER: Final = "self_denial_safe_state_answer"
+_SELECTION_KIND_NORMAL_OBSERVATION_REBUILD: Final = "normal_observation_rebuild_candidate"
+
+NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE: Final = (
+    "GateRecoveryPublicSurfaceLeakRepair_P8_NormalObservationRebuild"
+)
+NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL: Final = "normal_observation_rebuild_candidate_v1"
+NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD: Final = (
+    "normal_observation_rebuild_after_surface_gate_failure"
+)
+NORMAL_OBSERVATION_REBUILD_META_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.phase20_8.normal_observation_rebuild.meta.v1"
+)
+NORMAL_OBSERVATION_REBUILD_RESPONSE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.phase20_8.normal_observation_rebuild.response.v1"
+)
 
 LOW_INFORMATION_RECOVERY_SOURCE_PHASE: Final = (
     "GateRecoveryPublicSurfaceLeakRepair_P6_LowInformationRecovery"
@@ -87,6 +105,111 @@ BOUNDED_ORIGINAL_REPAIR_META_SCHEMA_VERSION: Final = (
 _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
     {"low_information", "limited_grounding"}
 )
+_NORMAL_REBUILD_REPAIRABLE_REASON_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"surface_grammar", "relation_skeleton", "visible_surface", "runtime_surface", "koto_splice"}
+)
+_NORMAL_REBUILD_NON_REPAIRABLE_REASON_FAMILIES: Final[frozenset[str]] = frozenset(
+    {
+        "safety",
+        "source_unavailable",
+        "composer_disabled",
+        "phase_not_complete",
+        "grounding_unsupported",
+        "reader_failure",
+        "template_echo_major",
+        "public_boundary_blocked",
+        "infrastructure_error",
+    }
+)
+_NORMAL_REBUILD_REASON_FAMILY_MARKERS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    (
+        "surface_grammar",
+        (
+            "surface_grammar",
+            "malformed_phrase",
+            "malformed_nominalization",
+            "candidate_blocked_surface_grammar",
+        ),
+    ),
+    (
+        "relation_skeleton",
+        (
+            "relation_skeleton",
+            "surface_relation_skeleton",
+            "candidate_blocked_relation_skeleton",
+        ),
+    ),
+    (
+        "visible_surface",
+        (
+            "visible_surface",
+            "visible_surface_acceptance_gate",
+            "rerender_surface",
+        ),
+    ),
+    (
+        "runtime_surface",
+        (
+            "runtime_surface",
+            "runtime_surface_pre_return_gate",
+            "rerender_shallow",
+        ),
+    ),
+    ("koto_splice", ("koto_splice",)),
+)
+_NORMAL_REBUILD_NON_REPAIRABLE_REASON_MARKERS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    ("safety", ("safety_blocked", "requires_block", "emergency")),
+    ("source_unavailable", ("source_unavailable", "composer_source_unavailable")),
+    ("composer_disabled", ("composer_disabled", "default_limited_composer_feature_disabled")),
+    ("phase_not_complete", ("phase_not_complete",)),
+    ("grounding_unsupported", ("grounding_unsupported",)),
+    ("reader_failure", ("reader_failure", "reader_unavailable")),
+    ("template_echo_major", ("template_echo_major",)),
+    ("public_boundary_blocked", ("public_boundary_blocked",)),
+    ("infrastructure_error", ("infrastructure_error", "timeout", "exception")),
+)
+
+_NORMAL_REBUILD_FORBIDDEN_SURFACE_FRAGMENTS: Final[tuple[str, ...]] = (
+    "同じ流れ",
+    "同じ場所",
+    "別々の向き",
+    "片方だけに減らさず",
+    "片方だけに寄らず",
+    "重なりを保っています",
+    "一方向には決まりきっていません",
+    "状態が一色ではありません",
+    "今見えている範囲は一つの要素だけではありません",
+    "一つの要素だけではありません",
+    "重なりとして並んで",
+    "網羅",
+    "要素",
+    "範囲",
+    "原因や結論までは決めず",
+    "誰かを良い悪いで決めず",
+    "Emlisから：",
+    "見えたこと：",
+)
+_NORMAL_REBUILD_GATE_RECOVERY_MATERIAL_FRAGMENTS: Final[tuple[str, ...]] = (
+    "今回の入力では",
+    "原因や結論までは",
+    "誰かを良い悪いで",
+    "gate_recovery",
+    "Gate Recovery",
+)
+_NORMAL_REBUILD_ANALYTIC_REGISTER_FRAGMENTS: Final[tuple[str, ...]] = (
+    "関係骨格",
+    "分類",
+    "診断",
+    "傾向",
+    "人格",
+    "処方",
+    "原因化",
+    "分析",
+)
+_NORMAL_REBUILD_ALLOWED_SCOPE_MARKERS: Final[tuple[str, ...]] = ("この記録では", "今回の記録では", "この入力では", "今の入力では")
+_NORMAL_REBUILD_MAX_SENTENCES: Final = 3
+_NORMAL_REBUILD_MIN_SENTENCES: Final = 2
+_NORMAL_REBUILD_ATTEMPT_LIMIT: Final = 1
 
 _CONTRACT_FLAG_KEYS: Final[tuple[str, ...]] = (
     "api_route_changed",
@@ -228,17 +351,18 @@ def build_public_candidate_after_gate_recovery(
     bounded_repaired_original_candidate: Any | None = None,
     low_information_candidate: Any | None = None,
     self_denial_safe_state_answer_candidate: Any | None = None,
+    normal_observation_rebuild_candidate: Any | None = None,
     composer_resolution: Mapping[str, Any] | None = None,
 ) -> PublicRecoveryCandidateResult:
-    """Select a public candidate after Gate Recovery without building text.
+    """Select or build a public candidate after Gate Recovery.
 
-    The function accepts already-built candidates from allowed generators.  It
-    never falls back to Gate Recovery material-surface text.  ``current_input``
-    is accepted to keep the P5/P6/P7 call contract stable, but no raw input or
-    public body is serialized into the returned meta.
+    The function accepts already-built candidates from allowed generators and,
+    for normal-observation surface failures, can build a body-free-meta rebuild
+    candidate.  It never falls back to Gate Recovery material-surface text, and
+    no raw input or public body is serialized into the returned meta.
     """
 
-    del safety_report  # P5/P6 keep safety material out of serialized meta.
+    safety_requires_block = bool(getattr(safety_report, "requires_block", False))
 
     default_plan = _sanitize_recovery_plan(
         _default_recovery_plan(
@@ -277,6 +401,25 @@ def build_public_candidate_after_gate_recovery(
             trace_id=trace_id,
         )
 
+    normal_rebuild_build_reasons: list[str] = []
+    if normal_observation_rebuild_candidate is None and _should_attempt_normal_observation_rebuild(
+        original_composer_candidate=original_composer_candidate,
+        original_display_decision=original_display_decision,
+        material_route=material_route,
+        recovery_plan=plan,
+        safety_triage_kind=safety_triage_kind,
+        safety_requires_block=safety_requires_block,
+    ):
+        normal_observation_rebuild_candidate, normal_rebuild_build_reasons = _build_normal_observation_rebuild_candidate(
+            current_input=current_input,
+            material_route=material_route,
+            original_composer_candidate=original_composer_candidate,
+            original_display_decision=original_display_decision,
+            recovery_plan=plan,
+            trace_id=trace_id,
+            recovery_context=recovery_context,
+        )
+
     original_source_kind = _candidate_source_kind(original_composer_candidate)
     if "self_denial_safe_state_answer" not in _clean(safety_triage_kind):
         self_denial_safe_state_answer_candidate = None
@@ -285,11 +428,19 @@ def build_public_candidate_after_gate_recovery(
         bounded_repaired_original_candidate=bounded_repaired_original_candidate,
         low_information_candidate=low_information_candidate,
         self_denial_safe_state_answer_candidate=self_denial_safe_state_answer_candidate,
+        normal_observation_rebuild_candidate=normal_observation_rebuild_candidate,
         original_source_kind=original_source_kind,
+        recovery_plan=plan,
     )
 
     blocked: list[str] = []
-    reasons: list[str] = list(_dedupe(list(bounded_original_build_reasons) + list(low_information_build_reasons)))
+    reasons: list[str] = list(
+        _dedupe(
+            list(bounded_original_build_reasons)
+            + list(low_information_build_reasons)
+            + list(normal_rebuild_build_reasons)
+        )
+    )
     last_boundary: dict[str, Any] | None = None
     if (
         original_composer_candidate is not None
@@ -359,6 +510,7 @@ def build_public_candidate_after_gate_recovery(
         "public_surface_role": PUBLIC_SURFACE_ROLE_BLOCKED_NO_PUBLIC_CANDIDATE,
         "public_surface_blockers": _dedupe(
             list(blocked)
+            + list(_as_mapping(plan).get("blockers_if_no_public_candidate") or ())
             + [
                 BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING,
                 BLOCKER_PUBLIC_CANDIDATE_SOURCE_NOT_OPEN,
@@ -723,6 +875,451 @@ def _build_low_information_recovery_candidate(
     )
 
 
+def _should_attempt_normal_observation_rebuild(
+    *,
+    original_composer_candidate: Any | None,
+    original_display_decision: Any,
+    material_route: Any,
+    recovery_plan: Mapping[str, Any],
+    safety_triage_kind: str,
+    safety_requires_block: bool = False,
+) -> bool:
+    if safety_requires_block:
+        return False
+    if original_composer_candidate is None:
+        return False
+    if _display_decision_passed(original_display_decision):
+        return False
+    if not _candidate_has_public_text(original_composer_candidate):
+        return False
+    if _clean_identifier(getattr(original_composer_candidate, "composer_source", ""), max_length=96) != "ai_generated":
+        return False
+    if bool(getattr(original_composer_candidate, "ai_generated", False)) is not True:
+        return False
+    if not _safety_triage_allows_normal_observation_rebuild(safety_triage_kind):
+        return False
+
+    source_kind = _candidate_source_kind(original_composer_candidate)
+    if source_kind in {
+        CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+        CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
+        CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+        "diagnostic_recovery_surface",
+    }:
+        return False
+    original_comment = _clean(getattr(original_composer_candidate, "comment_text", ""))
+    if _looks_like_gate_recovery_material_surface(original_composer_candidate, original_comment):
+        return False
+
+    route_meta = _material_route_meta(material_route)
+    input_summary = _as_mapping(recovery_plan.get("input_material_summary"))
+    material_quality = _clean_identifier(
+        input_summary.get("material_quality")
+        or route_meta.get("material_quality")
+        or getattr(material_route, "material_quality", ""),
+        max_length=96,
+    )
+    if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES:
+        return False
+
+    failed_summary = _as_mapping(recovery_plan.get("failed_gate_summary"))
+    reason_families = _dedupe(
+        failed_summary.get("reason_families")
+        or _normal_rebuild_reason_families(original_display_decision)
+    )
+    non_repairable_families = _dedupe(
+        failed_summary.get("non_repairable_reason_families")
+        or _normal_rebuild_non_repairable_reason_families(original_display_decision)
+    )
+    if not set(reason_families).intersection(_NORMAL_REBUILD_REPAIRABLE_REASON_FAMILIES):
+        return False
+    if set(non_repairable_families).intersection(_NORMAL_REBUILD_NON_REPAIRABLE_REASON_FAMILIES):
+        return False
+
+    target = _clean_identifier(recovery_plan.get("target_public_candidate_source"), max_length=96)
+    fallback_order = set(_dedupe(recovery_plan.get("fallback_public_candidate_source_order") or []))
+    return bool(
+        target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE in fallback_order
+    )
+
+
+def _build_normal_observation_rebuild_candidate(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    original_composer_candidate: Any | None,
+    original_display_decision: Any,
+    recovery_plan: Mapping[str, Any],
+    trace_id: str,
+    recovery_context: str,
+) -> tuple[ConversationComposerCandidate | None, list[str]]:
+    if original_composer_candidate is None:
+        return None, ["normal_observation_rebuild_original_candidate_missing"]
+    original_comment = _clean(getattr(original_composer_candidate, "comment_text", ""))
+    if not original_comment:
+        return None, ["normal_observation_rebuild_original_comment_text_missing"]
+    original_source_kind = _candidate_source_kind(original_composer_candidate)
+    if original_source_kind in {
+        CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+        CANDIDATE_SOURCE_KIND_DIAGNOSTIC_RECOVERY_SURFACE,
+        CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+        "diagnostic_recovery_surface",
+    }:
+        return None, ["normal_observation_rebuild_original_source_not_allowed"]
+    if _clean_identifier(getattr(original_composer_candidate, "composer_source", ""), max_length=96) != "ai_generated":
+        return None, ["normal_observation_rebuild_original_source_not_ai_generated"]
+    if bool(getattr(original_composer_candidate, "ai_generated", False)) is not True:
+        return None, ["normal_observation_rebuild_original_ai_generated_flag_missing"]
+    if _looks_like_gate_recovery_material_surface(original_composer_candidate, original_comment):
+        return None, ["normal_observation_rebuild_original_gate_recovery_material_surface"]
+
+    route_meta = dict(_material_route_meta(material_route))
+    input_summary = _as_mapping(recovery_plan.get("input_material_summary"))
+    failed_summary = _as_mapping(recovery_plan.get("failed_gate_summary"))
+    material_quality = _clean_identifier(
+        input_summary.get("material_quality")
+        or route_meta.get("material_quality")
+        or getattr(material_route, "material_quality", ""),
+        max_length=96,
+    )
+    if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES:
+        return None, ["normal_observation_rebuild_material_quality_not_normal"]
+
+    reason_families = _dedupe(
+        failed_summary.get("reason_families")
+        or _normal_rebuild_reason_families(original_display_decision)
+    )
+    non_repairable_families = _dedupe(
+        failed_summary.get("non_repairable_reason_families")
+        or _normal_rebuild_non_repairable_reason_families(original_display_decision)
+    )
+    if not set(reason_families).intersection(_NORMAL_REBUILD_REPAIRABLE_REASON_FAMILIES):
+        return None, ["normal_observation_rebuild_repairable_reason_family_missing"]
+    if set(non_repairable_families).intersection(_NORMAL_REBUILD_NON_REPAIRABLE_REASON_FAMILIES):
+        return None, ["normal_observation_rebuild_non_repairable_reason_present"]
+
+    surface_plan = _normal_observation_rebuild_surface_plan(
+        current_input=current_input,
+        material_route=material_route,
+        original_composer_candidate=original_composer_candidate,
+    )
+    comment_text = _normal_observation_rebuild_comment_from_plan(surface_plan)
+    precheck_blockers = _normal_rebuild_surface_precheck(comment_text)
+    if precheck_blockers:
+        return None, [f"normal_observation_rebuild_surface_precheck_failed:{blocker}" for blocker in precheck_blockers]
+
+    original_model = _clean_identifier(getattr(original_composer_candidate, "composer_model", ""), max_length=128)
+    original_generation_method = _clean_identifier(getattr(original_composer_candidate, "generation_method", ""), max_length=128)
+    original_composer_source = _clean_identifier(getattr(original_composer_candidate, "composer_source", ""), max_length=96)
+    original_meta = _body_free_mapping(_candidate_meta(original_composer_candidate))
+    original_meta_keys = tuple(sorted(str(key) for key in original_meta.keys()))
+    relation_ids = list(
+        _dedupe(
+            list(getattr(original_composer_candidate, "used_relation_ids", []) or [])
+            + list(input_summary.get("relation_material_ids") or [])
+            + list(route_meta.get("relation_material_ids") or [])
+            + list(route_meta.get("generic_relation_material_ids") or [])
+        )
+    )
+    claim_ids = list(_dedupe(getattr(original_composer_candidate, "used_claim_ids", []) or []))
+    visible_slots = list(
+        _dedupe(
+            input_summary.get("visible_material_slots")
+            or route_meta.get("visible_material_slots")
+            or getattr(material_route, "visible_material_slots", None)
+        )
+    )
+    lineage = {
+        "original_candidate_present": True,
+        "original_candidate_source": original_source_kind or original_composer_source or CANDIDATE_SOURCE_KIND_NONE,
+        "recovery_plan_used": True,
+        "diagnostic_surface_used": False,
+        "public_candidate_rebuilt_after_recovery": True,
+    }
+    meta = {
+        "schema_version": NORMAL_OBSERVATION_REBUILD_META_SCHEMA_VERSION,
+        "source_phase": NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE,
+        "recovery_context": _clean_identifier(recovery_context, max_length=96) or RECOVERY_CONTEXT_UNKNOWN,
+        "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+        "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+        "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+        "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+        "normal_observation_rebuild_connected": True,
+        "normal_observation_rebuild_ready": True,
+        "normal_observation_rebuild_applied": True,
+        "normal_observation_rebuild_attempt_count": 1,
+        "normal_observation_rebuild_attempt_limit": _NORMAL_REBUILD_ATTEMPT_LIMIT,
+        "two_stage_section_surface_plan": {
+            "required": False,
+            "source_phase": NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE,
+            "normal_observation_rebuild_plain_surface": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        "source_gate_failure_families": list(reason_families),
+        "non_repairable_reason_families": list(non_repairable_families),
+        "surface_repair_operations": list(surface_plan.get("surface_repair_operations") or []),
+        "surface_contract_summary": {
+            "scope_marker_required": True,
+            "scope_marker_family": "environment_state_output",
+            "sentence_count_max": _NORMAL_REBUILD_MAX_SENTENCES,
+            "forbidden_fragment_screened": True,
+            "relation_skeleton_screened": True,
+            "diagnostic_claim_screened": True,
+        },
+        "source_material_summary": {
+            "original_candidate_present": True,
+            "original_candidate_ai_generated": True,
+            "material_quality": material_quality,
+            "visible_slot_count": len(visible_slots),
+            "relation_id_count": len(relation_ids),
+            "claim_id_count": len(claim_ids),
+            "user_payload_serialized": False,
+            "candidate_payload_serialized": False,
+        },
+        "original_candidate_source_kind": original_source_kind,
+        "original_composer_source": original_composer_source,
+        "original_composer_model": original_model,
+        "original_generation_method": original_generation_method,
+        "original_candidate_status": _clean_identifier(getattr(original_composer_candidate, "status", ""), max_length=96),
+        "original_candidate_attempt_count": _safe_int(getattr(original_composer_candidate, "attempt_count", 0), 0),
+        "original_candidate_meta_keys": list(original_meta_keys),
+        "candidate_lineage": lineage,
+        "meaning_added": False,
+        "new_meaning_added": False,
+        "display_gate_relaxed": False,
+        "runtime_surface_gate_relaxed": False,
+        "visible_surface_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "safety_gate_relaxed": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "comment_text_body_included": False,
+        "original_comment_text_body_included": False,
+        "fixed_fallback_used": False,
+        "fixed_sentence_template_used": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+    }
+    if _contains_forbidden_text_key(meta):
+        return None, ["normal_observation_rebuild_meta_body_free_contract_failed"]
+
+    return (
+        ConversationComposerCandidate(
+            comment_text=comment_text,
+            composer_source="ai_generated",
+            status="generated",
+            ai_generated=True,
+            trace_id=trace_id or _clean_identifier(getattr(original_composer_candidate, "trace_id", ""), max_length=128),
+            attempt_count=1,
+            used_evidence_span_ids=list(getattr(original_composer_candidate, "used_evidence_span_ids", []) or []),
+            confidence=float(getattr(original_composer_candidate, "confidence", 0.0) or 0.0) or 0.76,
+            rejection_reasons=[],
+            request_schema_version=_clean_identifier(getattr(original_composer_candidate, "request_schema_version", ""), max_length=128) or "emlis.composer.request.v1",
+            response_schema_version=NORMAL_OBSERVATION_REBUILD_RESPONSE_SCHEMA_VERSION,
+            fixed_string_renderer_used=False,
+            composer_model=NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+            generation_method=NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+            coverage_scope="current_input_normal_observation_rebuild",
+            generation_scope="current_input_only",
+            composer_meta=meta,
+            used_claim_ids=claim_ids,
+            used_relation_ids=relation_ids,
+        ),
+        ["normal_observation_rebuild_candidate_built"],
+    )
+
+
+def _normal_observation_rebuild_surface_plan(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    original_composer_candidate: Any,
+) -> dict[str, Any]:
+    route_meta = _material_route_meta(material_route)
+    current = _as_mapping(current_input)
+    original_comment = _clean(getattr(original_composer_candidate, "comment_text", ""))
+    memo_like = _clean(current.get("memo") or current.get("memo_text") or current.get("comment") or "")
+    action_like = _clean(current.get("memo_action") or current.get("action") or current.get("next_action") or "")
+    categories = _normal_rebuild_safe_string_items(current.get("category") or current.get("categories"))
+    emotions = _normal_rebuild_safe_string_items(current.get("emotions") or current.get("emotion"))
+    slots = _dedupe(route_meta.get("visible_material_slots") or getattr(material_route, "visible_material_slots", None) or [])
+    relation_ids = _dedupe(
+        route_meta.get("relation_material_ids")
+        or route_meta.get("generic_relation_material_ids")
+        or getattr(material_route, "generic_relation_material_ids", None)
+        or []
+    )
+    return {
+        "topic_phrase": _normal_rebuild_topic_phrase(
+            memo_like=memo_like,
+            original_comment=original_comment,
+            categories=categories,
+            relation_ids=relation_ids,
+        ),
+        "feeling_phrase": _normal_rebuild_feeling_phrase(
+            memo_like=memo_like,
+            original_comment=original_comment,
+            emotions=emotions,
+        ),
+        "follow_phrase": _normal_rebuild_follow_phrase(
+            memo_action=action_like,
+            memo_like=memo_like,
+            slots=slots,
+        ),
+        "surface_repair_operations": _dedupe(
+            [
+                "drop_relation_skeleton_markers",
+                "replace_analytic_register",
+                "normalize_scope_marker",
+                "shorten_to_state_answer",
+                "remove_gate_recovery_fragments",
+                "rebuild_human_follow_sentence",
+            ]
+        ),
+    }
+
+
+def _normal_observation_rebuild_comment_from_plan(surface_plan: Mapping[str, Any]) -> str:
+    topic = _clean(surface_plan.get("topic_phrase")) or "この出来事"
+    feeling = _clean(surface_plan.get("feeling_phrase")) or "気持ちの動き"
+    follow = _clean(surface_plan.get("follow_phrase")) or "その中で、まだ言葉にしようとしている途中の重さもEmlisは受け取りました。"
+    first = f"この記録では、{topic}について、{feeling}がまだ落ち着ききっていない状態として見えます。"
+    if not follow.endswith(("。", "！", "？", "!", "?")):
+        follow = f"{follow}。"
+    return f"{first}{follow}"
+
+
+def _normal_rebuild_surface_precheck(comment: str) -> list[str]:
+    body = _clean(comment)
+    blockers: list[str] = []
+    if not body:
+        blockers.append("empty_comment")
+        return blockers
+    sentence_count = len([part for part in re.split(r"(?<=[。！？!?])\s*", body) if _clean(part)])
+    if sentence_count < _NORMAL_REBUILD_MIN_SENTENCES:
+        blockers.append("sentence_count_too_low")
+    if sentence_count > _NORMAL_REBUILD_MAX_SENTENCES:
+        blockers.append("sentence_count_too_high")
+    if not any(marker in body for marker in _NORMAL_REBUILD_ALLOWED_SCOPE_MARKERS):
+        blockers.append("scope_marker_missing")
+    if _relation_skeleton_forbidden_fragment_present(body):
+        blockers.append("relation_skeleton_forbidden_fragment_present")
+    if any(fragment in body for fragment in _NORMAL_REBUILD_GATE_RECOVERY_MATERIAL_FRAGMENTS):
+        blockers.append("gate_recovery_material_fragment_present")
+    if any(fragment in body for fragment in _NORMAL_REBUILD_ANALYTIC_REGISTER_FRAGMENTS):
+        blockers.append("analytic_register_fragment_present")
+    if re.search(r"(診断|人格|原因|処方|してください|するべき|すべき)", body):
+        blockers.append("diagnostic_or_instruction_claim_present")
+    return list(_dedupe(blockers))
+
+
+def _relation_skeleton_forbidden_fragment_present(comment: str) -> bool:
+    body = _clean(comment)
+    return any(fragment in body for fragment in _NORMAL_REBUILD_FORBIDDEN_SURFACE_FRAGMENTS)
+
+
+def _safety_triage_allows_normal_observation_rebuild(safety_triage_kind: str) -> bool:
+    kind = _clean_identifier(safety_triage_kind, max_length=128).lower()
+    if not kind:
+        return False
+    blocked_markers = ("requires_block", "safety_blocked", "emergency", "self_harm", "medical", "legal")
+    if any(marker in kind for marker in blocked_markers):
+        return False
+    return "safe" in kind or "observation" in kind
+
+
+def _normal_rebuild_topic_phrase(
+    *,
+    memo_like: str,
+    original_comment: str,
+    categories: Sequence[str],
+    relation_ids: Sequence[str],
+) -> str:
+    source = f"{memo_like}\n{original_comment}\n{' '.join(categories)}\n{' '.join(relation_ids)}"
+    if any(marker in source for marker in ("仕事", "職場", "会社", "work")) and any(marker in source for marker in ("人間関係", "相手", "関係", "relationship")):
+        return "仕事や人とのやり取り"
+    if any(marker in source for marker in ("仕事", "職場", "会社", "work")):
+        return "仕事の話"
+    if any(marker in source for marker in ("家族", "親", "子", "family")):
+        return "家族とのやり取り"
+    if any(marker in source for marker in ("友", "恋人", "パートナー", "関係", "relationship")):
+        return "人とのやり取り"
+    if categories:
+        return _normal_rebuild_join_terms(categories[:2]) + "のこと"
+    return "この出来事"
+
+
+def _normal_rebuild_feeling_phrase(
+    *,
+    memo_like: str,
+    original_comment: str,
+    emotions: Sequence[str],
+) -> str:
+    source = f"{memo_like}\n{original_comment}\n{' '.join(emotions)}"
+    if "納得" in source and any(marker in source for marker in ("引っかかり", "違和感", "ひっかかり")):
+        return "納得したい気持ちと引っかかり"
+    if "迷" in source and any(marker in source for marker in ("不安", "違和感")):
+        return "迷いと不安"
+    if len(emotions) >= 2:
+        return _normal_rebuild_join_terms(emotions[:2])
+    if len(emotions) == 1:
+        return f"{emotions[0]}の動き"
+    if "不安" in source:
+        return "不安の動き"
+    if any(marker in source for marker in ("怒", "腹", "嫌")):
+        return "強い反応"
+    return "気持ちの動き"
+
+
+def _normal_rebuild_follow_phrase(
+    *,
+    memo_action: str,
+    memo_like: str,
+    slots: Sequence[str],
+) -> str:
+    source = f"{memo_action}\n{memo_like}\n{' '.join(slots)}"
+    if "事実" in source and "返事" in source:
+        return "返事を急がず、事実を分けて見ようとしているところもEmlisは受け取りました。"
+    if any(marker in source for marker in ("書き出", "メモ", "記録")):
+        return "一度言葉に分けて見ようとしているところもEmlisは受け取りました。"
+    if any(marker in source for marker in ("休", "寝", "落ち着")):
+        return "すぐに結論へ寄せず、落ち着きを取り戻そうとしているところもEmlisは受け取りました。"
+    if any(marker in source for marker in ("行動", "action", "次")):
+        return "次にどう動くかを探しているところもEmlisは受け取りました。"
+    return "その中で、まだ言葉にしようとしている途中の重さもEmlisは受け取りました。"
+
+
+def _normal_rebuild_safe_string_items(value: Any) -> tuple[str, ...]:
+    items: list[str] = []
+    for item in _as_sequence(value):
+        text = re.sub(r"[\r\n\t]+", " ", _clean(item))
+        text = re.sub(r"[。！？!?].*$", "", text).strip()
+        if not text:
+            continue
+        if any(fragment in text for fragment in _NORMAL_REBUILD_FORBIDDEN_SURFACE_FRAGMENTS):
+            continue
+        if text in _FORBIDDEN_TEXT_PAYLOAD_KEYS:
+            continue
+        items.append(text[:24])
+    return _dedupe(items)
+
+
+def _normal_rebuild_join_terms(values: Sequence[str]) -> str:
+    terms = [term for term in values if term]
+    if not terms:
+        return ""
+    if len(terms) == 1:
+        return terms[0]
+    if len(terms) == 2:
+        return f"{terms[0]}や{terms[1]}"
+    return f"{terms[0]}や{terms[1]}、{terms[2]}"
+
+
 def _bounded_original_repair_reasons(original_display_decision: Any) -> tuple[str, ...]:
     reasons = list(getattr(original_display_decision, "rejection_reasons", []) or [])
     status = _clean_identifier(getattr(original_display_decision, "observation_status", ""), max_length=96)
@@ -772,7 +1369,9 @@ def _candidate_options(
     bounded_repaired_original_candidate: Any | None,
     low_information_candidate: Any | None,
     self_denial_safe_state_answer_candidate: Any | None,
+    normal_observation_rebuild_candidate: Any | None,
     original_source_kind: str,
+    recovery_plan: Mapping[str, Any],
 ) -> tuple[tuple[str, str, Any | None], ...]:
     repaired_original = bounded_repaired_original_candidate
     if repaired_original is None and original_source_kind in {
@@ -780,23 +1379,36 @@ def _candidate_options(
         CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
     }:
         repaired_original = original_composer_candidate
-    return (
-        (
+
+    input_summary = _as_mapping(recovery_plan.get("input_material_summary"))
+    material_quality = _clean_identifier(input_summary.get("material_quality"), max_length=96)
+    if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES:
+        normal_observation_rebuild_candidate = None
+
+    option_map: dict[str, tuple[str, str, Any | None]] = {
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE: (
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            _SELECTION_KIND_NORMAL_OBSERVATION_REBUILD,
+            normal_observation_rebuild_candidate,
+        ),
+        CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE: (
             CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
             _SELECTION_KIND_BOUND_REPAIRED_ORIGINAL,
             repaired_original,
         ),
-        (
+        CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER: (
             CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
             _SELECTION_KIND_LOW_INFORMATION,
             low_information_candidate,
         ),
-        (
+        CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER: (
             CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
             _SELECTION_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
             self_denial_safe_state_answer_candidate,
         ),
-    )
+    }
+    ordered_sources = _ordered_public_candidate_sources(recovery_plan)
+    return tuple(option_map[source] for source in ordered_sources if source in option_map)
 
 
 def _candidate_with_public_lineage(
@@ -862,6 +1474,8 @@ def _candidate_source_kind(candidate: Any | None) -> str:
         return CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
     if "self_denial_safe_state_answer" in model or "self_denial_safe_state_answer" in generation_method or "self_denial_safe_state_answer" in composer_source:
         return CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
+    if "normal_observation_rebuild" in model or "normal_observation_rebuild" in generation_method or "normal_observation_rebuild" in composer_source:
+        return CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
     if "bounded_repaired_original" in model or "bounded_repair" in generation_method:
         return CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
     if "complete_self_repair" in model or "complete_self_repair" in generation_method:
@@ -904,15 +1518,24 @@ def _default_recovery_plan(
         _first(("material_quality", "eligibility_status", "status"), route_meta),
         max_length=96,
     )
+    repairable_reason_families = _normal_rebuild_reason_families(original_display_decision)
+    non_repairable_reason_families = _normal_rebuild_non_repairable_reason_families(original_display_decision)
     target = (
         CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
-        if material_quality in {"low_information", "limited_grounding"}
+        if material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
         else CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER
         if "self_denial_safe_state_answer" in _clean(safety_triage_kind)
-        else CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
-        if original_candidate_present
+        else CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        if (
+            original_candidate_present
+            and repairable_reason_families
+            and not non_repairable_reason_families
+        )
         else CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
     )
+    blockers_if_no_public_candidate = [BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING]
+    if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+        blockers_if_no_public_candidate.insert(0, BLOCKER_NORMAL_OBSERVATION_REBUILD_CANDIDATE_MISSING)
     return {
         "schema_version": RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION,
         "source_phase": PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE,
@@ -928,18 +1551,21 @@ def _default_recovery_plan(
         "failed_gate_summary": {
             "display_status_before_recovery": _clean_identifier(getattr(original_display_decision, "observation_status", ""), max_length=96),
             "rejection_reasons": _dedupe(getattr(original_display_decision, "rejection_reasons", []) or []),
+            "reason_families": repairable_reason_families,
+            "non_repairable_reason_families": non_repairable_reason_families,
             "safety_triage_kind": _clean_identifier(safety_triage_kind, max_length=96),
         },
         "target_public_candidate_source": target,
         "fallback_public_candidate_source_order": [
-            CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
-            CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
             CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
+            CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
         ],
         "diagnostic_surface_allowed": True,
         "diagnostic_surface_public_display_allowed": False,
         "public_candidate_required": True,
-        "blockers_if_no_public_candidate": [BLOCKER_BOUNDED_RECOVERY_PUBLIC_CANDIDATE_MISSING],
+        "blockers_if_no_public_candidate": blockers_if_no_public_candidate,
     }
 
 
@@ -975,7 +1601,13 @@ def _merge_recovery_plan_defaults(plan: Mapping[str, Any], default_plan: Mapping
 
     failed_summary = dict(_as_mapping(merged.get("failed_gate_summary")))
     default_failed_summary = _as_mapping(defaults.get("failed_gate_summary"))
-    for key in ("display_status_before_recovery", "rejection_reasons", "safety_triage_kind"):
+    for key in (
+        "display_status_before_recovery",
+        "rejection_reasons",
+        "reason_families",
+        "non_repairable_reason_families",
+        "safety_triage_kind",
+    ):
         if not failed_summary.get(key):
             value = default_failed_summary.get(key)
             failed_summary[key] = list(value) if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)) else value
@@ -1010,6 +1642,10 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
         "failed_gate_summary": {
             "display_status_before_recovery": _clean_identifier(failed_summary.get("display_status_before_recovery"), max_length=96),
             "rejection_reasons": _dedupe(failed_summary.get("rejection_reasons") or []),
+            "reason_families": _dedupe(failed_summary.get("reason_families") or []),
+            "non_repairable_reason_families": _dedupe(
+                failed_summary.get("non_repairable_reason_families") or []
+            ),
             "safety_triage_kind": _clean_identifier(failed_summary.get("safety_triage_kind"), max_length=96),
         },
         "target_public_candidate_source": _clean_identifier(source.get("target_public_candidate_source"), max_length=96),
@@ -1022,6 +1658,56 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
         ),
     }
 
+
+
+def _normal_rebuild_failure_family_present(original_display_decision: Any) -> bool:
+    return bool(
+        _normal_rebuild_reason_families(original_display_decision)
+        and not _normal_rebuild_non_repairable_reason_families(original_display_decision)
+    )
+
+
+def _normal_rebuild_reason_families(original_display_decision: Any) -> tuple[str, ...]:
+    return _normal_rebuild_reason_families_from_reasons(
+        getattr(original_display_decision, "rejection_reasons", []) or []
+    )
+
+
+def _normal_rebuild_non_repairable_reason_families(original_display_decision: Any) -> tuple[str, ...]:
+    return _normal_rebuild_reason_families_from_reasons(
+        getattr(original_display_decision, "rejection_reasons", []) or [],
+        marker_map=_NORMAL_REBUILD_NON_REPAIRABLE_REASON_MARKERS,
+        allowed_families=_NORMAL_REBUILD_NON_REPAIRABLE_REASON_FAMILIES,
+    )
+
+
+def _normal_rebuild_reason_families_from_reasons(
+    reasons: Sequence[Any] | Any | None,
+    *,
+    marker_map: Sequence[tuple[str, Sequence[str]]] = _NORMAL_REBUILD_REASON_FAMILY_MARKERS,
+    allowed_families: frozenset[str] = _NORMAL_REBUILD_REPAIRABLE_REASON_FAMILIES,
+) -> tuple[str, ...]:
+    families: list[str] = []
+    normalized_reasons = [str(reason or "").strip().lower() for reason in _as_sequence(reasons)]
+    for family, markers in marker_map:
+        if family not in allowed_families:
+            continue
+        if any(marker in reason for reason in normalized_reasons for marker in markers):
+            families.append(family)
+    return _dedupe(families)
+
+
+def _ordered_public_candidate_sources(recovery_plan: Mapping[str, Any]) -> tuple[str, ...]:
+    target = _clean_identifier(recovery_plan.get("target_public_candidate_source"), max_length=96)
+    fallback_order = list(_dedupe(recovery_plan.get("fallback_public_candidate_source_order") or []))
+    legacy_order = [
+        CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+        CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+        CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
+    ]
+    if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+        legacy_order.insert(0, CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE)
+    return _dedupe([target, *fallback_order, *legacy_order])
 
 def _material_route_meta(material_route: Any) -> Mapping[str, Any]:
     if isinstance(material_route, Mapping):
@@ -1146,6 +1832,11 @@ __all__ = [
     "LOW_INFORMATION_RECOVERY_COMPOSER_MODEL",
     "LOW_INFORMATION_RECOVERY_GENERATION_METHOD",
     "LOW_INFORMATION_RECOVERY_SOURCE_PHASE",
+    "NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL",
+    "NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD",
+    "NORMAL_OBSERVATION_REBUILD_META_SCHEMA_VERSION",
+    "NORMAL_OBSERVATION_REBUILD_RESPONSE_SCHEMA_VERSION",
+    "NORMAL_OBSERVATION_REBUILD_SOURCE_PHASE",
     "BOUNDED_ORIGINAL_REPAIR_COMPOSER_MODEL",
     "BOUNDED_ORIGINAL_REPAIR_GENERATION_METHOD",
     "BOUNDED_ORIGINAL_REPAIR_META_SCHEMA_VERSION",

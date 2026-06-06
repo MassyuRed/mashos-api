@@ -21,6 +21,7 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
@@ -213,6 +214,78 @@ def test_p5_allows_explicitly_rebuilt_original_candidate() -> None:
     assert result.source_kind == CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
     assert result.candidate.comment_text == original.comment_text
     _assert_result_meta(result.as_meta())
+
+
+def test_p8_p5_selects_normal_observation_rebuild_candidate_before_bounded_original() -> None:
+    normal_body = (
+        "この記録では、予定変更のあとに残った不安が、まだ置き場を探している状態として見えます。"
+        "その中で、急いで意味を決めずに扱いたい感じも一緒にEmlisは受け取りました。"
+    )
+    normal_candidate = ConversationComposerCandidate(
+        comment_text=normal_body,
+        composer_source="ai_generated",
+        status="generated",
+        composer_model="normal_observation_rebuild_candidate_v1",
+        generation_method="normal_observation_rebuild_after_surface_gate_failure",
+        composer_meta={
+            "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+            "normal_observation_rebuild_attempted": True,
+            "normal_observation_rebuild_applied": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+            "candidate_lineage": {
+                "original_candidate_present": True,
+                "original_candidate_source": "complete_initial_composer",
+                "recovery_plan_used": True,
+                "diagnostic_surface_used": False,
+                "public_candidate_rebuilt_after_recovery": True,
+            },
+        },
+    )
+    bounded_candidate = ConversationComposerCandidate(
+        comment_text="Emlisです。ここでは、予定変更に対して気持ちが追いつかないまま残っているところが見えます。",
+        composer_source="limited_composer",
+        status="generated",
+        composer_model="bounded_repaired_original_candidate_v1",
+        generation_method="bounded_repair_after_gate_recovery",
+        composer_meta={
+            "candidate_source_kind": CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+            "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+    )
+
+    result = _result(
+        recovery_plan={
+            "target_public_candidate_source": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            "fallback_public_candidate_source_order": [
+                CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+            ],
+        },
+        normal_observation_rebuild_candidate=normal_candidate,
+        bounded_repaired_original_candidate=bounded_candidate,
+    )
+
+    assert result.candidate is not None
+    assert result.public_display_allowed is True
+    assert result.source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert result.selection_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert result.candidate.comment_text == normal_body
+    assert result.candidate.composer_meta["candidate_source_kind"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert result.candidate.composer_meta["candidate_lineage"]["diagnostic_surface_used"] is False
+    assert result.candidate.composer_meta["candidate_lineage"]["public_candidate_rebuilt_after_recovery"] is True
+    assert result.blocked_reasons == ()
+    meta = result.as_meta()
+    assert meta["source_kind"] == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert meta["gate_recovery_public_boundary_decision"]["public_display_allowed"] is True
+    assert meta["gate_recovery_public_boundary_decision"]["blockers"] == []
+    _assert_result_meta(meta)
+    _assert_meta_body_free(result.candidate.composer_meta)
 
 
 def test_p5_allows_explicit_self_denial_safe_state_answer_candidate_only_with_triage() -> None:

@@ -22,6 +22,7 @@ from emlis_ai_gate_recovery_public_candidate_builder import (
 )
 from emlis_ai_gate_recovery_public_constants import (
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
 )
 from emlis_ai_types import (
@@ -270,6 +271,75 @@ def test_p7_builder_does_not_repair_gate_recovery_material_surface_as_original()
     assert meta["candidate_available"] is False
     assert meta["candidate_lineage"]["diagnostic_surface_used"] is True
     _assert_meta_body_free(meta)
+
+
+def test_p8_surface_grammar_failure_prefers_normal_rebuild_over_bounded_original_repair() -> None:
+    result = build_public_candidate_after_gate_recovery(
+        current_input=dict(_CURRENT_INPUT),
+        material_route=_material_route(),
+        original_composer_candidate=ConversationComposerCandidate(
+            comment_text=(
+                "この入力では、仕事のことが同じ流れの中で残っています。"
+                "片方だけに減らさず、状態が一色ではありません。"
+            ),
+            composer_source="ai_generated",
+            status="generated",
+            ai_generated=True,
+            trace_id="p8-normal-rebuild-original",
+            attempt_count=1,
+            confidence=0.82,
+            response_schema_version="cocolon.emlis.complete_composer.response.v1",
+            fixed_string_renderer_used=False,
+            composer_model="complete_initial_composer_v1",
+            generation_method="complete_initial_composer",
+            coverage_scope="current_input_only",
+            generation_scope="current_input_only",
+            composer_meta={
+                "source_phase": "complete_initial_composer",
+                "candidate_source_kind": "complete_initial_composer",
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+            used_relation_ids=["work_material"],
+        ),
+        original_display_decision=DisplayDecision(
+            observation_status="rejected",
+            comment_text="",
+            rejection_reasons=[
+                "visible_surface_acceptance_gate_failed",
+                "surface_relation_skeleton_major",
+                "surface_grammar_warning",
+            ],
+            trace_id="p8-normal-rebuild-over-bounded-original",
+        ),
+        safety_triage_kind="safe_observation",
+        safety_report=SafetyBoundaryReport(requires_block=False),
+        recovery_plan={},
+        trace_id="p8-normal-rebuild-over-bounded-original",
+    )
+
+    assert result.candidate is not None
+    assert result.public_display_allowed is True
+    assert result.source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert result.selection_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert result.source_kind != CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
+    assert result.blocked_reasons == ()
+    comment_text = str(result.candidate.comment_text or "")
+    assert "同じ流れ" not in comment_text
+    assert "片方だけに減らさず" not in comment_text
+    assert "状態が一色ではありません" not in comment_text
+    assert "今回の入力では" not in comment_text
+    assert "原因や結論までは" not in comment_text
+    assert "誰かを良い悪い" not in comment_text
+    assert _CURRENT_INPUT["memo"] not in comment_text
+    meta = result.as_meta()
+    assert meta["recovery_plan"]["target_public_candidate_source"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert meta["gate_recovery_public_boundary_decision"]["public_display_allowed"] is True
+    _assert_meta_body_free(meta)
+    _assert_meta_body_free(result.candidate.composer_meta)
 
 
 def test_p7_recover_emlis_gate_failure_promotes_bounded_original_candidate_through_existing_gates() -> None:

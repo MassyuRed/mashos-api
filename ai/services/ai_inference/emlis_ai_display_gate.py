@@ -372,6 +372,8 @@ def _runtime_surface_gate_meta(runtime_surface_pre_return_gate_report: Any = Non
         "blocked": bool(data.get("blocked", not bool(data.get("passed")))),
         "action": action,
         "rerender_recommended": bool(data.get("rerender_recommended") or action == ACTION_RERENDER_SHALLOW_V2),
+        "rerender_attempted": bool(data.get("rerender_attempted")),
+        "rerender_attempt_limit": _safe_int(data.get("rerender_attempt_limit")),
         "reroute_low_information_recommended": bool(data.get("reroute_low_information_recommended") or action == ACTION_REROUTE_LOW_INFORMATION),
         "rejection_reasons": reasons,
         "surface_signature_ready": bool(data.get("surface_signature_ready") or data.get("surface_signature_id")),
@@ -516,6 +518,8 @@ def _visible_surface_acceptance_gate_meta(visible_surface_acceptance_gate_report
         "classification": str(data.get("classification") or ""),
         "action": action,
         "rerender_recommended": bool(data.get("rerender_recommended") or action == VISIBLE_SURFACE_ACTION_RERENDER_SURFACE),
+        "rerender_attempted": bool(data.get("rerender_attempted")),
+        "rerender_attempt_limit": _safe_int(data.get("rerender_attempt_limit")),
         "reroute_low_information_recommended": bool(
             data.get("reroute_low_information_recommended") or action == VISIBLE_SURFACE_ACTION_REROUTE_LOW_INFORMATION
         ),

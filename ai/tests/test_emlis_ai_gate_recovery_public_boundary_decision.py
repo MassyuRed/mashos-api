@@ -19,12 +19,14 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_COMPOSER_DISABLED_RECOVERY_SURFACE_PUBLIC_SUBSTITUTION,
     BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC,
     BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
+    BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE,
     BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     BLOCKER_RECOVERY_SURFACE_SOURCE_LINEAGE_MISSING,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_COMPOSER,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_NONE,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
     GATE_RECOVERY_PUBLIC_BOUNDARY_SCHEMA_VERSION,
@@ -191,3 +193,100 @@ def test_p2_allows_bounded_repaired_original_when_rebuilt_lineage_exists() -> No
     assert decision["blockers"] == []
     assert decision["candidate_lineage"]["public_candidate_rebuilt_after_recovery"] is True
     _assert_meta_only(decision)
+
+
+def test_normal_observation_rebuild_candidate_allowed_when_body_free_public_lineage() -> None:
+    decision = decide_gate_recovery_public_boundary(
+        candidate=_Candidate(
+            composer_model="normal_observation_rebuild_candidate_v1",
+            generation_method="normal_observation_rebuild_after_surface_gate_failure",
+            composer_meta={
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "candidate_lineage": {
+                    "original_candidate_present": True,
+                    "original_candidate_source": "limited_composer",
+                    "recovery_plan_used": True,
+                    "diagnostic_surface_used": False,
+                    "public_candidate_rebuilt_after_recovery": True,
+                },
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+        )
+    )
+
+    assert decision["public_display_allowed"] is True
+    assert decision["blockers"] == []
+    assert decision["candidate_source_kind"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert decision["public_surface_role"] == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+    assert decision["candidate_lineage"] == {
+        "original_candidate_present": True,
+        "original_candidate_source": "limited_composer",
+        "recovery_plan_used": True,
+        "diagnostic_surface_used": False,
+        "public_candidate_rebuilt_after_recovery": True,
+    }
+    _assert_meta_only(decision)
+
+
+def test_normal_observation_rebuild_candidate_blocked_when_diagnostic_role() -> None:
+    decision = decide_gate_recovery_public_boundary(
+        candidate=_Candidate(
+            composer_model="normal_observation_rebuild_candidate_v1",
+            generation_method="normal_observation_rebuild_after_surface_gate_failure",
+            composer_meta={
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
+                "candidate_lineage": {
+                    "original_candidate_present": True,
+                    "original_candidate_source": "limited_composer",
+                    "recovery_plan_used": True,
+                    "diagnostic_surface_used": True,
+                    "public_candidate_rebuilt_after_recovery": True,
+                },
+            },
+        )
+    )
+
+    assert decision["public_display_allowed"] is False
+    assert BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC in decision["blockers"]
+    assert decision["candidate_source_kind"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert decision["public_surface_role"] == PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
+    assert decision["candidate_lineage"]["diagnostic_surface_used"] is True
+    _assert_meta_only(decision)
+
+
+def test_normal_observation_rebuild_candidate_blocked_when_forbidden_payload_key_in_meta() -> None:
+    decision = decide_gate_recovery_public_boundary(
+        candidate=_Candidate(
+            composer_model="normal_observation_rebuild_candidate_v1",
+            generation_method="normal_observation_rebuild_after_surface_gate_failure",
+            composer_meta={
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "candidate_lineage": {
+                    "original_candidate_present": True,
+                    "original_candidate_source": "limited_composer",
+                    "recovery_plan_used": True,
+                    "diagnostic_surface_used": False,
+                    "public_candidate_rebuilt_after_recovery": True,
+                },
+                "comment_text": "この本文はboundary metaに入れてはいけない。",
+            },
+        )
+    )
+
+    assert decision["public_display_allowed"] is False
+    assert BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE in decision["blockers"]
+    assert decision["candidate_source_kind"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert decision["public_surface_role"] == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+    assert decision["candidate_lineage"]["public_candidate_rebuilt_after_recovery"] is True
+    _assert_meta_only(decision)
+

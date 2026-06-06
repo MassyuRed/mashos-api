@@ -10,6 +10,7 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
     POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
@@ -18,6 +19,8 @@ from emlis_ai_gate_recovery_public_constants import (
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
 )
 from emlis_ai_product_quality_measurement_event import (
+    NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+    NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
     PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION,
     assert_product_quality_measurement_event_meta_only,
     normalize_product_quality_event,
@@ -90,6 +93,74 @@ def test_p8_product_quality_event_records_allowed_surface_origin_without_text() 
     assert row["surface_origin_candidate_source_kind"] == CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE
     dumped = json.dumps({"event": event, "row": row}, ensure_ascii=False, sort_keys=True)
     assert VISIBLE_COMMENT not in dumped
+    assert '"comment_text":' not in dumped
+    assert '"raw_input":' not in dumped
+    assert_product_quality_measurement_event_meta_only(event)
+
+
+def test_p8_product_quality_event_records_normal_observation_rebuild_as_allowed_surface_origin_without_text() -> None:
+    event = normalize_product_quality_event(
+        run_id="pq_p8_event",
+        row_id="row_normal_rebuild",
+        source_type="regression_fixture",
+        source_case_id="normal_observation_rebuild_surface_origin",
+        family="relationship_boundary",
+        comment_text=VISIBLE_COMMENT,
+        public_meta=_passed_public_meta(),
+        internal_meta={
+            "observation_status": "passed",
+            "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+            "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+            "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+            "normal_observation_rebuild_attempted": True,
+            "normal_observation_rebuild_applied": True,
+            "reply_service_public_boundary": {
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "public_display_allowed": True,
+                "normal_observation_rebuild_attempted": True,
+                "normal_observation_rebuild_applied": True,
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+        },
+        machine_metrics={
+            "binding_required_count": 1,
+            "binding_supported_count": 1,
+            "reason_required_count": 1,
+            "reason_covered_count": 1,
+            "template_major_count": 0,
+            "safety_major_count": 0,
+        },
+    )
+
+    origin = event["surface_origin"]
+    assert origin["schema_version"] == PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION
+    assert origin["candidate_source_kind"] == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert origin["composer_model"] == NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL
+    assert origin["generation_method"] == NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD
+    assert origin["public_surface_role"] == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+    assert origin["public_display_allowed_by_boundary"] is True
+    assert origin["gate_recovery_material_surface_detected"] is False
+    assert origin["post_final_gate_recovery_material_surface_detected"] is False
+    assert origin["internal_policy_sentence_leak_risk"] is False
+    assert origin["template_meta_false_negative_risk"] is False
+    assert origin["normal_observation_rebuild_attempted"] is True
+    assert origin["normal_observation_rebuild_applied"] is True
+    assert origin["raw_input_included"] is False
+    assert origin["comment_text_body_included"] is False
+    assert event["gate_results"]["normal_observation_rebuild_attempted"] is True
+    assert event["gate_results"]["normal_observation_rebuild_applied"] is True
+    assert event["blockers"] == []
+
+    row = product_quality_event_to_scorecard_row(event)
+    assert row["surface_origin_candidate_source_kind"] == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert row["surface_origin_normal_observation_rebuild_attempted"] is True
+    assert row["surface_origin_normal_observation_rebuild_applied"] is True
+    dumped = json.dumps({"event": event, "row": row}, ensure_ascii=False, sort_keys=True)
+    assert VISIBLE_COMMENT not in dumped
+    assert SECRET_INPUT not in dumped
     assert '"comment_text":' not in dumped
     assert '"raw_input":' not in dumped
     assert_product_quality_measurement_event_meta_only(event)
@@ -223,6 +294,89 @@ def test_p8_runner_summarizes_surface_origin_and_keeps_release_closed() -> None:
     assert BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK in run["blockers"]
     assert BLOCKER_GATE_RECOVERY_DIAGNOSTIC_SURFACE_PROMOTED_TO_PUBLIC in run["blockers"]
     assert BLOCKER_GATE_RECOVERY_TEMPLATE_META_FALSE_NEGATIVE in run["blockers"]
+    assert run["product_gate_ready"] is False
+    assert run["public_release_applied"] is False
+
+    dumped = dump_product_quality_measurement_run(run)
+    assert VISIBLE_COMMENT not in dumped
+    assert SECRET_INPUT not in dumped
+    assert '"comment_text":' not in dumped
+    assert '"raw_input":' not in dumped
+    assert_product_quality_measurement_run_meta_only(run)
+
+
+def test_p8_runner_counts_normal_observation_rebuild_as_allowed_public_origin() -> None:
+    def renderer(**_: object) -> ReplyEnvelope:
+        return ReplyEnvelope(
+            comment_text=VISIBLE_COMMENT,
+            meta={
+                "version": "emlis_ai_v3",
+                "kernel_version": "multi_perspective_observation.v1",
+                "tier": "free",
+                "observation_status": "passed",
+                "runtime_surface_pre_return_gate": {"passed": True, "action": "allow"},
+                "visible_surface_acceptance_gate": {"classification": "pass", "action": "allow"},
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+                "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+                "normal_observation_rebuild_attempted": True,
+                "normal_observation_rebuild_applied": True,
+                "surface_origin": {
+                    "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                    "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+                    "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+                    "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                    "public_display_allowed_by_boundary": True,
+                    "gate_recovery_material_surface_detected": False,
+                    "post_final_gate_recovery_material_surface_detected": False,
+                    "normal_observation_rebuild_attempted": True,
+                    "normal_observation_rebuild_applied": True,
+                    "raw_input_included": False,
+                    "comment_text_body_included": False,
+                },
+                "diagnostic_summary": {
+                    "binding_required_count": 1,
+                    "binding_supported_count": 1,
+                    "reason_required_count": 1,
+                    "reason_covered_count": 1,
+                    "surface_signature_key": "p8_normal_rebuild_signature",
+                },
+            },
+        )
+
+    run = run_product_quality_measurement(
+        input_cases=[
+            {
+                "case_id": "p8_normal_observation_rebuild_surface_origin",
+                "family": "relationship_boundary",
+                "current_input": {"memo": SECRET_INPUT},
+            }
+        ],
+        renderer=renderer,
+        run_id="pq_p8_normal_rebuild_runner",
+        created_at="2026-06-05T00:00:00Z",
+        env={},
+        enable_composer=True,
+    )
+
+    event = run["measurement_events"][0]
+    assert event["surface_origin"]["candidate_source_kind"] == (
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    )
+    assert event["surface_origin"]["public_display_allowed_by_boundary"] is True
+    assert event["surface_origin"]["normal_observation_rebuild_attempted"] is True
+    assert event["surface_origin"]["normal_observation_rebuild_applied"] is True
+    assert event["surface_origin"]["gate_recovery_material_surface_detected"] is False
+    assert event["surface_origin"]["post_final_gate_recovery_material_surface_detected"] is False
+    assert run["machine_metrics"]["public_display_reached_via_gate_recovery_material_surface_count"] == 0
+    assert run["surface_origin_summary"]["gate_recovery_material_surface_event_count"] == 0
+    assert run["surface_origin_summary"]["post_final_gate_recovery_material_surface_event_count"] == 0
+    assert run["surface_origin_summary"]["candidate_source_kind_counts"] == {
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE: 1,
+    }
+    assert BLOCKER_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK not in run["blockers"]
+    assert BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK not in run["blockers"]
     assert run["product_gate_ready"] is False
     assert run["public_release_applied"] is False
 

@@ -20,6 +20,7 @@ from emlis_ai_gate_recovery_public_constants import (
     BLOCKER_POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_PUBLIC_LEAK,
     CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
     POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
@@ -28,6 +29,8 @@ from emlis_ai_gate_recovery_public_constants import (
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
 )
 from emlis_ai_product_quality_measurement_event import (
+    NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+    NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
     assert_product_quality_measurement_event_meta_only,
     normalize_product_quality_event,
 )
@@ -52,6 +55,10 @@ _ALLOWED_COMMENT = (
     "いまは、選ばれた感情と行動の流れを分けて扱う必要がありそうです。\n"
     "Emlisから：\n"
     "急いで意味を決めず、いま扱える範囲から整理します。"
+)
+_NORMAL_REBUILD_ALLOWED_COMMENT = (
+    "この記録では、予定の変化を受けたあと、不安がまだ落ち着ききっていない状態として見えます。"
+    "その中で、返事を急がずに置き直したい感じもEmlisは受け取りました。"
 )
 _LEAK_COMMENT = (
     "見えたこと：\n"
@@ -104,6 +111,48 @@ def _allowed_renderer(**_: object) -> ReplyEnvelope:
         }
     )
     return ReplyEnvelope(comment_text=_ALLOWED_COMMENT, meta=meta)
+
+
+def _normal_rebuild_allowed_renderer(**_: object) -> ReplyEnvelope:
+    meta = _base_public_gate_meta()
+    meta.update(
+        {
+            "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+            "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+            "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+            "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+            "normal_observation_rebuild_attempted": True,
+            "normal_observation_rebuild_applied": True,
+            "normal_observation_rebuild_source_kind": (
+                CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+            ),
+            "reply_service_public_boundary": {
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "public_display_allowed": True,
+                "normal_observation_rebuild_attempted": True,
+                "normal_observation_rebuild_applied": True,
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+            "surface_origin": {
+                "candidate_source_kind": CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+                "composer_model": NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL,
+                "generation_method": NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD,
+                "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+                "public_display_allowed_by_boundary": True,
+                "gate_recovery_material_surface_detected": False,
+                "post_final_gate_recovery_material_surface_detected": False,
+                "internal_policy_sentence_leak_risk": False,
+                "template_meta_false_negative_risk": False,
+                "normal_observation_rebuild_attempted": True,
+                "normal_observation_rebuild_applied": True,
+                "raw_input_included": False,
+                "comment_text_body_included": False,
+            },
+        }
+    )
+    return ReplyEnvelope(comment_text=_NORMAL_REBUILD_ALLOWED_COMMENT, meta=meta)
 
 
 def _leaky_renderer(**kwargs: object) -> ReplyEnvelope:
@@ -165,6 +214,9 @@ def test_p11_real_device_feg_fixtures_are_meta_only_not_exact_runtime_routes() -
         assert set(fixture["expected_allowed_public_candidate_source_kinds"]).issubset(
             set(ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS)
         )
+        assert CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE in fixture[
+            "expected_allowed_public_candidate_source_kinds"
+        ]
         assert "material_slot_echo_only" in fixture["forbidden_surface_classes"]
         assert "category_emotion_slot_label_listing" in fixture["forbidden_surface_classes"]
         for fragment in P11_FORBIDDEN_PUBLIC_FRAGMENTS:
@@ -252,6 +304,57 @@ def test_p11_real_device_feg_allowed_sources_are_checked_by_lineage_not_exact_bo
     assert "exact_comment_text" not in dumped
     assert "\"comment_text\":" not in dumped
     assert "\"raw_input\":" not in dumped
+
+
+def test_p11_real_device_feg_normal_rebuild_allowed_source_is_checked_by_lineage_not_exact_body() -> None:
+    events = []
+    for index, fixture in enumerate(P11_REAL_DEVICE_GATE_RECOVERY_REGRESSION_FIXTURES, start=1):
+        reply = _normal_rebuild_allowed_renderer()
+        event = normalize_product_quality_event(
+            run_id="p11_real_device_normal_rebuild_allowed_source_regression",
+            row_id=f"p11_normal_rebuild_allowed_{index}",
+            source_type="regression_fixture",
+            source_case_id=fixture.fixture_id,
+            source_revision=P11_REAL_DEVICE_GATE_RECOVERY_REGRESSION_REVISION,
+            family=fixture.family,
+            reply=reply,
+            comment_text=reply.comment_text,
+            public_meta=reply.meta,
+            internal_meta=reply.meta,
+            composer_resolution={},
+            machine_metrics={},
+        )
+        events.append(event)
+
+    assert len(events) == 3
+    for event in events:
+        assert event["public_display_reached"] is True
+        assert event["comment_text_present"] is True
+        assert event["blockers"] == []
+        assert event["surface_origin"]["candidate_source_kind"] == (
+            CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        )
+        assert event["surface_origin"]["candidate_source_kind"] in ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS
+        assert event["surface_origin"]["public_surface_role"] == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+        assert event["surface_origin"]["public_display_allowed_by_boundary"] is True
+        assert event["surface_origin"]["gate_recovery_material_surface_detected"] is False
+        assert event["surface_origin"]["post_final_gate_recovery_material_surface_detected"] is False
+        assert event["surface_origin"]["normal_observation_rebuild_attempted"] is True
+        assert event["surface_origin"]["normal_observation_rebuild_applied"] is True
+        assert event["gate_results"]["normal_observation_rebuild_attempted"] is True
+        assert event["gate_results"]["normal_observation_rebuild_applied"] is True
+        assert event["surface_origin"]["internal_policy_sentence_leak_risk"] is False
+        assert event["surface_origin"]["template_meta_false_negative_risk"] is False
+        assert_product_quality_measurement_event_meta_only(event)
+        for fragment in P11_FORBIDDEN_PUBLIC_FRAGMENTS:
+            assert fragment not in _NORMAL_REBUILD_ALLOWED_COMMENT
+
+    dumped = json.dumps(events, ensure_ascii=False, sort_keys=True)
+    assert _NORMAL_REBUILD_ALLOWED_COMMENT not in dumped
+    assert "expected_comment_text" not in dumped
+    assert "exact_comment_text" not in dumped
+    assert '"comment_text":' not in dumped
+    assert '"raw_input":' not in dumped
 
 
 def test_p11_real_device_fixture_ids_do_not_create_runtime_service_branches() -> None:

@@ -15,6 +15,10 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
+from emlis_ai_gate_recovery_public_constants import (
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+    PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+)
 from emlis_ai_response_contract import (
     internal_response_contract_from_meta,
     public_status_from_internal_response_contract,
@@ -439,6 +443,8 @@ def _build_display_absence_summary(internal_meta: Mapping[str, Any]) -> Dict[str
         "public_feedback_not_included_state_answer_gate",
         "public_feedback_not_included_reply_timeout_or_error",
         "rn_payload_absent",
+        "normal_observation_rebuild_attempted",
+        "normal_observation_rebuild_applied",
     ):
         value = _safe_bool(_safe_get(source, key))
         if value is not None:
@@ -447,10 +453,144 @@ def _build_display_absence_summary(internal_meta: Mapping[str, Any]) -> Dict[str
     reason_family = _safe_identifier(_safe_get(source, "reason_family"), max_length=80, default=None)
     if reason_family:
         public_summary["reason_family"] = reason_family
+    normal_rebuild_source_kind = _safe_public_identifier(
+        _safe_get(source, "normal_observation_rebuild_source_kind"),
+        max_length=128,
+        default=None,
+    )
+    if normal_rebuild_source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+        public_summary["normal_observation_rebuild_source_kind"] = normal_rebuild_source_kind
     reason_codes = _safe_surface_codes(_safe_get(source, "reason_codes"))
     if reason_codes:
         public_summary["reason_codes"] = reason_codes
     return public_summary
+
+
+def _normal_observation_rebuild_candidate_sources(internal_meta: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    sources: list[Mapping[str, Any]] = []
+
+    def add(value: Any) -> None:
+        mapping = _safe_mapping(value)
+        if mapping is None:
+            return
+        sources.append(mapping)
+        for nested_key in (
+            "normal_observation_rebuild",
+            "reply_service_public_boundary",
+            "gate_recovery_public_boundary_decision",
+        ):
+            nested = _safe_mapping(_safe_get(mapping, nested_key))
+            if nested is not None:
+                sources.append(nested)
+
+    add(internal_meta)
+    add(_safe_get(internal_meta, "reply_service_public_boundary"))
+    add(_safe_get(internal_meta, "phase20_5_gate_recovery_public_boundary"))
+    add(_safe_get(internal_meta, "phase20_13_post_final_gate_recovery"))
+    phase_gate = _safe_mapping(_safe_get(internal_meta, "phase_gate"))
+    if phase_gate is not None:
+        add(phase_gate)
+    diagnostic_summary = _pick_diagnostic_summary(internal_meta)
+    if diagnostic_summary is not None:
+        add(diagnostic_summary)
+        add(_safe_get(diagnostic_summary, "normal_observation_rebuild"))
+        add(_safe_get(diagnostic_summary, "display_absence_summary"))
+        add(_safe_get(diagnostic_summary, "public_feedback_diagnostic_summary"))
+        add(_safe_get(diagnostic_summary, "step7_public_feedback_diagnostic_summary"))
+        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
+        add(_safe_get(diagnostic_summary, "phase20_13_post_final_gate_recovery"))
+    return sources
+
+
+def _normal_observation_rebuild_source_kind_from_sources(sources: Iterable[Mapping[str, Any]]) -> str:
+    for source in sources:
+        for key in (
+            "normal_observation_rebuild_source_kind",
+            "source_kind",
+            "candidate_source_kind",
+            "public_candidate_source_kind",
+            "adopted_candidate_source_kind",
+            "final_surface_origin_candidate_source_kind",
+        ):
+            value = _safe_public_identifier(_safe_get(source, key), max_length=128, default=None)
+            if value == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+                return value
+    return ""
+
+
+def _first_safe_bool_from_sources(sources: Iterable[Mapping[str, Any]], keys: Iterable[str]) -> Optional[bool]:
+    for source in sources:
+        for key in keys:
+            value = _safe_bool(_safe_get(source, key))
+            if value is not None:
+                return value
+    return None
+
+
+def _build_normal_observation_rebuild_public_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return body-free public diagnostics for a normal observation rebuild.
+
+    P7 exposes only source lineage and applied status.  It never serializes raw
+    input, candidate body, or public ``comment_text`` body.
+    """
+
+    sources = _normal_observation_rebuild_candidate_sources(internal_meta)
+    source_kind = _normal_observation_rebuild_source_kind_from_sources(sources)
+    attempted = bool(
+        source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+        or _first_safe_bool_from_sources(sources, ("normal_observation_rebuild_attempted", "attempted")) is True
+    )
+    if not attempted:
+        return {}
+
+    applied_value = _first_safe_bool_from_sources(
+        sources,
+        ("normal_observation_rebuild_applied", "applied", "adopted"),
+    )
+    public_allowed = _first_safe_bool_from_sources(
+        sources,
+        ("public_display_allowed_by_boundary", "public_display_allowed"),
+    )
+    blocked_value = _first_safe_bool_from_sources(sources, ("public_boundary_blocked", "blocked"))
+    applied = bool(applied_value) if applied_value is not None else bool(source_kind and public_allowed is True)
+    public_surface_role = ""
+    for source in sources:
+        public_surface_role = _safe_public_identifier(
+            _safe_get(source, "public_surface_role"),
+            max_length=128,
+            default=None,
+        ) or ""
+        if public_surface_role:
+            break
+    if not public_surface_role and source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
+        public_surface_role = PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
+
+    blocked_reasons: list[str] = []
+    for source in sources:
+        blocked_reasons = _safe_rejection_reasons(
+            _safe_get(source, "normal_observation_rebuild_blocked_reasons")
+            or _safe_get(source, "public_boundary_blockers")
+            or _safe_get(source, "blocked_reasons")
+            or _safe_get(source, "blockers")
+        )
+        if blocked_reasons:
+            break
+
+    summary: Dict[str, Any] = {
+        "attempted": True,
+        "applied": bool(applied),
+        "source_kind": source_kind or CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+        "public_surface_role": public_surface_role or PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+        "public_boundary": {
+            "public_display_allowed": bool(public_allowed) if public_allowed is not None else bool(applied),
+            "blocked": bool(blocked_value) if blocked_value is not None else not bool(applied),
+        },
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+    if blocked_reasons and not applied:
+        summary["blocked_reasons"] = blocked_reasons
+    return summary
 
 
 def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
@@ -477,6 +617,10 @@ def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     display_absence_summary = _build_display_absence_summary(internal_meta)
     if display_absence_summary:
         public_summary["display_absence_summary"] = display_absence_summary
+
+    normal_observation_rebuild = _build_normal_observation_rebuild_public_summary(internal_meta)
+    if normal_observation_rebuild:
+        public_summary["normal_observation_rebuild"] = normal_observation_rebuild
 
     return public_summary
 

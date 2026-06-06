@@ -25,6 +25,7 @@ from emlis_ai_gate_recovery_public_constants import (
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
     CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE,
     CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+    CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
     GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
     GATE_RECOVERY_MATERIAL_SURFACE_MODEL,
     POST_FINAL_GATE_RECOVERY_MATERIAL_SURFACE_GENERATION_METHOD,
@@ -301,6 +302,8 @@ def assert_p11_real_device_gate_recovery_fixture_meta_only(value: Any) -> None:
             raise ValueError("P11 fixture must allow bounded original repair source")
         if CANDIDATE_SOURCE_KIND_COMPLETE_SELF_REPAIR_CANDIDATE not in allowed:
             raise ValueError("P11 fixture must allow complete self-repair source")
+        if CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE not in allowed:
+            raise ValueError("P11 fixture must allow normal observation rebuild source")
         if PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY in allowed:
             raise ValueError("P11 fixture must not allow diagnostic recovery surface as public source")
         for item in value.values():
