@@ -184,6 +184,12 @@ _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SCHEMA_VERSION = (
 _REPLY_SERVICE_GATE_RECOVERY_PUBLIC_BOUNDARY_SOURCE_PHASE = (
     "ReplyService_GateRecovery_PublicBoundary_Insurance_P4"
 )
+_REPLY_SERVICE_RECOMPOSITION_EXISTING_GATE_CHAIN_SCHEMA_VERSION = (
+    "cocolon.emlis.complete_initial_surface_recomposition.existing_gate_chain.v1"
+)
+_REPLY_SERVICE_RECOMPOSITION_EXISTING_GATE_CHAIN_SOURCE_PHASE = (
+    "PublicObservationRecovery_P8_ReplyServiceExistingGateChain"
+)
 _PHASE20_13_DISPLAYABLE_RESPONSE_KINDS = {
     ResponseKind.NORMAL_OBSERVATION.value,
     ResponseKind.LOW_INFORMATION_OBSERVATION.value,
@@ -647,6 +653,180 @@ def _reply_service_gate_recovery_candidate_summary(gate_recovery_loop_result: An
         ),
         "raw_input_included": False,
         "comment_text_body_included": False,
+    }
+def _reply_service_gate_passed(report: Any) -> bool:
+    if isinstance(report, Mapping):
+        return bool(report.get("passed") is True)
+    if hasattr(report, "passed"):
+        return bool(getattr(report, "passed", False) is True)
+    # ListenerReaderReport does not expose a `passed` field; the display gate
+    # treats `understandable` as the reader gate pass signal.
+    if hasattr(report, "understandable"):
+        return bool(getattr(report, "understandable", False) is True)
+    return False
+
+
+def _reply_service_gate_rejection_reasons(report: Any) -> List[str]:
+    if report is None:
+        return []
+    if isinstance(report, Mapping):
+        reasons = (
+            report.get("rejection_reasons")
+            or report.get("blocked_reasons")
+            or report.get("surface_blocker_reasons")
+            or []
+        )
+        return _dedupe_reason_codes(reasons)
+    return _dedupe_reason_codes(getattr(report, "rejection_reasons", []) or [])
+
+
+def _reply_service_display_gate_passed(display_decision: Any) -> bool:
+    return _clean(getattr(display_decision, "observation_status", "")) == "passed"
+
+
+def _reply_service_gate_trace(display_decision: Any) -> Mapping[str, Any]:
+    gate_trace = getattr(display_decision, "gate_trace", {}) if display_decision is not None else {}
+    return gate_trace if isinstance(gate_trace, Mapping) else {}
+
+
+def _reply_service_gate_trace_passed(
+    gate_trace: Mapping[str, Any],
+    gate_key: str,
+    fallback_report: Any = None,
+) -> bool:
+    gate = gate_trace.get(gate_key)
+    if isinstance(gate, Mapping) and isinstance(gate.get("passed"), bool):
+        return bool(gate.get("passed"))
+    return _reply_service_gate_passed(fallback_report)
+
+
+def _reply_service_gate_trace_evaluated(
+    gate_trace: Mapping[str, Any],
+    gate_key: str,
+    fallback_report: Any = None,
+) -> bool:
+    return isinstance(gate_trace.get(gate_key), Mapping) or fallback_report is not None
+
+
+def _reply_service_gate_trace_rejection_reasons(
+    gate_trace: Mapping[str, Any],
+    gate_key: str,
+) -> List[str]:
+    gate = gate_trace.get(gate_key)
+    if not isinstance(gate, Mapping):
+        return []
+    return _reply_service_gate_rejection_reasons(gate)
+
+
+def _reply_service_recomposition_existing_gate_chain_summary(
+    *,
+    reader_report: Any = None,
+    grounding_report: Any = None,
+    template_echo_report: Any = None,
+    runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
+    visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
+    display_decision: Any = None,
+    adopted: bool = False,
+) -> Dict[str, Any]:
+    """Summarise Step 8 gate passage without serialising candidate text.
+
+    Recomposition may generate a candidate before the normal public observation
+    is adopted.  Step 8 requires that the candidate is accepted only after the
+    existing gates pass; this meta keeps that distinction explicit and
+    fail-closed without relaxing any gate.
+    """
+
+    runtime_report = (
+        dict(runtime_surface_pre_return_gate_report)
+        if isinstance(runtime_surface_pre_return_gate_report, Mapping)
+        else {}
+    )
+    visible_report = (
+        dict(visible_surface_acceptance_gate_report)
+        if isinstance(visible_surface_acceptance_gate_report, Mapping)
+        else {}
+    )
+    display_status = _clean(getattr(display_decision, "observation_status", ""))
+    display_rejection_reasons = _dedupe_reason_codes(
+        getattr(display_decision, "rejection_reasons", []) or []
+    )
+    gate_trace = _reply_service_gate_trace(display_decision)
+    reader_passed = _reply_service_gate_trace_passed(gate_trace, "reader", reader_report)
+    grounding_passed = _reply_service_gate_trace_passed(gate_trace, "grounding", grounding_report)
+    template_passed = _reply_service_gate_trace_passed(gate_trace, "template_echo", template_echo_report)
+    runtime_passed = bool(runtime_report.get("passed") is True)
+    visible_passed = bool(visible_report.get("passed") is True) or _reply_service_gate_trace_passed(
+        gate_trace,
+        "visible_surface_acceptance",
+        visible_report,
+    )
+    display_passed = _reply_service_gate_trace_passed(
+        gate_trace,
+        "display",
+    ) or _reply_service_display_gate_passed(display_decision)
+    passed_by_all_existing_gates = all(
+        (
+            reader_passed,
+            grounding_passed,
+            template_passed,
+            runtime_passed,
+            visible_passed,
+            display_passed,
+        )
+    )
+    blocked_reasons = _dedupe_reason_codes(
+        [
+            *([] if reader_passed else ["reader_gate_failed"]),
+            *([] if grounding_passed else ["grounding_gate_failed"]),
+            *([] if template_passed else ["template_gate_failed"]),
+            *([] if runtime_passed else ["runtime_surface_pre_return_gate_failed"]),
+            *([] if visible_passed else ["visible_surface_acceptance_gate_failed"]),
+            *([] if display_passed else ["display_gate_failed"]),
+            *_reply_service_gate_rejection_reasons(reader_report),
+            *_reply_service_gate_rejection_reasons(grounding_report),
+            *_reply_service_gate_rejection_reasons(template_echo_report),
+            *_reply_service_gate_rejection_reasons(runtime_report),
+            *_reply_service_gate_rejection_reasons(visible_report),
+            *_reply_service_gate_trace_rejection_reasons(gate_trace, "reader"),
+            *_reply_service_gate_trace_rejection_reasons(gate_trace, "grounding"),
+            *_reply_service_gate_trace_rejection_reasons(gate_trace, "template_echo"),
+            *_reply_service_gate_trace_rejection_reasons(gate_trace, "visible_surface_acceptance"),
+            *_reply_service_gate_trace_rejection_reasons(gate_trace, "display"),
+            *display_rejection_reasons,
+        ]
+    )
+    return {
+        "schema_version": _REPLY_SERVICE_RECOMPOSITION_EXISTING_GATE_CHAIN_SCHEMA_VERSION,
+        "source_phase": _REPLY_SERVICE_RECOMPOSITION_EXISTING_GATE_CHAIN_SOURCE_PHASE,
+        "candidate_body_in_meta": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "reader_gate_evaluated": _reply_service_gate_trace_evaluated(gate_trace, "reader", reader_report),
+        "reader_gate_passed": reader_passed,
+        "grounding_gate_evaluated": _reply_service_gate_trace_evaluated(gate_trace, "grounding", grounding_report),
+        "grounding_gate_passed": grounding_passed,
+        "template_gate_evaluated": _reply_service_gate_trace_evaluated(gate_trace, "template_echo", template_echo_report),
+        "template_gate_passed": template_passed,
+        "runtime_surface_pre_return_gate_evaluated": bool(runtime_report),
+        "runtime_surface_pre_return_gate_passed": runtime_passed,
+        "visible_surface_acceptance_gate_evaluated": bool(visible_report),
+        "visible_surface_acceptance_gate_passed": visible_passed,
+        "display_gate_evaluated": display_decision is not None,
+        "display_gate_passed": display_passed,
+        "display_observation_status": display_status,
+        "passed_by_all_existing_gates": passed_by_all_existing_gates,
+        "candidate_adopted_after_existing_gates": bool(adopted and passed_by_all_existing_gates),
+        # Step 8 is fail-closed at the existing-gate boundary: even if a caller
+        # has an adoption intent, the candidate is not considered adopted when
+        # any existing gate failed.
+        "fail_closed_when_gate_failed": bool(not passed_by_all_existing_gates),
+        "blocked_reasons": blocked_reasons,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "runtime_surface_gate_relaxed": False,
+        "visible_surface_gate_relaxed": False,
     }
 
 
@@ -3062,6 +3242,9 @@ def _attach_p4_complete_initial_surface_availability_summary(
     *,
     diagnostic_summary: Dict[str, Any],
     phase_gate_meta: Dict[str, Any],
+    candidate_generation_summary: Mapping[str, Any] | None = None,
+    surface_requirement: Mapping[str, Any] | None = None,
+    material_route: Mapping[str, Any] | None = None,
 ) -> None:
     """Attach P4 body-free source-availability summary.
 
@@ -3070,9 +3253,18 @@ def _attach_p4_complete_initial_surface_availability_summary(
     """
 
     try:
+        resolved_candidate_generation_summary = (
+            dict(candidate_generation_summary)
+            if isinstance(candidate_generation_summary, Mapping)
+            else dict(diagnostic_summary.get("complete_initial_candidate_generation_path") or {})
+            or dict(diagnostic_summary.get("step5_candidate_generation_path") or {})
+        )
         summary = build_complete_initial_surface_availability_summary(
             diagnostic_summary=diagnostic_summary,
             phase_gate=phase_gate_meta,
+            candidate_generation_summary=resolved_candidate_generation_summary,
+            surface_requirement=surface_requirement,
+            material_route=material_route,
         )
     except Exception:
         return
@@ -6354,6 +6546,57 @@ async def render_emlis_ai_reply(
             display_decision=display_decision,
             gate_trace=pre_public_gate_trace if isinstance(pre_public_gate_trace, dict) else {},
         )
+        pre_public_candidate_meta = (
+            getattr(composer_candidate, "composer_meta", {})
+            if composer_candidate is not None
+            else {}
+        )
+        if not isinstance(pre_public_candidate_meta, Mapping):
+            pre_public_candidate_meta = {}
+        pre_public_original_composer_diagnostic = (
+            dict(pre_public_candidate_meta.get("composer_diagnostic") or {})
+            if isinstance(pre_public_candidate_meta.get("composer_diagnostic"), Mapping)
+            else {}
+        )
+        pre_public_candidate_reasons = _dedupe_reason_codes(getattr(composer_candidate, "rejection_reasons", []) or [])
+        pre_public_composer_diagnostic_reasons = _dedupe_reason_codes(
+            pre_public_original_composer_diagnostic.get("reason_codes") or []
+        )
+        pre_public_display_reasons = _dedupe_reason_codes(getattr(display_decision, "rejection_reasons", []) or [])
+        pre_public_original_reason_codes = _dedupe_reason_codes(
+            [
+                *pre_public_candidate_reasons,
+                *pre_public_composer_diagnostic_reasons,
+                *pre_public_display_reasons,
+            ]
+        )
+        pre_public_original_primary_reason = _first_reason(
+            [
+                value
+                for value in pre_public_original_reason_codes
+                if value
+                in {
+                    "limited_composer_shallow_empty_candidate",
+                    "composer_source_unavailable",
+                    "sentence_plan_unavailable",
+                    "empty_comment_text_without_candidate",
+                    "complete_initial_surface_unavailable",
+                }
+            ],
+            default=_first_reason(pre_public_original_reason_codes, default=""),
+        )
+        pre_public_original_composer_status = str(
+            getattr(composer_candidate, "status", "")
+            or pre_public_original_composer_diagnostic.get("composer_status")
+            or ""
+        )
+        pre_public_original_composer_source = str(
+            pre_public_original_composer_diagnostic.get("composer_source")
+            or composer_source
+            or ""
+        )
+        if pre_public_original_composer_status in {"unavailable", "not_generated", "not_attempted"}:
+            pre_public_original_composer_source = "unavailable"
         pre_public_diagnostic_summary = {
             "complete_initial_candidate_generation_path": pre_public_candidate_generation_summary,
             "step5_candidate_generation_path": pre_public_candidate_generation_summary,
@@ -6361,6 +6604,20 @@ async def render_emlis_ai_reply(
             "display_rejection_reasons": list(getattr(display_decision, "rejection_reasons", []) or []),
             "runtime_surface_pre_return_gate": dict(runtime_surface_pre_return_gate_report or {}),
             "visible_surface_acceptance_gate": dict(visible_surface_acceptance_gate_report or {}),
+            "candidate_status": pre_public_original_composer_status or "unavailable",
+            "composer_status": pre_public_original_composer_status or "unavailable",
+            "composer_source": pre_public_original_composer_source or "unavailable",
+            "primary_reason": pre_public_original_primary_reason,
+            "reason_codes": pre_public_original_reason_codes,
+            "composer_reason_category": str(
+                pre_public_original_composer_diagnostic.get("reason_category")
+                or pre_public_original_composer_diagnostic.get("reason_categories", [""])[0]
+                if isinstance(pre_public_original_composer_diagnostic.get("reason_categories"), list)
+                and pre_public_original_composer_diagnostic.get("reason_categories")
+                else pre_public_original_composer_diagnostic.get("reason_category")
+                or ""
+            ),
+            "composer_diagnostic": pre_public_original_composer_diagnostic,
         }
         pre_public_surface_requirement_decision = resolve_public_surface_requirement(
             current_input=current_input if isinstance(current_input, Mapping) else {},
@@ -6385,6 +6642,7 @@ async def render_emlis_ai_reply(
 
     gate_recovery_loop_result = None
     phase20_5_gate_recovery_public_boundary_meta: Dict[str, Any] | None = None
+    complete_initial_surface_recomposition_result = None
     if (
         str(getattr(display_decision, "observation_status", "") or "") != "passed"
         and not bool(getattr(safety_report, "requires_block", False))
@@ -6431,8 +6689,48 @@ async def render_emlis_ai_reply(
                 grounding_graph = graph
                 grounding_scope = "current_input_material_bundle_recovery"
                 grounding_allowed_evidence_span_ids = list(getattr(grounding_report, "allowed_evidence_span_ids", []) or [])
+                if (
+                    isinstance(pre_public_boundary_decision, Mapping)
+                    and str(pre_public_boundary_decision.get("candidate_source_kind") or "")
+                    == "complete_initial_surface_recomposition_candidate"
+                ):
+                    gate_recovery_existing_gate_chain = _reply_service_recomposition_existing_gate_chain_summary(
+                        reader_report=gate_recovery_loop_result.reader_report,
+                        grounding_report=gate_recovery_loop_result.grounding_report,
+                        template_echo_report=gate_recovery_loop_result.template_echo_report,
+                        runtime_surface_pre_return_gate_report=dict(
+                            gate_recovery_loop_result.runtime_surface_pre_return_gate_report or {}
+                        ),
+                        visible_surface_acceptance_gate_report=dict(
+                            gate_recovery_loop_result.visible_surface_acceptance_gate_report or {}
+                        ),
+                        display_decision=gate_recovery_loop_result.display_decision,
+                        adopted=True,
+                    )
+                    complete_initial_surface_recomposition_result = {
+                        "schema_version": "cocolon.emlis.complete_initial_surface_recomposition.reply_service_result.v1",
+                        "source_phase": "PublicObservationRecovery_P5_ReplyServiceGateRecoveryConnection",
+                        "attempted": True,
+                        "applied": bool(gate_recovery_existing_gate_chain.get("passed_by_all_existing_gates")),
+                        "candidate_generated": True,
+                        "candidate_source_kind": "complete_initial_surface_recomposition_candidate",
+                        "build_reasons": ["complete_initial_surface_recomposition_candidate_built"],
+                        "normal_observation_rebuild_used": False,
+                        "gate_recovery_material_surface_used": False,
+                        "display_gate_relaxed": False,
+                        "raw_input_included": False,
+                        "comment_text_body_included": False,
+                        "candidate_body_in_meta": False,
+                        "case_specific_route_used": False,
+                        "existing_gate_chain": gate_recovery_existing_gate_chain,
+                        "passed_by_all_existing_gates": bool(
+                            gate_recovery_existing_gate_chain.get("passed_by_all_existing_gates")
+                        ),
+                        "candidate_adopted_after_existing_gates": bool(
+                            gate_recovery_existing_gate_chain.get("candidate_adopted_after_existing_gates")
+                        ),
+                    }
 
-    complete_initial_surface_recomposition_result = None
     if (
         str(getattr(display_decision, "observation_status", "") or "") != "passed"
         and not bool(getattr(safety_report, "requires_block", False))
@@ -6450,7 +6748,15 @@ async def render_emlis_ai_reply(
             recovery_context=RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
             safety_requires_block=safety_requires_block,
             reply_timeout_or_error=False,
-            composer_disabled=resolved_composer_client is None and not bool(complete_initial_default_client),
+            composer_disabled=bool(
+                isinstance(pre_public_complete_initial_availability_summary, Mapping)
+                and (
+                    str(pre_public_complete_initial_availability_summary.get("first_blocker_family") or "")
+                    == "composer_disabled"
+                    or str(pre_public_complete_initial_availability_summary.get("first_blocker_code") or "")
+                    == "composer_disabled"
+                )
+            ),
         )
         recomposition_candidate_meta = (
             getattr(recomposition_candidate, "composer_meta", {})
@@ -6463,7 +6769,11 @@ async def render_emlis_ai_reply(
             "schema_version": "cocolon.emlis.complete_initial_surface_recomposition.reply_service_result.v1",
             "source_phase": "PublicObservationRecovery_P5_ReplyServiceConnection",
             "attempted": True,
-            "applied": recomposition_candidate is not None,
+            # Candidate generation and public adoption are intentionally
+            # separate.  Step 8 allows adoption only after the recomposed
+            # candidate passes the existing reader / grounding / template /
+            # runtime / visible / display gates below.
+            "applied": False,
             "candidate_generated": recomposition_candidate is not None,
             "candidate_source_kind": str(
                 recomposition_candidate_meta.get("candidate_source_kind")
@@ -6475,6 +6785,9 @@ async def render_emlis_ai_reply(
             "display_gate_relaxed": False,
             "raw_input_included": False,
             "comment_text_body_included": False,
+            "candidate_body_in_meta": False,
+            "case_specific_route_used": False,
+            "candidate_adopted_after_existing_gates": False,
         }
         if recomposition_candidate is not None:
             recomposed_candidate = recomposition_candidate
@@ -6554,7 +6867,33 @@ async def render_emlis_ai_reply(
                 runtime_surface_pre_return_gate_report=recomposed_runtime_surface_pre_return_gate_report,
                 visible_surface_acceptance_gate_report=recomposed_visible_surface_acceptance_gate_report,
             )
-            if str(getattr(recomposed_display_decision, "observation_status", "") or "") == "passed":
+            recomposed_existing_gate_chain = _reply_service_recomposition_existing_gate_chain_summary(
+                reader_report=recomposed_reader_report,
+                grounding_report=recomposed_grounding_report,
+                template_echo_report=recomposed_template_echo_report,
+                runtime_surface_pre_return_gate_report=recomposed_runtime_surface_pre_return_gate_report,
+                visible_surface_acceptance_gate_report=recomposed_visible_surface_acceptance_gate_report,
+                display_decision=recomposed_display_decision,
+                adopted=False,
+            )
+            complete_initial_surface_recomposition_result["existing_gate_chain"] = recomposed_existing_gate_chain
+            complete_initial_surface_recomposition_result["passed_by_all_existing_gates"] = bool(
+                recomposed_existing_gate_chain.get("passed_by_all_existing_gates")
+            )
+            complete_initial_surface_recomposition_result["candidate_adopted_after_existing_gates"] = False
+            if bool(recomposed_existing_gate_chain.get("passed_by_all_existing_gates")):
+                recomposed_existing_gate_chain = _reply_service_recomposition_existing_gate_chain_summary(
+                    reader_report=recomposed_reader_report,
+                    grounding_report=recomposed_grounding_report,
+                    template_echo_report=recomposed_template_echo_report,
+                    runtime_surface_pre_return_gate_report=recomposed_runtime_surface_pre_return_gate_report,
+                    visible_surface_acceptance_gate_report=recomposed_visible_surface_acceptance_gate_report,
+                    display_decision=recomposed_display_decision,
+                    adopted=True,
+                )
+                complete_initial_surface_recomposition_result["existing_gate_chain"] = recomposed_existing_gate_chain
+                complete_initial_surface_recomposition_result["applied"] = True
+                complete_initial_surface_recomposition_result["candidate_adopted_after_existing_gates"] = True
                 display_decision = recomposed_display_decision
                 reader_report = recomposed_reader_report
                 grounding_report = recomposed_grounding_report
@@ -7124,6 +7463,35 @@ async def render_emlis_ai_reply(
         meta["diagnostic_summary"]["phase20_3_input_material_bundle"] = dict(
             phase20_3_material_route_meta.get(EMLIS_INPUT_MATERIAL_BUNDLE_META_KEY) or {}
         )
+        try:
+            phase20_3_surface_requirement_decision = resolve_public_surface_requirement(
+                current_input=current_input if isinstance(current_input, Mapping) else {},
+                material_route=phase20_3_material_route,
+                composer_meta=getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {},
+                diagnostic_summary=meta["diagnostic_summary"],
+                comment_text_present=bool(str(getattr(composer_candidate, "comment_text", "") or "").strip()),
+            )
+            meta["diagnostic_summary"]["public_surface_requirement"] = dict(phase20_3_surface_requirement_decision)
+            meta["diagnostic_summary"]["surface_requirement"] = dict(phase20_3_surface_requirement_decision)
+            phase_gate_for_availability = meta.get("phase_gate") if isinstance(meta.get("phase_gate"), dict) else {}
+            if isinstance(phase_gate_for_availability, dict):
+                phase_gate_for_availability["public_surface_requirement"] = dict(phase20_3_surface_requirement_decision)
+                phase_gate_for_availability["surface_requirement"] = dict(phase20_3_surface_requirement_decision)
+                phase_gate_for_availability["phase20_3_material_route_available_for_p4"] = True
+                phase_gate_for_availability["phase20_3_material_quality_for_p4"] = str(
+                    phase20_3_material_route_meta.get("material_quality") or ""
+                )
+                phase_gate_for_availability["phase20_3_response_kind_for_p4"] = str(
+                    phase20_3_material_route_meta.get("response_kind") or ""
+                )
+            _attach_p4_complete_initial_surface_availability_summary(
+                diagnostic_summary=meta["diagnostic_summary"],
+                phase_gate_meta=phase_gate_for_availability if isinstance(phase_gate_for_availability, dict) else {},
+                surface_requirement=phase20_3_surface_requirement_decision,
+                material_route=phase20_3_material_route_meta,
+            )
+        except Exception:
+            pass
     if isinstance(meta.get("phase_gate"), dict):
         meta["phase_gate"].update(
             {
@@ -7205,6 +7573,8 @@ async def render_emlis_ai_reply(
                     "p5_complete_initial_surface_recomposition_display_gate_relaxed": False,
                     "p5_complete_initial_surface_recomposition_comment_text_body_included": False,
                     "p5_complete_initial_surface_recomposition_raw_input_included": False,
+                    "p5_complete_initial_surface_recomposition_candidate_body_in_meta": False,
+                    "p5_complete_initial_surface_recomposition_case_specific_route_used": False,
                 }
             )
 

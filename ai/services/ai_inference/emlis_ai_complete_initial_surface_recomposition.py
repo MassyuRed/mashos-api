@@ -71,10 +71,43 @@ _SOURCE_UNAVAILABLE_CODES: Final[frozenset[str]] = frozenset(
         "complete_initial_candidate_not_generated",
         "complete_initial_candidate_unavailable",
         "composer_source_unavailable",
+        "limited_composer_shallow_empty_candidate",
     }
 )
 _BLOCKED_AVAILABILITY_FAMILIES: Final[frozenset[str]] = frozenset(
-    {"safety", "infrastructure_error", "composer_disabled", "timeout", "exception"}
+    {
+        "safety",
+        "infrastructure",
+        "infrastructure_error",
+        "composer_disabled",
+        "timeout",
+        "exception",
+        "ap0_rollout",
+        "rollout",
+        "material_quality",
+        "coverage",
+        "required_structure",
+        "surface_requirement",
+    }
+)
+_BLOCKED_AVAILABILITY_CODES: Final[frozenset[str]] = frozenset(
+    {
+        "safety_blocked",
+        "reply_timeout_or_error",
+        "reply_timeout",
+        "reply_error",
+        "composer_disabled",
+        "infrastructure_error",
+        "timeout",
+        "exception",
+        "preconnection_failure",
+        "rollout_blocked",
+        "ap0_rollout_blocked",
+        "material_unsupported",
+        "unsupported_material",
+        "surface_requirement_blocked",
+        "infrastructure_fail_closed",
+    }
 )
 _UNSUPPORTED_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
     {
@@ -82,6 +115,11 @@ _UNSUPPORTED_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
         "limited_grounding_material",
         "insufficient_input_material",
         "empty_input_material",
+        "unsupported",
+        "material_unsupported",
+        "unsupported_material",
+        "material_quality_unsupported",
+        "unsupported_input_material",
     }
 )
 _BLOCKED_SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
@@ -153,8 +191,11 @@ _META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
         "body_boundary",
         "implementation_boundary",
         "candidate_lineage",
+        "body_free",
         "raw_input_included",
         "comment_text_body_included",
+        "candidate_body_in_meta",
+        "case_specific_route_used",
     }
 )
 
@@ -196,6 +237,8 @@ def _limited_grounding_reception_recomposition_allowed(
     first_blocker_code = _clean_identifier(availability.get("first_blocker_code"), max_length=128)
     if first_blocker_family in _BLOCKED_AVAILABILITY_FAMILIES:
         return False
+    if first_blocker_code in _BLOCKED_AVAILABILITY_CODES:
+        return False
     recoverable_families = set(_SOURCE_UNAVAILABLE_FAMILIES) | {"surface_realizer_unavailable", ""}
     recoverable_codes = set(_SOURCE_UNAVAILABLE_CODES) | {"surface_realizer_unavailable", ""}
     if (first_blocker_family or first_blocker_code) and (
@@ -227,20 +270,16 @@ def should_attempt_complete_initial_surface_recomposition(
 
     if safety_requires_block or reply_timeout_or_error or composer_disabled:
         return False
-    availability = complete_initial_surface_availability_public_summary(availability_summary)
+    availability = _availability_for_recomposition_permission(availability_summary)
     if not availability:
         return False
-    requirement = public_surface_requirement_public_summary(surface_requirement)
+    requirement = _surface_requirement_with_availability_fallback(surface_requirement, availability)
     if _limited_grounding_reception_recomposition_allowed(
         availability=availability,
         surface_requirement=requirement,
         material_route=material_route,
     ):
         return True
-    if availability.get("complete_initial_client_resolved") is not True:
-        return False
-    if availability.get("candidate_generation_attempted") is not True:
-        return False
     if availability.get("recovery_lane") != RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION:
         return False
     if availability.get("material_sufficient") is not True:
@@ -253,6 +292,8 @@ def should_attempt_complete_initial_surface_recomposition(
     first_blocker_family = _clean_identifier(availability.get("first_blocker_family"), max_length=96)
     first_blocker_code = _clean_identifier(availability.get("first_blocker_code"), max_length=128)
     if first_blocker_family in _BLOCKED_AVAILABILITY_FAMILIES:
+        return False
+    if first_blocker_code in _BLOCKED_AVAILABILITY_CODES:
         return False
     if first_blocker_family not in _SOURCE_UNAVAILABLE_FAMILIES and first_blocker_code not in _SOURCE_UNAVAILABLE_CODES:
         return False
@@ -271,7 +312,30 @@ def should_attempt_complete_initial_surface_recomposition(
     family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
     if not family or family in _BLOCKED_SURFACE_REQUIREMENT_FAMILIES:
         return False
-    return True
+
+    client_resolved = availability.get("complete_initial_client_resolved") is True
+    generation_attempted = availability.get("candidate_generation_attempted") is True
+    if client_resolved and generation_attempted:
+        return True
+
+    # Step 6: limited-composer source-unavailable recovery is allowed even
+    # when no complete-initial client was resolved before the first display
+    # gate, but only for the safe + eligible normal-observation material lane.
+    # It keeps normal_observation_rebuild closed and creates a fresh
+    # complete-initial surface recomposition candidate instead.
+    route_meta = _material_route_meta(material_route)
+    safety_triage_kind = _clean_identifier(
+        _first(("safety_triage_kind", "safety_kind", "triage_kind"), route_meta)
+        or availability.get("safety_triage_kind"),
+        max_length=96,
+    )
+    if safety_triage_kind and safety_triage_kind != "safe_observation":
+        return False
+    if material_quality != "eligible":
+        return False
+    if family not in {SURFACE_REQUIREMENT_LABELLED_TWO_STAGE, SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER}:
+        return False
+    return bool(first_blocker_family in _SOURCE_UNAVAILABLE_FAMILIES or first_blocker_code in _SOURCE_UNAVAILABLE_CODES)
 
 
 def build_complete_initial_surface_recomposition_candidate(
@@ -288,8 +352,8 @@ def build_complete_initial_surface_recomposition_candidate(
 ) -> tuple[ConversationComposerCandidate | None, list[str]]:
     """Build a public observation candidate for the P5 lane."""
 
-    requirement = public_surface_requirement_public_summary(surface_requirement)
-    availability = complete_initial_surface_availability_public_summary(availability_summary)
+    availability = _availability_for_recomposition_permission(availability_summary)
+    requirement = _surface_requirement_with_availability_fallback(surface_requirement, availability)
     limited_grounding_reception_required = is_limited_grounding_reception_required(
         material_route=material_route,
         surface_requirement=requirement,
@@ -416,6 +480,8 @@ def complete_initial_surface_recomposition_public_summary(value: Mapping[str, An
         "body_free": True,
         "raw_input_included": False,
         "comment_text_body_included": False,
+        "candidate_body_in_meta": False,
+        "case_specific_route_used": False,
         "display_gate_relaxed": False,
     }
 
@@ -436,8 +502,13 @@ def assert_complete_initial_surface_recomposition_meta(value: Mapping[str, Any])
         raise ValueError("complete initial surface recomposition must not use normal rebuild")
     if value.get("gate_recovery_material_surface_used") is not False:
         raise ValueError("complete initial surface recomposition must not use Gate Recovery material surface")
-    if any(bool(value.get(key)) for key in ("raw_input_included", "comment_text_body_included")):
+    if any(
+        bool(value.get(key))
+        for key in ("raw_input_included", "comment_text_body_included", "candidate_body_in_meta")
+    ):
         raise ValueError("complete initial surface recomposition meta must be body-free")
+    if value.get("case_specific_route_used") is not False:
+        raise ValueError("complete initial surface recomposition must not use a case-specific route")
     if _contains_forbidden_text_key(value):
         raise ValueError("complete initial surface recomposition meta must not contain text payload keys")
     for key in ("gate_contract", "body_boundary", "implementation_boundary"):
@@ -491,6 +562,7 @@ def _candidate_meta(
             "expected_comment_text_shape": "labelled_two_stage" if two_stage_required else "plain_state_answer",
             "raw_input_included": False,
             "comment_text_body_included": False,
+            "candidate_body_in_meta": False,
         },
         "source_material_summary": {
             "material_quality": _clean_identifier(material_quality, max_length=96),
@@ -526,6 +598,7 @@ def _candidate_meta(
             "fixed_fallback_used": False,
             "raw_input_included": False,
             "comment_text_body_included": False,
+            "candidate_body_in_meta": False,
         },
         "limited_grounding_reception_surface_summary": dict(limited_grounding_reception_surface_summary),
         "gate_contract": {
@@ -541,6 +614,7 @@ def _candidate_meta(
             "raw_text_included": False,
             "comment_text_body_included": False,
             "original_comment_text_body_included": False,
+            "candidate_body_in_meta": False,
         },
         "implementation_boundary": {
             "fixed_fallback_used": False,
@@ -560,8 +634,11 @@ def _candidate_meta(
         "used_evidence_span_ids": list(used_evidence_span_ids),
         "used_phrase_unit_ids": list(used_phrase_unit_ids),
         "recovery_context": _clean_identifier(recovery_context, max_length=96),
+        "body_free": True,
         "raw_input_included": False,
         "comment_text_body_included": False,
+        "candidate_body_in_meta": False,
+        "case_specific_route_used": False,
     }
 
 
@@ -786,6 +863,68 @@ def _material_quality(material_route: Any) -> str:
         _first(("material_quality", "eligibility_status", "status"), meta)
         or getattr(material_route, "material_quality", ""),
         max_length=96,
+    )
+
+
+
+def _availability_for_recomposition_permission(summary: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return body-free availability plus Step 6 permission-only classifiers.
+
+    ``complete_initial_surface_availability_public_summary`` deliberately strips
+    body text.  Step 6 also needs non-body classifier fields such as
+    ``material_quality_family`` to decide whether the source-unavailable path is
+    safe + eligible enough to open recomposition.
+    """
+
+    public = complete_initial_surface_availability_public_summary(summary)
+    raw = _as_mapping(summary)
+    if not public:
+        return public
+    for key in (
+        "material_quality_family",
+        "material_quality",
+        "safety_triage_kind",
+    ):
+        value = _clean_identifier(raw.get(key), max_length=96)
+        if value and not public.get(key):
+            public[key] = value
+    return public
+
+def _surface_requirement_with_availability_fallback(
+    surface_requirement: Mapping[str, Any] | None,
+    availability_summary: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Resolve P1 surface requirement, falling back to P4 body-free lane meta.
+
+    Step 6 may run after a limited-composer source-unavailable failure where the
+    standalone P1 decision is not present on the call edge, while P4 availability
+    already carries the material-route-derived ``surface_requirement_family``.
+    This does not add a public response key or relax any gate; it only preserves
+    the already-computed requirement for permission and candidate construction.
+    """
+
+    resolved = public_surface_requirement_public_summary(surface_requirement)
+    if resolved.get("surface_requirement_family"):
+        return resolved
+
+    availability = _as_mapping(availability_summary)
+    family = _clean_identifier(availability.get("surface_requirement_family"), max_length=96)
+    if not family:
+        return {}
+    two_stage_required = family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    plain_allowed = family == SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER
+    return public_surface_requirement_public_summary(
+        {
+            "surface_requirement_family": family,
+            "two_stage_required": two_stage_required,
+            "plain_state_answer_allowed": plain_allowed,
+            "low_information_allowed": False,
+            "material_quality_family": _clean_identifier(
+                availability.get("material_quality_family"),
+                max_length=96,
+            ),
+            "decision_sources": ["availability_surface_requirement_family"],
+        }
     )
 
 

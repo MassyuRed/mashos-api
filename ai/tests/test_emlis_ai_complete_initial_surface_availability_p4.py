@@ -130,6 +130,71 @@ def test_p4_names_c_complete_initial_surface_unavailable_without_normal_rebuild(
     _assert_body_free(summary)
 
 
+def test_p4_d_source_unavailable_material_route_meta_keeps_availability_eligible() -> None:
+    summary = build_complete_initial_surface_availability_summary(
+        candidate_generation_summary={
+            "complete_initial_client_resolved": False,
+            "candidate_generation_attempted": False,
+            "candidate_generated_before_display_gate": False,
+            "candidate_status": "unavailable",
+            "composer_source": "unavailable",
+            "primary_reason": "limited_composer_shallow_empty_candidate",
+            "reason_codes": ["limited_composer_shallow_empty_candidate"],
+            "reader_gate_evaluated": True,
+            "grounding_gate_evaluated": True,
+            "template_gate_evaluated": True,
+            "display_gate_evaluated": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        surface_requirement={
+            "surface_requirement_family": SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
+            "two_stage_required": True,
+            "plain_state_answer_allowed": False,
+            "low_information_allowed": False,
+            "body_free": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        material_route={
+            "material_quality": "eligible",
+            "response_kind": "normal_observation",
+            "safety_triage_kind": "safe_observation",
+            "visible_material_slots": [
+                "event",
+                "action",
+                "emotion_direction",
+                "relationship",
+                "target",
+                "change",
+                "time",
+                "value",
+            ],
+            "relation_material_ids": [
+                "relationship_end",
+                "support_from_other",
+                "gratitude_or_return_intent",
+            ],
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+    )
+
+    assert_complete_initial_surface_availability_summary(summary)
+    assert summary["first_blocker_family"] == "source_unavailable"
+    assert summary["first_blocker_code"] == "limited_composer_shallow_empty_candidate"
+    assert summary["material_sufficient"] is True
+    assert summary["material_quality_family"] == "eligible"
+    assert summary["surface_requirement_family"] == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    assert summary["recovery_lane"] == RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION
+    assert summary["normal_observation_rebuild_allowed"] is False
+    assert summary["normal_observation_rebuild_blocker"] == (
+        NORMAL_REBUILD_BLOCKER_SOURCE_UNAVAILABLE_NOT_REBUILDABLE
+    )
+    assert summary["body_free"] is True
+    _assert_body_free(summary)
+
+
 def test_p4_public_meta_exposes_body_free_availability_summary() -> None:
     summary = build_complete_initial_surface_availability_summary(
         candidate_generation_summary=_c_source_unavailable_step5_meta(),
@@ -210,3 +275,76 @@ def test_p4_can_build_public_summary_from_step5_without_body_payload() -> None:
     assert public_summary["surface_requirement_family"] == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
     assert public_summary["body_free"] is True
     _assert_body_free(public_summary)
+
+
+def test_p4_explicit_phase20_3_material_route_overrides_prior_unknown_availability_summary() -> None:
+    prior_unknown_summary = {
+        "schema_version": "cocolon.emlis.complete_initial_surface_availability.v1",
+        "source_phase": "PublicObservationRecovery_P4_CompleteInitialSurfaceAvailability",
+        "candidate_status": "unavailable",
+        "composer_source": "unavailable",
+        "first_blocker_family": "source_unavailable",
+        "first_blocker_code": "limited_composer_shallow_empty_candidate",
+        "material_sufficient": False,
+        "material_quality_family": "unknown",
+        "surface_requirement_family": "unknown",
+        "recovery_lane": "source_availability_investigation",
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+    summary = build_complete_initial_surface_availability_summary(
+        diagnostic_summary={
+            COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY: prior_unknown_summary,
+            "primary_reason": "limited_composer_shallow_empty_candidate",
+            "display_rejection_reasons": [
+                "surface_signature_unavailable",
+                "empty_comment_text_without_candidate",
+            ],
+            "composer_status": "unavailable",
+            "composer_source": "unavailable",
+        },
+        candidate_generation_summary={
+            "candidate_generation_attempted": False,
+            "candidate_generated_before_display_gate": False,
+            "candidate_status": "unavailable",
+            "composer_source": "unavailable",
+        },
+        surface_requirement=_labelled_requirement(),
+        material_route={
+            "response_kind": "normal_observation",
+            "material_quality": "eligible",
+            "eligible_for_full_observation": True,
+            "visible_material_slots": [
+                "event",
+                "action",
+                "emotion_direction",
+                "relationship",
+                "target",
+                "change",
+                "time",
+                "value",
+            ],
+            "relation_material_ids": [
+                "relationship_end",
+                "support_from_other",
+                "gratitude_or_return_intent",
+            ],
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+    )
+
+    assert_complete_initial_surface_availability_summary(summary)
+    assert summary["first_blocker_family"] == "source_unavailable"
+    assert summary["first_blocker_code"] == "limited_composer_shallow_empty_candidate"
+    assert summary["material_sufficient"] is True
+    assert summary["material_quality_family"] == "eligible"
+    assert summary["surface_requirement_family"] == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    assert summary["recovery_lane"] == RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION
+    assert summary["normal_observation_rebuild_allowed"] is False
+    assert summary["normal_observation_rebuild_blocker"] == (
+        NORMAL_REBUILD_BLOCKER_SOURCE_UNAVAILABLE_NOT_REBUILDABLE
+    )
+    assert summary["body_free"] is True
+    _assert_body_free(summary)

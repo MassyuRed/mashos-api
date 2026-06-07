@@ -20,6 +20,7 @@ from emlis_ai_public_surface_requirement import (
     SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
     SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION,
     SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+    SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER,
     assert_public_surface_requirement_decision,
     public_surface_requirement_public_summary,
     resolve_public_surface_requirement,
@@ -75,6 +76,56 @@ def _eligible_material_route() -> dict[str, Any]:
         "visible_material_slots": ["event", "emotion_direction", "action", "relationship"],
         "unknown_slots": ["cause"],
         "relation_material_ids": ["relationship_boundary_state_answer"],
+    }
+
+
+def _relationship_transition_current_input() -> dict[str, Any]:
+    return {
+        "memo": (
+            "大切な人との関係が終わったあとも、そばにいてくれる友達の優しさを受け取れている。"
+            "その優しさに安心するだけでなく、自分も別の形で返したい気持ちが強くなっている。"
+            "関係の区切りと、次に向かう変化が同時に起きているように感じている。"
+        ),
+        "memo_action": "関係の終わりを受け止めつつ、支えてくれた友達に感謝を伝えようとしている。",
+        "emotions": ["喜び", "悲しみ"],
+        "category": ["人間関係", "価値観"],
+    }
+
+
+def _relationship_transition_material_route() -> dict[str, Any]:
+    return {
+        "safety_triage_kind": "safe_observation",
+        "response_kind": "normal_observation",
+        "public_observation_status": "passed",
+        "comment_text_required": True,
+        "public_input_feedback_allowed": True,
+        "material_quality": "eligible",
+        "material_sufficient": True,
+        "visible_material_slots": [
+            "event",
+            "action",
+            "emotion_direction",
+            "relationship",
+            "target",
+            "change",
+            "time",
+            "value",
+        ],
+        "unknown_slots": ["cause"],
+        "relation_material_ids": [
+            "relationship_end",
+            "support_from_other",
+            "gratitude_or_return_intent",
+            "relationship_material",
+            "support_received_material",
+        ],
+        "generic_relation_material_ids": [
+            "relationship_end",
+            "support_from_other",
+            "gratitude_or_return_intent",
+            "relationship_material",
+            "support_received_material",
+        ],
     }
 
 
@@ -152,6 +203,71 @@ def test_p1_two_stage_meta_requires_labelled_surface_body_free() -> None:
     assert decision["gate_policy"]["display_gate_relaxed"] is False
     assert decision["raw_input_included"] is False
     assert decision["comment_text_body_included"] is False
+    _assert_body_free(decision)
+
+
+def test_p1_relationship_transition_material_requires_labelled_two_stage_without_case_route() -> None:
+    decision = resolve_public_surface_requirement(
+        current_input=_relationship_transition_current_input(),
+        material_route=_relationship_transition_material_route(),
+        composer_meta={
+            "composer_source": "unavailable",
+            "candidate_status": "unavailable",
+            "primary_reason": "limited_composer_shallow_empty_candidate",
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+        diagnostic_summary={"primary_reason": "limited_composer_shallow_empty_candidate"},
+    )
+
+    assert_public_surface_requirement_decision(decision)
+    assert decision["surface_requirement_family"] == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    assert decision["two_stage_required"] is True
+    assert decision["plain_state_answer_allowed"] is False
+    assert decision["low_information_allowed"] is False
+    assert "material_relationship_transition_two_stage" in decision["decision_sources"]
+    assert "fixture_family_meta" not in decision["decision_sources"]
+    assert decision["input_material_classification"]["high_information_input"] is True
+    assert decision["required_comment_text_shape"]["starts_with"] == LABELLED_TWO_STAGE_OBSERVATION_MARKER
+    assert decision["required_comment_text_shape"]["contains_boundary"] == LABELLED_TWO_STAGE_RECEPTION_BOUNDARY
+    assert decision["public_contract"]["rn_visible_contract_changed"] is False
+    assert decision["gate_policy"]["display_gate_relaxed"] is False
+    _assert_body_free(decision)
+
+
+def test_p1_relationship_transition_rule_does_not_promote_without_relationship_slot() -> None:
+    material_route = _relationship_transition_material_route()
+    material_route["visible_material_slots"] = ["event", "action", "target", "change", "value"]
+
+    decision = resolve_public_surface_requirement(
+        current_input=_relationship_transition_current_input(),
+        material_route=material_route,
+        composer_meta={"composer_source": "unavailable", "candidate_status": "unavailable"},
+        diagnostic_summary={},
+    )
+
+    assert decision["surface_requirement_family"] == SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER
+    assert decision["two_stage_required"] is False
+    assert decision["plain_state_answer_allowed"] is True
+    assert "material_relationship_transition_two_stage" not in decision["decision_sources"]
+    _assert_body_free(decision)
+
+
+def test_p1_relationship_transition_rule_does_not_override_self_denial_safe_state_answer() -> None:
+    material_route = _relationship_transition_material_route()
+    material_route["surface_requirement_family"] = SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER
+
+    decision = resolve_public_surface_requirement(
+        current_input=_relationship_transition_current_input(),
+        material_route=material_route,
+        composer_meta={},
+        diagnostic_summary={},
+    )
+
+    assert decision["surface_requirement_family"] == SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER
+    assert decision["two_stage_required"] is False
+    assert decision["plain_state_answer_allowed"] is False
+    assert "material_relationship_transition_two_stage" not in decision["decision_sources"]
     _assert_body_free(decision)
 
 

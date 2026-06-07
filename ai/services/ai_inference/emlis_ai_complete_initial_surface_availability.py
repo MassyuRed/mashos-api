@@ -69,13 +69,24 @@ _FIRST_BLOCKER_FAMILY_NONE: Final = ""
 _FIRST_BLOCKER_FAMILY_UNKNOWN: Final = "unknown"
 
 _SOURCE_UNAVAILABLE_CODES: Final[tuple[str, ...]] = (
-    "complete_initial_surface_unavailable",
-    "source_unavailable",
+    "limited_composer_shallow_empty_candidate",
+    "sentence_plan_unavailable",
+    "empty_comment_text_without_candidate",
     "composer_source_unavailable",
     "composer_unavailable",
+    "complete_initial_surface_unavailable",
+    "source_unavailable",
     "complete_initial_candidate_not_generated",
     "complete_initial_generation_not_attempted",
     "complete_initial_client_not_resolved",
+)
+_NON_BLOCKING_ROUTE_REASON_CODES: Final[frozenset[str]] = frozenset(
+    {
+        # Phase20-3 material routing names the source of an eligible material
+        # decision.  It is not a blocker and must not shadow the limited
+        # composer source-unavailable reason used by P4/P5 recovery.
+        "phase20_3_material_quality_router",
+    }
 )
 _SURFACE_REALIZER_CODES: Final[tuple[str, ...]] = (
     "surface_realizer_unavailable",
@@ -113,6 +124,10 @@ _MATERIAL_QUALITY_CODES: Final[tuple[str, ...]] = (
     "limited_grounding",
     "material_quality_low_information",
     "material_quality_limited_grounding",
+    "material_unsupported",
+    "unsupported_material",
+    "material_quality_unsupported",
+    "unsupported_input_material",
 )
 _SURFACE_SIGNATURE_CODES: Final[tuple[str, ...]] = (
     "surface_signature_unavailable",
@@ -149,12 +164,26 @@ _COMPOSER_DISABLED_CODES: Final[tuple[str, ...]] = (
     "complete_initial_composer_disabled",
     "composer_client_disabled",
 )
+_BLOCKED_BEFORE_RECOMPOSITION_CODE_GROUPS: Final[tuple[tuple[str, ...], ...]] = (
+    _SAFETY_CODES,
+    _INFRASTRUCTURE_CODES,
+    _COMPOSER_DISABLED_CODES,
+    _AP0_ROLLOUT_CODES,
+    _MATERIAL_QUALITY_CODES,
+    _COVERAGE_CODES,
+    _REQUIRED_STRUCTURE_CODES,
+)
 _LOW_MATERIAL_QUALITY_VALUES: Final[frozenset[str]] = frozenset(
     {
         "low_information",
         "limited_grounding",
         "material_insufficient",
         "insufficient_input_material",
+        "unsupported",
+        "material_unsupported",
+        "unsupported_material",
+        "material_quality_unsupported",
+        "unsupported_input_material",
         "unknown",
     }
 )
@@ -167,6 +196,31 @@ _SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
         SURFACE_REQUIREMENT_SAFETY_BLOCKED,
         SURFACE_REQUIREMENT_INFRASTRUCTURE_FAIL_CLOSED,
         "unknown",
+    }
+)
+_RECOMPOSITION_COMPATIBLE_SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
+    {
+        SURFACE_REQUIREMENT_LABELLED_TWO_STAGE,
+        SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
+    }
+)
+_RECOMPOSITION_BLOCKING_SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
+    {
+        SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION,
+        SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER,
+        SURFACE_REQUIREMENT_SAFETY_BLOCKED,
+        SURFACE_REQUIREMENT_INFRASTRUCTURE_FAIL_CLOSED,
+    }
+)
+_HARD_BLOCKER_FAMILIES: Final[frozenset[str]] = frozenset(
+    {
+        _FIRST_BLOCKER_FAMILY_AP0_ROLLOUT,
+        _FIRST_BLOCKER_FAMILY_COVERAGE,
+        _FIRST_BLOCKER_FAMILY_REQUIRED_STRUCTURE,
+        _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY,
+        _FIRST_BLOCKER_FAMILY_SAFETY,
+        _FIRST_BLOCKER_FAMILY_INFRASTRUCTURE,
+        _FIRST_BLOCKER_FAMILY_COMPOSER_DISABLED,
     }
 )
 _PUBLIC_CONTRACT_KEYS: Final[tuple[str, ...]] = (
@@ -286,9 +340,9 @@ def build_complete_initial_surface_availability_summary(
 
     sources = _collect_sources(
         candidate_generation_summary,
-        diagnostic_summary,
-        phase_gate,
-        internal_meta,
+        _without_prior_availability_summary(diagnostic_summary),
+        _without_prior_availability_summary(phase_gate),
+        _without_prior_availability_summary(internal_meta),
         material_route,
         surface_requirement,
     )
@@ -385,6 +439,11 @@ def build_complete_initial_surface_availability_summary(
         candidate_status=candidate_status,
         composer_source=composer_source,
     )
+    first_blocker_family = _apply_lane_blocker_overrides(
+        first_blocker_family,
+        material_quality_family=material_quality_family,
+        surface_requirement_family=surface_requirement_family,
+    )
     availability_diagnostics = _availability_diagnostics(first_blocker_family, reason_codes)
     existing_gates_evaluated = _existing_gates_evaluated(sources)
     two_stage_required = bool(requirement.get("two_stage_required")) or surface_requirement_family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
@@ -398,6 +457,7 @@ def build_complete_initial_surface_availability_summary(
     recovery_lane = _recovery_lane(
         first_blocker_family=first_blocker_family,
         material_sufficient=material_sufficient,
+        surface_requirement_family=surface_requirement_family,
         candidate_generated_before_display_gate=candidate_generated_before_display_gate,
         normal_observation_rebuild_allowed=normal_allowed,
     )
@@ -451,6 +511,7 @@ def complete_initial_surface_availability_public_summary(
         "first_blocker_family": _clean_identifier(source.get("first_blocker_family"), max_length=96),
         "first_blocker_code": _clean_identifier(source.get("first_blocker_code"), max_length=128),
         "material_sufficient": bool(source.get("material_sufficient")),
+        "material_quality_family": _clean_identifier(source.get("material_quality_family"), max_length=96) or "unknown",
         "surface_requirement_family": _clean_identifier(source.get("surface_requirement_family"), max_length=96) or "unknown",
         "recovery_lane": _clean_identifier(source.get("recovery_lane"), max_length=96),
         "normal_observation_rebuild_allowed": bool(source.get("normal_observation_rebuild_allowed")),
@@ -516,6 +577,30 @@ def assert_complete_initial_surface_availability_summary(value: Any) -> None:
         raise ValueError("P4 availability summary must not relax gates")
     _assert_no_forbidden_body_keys(value)
     json.dumps(dict(value), ensure_ascii=False, sort_keys=True)
+
+
+
+def _without_prior_availability_summary(value: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    """Return context without a previously built availability summary.
+
+    Availability summaries are outputs of this module, not authoritative inputs
+    for a later rebuild.  Keeping an older summary in the source set can let an
+    earlier ``material_sufficient=false / material_quality_family=unknown``
+    shadow the Phase20-3 material route that reply_service now passes
+    explicitly.
+    """
+
+    mapping = _as_mapping(value)
+    if not mapping:
+        return None
+    cleaned = dict(mapping)
+    for key in (
+        COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,
+        "public_observation_complete_initial_surface_availability",
+        "complete_initial_availability_summary",
+    ):
+        cleaned.pop(key, None)
+    return cleaned
 
 
 def _collect_sources(*values: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
@@ -657,6 +742,8 @@ def _reason_codes(sources: Sequence[Mapping[str, Any]]) -> list[str]:
         ):
             for item in _as_sequence(source.get(key)):
                 reason = _clean_identifier(item, max_length=128)
+                if reason in _NON_BLOCKING_ROUTE_REASON_CODES:
+                    continue
                 if reason and reason not in out:
                     out.append(reason)
         for key in (
@@ -668,6 +755,8 @@ def _reason_codes(sources: Sequence[Mapping[str, Any]]) -> list[str]:
             "public_feedback_absence_reason_code",
         ):
             reason = _clean_identifier(source.get(key), max_length=128)
+            if reason in _NON_BLOCKING_ROUTE_REASON_CODES:
+                continue
             if reason and reason not in out:
                 out.append(reason)
     return out[:32]
@@ -683,6 +772,12 @@ def _first_blocker_code(
     candidate_status: str,
     composer_source: str,
 ) -> str:
+    priority_blocker = _blocked_before_recomposition_reason_code(reason_codes)
+    if priority_blocker:
+        return priority_blocker
+    source_unavailable_reason = _source_unavailable_reason_code(reason_codes)
+    if source_unavailable_reason:
+        return source_unavailable_reason
     for source in sources:
         for key in (
             "first_blocker_code",
@@ -722,16 +817,18 @@ def _first_blocker_family(
         return _FIRST_BLOCKER_FAMILY_INFRASTRUCTURE
     if _contains_any(codes, _COMPOSER_DISABLED_CODES):
         return _FIRST_BLOCKER_FAMILY_COMPOSER_DISABLED
-    if _contains_any(codes, _SURFACE_REALIZER_CODES):
-        return _FIRST_BLOCKER_FAMILY_SURFACE_REALIZER_UNAVAILABLE
     if _contains_any(codes, _AP0_ROLLOUT_CODES):
         return _FIRST_BLOCKER_FAMILY_AP0_ROLLOUT
+    if _contains_any(codes, _MATERIAL_QUALITY_CODES):
+        return _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY
     if _contains_any(codes, _COVERAGE_CODES):
         return _FIRST_BLOCKER_FAMILY_COVERAGE
     if _contains_any(codes, _REQUIRED_STRUCTURE_CODES):
         return _FIRST_BLOCKER_FAMILY_REQUIRED_STRUCTURE
-    if _contains_any(codes, _MATERIAL_QUALITY_CODES):
-        return _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY
+    if _contains_any((first_blocker_code,), _SOURCE_UNAVAILABLE_CODES):
+        return _FIRST_BLOCKER_FAMILY_SOURCE_UNAVAILABLE
+    if _contains_any(codes, _SURFACE_REALIZER_CODES):
+        return _FIRST_BLOCKER_FAMILY_SURFACE_REALIZER_UNAVAILABLE
     if _contains_any(codes, _SURFACE_SIGNATURE_CODES):
         return _FIRST_BLOCKER_FAMILY_SURFACE_SIGNATURE
     if _contains_any(codes, _SOURCE_UNAVAILABLE_CODES):
@@ -745,6 +842,43 @@ def _first_blocker_family(
     if first_blocker_code:
         return _FIRST_BLOCKER_FAMILY_UNKNOWN
     return _FIRST_BLOCKER_FAMILY_NONE
+
+
+def _apply_lane_blocker_overrides(
+    first_blocker_family: str,
+    *,
+    material_quality_family: str,
+    surface_requirement_family: str,
+) -> str:
+    """Keep Step 5 lane decisions fail-closed before recomposition.
+
+    Source-unavailable can move toward complete-initial surface recomposition only
+    when the material is eligible and the surface requirement is a compatible
+    public observation family.  Safety, infrastructure, unsupported material,
+    and blocked surface families must not be reopened by a shallow-empty composer
+    reason.
+    """
+
+    if first_blocker_family in _HARD_BLOCKER_FAMILIES:
+        return first_blocker_family
+    if surface_requirement_family == SURFACE_REQUIREMENT_SAFETY_BLOCKED:
+        return _FIRST_BLOCKER_FAMILY_SAFETY
+    if surface_requirement_family == SURFACE_REQUIREMENT_INFRASTRUCTURE_FAIL_CLOSED:
+        return _FIRST_BLOCKER_FAMILY_INFRASTRUCTURE
+    if surface_requirement_family in {
+        SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION,
+        SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER,
+    }:
+        return _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY
+    if material_quality_family in {
+        "unsupported",
+        "material_unsupported",
+        "unsupported_material",
+        "material_quality_unsupported",
+        "unsupported_input_material",
+    }:
+        return _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY
+    return first_blocker_family
 
 
 def _availability_diagnostics(first_blocker_family: str, reason_codes: Sequence[str]) -> dict[str, bool]:
@@ -809,29 +943,26 @@ def _recovery_lane(
     *,
     first_blocker_family: str,
     material_sufficient: bool,
+    surface_requirement_family: str,
     candidate_generated_before_display_gate: bool,
     normal_observation_rebuild_allowed: bool,
 ) -> str:
     if normal_observation_rebuild_allowed:
         return RECOVERY_LANE_NORMAL_OBSERVATION_REBUILD
+    if first_blocker_family in _HARD_BLOCKER_FAMILIES:
+        return RECOVERY_LANE_BLOCKED_BEFORE_RECOMPOSITION
     if first_blocker_family in {
         _FIRST_BLOCKER_FAMILY_SOURCE_UNAVAILABLE,
         _FIRST_BLOCKER_FAMILY_SURFACE_REALIZER_UNAVAILABLE,
         _FIRST_BLOCKER_FAMILY_SURFACE_SIGNATURE,
     }:
-        if material_sufficient:
+        if not material_sufficient:
+            return RECOVERY_LANE_SOURCE_AVAILABILITY_INVESTIGATION
+        if surface_requirement_family in _RECOMPOSITION_COMPATIBLE_SURFACE_REQUIREMENT_FAMILIES:
             return RECOVERY_LANE_COMPLETE_INITIAL_SURFACE_RECOMPOSITION
+        if surface_requirement_family in _RECOMPOSITION_BLOCKING_SURFACE_REQUIREMENT_FAMILIES:
+            return RECOVERY_LANE_BLOCKED_BEFORE_RECOMPOSITION
         return RECOVERY_LANE_SOURCE_AVAILABILITY_INVESTIGATION
-    if first_blocker_family in {
-        _FIRST_BLOCKER_FAMILY_AP0_ROLLOUT,
-        _FIRST_BLOCKER_FAMILY_COVERAGE,
-        _FIRST_BLOCKER_FAMILY_REQUIRED_STRUCTURE,
-        _FIRST_BLOCKER_FAMILY_MATERIAL_QUALITY,
-        _FIRST_BLOCKER_FAMILY_SAFETY,
-        _FIRST_BLOCKER_FAMILY_INFRASTRUCTURE,
-        _FIRST_BLOCKER_FAMILY_COMPOSER_DISABLED,
-    }:
-        return RECOVERY_LANE_BLOCKED_BEFORE_RECOMPOSITION
     if not candidate_generated_before_display_gate:
         return RECOVERY_LANE_SOURCE_AVAILABILITY_INVESTIGATION
     return RECOVERY_LANE_NONE
@@ -851,6 +982,28 @@ def _pick_identifier(sources: Sequence[Mapping[str, Any]], keys: Sequence[str]) 
         for key in keys:
             value = _clean_identifier(source.get(key), max_length=128)
             if value:
+                return value
+    return ""
+
+
+def _source_unavailable_reason_code(reason_codes: Sequence[str]) -> str:
+    cleaned_reason_codes = [_clean_identifier(value, max_length=160) for value in reason_codes]
+    for source_unavailable_code in _SOURCE_UNAVAILABLE_CODES:
+        for value in cleaned_reason_codes:
+            if not value:
+                continue
+            if value == source_unavailable_code or source_unavailable_code in value:
+                return value
+    return ""
+
+
+def _blocked_before_recomposition_reason_code(reason_codes: Sequence[str]) -> str:
+    cleaned_reason_codes = [_clean_identifier(value, max_length=160) for value in reason_codes]
+    for group in _BLOCKED_BEFORE_RECOMPOSITION_CODE_GROUPS:
+        for value in cleaned_reason_codes:
+            if not value:
+                continue
+            if _contains_any((value,), group):
                 return value
     return ""
 

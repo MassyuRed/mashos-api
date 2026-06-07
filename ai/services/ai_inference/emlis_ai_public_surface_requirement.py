@@ -85,6 +85,26 @@ _TWO_STAGE_REASON_MARKERS: Final[tuple[str, ...]] = (
     "labelled_two_stage",
     "product_visible",
 )
+_RELATIONSHIP_TRANSITION_VISIBLE_SLOT_MARKERS: Final[frozenset[str]] = frozenset(
+    {"relationship", "action", "change", "value", "target"}
+)
+_RELATIONSHIP_TRANSITION_ACTION_SLOT_MARKERS: Final[frozenset[str]] = frozenset(
+    {"action", "target"}
+)
+_RELATIONSHIP_TRANSITION_MEANING_SLOT_MARKERS: Final[frozenset[str]] = frozenset(
+    {"change", "value"}
+)
+_RELATIONSHIP_TRANSITION_MATERIAL_IDS: Final[frozenset[str]] = frozenset(
+    {
+        "relationship_end",
+        "support_from_other",
+        "gratitude_or_return_intent",
+        "boundary_or_transition",
+        "future_intention",
+        "relationship_material",
+        "support_received_material",
+    }
+)
 _TWO_STAGE_META_TRUE_KEYS: Final[tuple[str, ...]] = (
     "two_stage_required",
     "two_stage_reception_gate_required",
@@ -269,9 +289,20 @@ def resolve_public_surface_requirement(
         containers=containers,
         reason_codes=reason_codes,
     )
+    material_relationship_transition_two_stage = (
+        False
+        if self_denial_safe_answer
+        else _material_relationship_transition_two_stage_required(
+            input_classification=input_classification,
+            material_quality=material_quality,
+            route_meta=route_meta,
+            containers=containers,
+        )
+    )
     two_stage_required = bool(
         not safety_blocked
         and not infrastructure_fail_closed
+        and not self_denial_safe_answer
         and not low_information_requested
         and (
             limited_grounding_requested
@@ -279,6 +310,7 @@ def resolve_public_surface_requirement(
             or fixture_two_stage
             or bool(two_stage_decision.get("required"))
             or high_information_two_stage
+            or material_relationship_transition_two_stage
         )
     )
 
@@ -315,6 +347,7 @@ def resolve_public_surface_requirement(
         explicit_two_stage=explicit_two_stage,
         fixture_two_stage=fixture_two_stage,
         high_information_two_stage=high_information_two_stage,
+        material_relationship_transition_two_stage=material_relationship_transition_two_stage,
         two_stage_applicability_required=bool(two_stage_decision.get("required")),
         limited_grounding_requested=limited_grounding_requested,
         low_information_requested=low_information_requested,
@@ -675,6 +708,63 @@ def _high_information_two_stage_required(
     return False
 
 
+def _material_relationship_transition_two_stage_required(
+    *,
+    input_classification: Mapping[str, Any],
+    material_quality: str,
+    route_meta: Mapping[str, Any],
+    containers: Sequence[Mapping[str, Any]],
+) -> bool:
+    """Require labelled two-stage for rich relation/transition material.
+
+    This is a material-shaped rule, not a fixture route. It only reads
+    body-free slots and material identifiers already produced by Phase20-3, so
+    D-equivalent source-unavailable inputs can carry the right public-surface
+    requirement without embedding their text or reintroducing a case-specific
+    surface.
+    """
+
+    if material_quality not in _HIGH_INFORMATION_QUALITY_MARKERS:
+        return False
+    if not bool(input_classification.get("high_information_input")):
+        return False
+    if _self_denial_safe_state_answer(containers):
+        return False
+
+    route_response_kind = _clean_identifier(route_meta.get("response_kind"), max_length=96)
+    if route_response_kind and route_response_kind != "normal_observation":
+        return False
+    route_safety_kind = _clean_identifier(route_meta.get("safety_triage_kind"), max_length=96)
+    if route_safety_kind and route_safety_kind != "safe_observation":
+        return False
+
+    visible_slots = set(_dedupe(route_meta.get("visible_material_slots") or ()))
+    relation_ids = set(
+        _dedupe(
+            _listify(route_meta.get("relation_material_ids"))
+            + _listify(route_meta.get("generic_relation_material_ids"))
+        )
+    )
+
+    for container in containers:
+        visible_slots.update(_dedupe(container.get("visible_material_slots") or ()))
+        relation_ids.update(_dedupe(container.get("relation_material_ids") or ()))
+        relation_ids.update(_dedupe(container.get("generic_relation_material_ids") or ()))
+
+    relationship_transition_slots = visible_slots.intersection(_RELATIONSHIP_TRANSITION_VISIBLE_SLOT_MARKERS)
+    action_slots = visible_slots.intersection(_RELATIONSHIP_TRANSITION_ACTION_SLOT_MARKERS)
+    meaning_slots = visible_slots.intersection(_RELATIONSHIP_TRANSITION_MEANING_SLOT_MARKERS)
+    relationship_transition_ids = relation_ids.intersection(_RELATIONSHIP_TRANSITION_MATERIAL_IDS)
+
+    return bool(
+        "relationship" in visible_slots
+        and len(relationship_transition_slots) >= 3
+        and bool(action_slots)
+        and bool(meaning_slots)
+        and len(relationship_transition_ids) >= 2
+    )
+
+
 def _safety_required(containers: Sequence[Mapping[str, Any]], *, reason_codes: Sequence[str]) -> bool:
     if any(any(marker in reason for marker in _SAFETY_REASON_MARKERS) for reason in reason_codes):
         return True
@@ -719,6 +809,7 @@ def _decision_sources(
     explicit_two_stage: bool,
     fixture_two_stage: bool,
     high_information_two_stage: bool,
+    material_relationship_transition_two_stage: bool,
     two_stage_applicability_required: bool,
     limited_grounding_requested: bool,
     low_information_requested: bool,
@@ -742,6 +833,8 @@ def _decision_sources(
         sources.append("fixture_family_meta")
     if high_information_two_stage:
         sources.append("high_information_structure_family")
+    if material_relationship_transition_two_stage:
+        sources.append("material_relationship_transition_two_stage")
     if limited_grounding_requested:
         sources.append("limited_grounding_reception_required")
     if low_information_requested:

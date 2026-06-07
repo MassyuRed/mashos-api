@@ -7,6 +7,7 @@ from typing import Any
 from emlis_ai_complete_initial_surface_recomposition import (
     COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
     build_complete_initial_surface_recomposition_candidate,
+    complete_initial_surface_recomposition_public_summary,
     should_attempt_complete_initial_surface_recomposition,
 )
 from emlis_ai_gate_recovery_public_candidate_builder import build_public_candidate_after_gate_recovery
@@ -37,6 +38,8 @@ def _availability(**overrides: Any) -> dict[str, Any]:
         "normal_observation_rebuild_blocker": "source_unavailable_not_rebuildable",
         "raw_input_included": False,
         "comment_text_body_included": False,
+        "candidate_body_in_meta": False,
+        "case_specific_route_used": False,
     }
     value.update(overrides)
     return value
@@ -53,6 +56,7 @@ def _surface_requirement(**overrides: Any) -> dict[str, Any]:
         "body_free": True,
         "raw_input_included": False,
         "comment_text_body_included": False,
+        "candidate_body_in_meta": False,
     }
     value.update(overrides)
     return value
@@ -87,6 +91,8 @@ def _assert_body_free(value: Any) -> None:
         "comment_text",
         "candidate_comment_text",
         "public_comment_text",
+        "candidate_body",
+        "candidateBody",
         "realized_text",
         "surface_text",
         "body",
@@ -123,6 +129,10 @@ def test_p5_builds_labelled_two_stage_candidate_from_complete_surface_realizer_w
     assert candidate.composer_meta["public_surface_role"] == PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION
     assert candidate.composer_meta["normal_observation_rebuild_used"] is False
     assert candidate.composer_meta["gate_recovery_material_surface_used"] is False
+    assert candidate.composer_meta["candidate_body_in_meta"] is False
+    assert candidate.composer_meta["case_specific_route_used"] is False
+    assert candidate.composer_meta["body_boundary"]["candidate_body_in_meta"] is False
+    assert candidate.composer_meta["complete_surface_recomposition_summary"]["candidate_body_in_meta"] is False
     assert candidate.composer_meta["complete_surface_recomposition_summary"]["complete_sentence_plan_connected"] is True
     assert candidate.composer_meta["complete_surface_recomposition_summary"]["complete_surface_realizer_connected"] is True
     assert candidate.composer_meta["implementation_boundary"]["fixed_fallback_used"] is False
@@ -160,8 +170,145 @@ def test_p5_builder_selects_complete_initial_surface_recomposition_for_source_un
     assert meta["candidate_available"] is True
     assert meta["gate_recovery_public_boundary_decision"]["public_display_allowed"] is True
     assert meta["source_kind"] != CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    assert meta["contract_flags"]["candidate_body_in_meta"] is False
+    assert meta["contract_flags"]["case_specific_route_used"] is False
     _assert_body_free(meta)
     _assert_body_free(result.candidate.composer_meta)
+
+
+
+def test_p5_allows_limited_source_unavailable_recomposition_without_complete_client_resolution() -> None:
+    availability = _availability(
+        complete_initial_client_resolved=False,
+        candidate_generation_attempted=False,
+        candidate_generated_before_display_gate=False,
+        candidate_status="unavailable",
+        composer_source="unavailable",
+        first_blocker_family="source_unavailable",
+        first_blocker_code="limited_composer_shallow_empty_candidate",
+        material_quality_family="eligible",
+        surface_requirement_family="labelled_two_stage",
+        recovery_lane="complete_initial_surface_recomposition",
+        normal_observation_rebuild_allowed=False,
+    )
+    material = _material_route(
+        material_quality="eligible",
+        safety_triage_kind="safe_observation",
+        visible_material_slots=["relationship", "action", "change", "value"],
+        relation_material_ids=[
+            "relationship_end",
+            "support_from_other",
+            "gratitude_or_return_intent",
+        ],
+    )
+
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=availability,
+        surface_requirement=None,
+        material_route=material,
+    ) is True
+    candidate, reasons = build_complete_initial_surface_recomposition_candidate(
+        current_input={
+            "memo": "関係の区切りと友達から受け取った優しさを、次の形で返したい。",
+            "memo_action": "別れたあとも友達が優しくしてくれていることを整理する。",
+            "emotions": ["喜び"],
+            "category": ["恋愛", "人間関係", "価値観"],
+        },
+        material_route=material,
+        surface_requirement=None,
+        availability_summary=availability,
+        trace_id="p5-limited-source-unavailable",
+        recovery_context="pre_public_display_gate",
+    )
+
+    assert reasons == ["complete_initial_surface_recomposition_candidate_built"]
+    assert candidate is not None
+    assert candidate.comment_text.startswith("見えたこと：\n")
+    assert "\n\nEmlisから：\n" in candidate.comment_text
+    assert candidate.composer_meta["surface_requirement_family"] == "labelled_two_stage"
+    assert candidate.composer_meta["surface_requirement"]["decision_sources"] == [
+        "availability_surface_requirement_family"
+    ]
+    assert candidate.composer_meta["source_unavailable_recovered"] is True
+    assert candidate.composer_meta["normal_observation_rebuild_used"] is False
+    assert candidate.composer_meta["gate_recovery_material_surface_used"] is False
+    assert candidate.composer_meta["candidate_body_in_meta"] is False
+    assert candidate.composer_meta["case_specific_route_used"] is False
+    summary = complete_initial_surface_recomposition_public_summary(candidate.composer_meta)
+    assert summary["candidate_body_in_meta"] is False
+    assert summary["case_specific_route_used"] is False
+    _assert_body_free(candidate.composer_meta)
+
+
+def test_p5_keeps_limited_source_unavailable_recomposition_closed_for_blocked_conditions() -> None:
+    base_availability = _availability(
+        complete_initial_client_resolved=False,
+        candidate_generation_attempted=False,
+        candidate_generated_before_display_gate=False,
+        candidate_status="unavailable",
+        composer_source="unavailable",
+        first_blocker_family="source_unavailable",
+        first_blocker_code="limited_composer_shallow_empty_candidate",
+        material_quality_family="eligible",
+        surface_requirement_family="labelled_two_stage",
+        recovery_lane="complete_initial_surface_recomposition",
+        normal_observation_rebuild_allowed=False,
+    )
+    material = _material_route(
+        material_quality="eligible",
+        safety_triage_kind="safe_observation",
+        visible_material_slots=["relationship", "action", "change", "value"],
+        relation_material_ids=["relationship_end"],
+    )
+
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=base_availability,
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+        safety_requires_block=True,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=base_availability,
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+        reply_timeout_or_error=True,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=base_availability,
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+        composer_disabled=True,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=dict(base_availability, first_blocker_family="infrastructure_error"),
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=dict(base_availability, first_blocker_code="reply_timeout_or_error"),
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=dict(base_availability, candidate_generated_before_display_gate=True),
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=dict(base_availability, normal_observation_rebuild_allowed=True),
+        surface_requirement=_surface_requirement(),
+        material_route=material,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=base_availability,
+        surface_requirement=_surface_requirement(surface_requirement_family="safety_blocked"),
+        material_route=material,
+    ) is False
+    assert should_attempt_complete_initial_surface_recomposition(
+        availability_summary=base_availability,
+        surface_requirement=_surface_requirement(),
+        material_route=_material_route(material_quality="low_information"),
+    ) is False
 
 
 def test_p5_does_not_attempt_recomposition_for_low_information_or_generated_candidate() -> None:

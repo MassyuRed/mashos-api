@@ -266,6 +266,10 @@ _CONTRACT_FLAG_KEYS: Final[tuple[str, ...]] = (
     "safety_gate_relaxed",
     "raw_input_included",
     "comment_text_body_included",
+    "candidate_body_in_meta",
+    "gate_recovery_material_surface_used",
+    "normal_observation_rebuild_used",
+    "case_specific_route_used",
 )
 _FORBIDDEN_TEXT_PAYLOAD_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -455,6 +459,16 @@ def build_public_candidate_after_gate_recovery(
         _sanitize_recovery_plan(recovery_plan or default_plan),
         default_plan,
     )
+    direct_complete_initial_availability_summary = complete_initial_surface_availability_public_summary(
+        complete_initial_surface_availability_summary
+    )
+    if (
+        direct_complete_initial_availability_summary.get("recovery_lane")
+        == "complete_initial_surface_recomposition"
+    ):
+        plan["complete_initial_surface_availability_summary"] = dict(
+            direct_complete_initial_availability_summary
+        )
     bounded_original_build_reasons: list[str] = []
     if bounded_repaired_original_candidate is None and _should_attempt_bounded_original_repair(
         original_composer_candidate=original_composer_candidate,
@@ -1603,10 +1617,15 @@ def _candidate_with_public_lineage(
                 "selection_kind": selection_kind,
                 "raw_input_included": False,
                 "comment_text_body_included": False,
+                "candidate_body_in_meta": False,
             },
             "raw_input_included": False,
             "raw_text_included": False,
             "comment_text_body_included": False,
+            "candidate_body_in_meta": False,
+            "normal_observation_rebuild_used": False,
+            "gate_recovery_material_surface_used": False,
+            "case_specific_route_used": False,
             "display_gate_relaxed": False,
             "grounding_gate_relaxed": False,
             "template_gate_relaxed": False,
