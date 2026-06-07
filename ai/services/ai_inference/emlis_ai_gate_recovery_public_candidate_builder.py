@@ -143,7 +143,10 @@ BOUNDED_ORIGINAL_REPAIR_META_SCHEMA_VERSION: Final = (
     "cocolon.emlis.phase20_7.bounded_original_candidate_repair.v1"
 )
 _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
-    {"low_information", "limited_grounding"}
+    {"low_information"}
+)
+_LIMITED_GROUNDING_RECEPTION_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
+    {"limited_grounding"}
 )
 _NORMAL_REBUILD_REPAIRABLE_REASON_FAMILIES: Final[frozenset[str]] = frozenset(
     {"surface_grammar", "relation_skeleton", "visible_surface", "runtime_surface", "koto_splice"}
@@ -1522,11 +1525,18 @@ def _candidate_options(
 
     input_summary = _as_mapping(recovery_plan.get("input_material_summary"))
     material_quality = _clean_identifier(input_summary.get("material_quality"), max_length=96)
+    limited_grounding_reception_requested = _limited_grounding_reception_requested(
+        material_quality=material_quality,
+        surface_requirement=recovery_plan.get("surface_requirement"),
+    )
     if (
         material_quality in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
+        or limited_grounding_reception_requested
         or _recovery_plan_requires_labelled_two_stage(recovery_plan)
     ):
         normal_observation_rebuild_candidate = None
+    if limited_grounding_reception_requested:
+        low_information_candidate = None
 
     option_map: dict[str, tuple[str, str, Any | None]] = {
         CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE: (
@@ -1755,13 +1765,35 @@ def _normal_rebuild_candidate_source_order(
     *,
     normal_rebuild_allowed: bool,
 ) -> tuple[str, ...]:
-    ordered = _dedupe(values or [])
-    if normal_rebuild_allowed:
-        return ordered
-    return tuple(
-        item
-        for item in ordered
-        if item != CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
+    return _filter_recovery_candidate_source_order(
+        values,
+        normal_rebuild_allowed=normal_rebuild_allowed,
+        low_information_allowed=True,
+    )
+
+
+def _filter_recovery_candidate_source_order(
+    values: Sequence[Any] | Any | None,
+    *,
+    normal_rebuild_allowed: bool,
+    low_information_allowed: bool,
+) -> tuple[str, ...]:
+    blocked_sources: set[str] = set()
+    if not normal_rebuild_allowed:
+        blocked_sources.add(CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE)
+    if not low_information_allowed:
+        blocked_sources.add(CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER)
+    return tuple(item for item in _dedupe(values or []) if item not in blocked_sources)
+
+
+def _limited_grounding_reception_requested(
+    *,
+    material_quality: str,
+    surface_requirement: Mapping[str, Any] | None,
+) -> bool:
+    return bool(
+        material_quality in _LIMITED_GROUNDING_RECEPTION_MATERIAL_QUALITIES
+        and _surface_requirement_requires_labelled_two_stage(surface_requirement)
     )
 
 
@@ -1801,12 +1833,17 @@ def _default_recovery_plan(
         surface_requirement=surface_requirement_summary,
         material_route=material_route,
     )
+    limited_grounding_reception_requested = _limited_grounding_reception_requested(
+        material_quality=material_quality,
+        surface_requirement=surface_requirement_summary,
+    )
     # _default_recovery_plan receives only the candidate-presence boolean.  If a
-    # labelled surface is required and an original candidate exists, target P6;
-    # the concrete builder will still fail closed if the candidate is missing,
-    # unsafe, or already unavailable.
+    # labelled surface is required and an original candidate exists, target P6.
+    # limited_grounding is also routed to P6 here so it cannot fall back into the
+    # low-information question lane; P3/P6 still owns the actual recomposition
+    # eligibility and will fail closed when no safe public candidate can be built.
     labelled_two_stage_recomposition_allowed = bool(
-        original_candidate_present
+        (original_candidate_present or limited_grounding_reception_requested)
         and _surface_requirement_requires_labelled_two_stage(surface_requirement_summary)
         and material_quality not in _LOW_INFORMATION_RECOVERY_MATERIAL_QUALITIES
     )
@@ -1836,12 +1873,14 @@ def _default_recovery_plan(
         )
     if normal_rebuild_allowed:
         blockers_if_no_public_candidate.insert(0, BLOCKER_NORMAL_OBSERVATION_REBUILD_CANDIDATE_MISSING)
-    elif normal_rebuild_blocked_by_two_stage:
+    elif normal_rebuild_blocked_by_two_stage or limited_grounding_reception_requested:
         blockers_if_no_public_candidate.insert(
             0,
             BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED,
         )
-    normal_rebuild_in_order = not normal_rebuild_blocked_by_two_stage
+    normal_rebuild_in_order = not (
+        normal_rebuild_blocked_by_two_stage or limited_grounding_reception_requested
+    )
     return {
         "schema_version": RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION,
         "source_phase": PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE,
@@ -1866,7 +1905,7 @@ def _default_recovery_plan(
             complete_initial_surface_availability_summary
         ),
         "target_public_candidate_source": target,
-        "fallback_public_candidate_source_order": _normal_rebuild_candidate_source_order(
+        "fallback_public_candidate_source_order": _filter_recovery_candidate_source_order(
             [
                 CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
                 CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
@@ -1876,6 +1915,7 @@ def _default_recovery_plan(
                 CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
             ],
             normal_rebuild_allowed=normal_rebuild_in_order,
+            low_information_allowed=not limited_grounding_reception_requested,
         ),
         "diagnostic_surface_allowed": True,
         "diagnostic_surface_public_display_allowed": False,
@@ -1949,10 +1989,16 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
     input_summary = _as_mapping(source.get("input_material_summary"))
     failed_summary = _as_mapping(source.get("failed_gate_summary"))
     surface_requirement = public_surface_requirement_public_summary(source.get("surface_requirement"))
+    material_quality = _clean_identifier(input_summary.get("material_quality"), max_length=96)
+    limited_grounding_reception_requested = _limited_grounding_reception_requested(
+        material_quality=material_quality,
+        surface_requirement=surface_requirement,
+    )
     normal_rebuild_allowed = not _surface_requirement_requires_labelled_two_stage(surface_requirement)
-    fallback_order = _normal_rebuild_candidate_source_order(
+    fallback_order = _filter_recovery_candidate_source_order(
         source.get("fallback_public_candidate_source_order") or [],
         normal_rebuild_allowed=normal_rebuild_allowed,
+        low_information_allowed=not limited_grounding_reception_requested,
     )
     availability_summary = complete_initial_surface_availability_public_summary(
         source.get("complete_initial_surface_availability_summary")
@@ -1969,6 +2015,12 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
             [BLOCKER_NORMAL_OBSERVATION_REBUILD_BLOCKED_TWO_STAGE_REQUIRED, *blockers]
         )
     target_public_candidate_source = _clean_identifier(source.get("target_public_candidate_source"), max_length=96)
+    if limited_grounding_reception_requested and target_public_candidate_source in {
+        CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
+        CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE,
+        "",
+    }:
+        target_public_candidate_source = CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
     if not normal_rebuild_allowed and target_public_candidate_source == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE:
         target_public_candidate_source = ""
     return {
@@ -1976,7 +2028,7 @@ def _sanitize_recovery_plan(plan: Mapping[str, Any] | None) -> dict[str, Any]:
         "source_phase": _clean_identifier(source.get("source_phase"), max_length=128) or PUBLIC_RECOVERY_CANDIDATE_BUILDER_SOURCE_PHASE,
         "recovery_context": _clean_identifier(source.get("recovery_context"), max_length=96) or RECOVERY_CONTEXT_UNKNOWN,
         "input_material_summary": {
-            "material_quality": _clean_identifier(input_summary.get("material_quality"), max_length=96),
+            "material_quality": material_quality,
             "visible_material_slots": _dedupe(input_summary.get("visible_material_slots") or []),
             "unknown_slots": _dedupe(input_summary.get("unknown_slots") or []),
             "relation_material_ids": _dedupe(input_summary.get("relation_material_ids") or []),
@@ -2056,10 +2108,19 @@ def _ordered_public_candidate_sources(recovery_plan: Mapping[str, Any]) -> tuple
         and target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
     ):
         target = ""
+    material_quality = _clean_identifier(
+        _as_mapping(recovery_plan.get("input_material_summary")).get("material_quality"),
+        max_length=96,
+    )
+    limited_grounding_reception_requested = _limited_grounding_reception_requested(
+        material_quality=material_quality,
+        surface_requirement=recovery_plan.get("surface_requirement"),
+    )
     fallback_order = list(
-        _normal_rebuild_candidate_source_order(
+        _filter_recovery_candidate_source_order(
             recovery_plan.get("fallback_public_candidate_source_order") or [],
             normal_rebuild_allowed=normal_rebuild_allowed,
+            low_information_allowed=not limited_grounding_reception_requested,
         )
     )
     if labelled_two_stage_required:
@@ -2075,6 +2136,12 @@ def _ordered_public_candidate_sources(recovery_plan: Mapping[str, Any]) -> tuple
         CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER,
         CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     ]
+    if limited_grounding_reception_requested:
+        legacy_order = [
+            source
+            for source in legacy_order
+            if source != CANDIDATE_SOURCE_KIND_LOW_INFORMATION_OBSERVATION_COMPOSER
+        ]
     if target == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE and normal_rebuild_allowed:
         legacy_order.insert(0, CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE)
     return _dedupe([target, *fallback_order, *legacy_order])

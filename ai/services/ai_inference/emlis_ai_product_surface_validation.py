@@ -13,6 +13,15 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Final
 import json
 
+from emlis_ai_question_dominance_guard import (
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_BEFORE_RECEPTION,
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_DOMINANT_SURFACE,
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_ONLY_SURFACE,
+    QUESTION_DOMINANCE_BLOCKER_RECEPTION_SECTION_MISSING,
+    assert_question_dominance_guard_summary,
+    build_question_dominance_guard_summary,
+    question_dominance_guard_public_summary,
+)
 from emlis_ai_gate_recovery_public_constants import (
     ALLOWED_PUBLIC_CANDIDATE_SOURCE_KINDS,
     CANDIDATE_SOURCE_KIND_BOUNDED_REPAIRED_ORIGINAL_CANDIDATE,
@@ -80,6 +89,18 @@ PRODUCT_SURFACE_INVALID_PLAIN_STATE_ANSWER_NOT_ALLOWED: Final = (
 PRODUCT_SURFACE_INVALID_SURFACE_REQUIREMENT_UNSATISFIED: Final = (
     "product_surface_invalid_surface_requirement_unsatisfied"
 )
+PRODUCT_SURFACE_INVALID_RECEPTION_SECTION_MISSING: Final = (
+    QUESTION_DOMINANCE_BLOCKER_RECEPTION_SECTION_MISSING
+)
+PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE: Final = (
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_DOMINANT_SURFACE
+)
+PRODUCT_SURFACE_INVALID_QUESTION_BEFORE_RECEPTION: Final = (
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_BEFORE_RECEPTION
+)
+PRODUCT_SURFACE_INVALID_QUESTION_ONLY_SURFACE: Final = (
+    QUESTION_DOMINANCE_BLOCKER_QUESTION_ONLY_SURFACE
+)
 
 # Public aliases used by P3 tests and ProductQuality integration.
 PRODUCT_SURFACE_BLOCKER_NONE: Final = PRODUCT_SURFACE_VALID
@@ -96,6 +117,10 @@ PRODUCT_SURFACE_BLOCKER_LOW_INFORMATION_MISROUTE: Final = PRODUCT_SURFACE_INVALI
 PRODUCT_SURFACE_BLOCKER_PLAIN_STATE_ANSWER_NOT_ALLOWED: Final = PRODUCT_SURFACE_INVALID_PLAIN_STATE_ANSWER_NOT_ALLOWED
 PRODUCT_SURFACE_BLOCKER_SURFACE_REQUIREMENT_UNSATISFIED: Final = PRODUCT_SURFACE_INVALID_SURFACE_REQUIREMENT_UNSATISFIED
 PRODUCT_SURFACE_BLOCKER_SURFACE_REQUIREMENT_UNSUPPORTED: Final = PRODUCT_SURFACE_INVALID_SURFACE_REQUIREMENT_UNSATISFIED
+PRODUCT_SURFACE_BLOCKER_RECEPTION_SECTION_MISSING: Final = PRODUCT_SURFACE_INVALID_RECEPTION_SECTION_MISSING
+PRODUCT_SURFACE_BLOCKER_QUESTION_DOMINANT_SURFACE: Final = PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE
+PRODUCT_SURFACE_BLOCKER_QUESTION_BEFORE_RECEPTION: Final = PRODUCT_SURFACE_INVALID_QUESTION_BEFORE_RECEPTION
+PRODUCT_SURFACE_BLOCKER_QUESTION_ONLY_SURFACE: Final = PRODUCT_SURFACE_INVALID_QUESTION_ONLY_SURFACE
 
 _BLOCKER_FAMILY_NONE: Final = ""
 _BLOCKER_FAMILY_PUBLIC_FEEDBACK: Final = "public_feedback_contract"
@@ -106,6 +131,7 @@ _BLOCKER_FAMILY_TWO_STAGE_SHAPE: Final = "two_stage_shape_required"
 _BLOCKER_FAMILY_LOW_INFORMATION: Final = "low_information_misroute"
 _BLOCKER_FAMILY_PLAIN_STATE_ANSWER: Final = "plain_state_answer_contract"
 _BLOCKER_FAMILY_SURFACE_REQUIREMENT: Final = "surface_requirement"
+_BLOCKER_FAMILY_QUESTION_DOMINANCE: Final = "question_dominance_guard"
 
 _FUTURE_PUBLIC_CANDIDATE_SOURCE_KINDS: Final[frozenset[str]] = frozenset(
     {
@@ -195,6 +221,7 @@ _REQUIRED_SUMMARY_KEYS: Final[frozenset[str]] = frozenset(
         "plain_surface_allowed",
         "low_information_surface_used",
         "labelled_two_stage_shape",
+        "question_dominance_guard",
         "candidate_source_kind",
         "composer_source",
         "candidate_status",
@@ -229,6 +256,10 @@ _VALID_BLOCKER_CODES: Final[frozenset[str]] = frozenset(
         PRODUCT_SURFACE_INVALID_LOW_INFORMATION_MISROUTE,
         PRODUCT_SURFACE_INVALID_PLAIN_STATE_ANSWER_NOT_ALLOWED,
         PRODUCT_SURFACE_INVALID_SURFACE_REQUIREMENT_UNSATISFIED,
+        PRODUCT_SURFACE_INVALID_RECEPTION_SECTION_MISSING,
+        PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE,
+        PRODUCT_SURFACE_INVALID_QUESTION_BEFORE_RECEPTION,
+        PRODUCT_SURFACE_INVALID_QUESTION_ONLY_SURFACE,
     }
 )
 _BODY_FORBIDDEN_EXACT_KEYS: Final[frozenset[str]] = frozenset(
@@ -322,6 +353,7 @@ def build_product_surface_validation_summary(
     public_feedback_contract_passed = bool(rn_visible)
 
     surface_family = _surface_family(requirement.get("surface_requirement_family"))
+    material_quality_family = _clean_identifier(requirement.get("material_quality_family"), max_length=96)
     two_stage_required = bool(requirement.get("two_stage_required")) or surface_family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
     plain_allowed_by_requirement = bool(requirement.get("plain_state_answer_allowed"))
     low_information_allowed = bool(requirement.get("low_information_allowed"))
@@ -355,6 +387,20 @@ def build_product_surface_validation_summary(
         generation=generation,
         public_meta=public,
     )
+    question_dominance_guard_required = _question_dominance_guard_required(
+        surface_family=surface_family,
+        material_quality_family=material_quality_family,
+    )
+    question_dominance_guard = build_question_dominance_guard_summary(
+        comment_text=comment_text,
+        target_surface_family=surface_family,
+        material_quality_family=material_quality_family,
+        reception_required=question_dominance_guard_required,
+    )
+    question_dominance_guard_passed = bool(question_dominance_guard.get("passed"))
+    low_information_reception_shape_valid = bool(
+        labelled_shape_valid and question_dominance_guard_passed
+    )
     plain_surface_used = bool(
         rn_visible
         and not labelled_shape_valid
@@ -377,6 +423,9 @@ def build_product_surface_validation_summary(
         low_information_allowed=low_information_allowed,
         labelled_shape_valid=labelled_shape_valid,
         low_information_surface_used=low_information_surface_used,
+        low_information_reception_shape_valid=low_information_reception_shape_valid,
+        question_dominance_guard_required=question_dominance_guard_required,
+        question_dominance_guard_passed=question_dominance_guard_passed,
         candidate_source_kind=candidate_source_kind,
         public_candidate_source_allowed=public_candidate_source_allowed,
     )
@@ -389,6 +438,11 @@ def build_product_surface_validation_summary(
         plain_surface_used=plain_surface_used,
         labelled_shape_valid=labelled_shape_valid,
         low_information_surface_used=low_information_surface_used,
+        question_dominance_guard_required=question_dominance_guard_required,
+        question_dominance_guard_passed=question_dominance_guard_passed,
+        question_dominance_guard_blocker_code=_clean_identifier(
+            question_dominance_guard.get("blocker_code"), max_length=128
+        ),
         low_information_allowed=low_information_allowed,
         plain_surface_allowed=plain_surface_allowed,
         surface_requirement_satisfied=surface_requirement_satisfied,
@@ -415,6 +469,7 @@ def build_product_surface_validation_summary(
         "plain_surface_allowed": plain_surface_allowed,
         "low_information_surface_used": low_information_surface_used,
         "labelled_two_stage_shape": labelled_shape,
+        "question_dominance_guard": question_dominance_guard,
         "candidate_source_kind": candidate_source_kind,
         "composer_source": composer_source,
         "candidate_status": candidate_status,
@@ -436,6 +491,14 @@ def build_product_surface_validation_summary(
             two_stage_required=two_stage_required,
             plain_surface_used=plain_surface_used,
             low_information_surface_used=low_information_surface_used,
+            question_dominance_guard_checked=bool(question_dominance_guard.get("checked")),
+            question_dominance_guard_question_surface_present=bool(
+                question_dominance_guard.get("question_surface_present")
+            ),
+            question_dominance_guard_passed=question_dominance_guard_passed,
+            question_dominance_guard_blocker_code=_clean_identifier(
+                question_dominance_guard.get("blocker_code"), max_length=128
+            ),
             candidate_source_kind=candidate_source_kind,
             gate_validation=gate_validation,
         ),
@@ -477,6 +540,9 @@ def product_surface_validation_public_summary(
         "plain_surface_used": bool(source.get("plain_surface_used")),
         "plain_surface_allowed": bool(source.get("plain_surface_allowed")),
         "low_information_surface_used": bool(source.get("low_information_surface_used")),
+        "question_dominance_guard": question_dominance_guard_public_summary(
+            _as_mapping(source.get("question_dominance_guard"))
+        ),
         "candidate_source_kind": _clean_identifier(source.get("candidate_source_kind"), max_length=128),
         "normal_observation_rebuild_used": bool(source.get("normal_observation_rebuild_used")),
         "complete_initial_surface_recomposition_used": bool(source.get("complete_initial_surface_recomposition_used")),
@@ -544,6 +610,7 @@ def assert_product_surface_validation_summary(value: Any) -> None:
     if value.get("blocker_code") not in _VALID_BLOCKER_CODES:
         raise ValueError("unknown product surface blocker code")
     _assert_shape(value.get("labelled_two_stage_shape"))
+    _assert_question_dominance_guard(value.get("question_dominance_guard"))
     _assert_origin(value.get("surface_origin"))
     _assert_gate_validation(value.get("gate_validation"))
     _assert_public_contract(value.get("public_contract"))
@@ -634,6 +701,19 @@ def _requirement_summary(surface_requirement: Mapping[str, Any] | None) -> dict[
     }
 
 
+def _question_dominance_guard_required(
+    *,
+    surface_family: str,
+    material_quality_family: str,
+) -> bool:
+    if surface_family == SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION:
+        return True
+    return bool(
+        surface_family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+        and material_quality_family == "limited_grounding"
+    )
+
+
 def _surface_requirement_satisfied(
     *,
     rn_visible: bool,
@@ -643,6 +723,9 @@ def _surface_requirement_satisfied(
     low_information_allowed: bool,
     labelled_shape_valid: bool,
     low_information_surface_used: bool,
+    low_information_reception_shape_valid: bool,
+    question_dominance_guard_required: bool,
+    question_dominance_guard_passed: bool,
     candidate_source_kind: str,
     public_candidate_source_allowed: bool,
 ) -> bool:
@@ -654,10 +737,15 @@ def _surface_requirement_satisfied(
         return bool(
             labelled_shape_valid
             and not low_information_surface_used
+            and (not question_dominance_guard_required or question_dominance_guard_passed)
             and candidate_source_kind != CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
         )
     if surface_family == SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION:
-        return bool(low_information_allowed and low_information_surface_used)
+        return bool(
+            low_information_allowed
+            and low_information_surface_used
+            and low_information_reception_shape_valid
+        )
     if surface_family in {SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER, SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER}:
         return bool(plain_surface_allowed and not low_information_surface_used)
     return False
@@ -673,6 +761,9 @@ def _blocker(
     plain_surface_used: bool,
     labelled_shape_valid: bool,
     low_information_surface_used: bool,
+    question_dominance_guard_required: bool,
+    question_dominance_guard_passed: bool,
+    question_dominance_guard_blocker_code: str,
     low_information_allowed: bool,
     plain_surface_allowed: bool,
     surface_requirement_satisfied: bool,
@@ -696,6 +787,11 @@ def _blocker(
         return (_BLOCKER_FAMILY_TWO_STAGE_SHAPE, PRODUCT_SURFACE_INVALID_PLAIN_USED_FOR_TWO_STAGE_REQUIRED)
     if two_stage_required and not labelled_shape_valid:
         return (_BLOCKER_FAMILY_TWO_STAGE_SHAPE, PRODUCT_SURFACE_INVALID_TWO_STAGE_SHAPE_REQUIRED)
+    if question_dominance_guard_required and not question_dominance_guard_passed:
+        return (
+            _BLOCKER_FAMILY_QUESTION_DOMINANCE,
+            question_dominance_guard_blocker_code or PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE,
+        )
     if surface_family == SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION and not low_information_surface_used:
         return (_BLOCKER_FAMILY_LOW_INFORMATION, PRODUCT_SURFACE_INVALID_LOW_INFORMATION_MISROUTE)
     if surface_family in {SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER, SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER} and not plain_surface_allowed:
@@ -714,6 +810,10 @@ def _decision_reasons(
     two_stage_required: bool,
     plain_surface_used: bool,
     low_information_surface_used: bool,
+    question_dominance_guard_checked: bool,
+    question_dominance_guard_question_surface_present: bool,
+    question_dominance_guard_passed: bool,
+    question_dominance_guard_blocker_code: str,
     candidate_source_kind: str,
     gate_validation: Mapping[str, Any],
 ) -> tuple[str, ...]:
@@ -725,6 +825,24 @@ def _decision_reasons(
         reasons.append("plain_surface_used")
     if low_information_surface_used:
         reasons.append("low_information_surface_used")
+    if question_dominance_guard_checked:
+        reasons.append("question_dominance_guard_checked")
+        if question_dominance_guard_question_surface_present:
+            reasons.append("question_surface_present")
+        if question_dominance_guard_passed:
+            reasons.append("question_dominance_guard_passed")
+        else:
+            reasons.append("question_dominance_guard_failed")
+            if question_dominance_guard_blocker_code:
+                reasons.append(question_dominance_guard_blocker_code)
+                if question_dominance_guard_blocker_code == PRODUCT_SURFACE_INVALID_RECEPTION_SECTION_MISSING:
+                    reasons.append("reception_section_missing")
+                elif question_dominance_guard_blocker_code == PRODUCT_SURFACE_INVALID_QUESTION_BEFORE_RECEPTION:
+                    reasons.append("question_before_reception")
+                elif question_dominance_guard_blocker_code == PRODUCT_SURFACE_INVALID_QUESTION_ONLY_SURFACE:
+                    reasons.append("question_only_surface")
+                elif question_dominance_guard_blocker_code == PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE:
+                    reasons.append("question_dominant_surface")
     if surface_family:
         reasons.append(f"surface_requirement:{surface_family}")
     if candidate_source_kind:
@@ -733,6 +851,11 @@ def _decision_reasons(
     if first_blocker:
         reasons.append(f"public_gate_blocker:{first_blocker}")
     return _dedupe(reasons)[:12]
+
+
+def _assert_question_dominance_guard(value: Any) -> None:
+    assert_question_dominance_guard_summary(value)
+
 
 
 def _labelled_shape_summary(comment_text: Any) -> dict[str, bool]:
@@ -1101,6 +1224,14 @@ __all__ = [
     "PRODUCT_SURFACE_INVALID_RN_NOT_VISIBLE",
     "PRODUCT_SURFACE_INVALID_SURFACE_REQUIREMENT_UNSATISFIED",
     "PRODUCT_SURFACE_INVALID_TWO_STAGE_SHAPE_REQUIRED",
+    "PRODUCT_SURFACE_INVALID_RECEPTION_SECTION_MISSING",
+    "PRODUCT_SURFACE_INVALID_QUESTION_DOMINANT_SURFACE",
+    "PRODUCT_SURFACE_INVALID_QUESTION_BEFORE_RECEPTION",
+    "PRODUCT_SURFACE_INVALID_QUESTION_ONLY_SURFACE",
+    "PRODUCT_SURFACE_BLOCKER_RECEPTION_SECTION_MISSING",
+    "PRODUCT_SURFACE_BLOCKER_QUESTION_DOMINANT_SURFACE",
+    "PRODUCT_SURFACE_BLOCKER_QUESTION_BEFORE_RECEPTION",
+    "PRODUCT_SURFACE_BLOCKER_QUESTION_ONLY_SURFACE",
     "PRODUCT_SURFACE_VALID",
     "PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY",
     "PRODUCT_SURFACE_VALIDATION_SCHEMA_VERSION",

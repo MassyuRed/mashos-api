@@ -30,6 +30,12 @@ from emlis_ai_public_surface_requirement import (
     is_labelled_two_stage_comment_text_shape,
     public_surface_requirement_public_summary,
 )
+from emlis_ai_limited_grounding_reception_surface import (
+    build_limited_grounding_reception_surface_plan,
+    compose_limited_grounding_labelled_two_stage_comment,
+    is_limited_grounding_reception_required,
+    limited_grounding_reception_surface_public_summary,
+)
 from emlis_ai_types import ConversationComposerCandidate
 
 LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SCHEMA_VERSION: Final = (
@@ -54,15 +60,16 @@ LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SCOPE: Final = (
     "labelled_two_stage_surface_recomposition"
 )
 
+_LIMITED_GROUNDING_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset({"limited_grounding"})
 _UNSUPPORTED_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
     {
         "low_information",
-        "limited_grounding",
         "limited_grounding_material",
         "insufficient_input_material",
         "empty_input_material",
     }
 )
+
 _BLOCKED_SOURCE_KINDS: Final[frozenset[str]] = frozenset(
     {
         CANDIDATE_SOURCE_KIND_NONE,
@@ -135,6 +142,7 @@ _META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
         "two_stage_section_surface_plan",
         "source_material_summary",
         "labelled_two_stage_surface_recomposition_summary",
+        "limited_grounding_reception_surface_summary",
         "gate_contract",
         "body_boundary",
         "implementation_boundary",
@@ -222,7 +230,11 @@ def build_labelled_two_stage_surface_recomposition_candidate(
         return None, ["labelled_two_stage_surface_recomposition_not_allowed"]
 
     comment_text = _clean_public_body(
-        _compose_labelled_two_stage_comment(current_input=current_input, material_route=material_route)
+        _compose_labelled_two_stage_comment(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=requirement,
+        )
     )
     if not comment_text:
         return None, ["labelled_two_stage_surface_recomposition_comment_text_missing"]
@@ -239,6 +251,16 @@ def build_labelled_two_stage_surface_recomposition_candidate(
         _first(("material_quality", "eligibility_status", "status"), route_meta),
         max_length=96,
     )
+    limited_grounding_reception_surface_summary: dict[str, Any] = {}
+    if material_quality in _LIMITED_GROUNDING_MATERIAL_QUALITIES:
+        limited_grounding_reception_surface_plan = build_limited_grounding_reception_surface_plan(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=requirement,
+        )
+        limited_grounding_reception_surface_summary = limited_grounding_reception_surface_public_summary(
+            limited_grounding_reception_surface_plan
+        )
     source_kind = _candidate_source_kind(original_composer_candidate)
     used_evidence_span_ids = _evidence_span_ids(visible_slots=visible_slots, relation_ids=relation_ids)
     used_phrase_unit_ids = _phrase_unit_ids(
@@ -261,6 +283,7 @@ def build_labelled_two_stage_surface_recomposition_candidate(
             str(getattr(original_composer_candidate, "comment_text", "") or "")
         ),
         recovery_context=recovery_context,
+        limited_grounding_reception_surface_summary=limited_grounding_reception_surface_summary,
     )
     assert_labelled_two_stage_surface_recomposition_meta(meta)
     return (
@@ -312,6 +335,14 @@ def labelled_two_stage_surface_recomposition_public_summary(value: Mapping[str, 
         ),
         "section_budget_valid": bool(
             _as_mapping(meta.get("labelled_two_stage_surface_recomposition_summary")).get("section_budget_valid")
+        ),
+        "limited_grounding_reception_surface_used": bool(
+            _as_mapping(meta.get("limited_grounding_reception_surface_summary")).get(
+                "limited_grounding_reception_surface_used"
+            )
+        ),
+        "limited_grounding_semantic_material_count": int(
+            _as_mapping(meta.get("limited_grounding_reception_surface_summary")).get("semantic_material_count") or 0
         ),
         "body_free": True,
         "raw_input_included": False,
@@ -367,8 +398,12 @@ def _candidate_meta(
     original_display_status: str,
     original_surface_plain_or_unlabelled: bool,
     recovery_context: str,
+    limited_grounding_reception_surface_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     family = _clean_identifier(surface_requirement.get("surface_requirement_family"), max_length=96)
+    material_quality_family = _clean_identifier(material_quality, max_length=96)
+    limited_grounding_reception_required = material_quality_family in _LIMITED_GROUNDING_MATERIAL_QUALITIES
+    limited_grounding_surface_summary = dict(_as_mapping(limited_grounding_reception_surface_summary))
     return {
         "schema_version": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
         "source_phase": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SOURCE_PHASE,
@@ -402,7 +437,12 @@ def _candidate_meta(
             "comment_text_body_included": False,
         },
         "source_material_summary": {
-            "material_quality": _clean_identifier(material_quality, max_length=96),
+            "material_quality": material_quality_family,
+            "material_quality_family": material_quality_family,
+            "response_kind": "limited_grounding_observation"
+            if limited_grounding_reception_required
+            else "normal_observation",
+            "limited_grounding_reception_required": limited_grounding_reception_required,
             "visible_slot_count": max(0, int(visible_slot_count or 0)),
             "unknown_slot_count": max(0, int(unknown_slot_count or 0)),
             "relation_id_count": max(0, int(relation_id_count or 0)),
@@ -412,6 +452,9 @@ def _candidate_meta(
         },
         "labelled_two_stage_surface_recomposition_summary": {
             "existing_complete_material_connected": True,
+            "limited_grounding_reception_used": limited_grounding_reception_required,
+            "limited_grounding_reception_surface_plan_connected": bool(limited_grounding_surface_summary),
+            "limited_grounding_reception_surface_summary": limited_grounding_surface_summary,
             "two_stage_section_surface_plan_connected": True,
             "surface_realizer_connected": True,
             "labels_present": True,
@@ -428,6 +471,7 @@ def _candidate_meta(
             "raw_input_included": False,
             "comment_text_body_included": False,
         },
+        "limited_grounding_reception_surface_summary": limited_grounding_surface_summary,
         "gate_contract": {
             "display_gate_relaxed": False,
             "runtime_surface_gate_relaxed": False,
@@ -465,10 +509,31 @@ def _candidate_meta(
     }
 
 
-def _compose_labelled_two_stage_comment(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+def _compose_labelled_two_stage_comment(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    surface_requirement: Mapping[str, Any] | None = None,
+) -> str:
+    if _is_limited_grounding_reception(
+        material_route=material_route,
+        surface_requirement=surface_requirement,
+    ):
+        return compose_limited_grounding_labelled_two_stage_comment(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=surface_requirement,
+        )
     observation = _compose_observation_sentence(current_input=current_input, material_route=material_route)
     reception = _compose_reception_sentence(current_input=current_input, material_route=material_route)
     return f"見えたこと：\n{observation}\n\nEmlisから：\n{reception}"
+
+
+def _is_limited_grounding_reception(*, material_route: Any, surface_requirement: Mapping[str, Any] | None) -> bool:
+    return is_limited_grounding_reception_required(
+        material_route=material_route,
+        surface_requirement=surface_requirement,
+    )
 
 
 def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
@@ -518,7 +583,10 @@ def _topic_from_marker(value: str) -> str:
 
 def _feeling_phrase(*, current_input: Mapping[str, Any] | None) -> str:
     current = _as_mapping(current_input)
-    emotion_words = _safe_string_items(_first(("emotions", "emotion", "emotion_labels"), current), max_items=2)
+    emotion_words = _safe_string_items(
+        _first(("emotions", "emotion", "emotion_labels", "emotion_details"), current),
+        max_items=2,
+    )
     if emotion_words:
         return "・".join(emotion_words) + "の動き"
     memo = _clean(_first(("memo", "note", "description"), current))
@@ -644,7 +712,7 @@ def _safe_string_items(value: Any, *, max_items: int) -> tuple[str, ...]:
     items: list[str] = []
     for item in _as_sequence(value):
         if isinstance(item, Mapping):
-            raw = item.get("label") or item.get("name") or item.get("value") or item.get("id")
+            raw = item.get("label") or item.get("name") or item.get("value") or item.get("type") or item.get("id")
         else:
             raw = item
         cleaned = _clean(raw)

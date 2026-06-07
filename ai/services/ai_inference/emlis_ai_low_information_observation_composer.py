@@ -7,11 +7,12 @@ This module adds the dedicated low-information observation composer branch.  It
 is a normal observation branch selected by Step 2, not a fixed fallback and not a
 Display Gate bypass.
 
-The composer generates an internal ``body`` candidate made of 2-3 observation
-sentences plus a question.  It deliberately does not write ``comment_text``, does
-not alter the public ``observation_status`` enum, does not change API/RN/DB
-contracts, and does not promote low-information input to an eligible observation
-using user facts.
+The composer generates an internal ``body`` candidate with a reception-required
+low-information shape: a minimal ``見えたこと：`` observation section followed by
+an ``Emlisから：`` reception section and a light question.  It deliberately does
+not write ``comment_text``, does not alter the public ``observation_status`` enum,
+does not change API/RN/DB contracts, and does not promote low-information input
+to an eligible observation using user facts.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -75,6 +76,16 @@ LOW_INFORMATION_SPECIFICITY_PLAN_VERSION: Final = "emlis.low_information_specifi
 LOW_INFORMATION_SPECIFICITY_STEP: Final = "Step6_Low_Information_Specificity"
 LOW_INFORMATION_MATERIAL_SURFACE_PLAN_VERSION: Final = "cocolon.emlis.low_information_material_surface_plan.v1"
 LOW_INFORMATION_MATERIAL_SURFACE_STEP: Final = "Phase20-4_Low_Information_Material_Surface"
+LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_SHAPE: Final = "low_information_observation_reception_required"
+LOW_INFORMATION_OBSERVATION_SECTION_LABEL: Final = "見えたこと："
+LOW_INFORMATION_RECEPTION_SECTION_LABEL: Final = "Emlisから："
+LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY: Final = f"\n\n{LOW_INFORMATION_RECEPTION_SECTION_LABEL}\n"
+LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_PLAN_VERSION: Final = (
+    "cocolon.emlis.low_information_reception_required_surface_plan.v1"
+)
+LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_STEP: Final = (
+    "P5_Low_Information_Reception_Required_Surface"
+)
 
 QUESTION_SURFACE_WHAT_HAPPENED: Final = "what_happened"
 QUESTION_SURFACE_WHAT_CHANGED: Final = "what_changed"
@@ -592,6 +603,9 @@ def _low_information_material_surface_plan(
         "known_scope_surface_from_visible_material_slots": bool(known_scope_text),
         "question_surface_from_unknown_slots": True,
         "question_only": False,
+        "reception_required": True,
+        "question_position": "after_reception",
+        "surface_shape": LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_SHAPE,
         "raw_input_included": False,
         "raw_text_included": False,
         "comment_text_included": False,
@@ -603,6 +617,105 @@ def _low_information_material_surface_plan(
         "phase_name_runtime_condition_used": False,
         "known_scope_text": known_scope_text,
         "input_material_bundle_meta": bundle_meta,
+    }
+
+
+def _join_low_information_section(lines: Sequence[LowInformationObservationLine] | Sequence[str]) -> str:
+    parts: list[str] = []
+    for line in lines:
+        text = _clean(getattr(line, "text", line))
+        if text:
+            parts.append(_ensure_sentence(text))
+    return "".join(parts).strip()
+
+
+def _compose_low_information_reception_required_body(
+    lines: Sequence[LowInformationObservationLine],
+) -> str:
+    """Assemble true low-information as minimal observation + reception."""
+
+    observation_lines = [line for line in lines if line.observation_role == OBSERVATION_ROLE_LOW_INFO_KNOWN_SCOPE]
+    reception_lines = [line for line in lines if line.observation_role == OBSERVATION_ROLE_LOW_INFO_RECEIVE]
+    question_lines = [line for line in lines if line.observation_role == OBSERVATION_ROLE_LOW_INFO_QUESTION]
+
+    if not observation_lines:
+        observation_lines = [line for line in lines if line.observation_role != OBSERVATION_ROLE_LOW_INFO_QUESTION][:1]
+    if not reception_lines:
+        reception_lines = [line for line in lines if line not in observation_lines and line.observation_role != OBSERVATION_ROLE_LOW_INFO_QUESTION][:1]
+
+    observation_section = _join_low_information_section(observation_lines)
+    reception_section = _join_low_information_section([*reception_lines, *question_lines])
+    return (
+        f"{LOW_INFORMATION_OBSERVATION_SECTION_LABEL}\n{observation_section}"
+        f"{LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY}{reception_section}"
+    ).strip()
+
+
+def _section_text_for_low_information_body(body: str, *, section: str) -> str:
+    raw = str(body or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not raw.startswith(f"{LOW_INFORMATION_OBSERVATION_SECTION_LABEL}\n"):
+        return ""
+    if LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY not in raw:
+        return ""
+    observation_part, reception_part = raw.split(LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY, 1)
+    if section == "observation":
+        return observation_part.removeprefix(f"{LOW_INFORMATION_OBSERVATION_SECTION_LABEL}\n").strip()
+    if section == "reception":
+        return reception_part.strip()
+    return ""
+
+
+def low_information_reception_required_shape_summary(body: Any) -> dict[str, Any]:
+    raw = str(body or "").replace("\r\n", "\n").replace("\r", "\n")
+    observation_section = _section_text_for_low_information_body(raw, section="observation")
+    reception_section = _section_text_for_low_information_body(raw, section="reception")
+    boundary_index = raw.find(LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY)
+    prompt_matches = list(re.finditer(r"詳しく残せそうなら、[^。！？!?]*残してみませんか|残してみませんか", raw))
+    question_match = next((match for match in prompt_matches if boundary_index >= 0 and match.start() > boundary_index), prompt_matches[-1] if prompt_matches else None)
+    question_index = question_match.start() if question_match else -1
+    question_after_reception = bool(question_index >= 0 and boundary_index >= 0 and question_index > boundary_index)
+    question_before_reception = bool(question_index >= 0 and (boundary_index < 0 or question_index < boundary_index))
+    starts_with_question_prompt = bool(
+        raw.strip().startswith("詳しく残せそうなら")
+        or reception_section.startswith("詳しく残せそうなら")
+    )
+    non_question_sentence_count = max(_body_sentence_count(raw) - (1 if question_match else 0), 0)
+    question_dominant_surface = bool(
+        question_before_reception
+        or starts_with_question_prompt
+        or (question_match and non_question_sentence_count <= 0)
+    )
+    labels_present = bool(
+        raw.startswith(f"{LOW_INFORMATION_OBSERVATION_SECTION_LABEL}\n")
+        and LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY in raw
+    )
+    return {
+        "surface_shape": LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_SHAPE,
+        "labels_present": labels_present,
+        "starts_with_observation_label": raw.startswith(f"{LOW_INFORMATION_OBSERVATION_SECTION_LABEL}\n"),
+        "contains_reception_boundary": LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY in raw,
+        "observation_section_present": bool(observation_section),
+        "reception_section_present": bool(reception_section),
+        "observation_section_non_empty": bool(observation_section),
+        "reception_section_non_empty": bool(reception_section),
+        "question_present": bool(question_match),
+        "question_after_reception": question_after_reception,
+        "question_before_reception": question_before_reception,
+        "starts_with_question_prompt": starts_with_question_prompt,
+        "question_only_surface": bool(question_match and _QUESTION_MARK_RE.fullmatch(raw.strip("。！？!?"))),
+        "question_dominant_surface": question_dominant_surface,
+        "question_sentence_count": 1 if question_match else 0,
+        "non_question_sentence_count": non_question_sentence_count,
+        "passed": bool(
+            labels_present
+            and observation_section
+            and reception_section
+            and question_after_reception
+            and not question_dominant_surface
+        ),
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
     }
 
 
@@ -982,6 +1095,15 @@ class LowInformationObservationDraft:
             "contains_humility_marker": bool(_HUMILITY_MARKER_RE.search(self.body)),
             "contains_question": bool(_QUESTION_MARK_RE.search(self.body)),
             "question_not_only": _body_sentence_count(self.body) >= 2 and bool(_QUESTION_MARK_RE.search(self.body)),
+            "low_information_reception_required": True,
+            "low_information_reception_surface_shape": LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_SHAPE,
+            "low_information_reception_shape_valid": low_information_reception_required_shape_summary(self.body)["passed"],
+            "low_information_reception_shape_summary": low_information_reception_required_shape_summary(self.body),
+            "observation_section_present": low_information_reception_required_shape_summary(self.body)["observation_section_present"],
+            "reception_section_present": low_information_reception_required_shape_summary(self.body)["reception_section_present"],
+            "question_after_reception": low_information_reception_required_shape_summary(self.body)["question_after_reception"],
+            "question_before_reception": low_information_reception_required_shape_summary(self.body)["question_before_reception"],
+            "question_dominant_surface": low_information_reception_required_shape_summary(self.body)["question_dominant_surface"],
             "unknown_slots": list(self.unknown_slots),
             "visible_material_slots": list(self.visible_material_slots),
             "material_unknown_slots": list(self.material_unknown_slots),
@@ -1450,7 +1572,7 @@ def compose_low_information_observation(
         current_input=current_input,
         material_surface_plan=material_surface_plan,
     )
-    body = "".join(line.text for line in lines)
+    body = _compose_low_information_reception_required_body(lines)
     selected_material_ids = _dedupe(line_id for line in lines for line_id in line.material_entry_ids)
     if _clean(question_entry.get("entry_id")) and _clean(question_entry.get("entry_id")) not in selected_material_ids:
         selected_material_ids.append(_clean(question_entry.get("entry_id")))
@@ -1538,9 +1660,10 @@ def assert_low_information_observation_composer_contract(
     source: str = "low_information_observation_composer",
 ) -> None:
     if isinstance(value, LowInformationObservationDraft):
-        body = _clean(value.body)
+        body_raw = str(value.body or "")
+        body = _clean(body_raw)
         meta = {
-            "body": body,
+            "body": body_raw,
             **{
                 key: item
                 for key, item in value.as_meta_without_assert().items()
@@ -1549,7 +1672,8 @@ def assert_low_information_observation_composer_contract(
         }
     elif isinstance(value, Mapping):
         meta = dict(value)
-        body = _clean(meta.get("body") or meta.get("observation_body") or meta.get("candidate_body"))
+        body_raw = str(meta.get("body") or meta.get("observation_body") or meta.get("candidate_body") or "")
+        body = _clean(body_raw)
     else:
         raise ValueError(f"{source} must be a LowInformationObservationDraft or mapping")
 
@@ -1576,6 +1700,13 @@ def assert_low_information_observation_composer_contract(
     sentence_count = int(meta.get("body_sentence_count") or _body_sentence_count(body))
     if sentence_count < 2 or sentence_count > 3:
         raise ValueError(f"{source} body must be 2-3 sentences")
+    shape_summary = low_information_reception_required_shape_summary(body_raw)
+    if not shape_summary.get("passed"):
+        raise ValueError(f"{source} must use reception-required low-information surface shape")
+    if shape_summary.get("question_before_reception") is True:
+        raise ValueError(f"{source} must place question after Emlis reception")
+    if shape_summary.get("question_dominant_surface") is True:
+        raise ValueError(f"{source} must not make the question dominant")
     if not _KNOWN_SCOPE_RE.search(body):
         raise ValueError(f"{source} body must include known-scope observation")
     if not _HUMILITY_MARKER_RE.search(body):
@@ -1804,6 +1935,11 @@ __all__ = [
     "LOW_INFORMATION_TONE_PROFILE_NEUTRAL_OR_UNKNOWN",
     "LOW_INFORMATION_TONE_PROFILES",
     "format_low_information_question_prompt",
+    "low_information_reception_required_shape_summary",
+    "LOW_INFORMATION_RECEPTION_REQUIRED_SURFACE_SHAPE",
+    "LOW_INFORMATION_OBSERVATION_SECTION_LABEL",
+    "LOW_INFORMATION_RECEPTION_SECTION_LABEL",
+    "LOW_INFORMATION_RECEPTION_SECTION_BOUNDARY",
     "QUESTION_SURFACE_WHAT_CHANGED",
     "QUESTION_SURFACE_WHAT_HAPPENED",
     "QUESTION_SURFACE_WHAT_IS_HARD_TO_SAY",

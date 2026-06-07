@@ -10,7 +10,7 @@ will decide whether the realized candidate is promoted through Display Gate.
 Scope of this step:
 
 * accept observation roles from Step 7;
-* keep low-information observations as 2-3 sentence observation + question;
+* keep low-information observations as reception-required two-stage surfaces;
 * select low-information question endings from ``unknown_slots``;
 * require eligible state verbalization to be relation-connected;
 * apply tone/template guard metadata without changing public status, API route,
@@ -32,6 +32,7 @@ from emlis_ai_low_information_observation_composer import (
     LowInformationObservationDraft,
     compose_low_information_observation,
     format_low_information_question_prompt,
+    low_information_reception_required_shape_summary,
 )
 from emlis_ai_observation_dictionary_loader import (
     CATEGORY_FORBIDDEN_TEMPLATE_SIGNATURE,
@@ -856,7 +857,9 @@ def realize_low_information_observation_surface(
         draft = compose_low_information_observation(current_input=current_input, **composer_kwargs)
     draft_meta = draft.as_meta()
     lines = _low_information_lines_from_draft(draft)
-    body = "".join(line.surface_text for line in lines)
+    draft_body = str(getattr(draft, "body", "") or "")
+    shape_summary = low_information_reception_required_shape_summary(draft_body)
+    body = draft_body if shape_summary.get("passed") else "".join(line.surface_text for line in lines)
     roles: list[str] = []
     for line in lines:
         roles.extend(line.observation_roles)
@@ -881,6 +884,10 @@ def realize_low_information_observation_surface(
         source_meta={
             "source_step": draft_meta.get("source_step"),
             "low_information_observation_composer_ready": bool(draft_meta.get("low_information_observation_composer_ready")),
+            "low_information_reception_required": bool(draft_meta.get("low_information_reception_required")),
+            "low_information_reception_shape_summary": dict(draft_meta.get("low_information_reception_shape_summary") or shape_summary),
+            "low_information_reception_shape_valid": bool((draft_meta.get("low_information_reception_shape_summary") or shape_summary).get("passed") if isinstance(draft_meta.get("low_information_reception_shape_summary") or shape_summary, Mapping) else False),
+            "question_after_reception": bool((draft_meta.get("low_information_reception_shape_summary") or shape_summary).get("question_after_reception") if isinstance(draft_meta.get("low_information_reception_shape_summary") or shape_summary, Mapping) else False),
             "low_information_specificity_plan": dict(draft_meta.get("low_information_specificity_plan") or {}),
             "low_information_tone_profile_plan": dict(draft_meta.get("low_information_tone_profile_plan") or {}),
             "low_information_tone_profile": _clean(draft_meta.get("low_information_tone_profile") or draft_meta.get("positive_tone_profile")),
@@ -1110,6 +1117,12 @@ def assert_observation_surface_realizer_tone_contract(value: ObservationSurfaceR
             raise ValueError("low information surface body must contain a question")
         if body and _body_sentence_count(body) < 2:
             raise ValueError("low information surface must not be question-only")
+        if body:
+            shape_summary = low_information_reception_required_shape_summary(body)
+            if not shape_summary.get("passed"):
+                raise ValueError("low information surface must use reception-required two-stage shape")
+            if not shape_summary.get("question_after_reception"):
+                raise ValueError("low information surface must place the question after reception")
     if kind == OBSERVATION_REPLY_KIND_ELIGIBLE:
         if status and status != OBSERVATION_ELIGIBILITY_STATUS_ELIGIBLE:
             raise ValueError("eligible surface must keep eligibility_status=eligible")

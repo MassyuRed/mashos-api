@@ -49,7 +49,6 @@ _LOW_INFORMATION_INPUT = {
 }
 _FORBIDDEN_PUBLIC_SURFACE_FRAGMENTS = (
     "今回の入力では",
-    "Emlisから：",
     "原因や結論までは",
     "誰かを良い悪い",
 )
@@ -138,6 +137,13 @@ def _assert_low_information_public_candidate(candidate: ConversationComposerCand
     assert meta["contains_humility_marker"] is True
     assert meta["contains_question"] is True
     assert meta["question_not_only"] is True
+    assert meta["low_information_reception_required"] is True
+    assert meta["low_information_reception_shape_valid"] is True
+    assert meta["question_after_reception"] is True
+    assert meta["question_dominant_surface"] is False
+    assert comment_text.startswith("見えたこと：\n")
+    assert "\n\nEmlisから：\n" in comment_text
+    assert comment_text.index("詳しく残せそうなら") > comment_text.index("Emlisから：")
     assert meta["raw_input_included"] is False
     assert meta["comment_text_body_included"] is False
     assert meta["fixed_fallback_used"] is False

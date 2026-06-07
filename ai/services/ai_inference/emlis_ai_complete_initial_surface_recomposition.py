@@ -28,6 +28,12 @@ from emlis_ai_public_surface_requirement import (
     SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER,
     public_surface_requirement_public_summary,
 )
+from emlis_ai_limited_grounding_reception_surface import (
+    build_limited_grounding_reception_surface_plan,
+    compose_limited_grounding_labelled_two_stage_comment,
+    is_limited_grounding_reception_required,
+    limited_grounding_reception_surface_public_summary,
+)
 from emlis_ai_types import ConversationComposerCandidate
 
 COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION: Final = (
@@ -73,7 +79,6 @@ _BLOCKED_AVAILABILITY_FAMILIES: Final[frozenset[str]] = frozenset(
 _UNSUPPORTED_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
     {
         "low_information",
-        "limited_grounding",
         "limited_grounding_material",
         "insufficient_input_material",
         "empty_input_material",
@@ -143,6 +148,7 @@ _META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
         "source_material_summary",
         "complete_initial_surface_availability_summary",
         "complete_surface_recomposition_summary",
+        "limited_grounding_reception_surface_summary",
         "gate_contract",
         "body_boundary",
         "implementation_boundary",
@@ -151,6 +157,61 @@ _META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
         "comment_text_body_included",
     }
 )
+
+
+def _limited_grounding_reception_recomposition_allowed(
+    *,
+    availability: Mapping[str, Any],
+    surface_requirement: Mapping[str, Any],
+    material_route: Any,
+) -> bool:
+    """Return whether P8 may recover a limited-grounding source-unavailable surface.
+
+    This lane is deliberately narrower than normal observation rebuild: it only
+    applies when P1 has already required labelled two-stage reception for a
+    limited-grounding route, the original complete-initial source was
+    unavailable, and the material bundle exposes body-free visible or semantic
+    material.  It does not relax safety, runtime, visible, grounding, or
+    template gates.
+    """
+
+    if not is_limited_grounding_reception_required(
+        material_route=material_route,
+        surface_requirement=surface_requirement,
+    ):
+        return False
+
+    family = _clean_identifier(surface_requirement.get("surface_requirement_family"), max_length=96)
+    two_stage_required = bool(
+        surface_requirement.get("two_stage_required") or family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
+    )
+    if not two_stage_required or family in _BLOCKED_SURFACE_REQUIREMENT_FAMILIES:
+        return False
+    if availability.get("candidate_generated_before_display_gate") is True:
+        return False
+    if availability.get("normal_observation_rebuild_allowed") is True:
+        return False
+
+    first_blocker_family = _clean_identifier(availability.get("first_blocker_family"), max_length=96)
+    first_blocker_code = _clean_identifier(availability.get("first_blocker_code"), max_length=128)
+    if first_blocker_family in _BLOCKED_AVAILABILITY_FAMILIES:
+        return False
+    recoverable_families = set(_SOURCE_UNAVAILABLE_FAMILIES) | {"surface_realizer_unavailable", ""}
+    recoverable_codes = set(_SOURCE_UNAVAILABLE_CODES) | {"surface_realizer_unavailable", ""}
+    if (first_blocker_family or first_blocker_code) and (
+        first_blocker_family not in recoverable_families
+        and first_blocker_code not in recoverable_codes
+    ):
+        return False
+
+    candidate_status = _clean_identifier(availability.get("candidate_status"), max_length=96)
+    if candidate_status and candidate_status not in {"unavailable", "not_generated", "not_attempted", "unknown"}:
+        return False
+
+    route_meta = _material_route_meta(material_route)
+    visible_slots = _dedupe(route_meta.get("visible_material_slots") or ())
+    relation_ids = _dedupe(_first(("relation_material_ids", "generic_relation_material_ids"), route_meta) or ())
+    return bool(visible_slots or relation_ids)
 
 
 def should_attempt_complete_initial_surface_recomposition(
@@ -169,6 +230,13 @@ def should_attempt_complete_initial_surface_recomposition(
     availability = complete_initial_surface_availability_public_summary(availability_summary)
     if not availability:
         return False
+    requirement = public_surface_requirement_public_summary(surface_requirement)
+    if _limited_grounding_reception_recomposition_allowed(
+        availability=availability,
+        surface_requirement=requirement,
+        material_route=material_route,
+    ):
+        return True
     if availability.get("complete_initial_client_resolved") is not True:
         return False
     if availability.get("candidate_generation_attempted") is not True:
@@ -200,7 +268,6 @@ def should_attempt_complete_initial_surface_recomposition(
     if material_quality in _UNSUPPORTED_MATERIAL_QUALITIES:
         return False
 
-    requirement = public_surface_requirement_public_summary(surface_requirement)
     family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
     if not family or family in _BLOCKED_SURFACE_REQUIREMENT_FAMILIES:
         return False
@@ -223,6 +290,11 @@ def build_complete_initial_surface_recomposition_candidate(
 
     requirement = public_surface_requirement_public_summary(surface_requirement)
     availability = complete_initial_surface_availability_public_summary(availability_summary)
+    limited_grounding_reception_required = is_limited_grounding_reception_required(
+        material_route=material_route,
+        surface_requirement=requirement,
+    )
+    limited_grounding_reception_surface_plan: dict[str, Any] | None = None
     if not should_attempt_complete_initial_surface_recomposition(
         availability_summary=availability,
         surface_requirement=requirement,
@@ -236,8 +308,18 @@ def build_complete_initial_surface_recomposition_candidate(
     family = _clean_identifier(requirement.get("surface_requirement_family"), max_length=96)
     two_stage_required = bool(requirement.get("two_stage_required") or family == SURFACE_REQUIREMENT_LABELLED_TWO_STAGE)
     plain_allowed = bool(requirement.get("plain_state_answer_allowed")) and not two_stage_required
+    if limited_grounding_reception_required and two_stage_required:
+        limited_grounding_reception_surface_plan = build_limited_grounding_reception_surface_plan(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=requirement,
+        )
     if two_stage_required:
-        comment_text = _compose_labelled_two_stage_comment(current_input=current_input, material_route=material_route)
+        comment_text = _compose_labelled_two_stage_comment(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=requirement,
+        )
     elif family == SURFACE_REQUIREMENT_PLAIN_STATE_ANSWER or plain_allowed:
         comment_text = _compose_plain_state_answer_comment(current_input=current_input, material_route=material_route)
     else:
@@ -277,6 +359,8 @@ def build_complete_initial_surface_recomposition_candidate(
         used_phrase_unit_ids=used_phrase_unit_ids,
         two_stage_required=two_stage_required,
         plain_surface_allowed=plain_allowed,
+        limited_grounding_reception_required=limited_grounding_reception_required,
+        limited_grounding_reception_surface_plan=limited_grounding_reception_surface_plan,
         recovery_context=recovery_context,
     )
     assert_complete_initial_surface_recomposition_meta(meta)
@@ -322,6 +406,12 @@ def complete_initial_surface_recomposition_public_summary(value: Mapping[str, An
         ),
         "complete_surface_realizer_connected": bool(
             _as_mapping(meta.get("complete_surface_recomposition_summary")).get("complete_surface_realizer_connected")
+        ),
+        "limited_grounding_reception_used": bool(
+            _as_mapping(meta.get("complete_surface_recomposition_summary")).get("limited_grounding_reception_used")
+        ),
+        "limited_grounding_semantic_material_count": int(
+            _as_mapping(meta.get("limited_grounding_reception_surface_summary")).get("semantic_material_count") or 0
         ),
         "body_free": True,
         "raw_input_included": False,
@@ -369,9 +459,14 @@ def _candidate_meta(
     used_phrase_unit_ids: Sequence[str],
     two_stage_required: bool,
     plain_surface_allowed: bool,
+    limited_grounding_reception_required: bool,
+    limited_grounding_reception_surface_plan: Mapping[str, Any] | None,
     recovery_context: str,
 ) -> dict[str, Any]:
     family = _clean_identifier(surface_requirement.get("surface_requirement_family"), max_length=96)
+    limited_grounding_reception_surface_summary = limited_grounding_reception_surface_public_summary(
+        limited_grounding_reception_surface_plan or {}
+    )
     return {
         "schema_version": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
         "source_phase": COMPLETE_INITIAL_SURFACE_RECOMPOSITION_SOURCE_PHASE,
@@ -417,12 +512,22 @@ def _candidate_meta(
             "used_phrase_unit_count": len(tuple(used_phrase_unit_ids)),
             "relation_type_count": max(0, int(relation_id_count or 0)),
             "two_stage_comment_surface_generated": bool(two_stage_required),
+            "limited_grounding_reception_required": bool(limited_grounding_reception_required),
+            "limited_grounding_reception_used": bool(
+                limited_grounding_reception_required
+                and limited_grounding_reception_surface_summary.get("limited_grounding_reception_surface_used")
+            ),
+            "limited_grounding_reception_surface_plan_connected": bool(
+                limited_grounding_reception_surface_plan
+            ),
+            "limited_grounding_reception_surface_summary": dict(limited_grounding_reception_surface_summary),
             "normal_observation_rebuild_used": False,
             "gate_recovery_material_surface_used": False,
             "fixed_fallback_used": False,
             "raw_input_included": False,
             "comment_text_body_included": False,
         },
+        "limited_grounding_reception_surface_summary": dict(limited_grounding_reception_surface_summary),
         "gate_contract": {
             "display_gate_relaxed": False,
             "runtime_surface_gate_relaxed": False,
@@ -460,7 +565,21 @@ def _candidate_meta(
     }
 
 
-def _compose_labelled_two_stage_comment(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+def _compose_labelled_two_stage_comment(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+    surface_requirement: Mapping[str, Any] | None,
+) -> str:
+    if is_limited_grounding_reception_required(
+        material_route=material_route,
+        surface_requirement=surface_requirement,
+    ):
+        return compose_limited_grounding_labelled_two_stage_comment(
+            current_input=current_input,
+            material_route=material_route,
+            surface_requirement=surface_requirement,
+        )
     observation = _compose_observation_sentence(current_input=current_input, material_route=material_route)
     reception = _compose_reception_sentence(current_input=current_input, material_route=material_route)
     return f"見えたこと：\n{observation}\n\nEmlisから：\n{reception}"
@@ -473,6 +592,15 @@ def _compose_plain_state_answer_comment(*, current_input: Mapping[str, Any] | No
 
 
 def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    current = _as_mapping(current_input)
+    memo = _clean(_first(("memo", "note", "description"), current))
+    semantic_ids = set(_semantic_material_ids(current_input=current_input, material_route=material_route))
+    if "recovered_energy" in semantic_ids and ({"self_observation", "value_preservation", "future_intention"} & semantic_ids):
+        return "今は、やってみたいと思えた気持ちを大事にしながら、次の頑張り方を探している状態に見えます。"
+    if "recovered_energy" in semantic_ids and ("relationship_wish" in semantic_ids or "寂" in memo):
+        return "今は、気力が戻ってきたタイミングを逃したくない気持ちと、人と近くありたい願いが一緒に出ている状態に見えます。"
+    if {"comparison_baseline_shift", "small_change_preservation"}.issubset(semantic_ids):
+        return "今は、大きく変わることより、昨日の自分より少し前に進むことを基準に置こうとしている状態に見えます。"
     topic = _topic_phrase(current_input=current_input, material_route=material_route)
     feeling = _feeling_phrase(current_input=current_input)
     action = _action_phrase(current_input=current_input)
@@ -480,14 +608,81 @@ def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, ma
 
 
 def _compose_reception_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
-    _ = material_route
     current = _as_mapping(current_input)
     memo = _clean(_first(("memo", "note", "description"), current))
+    semantic_ids = set(_semantic_material_ids(current_input=current_input, material_route=material_route))
+    if "recovered_energy" in semantic_ids and ({"self_observation", "value_preservation", "future_intention"} & semantic_ids):
+        return "自分にも出来るかもしれないと思えた瞬間を流さず、その気持ちを確かめようとしているところを、Emlisは受け取りました。"
+    if "recovered_energy" in semantic_ids and ("relationship_wish" in semantic_ids or "寂" in memo):
+        return "寂しい時にそばにいてくれる存在をいいなと思えたことも、また挑戦したいと思えたことも、今の回復の動きとして大切に置かれているようにEmlisは受け取りました。"
+    if {"comparison_baseline_shift", "small_change_preservation"}.issubset(semantic_ids):
+        return "人と比べて焦りが出る中でも、小さな変化や少し言葉にできたことを消さずに見ようとしているところを、Emlisは受け取りました。"
     if any(marker in memo for marker in ("責め", "だめ", "ダメ", "嫌い", "否定")):
         return "自分を急いで裁くより、その奥にあるきつさを言葉として置こうとしているところを、Emlisは受け取りました。"
     if any(marker in memo for marker in ("嬉", "楽", "よかっ", "良かっ", "できた")):
         return "良かった動きも迷いもどちらかに寄せず、そのまま確かめようとしているところを、Emlisは受け取りました。"
     return "すぐに一つへまとめず、いま見えている動きをそのまま置こうとしているところを、Emlisは受け取りました。"
+
+
+_SEMANTIC_MATERIAL_PATTERNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    (
+        "recovered_energy",
+        ("気力", "やる気力", "やってみたい", "出来るかもしれない", "できるかもしれない", "挑戦", "頑張"),
+    ),
+    (
+        "future_intention",
+        ("このタイミング", "逃した", "次どう頑張", "つぎどう頑張", "していきたい", "知って行きたい", "知っていきたい", "過ごしていきたい"),
+    ),
+    (
+        "relationship_wish",
+        ("そば", "側に", "恋愛", "出会え", "素敵な人", "存在", "甘え"),
+    ),
+    (
+        "comparison_baseline_shift",
+        ("昨日の自分", "人と比べ", "比べる相手", "他の誰か"),
+    ),
+    (
+        "small_change_preservation",
+        ("小さな変化", "少し出来", "少しでき", "少し勇気", "少し気持ちを言葉", "言葉に出来", "言葉にでき", "少し前に進", "ほんの少し前"),
+    ),
+    ("value_preservation", ("大事", "大切")),
+    ("self_observation", ("なぜ", "なんで", "どうして", "自分について", "思ったんだろう", "基準")),
+)
+_RELATION_ID_SEMANTIC_ALIASES: Final[dict[str, tuple[str, ...]]] = {
+    "self_understanding_learning": ("self_observation",),
+    "value_or_self_understanding_material": ("self_observation", "value_preservation"),
+    "boundary_or_transition": ("future_intention",),
+    "relationship_material": ("relationship_wish",),
+    "support_received_material": ("relationship_wish",),
+    "recovered_energy": ("recovered_energy",),
+    "future_intention": ("future_intention",),
+    "relationship_wish": ("relationship_wish",),
+    "comparison_baseline_shift": ("comparison_baseline_shift",),
+    "small_change_preservation": ("small_change_preservation",),
+    "value_preservation": ("value_preservation",),
+    "self_observation": ("self_observation",),
+}
+
+
+def _semantic_material_ids(*, current_input: Mapping[str, Any] | None, material_route: Any) -> tuple[str, ...]:
+    current = _as_mapping(current_input)
+    haystack = "\n".join(
+        part
+        for part in (
+            _clean(_first(("memo", "note", "description"), current)),
+            _clean(_first(("memo_action", "action", "next_action"), current)),
+        )
+        if part
+    )
+    ids: list[str] = []
+    for material_id, patterns in _SEMANTIC_MATERIAL_PATTERNS:
+        if any(pattern in haystack for pattern in patterns):
+            ids.append(material_id)
+    route_meta = _material_route_meta(material_route)
+    relation_ids = _dedupe(_first(("relation_material_ids", "generic_relation_material_ids"), route_meta) or ())
+    for relation_id in relation_ids:
+        ids.extend(_RELATION_ID_SEMANTIC_ALIASES.get(relation_id, ()))
+    return tuple(_dedupe(ids))
 
 
 def _topic_phrase(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:

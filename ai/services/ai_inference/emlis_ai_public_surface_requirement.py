@@ -49,7 +49,10 @@ _SURFACE_REQUIREMENT_FAMILIES: Final[frozenset[str]] = frozenset(
     }
 )
 _LOW_INFORMATION_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
-    {"low_information", "limited_grounding"}
+    {"low_information"}
+)
+_LIMITED_GROUNDING_MATERIAL_QUALITIES: Final[frozenset[str]] = frozenset(
+    {"limited_grounding"}
 )
 _HIGH_INFORMATION_QUALITY_MARKERS: Final[frozenset[str]] = frozenset(
     {
@@ -245,6 +248,7 @@ def resolve_public_surface_requirement(
     safety_blocked = _safety_required(containers, reason_codes=reason_codes)
     infrastructure_fail_closed = _infrastructure_failed(containers, reason_codes=reason_codes)
     self_denial_safe_answer = _self_denial_safe_state_answer(containers)
+    limited_grounding_requested = _limited_grounding_requested(material_quality=material_quality)
     low_information_requested = _low_information_requested(
         material_quality=material_quality,
         containers=containers,
@@ -270,7 +274,8 @@ def resolve_public_surface_requirement(
         and not infrastructure_fail_closed
         and not low_information_requested
         and (
-            explicit_two_stage
+            limited_grounding_requested
+            or explicit_two_stage
             or fixture_two_stage
             or bool(two_stage_decision.get("required"))
             or high_information_two_stage
@@ -287,6 +292,10 @@ def resolve_public_surface_requirement(
         low_info_allowed = False
     elif self_denial_safe_answer:
         family = SURFACE_REQUIREMENT_SELF_DENIAL_SAFE_STATE_ANSWER
+        plain_allowed = False
+        low_info_allowed = False
+    elif limited_grounding_requested:
+        family = SURFACE_REQUIREMENT_LABELLED_TWO_STAGE
         plain_allowed = False
         low_info_allowed = False
     elif two_stage_required:
@@ -307,6 +316,7 @@ def resolve_public_surface_requirement(
         fixture_two_stage=fixture_two_stage,
         high_information_two_stage=high_information_two_stage,
         two_stage_applicability_required=bool(two_stage_decision.get("required")),
+        limited_grounding_requested=limited_grounding_requested,
         low_information_requested=low_information_requested,
         safety_blocked=safety_blocked,
         infrastructure_fail_closed=infrastructure_fail_closed,
@@ -540,7 +550,12 @@ def _input_material_classification(
 ) -> dict[str, Any]:
     memo = str(current_input.get("memo") or current_input.get("memo_text") or "")
     memo_action = str(current_input.get("memo_action") or "")
-    emotions = current_input.get("emotions") or current_input.get("emotion") or ()
+    emotions = (
+        current_input.get("emotions")
+        or current_input.get("emotion_details")
+        or current_input.get("emotion")
+        or ()
+    )
     categories = current_input.get("category") or current_input.get("categories") or ()
     memo_len = len(memo)
     memo_action_len = len(memo_action)
@@ -582,7 +597,13 @@ def _sanitize_input_material_classification(value: Any) -> dict[str, Any]:
     }
 
 
+def _limited_grounding_requested(*, material_quality: str) -> bool:
+    return material_quality in _LIMITED_GROUNDING_MATERIAL_QUALITIES
+
+
 def _low_information_requested(*, material_quality: str, containers: Sequence[Mapping[str, Any]]) -> bool:
+    if material_quality in _LIMITED_GROUNDING_MATERIAL_QUALITIES:
+        return False
     if material_quality in _LOW_INFORMATION_MATERIAL_QUALITIES:
         return True
     for container in containers:
@@ -699,6 +720,7 @@ def _decision_sources(
     fixture_two_stage: bool,
     high_information_two_stage: bool,
     two_stage_applicability_required: bool,
+    limited_grounding_requested: bool,
     low_information_requested: bool,
     safety_blocked: bool,
     infrastructure_fail_closed: bool,
@@ -720,8 +742,11 @@ def _decision_sources(
         sources.append("fixture_family_meta")
     if high_information_two_stage:
         sources.append("high_information_structure_family")
+    if limited_grounding_requested:
+        sources.append("limited_grounding_reception_required")
     if low_information_requested:
         sources.append("low_information_material")
+        sources.append("low_information_reception_required")
     if plain_allowed:
         sources.append("plain_state_answer_default")
     return list(_dedupe(sources or ["plain_state_answer_default"]))
@@ -742,11 +767,11 @@ def _required_comment_text_shape(family_value: Any) -> dict[str, Any]:
     if family == SURFACE_REQUIREMENT_LOW_INFORMATION_OBSERVATION:
         return {
             "kind": LOW_INFORMATION_SHAPE_KIND,
-            "starts_with": "",
-            "contains_boundary": "",
-            "labels_required": False,
+            "starts_with": LABELLED_TWO_STAGE_OBSERVATION_MARKER,
+            "contains_boundary": LABELLED_TWO_STAGE_RECEPTION_BOUNDARY,
+            "labels_required": True,
             "observation_section_required": True,
-            "reception_section_required": False,
+            "reception_section_required": True,
             "comment_text_body_included": False,
         }
     return {

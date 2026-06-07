@@ -168,6 +168,71 @@ _GENERIC_RELATION_MATERIAL_PATTERNS: Final = {
     "self_understanding_learning": ("疑問", "対象", "人について", "人への興味", "人との話し方", "メモ", "進歩", "勇気"),
     "boundary_or_transition": ("区切り", "大丈夫", "変わ", "行動", "日常", "傷", "汚れ"),
 }
+_SEMANTIC_MATERIAL_PATTERNS: Final = {
+    # P7: these are general, text-grounded material ids for limited reception.
+    # They are not H/I/J case routes and are not generated surface text.
+    "recovered_energy": (
+        "気力",
+        "やる気力",
+        "やってみたい",
+        "出来るかもしれない",
+        "できるかもしれない",
+        "挑戦",
+        "頑張",
+    ),
+    "future_intention": (
+        "このタイミング",
+        "逃したくない",
+        "逃したら",
+        "次どう頑張",
+        "つぎどう頑張",
+        "していきたい",
+        "出会えたら",
+        "過ごしていきたい",
+        "知って行きたい",
+        "知っていきたい",
+    ),
+    "relationship_wish": (
+        "そばに",
+        "側に",
+        "居てくれる",
+        "いてくれる",
+        "恋愛",
+        "出会え",
+        "素敵な人",
+        "存在",
+        "甘え",
+    ),
+    "comparison_baseline_shift": (
+        "昨日の自分",
+        "人と比べ",
+        "比べる相手",
+        "他の誰か",
+    ),
+    "small_change_preservation": (
+        "小さな変化",
+        "少し出来",
+        "少しでき",
+        "少し勇気",
+        "少し気持ちを言葉",
+        "言葉に出来",
+        "言葉にでき",
+        "少し前に進",
+        "ほんの少し前",
+    ),
+    "value_preservation": (
+        "大事",
+        "大切",
+    ),
+    "self_observation": (
+        "なぜ",
+        "なんで",
+        "どうして",
+        "自分について",
+        "思ったんだろう",
+        "基準",
+    ),
+}
 
 
 def _clean(value: Any) -> str:
@@ -248,11 +313,20 @@ def _source_field_ids(bundle: EmlisCurrentInputBundle) -> tuple[str, ...]:
 
 
 def _generic_relation_material_ids(text: str, categories: Sequence[str]) -> tuple[str, ...]:
-    haystack = "\n".join([_clean(text), " ".join(_clean(category) for category in categories)])
+    text_value = _clean(text)
+    category_value = " ".join(_clean(category) for category in categories)
+    haystack = "\n".join([text_value, category_value])
     ids: list[str] = []
     for material_id, patterns in _GENERIC_RELATION_MATERIAL_PATTERNS.items():
         if any(pattern in haystack for pattern in patterns):
             ids.append(material_id)
+    # P7 semantic material ids must be grounded in the user's written text.
+    # Category labels alone can show topic direction, but they must not create
+    # recovery/wish/comparison semantics by themselves.
+    if text_value:
+        for material_id, patterns in _SEMANTIC_MATERIAL_PATTERNS.items():
+            if any(pattern in text_value for pattern in patterns):
+                ids.append(material_id)
     if any(category in {"人間関係", "恋愛", "家族"} for category in categories):
         ids.append("relationship_category_direction")
     # Phase20-3 uses generic material ids rather than Phase19 case cue ids.
@@ -265,7 +339,6 @@ def _generic_relation_material_ids(text: str, categories: Sequence[str]) -> tupl
     if "self_understanding_learning" in ids:
         ids.append("value_or_self_understanding_material")
     return _dedupe(ids)
-
 
 def _visible_material_slots(bundle: EmlisCurrentInputBundle) -> tuple[str, ...]:
     text = _joined_text(bundle)
