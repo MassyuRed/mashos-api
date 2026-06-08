@@ -181,6 +181,13 @@ _GATE_VALIDATION_KEYS: Final[tuple[str, ...]] = (
     "raw_input_included",
     "comment_text_body_included",
 )
+
+_VISIBLE_SURFACE_PUBLIC_ARRIVAL_BLOCKING_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
+    {"repair_required", "red"}
+)
+_VISIBLE_SURFACE_PUBLIC_ARRIVAL_BLOCKING_ACTIONS: Final[frozenset[str]] = frozenset(
+    {"rerender_surface", "reroute_low_information", "block", "fail_closed"}
+)
 _SHAPE_KEYS: Final[tuple[str, ...]] = (
     "labels_present",
     "label_order_valid",
@@ -773,10 +780,10 @@ def _blocker(
 ) -> tuple[str, str]:
     if not public_reached:
         return (_BLOCKER_FAMILY_PUBLIC_FEEDBACK, PRODUCT_SURFACE_INVALID_PUBLIC_FEEDBACK_NOT_REACHED)
-    if not rn_visible:
-        return (_BLOCKER_FAMILY_RN_VISIBLE, PRODUCT_SURFACE_INVALID_RN_NOT_VISIBLE)
     if public_gate_blocked:
         return (_BLOCKER_FAMILY_PUBLIC_GATE, PRODUCT_SURFACE_INVALID_PUBLIC_GATE_BLOCKED)
+    if not rn_visible:
+        return (_BLOCKER_FAMILY_RN_VISIBLE, PRODUCT_SURFACE_INVALID_RN_NOT_VISIBLE)
     if not public_candidate_source_allowed:
         return (_BLOCKER_FAMILY_CANDIDATE_SOURCE, PRODUCT_SURFACE_INVALID_CANDIDATE_SOURCE_NOT_ALLOWED)
     if low_information_surface_used and not low_information_allowed:
@@ -885,12 +892,24 @@ def _labelled_shape_summary(comment_text: Any) -> dict[str, bool]:
 def _gate_validation_summary(value: Mapping[str, Any] | None, *, public_meta: Mapping[str, Any]) -> dict[str, Any]:
     source = _as_mapping(value)
     blocking_codes = _blocking_codes(source, public_meta)
-    first_blocker_code = _clean_identifier(
+    visible_gate = _as_mapping(public_meta.get("visible_surface_acceptance_gate"))
+    runtime_gate = _as_mapping(public_meta.get("runtime_surface_pre_return_gate"))
+    display_gate = _as_mapping(public_meta.get("display_gate"))
+    state_answer_gate = _as_mapping(public_meta.get("state_answer_gate_boundary"))
+    two_stage_gate = _as_mapping(public_meta.get("two_stage_reception_gate"))
+    visible_warning_only = _visible_surface_gate_warning_only(visible_gate)
+
+    first_blocker_code_source = _clean_identifier(
         source.get("first_blocker_code")
         or source.get("first_backend_blocker")
         or source.get("public_blocker_code")
         or (blocking_codes[0] if blocking_codes else ""),
         max_length=128,
+    )
+    first_blocker_code = (
+        ""
+        if visible_warning_only and _blocker_family_from_code(first_blocker_code_source) == "visible_surface"
+        else first_blocker_code_source
     )
     first_blocker_family = _clean_identifier(
         source.get("first_blocker_family")
@@ -898,13 +917,39 @@ def _gate_validation_summary(value: Mapping[str, Any] | None, *, public_meta: Ma
         or _blocker_family_from_code(first_blocker_code),
         max_length=96,
     )
-    visible_blocked = bool(source.get("visible_surface_gate_blocked") or _contains_marker(blocking_codes, "visible"))
-    runtime_blocked = bool(source.get("runtime_surface_gate_blocked") or _contains_marker(blocking_codes, "runtime"))
-    display_blocked = bool(source.get("display_gate_blocked") or _contains_marker(blocking_codes, "display"))
-    state_answer_blocked = bool(source.get("state_answer_gate_blocked") or _contains_marker(blocking_codes, "state_answer"))
-    two_stage_blocked = bool(source.get("two_stage_gate_blocked") or _contains_marker(blocking_codes, "two_stage"))
+    if visible_warning_only and first_blocker_family == "visible_surface":
+        first_blocker_family = ""
+
+    visible_source_blocked = bool(
+        source.get("visible_surface_gate_blocked") or _contains_marker(blocking_codes, "visible")
+    )
+    visible_blocked = bool(
+        _visible_surface_gate_blocks_for_public_arrival(visible_gate)
+        or (visible_source_blocked and not visible_warning_only)
+    )
+    runtime_blocked = bool(
+        source.get("runtime_surface_gate_blocked")
+        or _contains_marker(blocking_codes, "runtime")
+        or _strict_public_gate_blocks(runtime_gate)
+    )
+    display_blocked = bool(
+        source.get("display_gate_blocked")
+        or _contains_marker(blocking_codes, "display")
+        or _strict_public_gate_blocks(display_gate)
+    )
+    state_answer_blocked = bool(
+        source.get("state_answer_gate_blocked")
+        or _contains_marker(blocking_codes, "state_answer")
+        or _strict_public_gate_blocks(state_answer_gate)
+    )
+    two_stage_blocked = bool(
+        source.get("two_stage_gate_blocked")
+        or _contains_marker(blocking_codes, "two_stage")
+        or _strict_public_gate_blocks(two_stage_gate)
+    )
+    source_public_gate_blocked = bool(source.get("public_gate_blocked") and not visible_warning_only)
     public_gate_blocked = bool(
-        source.get("public_gate_blocked")
+        source_public_gate_blocked
         or visible_blocked
         or runtime_blocked
         or display_blocked
@@ -1050,14 +1095,57 @@ def _public_gate_blocks(public_meta: Mapping[str, Any]) -> bool:
         gate = _as_mapping(public_meta.get(key))
         if not gate:
             continue
-        passed = _safe_bool(gate.get("passed"))
-        if passed is False:
+        if key == "visible_surface_acceptance_gate":
+            if _visible_surface_gate_blocks_for_public_arrival(gate):
+                return True
+            continue
+        if _strict_public_gate_blocks(gate):
             return True
-        if _safe_bool(gate.get("blocked")) is True or _safe_bool(gate.get("terminal_surface_block")) is True:
-            return True
-        action = _clean_identifier(gate.get("action"), max_length=80)
-        if action in {"rerender_surface", "reroute_low_information", "block", "fail_closed"}:
-            return True
+    return False
+
+
+def _visible_surface_gate_blocks_for_public_arrival(gate: Mapping[str, Any]) -> bool:
+    if not gate:
+        return False
+
+    classification = _clean_identifier(gate.get("classification"), max_length=80)
+    if classification in _VISIBLE_SURFACE_PUBLIC_ARRIVAL_BLOCKING_CLASSIFICATIONS:
+        return True
+
+    action = _clean_identifier(gate.get("action"), max_length=80)
+    if action in _VISIBLE_SURFACE_PUBLIC_ARRIVAL_BLOCKING_ACTIONS:
+        return True
+
+    if _safe_bool(gate.get("blocked")) is True or _safe_bool(gate.get("terminal_surface_block")) is True:
+        return True
+
+    passed = _safe_bool(gate.get("passed"))
+    if passed is False and action != "warn":
+        return True
+
+    return False
+
+
+def _visible_surface_gate_warning_only(gate: Mapping[str, Any]) -> bool:
+    if not gate or _visible_surface_gate_blocks_for_public_arrival(gate):
+        return False
+    return bool(
+        _safe_bool(gate.get("passed")) is False
+        and _clean_identifier(gate.get("action"), max_length=80) == "warn"
+    )
+
+
+def _strict_public_gate_blocks(gate: Mapping[str, Any]) -> bool:
+    if not gate:
+        return False
+    passed = _safe_bool(gate.get("passed"))
+    if passed is False:
+        return True
+    if _safe_bool(gate.get("blocked")) is True or _safe_bool(gate.get("terminal_surface_block")) is True:
+        return True
+    action = _clean_identifier(gate.get("action"), max_length=80)
+    if action in _VISIBLE_SURFACE_PUBLIC_ARRIVAL_BLOCKING_ACTIONS:
+        return True
     return False
 
 

@@ -181,10 +181,19 @@ def test_user_label_connection_phase1_public_meta_sanitizer_does_not_expose_raw_
         "ulc diagnostic raw text must not leak",
         "ulc diagnostic comment body must not leak",
         "ulc evidence span raw text must not leak",
-        "candidate_body",
         "candidate_comment_text",
     ):
         assert fragment not in dumped
+
+    # Step 8 adds explicit body-free boundary markers.
+    # Keep forbidding the raw candidate body key itself, while allowing
+    # candidate_body_included=false as a public sanitizer marker.
+    assert '"candidate_body":' not in dumped
+    boundary = public_meta["public_feedback_meta_boundary"]
+    assert boundary["raw_input_included"] is False
+    assert boundary["comment_text_body_included"] is False
+    assert boundary["candidate_body_included"] is False
+    assert boundary["internal_meta_returned"] is False
     assert public_meta["observation_status"] == "passed"
 
 

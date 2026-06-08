@@ -224,6 +224,8 @@ def _boundary_marker(*, trimmed: bool) -> Dict[str, Any]:
         "internal_meta_returned": False,
         "raw_input_included": False,
         "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
     }
 
 
@@ -1865,16 +1867,16 @@ def _visible_surface_acceptance_gate_blocks_public_feedback(public_meta: Mapping
     if gate is None:
         return False
 
-    passed = _safe_bool(_safe_get(gate, "passed"))
-    if passed is False:
-        return True
-
     classification = _safe_visible_surface_acceptance_classification(_safe_get(gate, "classification"))
     if classification in _BLOCKING_VISIBLE_SURFACE_ACCEPTANCE_CLASSIFICATIONS:
         return True
 
     action = _safe_visible_surface_acceptance_action(_safe_get(gate, "action"))
     if action in _BLOCKING_VISIBLE_SURFACE_ACCEPTANCE_ACTIONS:
+        return True
+
+    passed = _safe_bool(_safe_get(gate, "passed"))
+    if passed is False and action != "warn":
         return True
 
     return False

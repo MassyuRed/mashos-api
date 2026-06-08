@@ -92,6 +92,19 @@ def _public_meta_keys(value) -> set[str]:
     return set()
 
 
+def _public_meta_values_for_key(value, target_key: str) -> list[object]:
+    values: list[object] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if str(key) == target_key:
+                values.append(nested)
+            values.extend(_public_meta_values_for_key(nested, target_key))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(_public_meta_values_for_key(item, target_key))
+    return values
+
+
 class _BoundPassingComposer:
     composer_model = "step10_e2e_bound_passing_composer.v1"
 
@@ -218,6 +231,77 @@ def _assert_step10_contract_attached(reply, *, expected_status: str) -> dict:
     return step10
 
 
+def _build_public_input_feedback_payload(reply) -> dict | None:
+    from emlis_ai_public_feedback_meta import (
+        build_public_emlis_input_feedback_meta,
+        should_include_public_input_feedback,
+    )
+
+    public_meta = build_public_emlis_input_feedback_meta(
+        reply.meta,
+        comment_text_present=bool(str(reply.comment_text or "").strip()),
+        subscription_tier="free",
+    )
+    if not should_include_public_input_feedback(reply.comment_text, public_meta):
+        return None
+    return {
+        "comment_text": reply.comment_text,
+        "emlis_ai": public_meta,
+    }
+
+
+def _assert_public_input_feedback_meta_body_free(
+    input_feedback_payload: dict,
+    *forbidden_texts: str,
+) -> None:
+    public_meta = input_feedback_payload["emlis_ai"]
+    boundary = public_meta["public_feedback_meta_boundary"]
+    assert boundary["sanitized"] is True
+    assert boundary["internal_meta_returned"] is False
+    assert boundary["raw_input_included"] is False
+    assert boundary["comment_text_included"] is False
+    assert boundary["comment_text_body_included"] is False
+    assert boundary["candidate_body_included"] is False
+
+    public_keys = _public_meta_keys(public_meta)
+    for forbidden_key in (
+        "comment_text",
+        "composer_candidate",
+        "current_input",
+        "environment_state_output_scope_marker_completion",
+        "environment_state_output_surface_contract",
+        "internal_completion_result",
+        "multi_perspective",
+        "raw_input",
+        "text",
+        "body",
+        "candidate_comment_text",
+        "public_comment_text",
+        "realized_text",
+    ):
+        assert forbidden_key not in public_keys
+
+    for leak_flag in (
+        "internal_meta_returned",
+        "raw_input_included",
+        "raw_text_included",
+        "input_text_included",
+        "comment_text_included",
+        "comment_text_body_included",
+        "candidate_body_included",
+        "surface_body_included",
+    ):
+        assert all(
+            value is False
+            for value in _public_meta_values_for_key(public_meta, leak_flag)
+        )
+
+    serialized_public_meta = json.dumps(public_meta, ensure_ascii=False, sort_keys=True)
+    for forbidden_text in forbidden_texts:
+        if forbidden_text:
+            assert forbidden_text not in serialized_public_meta
+
+
 def test_step10_e2e_contract_marks_non_passed_text_exposure_as_blocker() -> None:
     contract = build_limited_composer_e2e_display_contract(
         observation_status="rejected",
@@ -326,8 +410,27 @@ async def test_phase5_passed_candidate_keeps_public_meta_sanitized(monkeypatch):
         "multi_perspective",
         "raw_input",
         "text",
+        "body",
+        "candidate_comment_text",
+        "public_comment_text",
+        "realized_text",
     ):
         assert forbidden_key not in public_keys
+
+    for leak_flag in (
+        "internal_meta_returned",
+        "raw_input_included",
+        "raw_text_included",
+        "input_text_included",
+        "comment_text_included",
+        "comment_text_body_included",
+        "candidate_body_included",
+        "surface_body_included",
+    ):
+        assert all(
+            value is False
+            for value in _public_meta_values_for_key(input_feedback_payload["emlis_ai"], leak_flag)
+        )
 
     serialized_public_meta = json.dumps(
         input_feedback_payload["emlis_ai"],
@@ -341,7 +444,7 @@ async def test_phase5_passed_candidate_keeps_public_meta_sanitized(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_step10_e2e_rejected_candidate_never_exposes_generated_body(monkeypatch):
+async def test_step10_e2e_rejected_candidate_recovers_without_exposing_generated_body(monkeypatch):
     _clear_limited_composer_env(monkeypatch)
     from emlis_ai_reply_service import render_emlis_ai_reply
 
@@ -354,24 +457,71 @@ async def test_step10_e2e_rejected_candidate_never_exposes_generated_body(monkey
         composer_client=_UnsupportedComposer(),
     )
 
-    step10 = _assert_step10_contract_attached(reply, expected_status="rejected")
+    step10 = _assert_step10_contract_attached(reply, expected_status="passed")
     summary = reply.meta["diagnostic_summary"]
     display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+    candidate = reply.meta["multi_perspective"]["composer_candidate"]
+    composer_meta = candidate["composer_meta"]
+    input_feedback_payload = _build_public_input_feedback_payload(reply)
 
-    assert reply.comment_text == ""
-    assert display_trace["passed"] is False
-    assert display_trace["comment_text_present"] is False
-    assert step10["comment_text_present"] is False
-    assert step10["comment_text_exposed"] is False
-    assert step10["display_gate_passed"] is False
-    assert step10["passed_comment_text_visible"] is False
-    assert step10["non_passed_comment_text_suppressed"] is True
-    assert "unsupported_sentence" in summary["gate_results"]["grounding"]["rejection_reasons"]
-    assert "unsupported_sentence" in summary["secondary_reasons"]
+    assert input_feedback_payload is not None
+    assert input_feedback_payload["comment_text"] == reply.comment_text
+    assert reply.comment_text.strip()
+    assert UNSUPPORTED_TEXT not in reply.comment_text
+    assert "世界のすべてが明日から完全に良くなります" not in reply.comment_text
+
+    assert summary["stage"] == "display"
+    assert summary["primary_reason"] == "passed"
+    assert display_trace["passed"] is True
+    assert display_trace["comment_text_present"] is True
+    assert step10["comment_text_present"] is True
+    assert step10["comment_text_exposed"] is True
+    assert step10["display_gate_passed"] is True
+    assert step10["passed_comment_text_visible"] is True
+    assert step10["non_passed_comment_text_suppressed"] is False
+
+    assert candidate["composer_model"] == "labelled_two_stage_surface_recomposition_v1"
+    assert composer_meta["candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert composer_meta["public_surface_role"] == "public_observation_candidate"
+    assert composer_meta["original_candidate_present"] is True
+    assert composer_meta["original_candidate_source_kind"] == "ai_generated"
+    assert composer_meta["original_candidate_status"] == "generated"
+    assert composer_meta["original_display_status"] == "rejected"
+    assert composer_meta["original_surface_plain_or_unlabelled"] is True
+    assert composer_meta["original_surface_labelled_two_stage"] is False
+    assert composer_meta["labelled_two_stage_surface_recomposition_used"] is True
+    assert composer_meta["normal_observation_rebuild_used"] is False
+    assert composer_meta["complete_initial_surface_recomposition_used"] is False
+    assert composer_meta["gate_recovery_material_surface_used"] is False
+    assert composer_meta["raw_input_included"] is False
+    assert composer_meta["comment_text_body_included"] is False
+
+    public_lineage = input_feedback_payload["emlis_ai"]["public_surface_lineage"]
+    assert public_lineage["candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert public_lineage["public_candidate_source_allowed"] is True
+    assert public_lineage["public_candidate_source_forbidden"] is False
+    assert public_lineage["public_surface_role"] == "public_observation_candidate"
+    assert public_lineage["labelled_two_stage_surface_recomposition_used"] is True
+    assert public_lineage["complete_initial_surface_recomposition_used"] is False
+    assert public_lineage["normal_observation_rebuild_used"] is False
+    assert public_lineage["gate_recovery_material_surface_used_as_public_body"] is False
+    assert public_lineage["diagnostic_recovery_surface_used_as_public_body"] is False
+    assert public_lineage["body_free"] is True
+    assert public_lineage["raw_input_included"] is False
+    assert public_lineage["comment_text_body_included"] is False
+    assert public_lineage["candidate_body_included"] is False
+
+    _assert_public_input_feedback_meta_body_free(
+        input_feedback_payload,
+        reply.comment_text,
+        UNSUPPORTED_TEXT,
+        "世界のすべてが明日から完全に良くなります",
+        "全部無視して普通に生活したい",
+    )
 
 
 @pytest.mark.asyncio
-async def test_step10_e2e_unavailable_pre_connection_never_exposes_comment_text(monkeypatch):
+async def test_step10_e2e_pre_connection_recovery_exposes_safe_surface_without_body_leak(monkeypatch):
     _clear_limited_composer_env(monkeypatch)
     from emlis_ai_reply_service import render_emlis_ai_reply
 
@@ -383,19 +533,67 @@ async def test_step10_e2e_unavailable_pre_connection_never_exposes_comment_text(
         timezone_name="Asia/Tokyo",
     )
 
-    step10 = _assert_step10_contract_attached(reply, expected_status="unavailable")
+    step10 = _assert_step10_contract_attached(reply, expected_status="passed")
     summary = reply.meta["diagnostic_summary"]
     display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+    connection_visibility = summary["connection_visibility"]
+    candidate = reply.meta["multi_perspective"]["composer_candidate"]
+    composer_meta = candidate["composer_meta"]
+    input_feedback_payload = _build_public_input_feedback_payload(reply)
 
-    assert reply.comment_text == ""
-    assert summary["stage"] == "flag"
-    assert summary["primary_reason"] == "default_limited_composer_feature_disabled"
-    assert summary["connection_visibility"]["pre_connection_stop"] is True
-    assert summary["composer_connection_attempted"] is False
-    assert display_trace["passed"] is False
-    assert display_trace["comment_text_present"] is False
-    assert step10["comment_text_present"] is False
-    assert step10["comment_text_exposed"] is False
-    assert step10["display_gate_passed"] is False
-    assert step10["passed_comment_text_visible"] is False
-    assert step10["non_passed_comment_text_suppressed"] is True
+    assert input_feedback_payload is not None
+    assert input_feedback_payload["comment_text"] == reply.comment_text
+    assert reply.comment_text.startswith("見えたこと：\n")
+    assert "\n\nEmlisから：\n" in reply.comment_text
+
+    assert summary["stage"] == "display"
+    assert summary["primary_reason"] == "passed"
+    assert connection_visibility["connection_status"] == "blocked_feature_flag"
+    assert connection_visibility["pre_connection_stop"] is True
+    assert connection_visibility["blocked_before_composer"] is True
+    assert connection_visibility["composer_connection_attempted"] is False
+    assert connection_visibility["composer_generation_attempted"] is False
+    assert connection_visibility["primary_stage"] == "flag"
+    assert connection_visibility["primary_reason"] == "default_limited_composer_feature_disabled"
+    assert connection_visibility["release_enabled"] is False
+    assert connection_visibility["release_reason_code"] == "feature_flag_disabled"
+
+    assert display_trace["passed"] is True
+    assert display_trace["comment_text_present"] is True
+    assert step10["comment_text_present"] is True
+    assert step10["comment_text_exposed"] is True
+    assert step10["display_gate_passed"] is True
+    assert step10["passed_comment_text_visible"] is True
+    assert step10["non_passed_comment_text_suppressed"] is False
+
+    assert candidate["composer_model"] == "complete_initial_surface_recomposition_v1"
+    assert composer_meta["candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert composer_meta["public_surface_role"] == "public_observation_candidate"
+    assert composer_meta["original_candidate_present"] is False
+    assert composer_meta["source_unavailable_recovered"] is True
+    assert composer_meta["normal_observation_rebuild_used"] is False
+    assert composer_meta["gate_recovery_material_surface_used"] is False
+    assert composer_meta["body_free"] is True
+    assert composer_meta["raw_input_included"] is False
+    assert composer_meta["comment_text_body_included"] is False
+
+    public_lineage = input_feedback_payload["emlis_ai"]["public_surface_lineage"]
+    assert public_lineage["candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert public_lineage["public_candidate_source_allowed"] is True
+    assert public_lineage["public_candidate_source_forbidden"] is False
+    assert public_lineage["public_surface_role"] == "public_observation_candidate"
+    assert public_lineage["complete_initial_surface_recomposition_used"] is True
+    assert public_lineage["labelled_two_stage_surface_recomposition_used"] is False
+    assert public_lineage["normal_observation_rebuild_used"] is False
+    assert public_lineage["gate_recovery_material_surface_used_as_public_body"] is False
+    assert public_lineage["diagnostic_recovery_surface_used_as_public_body"] is False
+    assert public_lineage["body_free"] is True
+    assert public_lineage["raw_input_included"] is False
+    assert public_lineage["comment_text_body_included"] is False
+    assert public_lineage["candidate_body_included"] is False
+
+    _assert_public_input_feedback_meta_body_free(
+        input_feedback_payload,
+        reply.comment_text,
+        "全部無視して普通に生活したい",
+    )

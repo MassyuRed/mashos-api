@@ -10,6 +10,7 @@ from emlis_ai_product_quality_measurement_event import (
 from emlis_ai_product_surface_validation import (
     PRODUCT_SURFACE_BLOCKER_NONE,
     PRODUCT_SURFACE_BLOCKER_PLAIN_USED_FOR_TWO_STAGE_REQUIRED,
+    PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED,
     PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,
     assert_product_surface_validation_summary,
     build_product_surface_validation_summary,
@@ -268,3 +269,168 @@ def test_p3_resolves_requirement_from_nested_body_free_sources() -> None:
     assert summary["product_surface_valid"] is True
     assert summary["raw_input_included"] is False
     assert summary["comment_text_body_included"] is False
+
+
+def test_p3_keeps_rn_visible_for_visible_surface_yellow_warn() -> None:
+    meta = {
+        **_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "warn",
+        },
+    }
+
+    summary = build_product_surface_validation_summary(
+        comment_text=PLAIN_VISIBLE_COMMENT,
+        emlis_ai_public_meta=meta,
+        surface_requirement=_plain_requirement(),
+        candidate_generation_summary={
+            "candidate_source_kind": "normal_observation_rebuild_candidate",
+            "composer_source": "ai_generated",
+            "candidate_status": "generated",
+        },
+        input_feedback_included=True,
+    )
+
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is True
+    assert summary["gate_validation"]["public_gate_blocked"] is False
+    assert summary["gate_validation"]["visible_surface_gate_blocked"] is False
+    assert summary["blocker_code"] != PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED
+    assert_product_surface_validation_summary(summary)
+
+
+def test_p3_keeps_visible_surface_repair_required_as_public_gate_blocker() -> None:
+    meta = {
+        **_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "repair_required",
+            "action": "rerender_surface",
+        },
+    }
+
+    summary = build_product_surface_validation_summary(
+        comment_text=PLAIN_VISIBLE_COMMENT,
+        emlis_ai_public_meta=meta,
+        surface_requirement=_plain_requirement(),
+        candidate_generation_summary={
+            "candidate_source_kind": "normal_observation_rebuild_candidate",
+            "composer_source": "ai_generated",
+            "candidate_status": "generated",
+        },
+        input_feedback_included=True,
+    )
+
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is False
+    assert summary["gate_validation"]["public_gate_blocked"] is True
+    assert summary["gate_validation"]["visible_surface_gate_blocked"] is True
+    assert summary["blocker_code"] == PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED
+    assert_product_surface_validation_summary(summary)
+
+
+def test_p3_blocks_visible_surface_passed_false_without_warn_for_rn_visible() -> None:
+    meta = {
+        **_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "allow",
+        },
+    }
+
+    summary = build_product_surface_validation_summary(
+        comment_text=PLAIN_VISIBLE_COMMENT,
+        emlis_ai_public_meta=meta,
+        surface_requirement=_plain_requirement(),
+        candidate_generation_summary={
+            "candidate_source_kind": "normal_observation_rebuild_candidate",
+            "composer_source": "ai_generated",
+            "candidate_status": "generated",
+        },
+        input_feedback_included=True,
+    )
+
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is False
+    assert summary["gate_validation"]["public_gate_blocked"] is True
+    assert summary["gate_validation"]["visible_surface_gate_blocked"] is True
+    assert summary["blocker_code"] == PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED
+    assert_product_surface_validation_summary(summary)
+
+
+def test_p3_normalizes_legacy_visible_surface_blocker_when_gate_is_yellow_warn() -> None:
+    meta = {
+        **_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "warn",
+        },
+    }
+
+    summary = build_product_surface_validation_summary(
+        comment_text=PLAIN_VISIBLE_COMMENT,
+        emlis_ai_public_meta=meta,
+        surface_requirement=_plain_requirement(),
+        candidate_generation_summary={
+            "candidate_source_kind": "normal_observation_rebuild_candidate",
+            "composer_source": "ai_generated",
+            "candidate_status": "generated",
+        },
+        gate_validation_summary={
+            "public_gate_blocked": True,
+            "visible_surface_gate_blocked": True,
+            "first_blocker_family": "visible_surface",
+            "first_blocker_code": "visible_surface_acceptance_gate_failed",
+            "blocking_codes": ["visible_surface_acceptance_gate_failed"],
+        },
+        input_feedback_included=True,
+    )
+
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is True
+    assert summary["gate_validation"]["public_gate_blocked"] is False
+    assert summary["gate_validation"]["visible_surface_gate_blocked"] is False
+    assert summary["gate_validation"]["first_blocker_family"] == ""
+    assert summary["gate_validation"]["first_blocker_code"] == ""
+    assert_product_surface_validation_summary(summary)
+
+
+def test_p3_keeps_runtime_gate_strict_when_visible_surface_is_yellow_warn() -> None:
+    meta = {
+        **_passed_public_meta(),
+        "runtime_surface_pre_return_gate": {"passed": False, "action": "fail_closed"},
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "warn",
+        },
+    }
+
+    summary = build_product_surface_validation_summary(
+        comment_text=PLAIN_VISIBLE_COMMENT,
+        emlis_ai_public_meta=meta,
+        surface_requirement=_plain_requirement(),
+        candidate_generation_summary={
+            "candidate_source_kind": "normal_observation_rebuild_candidate",
+            "composer_source": "ai_generated",
+            "candidate_status": "generated",
+        },
+        input_feedback_included=True,
+    )
+
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is False
+    assert summary["gate_validation"]["visible_surface_gate_blocked"] is False
+    assert summary["gate_validation"]["runtime_surface_gate_blocked"] is True
+    assert summary["gate_validation"]["public_gate_blocked"] is True
+    assert summary["blocker_code"] == PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED
+    assert_product_surface_validation_summary(summary)

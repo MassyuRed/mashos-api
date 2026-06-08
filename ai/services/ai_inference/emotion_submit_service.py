@@ -53,6 +53,8 @@ from emlis_ai_complete_initial_surface_availability import (
 )
 from emlis_ai_product_surface_validation import (
     PRODUCT_SURFACE_BLOCKER_NONE,
+    PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED,
+    PRODUCT_SURFACE_BLOCKER_RN_NOT_VISIBLE,
     PRODUCT_SURFACE_VALIDATION_PUBLIC_META_KEY,
     build_product_surface_validation_summary,
     product_surface_validation_public_summary,
@@ -514,13 +516,27 @@ def _public_visible_surface_gate_blocks(public_meta: Dict[str, Any]) -> bool:
     gate = public_meta.get("visible_surface_acceptance_gate") if isinstance(public_meta, dict) else None
     if not isinstance(gate, dict):
         return False
-    if gate.get("passed") is False:
+
+    classification = str(gate.get("classification") or "").strip()
+    if classification in {"repair_required", "red"}:
         return True
-    if str(gate.get("classification") or "").strip() in {"repair_required", "red"}:
+
+    action = str(gate.get("action") or "").strip()
+    if action in {"rerender_surface", "reroute_low_information", "block", "fail_closed"}:
         return True
-    if str(gate.get("action") or "").strip() in {"rerender_surface", "reroute_low_information", "block", "fail_closed"}:
+
+    if gate.get("passed") is False and action != "warn":
         return True
     return False
+
+
+def _public_visible_surface_gate_warning_only(public_meta: Dict[str, Any]) -> bool:
+    gate = public_meta.get("visible_surface_acceptance_gate") if isinstance(public_meta, dict) else None
+    if not isinstance(gate, dict):
+        return False
+    if _public_visible_surface_gate_blocks(public_meta):
+        return False
+    return bool(gate.get("passed") is False and str(gate.get("action") or "").strip() == "warn")
 
 
 def _public_state_answer_gate_blocks(public_meta: Dict[str, Any]) -> bool:
@@ -945,8 +961,34 @@ def _build_public_feedback_inclusion_summary(
         reason_family = "display_absent"
 
     legacy_reason_family = reason_family
-    public_reached = bool(product_surface_validation.get("public_reached", public_feedback_included))
-    rn_visible = bool(product_surface_validation.get("rn_visible", public_feedback_included))
+    visible_gate_warning_only = _public_visible_surface_gate_warning_only(public_meta)
+    product_blocker_code = _p7_safe_identifier(
+        product_surface_validation.get("blocker_code"),
+        limit=128,
+    )
+    product_blocker_family = _p7_safe_identifier(
+        product_surface_validation.get("blocker_family"),
+        limit=96,
+    )
+    product_blocked_only_by_visible_warning = bool(
+        public_feedback_included
+        and visible_gate_warning_only
+        and product_blocker_code in {
+            PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED,
+            PRODUCT_SURFACE_BLOCKER_RN_NOT_VISIBLE,
+        }
+        and product_blocker_family in {"public_gate", "rn_visible_contract"}
+    )
+
+    public_reached = bool(public_feedback_included)
+    rn_visible = bool(
+        public_feedback_included
+        and observation_status == "passed"
+        and comment_present
+        and not visible_gate_blocks
+        and not state_answer_gate_blocks
+        and not two_stage_gate_blocks
+    )
     product_surface_valid = bool(
         product_surface_validation.get(
             "product_surface_valid",
@@ -983,6 +1025,12 @@ def _build_public_feedback_inclusion_summary(
         reason_codes=reason_codes,
         public_feedback_included=public_feedback_included,
     )
+    if product_blocked_only_by_visible_warning and first_blocker_code in {
+        PRODUCT_SURFACE_BLOCKER_PUBLIC_GATE_BLOCKED,
+        PRODUCT_SURFACE_BLOCKER_RN_NOT_VISIBLE,
+    }:
+        first_blocker_family = ""
+        first_blocker_code = ""
     if public_feedback_included and not product_surface_valid:
         reason_family = first_blocker_family or "product_surface_invalid"
     elif public_feedback_included and product_surface_valid:

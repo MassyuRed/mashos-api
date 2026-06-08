@@ -285,6 +285,8 @@ def test_public_feedback_meta_keeps_public_rn_contract_keys_and_boundary_marker(
         "internal_meta_returned": False,
         "raw_input_included": False,
         "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
     }
 
 
@@ -295,6 +297,75 @@ def test_public_feedback_meta_drops_internal_text_and_diagnostic_payloads() -> N
         comment_text_present=True,
         subscription_tier="free",
     )
+
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_EVIDENCE not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+
+def test_step8_public_feedback_meta_body_free_flags_cover_comment_and_candidate_bodies() -> None:
+    public_meta = _build_public_meta(
+        _large_internal_meta(),
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    boundary = public_meta["public_feedback_meta_boundary"]
+    assert boundary["internal_meta_returned"] is False
+    assert boundary["raw_input_included"] is False
+    assert boundary["comment_text_included"] is False
+    assert boundary["comment_text_body_included"] is False
+    assert boundary["candidate_body_included"] is False
+
+
+def test_step8_visible_surface_yellow_warn_public_arrival_keeps_meta_body_free() -> None:
+    module = _public_meta_module()
+    internal_meta = dict(_large_internal_meta())
+    internal_meta["visible_surface_acceptance_gate"] = {
+        "evaluated": True,
+        "passed": False,
+        "classification": "yellow",
+        "action": "warn",
+        "rejection_reasons": ["surface_warning_only", SECRET_RAW_INPUT],
+        "comment_text": SECRET_COMMENT,
+        "candidate_comment_text": SECRET_COMMENT,
+        "public_comment_text": SECRET_COMMENT,
+        "realized_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "raw_text": SECRET_EVIDENCE,
+        "body": SECRET_COMMENT,
+        "text": SECRET_COMMENT,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "internal_meta_returned": False,
+    }
+
+    public_meta = _build_public_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["observation_status"] == "passed"
+    assert public_meta["visible_surface_acceptance_gate"] == {
+        "evaluated": True,
+        "passed": False,
+        "classification": "yellow",
+        "action": "warn",
+        "rejection_reasons": ["surface_warning_only"],
+    }
+    assert module.should_include_public_input_feedback("RNへ届く本文はmeta外にだけ置く", public_meta) is True
+
+    boundary = public_meta["public_feedback_meta_boundary"]
+    assert boundary["internal_meta_returned"] is False
+    assert boundary["raw_input_included"] is False
+    assert boundary["comment_text_included"] is False
+    assert boundary["comment_text_body_included"] is False
+    assert boundary["candidate_body_included"] is False
 
     dumped = _dump(public_meta)
     assert SECRET_COMMENT not in dumped
@@ -749,6 +820,8 @@ def test_public_feedback_meta_returns_minimal_unavailable_when_sanitizer_cannot_
             "internal_meta_returned": False,
             "raw_input_included": False,
             "comment_text_included": False,
+            "comment_text_body_included": False,
+            "candidate_body_included": False,
         },
     }
     assert _compact_json_bytes(public_meta) <= module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES
@@ -833,6 +906,188 @@ def test_should_include_public_input_feedback_requires_comment_and_passed_public
             },
         },
     ) is True
+
+
+def test_should_include_public_input_feedback_allows_visible_surface_yellow_warn() -> None:
+    module = _public_meta_module()
+
+    meta = {
+        "observation_status": "passed",
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "warn",
+        },
+        "state_answer_gate_boundary": {"passed": True, "blocked": False},
+        "two_stage_reception_gate": {"passed": True, "blocked": False},
+    }
+
+    assert module.should_include_public_input_feedback("表示してよい本文", meta) is True
+
+
+def test_should_include_public_input_feedback_blocks_visible_surface_repair_required() -> None:
+    module = _public_meta_module()
+
+    meta = {
+        "observation_status": "passed",
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "repair_required",
+            "action": "rerender_surface",
+        },
+    }
+
+    assert module.should_include_public_input_feedback("まだ出してはいけない本文", meta) is False
+
+
+def test_should_include_public_input_feedback_blocks_visible_surface_passed_false_without_warn() -> None:
+    module = _public_meta_module()
+
+    meta = {
+        "observation_status": "passed",
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "allow",
+        },
+    }
+
+    assert module.should_include_public_input_feedback("曖昧なので止める本文", meta) is False
+
+
+
+
+def test_step7_should_not_include_public_input_feedback_for_unavailable_even_with_comment_text() -> None:
+    module = _public_meta_module()
+
+    meta = {
+        "observation_status": "unavailable",
+        "rejection_reasons": ["emlis_ai_reply_timeout"],
+    }
+
+    assert module.should_include_public_input_feedback("出してはいけない本文", meta) is False
+
+
+def test_step7_should_not_include_public_input_feedback_for_safety_blocked_even_with_comment_text() -> None:
+    module = _public_meta_module()
+
+    meta = {
+        "observation_status": "safety_blocked",
+        "rejection_reasons": ["emlis_ai_safety_boundary"],
+    }
+
+    assert module.should_include_public_input_feedback("出してはいけない安全境界本文", meta) is False
+
+
+def test_step7_public_meta_infrastructure_error_remains_unavailable_and_body_free() -> None:
+    from emlis_ai_response_contract import ResponseKind, build_emlis_internal_response_contract
+
+    module = _public_meta_module()
+    internal_meta = {
+        "version": "emlis_ai_v3",
+        "kernel_version": "multi_perspective_observation.v1",
+        # Step 7 regression: legacy fields may look displayable, but a true
+        # infrastructure response contract must fail closed at the public boundary.
+        "observation_status": "passed",
+        "rejection_reasons": ["emlis_ai_reply_error"],
+        "internal_response_contract": build_emlis_internal_response_contract(
+            ResponseKind.INFRASTRUCTURE_ERROR,
+            reason="emlis_ai_reply_error",
+            public_observation_status="unavailable",
+        ),
+        "comment_text": SECRET_COMMENT,
+        "candidate_comment_text": SECRET_COMMENT,
+        "raw_input": SECRET_RAW_INPUT,
+        "current_input": {"memo": SECRET_RAW_INPUT},
+        "diagnostic_summary": {
+            "stage": "display",
+            "primary_reason": "emlis_ai_reply_error",
+            "comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+        },
+    }
+
+    public_meta = module.build_public_emlis_input_feedback_meta(
+        internal_meta,
+        comment_text_present=True,
+        subscription_tier="free",
+    )
+
+    assert public_meta["observation_status"] == "unavailable"
+    assert public_meta["public_feedback_meta_boundary"] == {
+        "version": "emlis.public_feedback_meta_boundary.v1",
+        "sanitized": True,
+        "max_bytes": module.PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES,
+        "trimmed": False,
+        "internal_meta_returned": False,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+    }
+    assert module.should_include_public_input_feedback("出してはいけない本文", public_meta) is False
+    dumped = _dump(public_meta)
+    assert SECRET_COMMENT not in dumped
+    assert SECRET_RAW_INPUT not in dumped
+    assert "internal_response_contract" not in dumped
+    assert "response_kind" not in dumped
+    assert "public_input_feedback_allowed" not in dumped
+    assert "infrastructure_error" not in dumped
+    assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
+
+
+def test_step7_public_meta_safety_response_contracts_remain_safety_blocked_and_body_free() -> None:
+    from emlis_ai_response_contract import ResponseKind, build_emlis_internal_response_contract
+
+    module = _public_meta_module()
+
+    for response_kind in (
+        ResponseKind.SAFETY_SUPPORT_REQUIRED,
+        ResponseKind.SAFETY_BLOCKED_EMERGENCY,
+    ):
+        internal_meta = {
+            "version": "emlis_ai_v3",
+            "kernel_version": "multi_perspective_observation.v1",
+            # Step 7 regression: even if legacy status/comment_text looks
+            # displayable, true safety contracts must not become input_feedback.
+            "observation_status": "passed",
+            "rejection_reasons": ["emlis_ai_safety_boundary"],
+            "internal_response_contract": build_emlis_internal_response_contract(
+                response_kind,
+                reason="emlis_ai_safety_boundary",
+                public_observation_status="safety_blocked",
+            ),
+            "comment_text": SECRET_COMMENT,
+            "candidate_comment_text": SECRET_COMMENT,
+            "raw_input": SECRET_RAW_INPUT,
+            "current_input": {"memo": SECRET_RAW_INPUT},
+            "diagnostic_summary": {
+                "stage": "display",
+                "primary_reason": "emlis_ai_safety_boundary",
+                "comment_text": SECRET_COMMENT,
+                "raw_input": SECRET_RAW_INPUT,
+            },
+        }
+
+        public_meta = module.build_public_emlis_input_feedback_meta(
+            internal_meta,
+            comment_text_present=True,
+            subscription_tier="free",
+        )
+
+        assert public_meta["observation_status"] == "safety_blocked"
+        assert module.should_include_public_input_feedback("出してはいけない安全境界本文", public_meta) is False
+        dumped = _dump(public_meta)
+        assert SECRET_COMMENT not in dumped
+        assert SECRET_RAW_INPUT not in dumped
+        assert "internal_response_contract" not in dumped
+        assert "response_kind" not in dumped
+        assert "public_input_feedback_allowed" not in dumped
+        assert response_kind.value not in dumped
+        assert FORBIDDEN_PUBLIC_KEYS.isdisjoint(_all_keys(public_meta))
 
 
 def test_step7_public_feedback_meta_keeps_surface_reason_summary_code_only() -> None:

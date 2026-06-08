@@ -19,6 +19,7 @@ from emlis_ai_public_surface_requirement import (
 )
 from emotion_submit_service import (
     _build_public_feedback_inclusion_summary,
+    _public_visible_surface_gate_blocks,
     _with_public_feedback_inclusion_summary,
 )
 
@@ -43,6 +44,99 @@ def _base_passed_public_meta() -> dict[str, object]:
         "visible_surface_acceptance_gate": {"classification": "pass", "action": "allow"},
         "state_answer_gate_boundary": {"passed": True},
     }
+
+
+def test_p7_summary_does_not_treat_visible_surface_yellow_warn_as_absence() -> None:
+    public_meta = {
+        **_base_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "warn",
+        },
+    }
+
+    assert _public_visible_surface_gate_blocks(public_meta) is False
+
+    summary = _build_public_feedback_inclusion_summary(
+        input_feedback_comment=PLAIN_VISIBLE_COMMENT,
+        internal_input_feedback_meta={
+            "observation_status": "passed",
+            "diagnostic_summary": {
+                "raw_input": SECRET_RAW_INPUT,
+                "comment_text": SECRET_COMMENT_TEXT,
+            },
+        },
+        public_input_feedback_meta=public_meta,
+    )
+
+    assert summary["public_feedback_included"] is True
+    assert summary["public_reached"] is True
+    assert summary["rn_visible"] is True
+    assert summary["public_feedback_not_included_visible_surface_gate"] is False
+    assert summary["public_feedback_absence_reason_family"] == ""
+    assert summary["first_blocker_family"] == ""
+    assert summary["first_blocker_code"] == ""
+    assert summary["reason_family"] != "visible_surface_gate"
+    assert summary["reason_family"] != "rn_visible_contract"
+    assert summary["rn_payload_absent"] is False
+    dumped = json.dumps(summary, ensure_ascii=False, sort_keys=True)
+    assert SECRET_RAW_INPUT not in dumped
+    assert SECRET_COMMENT_TEXT not in dumped
+
+
+def test_p7_summary_keeps_visible_surface_repair_required_as_absence() -> None:
+    public_meta = {
+        **_base_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "repair_required",
+            "action": "rerender_surface",
+        },
+    }
+
+    assert _public_visible_surface_gate_blocks(public_meta) is True
+
+    summary = _build_public_feedback_inclusion_summary(
+        input_feedback_comment=PLAIN_VISIBLE_COMMENT,
+        internal_input_feedback_meta={"observation_status": "passed"},
+        public_input_feedback_meta=public_meta,
+    )
+
+    assert summary["public_feedback_included"] is False
+    assert summary["public_reached"] is False
+    assert summary["rn_visible"] is False
+    assert summary["public_feedback_not_included_visible_surface_gate"] is True
+    assert summary["public_feedback_absence_reason_family"] == "visible_surface_gate"
+    assert summary["reason_family"] == "visible_surface_gate"
+
+
+def test_p7_summary_blocks_visible_surface_passed_false_without_warn() -> None:
+    public_meta = {
+        **_base_passed_public_meta(),
+        "visible_surface_acceptance_gate": {
+            "evaluated": True,
+            "passed": False,
+            "classification": "yellow",
+            "action": "allow",
+        },
+    }
+
+    assert _public_visible_surface_gate_blocks(public_meta) is True
+
+    summary = _build_public_feedback_inclusion_summary(
+        input_feedback_comment=PLAIN_VISIBLE_COMMENT,
+        internal_input_feedback_meta={"observation_status": "passed"},
+        public_input_feedback_meta=public_meta,
+    )
+
+    assert summary["public_feedback_included"] is False
+    assert summary["public_reached"] is False
+    assert summary["rn_visible"] is False
+    assert summary["public_feedback_not_included_visible_surface_gate"] is True
+    assert summary["public_feedback_absence_reason_family"] == "visible_surface_gate"
 
 
 def test_p7_summary_separates_rn_visible_from_product_surface_valid() -> None:
