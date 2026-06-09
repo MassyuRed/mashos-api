@@ -72,6 +72,13 @@ NORMAL_OBSERVATION_REBUILD_GENERATION_METHOD: Final = (
     "normal_observation_rebuild_after_surface_gate_failure"
 )
 
+PRODUCT_QUALITY_SCORECARD_ROW_FROM_SANITIZED_CURRENT_OUTPUT_EVENT_VERSION: Final = (
+    "cocolon.emlis.product_quality.scorecard_row_from_sanitized_current_output_event.20260609.v1"
+)
+PRODUCT_QUALITY_SANITIZED_CURRENT_OUTPUT_EVENT_CONNECTION_STEP_20260609: Final = (
+    "P3-3_Sanitized_Event_Inventory_Connection"
+)
+
 _ALLOWED_SOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "fixture_family",
@@ -1706,6 +1713,7 @@ def build_product_quality_event_from_reply(**kwargs: Any) -> dict[str, Any]:
     return normalize_product_quality_event(**kwargs)
 
 
+
 def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str, Any]:
     """Flatten ProductQualityEventV1 into text-free scorecard material."""
 
@@ -1787,6 +1795,164 @@ def product_quality_event_to_scorecard_row(event: Mapping[str, Any]) -> dict[str
         "candidate_body_included": False,
     }
     assert_emlis_ai_product_quality_contract_freeze_meta_only(row, source="product_quality_event_to_scorecard_row")
+    return row
+
+
+
+def product_quality_scorecard_row_from_sanitized_current_output_event_20260609(
+    event: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Project a P3-2 sanitized current-output event into ProductQuality scorecard material.
+
+    The source event is already body-free; this adapter keeps that boundary and
+    only reshapes identifiers, display booleans, safe counts, reason codes, and
+    surface-origin hints so the existing Product Read Feel inventory/scorecard
+    path can consume the row during P3-3.
+    """
+
+    source = _as_mapping(event)
+    text_paths = _find_forbidden_text_key_paths(source, path="sanitized_current_output_event", limit=8)
+    flag_paths = _find_forbidden_true_flag_paths(source, path="sanitized_current_output_event", limit=8)
+    family = normalize_product_quality_family(
+        source.get("family")
+        or source.get("product_readfeel_family")
+        or source.get("fixture_family")
+        or source.get("coverage_group")
+    )
+    if family == "unknown":
+        # Product Read Feel inventory uses ``unclassified`` for unknown families,
+        # but ProductQuality measurement keeps the stricter ``unknown`` boundary.
+        product_readfeel_family = "unclassified"
+    else:
+        product_readfeel_family = family
+
+    observation_status = _normalize_status(
+        source.get("observation_status") or source.get("backend_observation_status") or "unavailable"
+    )
+    public_display_reached = bool(
+        source.get("public_reached") is True
+        or source.get("public_passed") is True
+        or source.get("backend_public_passed") is True
+        or source.get("display_confirmed") is True
+        or (observation_status == "passed" and source.get("comment_text_present") is True)
+    )
+    comment_text_present = bool(
+        source.get("comment_text_present") is True or source.get("backend_comment_text_present") is True
+    )
+    reason_codes = _dedupe(
+        [
+            *_dedupe(source.get("reason_codes")),
+            *_dedupe(source.get("rejection_reasons")),
+            *_dedupe(source.get("repair_reasons")),
+            *_dedupe(source.get("failure_buckets")),
+        ]
+    )
+    warnings: list[str] = []
+    if text_paths:
+        reason_codes.append("sanitized_current_output_event_text_key_violation")
+        warnings.extend(f"forbidden_text_key:{path}" for path in text_paths)
+    if flag_paths:
+        reason_codes.append("sanitized_current_output_event_forbidden_true_flag")
+        warnings.extend(f"forbidden_true_flag:{path}" for path in flag_paths)
+    if not public_display_reached and source.get("rn_visible_expected") is True:
+        reason_codes.append("public_display_not_reached")
+    if not comment_text_present:
+        reason_codes.append("comment_text_missing")
+    if observation_status != "passed":
+        reason_codes.append("observation_status_not_passed")
+
+    row = {
+        "schema_version": PRODUCT_QUALITY_SCORECARD_ROW_FROM_SANITIZED_CURRENT_OUTPUT_EVENT_VERSION,
+        "source_schema_version": _safe_id(source.get("schema_version"), max_length=128, default=""),
+        "source_step": PRODUCT_QUALITY_SANITIZED_CURRENT_OUTPUT_EVENT_CONNECTION_STEP_20260609,
+        "run_id": _safe_id(source.get("run_id"), max_length=96, default=""),
+        "row_id": _safe_id(source.get("row_id"), max_length=96, default=""),
+        "case_id": _safe_id(source.get("case_id"), max_length=96, default=""),
+        "fixture_id": _safe_id(source.get("fixture_id") or source.get("case_id"), max_length=96, default=""),
+        "family": family,
+        "product_readfeel_family": product_readfeel_family,
+        "fixture_family": product_readfeel_family,
+        "coverage_group": product_readfeel_family,
+        "coverage_slices": _dedupe(source.get("coverage_slices")),
+        "path": _safe_id(source.get("path"), max_length=96, default=""),
+        "path_targets": _dedupe(source.get("path_targets")),
+        "target_paths_not_captured": _dedupe(source.get("target_paths_not_captured")),
+        "target_path_pending_capture": bool(source.get("target_path_pending_capture") is True),
+        "subscription_tier": _safe_id(source.get("subscription_tier"), max_length=32, default=""),
+        "observation_status": observation_status,
+        "backend_observation_status": observation_status,
+        "public_display_reached": public_display_reached,
+        "display_confirmed": public_display_reached,
+        "public_passed": public_display_reached,
+        "backend_public_passed": public_display_reached,
+        "rn_visible": bool(source.get("rn_visible") is True),
+        "rn_visible_expected": bool(source.get("rn_visible_expected") is True),
+        "expected_display": bool(source.get("rn_visible_expected") is not False),
+        "eligible_count": 1,
+        "passed_display_count": 1 if public_display_reached else 0,
+        "comment_text_present": comment_text_present,
+        "backend_comment_text_present": comment_text_present,
+        "comment_text_length": _to_int(source.get("comment_text_length"), 0, maximum=800),
+        "comment_text_fingerprint_present": bool(_safe_id(source.get("comment_text_fingerprint"), max_length=96, default="")),
+        "comment_text_body_included": False,
+        "comment_text_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "source_display_body_retained": False,
+        "product_surface_valid": bool(source.get("product_surface_valid") is True),
+        "visible_surface_acceptance_classification": _safe_id(
+            source.get("visible_surface_acceptance_classification")
+            or _as_mapping(source.get("visible_surface_acceptance")).get("classification"),
+            max_length=96,
+            default="",
+        ),
+        "visible_surface_acceptance_action": _safe_id(
+            source.get("visible_surface_acceptance_action")
+            or _as_mapping(source.get("visible_surface_acceptance")).get("action"),
+            max_length=96,
+            default="",
+        ),
+        "visible_surface_acceptance_passed": bool(
+            source.get("visible_surface_acceptance_passed") is True
+            or _as_mapping(source.get("visible_surface_acceptance")).get("passed") is True
+        ),
+        "candidate_source_kind": _safe_id(source.get("candidate_source_kind"), max_length=128, default=""),
+        "surface_origin_candidate_source_kind": _safe_id(source.get("candidate_source_kind"), max_length=128, default=""),
+        "surface_origin_composer_model": _safe_id(source.get("composer_model"), max_length=128, default=""),
+        "surface_origin_public_display_allowed_by_boundary": public_display_reached,
+        "material_quality": _safe_id(source.get("material_quality"), max_length=128, default=""),
+        "renderer_exception": _safe_id(source.get("renderer_exception"), max_length=96, default=""),
+        "reason_codes": _dedupe(reason_codes),
+        "rejection_reasons": _dedupe(source.get("rejection_reasons")),
+        "repair_reasons": _dedupe(source.get("repair_reasons")),
+        "warnings": _dedupe(warnings),
+        "product_gate_ready": False,
+        "product_gate_reached": False,
+        "public_release_applied": False,
+        "product_quality_released": False,
+        "public_response_key_added": False,
+        "public_response_key_change": False,
+        "response_shape_changed": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_contract_changed": False,
+        "rn_visible_title_changed": False,
+        "gate_relaxed": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "exact_comment_text_required": False,
+        "case_specific_runtime_branch": False,
+        "runtime_branching_uses_fixture_strings": False,
+        "fixture_text_used_for_runtime_branching": False,
+    }
+    assert_emlis_ai_product_quality_contract_freeze_meta_only(
+        row,
+        source="product_quality_scorecard_row_from_sanitized_current_output_event_20260609",
+    )
     return row
 
 
@@ -1908,6 +2074,7 @@ def build_product_quality_event_schema_material() -> dict[str, Any]:
 __all__ = [
     "PRODUCT_QUALITY_EVENT_PHASE",
     "PRODUCT_QUALITY_EVENT_SCHEMA_VERSION",
+    "PRODUCT_QUALITY_SCORECARD_ROW_FROM_SANITIZED_CURRENT_OUTPUT_EVENT_VERSION",
     "PRODUCT_QUALITY_SURFACE_ORIGIN_SCHEMA_VERSION",
     "PRODUCT_QUALITY_EVENT_V1_SCHEMA",
     "NORMAL_OBSERVATION_REBUILD_COMPOSER_MODEL",
@@ -1925,4 +2092,5 @@ __all__ = [
     "normalize_product_quality_event",
     "normalize_product_quality_family",
     "product_quality_event_to_scorecard_row",
+    "product_quality_scorecard_row_from_sanitized_current_output_event_20260609",
 ]
