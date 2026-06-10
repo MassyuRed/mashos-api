@@ -92,8 +92,8 @@ _RATIO_PRESETS: Final = {
         "human_follow_units": 2,
     },
     "daily_unpleasant_reception_light": {
-        "observation": 0.15,
-        "human_follow": 0.85,
+        "observation": 0.25,
+        "human_follow": 0.75,
         "reason": "daily_unpleasant_reception_light",
         "range_key": "daily_reception",
         "observation_units": 1,
@@ -128,7 +128,7 @@ _RATIO_PRESETS: Final = {
 _ALLOWED_RATIO_RANGES: Final = {
     "standard": {"observation_min": 0.55, "observation_max": 0.70},
     "self_denial_or_grief": {"observation_min": 0.40, "observation_max": 0.55},
-    "structure_question": {"observation_min": 0.65, "observation_max": 0.75},
+    "structure_question": {"observation_min": 0.60, "observation_max": 0.70},
     "exhaustion": {"observation_min": 0.45, "observation_max": 0.55},
     "daily_reception": {"observation_min": 0.10, "observation_max": 0.30},
     "low_information": {"observation_min": 0.15, "observation_max": 0.35},
@@ -147,6 +147,7 @@ _RATIO_PRESET_BY_RECEPTION_MODE: Final = {
 _PHASE6_AUTO_RECEPTION_MODE_HINT_IDS: Final = frozenset(
     {
         "public_unpleasant_encounter",
+        "daily_lightly_dismissed_unpleasant_event",
         "positive_change_after_work_streaming",
         "self_confidence_uncertainty_attempt",
     }
@@ -164,9 +165,9 @@ _PHASE6_SELF_NEGATIVE_OR_UNCERTAINTY_MODE_IDS: Final = frozenset(
 # ratio, but never returns the read string or any span body.
 _SPACE_RE: Final = re.compile(r"\s+")
 _SELF_DENIAL_RE: Final = re.compile(
-    r"(自分(?:なんか|など|は)?[^。！？!?]{0,18}(?:嫌い|きらい|ダメ|だめ|価値がない|価値ない|いらない|最低|クズ|消えたい|死にたい|生きてる意味|生きる意味)|"
-    r"(?:私|わたし|俺|僕)(?:なんか|など)[^。！？!?]{0,18}(?:ダメ|だめ|いらない|価値がない|価値ない)|"
-    r"(?:全部|すべて)(?:自分|私|俺|僕)が悪い)"
+    r"(自分(?:なんか|など|は|が|を|だけ)?[^。！？!?]{0,32}(?:嫌い|きらい|ダメ|だめ|価値がない|価値ない|いらない|最低|クズ|消えたい|死にたい|生きてる意味|生きる意味|責め|追い込|下げ|続けられない人間|何もできていない|できない)|"
+    r"(?:私|わたし|俺|僕)(?:なんか|など|は|が)?[^。！？!?]{0,28}(?:ダメ|だめ|いらない|価値がない|価値ない|悪い|できない)|"
+    r"できない自分|自分だけ[^。！？!?]{0,24}何もでき|(?:全部|すべて|みんな)(?:自分|私|わたし|俺|僕)が悪い)"
 )
 _STRUCTURE_QUESTION_RE: Final = re.compile(
     r"(なぜ|何故|どういうこと|どういう状態|どうして|なんで|何で|理由|構造|同じことになる|繰り返す|戻る)"
@@ -626,14 +627,18 @@ def _resolve_reason(
     reception_mode_summary: Mapping[str, Any],
 ) -> str:
     reception_mode_reason = _reason_from_reception_mode_summary(reception_mode_summary)
-    if reception_mode_reason:
+    if reception_mode_summary.get("safety_path_required") and reception_mode_reason:
         return reception_mode_reason
 
-    # Emotional safety takes precedence over observation-thickening.  A self-denial
-    # or grief-like question still needs a receivable temperature rather than a
-    # cold 7:3 explanation.
+    # P4-8: self-denial is yellow safety-adjacent material.  When the current
+    # input itself carries a self-denial signal, keep the careful 45:55 balance
+    # even if upstream material is still sparse; do not collapse it to a
+    # low-information question surface.  Emergency/safety support remains owned
+    # by the existing safety path above.
     if input_type == "self_denial":
         return "self_denial_follow_thickened"
+    if reception_mode_reason:
+        return reception_mode_reason
     if input_type == "self_confidence_uncertainty":
         return "self_confidence_uncertainty_follow_thickened"
     if input_type in {"sadness", "loneliness"}:
@@ -665,17 +670,22 @@ def _ratio_basis(
 ) -> dict[str, Any]:
     observation_units = int(preset.get("observation_units") or 3)
     human_follow_units = int(preset.get("human_follow_units") or 2)
+    range_key = _clean(preset.get("range_key"))
+    structure_question = range_key == "structure_question"
     return {
         "measurement_basis": ["section_role", "sentence_plan_unit_count", "follow_key_count"],
         "character_count_exact": False,
         "strict_character_count_used": False,
         "section_role_unit_plan": {
-            "observation_section_role": "state_answer_observation",
-            "human_follow_section_role": "human_follow",
+            "observation_section_role": "structure_question_observation" if structure_question else "state_answer_observation",
+            "human_follow_section_role": "structure_question_soft_reception" if structure_question else "human_follow",
             "observation_units": observation_units,
             "human_follow_units": human_follow_units,
             "total_units": observation_units + human_follow_units,
         },
+        "p4_7_structure_question_section_roles_applied": structure_question,
+        "p4_7_structure_question_observation_section_role": "structure_question_observation" if structure_question else "",
+        "p4_7_structure_question_reception_section_role": "structure_question_soft_reception" if structure_question else "",
         "follow_key_count": _follow_key_count(human_follow_layer) or 4,
         "primary_follow_required": True,
         "secondary_follow_required_count": 2,
@@ -1000,6 +1010,15 @@ def build_emlis_ai_state_answer_ratio_policy(
         "reception_mode_eligible_dictionary_mode_ids": _dedupe(reception_mode_summary.get("eligible_reception_mode_ids") or []),
         "reception_mode_event_fact_present": bool(reception_mode_summary.get("event_fact_present")),
         "reception_mode_reaction_present": bool(reception_mode_summary.get("reaction_present")),
+        "p4_6_daily_unpleasant_ratio_policy_aligned": bool(reason == "daily_unpleasant_reception_light"),
+        "p4_6_daily_unpleasant_observation_ratio_range": "20_30" if reason == "daily_unpleasant_reception_light" else "",
+        "p4_6_daily_unpleasant_reception_ratio_range": "70_80" if reason == "daily_unpleasant_reception_light" else "",
+        "p4_7_structure_question_ratio_policy_aligned": bool(reason == "structure_question_observation_thickened"),
+        "p4_7_structure_question_observation_ratio_range": "60_70" if reason == "structure_question_observation_thickened" else "",
+        "p4_7_structure_question_reception_ratio_range": "30_40" if reason == "structure_question_observation_thickened" else "",
+        "p4_7_structure_question_comfort_only_forbidden": bool(reason == "structure_question_observation_thickened"),
+        "p4_7_structure_question_question_only_forbidden": bool(reason == "structure_question_observation_thickened"),
+        "p4_7_structure_question_p6_deep_insight_blocked": bool(reason == "structure_question_observation_thickened"),
         "phase6_reception_mode_ratio_policy_connected": True,
         "reception_mode_ratio_reason_used": reason
         if reason == _clean(reception_mode_summary.get("ratio_preset"))

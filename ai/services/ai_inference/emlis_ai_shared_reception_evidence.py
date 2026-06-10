@@ -36,6 +36,10 @@ _REACTION_CUE_PATTERNS: Final = {
         "嫌",
         "いや",
         "最悪",
+        "軽く流",
+        "軽く扱",
+        "雑に扱",
+        "大事にされていない",
     ),
     "anger_irritation": (
         "イライラ",
@@ -45,6 +49,7 @@ _REACTION_CUE_PATTERNS: Final = {
         "腹が立",
         "ムカつ",
         "むかつ",
+        "悔し",
     ),
     "fear": (
         "怖い",
@@ -85,6 +90,14 @@ _REACTION_CUE_PATTERNS: Final = {
         "なんで私はこう",
         "自分を責め",
         "自分を追い込",
+        "自分を下げ",
+        "自分だけ何もでき",
+        "何もできていない",
+        "できない自分",
+        "続けられない人間",
+        "自分が嫌い",
+        "自己否定",
+        "自己嫌悪",
     ),
     "self_understanding_effort": (
         "向き合",
@@ -111,13 +124,27 @@ _REACTION_CUE_PATTERNS: Final = {
 
 _EMOTION_LABEL_IDS: Final = {
     "怒り": "anger",
+    "苛立ち": "anger",
+    "悔しさ": "frustration",
     "悲しみ": "sadness",
     "喜び": "joy",
     "平穏": "calm",
     "自己理解": "self_understanding",
+    "自己否定": "self_denial",
+    "自己嫌悪": "self_denial",
+    "自責": "self_denial",
     "恐怖": "fear",
+    "怖さ": "fear",
     "不安": "anxiety",
+    "焦り": "anxiety",
+    "苦しい": "sadness",
+    "重い": "burden",
+    "空っぽ": "emptiness",
+    "疲弊": "exhaustion",
     "嫌悪": "disgust",
+    "不快": "disgust",
+    "嫌さ": "disgust",
+    "嫌": "disgust",
     "安心": "relief",
 }
 
@@ -203,6 +230,46 @@ _RELATIONSHIP_BOUNDARY_SUPPORT_FEATURE_PATTERNS: Final = {
     ),
 }
 
+
+_STRUCTURE_QUESTION_FEATURE_PATTERNS: Final = {
+    "structure_question_core": (
+        "なぜ",
+        "何故",
+        "どうして",
+        "なんで",
+        "何で",
+        "どういうこと",
+        "どういう状態",
+        "何が起きている",
+        "なにが起きている",
+        "何が起きてる",
+        "理由を知りたい",
+        "構造を知りたい",
+        "構造として",
+    ),
+    "visible_relation_or_state": (
+        "関係",
+        "状態",
+        "流れ",
+        "構造",
+        "反応",
+        "同じ場面",
+        "同じこと",
+        "繰り返",
+    ),
+    "unresolved_or_conflict": (
+        "引っかか",
+        "詰ま",
+        "矛盾",
+        "ぶつか",
+        "止ま",
+        "戻ってしま",
+        "動けなく",
+        "分からなく",
+        "わからなく",
+    ),
+}
+
 _EVENT_HINT_PATTERNS: Final = {
     "public_unpleasant_encounter": (
         "立ちション",
@@ -210,6 +277,12 @@ _EVENT_HINT_PATTERNS: Final = {
         "出くわ",
         "見かけ",
         "遭遇",
+    ),
+    "daily_lightly_dismissed_unpleasant_event": (
+        "軽く流",
+        "軽く扱",
+        "雑に扱",
+        "大事にされていない",
     ),
     "positive_change_after_work_streaming": (
         "配信",
@@ -376,6 +449,14 @@ def _extract_relationship_boundary_support_feature_ids(text: str) -> tuple[str, 
     )
 
 
+def _extract_structure_question_feature_ids(text: str) -> tuple[str, ...]:
+    return _dedupe(
+        feature_id
+        for feature_id, patterns in _STRUCTURE_QUESTION_FEATURE_PATTERNS.items()
+        if _contains_any(text, patterns)
+    )
+
+
 def _source_fields_for_reaction(
     *,
     thought_text: str,
@@ -399,6 +480,7 @@ def _candidate_modes(
     emotion_label_ids: Sequence[str],
     self_understanding_change_feature_ids: Sequence[str],
     relationship_boundary_support_feature_ids: Sequence[str],
+    structure_question_feature_ids: Sequence[str] = (),
 ) -> tuple[str, ...]:
     cues = set(reaction_cue_ids)
     hints = set(event_hint_ids)
@@ -406,7 +488,15 @@ def _candidate_modes(
     emotion_labels = set(emotion_label_ids)
     self_understanding_change_features = set(self_understanding_change_feature_ids)
     relationship_boundary_support_features = set(relationship_boundary_support_feature_ids)
+    structure_question_features = set(structure_question_feature_ids)
     modes: list[str] = []
+
+    if structure_question_features.intersection({"structure_question_core"}) and (
+        event_fact_present
+        or reaction_present
+        or structure_question_features.intersection({"visible_relation_or_state", "unresolved_or_conflict"})
+    ):
+        modes.append("structure_question_observation")
 
     relationship_categories = {"relationship", "relationship_love"}
     relationship_support_features = {
@@ -439,14 +529,18 @@ def _candidate_modes(
         modes.append("self_understanding_follow")
 
     negative_daily_cues = {"disgust", "fear", "anger_irritation"}
-    if event_fact_present and reaction_present and cues.intersection(negative_daily_cues):
+    negative_daily_emotion_labels = {"anger", "fear", "disgust", "frustration"}
+    if event_fact_present and reaction_present and (
+        cues.intersection(negative_daily_cues)
+        or emotion_labels.intersection(negative_daily_emotion_labels)
+    ):
         modes.append("daily_unpleasant_reception")
 
     if "joy_or_surprise" in cues or "positive_change_after_work_streaming" in hints:
         modes.append("daily_positive_reception")
         modes.append("self_understanding_follow")
 
-    if "self_denial" in cues:
+    if "self_denial" in cues or "self_denial" in emotion_labels:
         modes.append("self_denial_support")
     if "uncertainty" in cues:
         modes.append("uncertainty_support")
@@ -473,6 +567,8 @@ def _candidate_modes(
 def _mode_reason(
     modes: Sequence[str], *, event_fact_present: bool, reaction_present: bool) -> str:
     # Phase20-0 inventory token retained: return "relationship_boundary_support_context"
+    if "structure_question_observation" in modes:
+        return "explicit_structure_question_current_input_material"
     if "daily_unpleasant_reception" in modes and event_fact_present and reaction_present:
         return "event_fact_with_explicit_negative_reaction"
     if "self_denial_support" in modes and "uncertainty_support" in modes:
@@ -510,6 +606,7 @@ def _generic_relation_material_ids(
     *,
     self_understanding_change_feature_ids: Sequence[str],
     relationship_boundary_support_feature_ids: Sequence[str],
+    structure_question_feature_ids: Sequence[str] = (),
 ) -> tuple[str, ...]:
     materials: list[str] = []
     learning = set(self_understanding_change_feature_ids)
@@ -543,6 +640,7 @@ class EmlisSharedReceptionEvidence:
     event_hint_ids: tuple[str, ...] = field(default_factory=tuple)
     self_understanding_change_feature_ids: tuple[str, ...] = field(default_factory=tuple)
     relationship_boundary_support_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    structure_question_feature_ids: tuple[str, ...] = field(default_factory=tuple)
     generic_relation_material_ids: tuple[str, ...] = field(default_factory=tuple)
     reception_candidate_mode_ids: tuple[str, ...] = field(default_factory=tuple)
     primary_reason: str = "insufficient_shared_reception_evidence"
@@ -552,6 +650,7 @@ class EmlisSharedReceptionEvidence:
     event_hint_count: int = 0
     self_understanding_change_feature_count: int = 0
     relationship_boundary_support_feature_count: int = 0
+    structure_question_feature_count: int = 0
     schema_version: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SCHEMA_VERSION
     source_phase: str = EMLIS_SHARED_RECEPTION_EVIDENCE_SOURCE_PHASE
     material_id: str = EMLIS_SHARED_RECEPTION_EVIDENCE_MATERIAL_ID
@@ -582,6 +681,16 @@ class EmlisSharedReceptionEvidence:
             "relationship_boundary_support_feature_ids": list(self.relationship_boundary_support_feature_ids),
             "relationship_boundary_support_feature_count": int(self.relationship_boundary_support_feature_count),
             "relationship_boundary_support_detected": bool(self.relationship_boundary_support_feature_ids),
+            "structure_question_feature_family": "structure_question_current_input" if self.structure_question_feature_ids else "",
+            "structure_question_feature_ids": list(self.structure_question_feature_ids),
+            "structure_question_feature_count": int(self.structure_question_feature_count),
+            "structure_question_requested": "structure_question_core" in set(self.structure_question_feature_ids),
+            "structure_question_anchor_ready": "structure_question_core" in set(self.structure_question_feature_ids),
+            "structure_question_visible_relation_or_state_anchor_ready": "visible_relation_or_state" in set(self.structure_question_feature_ids),
+            "structure_question_unresolved_or_conflict_anchor_ready": "unresolved_or_conflict" in set(self.structure_question_feature_ids),
+            "structure_question_current_input_scope_kept": bool(self.structure_question_feature_ids),
+            "structure_question_p6_deep_insight_applied": False,
+            "structure_question_p6_backlog_marker_only": bool(self.structure_question_feature_ids),
             "generic_relation_material_ids": list(self.generic_relation_material_ids),
             "phase20_3_dedicated_c_d_cue_runtime_disabled": True,
             "dedicated_c_d_cue_runtime_disabled": True,
@@ -653,8 +762,10 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
     event_hint_ids = _extract_event_hint_ids(text)
     raw_self_understanding_change_feature_ids = _extract_self_understanding_change_feature_ids(text)
     raw_relationship_boundary_support_feature_ids = _extract_relationship_boundary_support_feature_ids(text)
+    raw_structure_question_feature_ids = _extract_structure_question_feature_ids(text)
     self_understanding_change_feature_ids = raw_self_understanding_change_feature_ids
     relationship_boundary_support_feature_ids = raw_relationship_boundary_support_feature_ids
+    structure_question_feature_ids = raw_structure_question_feature_ids
     mode_ids = _candidate_modes(
         event_fact_present=event_fact_present,
         reaction_present=reaction_present,
@@ -664,6 +775,7 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         emotion_label_ids=emotion_label_ids,
         self_understanding_change_feature_ids=self_understanding_change_feature_ids,
         relationship_boundary_support_feature_ids=relationship_boundary_support_feature_ids,
+        structure_question_feature_ids=structure_question_feature_ids,
     )
     generic_relation_material_ids = _generic_relation_material_ids(
         self_understanding_change_feature_ids=raw_self_understanding_change_feature_ids,
@@ -681,6 +793,7 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         event_hint_ids=event_hint_ids,
         self_understanding_change_feature_ids=self_understanding_change_feature_ids,
         relationship_boundary_support_feature_ids=relationship_boundary_support_feature_ids,
+        structure_question_feature_ids=structure_question_feature_ids,
         generic_relation_material_ids=generic_relation_material_ids,
         reception_candidate_mode_ids=mode_ids,
         primary_reason=_mode_reason(mode_ids, event_fact_present=event_fact_present, reaction_present=reaction_present),
@@ -690,6 +803,7 @@ def build_emlis_shared_reception_evidence(current_input: Any) -> EmlisSharedRece
         event_hint_count=len(event_hint_ids),
         self_understanding_change_feature_count=len(self_understanding_change_feature_ids),
         relationship_boundary_support_feature_count=len(relationship_boundary_support_feature_ids),
+        structure_question_feature_count=len(structure_question_feature_ids),
     )
 
 

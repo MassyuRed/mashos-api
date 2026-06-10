@@ -38,7 +38,11 @@
         "キモい",
         "嫌",
         "いや",
-        "最悪"
+        "最悪",
+        "軽く流",
+        "軽く扱",
+        "雑に扱",
+        "大事にされていない"
       ],
       "reaction_family": "negative_daily_reaction",
       "allowed_reception_modes": [
@@ -79,7 +83,8 @@
         "怒っ",
         "腹が立",
         "ムカつ",
-        "むかつ"
+        "むかつ",
+        "悔し"
       ],
       "reaction_family": "anger_reaction",
       "allowed_reception_modes": [
@@ -165,7 +170,15 @@
         "自信をつけたい",
         "なんで私はこう",
         "自分を責め",
-        "自分を追い込"
+        "自分を追い込",
+        "自分を下げ",
+        "自分だけ何もでき",
+        "何もできていない",
+        "できない自分",
+        "続けられない人間",
+        "自分が嫌い",
+        "自己否定",
+        "自己嫌悪"
       ],
       "reaction_family": "self_negative_reaction",
       "allowed_reception_modes": [
@@ -248,6 +261,26 @@
         "danger",
         "trauma",
         "actual_danger_level"
+      ]
+    },
+    {
+      "hint_id": "daily_lightly_dismissed_unpleasant_event",
+      "surface_patterns": [
+        "軽く流",
+        "軽く扱",
+        "雑に扱",
+        "大事にされていない"
+      ],
+      "event_family": "daily_lightly_dismissed_unpleasant_event",
+      "can_support_modes": [
+        "daily_unpleasant_reception"
+      ],
+      "cannot_alone_infer": [
+        "target_is_bad",
+        "target_intent",
+        "anger_is_correct",
+        "attack_is_justified",
+        "period_tendency"
       ]
     },
     {

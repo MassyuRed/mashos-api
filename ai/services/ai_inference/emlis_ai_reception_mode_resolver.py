@@ -74,6 +74,12 @@ _STRUCTURE_REQUEST_PATTERNS: Final = (
     "同じことになる",
     "なぜこうなるのか知りたい",
     "なぜこうなるのか見たい",
+    "何が起きている",
+    "何が起きてる",
+    "なにが起きている",
+    "なにが起きてる",
+    "どう読めば",
+    "整理したい",
     "分析してほしい",
     "観測してほしい",
     "Emlisに観測してほしい",
@@ -158,6 +164,22 @@ _OBSERVATION_REPLY_KIND_BY_INTERNAL_MODE: Final = {
     MODE_SAFETY_EXISTING_PATH: "safety_blocked",
     MODE_LOW_INFORMATION: "low_information_question",
 }
+
+_NEGATIVE_DAILY_EMOTION_REACTION_FAMILY_IDS: Final = {
+    "anger": ("anger_reaction",),
+    "fear": ("fear_reaction",),
+    "disgust": ("negative_daily_reaction",),
+    "frustration": ("anger_reaction",),
+    "self_denial": ("self_negative_reaction",),
+}
+_NEGATIVE_DAILY_EMOTION_MODE_IDS: Final = {
+    "anger": (MODE_DAILY_UNPLEASANT,),
+    "fear": (MODE_DAILY_UNPLEASANT,),
+    "disgust": (MODE_DAILY_UNPLEASANT,),
+    "frustration": (MODE_DAILY_UNPLEASANT,),
+    "self_denial": (MODE_SELF_DENIAL,),
+}
+_DAILY_UNPLEASANT_EMOTION_LABEL_IDS: Final = frozenset({"anger", "fear", "disgust", "frustration"})
 
 
 def _clean(value: Any) -> str:
@@ -251,6 +273,26 @@ def _reaction_family_ids(
         if cues:
             families.append(str(cues[0].get("reaction_family") or ""))
     return _dedupe(families)
+
+
+
+
+def _emotion_label_reaction_family_ids(emotion_label_ids: Sequence[str]) -> tuple[str, ...]:
+    families: list[str] = []
+    for label_id in _dedupe(emotion_label_ids):
+        families.extend(_NEGATIVE_DAILY_EMOTION_REACTION_FAMILY_IDS.get(label_id, ()))
+    return _dedupe(families)
+
+
+def _emotion_label_allowed_mode_ids(emotion_label_ids: Sequence[str]) -> tuple[str, ...]:
+    modes: list[str] = []
+    for label_id in _dedupe(emotion_label_ids):
+        modes.extend(_NEGATIVE_DAILY_EMOTION_MODE_IDS.get(label_id, ()))
+    return _dedupe(modes)
+
+
+def _negative_daily_emotion_label_present(emotion_label_ids: Sequence[str]) -> bool:
+    return bool(set(_dedupe(emotion_label_ids)).intersection(_DAILY_UNPLEASANT_EMOTION_LABEL_IDS))
 
 
 def _reaction_allowed_mode_ids(
@@ -484,6 +526,7 @@ class EmlisReceptionModeResolution:
     event_hint_ids: tuple[str, ...] = field(default_factory=tuple)
     category_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     relationship_boundary_support_feature_ids: tuple[str, ...] = field(default_factory=tuple)
+    structure_question_feature_ids: tuple[str, ...] = field(default_factory=tuple)
     structure_question_requested: bool = False
     safety_path_required: bool = False
     safety_boundary_type_ids: tuple[str, ...] = field(default_factory=tuple)
@@ -522,6 +565,18 @@ class EmlisReceptionModeResolution:
             "reaction_present": bool(self.reaction_present),
             "reaction_family_ids": list(self.reaction_family_ids),
             "matched_reaction_family_ids": list(self.reaction_family_ids),
+            "daily_unpleasant_negative_emotion_label_present": _negative_daily_emotion_label_present(self.explicit_emotion_label_ids),
+            "daily_unpleasant_negative_reaction_family_present": bool(
+                set(self.reaction_family_ids).intersection({"negative_daily_reaction", "fear_reaction", "anger_reaction"})
+            ),
+            "daily_unpleasant_event_reaction_anchor_ready": bool(
+                self.event_fact_present
+                and self.reaction_present
+                and (
+                    set(self.reaction_family_ids).intersection({"negative_daily_reaction", "fear_reaction", "anger_reaction"})
+                    or _negative_daily_emotion_label_present(self.explicit_emotion_label_ids)
+                )
+            ),
             "reaction_allowed_mode_ids": list(self.reaction_allowed_mode_ids),
             "event_hint_supported_mode_ids": list(self.event_hint_supported_mode_ids),
             "phase20_3_dedicated_c_d_mode_runtime_disabled": True,
@@ -542,7 +597,21 @@ class EmlisReceptionModeResolution:
             "relationship_boundary_support_feature_ids": list(self.relationship_boundary_support_feature_ids),
             "relationship_boundary_support_feature_count": len(self.relationship_boundary_support_feature_ids),
             "relationship_boundary_support_detected": bool(self.relationship_boundary_support_feature_ids),
+            "structure_question_feature_ids": list(self.structure_question_feature_ids),
+            "structure_question_feature_count": len(self.structure_question_feature_ids),
             "structure_question_requested": bool(self.structure_question_requested),
+            "structure_question_anchor_ready": bool(self.structure_question_requested or "structure_question_core" in set(self.structure_question_feature_ids)),
+            "structure_question_visible_relation_or_state_anchor_ready": bool("visible_relation_or_state" in set(self.structure_question_feature_ids)),
+            "structure_question_unresolved_or_conflict_anchor_ready": bool("unresolved_or_conflict" in set(self.structure_question_feature_ids)),
+            "structure_question_current_only_surface_required": bool(self.reception_mode == MODE_STRUCTURE),
+            "structure_question_question_only_surface_allowed": False,
+            "structure_question_comfort_only_allowed": False,
+            "structure_question_cause_overclaim_allowed": False,
+            "structure_question_personality_claim_allowed": False,
+            "structure_question_other_person_intent_claim_allowed": False,
+            "structure_question_p6_deep_insight_applied": False,
+            "structure_question_p6_backlog_marker_only": bool(self.reception_mode == MODE_STRUCTURE),
+            "p4_7_structure_question_family_tuning_ready": bool(self.reception_mode == MODE_STRUCTURE),
             "safety_path_required": bool(self.safety_path_required),
             "existing_safety_path_required": bool(self.safety_path_required),
             "safety_boundary_type_ids": list(self.safety_boundary_type_ids),
@@ -585,6 +654,12 @@ class EmlisReceptionModeResolution:
                 "event_hint_alone_activated_mode": False,
                 "event_hint_alone_activated_reception_mode": False,
                 "self_denial_must_not_be_lightly_daily": True,
+                "daily_unpleasant_requires_event_and_reaction": True,
+                "daily_unpleasant_negative_emotion_label_may_support_reaction": True,
+                "structure_question_requires_current_input_scope": True,
+                "structure_question_p6_deep_insight_not_applied_in_p4": True,
+                "structure_question_question_only_surface_forbidden": True,
+                "structure_question_comfort_only_surface_forbidden": True,
                 "safety_uses_existing_path": bool(self.safety_path_required),
                 "dedicated_c_d_case_modes_absent": True,
             },
@@ -641,10 +716,17 @@ def resolve_emlis_reception_mode(
     event_hint_ids = _list_from_meta(evidence_meta, "event_hint_ids")
     category_topic_ids = _list_from_meta(evidence_meta, "category_topic_ids")
     relationship_boundary_support_feature_ids = _list_from_meta(evidence_meta, "relationship_boundary_support_feature_ids")
+    structure_question_feature_ids = _list_from_meta(evidence_meta, "structure_question_feature_ids")
     candidate_mode_ids = _list_from_meta(evidence_meta, "reception_candidate_mode_ids")
 
-    reaction_families = _reaction_family_ids(dictionary, reaction_cue_ids)
-    reaction_allowed_modes = _reaction_allowed_mode_ids(dictionary, reaction_cue_ids)
+    reaction_families = _dedupe(
+        list(_reaction_family_ids(dictionary, reaction_cue_ids))
+        + list(_emotion_label_reaction_family_ids(emotion_label_ids))
+    )
+    reaction_allowed_modes = _dedupe(
+        list(_reaction_allowed_mode_ids(dictionary, reaction_cue_ids))
+        + list(_emotion_label_allowed_mode_ids(emotion_label_ids))
+    )
     hint_supported_modes = _event_hint_supported_mode_ids(dictionary, event_hint_ids)
     for hint_id in event_hint_ids:
         if event_hint_can_create_emotion(dictionary, hint_id):
@@ -654,7 +736,10 @@ def resolve_emlis_reception_mode(
     safety_required = bool(safety_types)
     structure_requested = bool(user_structure_question_requested)
     if user_structure_question_requested is None:
-        structure_requested = _detect_structure_request(current_input)
+        structure_requested = bool(
+            _detect_structure_request(current_input)
+            or "structure_question_core" in set(structure_question_feature_ids)
+        )
 
     eligible_modes = _eligible_dictionary_mode_ids(
         dictionary,
@@ -699,6 +784,7 @@ def resolve_emlis_reception_mode(
         event_hint_ids=event_hint_ids,
         category_topic_ids=category_topic_ids,
         relationship_boundary_support_feature_ids=relationship_boundary_support_feature_ids,
+        structure_question_feature_ids=structure_question_feature_ids,
         structure_question_requested=structure_requested,
         safety_path_required=safety_required,
         safety_boundary_type_ids=safety_types,

@@ -102,6 +102,8 @@ EMLIS_TWO_STAGE_SURFACE_REALIZATION_SCHEMA_VERSION = "cocolon.emlis_two_stage.su
 EMLIS_TWO_STAGE_SURFACE_REALIZATION_SOURCE_PHASE = "Phase16_4_complete_surface_realizer_two_stage_comment_text"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_SURFACE_QUALITY_SCHEMA_VERSION = "cocolon.emlis_two_stage.daily_unpleasant_surface_quality.v1"
 EMLIS_TWO_STAGE_DAILY_UNPLEASANT_SURFACE_QUALITY_SOURCE_PHASE = "Phase16_5_daily_unpleasant_reception_surface_quality"
+EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SCHEMA_VERSION = "cocolon.emlis_two_stage.structure_question_surface_quality.v1"
+EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SOURCE_PHASE = "P4-7_structure_question_family_tuning"
 EMLIS_TWO_STAGE_INTERNAL_ROLE_SURFACE_POLICY_SCHEMA_VERSION = "cocolon.emlis_two_stage.internal_role_surface_policy.v1"
 EMLIS_TWO_STAGE_INTERNAL_ROLE_SURFACE_POLICY_SOURCE_PHASE = "Phase17_2_internal_role_surface_phrase_bank"
 EMLIS_TWO_STAGE_INTERNAL_ROLE_SURFACE_PHRASE_SCHEMA_VERSION = EMLIS_TWO_STAGE_INTERNAL_ROLE_SURFACE_POLICY_SCHEMA_VERSION
@@ -581,6 +583,16 @@ DAILY_UNPLEASANT_SURFACE_QUALITY_FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern
     ("daily_unpleasant_risk_overclaim", re.compile(r"危険な目に遭いました|トラウマになりそう|トラウマになった")),
     ("daily_unpleasant_analytic_register", re.compile(r"構造|関係性|要素|分類|パターン|傾向|深層|価値線")),
     ("daily_unpleasant_structural_label_leak", re.compile(r"explicit negative reaction|daily event fact|pressure_or_limit|anticipation_loop", re.IGNORECASE)),
+)
+
+STRUCTURE_QUESTION_SURFACE_QUALITY_FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("structure_question_question_only", re.compile(r"^[^。！？!?\n]{0,120}[？?]$")),
+    ("structure_question_comfort_only", re.compile(r"大丈夫です|気にしなくていい|安心してください|心配しなくていい")),
+    ("structure_question_cause_overclaim", re.compile(r"原因は|本当の原因|根本原因|だからです")),
+    ("structure_question_personality_claim", re.compile(r"性格|人格|あなたはいつも|傾向があります")),
+    ("structure_question_other_person_intent_claim", re.compile(r"相手の意図|相手は[^。！？!?\n]{0,24}(?:つもり|わざと|狙って)")),
+    ("structure_question_action_instruction", re.compile(r"してください|すべき|しなさい|行動しましょう|変えましょう")),
+    ("structure_question_p6_over_insight", re.compile(r"深層|診断|トラウマ|無意識|幼少期|価値線|根本構造")),
 )
 
 _SPACE_RE = re.compile(r"\s+")
@@ -1334,7 +1346,12 @@ def _phase17_self_repair_reason_codes_for_surface(
     if counts:
         observation_count = int(counts.get(EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID) or 0)
         reception_count = int(counts.get(EMLIS_TWO_STAGE_RECEPTION_SECTION_ID) or 0)
-        if observation_count > 1 or reception_count < 1 or reception_count > 2:
+        mode_context = _json_safe_mapping(report.get("two_stage_mode_context"))
+        mode_id = _clean_token(mode_context.get("reception_mode_id") or report.get("reception_mode_id"))
+        if mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID:
+            if observation_count < 2 or observation_count > 2 or reception_count < 1 or reception_count > 1:
+                codes.append(EMLIS_TWO_STAGE_PHASE17_REASON_SECTION_BUDGET_MISMATCH)
+        elif observation_count > 1 or reception_count < 1 or reception_count > 2:
             codes.append(EMLIS_TWO_STAGE_PHASE17_REASON_SECTION_BUDGET_MISMATCH)
     if report and not bool(report.get("applied", True)):
         codes.append(EMLIS_TWO_STAGE_PHASE17_REASON_SURFACE_MODE_POLICY_MISSING)
@@ -1521,6 +1538,14 @@ def _daily_unpleasant_surface_quality_summary(lines: Sequence[Any]) -> dict[str,
         return {}
     hits = tuple(dict.fromkeys(hit for row in rows for hit in row.get("forbidden_surface_hits", [])))
     applied_keys = tuple(_clean_token(row.get("surface_quality_key")) for row in rows if row.get("applied"))
+    observation_anchor_applied = any(key.startswith("daily_unpleasant_observation") for key in applied_keys)
+    reception_anchor_applied = any(
+        key.startswith("daily_unpleasant") and ("reception" in key or "receiving" in key)
+        for key in applied_keys
+    )
+    target_judgement_blocked = "daily_unpleasant_target_judgement_agreement" not in hits
+    analytic_register_blocked = "daily_unpleasant_analytic_register" not in hits
+    structural_label_blocked = "daily_unpleasant_structural_label_leak" not in hits
     return {
         "schema_version": EMLIS_TWO_STAGE_DAILY_UNPLEASANT_SURFACE_QUALITY_SCHEMA_VERSION,
         "source_phase": EMLIS_TWO_STAGE_DAILY_UNPLEASANT_SURFACE_QUALITY_SOURCE_PHASE,
@@ -1529,16 +1554,25 @@ def _daily_unpleasant_surface_quality_summary(lines: Sequence[Any]) -> dict[str,
         "line_count": len(rows),
         "section_ids": list(dict.fromkeys(_clean_token(row.get("section_id")) for row in rows if row.get("section_id"))),
         "surface_quality_keys": list(dict.fromkeys(key for key in applied_keys if key)),
-        "observation_event_reaction_shape_applied": any(key.startswith("daily_unpleasant_observation") for key in applied_keys),
-        "natural_short_reception_applied": any(key.startswith("daily_unpleasant") and ("reception" in key or "receiving" in key) for key in applied_keys),
+        "observation_event_reaction_shape_applied": observation_anchor_applied,
+        "natural_short_reception_applied": reception_anchor_applied,
+        "p4_6_daily_unpleasant_family_tuning_applied": True,
+        "p4_6_daily_unpleasant_observation_ratio_policy_aligned": True,
+        "p4_6_daily_unpleasant_event_or_situation_anchor_retained": observation_anchor_applied,
+        "p4_6_daily_unpleasant_unpleasant_reaction_anchor_retained": observation_anchor_applied,
+        "p4_6_daily_unpleasant_emlis_reception_anchor_retained": reception_anchor_applied,
+        "p4_6_daily_unpleasant_question_only_surface_blocked": True,
+        "p4_6_daily_unpleasant_target_judgement_blocked": target_judgement_blocked,
+        "p4_6_daily_unpleasant_heavy_analysis_blocked": analytic_register_blocked and structural_label_blocked,
+        "p4_6_daily_unpleasant_p6_over_insight_blocked": analytic_register_blocked and structural_label_blocked,
         "forbidden_surface_hits": list(hits),
         "blocked_by_surface_quality": bool(hits),
         "no_pressure_or_limit_skeleton": not any(hit in hits for hit in ("daily_unpleasant_pressure_or_limit_skeleton", "daily_unpleasant_anticipation_loop_skeleton")),
         "no_relation_skeleton_leak": "daily_unpleasant_relation_skeleton" not in hits,
         "no_low_information_prompt_escape": "daily_unpleasant_low_information_prompt_escape" not in hits,
-        "no_target_judgement_agreement": "daily_unpleasant_target_judgement_agreement" not in hits,
-        "no_analytic_register": "daily_unpleasant_analytic_register" not in hits,
-        "no_structural_label_leak": "daily_unpleasant_structural_label_leak" not in hits,
+        "no_target_judgement_agreement": target_judgement_blocked,
+        "no_analytic_register": analytic_register_blocked,
+        "no_structural_label_leak": structural_label_blocked,
         "gate_relaxed": False,
         "comment_text_body_included": False,
         "surface_text_body_included": False,
@@ -1558,6 +1592,109 @@ def _daily_unpleasant_surface_quality_errors_for_lines(lines: Sequence[Any]) -> 
     return tuple(dict.fromkeys(f"daily_unpleasant_surface_quality:{hit}" for row in rows for hit in row.get("forbidden_surface_hits", [])))
 
 
+def _structure_question_context_from_two_stage_meta(meta: Mapping[str, Any] | None) -> bool:
+    safe = _json_safe_mapping(meta or {})
+    mode_id = _clean_token(safe.get("two_stage_reception_mode_id") or safe.get("reception_mode_id"))
+    ratio_reason = _clean_token(safe.get("two_stage_ratio_reason") or safe.get("ratio_reason"))
+    return bool(
+        mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID
+        or ratio_reason == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_RATIO_REASON
+    )
+
+
+def _structure_question_surface_quality_hits(text: Any, meta: Mapping[str, Any] | None = None) -> Tuple[str, ...]:
+    if not _structure_question_context_from_two_stage_meta(meta):
+        return tuple()
+    body = str(text or "")
+    return tuple(
+        code
+        for code, pattern in STRUCTURE_QUESTION_SURFACE_QUALITY_FORBIDDEN_PATTERNS
+        if pattern.search(body)
+    )
+
+
+def _structure_question_surface_quality_rows(lines: Sequence[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in tuple(lines or ()):  # surface lines or line mappings; body is not retained
+        two_stage_meta = _two_stage_line_meta(line)
+        if not _structure_question_context_from_two_stage_meta(two_stage_meta):
+            continue
+        private_meta = _surface_line_private_meta(line)
+        signature = _json_safe_mapping(getattr(line, "surface_signature", {}) if not isinstance(line, Mapping) else line.get("surface_signature", {}))
+        merged = {**signature, **private_meta}
+        hits = list(_structure_question_surface_quality_hits(_surface_line_text(line), two_stage_meta))
+        rows.append({
+            "sentence_id": str(getattr(line, "sentence_id", "") or (line.get("sentence_id") if isinstance(line, Mapping) else "")),
+            "section_id": _clean_token(two_stage_meta.get("two_stage_section_id")),
+            "surface_key": _clean_token(merged.get("structure_insight_surface_key") or merged.get("two_stage_mode_specific_surface_key")),
+            "surface_role": _clean_token(merged.get("structure_insight_surface_role") or merged.get("two_stage_surface_role")),
+            "relation_family": _clean_token(merged.get("structure_insight_surface_relation_family")),
+            "feature_families": list(_dedupe(merged.get("structure_insight_surface_feature_families") or ())),
+            "insight_seed_added": bool(merged.get("structure_insight_surface_insight_seed_added")),
+            "temperature_support_added": bool(merged.get("structure_insight_surface_temperature_support_added")),
+            "gate_passed": bool(merged.get("structure_insight_surface_gate_passed", True)),
+            "forbidden_surface_hits": hits,
+            "comment_text_body_included": False,
+            "raw_input_included": False,
+            "fixed_sentence_template_used": False,
+        })
+    return rows
+
+
+def _structure_question_surface_quality_summary(lines: Sequence[Any]) -> dict[str, Any]:
+    rows = _structure_question_surface_quality_rows(lines)
+    if not rows:
+        return {}
+    hits = tuple(dict.fromkeys(hit for row in rows for hit in row.get("forbidden_surface_hits", [])))
+    section_ids = list(dict.fromkeys(_clean_token(row.get("section_id")) for row in rows if row.get("section_id")))
+    observation_anchor_retained = any(row.get("section_id") == EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID and (row.get("insight_seed_added") or row.get("surface_key")) for row in rows)
+    reception_anchor_retained = any(row.get("section_id") == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID and (row.get("temperature_support_added") or row.get("surface_key")) for row in rows)
+    relation_anchor_retained = any(_clean_token(row.get("relation_family")) for row in rows)
+    unresolved_anchor_retained = any(_clean_token(row.get("relation_family")) in {"desire_blockage_conflict", "mixed_emotion_coexistence", "event_reaction_link", "effort_residue"} for row in rows)
+    return {
+        "schema_version": EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SCHEMA_VERSION,
+        "source_phase": EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SOURCE_PHASE,
+        "target_reception_mode_id": EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID,
+        "applied": all(bool(row.get("gate_passed")) for row in rows) and not bool(hits),
+        "line_count": len(rows),
+        "section_ids": section_ids,
+        "surface_keys": list(dict.fromkeys(_clean_token(row.get("surface_key")) for row in rows if row.get("surface_key"))),
+        "relation_families": list(dict.fromkeys(_clean_token(row.get("relation_family")) for row in rows if row.get("relation_family"))),
+        "feature_families": list(dict.fromkeys(feature for row in rows for feature in row.get("feature_families", []) if feature)),
+        "p4_7_structure_question_family_tuning_applied": True,
+        "p4_7_structure_question_observation_ratio_policy_aligned": True,
+        "p4_7_structure_question_structure_question_anchor_retained": observation_anchor_retained,
+        "p4_7_structure_question_visible_relation_or_state_anchor_retained": relation_anchor_retained,
+        "p4_7_structure_question_unresolved_or_conflict_anchor_retained": unresolved_anchor_retained,
+        "p4_7_structure_question_emlis_reception_anchor_retained": reception_anchor_retained,
+        "p4_7_structure_question_question_only_surface_blocked": "structure_question_question_only" not in hits,
+        "p4_7_structure_question_comfort_only_blocked": "structure_question_comfort_only" not in hits,
+        "p4_7_structure_question_overclaim_blocked": not any(hit in hits for hit in ("structure_question_cause_overclaim", "structure_question_personality_claim", "structure_question_other_person_intent_claim")),
+        "p4_7_structure_question_p6_over_insight_blocked": "structure_question_p6_over_insight" not in hits,
+        "p4_7_structure_question_p6_backlog_marker_only": True,
+        "forbidden_surface_hits": list(hits),
+        "blocked_by_surface_quality": bool(hits),
+        "question_only_surface_detected": "structure_question_question_only" in hits,
+        "comfort_only_surface_detected": "structure_question_comfort_only" in hits,
+        "gate_relaxed": False,
+        "comment_text_body_included": False,
+        "surface_text_body_included": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "public_response_key_added": False,
+        "rn_visible_contract_changed": False,
+        "fixed_sentence_template_used": False,
+        "fixed_string_renderer_used": False,
+        "external_ai_used": False,
+        "local_llm_used": False,
+    }
+
+
+def _structure_question_surface_quality_errors_for_lines(lines: Sequence[Any]) -> Tuple[str, ...]:
+    rows = _structure_question_surface_quality_rows(lines)
+    return tuple(dict.fromkeys(f"structure_question_surface_quality:{hit}" for row in rows for hit in row.get("forbidden_surface_hits", [])))
+
+
 def _daily_unpleasant_surface_text_for_line(
     line: CompleteSentencePlanLine,
     *,
@@ -1573,13 +1710,13 @@ def _daily_unpleasant_surface_text_for_line(
     has_event_role = bool(roles.intersection(DAILY_UNPLEASANT_EVENT_ROLE_KEYS))
     if section_id == EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID:
         if has_reaction_role or "reaction_and_event_seen_without_over_explaining" in allowed_intents:
-            text = "日常の嫌な出来事に触れて、不快さや怖さ、怒りの反応が強く残っているように見えます。"
+            text = "日常の中で起きた嫌な場面と、不快さや怖さ、怒りの反応がどちらも残っているように見えます。"
             surface_key = "daily_unpleasant_observation_event_reaction"
         elif has_event_role:
-            text = "日常の中で嫌な反応が強く残る出来事として見えています。"
+            text = "日常の中で起きた嫌な出来事と、そこに残った反応が一緒に見えています。"
             surface_key = "daily_unpleasant_observation_event"
         else:
-            text = "日常の中で嫌な反応が強く残る場面として見えています。"
+            text = "日常の中の嫌な場面として、反応が消えずに残っているように見えます。"
             surface_key = "daily_unpleasant_observation_short"
     elif section_id == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID:
         if line_role == "relation" and (
@@ -1587,16 +1724,16 @@ def _daily_unpleasant_surface_text_for_line(
             or "fear_or_load_understanding" in allowed_intents
             or "not_over_explaining_daily_event" in allowed_intents
         ):
-            text = "怖さや怒りが重なって残るのも自然です。"
+            text = "怖さや怒りが残る反応として、その重さだけを受け取れます。"
             surface_key = "daily_unpleasant_fear_or_load_receiving"
         elif has_event_role or "explicit_reaction_receiving" in allowed_intents:
-            text = "嫌さや怖さが並んで残る、軽く流しにくい場面として受け取れます。"
+            text = "嫌さや怖さが並んで残る、軽く流しにくい反応として受け取れます。"
             surface_key = "daily_unpleasant_natural_short_reception"
         elif has_reaction_role:
-            text = "その反応は、いくつか並んで自然に残るものとして受け取れます。"
+            text = "その反応は、無理に大きくしなくても残るものとして受け取れます。"
             surface_key = "daily_unpleasant_reaction_receiving"
         else:
-            text = "嫌だった反応が並んで残るものとして自然に受け取れます。"
+            text = "嫌だった反応がそのまま残ったものとして受け取れます。"
             surface_key = "daily_unpleasant_brief_receiving"
     else:
         return "", {}
@@ -1609,7 +1746,12 @@ def _daily_unpleasant_surface_text_for_line(
             family="daily_unpleasant",
             roles=roles,
             repair_targets=("follow_depth", "observation_retention"),
-            feature_families=("daily_unpleasant_event_reaction_retained", "follow_depth_supported", "target_judgement_agreement_blocked"),
+            feature_families=(
+                "daily_unpleasant_event_reaction_retained",
+                "daily_unpleasant_lightly_dismissed_feeling_retained",
+                "follow_depth_supported",
+                "target_judgement_agreement_blocked",
+            ),
             daily_unpleasant_follow_depth_supported=True,
         ),
         "daily_unpleasant_surface_quality_applied": True,
@@ -1626,6 +1768,14 @@ def _daily_unpleasant_surface_text_for_line(
         "daily_unpleasant_no_target_judgement_agreement": True,
         "daily_unpleasant_no_analytic_register": True,
         "daily_unpleasant_no_structural_label_leak": True,
+        "p4_6_daily_unpleasant_surface_specificity_applied": True,
+        "p4_6_daily_unpleasant_event_or_situation_anchor_retained": bool(has_event_role),
+        "p4_6_daily_unpleasant_unpleasant_reaction_anchor_retained": bool(has_reaction_role),
+        "p4_6_daily_unpleasant_emlis_reception_anchor_retained": bool(section_id == EMLIS_TWO_STAGE_RECEPTION_SECTION_ID),
+        "p4_6_daily_unpleasant_no_target_judgement_agreement": True,
+        "p4_6_daily_unpleasant_no_other_person_intent_claim": True,
+        "p4_6_daily_unpleasant_no_heavy_analysis": True,
+        "p4_6_daily_unpleasant_no_p6_over_insight": True,
         "daily_unpleasant_comment_text_body_included": False,
         "daily_unpleasant_surface_text_body_included": False,
         "raw_input_included": False,
@@ -2267,6 +2417,15 @@ def _structure_insight_surface_text_for_line(
     feature_families = _dedupe(meta.get("structure_insight_surface_feature_families") or ())
     roles = _meaning_roles(line)
     allowed_intents = _dedupe(tuple(two_stage_meta.get("allowed_surface_intents") or ()) + ("structure_insight_surface_limited_family",))
+    p4_7_surface_variant_applied = False
+    if (
+        mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID
+        and section_id == EMLIS_TWO_STAGE_OBSERVATION_SECTION_ID
+        and "unresolved_or_conflict_anchor_required" in set(allowed_intents)
+        and surface_key == "structure_question_desire_blockage_insight_seed"
+    ):
+        text = "動きたい向きと止まる重さが、同じ入力の中でぶつかって残っています。"
+        p4_7_surface_variant_applied = True
     return text, {
         **_two_stage_mode_specific_surface_policy_meta(
             mode_id=mode_id,
@@ -2286,6 +2445,7 @@ def _structure_insight_surface_text_for_line(
         "two_stage_mode_specific_surface_relation_skeleton_suppressed": True,
         "two_stage_mode_specific_surface_internal_role_label_suppressed": True,
         "two_stage_mode_specific_surface_case_id_branch_used": False,
+        "p4_7_structure_question_surface_variant_applied": bool(p4_7_surface_variant_applied),
     }
 
 
@@ -2757,6 +2917,7 @@ def _two_stage_validation_errors_for_lines(lines: Sequence[Any], *, source_plan:
     if _two_stage_body_contains_label(observation_body) or _two_stage_body_contains_label(reception_body):
         errors.append("two_stage_section_body_contains_label")
     errors.extend(_daily_unpleasant_surface_quality_errors_for_lines(line_tuple))
+    errors.extend(_structure_question_surface_quality_errors_for_lines(line_tuple))
     return tuple(dict.fromkeys(errors))
 
 
@@ -2789,6 +2950,7 @@ def _two_stage_surface_realization_report_from_lines(
     joined = _two_stage_joined_comment_text_from_lines(line_tuple, source_plan=source_plan, meta=meta)
     validation_errors = list(_two_stage_validation_errors_for_lines(line_tuple, source_plan=source_plan, meta=meta))
     daily_unpleasant_quality = _daily_unpleasant_surface_quality_summary(line_tuple)
+    structure_question_quality = _structure_question_surface_quality_summary(line_tuple)
     mode_context_summary = _two_stage_mode_context_summary(line_tuple)
     mode_specific_policy = _two_stage_mode_specific_surface_policy_summary(line_tuple)
     product_readfeel_v1_surface_policy = _product_readfeel_v1_surface_policy_summary(line_tuple)
@@ -2846,6 +3008,12 @@ def _two_stage_surface_realization_report_from_lines(
         "daily_unpleasant_surface_quality_applied": bool(daily_unpleasant_quality.get("applied")) if daily_unpleasant_quality else False,
         "daily_unpleasant_surface_quality_forbidden_hits": list(daily_unpleasant_quality.get("forbidden_surface_hits") or []) if daily_unpleasant_quality else [],
         "daily_unpleasant_surface_quality_gate_relaxed": False,
+        "structure_question_surface_quality": structure_question_quality,
+        "structure_question_family_tuning_surface_quality": structure_question_quality,
+        "structure_question_surface_quality_evaluated": bool(structure_question_quality),
+        "structure_question_surface_quality_applied": bool(structure_question_quality.get("applied")) if structure_question_quality else False,
+        "structure_question_surface_quality_forbidden_hits": list(structure_question_quality.get("forbidden_surface_hits") or []) if structure_question_quality else [],
+        "structure_question_surface_quality_gate_relaxed": False,
         "two_stage_mode_context": mode_context_summary,
         "two_stage_mode_context_schema_version": EMLIS_TWO_STAGE_MODE_CONTEXT_SCHEMA_VERSION,
         "two_stage_mode_context_source_phase": EMLIS_TWO_STAGE_MODE_CONTEXT_SOURCE_PHASE,
@@ -3681,6 +3849,7 @@ class CompleteSurfaceRealizationV2:
         relation_surface_report = _relation_surface_report_from_lines(self.surface_lines)
         two_stage_summary = self.two_stage_surface_realization
         daily_unpleasant_summary = two_stage_summary.get("daily_unpleasant_reception_surface_quality") if isinstance(two_stage_summary.get("daily_unpleasant_reception_surface_quality"), Mapping) else {}
+        structure_question_surface_quality_summary = two_stage_summary.get("structure_question_surface_quality") if isinstance(two_stage_summary.get("structure_question_surface_quality"), Mapping) else {}
         mode_specific_policy_summary = two_stage_summary.get("two_stage_mode_specific_surface_policy") if isinstance(two_stage_summary.get("two_stage_mode_specific_surface_policy"), Mapping) else {}
         product_readfeel_v1_surface_policy_summary = two_stage_summary.get("product_readfeel_v1_surface_policy") if isinstance(two_stage_summary.get("product_readfeel_v1_surface_policy"), Mapping) else {}
         phase20_6_generic_surface_summary = two_stage_summary.get("phase20_6_generic_sentence_surface") if isinstance(two_stage_summary.get("phase20_6_generic_sentence_surface"), Mapping) else {}
@@ -3812,6 +3981,22 @@ class CompleteSurfaceRealizationV2:
             "structure_insight_surface_raw_input_included": False,
             "structure_insight_surface_public_response_key_added": False,
             "structure_insight_surface_gate_relaxed": False,
+            "structure_question_surface_quality_schema_version": EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SCHEMA_VERSION,
+            "structure_question_surface_quality_source_phase": EMLIS_TWO_STAGE_STRUCTURE_QUESTION_SURFACE_QUALITY_SOURCE_PHASE,
+            "structure_question_surface_quality_supported": True,
+            "structure_question_surface_quality": dict(structure_question_surface_quality_summary),
+            "structure_question_surface_quality_applied": bool(structure_question_surface_quality_summary.get("applied", False)),
+            "structure_question_surface_quality_passed": bool(not structure_question_surface_quality_summary.get("forbidden_surface_hits")),
+            "structure_question_surface_quality_forbidden_hits": list(structure_question_surface_quality_summary.get("forbidden_surface_hits") or []),
+            "structure_question_surface_quality_comment_text_body_included": False,
+            "structure_question_surface_quality_raw_input_included": False,
+            "structure_question_surface_quality_body_included": False,
+            "structure_question_surface_quality_gate_relaxed": False,
+            "p4_7_structure_question_family_tuning_applied": bool(structure_question_surface_quality_summary.get("p4_7_structure_question_family_tuning_applied", False)),
+            "p4_7_structure_question_question_only_surface_blocked": bool(structure_question_surface_quality_summary.get("p4_7_structure_question_question_only_surface_blocked", False)),
+            "p4_7_structure_question_comfort_only_blocked": bool(structure_question_surface_quality_summary.get("p4_7_structure_question_comfort_only_blocked", False)),
+            "p4_7_structure_question_overclaim_blocked": bool(structure_question_surface_quality_summary.get("p4_7_structure_question_overclaim_blocked", False)),
+            "p4_7_structure_question_p6_over_insight_blocked": bool(structure_question_surface_quality_summary.get("p4_7_structure_question_p6_over_insight_blocked", False)),
             "phase20_6_generic_sentence_surface_schema_version": EMLIS_TWO_STAGE_GENERIC_SENTENCE_SURFACE_SCHEMA_VERSION,
             "phase20_6_generic_sentence_surface_source_phase": EMLIS_TWO_STAGE_GENERIC_SENTENCE_SURFACE_SOURCE_PHASE,
             "phase20_6_generic_sentence_surface_supported": True,

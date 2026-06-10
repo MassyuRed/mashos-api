@@ -85,6 +85,42 @@ _TWO_STAGE_REASON_MARKERS: Final[tuple[str, ...]] = (
     "labelled_two_stage",
     "product_visible",
 )
+_SOURCE_UNAVAILABLE_REASON_MARKERS: Final[tuple[str, ...]] = (
+    "source_unavailable",
+    "composer_source_unavailable",
+    "complete_initial_surface_unavailable",
+    "limited_composer_shallow_empty_candidate",
+    "sentence_plan_unavailable",
+)
+_P4_3_RICH_VISIBLE_LOW_INFO_BOUNDARY_SOURCE: Final = (
+    "rich_visible_material_low_information_surface_boundary"
+)
+_P4_3_SOURCE_UNAVAILABLE_BOUNDARY_SOURCE: Final = (
+    "source_unavailable_high_information_surface_boundary"
+)
+_RICH_VISIBLE_EVENTISH_SLOTS: Final[frozenset[str]] = frozenset({"event", "action", "time"})
+_RICH_VISIBLE_REACTIONISH_SLOTS: Final[frozenset[str]] = frozenset(
+    {"emotion_direction", "unresolved_weight"}
+)
+_RICH_VISIBLE_MEANING_SLOTS: Final[frozenset[str]] = frozenset(
+    {"relationship", "target", "change", "value"}
+)
+_RICH_VISIBLE_RELATION_MATERIAL_IDS: Final[frozenset[str]] = frozenset(
+    {
+        "relationship_end",
+        "support_from_other",
+        "gratitude_or_return_intent",
+        "relationship_material",
+        "support_received_material",
+        "boundary_or_transition",
+        "future_intention",
+        "self_observation",
+        "value_or_self_understanding_material",
+        "self_understanding_learning",
+        "small_change_preservation",
+        "value_preservation",
+    }
+)
 _RELATIONSHIP_TRANSITION_VISIBLE_SLOT_MARKERS: Final[frozenset[str]] = frozenset(
     {"relationship", "action", "change", "value", "target"}
 )
@@ -243,6 +279,7 @@ def resolve_public_surface_requirement(
     diagnostic_summary: Mapping[str, Any] | None = None,
     fixture_family_meta: Mapping[str, Any] | None = None,
     comment_text_present: bool | None = None,
+    p4_3_boundary_correction_enabled: bool = True,
 ) -> dict[str, Any]:
     """Decide the public surface family before public candidate adoption.
 
@@ -269,7 +306,14 @@ def resolve_public_surface_requirement(
     infrastructure_fail_closed = _infrastructure_failed(containers, reason_codes=reason_codes)
     self_denial_safe_answer = _self_denial_safe_state_answer(containers)
     limited_grounding_requested = _limited_grounding_requested(material_quality=material_quality)
-    low_information_requested = _low_information_requested(
+    rich_visible_low_information_boundary = _rich_visible_low_information_boundary_required(
+        enabled=p4_3_boundary_correction_enabled,
+        material_quality=material_quality,
+        input_classification=input_classification,
+        route_meta=route_meta,
+        containers=containers,
+    )
+    low_information_requested = False if rich_visible_low_information_boundary else _low_information_requested(
         material_quality=material_quality,
         containers=containers,
     )
@@ -288,6 +332,15 @@ def resolve_public_surface_requirement(
         material_quality=material_quality,
         containers=containers,
         reason_codes=reason_codes,
+    )
+    source_unavailable_high_information_boundary = _source_unavailable_high_information_boundary_required(
+        enabled=p4_3_boundary_correction_enabled,
+        input_classification=input_classification,
+        material_quality=material_quality,
+        containers=containers,
+        reason_codes=reason_codes,
+        rich_visible_low_information_boundary=rich_visible_low_information_boundary,
+        low_information_requested=low_information_requested,
     )
     material_relationship_transition_two_stage = (
         False
@@ -310,6 +363,8 @@ def resolve_public_surface_requirement(
             or fixture_two_stage
             or bool(two_stage_decision.get("required"))
             or high_information_two_stage
+            or source_unavailable_high_information_boundary
+            or rich_visible_low_information_boundary
             or material_relationship_transition_two_stage
         )
     )
@@ -347,6 +402,8 @@ def resolve_public_surface_requirement(
         explicit_two_stage=explicit_two_stage,
         fixture_two_stage=fixture_two_stage,
         high_information_two_stage=high_information_two_stage,
+        source_unavailable_high_information_boundary=source_unavailable_high_information_boundary,
+        rich_visible_low_information_boundary=rich_visible_low_information_boundary,
         material_relationship_transition_two_stage=material_relationship_transition_two_stage,
         two_stage_applicability_required=bool(two_stage_decision.get("required")),
         limited_grounding_requested=limited_grounding_requested,
@@ -592,11 +649,28 @@ def _input_material_classification(
     categories = current_input.get("category") or current_input.get("categories") or ()
     memo_len = len(memo)
     memo_action_len = len(memo_action)
+    visible_slots = _visible_material_slots_from_sources(route_meta)
+    relation_material_ids = _relation_material_ids_from_sources(route_meta)
+    field_count = sum(
+        1
+        for present in (
+            bool(memo.strip()),
+            bool(memo_action.strip()),
+            bool(_listify(emotions)),
+            bool(_listify(categories)),
+        )
+        if present
+    )
+    rich_visible_material = _rich_visible_material_signal(
+        visible_slots=visible_slots,
+        relation_material_ids=relation_material_ids,
+    )
     high_information = bool(
         material_quality in _HIGH_INFORMATION_QUALITY_MARKERS
         or _bool(route_meta.get("material_sufficient"))
         or str(route_meta.get("input_material_quality") or "") in _HIGH_INFORMATION_QUALITY_MARKERS
         or (memo_len >= 120 and (memo_action_len >= 20 or bool(emotions) or bool(categories)))
+        or (rich_visible_material and (memo_len >= 40 or memo_action_len >= 10 or field_count >= 2))
     )
     return {
         "memo_present": bool(memo.strip()),
@@ -628,6 +702,131 @@ def _sanitize_input_material_classification(value: Any) -> dict[str, Any]:
         "raw_input_included": False,
         "comment_text_body_included": False,
     }
+
+
+
+def _visible_material_slots_from_sources(*sources: Mapping[str, Any]) -> tuple[str, ...]:
+    slots: list[str] = []
+    for source in sources:
+        mapping = _as_mapping(source)
+        slots.extend(_dedupe(mapping.get("visible_material_slots") or ()))
+        nested = _first_mapping(mapping, key="input_material_summary")
+        if nested:
+            slots.extend(_dedupe(nested.get("visible_material_slots") or ()))
+        bundle = _first_mapping(mapping, key="emlis_input_material_bundle")
+        if bundle:
+            slots.extend(_dedupe(bundle.get("visible_material_slots") or ()))
+    return tuple(_dedupe(slots))
+
+
+def _relation_material_ids_from_sources(*sources: Mapping[str, Any]) -> tuple[str, ...]:
+    ids: list[str] = []
+    for source in sources:
+        mapping = _as_mapping(source)
+        ids.extend(_dedupe(mapping.get("relation_material_ids") or ()))
+        ids.extend(_dedupe(mapping.get("generic_relation_material_ids") or ()))
+        nested = _first_mapping(mapping, key="input_material_summary")
+        if nested:
+            ids.extend(_dedupe(nested.get("relation_material_ids") or ()))
+            ids.extend(_dedupe(nested.get("generic_relation_material_ids") or ()))
+        bundle = _first_mapping(mapping, key="emlis_input_material_bundle")
+        if bundle:
+            ids.extend(_dedupe(bundle.get("relation_material_ids") or ()))
+            ids.extend(_dedupe(bundle.get("generic_relation_material_ids") or ()))
+    return tuple(_dedupe(ids))
+
+
+def _rich_visible_material_signal(
+    *,
+    visible_slots: Sequence[str],
+    relation_material_ids: Sequence[str] = (),
+) -> bool:
+    visible = set(_dedupe(visible_slots or ()))
+    relation_ids = set(_dedupe(relation_material_ids or ()))
+    if not visible:
+        return False
+    has_eventish = bool(visible.intersection(_RICH_VISIBLE_EVENTISH_SLOTS))
+    has_reactionish = bool(visible.intersection(_RICH_VISIBLE_REACTIONISH_SLOTS))
+    meaning_count = len(visible.intersection(_RICH_VISIBLE_MEANING_SLOTS))
+    has_relation_material = bool(relation_ids.intersection(_RICH_VISIBLE_RELATION_MATERIAL_IDS))
+    if has_eventish and has_reactionish and len(visible) >= 3:
+        return True
+    if has_reactionish and (meaning_count >= 2 or has_relation_material) and len(visible) >= 3:
+        return True
+    if has_eventish and meaning_count >= 2 and has_relation_material:
+        return True
+    return False
+
+
+def _rich_visible_low_information_boundary_required(
+    *,
+    enabled: bool,
+    material_quality: str,
+    input_classification: Mapping[str, Any],
+    route_meta: Mapping[str, Any],
+    containers: Sequence[Mapping[str, Any]],
+) -> bool:
+    """Keep rich visible current material from being surfaced as low-information.
+
+    P4-3 does not force ``material_quality`` to eligible.  It only prevents a
+    body-free low-information route marker from choosing the low-information
+    public shape when visible material already contains enough event/reaction or
+    relationship/change structure to require a normal observation surface.
+    """
+
+    if not enabled:
+        return False
+    if material_quality not in _LOW_INFORMATION_MATERIAL_QUALITIES:
+        return False
+    if input_classification.get("high_information_input") is not True:
+        return False
+    visible_slots: list[str] = list(_visible_material_slots_from_sources(route_meta))
+    relation_ids: list[str] = list(_relation_material_ids_from_sources(route_meta))
+    for container in containers:
+        visible_slots.extend(_visible_material_slots_from_sources(container))
+        relation_ids.extend(_relation_material_ids_from_sources(container))
+    return _rich_visible_material_signal(
+        visible_slots=visible_slots,
+        relation_material_ids=relation_ids,
+    )
+
+
+def _source_unavailable_high_information_boundary_required(
+    *,
+    enabled: bool,
+    input_classification: Mapping[str, Any],
+    material_quality: str,
+    containers: Sequence[Mapping[str, Any]],
+    reason_codes: Sequence[str],
+    rich_visible_low_information_boundary: bool,
+    low_information_requested: bool,
+) -> bool:
+    if not enabled:
+        return False
+    if low_information_requested:
+        return False
+    if not (input_classification.get("high_information_input") is True or material_quality in _HIGH_INFORMATION_QUALITY_MARKERS or rich_visible_low_information_boundary):
+        return False
+    joined_reasons = " ".join(reason_codes).lower()
+    if any(marker in joined_reasons for marker in _SOURCE_UNAVAILABLE_REASON_MARKERS):
+        return True
+    for container in containers:
+        values = {
+            _clean_lower(container.get("first_blocker_family")),
+            _clean_lower(container.get("first_blocker_code")),
+            _clean_lower(container.get("primary_reason")),
+            _clean_lower(container.get("candidate_failure_reason")),
+            _clean_lower(container.get("composer_source")),
+            _clean_lower(container.get("candidate_source_kind")),
+            _clean_lower(container.get("composer_status")),
+            _clean_lower(container.get("candidate_status")),
+            _clean_lower(container.get("recovery_lane")),
+        }
+        if any(any(marker in value for marker in _SOURCE_UNAVAILABLE_REASON_MARKERS) for value in values if value):
+            return True
+        if container.get("source_unavailable_boundary_kept") is True:
+            return True
+    return False
 
 
 def _limited_grounding_requested(*, material_quality: str) -> bool:
@@ -809,6 +1008,8 @@ def _decision_sources(
     explicit_two_stage: bool,
     fixture_two_stage: bool,
     high_information_two_stage: bool,
+    source_unavailable_high_information_boundary: bool,
+    rich_visible_low_information_boundary: bool,
     material_relationship_transition_two_stage: bool,
     two_stage_applicability_required: bool,
     limited_grounding_requested: bool,
@@ -833,6 +1034,10 @@ def _decision_sources(
         sources.append("fixture_family_meta")
     if high_information_two_stage:
         sources.append("high_information_structure_family")
+    if source_unavailable_high_information_boundary:
+        sources.append(_P4_3_SOURCE_UNAVAILABLE_BOUNDARY_SOURCE)
+    if rich_visible_low_information_boundary:
+        sources.append(_P4_3_RICH_VISIBLE_LOW_INFO_BOUNDARY_SOURCE)
     if material_relationship_transition_two_stage:
         sources.append("material_relationship_transition_two_stage")
     if limited_grounding_requested:

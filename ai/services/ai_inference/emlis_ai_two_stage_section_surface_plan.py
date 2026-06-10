@@ -92,10 +92,10 @@ _MODE_SECTION_BUDGET_BY_MODE: Final = {
         "reception_max": 2,
     },
     EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID: {
-        "observation_min": 1,
-        "observation_max": 1,
-        "reception_min": 2,
-        "reception_max": 2,
+        "observation_min": 2,
+        "observation_max": 2,
+        "reception_min": 1,
+        "reception_max": 1,
     },
     "low_information_question": {
         "observation_min": 1,
@@ -382,6 +382,12 @@ def build_two_stage_section_budget_policy(
         "phase10_structure_insight_surface_limited_family_only": True,
         "phase10_structure_insight_surface_deep_insight_for_daily_unpleasant": False,
         "phase10_structure_insight_surface_deep_insight_for_low_information": False,
+        "p4_7_structure_question_section_budget_aligned": bool(mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_observation_min": budget["observation_min"] if mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID else 0,
+        "p4_7_structure_question_reception_max": budget["reception_max"] if mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID else 0,
+        "p4_7_structure_question_question_only_forbidden": bool(mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_comfort_only_forbidden": bool(mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_p6_deep_insight_blocked": bool(mode_id == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
         "comment_text_generated": False,
         "completed_reply_template_used": False,
         "fixed_sentence_template_used": False,
@@ -423,6 +429,11 @@ def _default_observation_surface_intents(reception_mode_id: str) -> list[str]:
             "observation_insight_seed",
             "soft_inference_surface_required",
             "single_record_scope_only",
+            "structure_question_anchor_required",
+            "visible_relation_or_state_anchor_required",
+            "unresolved_or_conflict_anchor_required",
+            "comfort_only_forbidden",
+            "p6_deep_insight_backlog_only",
         ]
     return [
         "brief_current_input_observation",
@@ -469,6 +480,11 @@ def _default_reception_surface_intents(reception_mode_id: str) -> list[str]:
             "soft_observation_not_fact_claim",
             "overclaim_diagnosis_personality_forbidden",
             "fixed_template_reception_forbidden",
+            "structure_question_soft_reception",
+            "emlis_reception_anchor_required",
+            "question_only_forbidden",
+            "cause_personality_intent_claim_forbidden",
+            "p6_over_insight_forbidden",
         ]
     return [
         "explicit_reaction_receiving",
@@ -680,6 +696,9 @@ def build_two_stage_section_surface_plan(
         "comment_text_body_included": False,
         "raw_input_included": False,
         "public_response_key_added": False,
+        "p4_7_structure_question_family_tuning_ready": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_current_input_scope_only": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_p6_deep_insight_blocked": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
     }
     section_budget_policy = build_two_stage_section_budget_policy(
         reception_mode,
@@ -757,6 +776,11 @@ def build_two_stage_section_surface_plan(
         "section_budget_raw_input_included": False,
         "section_budget_display_gate_relaxed": False,
         "section_budget_grounding_gate_relaxed": False,
+        "p4_7_structure_question_family_tuning_ready": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_observation_ratio_section_aligned": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID and ratio_reason == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_RATIO_REASON),
+        "p4_7_structure_question_question_only_forbidden": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_comfort_only_forbidden": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
+        "p4_7_structure_question_p6_deep_insight_blocked": bool(reception_mode == EMLIS_TWO_STAGE_STRUCTURE_QUESTION_MODE_ID),
         "surface_joiner": _clean(role_plan.get("surface_joiner")) or "comment_text_two_stage_joiner",
         "joined_comment_text_required": True,
         "section_labels_required": True,
