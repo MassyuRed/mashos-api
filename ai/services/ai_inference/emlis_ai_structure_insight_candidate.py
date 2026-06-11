@@ -618,8 +618,14 @@ def build_structure_insight_candidate_material(
     relation_families = _detect_relation_families(bundle, observation_relation_ids)
 
     # Safety-triage material is not converted into normal Structure Insight.
+    # Keep only the internally grounded self-denial identity split candidate so
+    # downstream gates can attach forbidden-claim boundaries without surfacing it.
     if bundle.material_quality == MATERIAL_QUALITY_SAFETY_TRIAGE_REQUIRED:
-        relation_families = []
+        relation_families = (
+            [RELATION_SELF_DENIAL_IDENTITY_SPLIT]
+            if RELATION_SELF_DENIAL_IDENTITY_SPLIT in relation_families
+            else []
+        )
 
     supporting_by_family: dict[str, list[str]] = {}
     for relation_id in observation_relation_ids:
