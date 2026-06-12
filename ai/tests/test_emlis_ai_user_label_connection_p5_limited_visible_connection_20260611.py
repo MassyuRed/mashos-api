@@ -162,6 +162,17 @@ def test_p5_6_applies_limited_visible_connection_only_after_p5_1_to_p5_5_pass() 
     assert meta["release_allowed"] is False
     assert meta["public_release_applied"] is False
     assert meta["product_quality_released"] is False
+    assert meta["visible_connection_route"] == "p5_6_boundary_internal_phase8_connector"
+    assert meta["p5_6_boundary_enforced"] is True
+    assert meta["phase8_connector_scope"] == "p5_6_internal_boundary_only"
+    assert meta["phase8_direct_reply_service_call_allowed"] is False
+    assert meta["phase8_direct_visible_connection_from_reply_service"] is False
+    assert meta["old_phase8_direct_visible_connection_replaced_by_p5_6_boundary"] is True
+    assert meta["legacy_phase8_direct_call_used"] is False
+    assert meta["phase8_connector_called_inside_p5_6_boundary"] is True
+    assert meta["post_connection_regate_required"] is True
+    assert meta["post_connection_gate_passed"] is True
+    assert meta["p5_red_002_closed_by_route"] is True
     assert _contains_forbidden_raw_key(meta) is False
     assert_user_label_connection_p5_limited_visible_connection_contract(meta)
 
@@ -298,6 +309,17 @@ def test_p5_6_public_summary_is_safe_and_does_not_expose_comment_text_body_or_re
     assert summary["comment_text_body_included"] is False
     assert summary["history_raw_text_included"] is False
     assert summary["release_allowed"] is False
+    assert summary["visible_connection_route"] == "p5_6_boundary_internal_phase8_connector"
+    assert summary["p5_6_boundary_enforced"] is True
+    assert summary["phase8_connector_scope"] == "p5_6_internal_boundary_only"
+    assert summary["phase8_direct_reply_service_call_allowed"] is False
+    assert summary["phase8_direct_visible_connection_from_reply_service"] is False
+    assert summary["old_phase8_direct_visible_connection_replaced_by_p5_6_boundary"] is True
+    assert summary["legacy_phase8_direct_call_used"] is False
+    assert summary["phase8_connector_called_inside_p5_6_boundary"] is True
+    assert summary["post_connection_regate_required"] is True
+    assert summary["post_connection_gate_passed"] is True
+    assert summary["p5_red_002_closed_by_route"] is True
     assert _contains_forbidden_raw_key(summary) is False
     assert_user_label_connection_p5_limited_visible_connection_contract(summary, allow_partial=True)
 

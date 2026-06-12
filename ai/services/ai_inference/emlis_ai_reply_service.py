@@ -58,10 +58,37 @@ from emlis_ai_user_label_connection_public_meta import (
     user_label_connection_public_summary,
 )
 from emlis_ai_user_label_connection_surface import (
-    build_user_label_connection_limited_visible_surface_connection,
     build_user_label_connection_visible_surface_binding_meta,
     user_label_connection_visible_surface_public_summary,
 )
+from emlis_ai_user_label_connection_p5_readiness import build_user_label_connection_p5_readiness
+from emlis_ai_user_label_connection_p5_visibility_boundary import build_user_label_connection_p5_visibility_boundary
+from emlis_ai_user_label_connection_p5_eligibility_matrix import build_user_label_connection_p5_eligibility_matrix
+from emlis_ai_user_label_connection_p5_surface_role_plan import build_user_label_connection_p5_surface_role_plan
+from emlis_ai_user_label_connection_p5_safety_guard import build_user_label_connection_p5_safety_guard
+from emlis_ai_user_label_connection_p5_product_quality_review import build_user_label_connection_p5_product_quality_review
+from emlis_ai_user_label_connection_p5_limited_visible_connection import build_user_label_connection_p5_limited_visible_connection
+from emlis_ai_user_label_connection_p5_regression_handoff import build_user_label_connection_p5_regression_handoff
+from emlis_ai_structure_insight_p6_entry_freeze import build_structure_insight_p6_entry_freeze
+from emlis_ai_structure_insight_p6_inventory import build_structure_insight_p6_inventory
+from emlis_ai_structure_insight_p6_family_boundary import build_structure_insight_p6_family_boundary
+from emlis_ai_structure_insight_p6_relation_policy import build_structure_insight_p6_relation_policy
+from emlis_ai_structure_insight_p6_quality_rubric import (
+    P6_QUALITY_RUBRIC_DIMENSION_TARGETS,
+    build_structure_insight_p6_quality_rubric,
+)
+from emlis_ai_structure_insight_p6_gate_hardening import build_structure_insight_p6_gate_hardening
+from emlis_ai_structure_insight_p6_surface_role_plan import build_structure_insight_p6_surface_role_plan
+from emlis_ai_structure_insight_p6_family_review import build_structure_insight_p6_family_review
+from emlis_ai_structure_insight_p6_product_quality_review import build_structure_insight_p6_product_quality_review
+from emlis_ai_structure_insight_p6_regression_handoff import build_structure_insight_p6_regression_handoff
+from emlis_ai_structure_insight_p6_limited_surface_connection import (
+    REASON_P6_POST_CONNECTION_GATE_BLOCKED,
+    build_structure_insight_p6_limited_surface_candidate_probe,
+    build_structure_insight_p6_limited_surface_connection,
+    structure_insight_p6_limited_surface_connection_public_summary,
+)
+from emlis_ai_p5_p6_split_test_matrix import build_p5_p6_handoff_lock
 from emlis_ai_world_model_service import build_emlis_ai_world_model
 
 from emlis_ai_evidence_ledger_service import build_evidence_ledger
@@ -7253,8 +7280,12 @@ async def render_emlis_ai_reply(
 
     user_label_connection_phase8_visible_meta: Dict[str, Any] = {}
     user_label_connection_phase8_binding_meta: Dict[str, Any] = {}
+    user_label_connection_p5_runtime_bridge_summary: Dict[str, Any] = {}
+    user_label_connection_p5_regression_handoff_for_p6: Dict[str, Any] = {}
+    structure_insight_p6_runtime_bridge_summary: Dict[str, Any] = {}
+    p5_p6_split_test_matrix_handoff_summary: Dict[str, Any] = {}
 
-    def _phase8_passed_report(report: Any, *, default: bool = False) -> bool:
+    def _p5_passed_report(report: Any, *, default: bool = False) -> bool:
         if isinstance(report, Mapping):
             if report.get("passed") is True:
                 return True
@@ -7264,7 +7295,7 @@ async def render_emlis_ai_reply(
             if action in {"allow", "pass", "passed", "accept"}:
                 return True
             classification = str(report.get("classification") or "").strip().lower()
-            if classification in {"green", "safe", "accepted", "passed"}:
+            if classification in {"green", "safe", "accepted", "passed", "pass"}:
                 return True
             status = str(report.get("status") or "").strip().lower()
             if status in {"passed", "pass", "ok", "accepted"}:
@@ -7272,11 +7303,24 @@ async def render_emlis_ai_reply(
             return default
         return default
 
-    def _phase8_existing_gate_reports_for(
+    def _p5_generic_report_passed(report: Any, *, default: bool = True) -> bool:
+        if isinstance(report, Mapping):
+            return _p5_passed_report(report, default=default)
+        if getattr(report, "passed", None) is True:
+            return True
+        if getattr(report, "blocked", None) is True:
+            return False
+        if list(getattr(report, "rejection_reasons", []) or []):
+            return False
+        return default
+
+    def _p5_existing_gate_reports_for(
         *,
         display_status: str,
         reader: Any,
         grounding: Any,
+        template_echo: Any = None,
+        safety: Any = None,
         runtime_report: Mapping[str, Any] | None,
         visible_report: Mapping[str, Any] | None,
     ) -> Dict[str, Any]:
@@ -7290,17 +7334,599 @@ async def render_emlis_ai_reply(
                 "passed": bool(getattr(grounding, "passed", False)),
                 "primary_reason": "" if bool(getattr(grounding, "passed", False)) else "grounding_not_passed",
             },
+            "template_echo": {
+                "passed": _p5_generic_report_passed(template_echo, default=True),
+                "primary_reason": "" if _p5_generic_report_passed(template_echo, default=True) else "template_echo_not_passed",
+            },
+            "safety": {
+                "passed": _p5_generic_report_passed(safety, default=True),
+                "primary_reason": "" if _p5_generic_report_passed(safety, default=True) else "safety_not_passed",
+            },
             "runtime_surface_pre_return_gate": {
-                "passed": _phase8_passed_report(runtime_report or {}, default=False),
-                "primary_reason": "" if _phase8_passed_report(runtime_report or {}, default=False) else "runtime_surface_pre_return_gate_not_passed",
+                "passed": _p5_passed_report(runtime_report or {}, default=False),
+                "primary_reason": "" if _p5_passed_report(runtime_report or {}, default=False) else "runtime_surface_pre_return_gate_not_passed",
             },
             "visible_surface_acceptance_gate": {
-                "passed": _phase8_passed_report(visible_report or {}, default=False),
-                "primary_reason": "" if _phase8_passed_report(visible_report or {}, default=False) else "visible_surface_acceptance_gate_not_passed",
+                "passed": _p5_passed_report(visible_report or {}, default=False),
+                "primary_reason": "" if _p5_passed_report(visible_report or {}, default=False) else "visible_surface_acceptance_gate_not_passed",
+            },
+        }
+
+    def _p5_step_decision(value: Mapping[str, Any] | None, *keys: str) -> str:
+        source = value if isinstance(value, Mapping) else {}
+        for key in keys or ("decision", "handoff_decision"):
+            text = str(source.get(key) or "").strip()
+            if text:
+                return text
+        return "evaluated"
+
+    def _p5_runtime_bridge_contract_summary(
+        *,
+        p5_readiness: Mapping[str, Any] | None = None,
+        p5_visibility_boundary: Mapping[str, Any] | None = None,
+        p5_eligibility_matrix: Mapping[str, Any] | None = None,
+        p5_surface_role_plan: Mapping[str, Any] | None = None,
+        p5_safety_guard: Mapping[str, Any] | None = None,
+        p5_product_quality_review: Mapping[str, Any] | None = None,
+        p5_limited_visible_connection: Mapping[str, Any] | None = None,
+        p5_regression_handoff: Mapping[str, Any] | None = None,
+        evaluated: bool = False,
+        error_code: str = "",
+    ) -> Dict[str, Any]:
+        readiness = p5_readiness if isinstance(p5_readiness, Mapping) else {}
+        visibility = p5_visibility_boundary if isinstance(p5_visibility_boundary, Mapping) else {}
+        eligibility = p5_eligibility_matrix if isinstance(p5_eligibility_matrix, Mapping) else {}
+        role_plan = p5_surface_role_plan if isinstance(p5_surface_role_plan, Mapping) else {}
+        safety_guard = p5_safety_guard if isinstance(p5_safety_guard, Mapping) else {}
+        quality_review = p5_product_quality_review if isinstance(p5_product_quality_review, Mapping) else {}
+        limited = p5_limited_visible_connection if isinstance(p5_limited_visible_connection, Mapping) else {}
+        handoff_payload = p5_regression_handoff if isinstance(p5_regression_handoff, Mapping) else {}
+        handoff_summary = handoff_payload.get("summary") if isinstance(handoff_payload.get("summary"), Mapping) else handoff_payload
+
+        blocked_reason_codes: List[str] = []
+        for source in (readiness, visibility, eligibility, role_plan, safety_guard, quality_review, limited, handoff_summary):
+            if not isinstance(source, Mapping):
+                continue
+            blocked_reason_codes.extend(list(source.get("p5_hold_reason_codes") or []))
+            blocked_reason_codes.extend(list(source.get("rejection_reasons") or []))
+            blocked_reason_codes.extend(list(source.get("blocker_reason_codes") or []))
+            blocked_reason_codes.extend(list(source.get("decision_reason_codes") or []))
+            blocked_reason_codes.extend(list(source.get("p5_continue_material") or []))
+            blocked_reason_codes.extend(list(source.get("p6_hold_material") or []))
+        if error_code:
+            blocked_reason_codes.append(error_code)
+        if not quality_review or int(quality_review.get("review_count") or 0) <= 0:
+            blocked_reason_codes.append("p5_product_quality_review_missing")
+        blocked_reason_codes = _dedupe_reason_codes(blocked_reason_codes)
+
+        visible_applied = bool(limited.get("limited_visible_connection_applied") is True or limited.get("applied") is True)
+        review_count = int(quality_review.get("review_count") or 0)
+        product_quality_confirmed = bool(
+            quality_review.get("p5_limited_visible_allowed") is True
+            and review_count > 0
+            and not list(quality_review.get("blocker_reason_codes") or [])
+        )
+        human_qa_hold_reason_codes = _dedupe_reason_codes(
+            [
+                *(quality_review.get("blocker_reason_codes") or []),
+                *([] if product_quality_confirmed else ["P5-HOLD-001", "p5_human_blind_qa_unconfirmed"]),
+            ]
+        )
+        product_quality_confirmation_layer = {
+            "layer": "product_quality_confirmation",
+            "product_quality_confirmed": product_quality_confirmed,
+            "product_quality_confirmation_source": "human_blind_qa_ratings" if product_quality_confirmed else "none",
+            "human_qa_status": "confirmed" if product_quality_confirmed else "pending",
+            "human_qa_required": True,
+            "human_qa_completed": product_quality_confirmed,
+            "human_qa_pending": not product_quality_confirmed,
+            "human_qa_hold_id": "" if product_quality_confirmed else "P5-HOLD-001",
+            "human_qa_hold_reason_codes": human_qa_hold_reason_codes,
+            "review_count": review_count,
+            "ratings_only": quality_review.get("ratings_only") is True,
+            "machine_metrics_used_for_read_feeling": False,
+            "read_feeling_auto_filled_from_machine_metrics": False,
+            "release_allowed": False,
+        }
+        return {
+            "schema_version": "cocolon.emlis.user_label_connection.p5_runtime_bridge.v1",
+            "step": "P5_RuntimeBridge_Repair_R4_20260612",
+            "previous_step": "P5_RuntimeBridge_Repair_R3_20260612",
+            "r4_boundary_step": "P5_RuntimeBridge_PublicMetaHumanQABoundary_R4_20260612",
+            "visible_connection_owner": "p5_6_limited_visible_connection_boundary",
+            "legacy_phase8_connector_scope": "p5_6_internal_boundary_only",
+            "reply_service_direct_phase8_call_allowed": False,
+            "phase8_connector_internal_to_p5_6_boundary": bool(limited.get("phase8_connector_internal_to_p5_6_boundary") is True),
+            "p5_runtime_evaluated": bool(evaluated),
+            "runtime_evaluated": bool(evaluated),
+            "p5_visible_applied": visible_applied,
+            "visible_applied": visible_applied,
+            "p5_product_quality_confirmed": product_quality_confirmed,
+            "product_quality_confirmed": product_quality_confirmed,
+            "p5_human_blind_qa_confirmed": product_quality_confirmed,
+            "human_blind_qa_confirmed": product_quality_confirmed,
+            "product_quality_complete_claim_allowed": False,
+            "p5_completion_claim_allowed": False,
+            "product_quality_confirmation_status": "confirmed" if product_quality_confirmed else "human_qa_pending",
+            "product_quality_confirmation_source": product_quality_confirmation_layer["product_quality_confirmation_source"],
+            "human_qa_status": product_quality_confirmation_layer["human_qa_status"],
+            "human_qa_required": True,
+            "human_qa_completed": product_quality_confirmed,
+            "human_qa_pending": not product_quality_confirmed,
+            "p5_hold_001_human_qa_unconfirmed": not product_quality_confirmed,
+            "runtime_evaluated_is_not_product_quality_confirmed": bool(evaluated and not product_quality_confirmed),
+            "visible_applied_is_not_product_quality_confirmed": bool(visible_applied and not product_quality_confirmed),
+            "human_qa_hold_reason_codes": human_qa_hold_reason_codes,
+            "runtime_evaluation_layer": {
+                "layer": "runtime_evaluated",
+                "runtime_evaluated": bool(evaluated),
+                "runtime_complete_claim_allowed": False,
+                "completion_claim_allowed": False,
+            },
+            "visible_application_layer": {
+                "layer": "visible_applied",
+                "visible_applied": visible_applied,
+                "comment_text_owner": "input_feedback.comment_text",
+                "visible_application_is_product_quality_confirmation": False,
+                "rn_visible_contract_changed": False,
+            },
+            "product_quality_confirmation_layer": product_quality_confirmation_layer,
+            "visible_connection_route": str(
+                limited.get("visible_connection_route") or "p5_6_boundary_internal_phase8_connector"
+            ),
+            "phase8_connector_scope": str(limited.get("phase8_connector_scope") or "p5_6_internal_boundary_only"),
+            "legacy_phase8_direct_call_used": False,
+            "phase8_connector_called_inside_p5_6_boundary": bool(
+                limited.get("phase8_connector_called_inside_p5_6_boundary") is True
+            ),
+            "post_connection_regate_required": True,
+            "post_connection_gate_passed": bool(limited.get("post_connection_gate_passed") is True),
+            "p5_red_002_closed_by_route": True,
+            "p5_step_summary": {
+                "p5_0_readiness": _p5_step_decision(readiness),
+                "p5_1_visibility_boundary": _p5_step_decision(visibility),
+                "p5_2_eligibility_matrix": _p5_step_decision(eligibility),
+                "p5_3_surface_role_plan": _p5_step_decision(role_plan, "surface_plan_kind", "decision"),
+                "p5_4_safety_guard": _p5_step_decision(safety_guard),
+                "p5_5_product_quality_review": "allowed" if quality_review.get("p5_limited_visible_allowed") is True else "blocked",
+                "p5_6_limited_visible_connection": "applied" if visible_applied else "blocked",
+                "p5_7_regression_handoff": _p5_step_decision(handoff_summary, "handoff_decision", "decision"),
+            },
+            "blocked_reason_codes": blocked_reason_codes,
+            "comment_text_owner": "input_feedback.comment_text",
+            "release_allowed": False,
+            "public_contract": {
+                "public_response_key_added": False,
+                "rn_visible_contract_changed": False,
+                "api_route_changed": False,
+                "db_schema_changed": False,
+                "release_allowed": False,
+            },
+            "body_free": {
+                "raw_input_included": False,
+                "raw_text_included": False,
+                "history_raw_text_included": False,
+                "comment_text_body_included": False,
+                "candidate_body_included": False,
+                "surface_body_included": False,
+                "reviewer_free_text_included": False,
+                "actual_appended_line_included": False,
+                "terminal_output_included": False,
+            },
+        }
+
+    def _p6_safe_summary(value: Mapping[str, Any] | None) -> Dict[str, Any]:
+        source = value if isinstance(value, Mapping) else {}
+        summary = source.get("summary") if isinstance(source.get("summary"), Mapping) else None
+        return dict(summary or source)
+
+    def _p6_step_decision(value: Mapping[str, Any] | None, *keys: str) -> str:
+        source = _p6_safe_summary(value)
+        for key in keys or ("decision", "handoff_decision", "verdict"):
+            raw_value = source.get(key)
+            if isinstance(raw_value, bool):
+                if raw_value is True:
+                    if key == "p6_inventory_ready":
+                        return "ready"
+                    if key == "p6_entry_allowed":
+                        return "p6_entry_allowed"
+                    return "passed"
+                continue
+            text = str(raw_value or "").strip()
+            if text:
+                return text
+        if source.get("p6_inventory_ready") is True:
+            return "ready"
+        if source.get("p6_entry_allowed") is True:
+            return "p6_entry_allowed"
+        if source.get("allow_limited_surface") is True:
+            return "allow_limited_surface"
+        return "evaluated"
+
+    _P6_R8_NO_CONNECT_FAMILY_CATEGORY_MARKERS = {
+        "low_information_short": "low_information_short",
+        "low_information": "low_information_short",
+        "limited_grounding": "limited_grounding",
+        "daily_unpleasant": "daily_unpleasant",
+        "daily_unpleasant_reception": "daily_unpleasant",
+        "daily_positive": "daily_positive",
+        "daily_positive_reception": "daily_positive",
+        "positive_only": "positive_only",
+        "positive_only_reception": "positive_only",
+        "safety_adjacent": "safety_adjacent",
+        "safety_triage_required": "safety_triage_required",
+        "self_denial": "self_denial",
+        "self_denial_safety_adjacent": "self_denial",
+        "target_judgement": "target_judgement",
+        "target_judgment": "target_judgement",
+        "anger_or_boundary": "anger_or_boundary",
+        "anger_attack_or_target_blame": "anger_or_boundary",
+    }
+
+    def _p6_normalize_runtime_marker(value: Any) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def _p6_current_tokens_for_runtime_family(current: Mapping[str, Any] | None) -> List[str]:
+        cur = current if isinstance(current, Mapping) else {}
+        values: List[str] = []
+        for key in ("category", "categories", "emotions"):
+            raw_value = cur.get(key)
+            items = raw_value if isinstance(raw_value, list) else [raw_value]
+            for item in items:
+                token = _p6_normalize_runtime_marker(item)
+                if token:
+                    values.append(token)
+        details = cur.get("emotion_details")
+        if isinstance(details, list):
+            for item in details:
+                if isinstance(item, Mapping):
+                    token = _p6_normalize_runtime_marker(item.get("type"))
+                    if token:
+                        values.append(token)
+        return values
+
+    def _p6_family_for_runtime_evaluation(
+        *,
+        current: Mapping[str, Any] | None,
+        material_route: Mapping[str, Any] | None,
+        safety_triage: Mapping[str, Any] | None,
+    ) -> str:
+        route = material_route if isinstance(material_route, Mapping) else {}
+        safety = safety_triage if isinstance(safety_triage, Mapping) else {}
+        material_quality_text = str(route.get("material_quality") or "").strip()
+        safety_kind = str(safety.get("safety_triage_kind") or "").strip()
+        if safety_kind and safety_kind != TRIAGE_SAFE_OBSERVATION:
+            return "safety_triage_required"
+        cur = current if isinstance(current, Mapping) else {}
+        category_values: List[str] = []
+        for raw in cur.get("category") if isinstance(cur.get("category"), list) else [cur.get("category")]:
+            text = str(raw or "").strip()
+            if text:
+                category_values.append(text)
+        runtime_tokens = _p6_current_tokens_for_runtime_family(cur)
+        for token in runtime_tokens:
+            mapped = _P6_R8_NO_CONNECT_FAMILY_CATEGORY_MARKERS.get(token)
+            if mapped:
+                return mapped
+        if any(token in runtime_tokens for token in ("うれしい", "嬉しい", "喜び", "安心")):
+            return "daily_positive"
+        if any(token in runtime_tokens for token in ("自己否定", "消えたい", "もう無理")):
+            return "self_denial"
+        if material_quality_text == "low_information":
+            return "low_information_short"
+        if material_quality_text == "limited_grounding":
+            return "limited_grounding"
+        if route.get("question_required") is True or any(
+            token in " ".join(category_values)
+            for token in ("自己理解", "整理", "問い", "構造", "内省")
+        ):
+            return "structure_question"
+        return "none"
+
+    def _p6_family_from_current_input() -> str:
+        return _p6_family_for_runtime_evaluation(
+            current=current_input if isinstance(current_input, Mapping) else {},
+            material_route=phase20_3_material_route_meta,
+            safety_triage=safety_triage_meta,
+        )
+
+    def _p6_relation_family_for_runtime_evaluation(
+        *,
+        family: str,
+        current: Mapping[str, Any] | None,
+    ) -> str:
+        if family != "structure_question":
+            if family in {"low_information", "low_information_short", "limited_grounding"}:
+                return "low_information_unspecified_weight"
+            if family in {"safety_triage_required", "safety_adjacent", "self_denial"}:
+                return "self_denial_identity_split"
+            if family == "target_judgement":
+                return "target_judgement_agreement"
+            if family == "anger_or_boundary":
+                return "value_line_crossed"
+            if family in {"daily_positive", "positive_only"}:
+                return "positive_change_recovery"
+            if family == "daily_unpleasant":
+                return "daily_discomfort_observation"
+            return "history_fact_line_as_insight"
+        cur = current if isinstance(current, Mapping) else {}
+        emotions = [str(item or "") for item in (cur.get("emotions") or [])] if isinstance(cur.get("emotions"), list) else []
+        emotion_details = cur.get("emotion_details") if isinstance(cur.get("emotion_details"), list) else []
+        for item in emotion_details:
+            if isinstance(item, Mapping):
+                emotions.append(str(item.get("type") or ""))
+        joined = " ".join(emotions)
+        if any(token in joined for token in ("迷い", "怖", "不安", "焦り")):
+            return "uncertainty_effort_pair"
+        return "desire_blockage_conflict"
+
+    def _p6_dependency_status_from_entry(p6_entry_freeze: Mapping[str, Any] | None) -> str:
+        entry_summary = _p6_safe_summary(p6_entry_freeze)
+        if entry_summary.get("p4_return_required") is True:
+            return "p4_return_required"
+        if entry_summary.get("p5_return_required") is True:
+            return "p5_return_required"
+        if entry_summary.get("p6_entry_allowed") is True:
+            return "p5_ready"
+        return "p5_hold"
+
+    def _p6_collect_reason_codes(*sources: Mapping[str, Any] | None) -> List[str]:
+        reason_codes: List[str] = []
+        for source in sources:
+            summary = _p6_safe_summary(source)
+            for key in (
+                "decision_reason_codes",
+                "source_reason_codes",
+                "blocker_reason_codes",
+                "required_regression_missing_suites",
+                "required_regression_red_suites",
+                "p4_return_material",
+                "p5_return_material",
+                "p6_continue_material",
+                "p7_hold_material",
+                "no_connect_reason_codes",
+                "blocked_reason_codes",
+                "rejection_reasons",
+            ):
+                reason_codes.extend(list(summary.get(key) or []))
+        return _dedupe_reason_codes(reason_codes)
+
+    _P6_R7_ALLOWED_STRUCTURE_QUESTION_RELATIONS = {
+        "desire_blockage_conflict",
+        "effort_residue",
+        "mixed_emotion_coexistence",
+        "uncertainty_effort_pair",
+    }
+
+    def _p6_limited_surface_quality_rows_for_runtime(
+        *,
+        family: str,
+        relation_family: str,
+        p5_dependency_status: str,
+        surface_candidate_available: bool,
+    ) -> List[Dict[str, Any]]:
+        if p5_dependency_status != "p5_ready":
+            return []
+        if family != "structure_question":
+            return []
+        if relation_family not in _P6_R7_ALLOWED_STRUCTURE_QUESTION_RELATIONS:
+            return []
+        if not surface_candidate_available:
+            return []
+        return [
+            {
+                "row_id": "p6_runtime_bridge_r7_structure_question_limited_surface_quality",
+                "family": "structure_question",
+                "relation_family": relation_family,
+                "ratings": dict(P6_QUALITY_RUBRIC_DIMENSION_TARGETS),
+                "red_flags": [],
+                "repair_flags": [],
+                "ratings_source": "runtime_limited_surface_safety_threshold",
+                "human_blind_qa_completed": False,
+                "release_allowed": False,
+            }
+        ]
+
+    def _p6_runtime_bridge_contract_summary(
+        *,
+        p6_entry_freeze: Mapping[str, Any] | None = None,
+        p6_inventory: Mapping[str, Any] | None = None,
+        p6_family_boundary: Mapping[str, Any] | None = None,
+        p6_relation_policy: Mapping[str, Any] | None = None,
+        p6_quality_rubric: Mapping[str, Any] | None = None,
+        p6_gate_hardening: Mapping[str, Any] | None = None,
+        p6_surface_role_plan: Mapping[str, Any] | None = None,
+        p6_family_review: Mapping[str, Any] | None = None,
+        p6_product_quality_review: Mapping[str, Any] | None = None,
+        p6_regression_handoff: Mapping[str, Any] | None = None,
+        p6_limited_surface_connection: Mapping[str, Any] | None = None,
+        p6_post_connection_regate: Mapping[str, Any] | None = None,
+        evaluated: bool = False,
+        family: str = "none",
+        error_code: str = "",
+    ) -> Dict[str, Any]:
+        p5_dependency_status = _p6_dependency_status_from_entry(p6_entry_freeze)
+        family_id = str(family or "none").strip() or "none"
+        limited_surface_summary = structure_insight_p6_limited_surface_connection_public_summary(
+            p6_limited_surface_connection
+        ) or _p6_safe_summary(p6_limited_surface_connection)
+        post_regate_summary = _p6_safe_summary(p6_post_connection_regate)
+        visible_applied = bool(
+            limited_surface_summary.get("visible_applied") is True
+            or limited_surface_summary.get("p6_visible_applied") is True
+            or limited_surface_summary.get("applied") is True
+        )
+        visible_family = str(limited_surface_summary.get("visible_family") or ("structure_question" if visible_applied else "none"))
+        if visible_family not in {"structure_question", "none"}:
+            visible_family = "none"
+        raw_seed_count = limited_surface_summary.get("insight_seed_count")
+        try:
+            insight_seed_count = min(1, max(0, int(raw_seed_count))) if raw_seed_count is not None else (1 if visible_applied else 0)
+        except (TypeError, ValueError):
+            insight_seed_count = 1 if visible_applied else 0
+        r7_attempted = bool(evaluated)
+        r7_candidate_generated = bool(
+            limited_surface_summary.get("surface_key")
+            or limited_surface_summary.get("surface_candidate_key")
+            or limited_surface_summary.get("structure_insight_surface_key")
+        )
+        post_blocked = bool(
+            limited_surface_summary.get("p6_post_connection_gate_blocked") is True
+            or (bool(post_regate_summary) and post_regate_summary.get("p6_candidate_kept") is False)
+        )
+        limited_surface_reasons = list(
+            limited_surface_summary.get("blocked_reason_codes")
+            or limited_surface_summary.get("rejection_reasons")
+            or []
+        )
+        p6_visible_not_applied_reason_codes = _dedupe_reason_codes(
+            [
+                *([] if visible_applied else ["r7_limited_surface_not_applied"]),
+                *(limited_surface_reasons if not visible_applied else []),
+                *([REASON_P6_POST_CONNECTION_GATE_BLOCKED] if post_blocked else []),
+                *([] if family_id == "structure_question" else [f"no_connect_family:{family_id}"]),
+                *([error_code] if error_code else []),
+            ]
+        )
+        blocked_reason_codes = _dedupe_reason_codes(
+            [
+                *p6_visible_not_applied_reason_codes,
+                *_p6_collect_reason_codes(
+                    p6_entry_freeze,
+                    p6_inventory,
+                    p6_family_boundary,
+                    p6_relation_policy,
+                    p6_quality_rubric,
+                    p6_gate_hardening,
+                    p6_surface_role_plan,
+                    p6_family_review,
+                    p6_product_quality_review,
+                    p6_regression_handoff,
+                    p6_limited_surface_connection,
+                ),
+            ]
+        )[:20]
+        p6_product_quality_summary = _p6_safe_summary(p6_product_quality_review)
+        p6_product_quality_review_ratings_only = bool(
+            p6_product_quality_summary.get("ratings_only") is True
+            or (isinstance(p6_product_quality_review, Mapping) and p6_product_quality_review.get("ratings_only") is True)
+        )
+        limited_surface_meta = {
+            "r7_limited_surface_meta_summary_only": True,
+            "schema_version": str(limited_surface_summary.get("schema_version") or ""),
+            "step": str(limited_surface_summary.get("step") or ""),
+            "visible_applied": visible_applied,
+            "visible_family": visible_family,
+            "runtime_family": family_id,
+            "relation_family": str(limited_surface_summary.get("relation_family") or ""),
+            "surface_key": str(limited_surface_summary.get("surface_key") or ""),
+            "section_placement": str(limited_surface_summary.get("section_placement") or "seen_section"),
+            "insight_seed_count": insight_seed_count,
+            "max_insight_seed_count": 1,
+            "post_connection_gate_passed": bool(limited_surface_summary.get("post_connection_gate_passed") is True and not post_blocked),
+            "p6_post_connection_gate_blocked": post_blocked,
+            "gate_threshold_relaxed": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_body_included": False,
+            "candidate_body_included": False,
+            "surface_body_included": False,
+            "release_allowed": False,
+        }
+        return {
+            "schema_version": "cocolon.emlis.structure_insight.p6_runtime_bridge.v1",
+            "step": "P6_RuntimeBridge_Repair_20260612",
+            "r7_repair_step": "R7_LimitedSurfaceConnection_20260612",
+            "p6_runtime_bridge": True,
+            "structure_insight_p6_runtime_bridge": True,
+            "runtime_evaluated": bool(evaluated),
+            "p6_runtime_evaluated": bool(evaluated),
+            "visible_applied": visible_applied,
+            "p6_visible_applied": visible_applied,
+            "visible_family": visible_family,
+            "runtime_family": family_id,
+            "r8_repair_step": "R8_NoConnectFamilySafetyLowInfoDailyPositiveRegression_20260612",
+            "r8_no_connect_regression": True,
+            "p6_product_quality_review_ratings_only": p6_product_quality_review_ratings_only,
+            "product_quality_review_ratings_only": p6_product_quality_review_ratings_only,
+            "no_connect_family_runtime": "" if family_id == "structure_question" else family_id,
+            "no_connect_family_blocked": bool(family_id != "structure_question" and not visible_applied),
+            "no_connect_family_runtime_blocked": bool(family_id != "structure_question" and not visible_applied),
+            "no_connect_family_visible_applied": False,
+            "no_deep_insight_for_daily": True,
+            "no_deep_insight_for_low_information": True,
+            "no_deep_insight_for_positive_only": True,
+            "no_deep_insight_for_safety_adjacent": True,
+            "p5_dependency_status": p5_dependency_status,
+            "p6_step_summary": {
+                "p6_0_entry_freeze": _p6_step_decision(p6_entry_freeze, "handoff_decision"),
+                "p6_1_inventory": _p6_step_decision(p6_inventory, "p6_inventory_ready"),
+                "p6_2_family_boundary": _p6_step_decision(p6_family_boundary, "decision"),
+                "p6_3_relation_policy": _p6_step_decision(p6_relation_policy, "visibility_decision", "decision"),
+                "p6_4_quality_rubric": _p6_step_decision(p6_quality_rubric, "verdict"),
+                "p6_5_gate_hardening": _p6_step_decision(p6_gate_hardening, "decision"),
+                "p6_6_surface_role_plan": _p6_step_decision(p6_surface_role_plan, "surface_plan_kind", "decision"),
+                "p6_7_family_review": _p6_step_decision(p6_family_review, "classification", "decision"),
+                "p6_8_product_quality_review": _p6_step_decision(p6_product_quality_review, "verdict"),
+                "p6_9_regression_handoff": _p6_step_decision(p6_regression_handoff, "decision"),
+                "r7_limited_surface_connection": "applied" if visible_applied else "blocked",
+            },
+            "no_connect_family_preserved": True,
+            "r7_limited_surface_connection": True,
+            "r7_structure_question_only": True,
+            "structure_question_only": True,
+            "r7_limited_surface_evaluated": r7_attempted,
+            "r7_limited_surface_connected": visible_applied,
+            "limited_surface_attempted": r7_attempted,
+            "limited_surface_candidate_generated": r7_candidate_generated,
+            "limited_surface_structure_question_only": True,
+            "limited_surface_allowed_family_only": "structure_question",
+            "limited_surface_section_placement": str(limited_surface_meta.get("section_placement") or "seen_section"),
+            "limited_surface_meta": limited_surface_meta,
+            "p6_visible_not_applied_reason_codes": p6_visible_not_applied_reason_codes,
+            "blocked_reason_codes": blocked_reason_codes,
+            "comment_text_owner": "input_feedback.comment_text",
+            "diagnosis_blocked": True,
+            "personality_classification_blocked": True,
+            "cause_assertion_blocked": True,
+            "future_prediction_blocked": True,
+            "action_instruction_blocked": True,
+            "target_judgement_blocked": True,
+            "insight_seed_count": insight_seed_count,
+            "max_insight_seed_count": 1,
+            "p6_post_connection_gate_blocked": post_blocked,
+            "post_connection_regate": dict(post_regate_summary),
+            "gate_threshold_relaxed": False,
+            "release_allowed": False,
+            "public_contract": {
+                "public_response_key_added": False,
+                "rn_visible_contract_changed": False,
+                "api_route_changed": False,
+                "db_schema_changed": False,
+                "release_allowed": False,
+                "public_release_applied": False,
+            },
+            "body_free": {
+                "raw_input_included": False,
+                "raw_text_included": False,
+                "comment_text_body_included": False,
+                "candidate_body_included": False,
+                "surface_body_included": False,
+                "history_raw_text_included": False,
+                "reviewer_free_text_included": False,
+                "terminal_output_included": False,
             },
         }
 
     if final_text and str(getattr(display_decision, "observation_status", "") or "") == "passed":
+        p5_readiness: Dict[str, Any] = {}
+        p5_visibility_boundary: Dict[str, Any] = {}
+        p5_eligibility_matrix: Dict[str, Any] = {}
+        p5_surface_role_plan: Dict[str, Any] = {}
+        p5_safety_guard: Dict[str, Any] = {}
+        p5_product_quality_review: Dict[str, Any] = {}
+        p5_limited_visible_connection_meta: Dict[str, Any] = {}
+        p5_regression_handoff: Dict[str, Any] = {}
         try:
             user_label_connection_phase8_reply_meta = {
                 "observation_reply_kind": str(
@@ -7325,39 +7951,109 @@ async def render_emlis_ai_reply(
                 safety_triage_kind=safety_triage_meta.get("safety_triage_kind"),
                 reply_flow_meta_only_connected=True,
             )
-            phase8_surface_plan = phase8_meta_only.get("surface_plan_meta") if isinstance(phase8_meta_only, Mapping) else {}
-            initial_phase8_reports = _phase8_existing_gate_reports_for(
+            phase8_material_summary = phase8_meta_only.get("material_summary") if isinstance(phase8_meta_only, Mapping) else {}
+            phase8_candidate_summary = phase8_meta_only.get("candidate_summary") if isinstance(phase8_meta_only, Mapping) else {}
+            phase8_gate_summary = phase8_meta_only.get("gate_summary") if isinstance(phase8_meta_only, Mapping) else {}
+            phase8_surface_plan_summary = phase8_meta_only.get("surface_plan_summary") if isinstance(phase8_meta_only, Mapping) else {}
+            p5_material_meta = {
+                **(dict(phase8_material_summary) if isinstance(phase8_material_summary, Mapping) else {}),
+                "source_scope": str(phase8_meta_only.get("source_scope") or phase8_meta_only.get("record_scope") or ""),
+                "record_scope": str(phase8_meta_only.get("record_scope") or phase8_meta_only.get("source_scope") or ""),
+                "capability_tier": str(phase8_meta_only.get("capability_tier") or subscription_tier or ""),
+                "history_connection_evidence_record_count": int(phase8_meta_only.get("history_connection_evidence_record_count") or 0),
+                "user_fact_grounding_boundary_passed": True,
+            }
+            p5_candidate_meta = dict(phase8_candidate_summary) if isinstance(phase8_candidate_summary, Mapping) else {}
+            p5_gate_meta = dict(phase8_gate_summary) if isinstance(phase8_gate_summary, Mapping) else {}
+            p5_surface_plan_meta = {
+                **(dict(phase8_surface_plan_summary) if isinstance(phase8_surface_plan_summary, Mapping) else {}),
+                "source_scope": str(phase8_meta_only.get("source_scope") or phase8_meta_only.get("record_scope") or ""),
+                "scope_marker_required": True,
+                "soft_marker_required": True,
+            }
+            p5_existing_gate_reports = _p5_existing_gate_reports_for(
                 display_status=str(getattr(display_decision, "observation_status", "") or ""),
                 reader=reader_report,
                 grounding=grounding_report,
+                template_echo=template_echo_report,
+                safety=safety_report,
                 runtime_report=runtime_surface_pre_return_gate_report,
                 visible_report=visible_surface_acceptance_gate_report,
             )
-            tentative_phase8_connection = build_user_label_connection_limited_visible_surface_connection(
-                final_text,
-                phase8_surface_plan if isinstance(phase8_surface_plan, Mapping) else {},
-                existing_gate_reports=initial_phase8_reports,
-                safety_context=safety_triage_meta.get("safety_triage_kind"),
+            p5_readiness = build_user_label_connection_p5_readiness(
+                None,
+                connection_decision_summary=phase8_meta_only if isinstance(phase8_meta_only, Mapping) else {},
+                user_label_connection_public_summary=user_label_connection_public_summary(phase8_meta_only if isinstance(phase8_meta_only, Mapping) else {}),
+                run_id="p5_runtime_bridge_r2_readiness",
             )
-            if tentative_phase8_connection.applied:
-                phase8_candidate_text = tentative_phase8_connection.comment_text
-                phase8_reader_report = _judge_listener_readability_for_reply(phase8_candidate_text, composer_candidate)
-                phase8_composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
-                phase8_grounding_report = judge_grounding(
-                    comment_text=phase8_candidate_text,
+            p5_visibility_boundary = build_user_label_connection_p5_visibility_boundary(
+                p5_readiness=p5_readiness,
+                material_meta=p5_material_meta,
+                gate_meta=p5_gate_meta,
+                surface_plan_meta=p5_surface_plan_meta,
+                observation_reply_meta=user_label_connection_phase8_reply_meta,
+                existing_comment_text_present=bool(final_text),
+                existing_gate_reports=p5_existing_gate_reports,
+                subscription_tier=subscription_tier,
+                run_id="p5_runtime_bridge_r2_visibility_boundary",
+            )
+            p5_eligibility_matrix = build_user_label_connection_p5_eligibility_matrix(
+                p5_visibility_boundary=p5_visibility_boundary,
+                material_meta=p5_material_meta,
+                candidate_meta=p5_candidate_meta,
+                gate_meta=p5_gate_meta,
+                surface_plan_meta=p5_surface_plan_meta,
+                observation_reply_meta=user_label_connection_phase8_reply_meta,
+                connectable_family=str(phase8_meta_only.get("connectable_family") or "") if isinstance(phase8_meta_only, Mapping) else "",
+                run_id="p5_runtime_bridge_r2_eligibility_matrix",
+            )
+            p5_surface_role_plan = build_user_label_connection_p5_surface_role_plan(
+                p5_eligibility_matrix=p5_eligibility_matrix,
+                surface_plan_meta=p5_surface_plan_meta,
+                run_id="p5_runtime_bridge_r2_surface_role_plan",
+            )
+            p5_safety_guard = build_user_label_connection_p5_safety_guard(
+                p5_surface_role_plan=p5_surface_role_plan,
+                observation_reply_meta=user_label_connection_phase8_reply_meta,
+                run_id="p5_runtime_bridge_r2_safety_guard",
+            )
+            p5_product_quality_review = build_user_label_connection_p5_product_quality_review(
+                p5_safety_guard=p5_safety_guard,
+                review_rows=[],
+                run_id="p5_runtime_bridge_r2_product_quality_review",
+            )
+            tentative_p5_connection = build_user_label_connection_p5_limited_visible_connection(
+                final_text,
+                observation_status=str(getattr(display_decision, "observation_status", "") or ""),
+                p5_visibility_boundary=p5_visibility_boundary,
+                p5_eligibility_matrix=p5_eligibility_matrix,
+                p5_surface_role_plan=p5_surface_role_plan,
+                p5_safety_guard=p5_safety_guard,
+                p5_product_quality_review=p5_product_quality_review,
+                existing_gate_reports=p5_existing_gate_reports,
+                safety_context=safety_triage_meta.get("safety_triage_kind"),
+                run_id="p5_runtime_bridge_r2_limited_visible_connection",
+            )
+            p5_limited_visible_connection_meta = tentative_p5_connection.as_meta()
+            if tentative_p5_connection.applied:
+                p5_candidate_text = tentative_p5_connection.comment_text
+                p5_reader_report = _judge_listener_readability_for_reply(p5_candidate_text, composer_candidate)
+                p5_composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
+                p5_grounding_report = judge_grounding(
+                    comment_text=p5_candidate_text,
                     graph=grounding_graph,
                     evidence_spans=evidence_spans,
                     allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
                     grounding_scope=grounding_scope,
                     sentence_bindings=(
-                        phase8_composer_meta_for_grounding.get("sentence_bindings")
-                        if isinstance(phase8_composer_meta_for_grounding, dict)
+                        p5_composer_meta_for_grounding.get("sentence_bindings")
+                        if isinstance(p5_composer_meta_for_grounding, dict)
                         else None
                     ),
-                    binding_meta=phase8_composer_meta_for_grounding if isinstance(phase8_composer_meta_for_grounding, dict) else None,
+                    binding_meta=p5_composer_meta_for_grounding if isinstance(p5_composer_meta_for_grounding, dict) else None,
                 )
-                phase8_template_echo_report = guard_template_echo(
-                    comment_text=phase8_candidate_text,
+                p5_template_echo_report = guard_template_echo(
+                    comment_text=p5_candidate_text,
                     evidence_spans=evidence_spans,
                     composer_source=composer_source,
                     composer_model=getattr(composer_candidate, "composer_model", ""),
@@ -7367,71 +8063,532 @@ async def render_emlis_ai_reply(
                     composer_meta=getattr(composer_candidate, "composer_meta", {}),
                     used_evidence_span_ids=getattr(composer_candidate, "used_evidence_span_ids", []),
                 )
-                phase8_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
-                    comment_text=phase8_candidate_text,
+                p5_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+                    comment_text=p5_candidate_text,
                     composer_candidate=composer_candidate,
                     composer_source=composer_source,
                     rerender_attempted=True,
                 )
-                phase8_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
-                    comment_text=phase8_candidate_text,
+                p5_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+                    comment_text=p5_candidate_text,
                     current_input=current_input,
                     composer_candidate=composer_candidate,
                     composer_source=composer_source,
                     rerender_attempted=True,
                 )
-                phase8_binding_meta = build_limited_composer_binding_presence_meta(
+                p5_binding_meta = build_limited_composer_binding_presence_meta(
                     composer_candidate=composer_candidate,
                 )
-                phase8_display_decision = decide_emlis_observation_display(
-                    comment_text=phase8_candidate_text,
-                    reader_report=phase8_reader_report,
-                    grounding_report=phase8_grounding_report,
-                    template_echo_report=phase8_template_echo_report,
+                p5_display_decision = decide_emlis_observation_display(
+                    comment_text=p5_candidate_text,
+                    reader_report=p5_reader_report,
+                    grounding_report=p5_grounding_report,
+                    template_echo_report=p5_template_echo_report,
                     safety_report=safety_report,
                     trace_id=trace_id,
                     composer_source=composer_source,
                     phase_completion_ready=True,
-                    binding_meta=phase8_binding_meta,
+                    binding_meta=p5_binding_meta,
                     observation_structure_gate_report=observation_structure_gate_report,
-                    runtime_surface_pre_return_gate_report=phase8_runtime_surface_pre_return_gate_report,
-                    visible_surface_acceptance_gate_report=phase8_visible_surface_acceptance_gate_report,
+                    runtime_surface_pre_return_gate_report=p5_runtime_surface_pre_return_gate_report,
+                    visible_surface_acceptance_gate_report=p5_visible_surface_acceptance_gate_report,
                 )
-                final_phase8_reports = _phase8_existing_gate_reports_for(
-                    display_status=str(getattr(phase8_display_decision, "observation_status", "") or ""),
-                    reader=phase8_reader_report,
-                    grounding=phase8_grounding_report,
-                    runtime_report=phase8_runtime_surface_pre_return_gate_report,
-                    visible_report=phase8_visible_surface_acceptance_gate_report,
+                final_p5_reports = _p5_existing_gate_reports_for(
+                    display_status=str(getattr(p5_display_decision, "observation_status", "") or ""),
+                    reader=p5_reader_report,
+                    grounding=p5_grounding_report,
+                    template_echo=p5_template_echo_report,
+                    safety=safety_report,
+                    runtime_report=p5_runtime_surface_pre_return_gate_report,
+                    visible_report=p5_visible_surface_acceptance_gate_report,
                 )
-                final_phase8_connection = build_user_label_connection_limited_visible_surface_connection(
+                final_p5_connection = build_user_label_connection_p5_limited_visible_connection(
                     final_text,
-                    phase8_surface_plan if isinstance(phase8_surface_plan, Mapping) else {},
-                    existing_gate_reports=final_phase8_reports,
+                    observation_status=str(getattr(p5_display_decision, "observation_status", "") or ""),
+                    p5_visibility_boundary=p5_visibility_boundary,
+                    p5_eligibility_matrix=p5_eligibility_matrix,
+                    p5_surface_role_plan=p5_surface_role_plan,
+                    p5_safety_guard=p5_safety_guard,
+                    p5_product_quality_review=p5_product_quality_review,
+                    existing_gate_reports=final_p5_reports,
                     safety_context=safety_triage_meta.get("safety_triage_kind"),
+                    run_id="p5_runtime_bridge_r2_limited_visible_connection_after_regate",
                 )
-                if (
-                    final_phase8_connection.applied
-                    and str(getattr(phase8_display_decision, "observation_status", "") or "") == "passed"
-                ):
-                    final_text = final_phase8_connection.comment_text
-                    display_decision = phase8_display_decision
-                    reader_report = phase8_reader_report
-                    grounding_report = phase8_grounding_report
-                    template_echo_report = phase8_template_echo_report
-                    runtime_surface_pre_return_gate_report = dict(phase8_runtime_surface_pre_return_gate_report or {})
-                    visible_surface_acceptance_gate_report = dict(phase8_visible_surface_acceptance_gate_report or {})
-                    user_label_connection_phase8_visible_meta = final_phase8_connection.as_meta()
-                    user_label_connection_phase8_binding_meta = build_user_label_connection_visible_surface_binding_meta(
-                        user_label_connection_phase8_visible_meta,
-                        evidence_span_ids=grounding_allowed_evidence_span_ids,
+                p5_limited_visible_connection_meta = final_p5_connection.as_meta()
+                p5_post_connection_display_passed = (
+                    str(getattr(p5_display_decision, "observation_status", "") or "") == "passed"
+                )
+                if not (final_p5_connection.applied and p5_post_connection_display_passed):
+                    p5_limited_visible_connection_meta = dict(p5_limited_visible_connection_meta)
+                    p5_limited_visible_connection_meta["rejection_reasons"] = _dedupe_reason_codes(
+                        [
+                            "p5_post_connection_gate_blocked",
+                            *(p5_limited_visible_connection_meta.get("rejection_reasons") or []),
+                            *(getattr(p5_display_decision, "rejection_reasons", []) or []),
+                        ]
                     )
-                else:
-                    user_label_connection_phase8_visible_meta = final_phase8_connection.as_meta()
-            else:
-                user_label_connection_phase8_visible_meta = tentative_phase8_connection.as_meta()
+                    p5_limited_visible_connection_meta["post_connection_gate_passed"] = False
+                    p5_limited_visible_connection_meta["post_connection_regate"] = {
+                        "rechecked_after_p5_6_candidate": True,
+                        "display_gate_passed": p5_post_connection_display_passed,
+                        "reader_gate_passed": _p5_generic_report_passed(p5_reader_report, default=False),
+                        "grounding_gate_passed": bool(getattr(p5_grounding_report, "passed", False)),
+                        "template_echo_gate_passed": _p5_generic_report_passed(p5_template_echo_report, default=True),
+                        "runtime_surface_pre_return_gate_passed": _p5_passed_report(
+                            p5_runtime_surface_pre_return_gate_report or {},
+                            default=False,
+                        ),
+                        "visible_surface_acceptance_gate_passed": _p5_passed_report(
+                            p5_visible_surface_acceptance_gate_report or {},
+                            default=False,
+                        ),
+                        "p5_candidate_kept": False,
+                        "original_final_text_preserved": True,
+                        "gate_threshold_relaxed": False,
+                    }
+                if (
+                    final_p5_connection.applied
+                    and p5_post_connection_display_passed
+                ):
+                    final_text = final_p5_connection.comment_text
+                    display_decision = p5_display_decision
+                    reader_report = p5_reader_report
+                    grounding_report = p5_grounding_report
+                    template_echo_report = p5_template_echo_report
+                    runtime_surface_pre_return_gate_report = dict(p5_runtime_surface_pre_return_gate_report or {})
+                    visible_surface_acceptance_gate_report = dict(p5_visible_surface_acceptance_gate_report or {})
+                    phase8_meta_for_legacy_public = p5_limited_visible_connection_meta.get("phase8_meta")
+                    if isinstance(phase8_meta_for_legacy_public, Mapping):
+                        user_label_connection_phase8_visible_meta = dict(phase8_meta_for_legacy_public)
+                        user_label_connection_phase8_binding_meta = build_user_label_connection_visible_surface_binding_meta(
+                            user_label_connection_phase8_visible_meta,
+                            evidence_span_ids=grounding_allowed_evidence_span_ids,
+                        )
+            p5_regression_handoff = build_user_label_connection_p5_regression_handoff(
+                p5_limited_visible_connection=p5_limited_visible_connection_meta,
+                p5_product_quality_review=p5_product_quality_review,
+                p5_safety_guard=p5_safety_guard,
+                p4_regression_handoff=None,
+                regression_suite_statuses=[],
+                p6_candidate_families=[_p6_family_from_current_input()],
+                p6_scope_meta={"p5_runtime_bridge_r2": True, "p6_runtime_bridge_r6_candidate_family": _p6_family_from_current_input()},
+                run_id="p5_runtime_bridge_r2_regression_handoff",
+            )
+            user_label_connection_p5_regression_handoff_for_p6 = (
+                dict(p5_regression_handoff) if isinstance(p5_regression_handoff, Mapping) else {}
+            )
+            user_label_connection_p5_runtime_bridge_summary = _p5_runtime_bridge_contract_summary(
+                p5_readiness=p5_readiness,
+                p5_visibility_boundary=p5_visibility_boundary,
+                p5_eligibility_matrix=p5_eligibility_matrix,
+                p5_surface_role_plan=p5_surface_role_plan,
+                p5_safety_guard=p5_safety_guard,
+                p5_product_quality_review=p5_product_quality_review,
+                p5_limited_visible_connection=p5_limited_visible_connection_meta,
+                p5_regression_handoff=p5_regression_handoff,
+                evaluated=True,
+            )
         except Exception:
-            user_label_connection_phase8_visible_meta = {}
+            user_label_connection_p5_runtime_bridge_summary = _p5_runtime_bridge_contract_summary(
+                evaluated=True,
+                error_code="p5_runtime_bridge_r2_exception",
+            )
+
+
+    if final_text and str(getattr(display_decision, "observation_status", "") or "") == "passed":
+        try:
+            p6_runtime_family = _p6_family_for_runtime_evaluation(
+                current=current_input if isinstance(current_input, Mapping) else {},
+                material_route=phase20_3_material_route_meta,
+                safety_triage=safety_triage_meta,
+            )
+            p6_relation_family = _p6_relation_family_for_runtime_evaluation(
+                family=p6_runtime_family,
+                current=current_input if isinstance(current_input, Mapping) else {},
+            )
+            p6_inventory = build_structure_insight_p6_inventory(
+                run_id="p6_runtime_bridge_r6_inventory",
+            )
+            p6_entry_freeze = build_structure_insight_p6_entry_freeze(
+                p5_7_regression_handoff=user_label_connection_p5_regression_handoff_for_p6,
+                structure_insight_inventory=p6_inventory,
+                p6_candidate_families=[p6_runtime_family] if p6_runtime_family != "none" else [],
+                p6_scope_meta={
+                    "r6_runtime_evaluation_layer": True,
+                    "r7_limited_surface_connection_layer": True,
+                    "r7_structure_question_only": True,
+                    "r8_no_connect_regression": True,
+                    "r8_no_connect_families": [
+                        "low_information_short",
+                        "daily_unpleasant",
+                        "daily_positive",
+                        "positive_only",
+                        "safety_triage_required",
+                        "safety_adjacent",
+                        "self_denial",
+                        "target_judgement",
+                        "anger_or_boundary",
+                        "limited_grounding",
+                    ],
+                    "r7_visible_surface_not_started": False,
+                    "release_allowed": False,
+                    "public_response_key_added": False,
+                    "comment_text_body_included": False,
+                    "candidate_body_included": False,
+                    "surface_body_included": False,
+                },
+                p6_relation_policy_fixed=True,
+                run_id="p6_runtime_bridge_r6_entry_freeze",
+            )
+            p6_dependency_status = _p6_dependency_status_from_entry(p6_entry_freeze)
+            p6_limited_surface_probe_text = ""
+            p6_limited_surface_probe_meta: Dict[str, Any] = {}
+            if p6_dependency_status == "p5_ready" and p6_runtime_family == "structure_question":
+                try:
+                    (
+                        p6_limited_surface_probe_text,
+                        p6_limited_surface_probe_meta,
+                    ) = build_structure_insight_p6_limited_surface_candidate_probe(
+                        family=p6_runtime_family,
+                        relation_family=p6_relation_family,
+                    )
+                except Exception:
+                    p6_limited_surface_probe_text = ""
+                    p6_limited_surface_probe_meta = {}
+            p6_limited_surface_candidate_generated = bool(
+                p6_dependency_status == "p5_ready"
+                and p6_runtime_family == "structure_question"
+                and str(p6_limited_surface_probe_text or "").strip()
+            )
+            p6_limited_surface_quality_rows = _p6_limited_surface_quality_rows_for_runtime(
+                family=p6_runtime_family,
+                relation_family=p6_relation_family,
+                p5_dependency_status=p6_dependency_status,
+                surface_candidate_available=p6_limited_surface_candidate_generated,
+            )
+
+            p6_material_quality = str(phase20_3_material_route_meta.get("material_quality") or "").strip()
+            if not p6_material_quality or p6_material_quality not in {"low_information", "limited_grounding", "safety_triage_required"}:
+                p6_material_quality = "eligible"
+            p6_family_boundary = build_structure_insight_p6_family_boundary(
+                family=p6_runtime_family if p6_runtime_family != "none" else None,
+                material_quality=p6_material_quality,
+                current_input_grounded=True,
+                observation_status=str(getattr(display_decision, "observation_status", "") or ""),
+                observation_status_connectable=True,
+                pre_gate_body_generated=False,
+                user_dictionary_fact_assertion_required=False,
+                target_judgement_required=False,
+                safety_adjacent=bool(safety_triage_meta.get("safety_triage_kind") != TRIAGE_SAFE_OBSERVATION),
+                emergency_safety=bool(safety_triage_meta.get("safety_triage_kind") == "safety_blocked_emergency"),
+                source_unavailable=False,
+                p6_entry_freeze=p6_entry_freeze,
+                run_id="p6_runtime_bridge_r7_family_boundary",
+            )
+            p6_relation_policy = build_structure_insight_p6_relation_policy(
+                relation_family=p6_relation_family,
+                p6_family_boundary=p6_family_boundary,
+                low_information_overread_risk=p6_runtime_family == "low_information",
+                target_judgement_required=False,
+                self_denial_identity_fact_required=False,
+                period_tendency_required=False,
+                user_dictionary_fact_claim_required=False,
+                gate_required_bypassed=False,
+                pre_gate_body_generated=False,
+                run_id="p6_runtime_bridge_r7_relation_policy",
+            )
+            p6_quality_rubric = build_structure_insight_p6_quality_rubric(
+                review_rows=p6_limited_surface_quality_rows,
+                p6_relation_policy=p6_relation_policy,
+                p6_family_boundary=p6_family_boundary,
+                run_id="p6_runtime_bridge_r7_quality_rubric",
+            )
+            p6_gate_hardening = build_structure_insight_p6_gate_hardening(
+                proposed_surface=p6_limited_surface_probe_text or None,
+                surface_probe=(
+                    {
+                        "r7_limited_surface_candidate_generated": True,
+                        "structure_insight_surface_family": "structure_question",
+                        "relation_family": p6_relation_family,
+                        "diagnosis_blocked": True,
+                        "personality_classification_blocked": True,
+                        "cause_assertion_blocked": True,
+                        "future_prediction_blocked": True,
+                        "action_instruction_blocked": True,
+                        "target_judgement_blocked": True,
+                    }
+                    if p6_limited_surface_candidate_generated
+                    else {
+                        "r6_evaluation_only": True,
+                        "r7_limited_surface_candidate_generated": False,
+                        "visible_surface_not_generated": True,
+                        "diagnosis_blocked": True,
+                        "personality_classification_blocked": True,
+                        "cause_assertion_blocked": True,
+                        "future_prediction_blocked": True,
+                        "action_instruction_blocked": True,
+                        "target_judgement_blocked": True,
+                    }
+                ),
+                relation_family=p6_relation_family,
+                p6_relation_policy=p6_relation_policy,
+                p6_quality_rubric=p6_quality_rubric,
+                gate_meta={
+                    "gate_threshold_relaxed": False,
+                    "comment_text_body_included": False,
+                    "candidate_body_included": False,
+                    "surface_body_included": False,
+                },
+                user_dictionary_meta={"user_dictionary_fact_claim_required": False},
+                run_id="p6_runtime_bridge_r7_gate_hardening",
+            )
+            p6_requested_insight_seed_count = 1 if p6_limited_surface_quality_rows else 0
+            p6_surface_role_plan = build_structure_insight_p6_surface_role_plan(
+                family=p6_runtime_family if p6_runtime_family != "none" else None,
+                relation_family=p6_relation_family,
+                p6_family_boundary=p6_family_boundary,
+                p6_relation_policy=p6_relation_policy,
+                p6_quality_rubric=p6_quality_rubric,
+                p6_gate_hardening=p6_gate_hardening,
+                requested_insight_seed_count=p6_requested_insight_seed_count,
+                target_judgement_risk=False,
+                surface_plan_meta={
+                    "r7_limited_surface_connection": True,
+                    "r7_limited_surface_structure_question_only": True,
+                    "r8_no_connect_regression": True,
+                    "structure_question": p6_runtime_family == "structure_question",
+                    "daily_unpleasant": p6_runtime_family == "daily_unpleasant",
+                    "daily_positive": p6_runtime_family == "daily_positive",
+                    "positive_only": p6_runtime_family == "positive_only",
+                    "low_information": p6_runtime_family in {"low_information", "low_information_short"},
+                    "low_information_short": p6_runtime_family == "low_information_short",
+                    "limited_grounding": p6_runtime_family == "limited_grounding",
+                    "safety_triage_required": p6_runtime_family == "safety_triage_required",
+                    "safety_adjacent": p6_runtime_family == "safety_adjacent",
+                    "self_denial": p6_runtime_family == "self_denial",
+                    "target_judgement": p6_runtime_family == "target_judgement",
+                    "anger_or_boundary": p6_runtime_family == "anger_or_boundary",
+                    "insight_seed_count": p6_requested_insight_seed_count,
+                    "max_insight_seed_count": 1,
+                    "fixed_sentence_template_added": False,
+                },
+                run_id="p6_runtime_bridge_r7_surface_role_plan",
+            )
+            p6_family_review = build_structure_insight_p6_family_review(
+                family=p6_runtime_family if p6_runtime_family != "none" else None,
+                relation_family=p6_relation_family,
+                p6_surface_role_plan=p6_surface_role_plan,
+                p6_relation_policy=p6_relation_policy,
+                p6_quality_rubric=p6_quality_rubric,
+                long_arc_core_count=0,
+                long_arc_summary_only=True,
+                long_arc_relation_flow_present=False,
+                self_understanding_observation_intent=p6_runtime_family == "structure_question",
+                self_understanding_uncertainty_boundary=True,
+                self_denial_identity_fact_required=False,
+                target_judgement_risk=False,
+                run_id="p6_runtime_bridge_r7_family_review",
+            )
+            p6_product_quality_review = build_structure_insight_p6_product_quality_review(
+                review_rows=p6_limited_surface_quality_rows,
+                p6_quality_rubric=p6_quality_rubric,
+                p6_surface_role_plan=p6_surface_role_plan,
+                p6_family_review=p6_family_review,
+                run_id="p6_runtime_bridge_r7_product_quality_review",
+            )
+            p6_existing_gate_reports = _p5_existing_gate_reports_for(
+                display_status=str(getattr(display_decision, "observation_status", "") or ""),
+                reader=reader_report,
+                grounding=grounding_report,
+                template_echo=template_echo_report,
+                safety=safety_report,
+                runtime_report=runtime_surface_pre_return_gate_report,
+                visible_report=visible_surface_acceptance_gate_report,
+            )
+            p6_limited_surface_connection = build_structure_insight_p6_limited_surface_connection(
+                final_text,
+                observation_status=str(getattr(display_decision, "observation_status", "") or ""),
+                p6_family_boundary=p6_family_boundary,
+                p6_relation_policy=p6_relation_policy,
+                p6_quality_rubric=p6_quality_rubric,
+                p6_gate_hardening=p6_gate_hardening,
+                p6_surface_role_plan=p6_surface_role_plan,
+                existing_gate_reports=p6_existing_gate_reports,
+                proposed_surface=p6_limited_surface_probe_text,
+                structure_insight_surface_meta=p6_limited_surface_probe_meta,
+                run_id="p6_runtime_bridge_r7_limited_surface_connection",
+            )
+            p6_limited_surface_connection_meta: Dict[str, Any] = p6_limited_surface_connection.as_meta()
+            p6_post_connection_regate_meta: Dict[str, Any] = {}
+            if p6_limited_surface_connection.applied:
+                p6_candidate_text = p6_limited_surface_connection.comment_text
+                p6_reader_report = _judge_listener_readability_for_reply(p6_candidate_text, composer_candidate)
+                p6_composer_meta_for_grounding = getattr(composer_candidate, "composer_meta", {}) if composer_candidate is not None else {}
+                p6_grounding_report = judge_grounding(
+                    comment_text=p6_candidate_text,
+                    graph=grounding_graph,
+                    evidence_spans=evidence_spans,
+                    allowed_evidence_span_ids=grounding_allowed_evidence_span_ids,
+                    grounding_scope=grounding_scope,
+                    sentence_bindings=(
+                        p6_composer_meta_for_grounding.get("sentence_bindings")
+                        if isinstance(p6_composer_meta_for_grounding, dict)
+                        else None
+                    ),
+                    binding_meta=p6_composer_meta_for_grounding if isinstance(p6_composer_meta_for_grounding, dict) else None,
+                )
+                p6_template_echo_report = guard_template_echo(
+                    comment_text=p6_candidate_text,
+                    evidence_spans=evidence_spans,
+                    composer_source=composer_source,
+                    composer_model=getattr(composer_candidate, "composer_model", ""),
+                    generation_method=getattr(composer_candidate, "generation_method", ""),
+                    generation_scope=getattr(composer_candidate, "generation_scope", ""),
+                    coverage_scope=getattr(composer_candidate, "coverage_scope", ""),
+                    composer_meta=getattr(composer_candidate, "composer_meta", {}),
+                    used_evidence_span_ids=getattr(composer_candidate, "used_evidence_span_ids", []),
+                )
+                p6_runtime_surface_pre_return_gate_report = _build_runtime_surface_pre_return_report_for_candidate(
+                    comment_text=p6_candidate_text,
+                    composer_candidate=composer_candidate,
+                    composer_source=composer_source,
+                    rerender_attempted=True,
+                )
+                p6_visible_surface_acceptance_gate_report = _build_visible_surface_acceptance_report_for_candidate(
+                    comment_text=p6_candidate_text,
+                    current_input=current_input,
+                    composer_candidate=composer_candidate,
+                    composer_source=composer_source,
+                    rerender_attempted=True,
+                )
+                p6_binding_meta = build_limited_composer_binding_presence_meta(composer_candidate=composer_candidate)
+                p6_display_decision = decide_emlis_observation_display(
+                    comment_text=p6_candidate_text,
+                    reader_report=p6_reader_report,
+                    grounding_report=p6_grounding_report,
+                    template_echo_report=p6_template_echo_report,
+                    safety_report=safety_report,
+                    trace_id=trace_id,
+                    composer_source=composer_source,
+                    phase_completion_ready=True,
+                    binding_meta=p6_binding_meta,
+                    observation_structure_gate_report=observation_structure_gate_report,
+                    runtime_surface_pre_return_gate_report=p6_runtime_surface_pre_return_gate_report,
+                    visible_surface_acceptance_gate_report=p6_visible_surface_acceptance_gate_report,
+                )
+                final_p6_reports = _p5_existing_gate_reports_for(
+                    display_status=str(getattr(p6_display_decision, "observation_status", "") or ""),
+                    reader=p6_reader_report,
+                    grounding=p6_grounding_report,
+                    template_echo=p6_template_echo_report,
+                    safety=safety_report,
+                    runtime_report=p6_runtime_surface_pre_return_gate_report,
+                    visible_report=p6_visible_surface_acceptance_gate_report,
+                )
+                final_p6_limited_surface_connection = build_structure_insight_p6_limited_surface_connection(
+                    final_text,
+                    observation_status=str(getattr(p6_display_decision, "observation_status", "") or ""),
+                    p6_family_boundary=p6_family_boundary,
+                    p6_relation_policy=p6_relation_policy,
+                    p6_quality_rubric=p6_quality_rubric,
+                    p6_gate_hardening=p6_gate_hardening,
+                    p6_surface_role_plan=p6_surface_role_plan,
+                    existing_gate_reports=final_p6_reports,
+                    proposed_surface=p6_limited_surface_probe_text,
+                    structure_insight_surface_meta=p6_limited_surface_probe_meta,
+                    run_id="p6_runtime_bridge_r7_limited_surface_connection_after_regate",
+                )
+                p6_limited_surface_connection_meta = final_p6_limited_surface_connection.as_meta()
+                p6_post_connection_display_passed = str(getattr(p6_display_decision, "observation_status", "") or "") == "passed"
+                p6_post_connection_regate_meta = {
+                    "rechecked_after_p6_limited_surface_candidate": True,
+                    "display_gate_passed": p6_post_connection_display_passed,
+                    "reader_gate_passed": _p5_generic_report_passed(p6_reader_report, default=False),
+                    "grounding_gate_passed": bool(getattr(p6_grounding_report, "passed", False)),
+                    "template_echo_gate_passed": _p5_generic_report_passed(p6_template_echo_report, default=True),
+                    "runtime_surface_pre_return_gate_passed": _p5_passed_report(p6_runtime_surface_pre_return_gate_report or {}, default=False),
+                    "visible_surface_acceptance_gate_passed": _p5_passed_report(p6_visible_surface_acceptance_gate_report or {}, default=False),
+                    "p6_candidate_kept": bool(final_p6_limited_surface_connection.applied and p6_post_connection_display_passed),
+                    "original_final_text_preserved": not bool(final_p6_limited_surface_connection.applied and p6_post_connection_display_passed),
+                    "gate_threshold_relaxed": False,
+                }
+                p6_limited_surface_connection_meta = dict(p6_limited_surface_connection_meta)
+                p6_limited_surface_connection_meta["post_connection_regate"] = dict(p6_post_connection_regate_meta)
+                if not (final_p6_limited_surface_connection.applied and p6_post_connection_display_passed):
+                    p6_limited_surface_connection_meta["rejection_reasons"] = _dedupe_reason_codes(
+                        [
+                            REASON_P6_POST_CONNECTION_GATE_BLOCKED,
+                            *(p6_limited_surface_connection_meta.get("rejection_reasons") or []),
+                            *(getattr(p6_display_decision, "rejection_reasons", []) or []),
+                        ]
+                    )
+                    p6_limited_surface_connection_meta["blocked_reason_codes"] = _dedupe_reason_codes(
+                        p6_limited_surface_connection_meta.get("rejection_reasons") or []
+                    )
+                    p6_limited_surface_connection_meta["visible_applied"] = False
+                    p6_limited_surface_connection_meta["p6_visible_applied"] = False
+                    p6_limited_surface_connection_meta["r7_limited_surface_connected"] = False
+                    p6_limited_surface_connection_meta["p6_limited_surface_r7_connected"] = False
+                    p6_limited_surface_connection_meta["visible_family"] = "none"
+                    p6_limited_surface_connection_meta["insight_seed_count"] = 0
+                    p6_limited_surface_connection_meta["post_connection_gate_passed"] = False
+                    p6_limited_surface_connection_meta["p6_post_connection_gate_blocked"] = True
+                else:
+                    final_text = final_p6_limited_surface_connection.comment_text
+                    display_decision = p6_display_decision
+                    reader_report = p6_reader_report
+                    grounding_report = p6_grounding_report
+                    template_echo_report = p6_template_echo_report
+                    runtime_surface_pre_return_gate_report = dict(p6_runtime_surface_pre_return_gate_report or {})
+                    visible_surface_acceptance_gate_report = dict(p6_visible_surface_acceptance_gate_report or {})
+            p6_regression_handoff = build_structure_insight_p6_regression_handoff(
+                p6_entry_freeze=p6_entry_freeze,
+                p6_family_boundary=p6_family_boundary,
+                p6_relation_policy=p6_relation_policy,
+                p6_gate_hardening=p6_gate_hardening,
+                p6_surface_role_plan=p6_surface_role_plan,
+                p6_family_review=p6_family_review,
+                p6_product_quality_review=p6_product_quality_review,
+                regression_statuses=[],
+                p7_review_meta={
+                    "r6_runtime_evaluation_layer": True,
+                    "r7_limited_surface_connection_layer": True,
+                    "r7_structure_question_only": True,
+                    "p7_not_started": True,
+                    "manual_read_feel_confirmed": False,
+                    "long_run_sequence_evaluated": False,
+                    "release_allowed": False,
+                },
+                run_id="p6_runtime_bridge_r7_regression_handoff",
+            )
+            structure_insight_p6_runtime_bridge_summary = _p6_runtime_bridge_contract_summary(
+                p6_entry_freeze=p6_entry_freeze,
+                p6_inventory=p6_inventory,
+                p6_family_boundary=p6_family_boundary,
+                p6_relation_policy=p6_relation_policy,
+                p6_quality_rubric=p6_quality_rubric,
+                p6_gate_hardening=p6_gate_hardening,
+                p6_surface_role_plan=p6_surface_role_plan,
+                p6_family_review=p6_family_review,
+                p6_product_quality_review=p6_product_quality_review,
+                p6_regression_handoff=p6_regression_handoff,
+                p6_limited_surface_connection=p6_limited_surface_connection_meta,
+                p6_post_connection_regate=p6_post_connection_regate_meta,
+                evaluated=True,
+                family=p6_runtime_family,
+            )
+        except Exception:
+            structure_insight_p6_runtime_bridge_summary = _p6_runtime_bridge_contract_summary(
+                evaluated=True,
+                family="none",
+                error_code="p6_runtime_bridge_r7_exception",
+            )
+
+    if user_label_connection_p5_runtime_bridge_summary or structure_insight_p6_runtime_bridge_summary:
+        p5_p6_split_test_matrix_handoff_summary = build_p5_p6_handoff_lock(
+            p5_runtime_bridge_summary=user_label_connection_p5_runtime_bridge_summary,
+            p6_runtime_bridge_summary=structure_insight_p6_runtime_bridge_summary,
+        )
 
     meta = _multi_perspective_meta(
         trace_id=trace_id,
@@ -7665,6 +8822,134 @@ async def render_emlis_ai_reply(
         material_quality=phase20_3_material_route_meta.get("material_quality"),
         safety_triage_kind=safety_triage_meta.get("safety_triage_kind"),
     )
+
+    if user_label_connection_p5_runtime_bridge_summary:
+        meta["user_label_connection_p5_runtime_bridge"] = dict(user_label_connection_p5_runtime_bridge_summary)
+        meta["p5_runtime_bridge"] = dict(user_label_connection_p5_runtime_bridge_summary)
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"]["user_label_connection_p5_runtime_bridge"] = dict(user_label_connection_p5_runtime_bridge_summary)
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "p5_runtime_bridge_r2_evaluated": bool(
+                        user_label_connection_p5_runtime_bridge_summary.get("runtime_evaluated") is True
+                    ),
+                    "p5_runtime_bridge_r2_visible_applied": bool(
+                        user_label_connection_p5_runtime_bridge_summary.get("visible_applied") is True
+                    ),
+                    "p5_runtime_bridge_r2_product_quality_confirmed": bool(
+                        user_label_connection_p5_runtime_bridge_summary.get("product_quality_confirmed") is True
+                    ),
+                    "p5_runtime_bridge_r2_release_allowed": False,
+                    "p5_runtime_bridge_r2_public_response_key_added": False,
+                    "p5_runtime_bridge_r2_comment_text_body_included": False,
+                    "p5_runtime_bridge_r2_candidate_body_included": False,
+                    "p5_runtime_bridge_r2_surface_body_included": False,
+                    "p5_runtime_bridge_r4_human_qa_required": True,
+                    "p5_runtime_bridge_r4_human_qa_completed": bool(
+                        user_label_connection_p5_runtime_bridge_summary.get("human_qa_completed") is True
+                    ),
+                    "p5_runtime_bridge_r4_human_qa_pending": bool(
+                        user_label_connection_p5_runtime_bridge_summary.get("human_qa_pending") is True
+                    ),
+                    "p5_runtime_bridge_r4_product_quality_confirmation_status": str(
+                        user_label_connection_p5_runtime_bridge_summary.get("product_quality_confirmation_status")
+                        or "human_qa_pending"
+                    ),
+                    "p5_runtime_bridge_r4_release_allowed": False,
+                    "p5_runtime_bridge_r4_public_response_key_added": False,
+                    "p5_runtime_bridge_r4_comment_text_body_included": False,
+                    "p5_runtime_bridge_r4_candidate_body_included": False,
+                    "p5_runtime_bridge_r4_surface_body_included": False,
+                    "p5_runtime_bridge_r4_reviewer_free_text_included": False,
+                    "p5_visible_connection_r3_route": str(
+                        user_label_connection_p5_runtime_bridge_summary.get("visible_connection_route")
+                        or "p5_6_boundary_internal_phase8_connector"
+                    ),
+                    "p5_visible_connection_r3_phase8_connector_scope": str(
+                        user_label_connection_p5_runtime_bridge_summary.get("phase8_connector_scope")
+                        or "p5_6_internal_boundary_only"
+                    ),
+                    "p5_visible_connection_r3_old_phase8_direct_call_used": False,
+                    "p5_visible_connection_r3_phase8_internal_only": True,
+                    "p5_visible_connection_r3_post_connection_regate_required": True,
+                    "p5_visible_connection_r3_public_response_key_added": False,
+                    "p5_visible_connection_r3_comment_text_body_included": False,
+                }
+            )
+
+
+    if structure_insight_p6_runtime_bridge_summary:
+        meta["structure_insight_p6_runtime_bridge"] = dict(structure_insight_p6_runtime_bridge_summary)
+        meta["p6_runtime_bridge"] = dict(structure_insight_p6_runtime_bridge_summary)
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"]["structure_insight_p6_runtime_bridge"] = dict(
+                structure_insight_p6_runtime_bridge_summary
+            )
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "p6_runtime_bridge_r6_evaluated": bool(
+                        structure_insight_p6_runtime_bridge_summary.get("runtime_evaluated") is True
+                    ),
+                    "p6_runtime_bridge_r6_visible_applied": bool(
+                        structure_insight_p6_runtime_bridge_summary.get("visible_applied") is True
+                    ),
+                    "p6_runtime_bridge_r6_visible_family": str(
+                        structure_insight_p6_runtime_bridge_summary.get("visible_family") or "none"
+                    ),
+                    "p6_runtime_bridge_r6_p5_dependency_status": str(
+                        structure_insight_p6_runtime_bridge_summary.get("p5_dependency_status") or "p5_hold"
+                    ),
+                    "p6_runtime_bridge_r6_no_connect_family_preserved": bool(
+                        structure_insight_p6_runtime_bridge_summary.get("no_connect_family_preserved") is True
+                    ),
+                    "p6_runtime_bridge_r6_release_allowed": False,
+                    "p6_runtime_bridge_r6_public_response_key_added": False,
+                    "p6_runtime_bridge_r6_comment_text_body_included": False,
+                    "p6_runtime_bridge_r6_candidate_body_included": False,
+                    "p6_runtime_bridge_r6_surface_body_included": False,
+                    "p6_runtime_bridge_r6_gate_threshold_relaxed": False,
+                }
+            )
+
+    if p5_p6_split_test_matrix_handoff_summary:
+        meta["p5_p6_split_test_matrix_handoff"] = dict(p5_p6_split_test_matrix_handoff_summary)
+        meta["p5_p6_handoff_lock"] = dict(p5_p6_split_test_matrix_handoff_summary)
+        if isinstance(meta.get("diagnostic_summary"), dict):
+            meta["diagnostic_summary"]["p5_p6_split_test_matrix_handoff"] = dict(
+                p5_p6_split_test_matrix_handoff_summary
+            )
+        if isinstance(meta.get("phase_gate"), dict):
+            meta["phase_gate"].update(
+                {
+                    "r9_p5_p6_split_matrix_fixed": True,
+                    "r9_repair_step": "R9_P5P6SplitTestMatrixHandoff_20260612",
+                    "r9_full_backend_suite_green_claim_allowed": False,
+                    "r9_combined_pytest_timeout_is_not_green": True,
+                    "r9_p5_runtime_evaluated": bool(
+                        p5_p6_split_test_matrix_handoff_summary.get("p5_handoff", {}).get("runtime_evaluated") is True
+                    ),
+                    "r9_p6_runtime_evaluated": bool(
+                        p5_p6_split_test_matrix_handoff_summary.get("p6_handoff", {}).get("runtime_evaluated") is True
+                    ),
+                    "r9_p6_visible_family": str(
+                        p5_p6_split_test_matrix_handoff_summary.get("p6_handoff", {}).get("visible_family") or "none"
+                    ),
+                    "r9_no_connect_family_regression_green": bool(
+                        p5_p6_split_test_matrix_handoff_summary.get("p6_handoff", {}).get(
+                            "no_connect_family_regression_green"
+                        )
+                        is True
+                    ),
+                    "r9_p7_ready": False,
+                    "r9_release_allowed": False,
+                    "r9_public_response_key_added": False,
+                    "r9_comment_text_body_included": False,
+                    "r9_candidate_body_included": False,
+                    "r9_surface_body_included": False,
+                }
+            )
 
     if user_label_connection_phase8_visible_meta:
         meta[USER_LABEL_CONNECTION_VISIBLE_SURFACE_META_KEY] = dict(user_label_connection_phase8_visible_meta)

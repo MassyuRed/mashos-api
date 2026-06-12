@@ -1012,6 +1012,12 @@ def _build_diagnostic_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any
     if public_surface_lineage:
         public_summary[PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY] = public_surface_lineage
 
+    # R6 keeps P6 runtime bridge evidence in internal reply meta.  The sanitizer
+    # and schema are present for the existing input_feedback/emlis_ai path, but
+    # the public diagnostic summary does not automatically inject P6 bridge data
+    # yet; otherwise older Phase19 public-meta byte-limit trimming drops required
+    # observation_reply_meta keys.  R7/R9 can opt into public exposure once split
+    # matrix coverage is fixed.
     return public_summary
 
 
@@ -1485,6 +1491,245 @@ def _pick_user_label_connection_source(internal_meta: Mapping[str, Any]) -> Opti
     return None
 
 
+def _pick_p5_runtime_bridge_source(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    for key in ("user_label_connection_p5_runtime_bridge", "p5_runtime_bridge"):
+        direct = _safe_mapping(_safe_get(internal_meta, key))
+        if direct is not None:
+            return direct
+
+    for container_key in ("diagnostic_summary", "phase_gate", "multi_perspective"):
+        container = _safe_mapping(_safe_get(internal_meta, container_key))
+        if container is None:
+            continue
+        for key in ("user_label_connection_p5_runtime_bridge", "p5_runtime_bridge"):
+            nested = _safe_mapping(_safe_get(container, key))
+            if nested is not None:
+                return nested
+    return None
+
+
+def _build_p5_runtime_bridge_public_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_p5_runtime_bridge_source(internal_meta)
+    if source is None:
+        return {}
+
+    schema_version = _safe_identifier(
+        _safe_get(source, "schema_version"),
+        max_length=120,
+        default="cocolon.emlis.user_label_connection.p5_runtime_bridge.v1",
+    )
+    step = _safe_identifier(
+        _safe_get(source, "step"),
+        max_length=120,
+        default="P5_RuntimeBridge_Repair_R4_20260612",
+    )
+    runtime_evaluated = _safe_bool(_safe_get(source, "runtime_evaluated")) is True or _safe_bool(
+        _safe_get(source, "p5_runtime_evaluated")
+    ) is True
+    visible_applied = _safe_bool(_safe_get(source, "visible_applied")) is True or _safe_bool(
+        _safe_get(source, "p5_visible_applied")
+    ) is True
+    product_quality_confirmed = _safe_bool(_safe_get(source, "product_quality_confirmed")) is True or _safe_bool(
+        _safe_get(source, "p5_product_quality_confirmed")
+    ) is True
+
+    product_layer = _safe_mapping(_safe_get(source, "product_quality_confirmation_layer")) or {}
+    human_qa_status = _safe_identifier(
+        _safe_get(source, "human_qa_status") or _safe_get(product_layer, "human_qa_status"),
+        max_length=40,
+        default="confirmed" if product_quality_confirmed else "pending",
+    )
+    if human_qa_status not in {"pending", "confirmed", "blocked", "not_required"}:
+        human_qa_status = "confirmed" if product_quality_confirmed else "pending"
+
+    hold_reason_codes = _safe_rejection_reasons(
+        _safe_get(source, "human_qa_hold_reason_codes") or _safe_get(product_layer, "human_qa_hold_reason_codes")
+    )[:5]
+    blocked_reason_codes = _safe_rejection_reasons(_safe_get(source, "blocked_reason_codes"))[:5]
+    for reason in hold_reason_codes:
+        if reason not in blocked_reason_codes and len(blocked_reason_codes) < 5:
+            blocked_reason_codes.append(reason)
+
+    # R4 intentionally publishes only the compact separation flags under the
+    # existing user_label_connection public meta container. Full step summaries,
+    # nested gate reports, and any body-bearing payloads remain internal so this
+    # additive meta cannot evict observation_reply_meta under the hard byte cap.
+    return {
+        "schema_version": schema_version,
+        "step": step,
+        "public_meta_summary_only": True,
+        "runtime_evaluated": runtime_evaluated,
+        "visible_applied": visible_applied,
+        "product_quality_confirmed": product_quality_confirmed,
+        "product_quality_confirmation_status": _safe_identifier(
+            _safe_get(source, "product_quality_confirmation_status"),
+            max_length=60,
+            default="confirmed" if product_quality_confirmed else "human_qa_pending",
+        ),
+        "human_qa_status": human_qa_status,
+        "human_qa_required": True,
+        "human_qa_completed": product_quality_confirmed,
+        "human_qa_pending": not product_quality_confirmed,
+        "p5_hold_001_human_qa_unconfirmed": not product_quality_confirmed,
+        "runtime_evaluated_is_not_product_quality_confirmed": bool(runtime_evaluated and not product_quality_confirmed),
+        "visible_applied_is_not_product_quality_confirmed": bool(visible_applied and not product_quality_confirmed),
+        "blocked_reason_codes": blocked_reason_codes,
+        "public_response_key_added": False,
+        "response_shape_changed": False,
+        "rn_visible_contract_changed": False,
+        "release_allowed": False,
+        "raw_text_included": False,
+        "history_raw_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "reviewer_free_text_included": False,
+    }
+
+
+
+def _pick_p6_runtime_bridge_source(internal_meta: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    for key in ("structure_insight_p6_runtime_bridge", "p6_runtime_bridge"):
+        direct = _safe_mapping(_safe_get(internal_meta, key))
+        if direct is not None:
+            return direct
+
+    for container_key in ("diagnostic_summary", "phase_gate", "multi_perspective"):
+        container = _safe_mapping(_safe_get(internal_meta, container_key))
+        if container is None:
+            continue
+        for key in ("structure_insight_p6_runtime_bridge", "p6_runtime_bridge"):
+            nested = _safe_mapping(_safe_get(container, key))
+            if nested is not None:
+                return nested
+    return None
+
+
+def _build_p6_runtime_bridge_public_summary(internal_meta: Mapping[str, Any]) -> Dict[str, Any]:
+    source = _pick_p6_runtime_bridge_source(internal_meta)
+    if source is None:
+        return {}
+
+    schema_version = _safe_identifier(
+        _safe_get(source, "schema_version"),
+        max_length=120,
+        default="cocolon.emlis.structure_insight.p6_runtime_bridge.v1",
+    )
+    step = _safe_identifier(
+        _safe_get(source, "step"),
+        max_length=120,
+        default="P6_RuntimeBridge_Repair_20260612",
+    )
+    runtime_evaluated = _safe_bool(_safe_get(source, "runtime_evaluated")) is True or _safe_bool(
+        _safe_get(source, "p6_runtime_evaluated")
+    ) is True
+    visible_applied = _safe_bool(_safe_get(source, "visible_applied")) is True or _safe_bool(
+        _safe_get(source, "p6_visible_applied")
+    ) is True
+    visible_family = _safe_identifier(_safe_get(source, "visible_family"), max_length=60, default="none")
+    if visible_family not in {"structure_question", "none"}:
+        visible_family = "none"
+    p5_dependency_status = _safe_identifier(
+        _safe_get(source, "p5_dependency_status"),
+        max_length=60,
+        default="p5_hold",
+    )
+    if p5_dependency_status not in {"p5_ready", "p5_hold", "p5_return_required", "p4_return_required"}:
+        p5_dependency_status = "p5_hold"
+
+    limited_surface_meta = _safe_mapping(_safe_get(source, "limited_surface_meta")) or {}
+    section_placement = _safe_identifier(
+        _safe_get(source, "limited_surface_section_placement") or _safe_get(limited_surface_meta, "section_placement"),
+        max_length=80,
+        default="none",
+    )
+    insight_seed_count_value = _safe_int(_safe_get(source, "insight_seed_count"), minimum=0, maximum=1)
+    insight_seed_count = int(insight_seed_count_value or 0)
+    if not visible_applied:
+        insight_seed_count = 0
+
+    return {
+        "schema_version": schema_version,
+        "step": step,
+        "public_meta_summary_only": True,
+        "runtime_evaluated": runtime_evaluated,
+        "p6_runtime_evaluated": runtime_evaluated,
+        "visible_applied": visible_applied,
+        "p6_visible_applied": visible_applied,
+        "visible_family": visible_family,
+        "runtime_family": _safe_identifier(_safe_get(source, "runtime_family"), max_length=80, default="none"),
+        "r8_no_connect_regression": _safe_bool(_safe_get(source, "r8_no_connect_regression")) is True,
+        "r8_repair_step": _safe_identifier(
+            _safe_get(source, "r8_repair_step"),
+            max_length=120,
+            default="R8_NoConnectFamilySafetyLowInfoDailyPositiveRegression_20260612",
+        ),
+        "no_connect_family_runtime": _safe_identifier(_safe_get(source, "no_connect_family_runtime"), max_length=80, default=""),
+        "no_connect_family_blocked": _safe_bool(_safe_get(source, "no_connect_family_blocked")) is True,
+        "no_connect_family_runtime_blocked": _safe_bool(_safe_get(source, "no_connect_family_runtime_blocked")) is True,
+        "no_connect_family_visible_applied": False,
+        "no_deep_insight_for_daily": True,
+        "no_deep_insight_for_low_information": True,
+        "no_deep_insight_for_positive_only": True,
+        "no_deep_insight_for_safety_adjacent": True,
+        "p5_dependency_status": p5_dependency_status,
+        "r7_limited_surface_evaluated": _safe_bool(_safe_get(source, "r7_limited_surface_evaluated")) is True,
+        "r7_limited_surface_connected": visible_applied and visible_family == "structure_question",
+        "p6_limited_surface_r7_connected": visible_applied and visible_family == "structure_question",
+        "limited_surface_attempted": _safe_bool(_safe_get(source, "limited_surface_attempted")) is True,
+        "limited_surface_candidate_generated": _safe_bool(_safe_get(source, "limited_surface_candidate_generated")) is True,
+        "limited_surface_structure_question_only": True,
+        "limited_surface_allowed_family_only": "structure_question",
+        "limited_surface_section_placement": section_placement,
+        "section_placement": section_placement,
+        "insight_seed_count": insight_seed_count,
+        "max_insight_seed_count": 1,
+        "post_connection_regate_required": True,
+        "post_connection_gate_passed": _safe_bool(_safe_get(source, "post_connection_gate_passed")) is True,
+        "p6_post_connection_gate_blocked": _safe_bool(_safe_get(source, "p6_post_connection_gate_blocked")) is True,
+        "fixed_sentence_template_added": False,
+        "input_specific_template_added": False,
+        "gate_threshold_relaxed": False,
+        "no_connect_family_preserved": _safe_bool(_safe_get(source, "no_connect_family_preserved")) is not False,
+        "blocked_reason_codes": _safe_rejection_reasons(_safe_get(source, "blocked_reason_codes"))[:8],
+        "p6_visible_not_applied_reason_codes": _safe_rejection_reasons(
+            _safe_get(source, "p6_visible_not_applied_reason_codes")
+        )[:8],
+        "limited_surface_meta": {
+            "r7_limited_surface_meta_summary_only": True,
+            "visible_applied": visible_applied,
+            "visible_family": visible_family,
+            "runtime_family": _safe_identifier(_safe_get(limited_surface_meta, "runtime_family"), max_length=80, default="none"),
+            "relation_family": _safe_identifier(_safe_get(limited_surface_meta, "relation_family"), max_length=100, default=""),
+            "surface_key": _safe_identifier(_safe_get(limited_surface_meta, "surface_key"), max_length=120, default=""),
+            "section_placement": section_placement,
+            "insight_seed_count": insight_seed_count,
+            "max_insight_seed_count": 1,
+            "post_connection_gate_passed": _safe_bool(_safe_get(limited_surface_meta, "post_connection_gate_passed")) is True,
+            "p6_post_connection_gate_blocked": _safe_bool(_safe_get(limited_surface_meta, "p6_post_connection_gate_blocked")) is True,
+            "gate_threshold_relaxed": False,
+            "raw_input_included": False,
+            "raw_text_included": False,
+            "comment_text_body_included": False,
+            "candidate_body_included": False,
+            "surface_body_included": False,
+            "release_allowed": False,
+        },
+        "comment_text_owner": "input_feedback.comment_text",
+        "public_response_key_added": False,
+        "response_shape_changed": False,
+        "rn_visible_contract_changed": False,
+        "api_route_changed": False,
+        "db_schema_changed": False,
+        "release_allowed": False,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "history_raw_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "reviewer_free_text_included": False,
+    }
 
 def _build_complete_initial_surface_availability_meta(internal_meta: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     """Return body-free P4 complete-initial availability public summary.
@@ -1594,10 +1839,12 @@ def _build_user_label_connection_public_meta(internal_meta: Mapping[str, Any]) -
     source = _pick_user_label_connection_source(internal_meta)
     if source is None:
         return {}
+    p5_runtime_bridge_summary = _build_p5_runtime_bridge_public_summary(internal_meta)
+    p6_runtime_bridge_summary = _build_p6_runtime_bridge_public_summary(internal_meta)
     try:
         summary = user_label_connection_public_summary(source)
     except Exception:
-        return {
+        summary = {
             "schema_version": "cocolon.emlis.user_label_connection_meta_only_public_summary.v1",
             "phase": "phase7_meta_only_integration",
             "meta_only_connected": False,
@@ -1622,7 +1869,12 @@ def _build_user_label_connection_public_meta(internal_meta: Mapping[str, Any]) -
             "public_release_applied": False,
             "rejection_reasons": ["meta_only_integration_exception"],
         }
-    return dict(summary)
+    public_summary = dict(summary)
+    if p5_runtime_bridge_summary:
+        public_summary["p5_runtime_bridge"] = p5_runtime_bridge_summary
+    if p6_runtime_bridge_summary:
+        public_summary["p6_runtime_bridge"] = p6_runtime_bridge_summary
+    return public_summary
 
 
 def _strip_internal_public_boundary_keys(value: Any) -> Any:
@@ -1675,6 +1927,15 @@ def _fit_hard_byte_limit(meta: Dict[str, Any], *, subscription_tier: Any = None)
     meta.pop("visible_surface_acceptance_gate", None)
     meta.pop("state_answer_gate_boundary", None)
     meta.pop("two_stage_reception_gate", None)
+
+    user_label_connection_meta = meta.get(USER_LABEL_CONNECTION_PUBLIC_META_KEY)
+    if isinstance(user_label_connection_meta, dict):
+        # R6 public P6 evidence is additive. It must never evict the older
+        # observation_reply_meta contract that RN/ABCD tests depend on.
+        user_label_connection_meta.pop("p6_runtime_bridge", None)
+    if _compact_json_bytes(meta) <= PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES:
+        return meta
+
     meta.pop("observation_reply_meta", None)
     meta.pop("step10_observation_display_repair_integration", None)
     meta["rejection_reasons"] = meta.get("rejection_reasons", [])[:5]

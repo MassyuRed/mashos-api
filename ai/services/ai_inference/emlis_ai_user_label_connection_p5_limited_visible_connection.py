@@ -47,6 +47,11 @@ USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_STEP: Final = "P5-6_LimitedV
 USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_SOURCE: Final = (
     "Cocolon_EmlisAI_P5_UserLabelConnection_LimitedVisibleConnection_20260611"
 )
+USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE: Final = "p5_6_internal_boundary_only"
+USER_LABEL_CONNECTION_P5_HUMAN_QA_HOLD_ID: Final = "P5-HOLD-001"
+USER_LABEL_CONNECTION_P5_HUMAN_QA_BOUNDARY_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.user_label_connection.p5_human_qa_boundary.v1"
+)
 
 REASON_EXISTING_COMMENT_TEXT_MISSING: Final = "existing_comment_text_missing"
 REASON_OBSERVATION_STATUS_NOT_PASSED: Final = "observation_status_not_passed"
@@ -62,6 +67,7 @@ REASON_RAW_TEXT_PAYLOAD_DETECTED: Final = "raw_text_payload_detected"
 REASON_CONTRACT_MUTATION_DETECTED: Final = "contract_mutation_detected"
 REASON_UPSTREAM_CONTRACT_INVALID: Final = "upstream_contract_invalid"
 REASON_PHASE8_VISIBLE_CONNECTION_NOT_APPLIED: Final = "phase8_visible_connection_not_applied"
+REASON_P5_POST_CONNECTION_GATE_BLOCKED: Final = "p5_post_connection_gate_blocked"
 
 _SOURCE_SCOPE_OWNED_HISTORY: Final = "current_input_with_owned_history"
 
@@ -416,6 +422,114 @@ def _body_free_contract() -> dict[str, bool]:
     }
 
 
+def _p5_human_qa_boundary(
+    *,
+    applied: bool,
+    p5_product_quality_review: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    review = _safe_mapping(p5_product_quality_review)
+    review_count = _int(review.get("review_count"))
+    blocker_reason_codes = _dedupe(review.get("blocker_reason_codes"))
+    review_rows_present = review_count > 0
+    ratings_only = review.get("ratings_only") is True
+    confirmed = bool(
+        review_rows_present
+        and ratings_only
+        and review.get("p5_limited_visible_allowed") is True
+        and not blocker_reason_codes
+    )
+    if confirmed:
+        qa_status = "confirmed_by_human_blind_qa"
+    elif review_rows_present:
+        qa_status = "reviewed_but_not_confirmed"
+    else:
+        qa_status = "not_started_or_missing"
+
+    hold_reason_codes: list[str] = []
+    if not confirmed:
+        hold_reason_codes.append("p5_human_qa_not_confirmed")
+        if not review_rows_present:
+            hold_reason_codes.append("p5_human_qa_review_rows_missing")
+        hold_reason_codes.extend(blocker_reason_codes)
+    hold_reason_codes = _dedupe(hold_reason_codes)
+
+    return {
+        "schema_version": USER_LABEL_CONNECTION_P5_HUMAN_QA_BOUNDARY_SCHEMA_VERSION,
+        "hold_id": USER_LABEL_CONNECTION_P5_HUMAN_QA_HOLD_ID,
+        "human_qa_required": True,
+        "human_qa_status": qa_status,
+        "human_qa_review_rows_present": review_rows_present,
+        "human_qa_review_count": review_count,
+        "human_qa_complete": confirmed,
+        "human_qa_confirmed": confirmed,
+        "human_blind_qa_confirmed": confirmed,
+        "human_qa_not_substituted_by_runtime": True,
+        "human_qa_not_substituted_by_visible_connection": True,
+        "runtime_evaluated": True,
+        "visible_applied": bool(applied),
+        "product_quality_confirmed": confirmed,
+        "product_quality_confirmed_by": "human_blind_qa_ratings" if confirmed else "not_confirmed",
+        "product_quality_complete_claim_allowed": False,
+        "p5_completion_claim_allowed": False,
+        "live_runtime_review_rows_synthesized": False,
+        "machine_metrics_used_as_human_qa": False,
+        "reviewer_free_text_included": False,
+        "public_meta_summary_only": True,
+        "public_contract": _public_contract(),
+        "body_free": _body_free_contract(),
+        "hold_reason_codes": hold_reason_codes,
+    }
+
+
+def _p5_public_meta_boundary(*, applied: bool, product_quality_confirmed: bool) -> dict[str, Any]:
+    return {
+        "safe_summary_only": True,
+        "input_feedback_comment_text_only_visible_body": True,
+        "public_response_top_level_key_added": False,
+        "public_response_key_added": False,
+        "rn_visible_contract_changed": False,
+        "api_route_changed": False,
+        "request_key_changed": False,
+        "db_schema_changed": False,
+        "runtime_evaluated": True,
+        "visible_applied": bool(applied),
+        "product_quality_confirmed": bool(product_quality_confirmed),
+        "human_qa_required_for_product_quality": True,
+        "raw_input_included": False,
+        "raw_text_included": False,
+        "history_raw_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "reviewer_free_text_included": False,
+        "actual_appended_line_included": False,
+        "release_allowed": False,
+    }
+
+
+def _p5_completion_layers(*, applied: bool, human_qa_boundary: Mapping[str, Any]) -> dict[str, Any]:
+    product_quality_confirmed = human_qa_boundary.get("product_quality_confirmed") is True
+    return {
+        "runtime_evaluated": {
+            "status": "evaluated",
+            "complete": True,
+            "body_free": True,
+        },
+        "visible_applied": {
+            "status": "applied" if applied else "not_applied",
+            "complete": bool(applied),
+            "comment_text_owner": "input_feedback.comment_text",
+        },
+        "human_qa_product_quality": {
+            "status": str(human_qa_boundary.get("human_qa_status") or "not_started_or_missing"),
+            "complete": product_quality_confirmed,
+            "hold_id": USER_LABEL_CONNECTION_P5_HUMAN_QA_HOLD_ID,
+            "not_substituted_by_runtime": True,
+            "not_substituted_by_visible_connection": True,
+        },
+    }
+
+
 def _meta(
     *,
     run_id: str,
@@ -431,8 +545,14 @@ def _meta(
     p5_product_quality_allowed: bool,
     rejection_reasons: Sequence[Any],
     phase8_meta: Mapping[str, Any] | None = None,
+    p5_product_quality_review: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     safe_phase8_meta = _safe_mapping(phase8_meta)
+    human_qa_boundary = _p5_human_qa_boundary(
+        applied=applied,
+        p5_product_quality_review=p5_product_quality_review,
+    )
+    product_quality_confirmed = human_qa_boundary.get("product_quality_confirmed") is True
     meta = {
         "schema_version": USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_SCHEMA_VERSION,
         "version": USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_SCHEMA_VERSION,
@@ -458,9 +578,49 @@ def _meta(
         "p5_surface_role_plan_ready": bool(p5_surface_role_plan_ready),
         "p5_safety_guard_allowed": bool(p5_safety_guard_allowed),
         "p5_product_quality_allowed": bool(p5_product_quality_allowed),
+        "p5_runtime_evaluated": True,
+        "runtime_evaluated": True,
+        "p5_visible_applied": bool(applied),
+        "visible_applied": bool(applied),
+        "p5_product_quality_confirmed": product_quality_confirmed,
+        "product_quality_confirmed": product_quality_confirmed,
+        "p5_human_blind_qa_confirmed": product_quality_confirmed,
+        "human_blind_qa_confirmed": product_quality_confirmed,
+        "p5_human_qa_status": str(human_qa_boundary.get("human_qa_status") or "not_started_or_missing"),
+        "human_qa_status": str(human_qa_boundary.get("human_qa_status") or "not_started_or_missing"),
+        "p5_human_qa_boundary": human_qa_boundary,
+        "human_qa_boundary": human_qa_boundary,
+        "p5_public_meta_boundary": _p5_public_meta_boundary(
+            applied=applied,
+            product_quality_confirmed=product_quality_confirmed,
+        ),
+        "p5_completion_layers": _p5_completion_layers(
+            applied=applied,
+            human_qa_boundary=human_qa_boundary,
+        ),
+        "product_quality_complete_claim_allowed": False,
+        "p5_completion_claim_allowed": False,
+        "human_qa_not_substituted_by_runtime": True,
+        "human_qa_not_substituted_by_visible_connection": True,
+        "visible_connection_route": "p5_6_boundary_internal_phase8_connector",
+        "p5_6_boundary_enforced": True,
+        "phase8_connector_scope": USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE,
+        "phase8_connector_used_as_internal_detail": bool(safe_phase8_meta),
+        "phase8_direct_reply_service_call_allowed": False,
+        "phase8_direct_visible_connection_from_reply_service": False,
+        "old_phase8_direct_visible_connection_replaced_by_p5_6_boundary": True,
+        "legacy_phase8_direct_call_used": False,
+        "phase8_connector_called_inside_p5_6_boundary": bool(safe_phase8_meta),
+        "post_connection_regate_required": True,
+        "post_connection_gate_passed": bool(applied),
+        "p5_red_002_closed_by_route": True,
         "phase8_visible_surface_connection": user_label_connection_visible_surface_public_summary(safe_phase8_meta)
         if safe_phase8_meta
         else {},
+        "visible_connection_owner": "p5_6_limited_visible_connection_boundary",
+        "legacy_phase8_connector_scope": "p5_6_internal_boundary_only",
+        "reply_service_direct_phase8_call_allowed": False,
+        "phase8_connector_internal_to_p5_6_boundary": True,
         "connection_shape": {
             "existing_comment_text_primary": True,
             "history_line_support_section": bool(applied),
@@ -498,6 +658,7 @@ def _blocked_result(
     p5_product_quality_allowed: bool,
     rejection_reasons: Sequence[Any],
     phase8_meta: Mapping[str, Any] | None = None,
+    p5_product_quality_review: Mapping[str, Any] | None = None,
 ) -> UserLabelConnectionP5LimitedVisibleConnection:
     meta = _meta(
         run_id=run_id,
@@ -513,6 +674,7 @@ def _blocked_result(
         p5_product_quality_allowed=p5_product_quality_allowed,
         rejection_reasons=rejection_reasons,
         phase8_meta=phase8_meta,
+        p5_product_quality_review=p5_product_quality_review,
     )
     return UserLabelConnectionP5LimitedVisibleConnection(comment_text=existing_comment_text, applied=False, meta=meta)
 
@@ -604,6 +766,7 @@ def build_user_label_connection_p5_limited_visible_connection(
             p5_safety_guard_allowed=p5_safety_guard_allowed,
             p5_product_quality_allowed=p5_product_quality_allowed,
             rejection_reasons=reasons,
+            p5_product_quality_review=review,
         )
 
     phase8_plan = _p5_surface_plan_for_phase8(
@@ -632,6 +795,7 @@ def build_user_label_connection_p5_limited_visible_connection(
             p5_product_quality_allowed=p5_product_quality_allowed,
             rejection_reasons=[REASON_PHASE8_VISIBLE_CONNECTION_NOT_APPLIED, *phase8_meta.get("rejection_reasons", [])],
             phase8_meta=phase8_meta,
+            p5_product_quality_review=review,
         )
 
     meta = _meta(
@@ -648,6 +812,7 @@ def build_user_label_connection_p5_limited_visible_connection(
         p5_product_quality_allowed=p5_product_quality_allowed,
         rejection_reasons=[],
         phase8_meta=phase8_meta,
+        p5_product_quality_review=review,
     )
     return UserLabelConnectionP5LimitedVisibleConnection(
         comment_text=phase8_result.comment_text,
@@ -676,6 +841,17 @@ def user_label_connection_p5_limited_visible_connection_public_summary(
             "raw_text_included": False,
             "comment_text_body_included": False,
             "history_raw_text_included": False,
+            "p5_runtime_evaluated": True,
+            "runtime_evaluated": True,
+            "p5_visible_applied": False,
+            "visible_applied": False,
+            "p5_product_quality_confirmed": False,
+            "product_quality_confirmed": False,
+            "p5_human_blind_qa_confirmed": False,
+            "human_blind_qa_confirmed": False,
+            "human_qa_status": "not_started_or_missing",
+            "product_quality_complete_claim_allowed": False,
+            "p5_completion_claim_allowed": False,
             "release_allowed": False,
         }
     summary = {
@@ -694,7 +870,35 @@ def user_label_connection_p5_limited_visible_connection_public_summary(
         "p5_surface_role_plan_ready": meta.get("p5_surface_role_plan_ready") is True,
         "p5_safety_guard_allowed": meta.get("p5_safety_guard_allowed") is True,
         "p5_product_quality_allowed": meta.get("p5_product_quality_allowed") is True,
+        "p5_runtime_evaluated": meta.get("runtime_evaluated") is True or meta.get("p5_runtime_evaluated") is True,
+        "runtime_evaluated": meta.get("runtime_evaluated") is True or meta.get("p5_runtime_evaluated") is True,
+        "p5_visible_applied": meta.get("visible_applied") is True or meta.get("p5_visible_applied") is True,
+        "visible_applied": meta.get("visible_applied") is True or meta.get("p5_visible_applied") is True,
+        "p5_product_quality_confirmed": meta.get("product_quality_confirmed") is True or meta.get("p5_product_quality_confirmed") is True,
+        "product_quality_confirmed": meta.get("product_quality_confirmed") is True or meta.get("p5_product_quality_confirmed") is True,
+        "p5_human_blind_qa_confirmed": meta.get("human_blind_qa_confirmed") is True or meta.get("p5_human_blind_qa_confirmed") is True,
+        "human_blind_qa_confirmed": meta.get("human_blind_qa_confirmed") is True or meta.get("p5_human_blind_qa_confirmed") is True,
+        "p5_human_qa_status": _clean(meta.get("p5_human_qa_status") or meta.get("human_qa_status")),
+        "human_qa_status": _clean(meta.get("p5_human_qa_status") or meta.get("human_qa_status")),
+        "p5_human_qa_boundary": dict(_safe_mapping(meta.get("p5_human_qa_boundary") or meta.get("human_qa_boundary"))),
+        "human_qa_boundary": dict(_safe_mapping(meta.get("p5_human_qa_boundary") or meta.get("human_qa_boundary"))),
+        "p5_public_meta_boundary": dict(_safe_mapping(meta.get("p5_public_meta_boundary"))),
+        "p5_completion_layers": dict(_safe_mapping(meta.get("p5_completion_layers"))),
+        "product_quality_complete_claim_allowed": False,
+        "p5_completion_claim_allowed": False,
+        "human_qa_not_substituted_by_runtime": meta.get("human_qa_not_substituted_by_runtime") is True,
+        "human_qa_not_substituted_by_visible_connection": meta.get("human_qa_not_substituted_by_visible_connection") is True,
+        "p5_6_boundary_enforced": meta.get("p5_6_boundary_enforced") is True,
+        "phase8_connector_scope": _clean(meta.get("phase8_connector_scope")),
+        "phase8_connector_used_as_internal_detail": meta.get("phase8_connector_used_as_internal_detail") is True,
+        "phase8_direct_reply_service_call_allowed": False,
+        "phase8_direct_visible_connection_from_reply_service": False,
+        "old_phase8_direct_visible_connection_replaced_by_p5_6_boundary": meta.get("old_phase8_direct_visible_connection_replaced_by_p5_6_boundary") is True,
         "existing_gate_reports_passed": meta.get("existing_gate_reports_passed") is True,
+        "visible_connection_owner": _clean(meta.get("visible_connection_owner")),
+        "legacy_phase8_connector_scope": _clean(meta.get("legacy_phase8_connector_scope")) or "p5_6_internal_boundary_only",
+        "reply_service_direct_phase8_call_allowed": False,
+        "phase8_connector_internal_to_p5_6_boundary": meta.get("phase8_connector_internal_to_p5_6_boundary") is True,
         "rejection_reasons": _dedupe(meta.get("rejection_reasons")),
         "public_meta_summary_only": True,
         "public_response_key_added": False,
@@ -704,6 +908,14 @@ def user_label_connection_p5_limited_visible_connection_public_summary(
         "comment_text_body_included": False,
         "history_raw_text_included": False,
         "release_allowed": False,
+        "visible_connection_route": _clean(meta.get("visible_connection_route"))
+        or "p5_6_boundary_internal_phase8_connector",
+        "phase8_connector_scope": _clean(meta.get("phase8_connector_scope")) or USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE,
+        "legacy_phase8_direct_call_used": False,
+        "phase8_connector_called_inside_p5_6_boundary": meta.get("phase8_connector_called_inside_p5_6_boundary") is True,
+        "post_connection_regate_required": True,
+        "post_connection_gate_passed": meta.get("post_connection_gate_passed") is True,
+        "p5_red_002_closed_by_route": True,
     }
     assert_user_label_connection_p5_limited_visible_connection_contract(summary, allow_partial=True)
     return summary
@@ -753,6 +965,14 @@ def assert_user_label_connection_p5_limited_visible_connection_contract(value: A
     ):
         if body_free.get(key) is not False:
             raise ValueError(f"P5 limited visible body_free.{key} must be false")
+    if meta.get("p5_6_boundary_enforced") is not True:
+        raise ValueError("P5 limited visible connection requires p5_6_boundary_enforced=true")
+    if meta.get("phase8_connector_scope") != USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE:
+        raise ValueError("P5 limited visible connection requires phase8 connector to be internal to P5-6")
+    if meta.get("phase8_direct_reply_service_call_allowed") is not False:
+        raise ValueError("P5 limited visible connection must not allow Phase8 direct reply_service calls")
+    if meta.get("phase8_direct_visible_connection_from_reply_service") is not False:
+        raise ValueError("P5 limited visible connection must prove no Phase8 direct visible reply_service connection")
     applied = meta.get("applied") is True
     for key in (
         "limited_visible_connection_applied",
@@ -779,14 +999,70 @@ def assert_user_label_connection_p5_limited_visible_connection_contract(value: A
                 raise ValueError(f"P5 limited visible applied meta requires {key}=true")
         if _dedupe(meta.get("rejection_reasons")):
             raise ValueError("P5 limited visible applied meta must not have rejection reasons")
+    human_qa = _safe_mapping(meta.get("p5_human_qa_boundary") or meta.get("human_qa_boundary"))
+    if human_qa:
+        if human_qa.get("hold_id") != USER_LABEL_CONNECTION_P5_HUMAN_QA_HOLD_ID:
+            raise ValueError("P5 human QA boundary must keep P5-HOLD-001 as separate hold evidence")
+        if human_qa.get("human_qa_required") is not True:
+            raise ValueError("P5 human QA boundary must mark human_qa_required=true")
+        if human_qa.get("human_qa_not_substituted_by_runtime") is not True:
+            raise ValueError("P5 human QA must not be substituted by runtime evaluation")
+        if human_qa.get("human_qa_not_substituted_by_visible_connection") is not True:
+            raise ValueError("P5 human QA must not be substituted by visible connection")
+        if human_qa.get("product_quality_confirmed") is True and human_qa.get("human_qa_complete") is not True:
+            raise ValueError("P5 product quality confirmation requires completed human QA")
+        if human_qa.get("product_quality_complete_claim_allowed") is not False:
+            raise ValueError("P5 human QA boundary must not claim product quality complete from runtime meta")
+        if human_qa.get("p5_completion_claim_allowed") is not False:
+            raise ValueError("P5 human QA boundary must not claim P5 completion from runtime meta")
+    public_meta_boundary = _safe_mapping(meta.get("p5_public_meta_boundary"))
+    if public_meta_boundary:
+        if public_meta_boundary.get("safe_summary_only") is not True:
+            raise ValueError("P5 public meta boundary must be safe summary only")
+        for key in (
+            "public_response_top_level_key_added",
+            "public_response_key_added",
+            "rn_visible_contract_changed",
+            "api_route_changed",
+            "request_key_changed",
+            "db_schema_changed",
+            "raw_input_included",
+            "raw_text_included",
+            "history_raw_text_included",
+            "comment_text_body_included",
+            "candidate_body_included",
+            "surface_body_included",
+            "reviewer_free_text_included",
+            "actual_appended_line_included",
+            "release_allowed",
+        ):
+            if public_meta_boundary.get(key) is not False:
+                raise ValueError(f"P5 public meta boundary requires {key}=false")
+    if meta.get("product_quality_complete_claim_allowed") is not False:
+        raise ValueError("P5 limited visible connection must not claim product-quality completion")
+    if meta.get("p5_completion_claim_allowed") is not False:
+        raise ValueError("P5 limited visible connection must not claim P5 completion")
     if meta.get("release_allowed") is not False or meta.get("public_release_applied") is not False:
         raise ValueError("P5 limited visible connection must not convert QA pass to release")
+    if not allow_partial:
+        if meta.get("visible_connection_route") != "p5_6_boundary_internal_phase8_connector":
+            raise ValueError("P5 visible connection must be routed through the P5-6 boundary")
+        if meta.get("phase8_connector_scope") != USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE:
+            raise ValueError("Phase8 connector must be scoped to the P5-6 internal boundary")
+        if meta.get("legacy_phase8_direct_call_used") is not False:
+            raise ValueError("P5 limited visible connection must not mark legacy Phase8 direct call usage")
+        if meta.get("post_connection_regate_required") is not True:
+            raise ValueError("P5 limited visible connection must require post-connection regate")
 
 
 __all__ = [
     "USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_SCHEMA_VERSION",
     "USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_STEP",
     "USER_LABEL_CONNECTION_P5_LIMITED_VISIBLE_CONNECTION_SOURCE",
+    "USER_LABEL_CONNECTION_P5_6_PHASE8_CONNECTOR_SCOPE",
+    "USER_LABEL_CONNECTION_P5_HUMAN_QA_HOLD_ID",
+    "USER_LABEL_CONNECTION_P5_HUMAN_QA_BOUNDARY_SCHEMA_VERSION",
+    "REASON_P5_POST_CONNECTION_GATE_BLOCKED",
     "UserLabelConnectionP5LimitedVisibleConnection",
     "build_user_label_connection_p5_limited_visible_connection",
     "user_label_connection_p5_limited_visible_connection_public_summary",
