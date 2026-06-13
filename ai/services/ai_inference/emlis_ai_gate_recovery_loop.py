@@ -53,6 +53,7 @@ from emlis_ai_gate_recovery_public_constants import (
     PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY,
     gate_recovery_material_surface_blockers_for_model,
 )
+from emlis_ai_relation_surface_contract import detect_relation_surface, relation_surface_status_for_reader
 from emlis_ai_response_contract import RepairKind, RepairResult, ResponseKind, build_repair_attempt
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
 from emlis_ai_types import (
@@ -386,6 +387,286 @@ def _dedupe_visible_text(values: Iterable[Any] | Any | None) -> list[str]:
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value or {}) if isinstance(value, Mapping) else {}
+
+
+
+def _strict_relation_trace_for_synthesized_reader(
+    *,
+    relation_values: Iterable[Any] | Any | None,
+    source_phase: str,
+    source_name: str,
+    relation_surface_contract_version: str,
+    detected_signal_keys: Iterable[Any] | Any | None = None,
+    detected_marker_keys: Iterable[Any] | Any | None = None,
+    strict_relation_required: bool = True,
+) -> dict[str, Any]:
+    relation_keys = _dedupe(relation_values)
+    expected_relation_types = relation_keys if strict_relation_required else []
+    signal_keys = _dedupe(detected_signal_keys)
+    marker_keys = _dedupe(detected_marker_keys)
+    status = relation_surface_status_for_reader(
+        expected_relation_types=expected_relation_types,
+        detected_signal_keys=signal_keys,
+        detected_marker_keys=marker_keys,
+    )
+    strict_required = bool(status.get("strict_relation_signal_required"))
+    matched_signal_keys = list(status.get("matched_relation_signal_keys") or [])
+    broad_type_only_keys = list(status.get("broad_relation_type_only_keys") or [])
+    if strict_required and not matched_signal_keys:
+        broad_type_only_keys = _dedupe([
+            *broad_type_only_keys,
+            *(key for key in relation_keys if key in list(status.get("expected_relation_types") or [])),
+        ])
+    return {
+        "schema_version": "cocolon.emlis.gate_recovery.strict_relation_trace.v2",
+        "source": _identifier(source_name),
+        "source_phase": _identifier(source_phase),
+        "relation_surface_contract_version": _identifier(relation_surface_contract_version),
+        "expected_relation_types": list(status.get("expected_relation_types") or []),
+        "relation_type_values_from_used_relation_ids": list(relation_keys),
+        "relation_type_values_not_promoted_to_signal_keys": True,
+        "strict_relation_signal_required": strict_required,
+        "required_relation_signal_keys": list(status.get("required_relation_signal_keys") or []),
+        "required_relation_marker_keys": list(status.get("required_relation_marker_keys") or []),
+        "detected_relation_signal_keys": list(status.get("detected_relation_signal_keys") or []),
+        "detected_relation_marker_keys": list(status.get("detected_relation_marker_keys") or []),
+        "matched_relation_signal_keys": matched_signal_keys,
+        "matched_relation_marker_keys": list(status.get("matched_relation_marker_keys") or []),
+        "broad_relation_type_only": bool(strict_required and not matched_signal_keys and broad_type_only_keys),
+        "broad_relation_type_only_keys": list(broad_type_only_keys),
+        "relation_surface_status": _identifier(status.get("relation_surface_status"), default="unspecified"),
+        "relation_surface_missing": bool(status.get("relation_surface_missing")),
+        "relation_surface_missing_after_repair": bool(status.get("relation_surface_missing")),
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "response_shape_changed": False,
+        "api_route_changed": False,
+        "db_schema_changed": False,
+        "db_physical_name_changed": False,
+        "rn_contract_changed": False,
+        "rn_visible_title_changed": False,
+        "public_response_key_change": False,
+    }
+
+
+def _synthesize_reader_report_from_public_surface(
+    *,
+    comment_text: Any,
+    relation_values: Iterable[Any] | Any | None,
+    source_phase: str,
+    source_name: str,
+    relation_surface_contract_version: str,
+    summary_of_output: str,
+    confidence: float,
+    strict_relation_required: bool = True,
+) -> ListenerReaderReport:
+    relation_keys = _dedupe(relation_values)
+    expected_relation_types = relation_keys if strict_relation_required else []
+    relation_signal = detect_relation_surface(comment_text, expected_relation_types=expected_relation_types)
+    signal_keys = _dedupe(relation_signal.get("reader_relation_signal_keys"))
+    signal_relation_types = _dedupe(
+        relation_signal.get("reader_relation_signal_relation_types")
+        or relation_signal.get("relation_types")
+    )
+    strict_relation_trace = _strict_relation_trace_for_synthesized_reader(
+        relation_values=relation_keys,
+        source_phase=source_phase,
+        source_name=source_name,
+        relation_surface_contract_version=relation_surface_contract_version,
+        detected_signal_keys=signal_keys,
+        strict_relation_required=strict_relation_required,
+    )
+    strict_required = bool(strict_relation_trace.get("strict_relation_signal_required"))
+    matched_signal_keys = _dedupe(strict_relation_trace.get("matched_relation_signal_keys"))
+    relation_surface_missing = bool(strict_relation_trace.get("relation_surface_missing"))
+    if strict_required:
+        reader_signal_keys = list(matched_signal_keys)
+        reader_signal_detected = bool(reader_signal_keys)
+        reader_signal_relation_types = list(signal_relation_types if reader_signal_detected else [])
+        rejection_reasons = ["relation_not_expressed"] if relation_surface_missing else []
+        understandable = not relation_surface_missing
+    else:
+        reader_signal_keys = list(signal_keys)
+        reader_signal_detected = bool(reader_signal_keys)
+        reader_signal_relation_types = list(signal_relation_types)
+        rejection_reasons = []
+        understandable = True
+    reader_relation_signal_meta = {
+        "source_phase": _identifier(source_phase),
+        "source": _identifier(source_name),
+        "relation_type_values_from_used_relation_ids": list(relation_keys),
+        "relation_type_values_not_promoted_to_signal_keys": True,
+        "surface_relation_detection": dict(relation_signal),
+        "strict_relation_trace": strict_relation_trace,
+        "strict_relation_signal_required": strict_required,
+        "required_relation_signal_keys": strict_relation_trace["required_relation_signal_keys"],
+        "required_relation_marker_keys": strict_relation_trace["required_relation_marker_keys"],
+        "matched_relation_signal_keys": strict_relation_trace["matched_relation_signal_keys"],
+        "matched_relation_marker_keys": strict_relation_trace["matched_relation_marker_keys"],
+        "broad_relation_type_only": strict_relation_trace["broad_relation_type_only"],
+        "broad_relation_type_only_keys": strict_relation_trace["broad_relation_type_only_keys"],
+        "relation_surface_status": strict_relation_trace["relation_surface_status"],
+        "relation_surface_missing": relation_surface_missing,
+        "relation_surface_missing_after_repair": strict_relation_trace["relation_surface_missing_after_repair"],
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+    }
+    return ListenerReaderReport(
+        understandable=bool(understandable),
+        addressee_clear=True,
+        speaker_integrity_ok=True,
+        conversational=True,
+        report_like=False,
+        summary_of_output=summary_of_output,
+        rejection_reasons=rejection_reasons,
+        confidence=confidence if understandable else min(confidence, 0.42),
+        relation_surface_contract_version=relation_surface_contract_version,
+        reader_relation_signal_detected=reader_signal_detected,
+        reader_relation_signal_count=len(reader_signal_keys),
+        reader_relation_signal_keys=reader_signal_keys,
+        reader_relation_signal_relation_types=reader_signal_relation_types,
+        expected_relation_types=list(expected_relation_types),
+        reader_relation_signal_meta=reader_relation_signal_meta,
+        raw_input_included=False,
+    )
+
+
+def _strict_relation_fail_closed_boundary_from_reader(
+    reader_report: ListenerReaderReport,
+    *,
+    source_phase: str,
+    fallback_public_recovery_attempted: bool,
+) -> dict[str, Any]:
+    """Return body-free strict relation fail-closed boundary meta.
+
+    Positive Recovery may use Gate Recovery / public-candidate rebuild paths only
+    when the recovered public surface still exposes the strict relation signal
+    that Reader needs.  A broad relation type such as ``recovery`` is kept as a
+    relation type, but it must not be treated as the concrete signal key that
+    makes the candidate displayable.
+    """
+
+    signal_meta = getattr(reader_report, "reader_relation_signal_meta", {}) or {}
+    if not isinstance(signal_meta, Mapping):
+        signal_meta = {}
+    trace = signal_meta.get("strict_relation_trace")
+    trace = trace if isinstance(trace, Mapping) else signal_meta
+    expected_relation_types = _dedupe(
+        trace.get("expected_relation_types")
+        or signal_meta.get("expected_relation_types")
+        or getattr(reader_report, "expected_relation_types", [])
+    )
+    strict_required = bool(
+        trace.get("strict_relation_signal_required")
+        or signal_meta.get("strict_relation_signal_required")
+    )
+    relation_missing = bool(
+        trace.get("relation_surface_missing_after_repair")
+        or signal_meta.get("relation_surface_missing_after_repair")
+        or trace.get("relation_surface_missing")
+        or signal_meta.get("relation_surface_missing")
+    )
+    relation_not_expressed = "relation_not_expressed" in _dedupe(
+        getattr(reader_report, "rejection_reasons", []) or []
+    )
+    fail_closed = bool(strict_required and (relation_missing or relation_not_expressed))
+    relation_type = "recovery" if "recovery" in expected_relation_types else (expected_relation_types[0] if expected_relation_types else "")
+    blocked_reasons = (
+        ["strict_relation_surface_missing_after_repair", "relation_not_expressed"]
+        if fail_closed
+        else []
+    )
+    return {
+        "schema_version": "cocolon.emlis.strict_relation_fail_closed.v1",
+        "source_phase": _identifier(source_phase),
+        "strict_relation_fail_closed_evaluated": bool(strict_required),
+        "strict_relation_fail_closed_triggered": fail_closed,
+        "strict_relation_fail_closed_applied": fail_closed,
+        "strict_relation_type": relation_type,
+        "expected_relation_types": list(expected_relation_types),
+        "repair_attempt_count": 1 if strict_required else 0,
+        "strict_relation_surface_present_after_repair": bool(strict_required and not relation_missing),
+        "strict_relation_surface_missing_after_repair": bool(strict_required and relation_missing),
+        "relation_surface_missing_after_repair": bool(strict_required and relation_missing),
+        "fallback_public_recovery_attempted": bool(fallback_public_recovery_attempted),
+        "fallback_public_recovery_allowed_for_this_candidate": bool(not fail_closed),
+        "final_observation_status": "rejected" if fail_closed else "",
+        "final_primary_reason": "relation_not_expressed" if fail_closed else "",
+        "comment_text_allowed": False if fail_closed else True,
+        "relation_not_expressed_preserved": fail_closed,
+        "relation_not_expressed_retained": fail_closed,
+        "blocked_reasons": blocked_reasons,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "response_shape_changed": False,
+        "api_route_changed": False,
+        "db_schema_changed": False,
+        "db_physical_name_changed": False,
+        "rn_contract_changed": False,
+        "rn_visible_title_changed": False,
+        "public_response_key_change": False,
+    }
+
+
+def _positive_recovery_relation_context(
+    *,
+    candidate: Any | None = None,
+    composer_meta: Mapping[str, Any] | None = None,
+    material_route: Any | None = None,
+    route_meta: Mapping[str, Any] | None = None,
+    original_composer_candidate: Any | None = None,
+) -> bool:
+    values: list[Any] = []
+    for source in (composer_meta, route_meta):
+        if isinstance(source, Mapping):
+            values.extend(
+                source.get(key)
+                for key in (
+                    "coverage_group",
+                    "coverage_scope",
+                    "generation_scope",
+                    "product_quality_group",
+                    "product_quality_case",
+                    "recovery_scope",
+                )
+            )
+    for obj in (candidate, material_route, original_composer_candidate):
+        if obj is None:
+            continue
+        values.extend(
+            getattr(obj, key, "")
+            for key in (
+                "coverage_group",
+                "coverage_scope",
+                "generation_scope",
+                "product_quality_group",
+                "product_quality_case",
+                "recovery_scope",
+            )
+        )
+        obj_meta = getattr(obj, "composer_meta", None)
+        if isinstance(obj_meta, Mapping):
+            values.extend(
+                obj_meta.get(key)
+                for key in (
+                    "coverage_group",
+                    "coverage_scope",
+                    "generation_scope",
+                    "product_quality_group",
+                    "product_quality_case",
+                    "recovery_scope",
+                )
+            )
+    return any("positive_recovery" in _identifier(value) for value in values)
 
 
 def _contains_text_payload_key(value: Any) -> bool:
@@ -1640,28 +1921,51 @@ def recover_emlis_gate_failure(
             else _response_kind_from_material_quality(material_quality).value
         )
         relation_values = _dedupe(getattr(candidate, "used_relation_ids", None)) or _dedupe(relation_ids)
+        reader_relation_surface_contract_version = f"{public_recovery_contract_prefix}.reader.v1"
         sentence_count = max(1, min(3, len([part for part in re.split(r"[。！？!?]+", comment) if _clean(part)])))
-        recovered_reader = ListenerReaderReport(
-            understandable=True,
-            addressee_clear=True,
-            speaker_integrity_ok=True,
-            conversational=True,
-            report_like=False,
+        recovered_reader = _synthesize_reader_report_from_public_surface(
+            comment_text=comment,
+            relation_values=relation_values,
+            source_phase=public_recovery_source_phase,
+            source_name="gate_recovery_public_candidate_synthesized_reader",
+            relation_surface_contract_version=reader_relation_surface_contract_version,
             summary_of_output=public_recovery_label,
-            rejection_reasons=[],
             confidence=0.8,
-            relation_surface_contract_version=f"{public_recovery_contract_prefix}.reader.v1",
-            reader_relation_signal_detected=bool(relation_values),
-            reader_relation_signal_count=len(relation_values),
-            reader_relation_signal_keys=relation_values,
-            reader_relation_signal_relation_types=relation_values,
-            expected_relation_types=relation_values,
-            reader_relation_signal_meta={
-                "source_phase": public_recovery_source_phase,
-                "raw_input_included": False,
-            },
-            raw_input_included=False,
+            strict_relation_required=_positive_recovery_relation_context(
+                candidate=candidate,
+                composer_meta=composer_meta,
+                material_route=material_route,
+                route_meta=route_meta,
+                original_composer_candidate=original_composer_candidate,
+            ),
         )
+        strict_fail_closed = _strict_relation_fail_closed_boundary_from_reader(
+            recovered_reader,
+            source_phase=public_recovery_source_phase,
+            fallback_public_recovery_attempted=True,
+        )
+        surface_binding_meta["strict_relation_fail_closed"] = strict_fail_closed
+        surface_binding_meta["strict_relation_fail_closed_evaluated"] = bool(
+            strict_fail_closed.get("strict_relation_fail_closed_evaluated")
+        )
+        surface_binding_meta["strict_relation_fail_closed_applied"] = bool(
+            strict_fail_closed.get("strict_relation_fail_closed_applied")
+        )
+        surface_binding_meta[
+            "fallback_public_recovery_allowed_for_strict_relation_candidate"
+        ] = bool(strict_fail_closed.get("fallback_public_recovery_allowed_for_this_candidate"))
+        if bool(strict_fail_closed.get("strict_relation_fail_closed_applied")):
+            return GateRecoveryLoopResult(
+                False,
+                display_decision,
+                reader_report,
+                grounding_report,
+                template_echo_report,
+                loop_decision=planning_decision,
+                recovery_policy=policy,
+                blocked_reasons=_dedupe(strict_fail_closed.get("blocked_reasons") or []),
+                surface_binding_meta=surface_binding_meta,
+            )
         claims = [
             GroundingSentenceClaim(
                 sentence_index=index,
@@ -1830,24 +2134,51 @@ def recover_emlis_gate_failure(
             surface_binding_meta=surface_binding_meta,
         )
     relation_values = _dedupe(relation_ids)
-    recovered_reader = ListenerReaderReport(
-        understandable=True,
-        addressee_clear=True,
-        speaker_integrity_ok=True,
-        conversational=True,
-        report_like=False,
+    material_reader_source_phase = POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE
+    material_relation_surface_contract_version = "cocolon.emlis.phase20_5.relation_surface.v1"
+    recovered_reader = _synthesize_reader_report_from_public_surface(
+        comment_text=comment,
+        relation_values=relation_values,
+        source_phase=material_reader_source_phase,
+        source_name="gate_recovery_material_synthesized_reader",
+        relation_surface_contract_version=material_relation_surface_contract_version,
         summary_of_output="phase20_5_gate_recovery_material_observation",
-        rejection_reasons=[],
         confidence=0.82,
-        relation_surface_contract_version="cocolon.emlis.phase20_5.relation_surface.v1",
-        reader_relation_signal_detected=bool(relation_values),
-        reader_relation_signal_count=len(relation_values),
-        reader_relation_signal_keys=relation_values,
-        reader_relation_signal_relation_types=relation_values,
-        expected_relation_types=relation_values,
-        reader_relation_signal_meta={"source_phase": POST_FINAL_GATE_RECOVERY_SOURCE_PHASE if post_final_gate_failure else GATE_RECOVERY_LOOP_SOURCE_PHASE, "raw_input_included": False},
-        raw_input_included=False,
+        strict_relation_required=_positive_recovery_relation_context(
+            candidate=candidate,
+            composer_meta=composer_meta,
+            material_route=material_route,
+            route_meta=route_meta,
+            original_composer_candidate=original_composer_candidate,
+        ),
     )
+    strict_fail_closed = _strict_relation_fail_closed_boundary_from_reader(
+        recovered_reader,
+        source_phase=material_reader_source_phase,
+        fallback_public_recovery_attempted=True,
+    )
+    surface_binding_meta["strict_relation_fail_closed"] = strict_fail_closed
+    surface_binding_meta["strict_relation_fail_closed_evaluated"] = bool(
+        strict_fail_closed.get("strict_relation_fail_closed_evaluated")
+    )
+    surface_binding_meta["strict_relation_fail_closed_applied"] = bool(
+        strict_fail_closed.get("strict_relation_fail_closed_applied")
+    )
+    surface_binding_meta[
+        "fallback_public_recovery_allowed_for_strict_relation_candidate"
+    ] = bool(strict_fail_closed.get("fallback_public_recovery_allowed_for_this_candidate"))
+    if bool(strict_fail_closed.get("strict_relation_fail_closed_applied")):
+        return GateRecoveryLoopResult(
+            False,
+            display_decision,
+            reader_report,
+            grounding_report,
+            template_echo_report,
+            loop_decision=planning_decision,
+            recovery_policy=policy,
+            blocked_reasons=_dedupe(strict_fail_closed.get("blocked_reasons") or []),
+            surface_binding_meta=surface_binding_meta,
+        )
     claims = [
         GroundingSentenceClaim(
             sentence_index=0,

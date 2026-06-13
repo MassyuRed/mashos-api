@@ -282,6 +282,15 @@ async def test_step6_positive_recovery_e2e_repairs_reader_relation_not_expressed
     template_gate = gate_results["template_echo"]
     display_gate = _display_gate(reply.meta)
     relation_diagnostic = diagnostic["step5_relation_diagnostic"]
+    strict_fail_closed = relation_diagnostic["strict_relation_fail_closed"]
+
+    assert strict_fail_closed["strict_relation_fail_closed_evaluated"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_triggered"] is False
+    assert strict_fail_closed["strict_relation_type"] == "recovery"
+    assert strict_fail_closed["strict_relation_surface_present_after_repair"] is True
+    assert strict_fail_closed["fallback_public_recovery_allowed_for_this_candidate"] is True
+    assert strict_fail_closed["raw_input_included"] is False
+    assert strict_fail_closed["comment_text_body_included"] is False
 
     assert reader_gate["passed"] is True
     assert template_gate["passed"] is True
@@ -303,6 +312,21 @@ async def test_step6_positive_recovery_e2e_repairs_reader_relation_not_expressed
         assert display_gate["passed"] is False
         assert display_gate["comment_text_allowed"] is False
         assert "relation_not_expressed" not in display_gate.get("rejection_reasons", [])
+
+    strict_fail_closed = relation_diagnostic["strict_relation_fail_closed"]
+    assert strict_fail_closed["strict_relation_fail_closed_evaluated"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_triggered"] is False
+    assert strict_fail_closed["strict_relation_fail_closed_applied"] is False
+    assert strict_fail_closed["strict_relation_type"] == "recovery"
+    assert strict_fail_closed["strict_relation_surface_present_after_repair"] is True
+    assert strict_fail_closed["strict_relation_surface_missing_after_repair"] is False
+    assert strict_fail_closed["fallback_public_recovery_allowed_for_this_candidate"] is True
+    assert relation_diagnostic["strict_relation_fail_closed_evaluated"] is True
+    assert relation_diagnostic["strict_relation_fail_closed_triggered"] is False
+    assert relation_diagnostic["strict_relation_fail_closed_applied"] is False
+    assert relation_diagnostic["strict_relation_type"] == "recovery"
+    assert relation_diagnostic["relation_not_expressed_preserved"] is False
+    assert relation_diagnostic["relation_not_expressed_retained"] is False
 
     assert relation_diagnostic["reader_gate_relation_not_expressed"] is False
     assert relation_diagnostic["reader_relation_signal_detected"] is True
@@ -344,6 +368,22 @@ async def test_step6_positive_recovery_e2e_keeps_fail_closed_when_relation_surfa
     reader_gate = _reader_gate(diagnostic)
     display_gate = _display_gate(reply.meta)
     relation_diagnostic = diagnostic["step5_relation_diagnostic"]
+    strict_fail_closed = relation_diagnostic["strict_relation_fail_closed"]
+
+    assert strict_fail_closed["strict_relation_fail_closed_evaluated"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_triggered"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_applied"] is True
+    assert strict_fail_closed["strict_relation_type"] == "recovery"
+    assert strict_fail_closed["strict_relation_surface_missing_after_repair"] is True
+    assert strict_fail_closed["strict_relation_surface_present_after_repair"] is False
+    assert strict_fail_closed["fallback_public_recovery_allowed_for_this_candidate"] is False
+    assert strict_fail_closed["final_observation_status"] == "rejected"
+    assert strict_fail_closed["final_primary_reason"] == "relation_not_expressed"
+    assert strict_fail_closed["comment_text_allowed"] is False
+    assert strict_fail_closed["relation_not_expressed_preserved"] is True
+    assert "relation_not_expressed" in strict_fail_closed["blocked_reasons"]
+    assert strict_fail_closed["raw_input_included"] is False
+    assert strict_fail_closed["comment_text_body_included"] is False
 
     assert len(composer.payloads) == 2
     assert "relation_not_expressed" in _previous_rejection_reasons(composer.payloads[1])
@@ -357,7 +397,33 @@ async def test_step6_positive_recovery_e2e_keeps_fail_closed_when_relation_surfa
     assert display_gate["passed"] is False
     assert display_gate["comment_text_allowed"] is False
     assert display_gate["comment_text_present"] is False
+    assert display_gate["strict_relation_fail_closed_evaluated"] is True
+    assert display_gate["strict_relation_fail_closed_triggered"] is True
+    assert display_gate["strict_relation_fail_closed_comment_text_allowed"] is False
     assert "relation_not_expressed" in display_gate.get("rejection_reasons", [])
+    strict_fail_closed = relation_diagnostic["strict_relation_fail_closed"]
+    assert strict_fail_closed["strict_relation_fail_closed_evaluated"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_triggered"] is True
+    assert strict_fail_closed["strict_relation_fail_closed_applied"] is True
+    assert strict_fail_closed["strict_relation_type"] == "recovery"
+    assert strict_fail_closed["strict_relation_surface_present_after_repair"] is False
+    assert strict_fail_closed["strict_relation_surface_missing_after_repair"] is True
+    assert strict_fail_closed["fallback_public_recovery_allowed_for_this_candidate"] is False
+    assert strict_fail_closed["final_observation_status"] == "rejected"
+    assert strict_fail_closed["final_primary_reason"] == "relation_not_expressed"
+    assert strict_fail_closed["comment_text_allowed"] is False
+    assert strict_fail_closed["relation_not_expressed_preserved"] is True
+    assert strict_fail_closed["relation_not_expressed_retained"] is True
+    assert "strict_relation_surface_missing_after_repair" in strict_fail_closed["blocked_reasons"]
+    assert "relation_not_expressed" in strict_fail_closed["blocked_reasons"]
+    assert relation_diagnostic["strict_relation_fail_closed_evaluated"] is True
+    assert relation_diagnostic["strict_relation_fail_closed_triggered"] is True
+    assert relation_diagnostic["strict_relation_fail_closed_applied"] is True
+    assert relation_diagnostic["strict_relation_type"] == "recovery"
+    assert relation_diagnostic["relation_not_expressed_preserved"] is True
+    assert relation_diagnostic["relation_not_expressed_retained"] is True
+    assert "strict_relation_surface_missing_after_repair" in relation_diagnostic["strict_relation_fail_closed_blocked_reasons"]
+
     assert relation_diagnostic["reader_gate_relation_not_expressed"] is True
     assert relation_diagnostic["self_repair_relation_marker_applied"] is False
     assert relation_diagnostic["display_gate_relaxed"] is False

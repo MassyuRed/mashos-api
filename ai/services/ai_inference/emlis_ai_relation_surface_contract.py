@@ -47,15 +47,22 @@ GENERIC_RELATION_SURFACE_PATTERNS: tuple[tuple[str, str], ...] = (
 RECOVERY_RELATION_SURFACE_PATTERNS: tuple[tuple[str, str], ...] = (
     (
         "recovery_load_bridge",
-        r"(?:戻ってくる動き|戻る流れ|少し戻(?:って|る)?|形を取り直(?:す|し)|回復)"
+        # Strict recovery is not the broad presence of a recovery word.  It must
+        # surface the bridge between the returning/recovering motion and the
+        # prior load/weight/flow in the generated public text.
+        r"(?:戻ってくる動き|戻る流れ|少し戻(?:って|る)?動き?|形を取り直(?:す|し)|回復)"
+        r".{0,48}"
+        r"(?:前段|その前|前の|負荷|重さ|圧力|疲れ|流れ)"
         r".{0,32}"
-        r"(?:前段|その前|前の|負荷|重さ|圧力|疲れ|流れ)",
+        r"(?:同じ流れ|つなが|切り離されず|関係)",
     ),
     (
         "recovery_load_bridge_reverse",
         r"(?:前段|その前|前の|負荷|重さ|圧力|疲れ)"
+        r".{0,48}"
+        r"(?:戻ってくる動き|戻る流れ|少し戻(?:って|る)?動き?|回復|取り直)"
         r".{0,32}"
-        r"(?:戻ってくる|戻る|回復|取り直)",
+        r"(?:同じ流れ|つなが|切り離されず|関係)",
     ),
     (
         "recovery_connected_flow",
@@ -66,6 +73,13 @@ RECOVERY_RELATION_SURFACE_PATTERNS: tuple[tuple[str, str], ...] = (
         r"(?:つなが|同じ流れ|切り離されず).{0,32}(?:戻る流れ|戻ってくる動き|回復)",
     ),
 )
+
+RELATION_SIGNAL_MARKER_KEY_MAP: dict[str, tuple[str, ...]] = {
+    "recovery_load_bridge": ("recovery_load_bridge_v1",),
+    "recovery_load_bridge_reverse": ("recovery_load_bridge_v1",),
+    "recovery_connected_flow": ("recovery_connected_flow_v1",),
+    "recovery_connected_flow_reverse": ("recovery_connected_flow_v1",),
+}
 
 _RELATION_TYPE_ALIASES = {
     "positive_recovery": "recovery",
@@ -382,6 +396,108 @@ def _expected_relation_types(values: Iterable[Any] | Any = ()) -> Tuple[str, ...
     return _dedupe(normalize_relation_surface_type(value) for value in values)
 
 
+def required_relation_signal_keys_for_reader(relation_type: Any) -> Tuple[str, ...]:
+    """Return strict Reader signal keys required for a relation type.
+
+    The result is body-free: it contains only relation-surface codes used by
+    Reader/Gate diagnostics.  ``recovery`` is intentionally strict; a broad
+    relation type value such as ``recovery`` is not itself a surface signal.
+    """
+
+    relation = normalize_relation_surface_type(relation_type)
+    if relation == "recovery":
+        return tuple(key for key, _ in RECOVERY_RELATION_SURFACE_PATTERNS)
+    return tuple()
+
+
+def relation_marker_keys_for_signal_key(signal_key: Any) -> Tuple[str, ...]:
+    """Return internal marker keys that may produce a concrete signal key.
+
+    Marker keys are self-repair/surface-realizer identifiers.  They are not
+    Reader signal keys and must not be promoted into ``reader_relation_signal_keys``.
+    """
+
+    return tuple(RELATION_SIGNAL_MARKER_KEY_MAP.get(str(signal_key or "").strip(), ()))
+
+
+def required_relation_marker_keys_for_reader(relation_type: Any) -> Tuple[str, ...]:
+    """Return strict internal marker keys associated with a relation type."""
+
+    return _dedupe(
+        marker
+        for signal_key in required_relation_signal_keys_for_reader(relation_type)
+        for marker in relation_marker_keys_for_signal_key(signal_key)
+    )
+
+
+def relation_surface_status_for_reader(
+    *,
+    expected_relation_types: Iterable[Any] | Any = (),
+    detected_signal_keys: Iterable[Any] | Any = (),
+    detected_marker_keys: Iterable[Any] | Any = (),
+) -> dict[str, Any]:
+    """Classify strict relation-surface status without exposing text bodies.
+
+    This helper separates broad relation type identifiers (for example
+    ``recovery``) from concrete surface signal keys (for example
+    ``recovery_load_bridge``).  It is diagnostic-only and does not change Gate
+    pass/fail behavior by itself.
+    """
+
+    expected = _expected_relation_types(expected_relation_types)
+    detected = _dedupe(detected_signal_keys)
+    required = _dedupe(
+        key
+        for relation in expected
+        for key in required_relation_signal_keys_for_reader(relation)
+    )
+    required_markers = _dedupe(
+        key
+        for relation in expected
+        for key in required_relation_marker_keys_for_reader(relation)
+    )
+    detected_markers = _dedupe(detected_marker_keys)
+    matched = _dedupe(key for key in detected if key in required)
+    matched_markers = _dedupe(key for key in detected_markers if key in required_markers)
+    broad_type_keys = _dedupe(
+        key
+        for key in detected
+        if key not in required and normalize_relation_surface_type(key) in expected
+    )
+    strict_required = bool(required)
+    missing = bool(strict_required and not matched)
+    broad_type_only = bool(missing and detected and broad_type_keys)
+
+    if not strict_required:
+        status = "not_required"
+    elif matched:
+        status = "present"
+    else:
+        status = "missing"
+
+    return {
+        "schema_version": "cocolon.emlis.relation_surface_status.v1",
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "strict_relation_signal_required": strict_required,
+        "expected_relation_types": list(expected),
+        "required_relation_signal_keys": list(required),
+        "required_relation_marker_keys": list(required_markers),
+        "detected_relation_signal_keys": list(detected),
+        "detected_relation_marker_keys": list(detected_markers),
+        "matched_relation_signal_keys": list(matched),
+        "matched_relation_marker_keys": list(matched_markers),
+        "broad_relation_type_only_keys": list(broad_type_keys),
+        "broad_relation_type_only": broad_type_only,
+        "relation_surface_status": status,
+        "relation_surface_missing": missing,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+    }
+
+
 def _pattern_hits(text: str, patterns: Sequence[tuple[str, str]]) -> Tuple[str, ...]:
     return _dedupe(key for key, pattern in patterns if re.search(pattern, text))
 
@@ -498,6 +614,7 @@ def build_relation_surface_contract_meta() -> dict[str, Any]:
         "contract_version": RELATION_SURFACE_CONTRACT_VERSION,
         "generic_relation_cue_keys": [key for key, _ in GENERIC_RELATION_SURFACE_PATTERNS],
         "recovery_relation_cue_keys": [key for key, _ in RECOVERY_RELATION_SURFACE_PATTERNS],
+        "relation_signal_marker_key_map": {key: list(value) for key, value in RELATION_SIGNAL_MARKER_KEY_MAP.items()},
         "recovery_marker_key": relation_marker_key("recovery", {"prior_load_present": True}),
         "strict_matching": True,
         "relation_word_alone_passes": False,
@@ -522,6 +639,10 @@ __all__ = [
     "detect_relation_surface",
     "normalize_relation_surface_type",
     "relation_marker_key",
+    "relation_marker_keys_for_signal_key",
     "relation_marker_meta",
     "relation_marker_phrase",
+    "relation_surface_status_for_reader",
+    "required_relation_marker_keys_for_reader",
+    "required_relation_signal_keys_for_reader",
 ]

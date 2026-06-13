@@ -13,6 +13,10 @@ from emlis_ai_types import (
     TemplateEchoReport,
 )
 from emlis_ai_observation_reply_contract import OBSERVATION_REPLY_KIND_LOW_INFORMATION
+from emlis_ai_relation_surface_contract import (
+    relation_surface_status_for_reader,
+    required_relation_signal_keys_for_reader,
+)
 from emlis_ai_runtime_surface_pre_return_gate import (
     ACTION_ALLOW,
     ACTION_BLOCK,
@@ -65,6 +69,82 @@ def _dedupe(values: Any) -> List[str]:
             source = [values]
     return list(dict.fromkeys(str(v) for v in source if str(v)))
 
+
+def _strict_relation_types_from_expected(expected_relation_types: List[str]) -> List[str]:
+    """Return only relation types that require concrete Reader signal keys."""
+
+    strict_types: List[str] = []
+    for relation_type in expected_relation_types or []:
+        relation = str(relation_type or "").strip()
+        if relation and required_relation_signal_keys_for_reader(relation) and relation not in strict_types:
+            strict_types.append(relation)
+    return strict_types
+
+
+def _strict_relation_fail_closed_meta(reader_report: ListenerReaderReport | None) -> Dict[str, Any]:
+    """Return body-free fail-closed state for strict relation surfaces.
+
+    R4 keeps Positive Recovery from depending only on a precomputed Reader
+    ``understandable`` boolean.  If a strict relation type such as ``recovery``
+    is expected, the final display boundary re-checks the concrete surface
+    signal keys and blocks broad relation-type-only reports.
+    """
+
+    report = reader_report or ListenerReaderReport(
+        understandable=False,
+        addressee_clear=False,
+        speaker_integrity_ok=False,
+        conversational=False,
+        report_like=False,
+    )
+    meta = getattr(report, "reader_relation_signal_meta", {}) or {}
+    if not isinstance(meta, Mapping):
+        meta = {}
+    strict_trace = meta.get("strict_relation_trace") if isinstance(meta.get("strict_relation_trace"), Mapping) else {}
+    expected_relation_types = (
+        list(getattr(report, "expected_relation_types", []) or [])
+        or list(meta.get("expected_relation_types") or [])
+        or list(strict_trace.get("expected_relation_types") or [])
+    )
+    detected_signal_keys = (
+        list(getattr(report, "reader_relation_signal_keys", []) or [])
+        or list(meta.get("reader_relation_signal_keys") or [])
+        or list(strict_trace.get("reader_relation_signal_keys") or [])
+    )
+    status = relation_surface_status_for_reader(
+        expected_relation_types=expected_relation_types,
+        detected_signal_keys=detected_signal_keys,
+    )
+    strict_required = bool(status.get("strict_relation_signal_required"))
+    missing = bool(status.get("relation_surface_missing"))
+    triggered = bool(strict_required and missing)
+    expected = list(status.get("expected_relation_types") or [])
+    strict_relation_types = _strict_relation_types_from_expected(expected)
+    return {
+        "schema_version": "cocolon.emlis.strict_relation_fail_closed.v1",
+        "strict_relation_fail_closed_evaluated": bool(strict_required),
+        "strict_relation_fail_closed_triggered": bool(triggered),
+        "strict_relation_type": strict_relation_types[0] if strict_relation_types else "",
+        "strict_relation_types": strict_relation_types,
+        "expected_relation_types": expected,
+        "required_relation_signal_keys": list(status.get("required_relation_signal_keys") or []),
+        "detected_relation_signal_keys": list(status.get("detected_relation_signal_keys") or []),
+        "matched_relation_signal_keys": list(status.get("matched_relation_signal_keys") or []),
+        "broad_relation_type_only": bool(status.get("broad_relation_type_only")),
+        "broad_relation_type_only_keys": list(status.get("broad_relation_type_only_keys") or []),
+        "relation_surface_status": str(status.get("relation_surface_status") or ""),
+        "relation_surface_missing": bool(missing),
+        "strict_relation_surface_present_after_repair": bool(strict_required and not missing),
+        "strict_relation_surface_missing_after_repair": bool(triggered),
+        "fallback_public_recovery_allowed_for_this_candidate": bool(not triggered),
+        "final_primary_reason": "relation_not_expressed" if triggered else "",
+        "comment_text_allowed": False if triggered else None,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+    }
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -693,8 +773,41 @@ def _with_display_gate_trace(
     low_information_quality_rejection_reasons: List[str] | None = None,
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
     visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
+    strict_relation_fail_closed_meta: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
+    strict_relation_fail_closed = dict(strict_relation_fail_closed_meta or out.get("strict_relation_fail_closed") or {})
+    if strict_relation_fail_closed:
+        deduped_reasons_for_meta = _dedupe(rejection_reasons)
+        final_primary_reason = (
+            "relation_not_expressed"
+            if bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered"))
+            else (
+                deduped_reasons_for_meta[0]
+                if deduped_reasons_for_meta
+                else ("passed" if observation_status == "passed" else str(observation_status or ""))
+            )
+        )
+        strict_relation_fail_closed.update(
+            {
+                "final_observation_status": str(observation_status or ""),
+                "final_primary_reason": final_primary_reason,
+                "comment_text_allowed": bool(
+                    observation_status == "passed"
+                    and str(comment_text or "").strip()
+                    and not bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered"))
+                ),
+                "fallback_public_recovery_allowed_for_this_candidate": bool(
+                    not strict_relation_fail_closed.get("strict_relation_fail_closed_triggered")
+                ),
+                "raw_input_included": False,
+                "comment_text_included": False,
+                "comment_text_body_included": False,
+                "candidate_body_included": False,
+                "surface_body_included": False,
+            }
+        )
+        out["strict_relation_fail_closed"] = strict_relation_fail_closed
     binding_fields = _gate_binding_fields(
         binding_meta,
         gate="display",
@@ -766,6 +879,13 @@ def _with_display_gate_trace(
         "state_answer_public_meta_summary_only": True,
         "state_answer_contract_body_returned": False,
         "state_answer_raw_evidence_included": False,
+        "strict_relation_fail_closed_evaluated": bool(strict_relation_fail_closed.get("strict_relation_fail_closed_evaluated")),
+        "strict_relation_fail_closed_triggered": bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered")),
+        "strict_relation_surface_present_after_repair": bool(strict_relation_fail_closed.get("strict_relation_surface_present_after_repair")),
+        "strict_relation_surface_missing_after_repair": bool(strict_relation_fail_closed.get("strict_relation_surface_missing_after_repair")),
+        "strict_relation_fail_closed_comment_text_allowed": False
+        if bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered"))
+        else bool(observation_status == "passed" and str(comment_text or "").strip()),
         "display_gate_relaxed": False,
         **binding_fields,
     }
@@ -1096,6 +1216,9 @@ def decide_emlis_observation_display(
         runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
         visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
     )
+    strict_relation_fail_closed = _strict_relation_fail_closed_meta(reader_report)
+    if strict_relation_fail_closed.get("strict_relation_fail_closed_evaluated"):
+        gate_trace["strict_relation_fail_closed"] = dict(strict_relation_fail_closed)
     display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
     reasons: List[str] = []
     observation_kind = str(observation_reply_kind or "").strip()
@@ -1126,6 +1249,7 @@ def decide_emlis_observation_display(
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
                 visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
+                strict_relation_fail_closed_meta=strict_relation_fail_closed,
             ),
         )
 
@@ -1139,6 +1263,8 @@ def decide_emlis_observation_display(
             reasons.append("rule_rendered_or_fallback_source")
     if not reader_report.understandable:
         reasons.extend(reader_report.rejection_reasons or ["reader_cannot_understand"])
+    if strict_relation_fail_closed.get("strict_relation_fail_closed_triggered"):
+        reasons.append("relation_not_expressed")
     if not grounding_report.passed:
         reasons.extend(grounding_report.rejection_reasons or ["ungrounded_or_relation_broken"])
     if not template_echo_report.passed:
@@ -1175,6 +1301,7 @@ def decide_emlis_observation_display(
                 low_information_quality_rejection_reasons=low_information_quality_reasons,
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
                 visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
+                strict_relation_fail_closed_meta=strict_relation_fail_closed,
             ),
         )
 
@@ -1194,6 +1321,7 @@ def decide_emlis_observation_display(
             low_information_quality_rejection_reasons=low_information_quality_reasons,
             runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
             visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
+            strict_relation_fail_closed_meta=strict_relation_fail_closed,
         ),
     )
 

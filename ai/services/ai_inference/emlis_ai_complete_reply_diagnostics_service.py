@@ -18,7 +18,10 @@ from emlis_ai_complete_composer_initial_meta import (
     build_complete_composer_initial_term_meta,
 )
 from emlis_ai_complete_composer_types import COMPLETE_COMPOSER_GENERATION_METHOD
-from emlis_ai_relation_surface_contract import RELATION_SURFACE_CONTRACT_VERSION
+from emlis_ai_relation_surface_contract import (
+    RELATION_SURFACE_CONTRACT_VERSION,
+    relation_surface_status_for_reader,
+)
 from emlis_ai_complete_surface_quality_signature import (
     SURFACE_QUALITY_SIGNATURE_VERSION,
     assert_surface_quality_signature_meta_only,
@@ -116,6 +119,20 @@ _SAFE_META_KEYS = (
     "surface_grammar_warning_count",
     "relation_surface_contract_version",
     "relation_surface_report",
+    "strict_relation_trace",
+    "relation_signal_source_records",
+    "relation_signal_source_priority",
+    "selected_relation_signal_source",
+    "gate_recovery_synthesized_reader_report",
+    "strict_relation_signal_required",
+    "required_relation_signal_keys",
+    "matched_relation_signal_keys",
+    "broad_relation_type_only",
+    "broad_relation_type_only_keys",
+    "relation_surface_status",
+    "relation_surface_missing",
+    "relation_surface_missing_after_repair",
+    "strict_relation_surface_present_anywhere",
     "reader_relation_signal_detected",
     "reader_relation_signal_count",
     "reader_relation_signal_keys",
@@ -239,6 +256,8 @@ _SAFE_META_KEYS = (
     "unsupported_event_assertion_present",
     "step6_low_information_specificity_ready",
     "comment_text_body_included",
+    "candidate_body_included",
+    "surface_body_included",
     "raw_input_included",
 )
 
@@ -1021,6 +1040,291 @@ def _first_from_sources(sources: Iterable[Mapping[str, Any]], *keys: str) -> str
     return ""
 
 
+RELATION_SIGNAL_SOURCE_PRIORITY = (
+    "reader_gate",
+    "runtime_surface_report",
+    "self_repair_report",
+    "limited_reader_repair_report",
+    "gate_recovery_synthesized_report",
+)
+
+
+def _relation_signal_keys_from_sources(sources: Iterable[Mapping[str, Any]]) -> list[str]:
+    return _list_from_sources(
+        sources,
+        "reader_relation_signal_keys",
+        "self_repair_relation_marker_signal_keys",
+        "self_repair_relation_signal_keys",
+        "relation_marker_signal_keys",
+        "keys",
+    )
+
+
+def _relation_source_record(
+    *,
+    source: str,
+    sources: Iterable[Mapping[str, Any]],
+    expected_relation_types: Iterable[Any] | Any,
+) -> dict[str, Any]:
+    source_list = [item for item in sources if isinstance(item, Mapping)]
+    signal_keys = _relation_signal_keys_from_sources(source_list)
+    relation_types = _list_from_sources(
+        source_list,
+        "reader_relation_signal_relation_types",
+        "self_repair_relation_marker_signal_relation_types",
+        "self_repair_relation_signal_relation_types",
+        "relation_marker_signal_relation_types",
+        "relation_types",
+    )
+    marker_keys = _list_from_sources(
+        source_list,
+        "self_repair_relation_marker_keys",
+        "self_repair_relation_marker_key",
+        "surface_relation_marker_keys",
+        "surface_relation_marker_key",
+        "relation_marker_key",
+    )
+    status = relation_surface_status_for_reader(
+        expected_relation_types=expected_relation_types,
+        detected_signal_keys=signal_keys,
+    )
+    return {
+        "source": source,
+        "signal_keys": list(signal_keys),
+        "relation_types": list(relation_types),
+        "marker_keys": list(marker_keys),
+        "strict_relation_signal_required": bool(status.get("strict_relation_signal_required")),
+        "matched_relation_signal_keys": list(status.get("matched_relation_signal_keys") or []),
+        "broad_relation_type_only": bool(status.get("broad_relation_type_only")),
+        "relation_surface_status": _clean(status.get("relation_surface_status")),
+        "relation_surface_missing": bool(status.get("relation_surface_missing")),
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+    }
+
+
+def _relation_source_records(
+    *,
+    reader_sources: Iterable[Mapping[str, Any]],
+    runtime_sources: Iterable[Mapping[str, Any]],
+    limited_reader_repair_diagnostic: Mapping[str, Any],
+    expected_relation_types: Iterable[Any] | Any,
+) -> list[dict[str, Any]]:
+    self_repair_sources = [
+        source
+        for source in runtime_sources
+        if isinstance(source, Mapping)
+        and (
+            source.get("self_repair_relation_marker_signal_keys") is not None
+            or source.get("self_repair_relation_signal_keys") is not None
+            or source.get("self_repair_relation_marker_applied") is not None
+        )
+    ]
+    limited_sources = [limited_reader_repair_diagnostic] if isinstance(limited_reader_repair_diagnostic, Mapping) else []
+    return [
+        _relation_source_record(
+            source="reader_gate",
+            sources=reader_sources,
+            expected_relation_types=expected_relation_types,
+        ),
+        _relation_source_record(
+            source="runtime_surface_report",
+            sources=runtime_sources,
+            expected_relation_types=expected_relation_types,
+        ),
+        _relation_source_record(
+            source="self_repair_report",
+            sources=self_repair_sources,
+            expected_relation_types=expected_relation_types,
+        ),
+        _relation_source_record(
+            source="limited_reader_repair_report",
+            sources=limited_sources,
+            expected_relation_types=expected_relation_types,
+        ),
+    ]
+
+
+def _gate_recovery_synthesized_reader_report(
+    *,
+    reader_gate: Mapping[str, Any],
+    relation_surface_contract_version: str,
+) -> bool:
+    meta = reader_gate.get("reader_relation_signal_meta") if isinstance(reader_gate, Mapping) else {}
+    source_phase = _clean(meta.get("source_phase")) if isinstance(meta, Mapping) else ""
+    contract_version = _clean(relation_surface_contract_version)
+    return bool(
+        "gate_recovery" in source_phase
+        or "public_observation_recovery" in contract_version
+        or "phase20_5" in contract_version
+        or "phase20_6" in contract_version
+        or "phase20_7" in contract_version
+        or "phase20_8" in contract_version
+    )
+
+
+def _selected_relation_signal_source(records: Iterable[Mapping[str, Any]]) -> str:
+    by_source = {str(record.get("source") or ""): record for record in records if isinstance(record, Mapping)}
+    for source in RELATION_SIGNAL_SOURCE_PRIORITY:
+        record = by_source.get(source)
+        if record and record.get("signal_keys"):
+            return source
+    return "none"
+
+
+def _build_strict_relation_trace(
+    *,
+    expected_relation_types: Iterable[Any] | Any,
+    reader_signal_keys: Iterable[Any] | Any,
+    reader_signal_relation_types: Iterable[Any] | Any,
+    marker_signal_keys: Iterable[Any] | Any,
+    marker_keys: Iterable[Any] | Any,
+    source_records: Iterable[Mapping[str, Any]],
+    selected_relation_signal_source: str,
+    gate_recovery_synthesized_reader_report: bool,
+) -> dict[str, Any]:
+    reader_status = relation_surface_status_for_reader(
+        expected_relation_types=expected_relation_types,
+        detected_signal_keys=reader_signal_keys,
+    )
+    marker_status = relation_surface_status_for_reader(
+        expected_relation_types=expected_relation_types,
+        detected_signal_keys=marker_signal_keys,
+    )
+    records = [dict(record) for record in source_records if isinstance(record, Mapping)]
+    strict_present_anywhere = any(record.get("matched_relation_signal_keys") for record in records)
+    relation_surface_missing_after_repair = bool(
+        reader_status.get("strict_relation_signal_required")
+        and not strict_present_anywhere
+    )
+    return {
+        "schema_version": "cocolon.emlis.positive_recovery.strict_relation_trace.v1",
+        "relation_surface_contract_version": RELATION_SURFACE_CONTRACT_VERSION,
+        "relation_signal_source_priority": list(RELATION_SIGNAL_SOURCE_PRIORITY),
+        "selected_relation_signal_source": selected_relation_signal_source,
+        "gate_recovery_synthesized_reader_report": bool(gate_recovery_synthesized_reader_report),
+        "strict_relation_signal_required": bool(reader_status.get("strict_relation_signal_required")),
+        "expected_relation_types": list(reader_status.get("expected_relation_types") or []),
+        "required_relation_signal_keys": list(reader_status.get("required_relation_signal_keys") or []),
+        "reader_relation_signal_keys": list(_dedupe(reader_signal_keys)),
+        "reader_relation_signal_relation_types": list(_dedupe(reader_signal_relation_types)),
+        "matched_relation_signal_keys": list(reader_status.get("matched_relation_signal_keys") or []),
+        "broad_relation_type_only_keys": list(reader_status.get("broad_relation_type_only_keys") or []),
+        "broad_relation_type_only": bool(reader_status.get("broad_relation_type_only")),
+        "relation_surface_status": _clean(reader_status.get("relation_surface_status")),
+        "relation_surface_missing": bool(reader_status.get("relation_surface_missing")),
+        "self_repair_relation_marker_signal_keys": list(_dedupe(marker_signal_keys)),
+        "self_repair_relation_marker_keys": list(_dedupe(marker_keys)),
+        "self_repair_matched_relation_signal_keys": list(marker_status.get("matched_relation_signal_keys") or []),
+        "strict_relation_surface_present_anywhere": bool(strict_present_anywhere),
+        "relation_surface_missing_after_repair": relation_surface_missing_after_repair,
+        "relation_signal_source_records": records,
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+    }
+
+
+def _strict_relation_fail_closed_diagnostic(
+    *,
+    strict_relation_trace: Mapping[str, Any],
+    gate_trace: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Build R4 Positive Recovery fail-closed diagnostic without text bodies.
+
+    The diagnostic mirrors the runtime fail-closed boundary used by Gate
+    Recovery, but remains diagnostic-only.  It keeps relation type
+    (``recovery``) separate from concrete relation signal keys
+    (``recovery_load_bridge`` family), and it never carries raw input,
+    candidate text, or public comment bodies.
+    """
+
+    trace = dict(strict_relation_trace or {})
+    display_gate = {}
+    if isinstance(gate_trace, Mapping) and isinstance(gate_trace.get("display_gate"), Mapping):
+        display_gate = dict(gate_trace.get("display_gate") or {})
+    display_reasons = _dedupe(display_gate.get("rejection_reasons") or [])
+    expected_relation_types = _dedupe(trace.get("expected_relation_types") or [])
+    strict_required = bool(trace.get("strict_relation_signal_required"))
+    missing_after_repair = bool(
+        trace.get("relation_surface_missing_after_repair")
+        or (strict_required and trace.get("relation_surface_missing"))
+    )
+    triggered = bool(strict_required and missing_after_repair)
+    strict_relation_type = (
+        "recovery"
+        if "recovery" in expected_relation_types
+        else (expected_relation_types[0] if expected_relation_types else "")
+    )
+    final_observation_status = _clean(display_gate.get("observation_status"))
+    if not final_observation_status:
+        if triggered:
+            final_observation_status = "rejected"
+        elif display_gate.get("passed") is True:
+            final_observation_status = "passed"
+    final_primary_reason = (
+        "relation_not_expressed"
+        if triggered
+        else (
+            "passed"
+            if final_observation_status == "passed"
+            else (_dedupe(display_reasons) or [final_observation_status or ""])[0]
+        )
+    )
+    blocked_reasons = (
+        ["strict_relation_surface_missing_after_repair", "relation_not_expressed"]
+        if triggered
+        else []
+    )
+    relation_not_expressed_retained = bool(
+        triggered
+        or "relation_not_expressed" in display_reasons
+        or final_primary_reason == "relation_not_expressed"
+    )
+    return {
+        "schema_version": "cocolon.emlis.strict_relation_fail_closed.v1",
+        "source_phase": "Step5_positive_recovery_strict_relation_fail_closed",
+        "strict_relation_fail_closed_evaluated": bool(strict_required),
+        "strict_relation_fail_closed_triggered": bool(triggered),
+        "strict_relation_fail_closed_applied": bool(triggered),
+        "strict_relation_type": strict_relation_type,
+        "expected_relation_types": list(expected_relation_types),
+        "repair_attempt_count": 1 if strict_required else 0,
+        "strict_relation_surface_present_after_repair": bool(
+            strict_required and not missing_after_repair and trace.get("strict_relation_surface_present_anywhere")
+        ),
+        "strict_relation_surface_missing_after_repair": bool(missing_after_repair),
+        "fallback_public_recovery_attempted": bool(trace.get("gate_recovery_synthesized_reader_report")),
+        "fallback_public_recovery_allowed_for_this_candidate": bool(strict_required and not missing_after_repair),
+        "final_observation_status": final_observation_status,
+        "final_primary_reason": final_primary_reason,
+        "comment_text_allowed": bool(display_gate.get("comment_text_allowed")) if display_gate else False,
+        "display_gate_passed": bool(display_gate.get("passed")) if display_gate else False,
+        "display_gate_rejection_reasons": list(display_reasons),
+        "relation_not_expressed_preserved": bool(relation_not_expressed_retained),
+        "relation_not_expressed_retained": bool(relation_not_expressed_retained),
+        "blocked_reasons": list(blocked_reasons),
+        "raw_input_included": False,
+        "comment_text_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+        "response_shape_changed": False,
+        "public_response_key_change": False,
+        "api_route_changed": False,
+        "db_physical_name_changed": False,
+        "rn_visible_title_changed": False,
+    }
+
+
 _LIMITED_READER_REPAIR_SOURCE_KEYS = (
     "limited_reader_repair",
     "limited_reader_repair_step3",
@@ -1246,8 +1550,6 @@ def build_positive_recovery_relation_diagnostic(
     reader_signal_relation_types = _list_from_sources(
         reader_sources,
         "reader_relation_signal_relation_types",
-        "reader_relation_signal_relation_types",
-        "reader_relation_signal_relation_types",
         "relation_types",
     )
     if not reader_signal_detected:
@@ -1310,6 +1612,31 @@ def build_positive_recovery_relation_diagnostic(
         "relation_marker_key",
     )
     surface_recovery_aligned = _bool_from_sources(runtime_sources, "surface_recovery_relation_line_aligned")
+    source_records = _relation_source_records(
+        reader_sources=reader_sources,
+        runtime_sources=runtime_sources,
+        limited_reader_repair_diagnostic=limited_reader_repair_diagnostic,
+        expected_relation_types=expected_relation_types,
+    )
+    selected_relation_signal_source = _selected_relation_signal_source(source_records)
+    gate_recovery_synthesized_reader = _gate_recovery_synthesized_reader_report(
+        reader_gate=reader_gate if isinstance(reader_gate, Mapping) else {},
+        relation_surface_contract_version=relation_surface_contract_version,
+    )
+    strict_relation_trace = _build_strict_relation_trace(
+        expected_relation_types=expected_relation_types,
+        reader_signal_keys=reader_signal_keys,
+        reader_signal_relation_types=reader_signal_relation_types,
+        marker_signal_keys=marker_signal_keys,
+        marker_keys=marker_keys,
+        source_records=source_records,
+        selected_relation_signal_source=selected_relation_signal_source,
+        gate_recovery_synthesized_reader_report=gate_recovery_synthesized_reader,
+    )
+    strict_relation_fail_closed = _strict_relation_fail_closed_diagnostic(
+        strict_relation_trace=strict_relation_trace,
+        gate_trace=gate_trace,
+    )
     diagnostic = {
         "version": RELATION_DIAGNOSTIC_VERSION,
         "target_step": RELATION_DIAGNOSTIC_STEP,
@@ -1321,6 +1648,32 @@ def build_positive_recovery_relation_diagnostic(
         "reader_relation_signal_keys": list(reader_signal_keys),
         "reader_relation_signal_relation_types": list(reader_signal_relation_types),
         "expected_relation_types": list(expected_relation_types),
+        "strict_relation_trace": strict_relation_trace,
+        "strict_relation_fail_closed": strict_relation_fail_closed,
+        "strict_relation_fail_closed_evaluated": bool(strict_relation_fail_closed.get("strict_relation_fail_closed_evaluated")),
+        "strict_relation_fail_closed_triggered": bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered")),
+        "strict_relation_fail_closed_applied": bool(strict_relation_fail_closed.get("strict_relation_fail_closed_applied")),
+        "strict_relation_type": _clean(strict_relation_fail_closed.get("strict_relation_type")),
+        "strict_relation_surface_present_after_repair": bool(strict_relation_fail_closed.get("strict_relation_surface_present_after_repair")),
+        "strict_relation_surface_missing_after_repair": bool(strict_relation_fail_closed.get("strict_relation_surface_missing_after_repair")),
+        "fallback_public_recovery_attempted": bool(strict_relation_fail_closed.get("fallback_public_recovery_attempted")),
+        "fallback_public_recovery_allowed_for_this_candidate": bool(strict_relation_fail_closed.get("fallback_public_recovery_allowed_for_this_candidate")),
+        "relation_not_expressed_preserved": bool(strict_relation_fail_closed.get("relation_not_expressed_preserved")),
+        "relation_not_expressed_retained": bool(strict_relation_fail_closed.get("relation_not_expressed_retained")),
+        "strict_relation_fail_closed_blocked_reasons": list(strict_relation_fail_closed.get("blocked_reasons") or []),
+        "relation_signal_source_records": list(source_records),
+        "relation_signal_source_priority": list(RELATION_SIGNAL_SOURCE_PRIORITY),
+        "selected_relation_signal_source": selected_relation_signal_source,
+        "gate_recovery_synthesized_reader_report": bool(gate_recovery_synthesized_reader),
+        "strict_relation_signal_required": bool(strict_relation_trace.get("strict_relation_signal_required")),
+        "required_relation_signal_keys": list(strict_relation_trace.get("required_relation_signal_keys") or []),
+        "matched_relation_signal_keys": list(strict_relation_trace.get("matched_relation_signal_keys") or []),
+        "broad_relation_type_only_keys": list(strict_relation_trace.get("broad_relation_type_only_keys") or []),
+        "broad_relation_type_only": bool(strict_relation_trace.get("broad_relation_type_only")),
+        "relation_surface_status": _clean(strict_relation_trace.get("relation_surface_status")),
+        "relation_surface_missing": bool(strict_relation_trace.get("relation_surface_missing")),
+        "relation_surface_missing_after_repair": bool(strict_relation_trace.get("relation_surface_missing_after_repair")),
+        "strict_relation_surface_present_anywhere": bool(strict_relation_trace.get("strict_relation_surface_present_anywhere")),
         "reader_gate_relation_not_expressed": "relation_not_expressed" in reader_rejection_reasons,
         "reader_rejection_reasons": list(reader_rejection_reasons),
         "limited_reader_repair_diagnostic": limited_reader_repair_diagnostic,
@@ -2033,6 +2386,20 @@ def attach_complete_reply_service_diagnostics(
         diagnostic_summary["relation_surface_diagnostic"] = relation_diagnostic
         for key in (
             "relation_surface_contract_version",
+            "strict_relation_trace",
+            "relation_signal_source_records",
+            "relation_signal_source_priority",
+            "selected_relation_signal_source",
+            "gate_recovery_synthesized_reader_report",
+            "strict_relation_signal_required",
+            "required_relation_signal_keys",
+            "matched_relation_signal_keys",
+            "broad_relation_type_only",
+            "broad_relation_type_only_keys",
+            "relation_surface_status",
+            "relation_surface_missing",
+            "relation_surface_missing_after_repair",
+            "strict_relation_surface_present_anywhere",
             "reader_relation_signal_detected",
             "reader_relation_signal_count",
             "reader_relation_signal_keys",
@@ -2057,6 +2424,20 @@ def attach_complete_reply_service_diagnostics(
             "limited_reader_repair_meaning_added",
             "limited_reader_repair_gate_relaxed",
             "limited_reader_repair_raw_input_included",
+            "strict_relation_trace",
+            "relation_signal_source_records",
+            "relation_signal_source_priority",
+            "selected_relation_signal_source",
+            "gate_recovery_synthesized_reader_report",
+            "strict_relation_signal_required",
+            "required_relation_signal_keys",
+            "matched_relation_signal_keys",
+            "broad_relation_type_only",
+            "broad_relation_type_only_keys",
+            "relation_surface_status",
+            "relation_surface_missing",
+            "relation_surface_missing_after_repair",
+            "strict_relation_surface_present_anywhere",
         ):
             if key in relation_diagnostic:
                 diagnostic_summary[key] = relation_diagnostic[key]

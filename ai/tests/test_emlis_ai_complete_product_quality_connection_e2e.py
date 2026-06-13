@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from emlis_ai_complete_product_quality_scorecard_service import COMPLETE_PRODUCT_QUALITY_SCORECARD_VERSION
+from emlis_ai_p7_body_free_leak_guard import (
+    assert_p7_body_free_no_payload_leak,
+    build_p7_product_quality_connection_scorecard_body_free_contract,
+)
 
 _SAMPLE_MEMO = "疲れているけれど、少し整えたい気持ちもある。"
+_SAMPLE_INPUT_ID = "step6-product-quality-scorecard-input"
 
 
 def _clear_flags(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,7 +57,7 @@ async def test_step6_product_quality_scorecard_is_attached_to_complete_initial_r
     reply = await render_emlis_ai_reply(
         user_id="step6-product-quality-scorecard-user",
         subscription_tier="free",
-        current_input=_sample_current_input("step6-product-quality-scorecard-input"),
+        current_input=_sample_current_input(_SAMPLE_INPUT_ID),
         display_name="Mash",
         timezone_name="Asia/Tokyo",
     )
@@ -93,8 +96,13 @@ async def test_step6_product_quality_scorecard_is_attached_to_complete_initial_r
     assert phase_gate["step6_product_quality_response_shape_changed"] is False
     assert phase_gate["step6_product_quality_display_gate_relaxed"] is False
 
-    serialized = json.dumps(scorecard, ensure_ascii=False, sort_keys=True)
-    assert _SAMPLE_MEMO not in serialized
-    assert "memo_action" not in serialized
-    assert "current_input" not in serialized
-    assert "source_text" not in serialized
+    body_free_contract = build_p7_product_quality_connection_scorecard_body_free_contract()
+    assert_p7_body_free_no_payload_leak(
+        scorecard,
+        source="complete_product_quality_connection_e2e.scorecard",
+        contract=body_free_contract,
+        forbidden_raw_values={
+            "current_input.memo": _SAMPLE_MEMO,
+            "current_input.id": _SAMPLE_INPUT_ID,
+        },
+    )
