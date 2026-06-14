@@ -53,13 +53,31 @@ _SUPPORT_REQUIRED_RE: Final = re.compile(
     r"(安全が保てない|今すぐ危ない|助けてほしい|助けが必要|緊急|救急|通報|抑えられない|止められない)",
     re.IGNORECASE,
 )
-_SELF_DENIAL_RE: Final = re.compile(
-    r"(自分(?:なんか|など|は|が|を|だけ)?[^。！？!?\n]{0,36}(?:嫌い|きらい|ダメ|だめ|駄目|価値がない|価値ない|"
-    r"いらない|最低|クズ|責め|追い込|許せない|好きになれない|下げ|続けられない人間|できない)|"
-    r"(?:私|わたし|俺|僕)(?:なんか|など|は|が)?[^。！？!?\n]{0,32}(?:嫌い|きらい|ダメ|だめ|駄目|"
-    r"価値がない|価値ない|いらない|最低|クズ|悪い|許せない|できない)|"
-    r"できない自分|自分を傷つけてるのは私|自分を傷つけているのは私|自分を傷つけてる|自分を傷つけている|"
+_EXPRESSION_DIFFICULTY_RE: Final = re.compile(
+    r"(上手く表現できない|うまく表現できない|表現できない|"
+    r"言葉にできない|言葉に出来ない|整理できない|言い切れない|"
+    r"うまく言えない|上手く言えない)",
+    re.IGNORECASE,
+)
+_SELF_DENIAL_HARD_MARKER_RE: Final = re.compile(
+    r"((?:自分|私|わたし|俺|僕)(?:なんか|など|は|が|を|だけ|には|の)?[^。！？!?\n]{0,36}"
+    r"(?:嫌い|きらい|ダメ|だめ|駄目|価値がない|価値ない|いらない|最低|クズ|責め|追い込|"
+    r"許せない|好きになれない|下げ|続けられない人間|悪い)|"
+    r"自分を傷つけてるのは私|自分を傷つけているのは私|自分を傷つけてる|自分を傷つけている|"
     r"自分のせい|私のせい|私が悪い|自分が悪い|いい事なんて絶対にない|いいことなんて絶対にない)",
+    re.IGNORECASE,
+)
+# Keep inability-as-identity separate from expression difficulty.  General
+# exhaustion such as ``何もできないくらい消耗`` must remain normal observation
+# unless the text also contains self-worth / identity-denial markers.
+_SELF_DENIAL_IDENTITY_INABILITY_RE: Final = re.compile(
+    r"((?:自分|私|わたし|俺|僕)(?:なんか|など|は|が|には)?[^。！？!?\n]{0,16}(?:何も|なにも|何にも)できない|"
+    r"(?:自分|私|わたし|俺|僕)(?:なんか|など|は|が)?[^。！？!?\n]{0,16}できない(?:人間|奴|やつ)|"
+    r"できない自分|できない人間)",
+    re.IGNORECASE,
+)
+_SELF_DENIAL_RE: Final = re.compile(
+    _SELF_DENIAL_HARD_MARKER_RE.pattern + r"|" + _SELF_DENIAL_IDENTITY_INABILITY_RE.pattern,
     re.IGNORECASE,
 )
 _CONTINUATION_REFUSAL_RE: Final = re.compile(
@@ -87,6 +105,25 @@ def _dedupe(values: Iterable[Any]) -> list[str]:
         if item and item not in out:
             out.append(item)
     return out
+
+
+def _is_self_denial_non_emergency(value: str) -> bool:
+    """Detect non-emergency self-denial without treating expression difficulty as identity denial.
+
+    P7-HOLD-004 narrows the older broad "self reference + できない" pattern.
+    Expression difficulty such as ``表現できない`` or ``言葉にできない`` stays on
+    the normal observation path unless a hard self-worth marker or an
+    identity-shaped inability marker is also present.  This helper returns only
+    booleans and never exposes matched text to meta.
+    """
+
+    if _SELF_DENIAL_HARD_MARKER_RE.search(value):
+        return True
+    if _SELF_DENIAL_IDENTITY_INABILITY_RE.search(value):
+        return True
+    if _EXPRESSION_DIFFICULTY_RE.search(value):
+        return False
+    return False
 
 
 def _text_from_current_input(current_input: Any | None) -> str:
@@ -210,7 +247,7 @@ def classify_emlis_safety_triage_text(text: Any) -> EmlisSafetyTriageDecision:
             boundary_types=["safety_support_required"],
         )
 
-    if _SELF_DENIAL_RE.search(value):
+    if _is_self_denial_non_emergency(value):
         return EmlisSafetyTriageDecision(
             safety_triage_kind=TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER,
             response_kind=RESPONSE_SELF_DENIAL_SAFE_STATE_ANSWER,

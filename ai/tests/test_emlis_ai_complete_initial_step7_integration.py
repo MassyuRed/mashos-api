@@ -173,27 +173,49 @@ async def test_step7_integration_ap0_green_and_rollout_green_resolves_complete_c
 
 
 @pytest.mark.asyncio
-async def test_step7_integration_gate_rejected_keeps_comment_text_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_step7_integration_stale_fail_closed_expectation_uses_binding_contract_consistency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _enable_complete_initial(monkeypatch)
 
-    reply = await _render("step7-gate-rejected-input", user_id="step7-gate-rejected-user")
+    reply = await _render("step7-gate-contract-input", user_id="step7-gate-contract-user")
     diagnostic = _diagnostic(reply)
     phase_gate = _phase_gate(reply)
     gate_results = diagnostic["gate_diagnostic"]["gate_results"]
     step5 = diagnostic["complete_initial_candidate_generation_path"]
     step6 = diagnostic["step6_final_ap0_scorecard_connection"]
+    display = step5["gate_results"]["display"]
 
     assert diagnostic["complete_initial_entry_ap0_decision"]["green"] is True
     assert diagnostic["complete_initial_client_resolved"] is True
     assert step5["candidate_generated"] is True
     assert step5["existing_reader_grounding_template_display_gates_preserved"] is True
-    assert any(not gate_results[key]["passed"] for key in ("reader", "grounding", "template_echo", "display"))
-    assert reply.meta["observation_status"] == "rejected"
-    assert step5["display_observation_status"] == "rejected"
-    assert step5["non_passed_comment_text_empty"] is True
-    assert step6["scorecard_display_passed"] is False
+    assert all(gate_results[key]["passed"] for key in ("reader", "grounding", "template_echo", "display"))
+    assert reply.meta["observation_status"] == "passed"
+    assert reply.comment_text.strip()
+    assert step5["display_observation_status"] == "passed"
+    assert step5["public_comment_text_present"] is True
+    assert step5["passed_only_comment_text_contract_preserved"] is True
+    assert step5["display_gate_relaxed"] is False
+
+    assert display["binding_required"] is True
+    assert display["binding_used"] is True
+    assert display["binding_missing"] is False
+    assert display["binding_count"] == 3
+    assert display["expected_binding_count"] == 3
+    assert display["display_binding_contract_consistent"] is True
+    assert display["display_binding_trace_repair_applied"] is True
+    assert display["display_binding_expected_count_source"] == "accepted_grounding_sentence_count"
+    assert step5["gate_results"]["display"]["comment_text_body_included"] is False
+    assert step5["gate_results"]["display"]["candidate_body_included"] is False
+    assert step5["gate_results"]["display"]["raw_input_included"] is False
+    assert step5["gate_results"]["display"]["surface_body_included"] is False
+
+    assert step6["scorecard_display_passed"] is True
+    assert step6["public_comment_text_assigned_by_step6"] is False
+    assert step6["fixed_fallback_used"] is False
     assert phase_gate["step5_existing_gates_preserved_after_generation"] is True
-    _assert_fail_closed_public_shape(reply)
+    assert phase_gate["step6_scorecard_display_passed"] is True
 
 
 @pytest.mark.asyncio

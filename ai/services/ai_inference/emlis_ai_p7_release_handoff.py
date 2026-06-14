@@ -30,6 +30,15 @@ from emlis_ai_p7_long_run_gate_handoff import (
     assert_p7_long_run_gate_handoff_contract,
     build_p7_long_run_gate_handoff,
 )
+from emlis_ai_p7_hold004_positive_public_shape_boundary import (
+    P7_HOLD004_POSITIVE_PUBLIC_SHAPE_REPAIRED_STATUS,
+    P7_HOLD004_POSITIVE_PUBLIC_SHAPE_SCHEMA_VERSION,
+    assert_p7_hold004_positive_public_shape_boundary_contract,
+)
+from emlis_ai_p7_hold004_step5_candidate_gate_classification import (
+    P7_HOLD004_STEP5_R6_MATERIAL_CONNECTION_SCHEMA_VERSION,
+    P7_HOLD004_STEP5_RED_ID,
+)
 from emlis_ai_p7_hold_matrix import (
     P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION,
     P7_R10_HOLD_MATRIX_SCHEMA_VERSION,
@@ -61,6 +70,16 @@ P7_RELEASE_HANDOFF_SCHEMA_VERSION: Final = "cocolon.emlis.p7.release_decision_ha
 P7_RELEASE_HANDOFF_STEP: Final = "P7-8_ReleaseDecisionHandoffMaterial_20260612"
 P7_RELEASE_HANDOFF_SCOPE: Final = "P7_release_decision_handoff_material"
 P7_RELEASE_HANDOFF_TARGET_MODULE: Final = "emlis_ai_product_release_decision"
+P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH: Final = (
+    "docs/Cocolon_EmlisAI_P7_HOLD004_Phase16ComposerRedClassification_ImplementationResult_20260613.md"
+)
+P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF: Final = "p7_hold004_phase16_composer_result_20260613"
+P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH: Final = (
+    "docs/Cocolon_EmlisAI_P7_HOLD004_PositivePublicShapeBoundary_ImplementationResult_20260614.md"
+)
+P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF: Final = (
+    "p7_hold004_positive_public_shape_boundary_result_20260614"
+)
 
 _ALLOWED_INPUT_STATUSES: Final[frozenset[str]] = frozenset({"blocked", "review_required", "input_material_ready"})
 _TIMEOUT_REF_IDS: Final[frozenset[str]] = frozenset({"P7-RED-003"})
@@ -159,6 +178,12 @@ def _followup_targets(reason_codes: Sequence[str], red_refs: Sequence[str], hold
         targets.append("P7_RealDevice_Submit_Modal_Readfeel_Check")
     if "full_backend_suite_green_unconfirmed" in reason_set:
         targets.append("P7_Validation_Regression_Matrix")
+    if {"phase16_complete_composer_candidate_boundary", "positive_public_fixture_shape_boundary"} & reason_set:
+        targets.append("P7_HOLD004_Phase16_Classification")
+    if "positive_public_shape_target_green_pending_full_suite" in reason_set:
+        targets.append("P7_HOLD004_PositivePublicShapeBoundary")
+    if "step5_display_binding_contract_consistency" in reason_set:
+        targets.append("P7_HOLD004_Step5CandidateGatePreservation")
     return dedupe_identifiers(targets, limit=20, max_length=140)
 
 
@@ -182,6 +207,12 @@ def build_p7_release_decision_handoff(
     real_device_check: Mapping[str, Any] | None = None,
     backend_suite_split_matrix: Mapping[str, Any] | None = None,
     r10_hold_matrix: Mapping[str, Any] | None = None,
+    hold004_phase16_classification: Mapping[str, Any] | None = None,
+    hold004_path_matrix: Mapping[str, Any] | None = None,
+    hold004_decision_rule: Mapping[str, Any] | None = None,
+    hold004_adjacent_public_red_registration: Mapping[str, Any] | None = None,
+    hold004_positive_public_shape_boundary: Mapping[str, Any] | None = None,
+    hold004_step5_material_connection: Mapping[str, Any] | None = None,
     source_runner_result_id: Any = "p7_runner_result",
 ) -> dict[str, Any]:
     """Build P7 body-free material for the release decision layer.
@@ -223,10 +254,27 @@ def build_p7_release_decision_handoff(
     assert_p7_real_device_modal_readfeel_check_contract(real_device)
     assert_p7_no_body_payload_or_contract_mutation(real_device, source="p7_release_handoff.real_device_check")
 
+    positive_public_shape = safe_mapping(hold004_positive_public_shape_boundary)
+    if hold004_positive_public_shape_boundary is not None:
+        assert_p7_hold004_positive_public_shape_boundary_contract(positive_public_shape)
+        assert_p7_no_body_payload_or_contract_mutation(
+            positive_public_shape,
+            source="p7_release_handoff.positive_public_shape",
+        )
+
     backend_split = (
         safe_mapping(backend_suite_split_matrix)
         if backend_suite_split_matrix is not None
-        else build_p7_backend_suite_split_matrix(real_device_check=real_device, positive_recovery_red_closed=True)
+        else build_p7_backend_suite_split_matrix(
+            real_device_check=real_device,
+            positive_recovery_red_closed=True,
+            hold004_phase16_classification=hold004_phase16_classification,
+            hold004_path_matrix=hold004_path_matrix,
+            hold004_decision_rule=hold004_decision_rule,
+            hold004_adjacent_public_red_registration=hold004_adjacent_public_red_registration,
+            hold004_positive_public_shape_boundary=positive_public_shape or None,
+            hold004_step5_material_connection=hold004_step5_material_connection,
+        )
     )
     assert_p7_backend_suite_split_matrix_contract(backend_split)
     assert_p7_no_body_payload_or_contract_mutation(backend_split, source="p7_release_handoff.backend_suite_split_matrix")
@@ -234,10 +282,154 @@ def build_p7_release_decision_handoff(
     r10_matrix = (
         safe_mapping(r10_hold_matrix)
         if r10_hold_matrix is not None
-        else build_p7_r10_hold_matrix(real_device_check=real_device, backend_suite_split_matrix=backend_split)
+        else build_p7_r10_hold_matrix(
+            real_device_check=real_device,
+            backend_suite_split_matrix=backend_split,
+            hold004_phase16_classification=hold004_phase16_classification,
+            hold004_path_matrix=hold004_path_matrix,
+            hold004_decision_rule=hold004_decision_rule,
+            hold004_adjacent_public_red_registration=hold004_adjacent_public_red_registration,
+            hold004_positive_public_shape_boundary=positive_public_shape or None,
+            hold004_step5_material_connection=hold004_step5_material_connection,
+        )
     )
     assert_p7_r10_hold_matrix_contract(r10_matrix)
     assert_p7_no_body_payload_or_contract_mutation(r10_matrix, source="p7_release_handoff.r10_hold_matrix")
+
+    hold004_required_followup_fixes = dedupe_identifiers(
+        [
+            *backend_split.get("hold004_required_followup_fixes", []),
+            *r10_matrix.get("hold004_required_followup_fixes", []),
+        ],
+        limit=120,
+        max_length=160,
+    )
+    hold004_phase16_classified_red_present = bool(
+        backend_split.get("hold004_phase16_classified_red_present") is True
+        or r10_matrix.get("hold004_phase16_classified_red_present") is True
+    )
+    hold004_candidate_boundary_registered = bool(
+        backend_split.get("hold004_phase16_candidate_boundary_registered") is True
+        or r10_matrix.get("hold004_phase16_candidate_boundary_registered") is True
+        or "phase16_complete_composer_candidate_boundary" in hold004_required_followup_fixes
+    )
+    hold004_adjacent_public_red_registered = bool(
+        backend_split.get("hold004_public_adjacent_red_registered") is True
+        or r10_matrix.get("hold004_public_adjacent_red_registered") is True
+        or "positive_public_fixture_shape_boundary" in hold004_required_followup_fixes
+    )
+    positive_shape_schema_version = clean_identifier(
+        backend_split.get("hold004_positive_public_shape_boundary_schema_version")
+        or r10_matrix.get("hold004_positive_public_shape_boundary_schema_version"),
+        default="",
+        max_length=160,
+    )
+    positive_shape_status = clean_identifier(
+        backend_split.get("hold004_positive_public_shape_boundary_status")
+        or r10_matrix.get("hold004_positive_public_shape_boundary_status"),
+        default="",
+        max_length=120,
+    )
+    positive_shape_target_green = bool(
+        backend_split.get("hold004_positive_public_shape_target_green_confirmed") is True
+        or r10_matrix.get("hold004_positive_public_shape_target_green_confirmed") is True
+    )
+    positive_shape_repaired_pending_full_suite = bool(
+        backend_split.get("hold004_positive_public_shape_repaired_target_green_pending_full_suite") is True
+        or r10_matrix.get("hold004_positive_public_shape_repaired_target_green_pending_full_suite") is True
+    )
+    positive_shape_true_self_denial_preserved = bool(
+        backend_split.get("hold004_positive_public_shape_true_self_denial_regression_preserved") is True
+        or r10_matrix.get("hold004_positive_public_shape_true_self_denial_regression_preserved") is True
+    )
+    positive_shape_emergency_preserved = bool(
+        backend_split.get("hold004_positive_public_shape_emergency_regression_preserved") is True
+        or r10_matrix.get("hold004_positive_public_shape_emergency_regression_preserved") is True
+    )
+    positive_shape_support_required_preserved = bool(
+        backend_split.get("hold004_positive_public_shape_support_required_regression_preserved") is True
+        or r10_matrix.get("hold004_positive_public_shape_support_required_regression_preserved") is True
+    )
+    positive_shape_input_material_confirmed = bool(
+        backend_split.get("hold004_positive_public_shape_input_material_bundle_confirmed") is True
+        or r10_matrix.get("hold004_positive_public_shape_input_material_bundle_confirmed") is True
+    )
+    positive_shape_public_e2e_confirmed = bool(
+        backend_split.get("hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed") is True
+        or r10_matrix.get("hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed") is True
+    )
+    step5_schema_version = clean_identifier(
+        backend_split.get("hold004_step5_material_connection_schema_version")
+        or r10_matrix.get("hold004_step5_material_connection_schema_version"),
+        default="",
+        max_length=160,
+    )
+    step5_status = clean_identifier(
+        backend_split.get("hold004_step5_material_connection_status")
+        or r10_matrix.get("hold004_step5_material_connection_status"),
+        default="",
+        max_length=120,
+    )
+    step5_red_classified = bool(
+        backend_split.get("hold004_step5_candidate_gate_red_classified") is True
+        or r10_matrix.get("hold004_step5_candidate_gate_red_classified") is True
+    )
+    step5_red_present = bool(
+        backend_split.get("hold004_step5_display_binding_red_present") is True
+        or r10_matrix.get("hold004_step5_display_binding_red_present") is True
+    )
+    step5_red_closed = bool(
+        backend_split.get("hold004_step5_candidate_gate_red_closed") is True
+        or r10_matrix.get("hold004_step5_candidate_gate_red_closed") is True
+    )
+    step5_contract_classification = clean_identifier(
+        backend_split.get("hold004_step5_contract_classification")
+        or r10_matrix.get("hold004_step5_contract_classification"),
+        default="",
+        max_length=160,
+    )
+    step5_required_followup_fixes = dedupe_identifiers(
+        [
+            *backend_split.get("hold004_step5_required_followup_fixes", []),
+            *r10_matrix.get("hold004_step5_required_followup_fixes", []),
+        ],
+        limit=120,
+        max_length=160,
+    )
+    step5_unresolved_red_refs = dedupe_identifiers(
+        [
+            *backend_split.get("hold004_step5_unresolved_red_refs", []),
+            *r10_matrix.get("hold004_step5_unresolved_red_refs", []),
+        ],
+        limit=40,
+        max_length=160,
+    )
+    step5_closed_red_refs = dedupe_identifiers(
+        [
+            *backend_split.get("hold004_step5_closed_red_refs", []),
+            *r10_matrix.get("hold004_step5_closed_red_refs", []),
+        ],
+        limit=40,
+        max_length=160,
+    )
+    hold004_implementation_result_doc_refs = dedupe_identifiers(
+        [
+            P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH
+            if hold004_phase16_classified_red_present
+            else "",
+            P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH
+            if positive_shape_schema_version
+            else "",
+        ],
+        limit=40,
+        max_length=220,
+    )
+    positive_shape_implementation_result_documented = bool(positive_shape_schema_version)
+    positive_shape_implementation_result_doc_ref = (
+        P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF
+        if positive_shape_implementation_result_documented
+        else ""
+    )
 
     red_refs = dedupe_identifiers(
         [*_refs_from(runner, long_run, keys=("unresolved_red_refs", "red_refs")), *_ledger_refs_by_status(ledger, "RED")],
@@ -249,6 +441,8 @@ def build_p7_release_decision_handoff(
         red_refs = dedupe_identifiers([ref for ref in red_refs if ref not in closed_set], limit=160, max_length=160)
     if classification_unresolved_red_refs:
         red_refs = dedupe_identifiers([*classification_unresolved_red_refs, *red_refs], limit=160, max_length=160)
+    if step5_unresolved_red_refs:
+        red_refs = dedupe_identifiers([*step5_unresolved_red_refs, *red_refs], limit=160, max_length=160)
     hold_refs = dedupe_identifiers(
         [
             *_refs_from(runner, long_run, keys=("unresolved_hold_refs", "hold_refs")),
@@ -275,6 +469,9 @@ def build_p7_release_decision_handoff(
             *_listify(long_run.get("required_followup_fixes")),
             *_listify(runner.get("required_followup_fixes")),
             *_listify(runner.get("candidate_blocked_or_review_required_reason_codes")),
+            *hold004_required_followup_fixes,
+            *step5_required_followup_fixes,
+            "positive_public_shape_target_green_pending_full_suite" if positive_shape_target_green else "",
         ],
         limit=160,
         max_length=160,
@@ -324,6 +521,37 @@ def build_p7_release_decision_handoff(
         "source_long_run_gate_handoff_schema_version": clean_identifier(
             long_run.get("schema_version"), default=P7_LONG_RUN_GATE_HANDOFF_SCHEMA_VERSION, max_length=128
         ),
+        "hold004_phase16_implementation_result_doc_path": P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH,
+        "hold004_phase16_implementation_result_doc_ref": P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF,
+        "hold004_positive_public_shape_implementation_result_doc_path": (
+            P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH
+        ),
+        "hold004_positive_public_shape_implementation_result_doc_ref": (
+            P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF
+        ),
+        "hold004_positive_public_shape_boundary_schema_version": positive_shape_schema_version,
+        "hold004_positive_public_shape_boundary_status": positive_shape_status,
+        "hold004_positive_public_shape_target_green_confirmed": positive_shape_target_green,
+        "hold004_positive_public_shape_repaired_target_green_pending_full_suite": positive_shape_repaired_pending_full_suite,
+        "hold004_positive_public_shape_true_self_denial_regression_preserved": positive_shape_true_self_denial_preserved,
+        "hold004_positive_public_shape_emergency_regression_preserved": positive_shape_emergency_preserved,
+        "hold004_positive_public_shape_support_required_regression_preserved": positive_shape_support_required_preserved,
+        "hold004_positive_public_shape_input_material_bundle_confirmed": positive_shape_input_material_confirmed,
+        "hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed": positive_shape_public_e2e_confirmed,
+        "hold004_positive_public_shape_full_backend_suite_green_confirmed": False,
+        "hold004_positive_public_shape_release_allowed": False,
+        "hold004_step5_material_connection_schema_version": step5_schema_version,
+        "hold004_step5_material_connection_status": step5_status,
+        "hold004_step5_candidate_gate_red_classified": step5_red_classified,
+        "hold004_step5_display_binding_red_present": step5_red_present,
+        "hold004_step5_candidate_gate_red_closed": step5_red_closed,
+        "hold004_step5_contract_classification": step5_contract_classification,
+        "hold004_step5_required_followup_fixes": step5_required_followup_fixes,
+        "hold004_step5_unresolved_red_refs": step5_unresolved_red_refs,
+        "hold004_step5_closed_red_refs": step5_closed_red_refs,
+        "hold004_step5_full_backend_suite_green_confirmed": False,
+        "hold004_step5_release_allowed": False,
+        "implementation_result_doc_refs": hold004_implementation_result_doc_refs,
         "handoff_target_module": P7_RELEASE_HANDOFF_TARGET_MODULE,
         "handoff_target_schema_version": PRODUCT_RELEASE_DECISION_SCHEMA_VERSION,
         "handoff_target_phase": PRODUCT_RELEASE_DECISION_PHASE,
@@ -387,6 +615,27 @@ def build_p7_release_decision_handoff(
             "real_device_submit_confirmed": real_device.get("real_device_submit_confirmed") is True,
             "full_backend_suite_green_confirmed": backend_split.get("full_backend_suite_green_confirmed") is True,
             "full_backend_suite_green_claim_allowed": False,
+            "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
+            "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
+            "hold004_public_adjacent_red_registered": hold004_adjacent_public_red_registered,
+            "hold004_phase16_implementation_result_documented": bool(hold004_phase16_classified_red_present),
+            "hold004_phase16_implementation_result_doc_ref": (
+                P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF if hold004_phase16_classified_red_present else ""
+            ),
+            "hold004_positive_public_shape_boundary_status": positive_shape_status,
+            "hold004_positive_public_shape_target_green_confirmed": positive_shape_target_green,
+            "hold004_positive_public_shape_repaired_target_green_pending_full_suite": positive_shape_repaired_pending_full_suite,
+            "hold004_positive_public_shape_implementation_result_documented": (
+                positive_shape_implementation_result_documented
+            ),
+            "hold004_positive_public_shape_implementation_result_doc_ref": (
+                positive_shape_implementation_result_doc_ref
+            ),
+            "hold004_step5_material_connection_schema_version": step5_schema_version,
+            "hold004_step5_candidate_gate_red_classified": step5_red_classified,
+            "hold004_step5_display_binding_red_present": step5_red_present,
+            "hold004_step5_candidate_gate_red_closed": step5_red_closed,
+            "hold004_step5_required_followup_fixes": step5_required_followup_fixes,
             "body_free": True,
         },
         "target_input_projection": {
@@ -399,6 +648,20 @@ def build_p7_release_decision_handoff(
             "full_backend_suite_green_confirmed": False,
             "full_backend_suite_green_claim_allowed": False,
             "split_green_promoted_to_full_suite_green": False,
+            "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
+            "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
+            "hold004_phase16_implementation_result_documented": bool(hold004_phase16_classified_red_present),
+            "hold004_positive_public_shape_target_green_confirmed": positive_shape_target_green,
+            "hold004_positive_public_shape_implementation_result_documented": (
+                positive_shape_implementation_result_documented
+            ),
+            "hold004_positive_public_shape_full_backend_suite_green_confirmed": False,
+            "hold004_positive_public_shape_release_allowed": False,
+            "hold004_step5_candidate_gate_red_classified": step5_red_classified,
+            "hold004_step5_display_binding_red_present": step5_red_present,
+            "hold004_step5_candidate_gate_red_closed": step5_red_closed,
+            "hold004_step5_full_backend_suite_green_confirmed": False,
+            "hold004_step5_release_allowed": False,
             "release_decision_input_ready": input_ready,
             "release_allowed": False,
             "raw_body_removed_from_release_material": True,
@@ -427,6 +690,39 @@ def build_p7_release_decision_handoff(
             "full_backend_suite_green_confirmed": backend_split.get("full_backend_suite_green_confirmed") is True,
             "full_backend_suite_green_claim_allowed": False,
             "full_backend_suite_hold_preserved": "P7-HOLD-004" in hold_refs,
+            "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
+            "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
+            "hold004_public_adjacent_red_registered": hold004_adjacent_public_red_registered,
+            "hold004_required_followup_fixes": hold004_required_followup_fixes,
+            "hold004_phase16_implementation_result_documented": bool(hold004_phase16_classified_red_present),
+            "hold004_phase16_implementation_result_doc_ref": (
+                P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF if hold004_phase16_classified_red_present else ""
+            ),
+            "hold004_positive_public_shape_boundary_status": positive_shape_status,
+            "hold004_positive_public_shape_target_green_confirmed": positive_shape_target_green,
+            "hold004_positive_public_shape_repaired_target_green_pending_full_suite": positive_shape_repaired_pending_full_suite,
+            "hold004_positive_public_shape_true_self_denial_regression_preserved": positive_shape_true_self_denial_preserved,
+            "hold004_positive_public_shape_emergency_regression_preserved": positive_shape_emergency_preserved,
+            "hold004_positive_public_shape_support_required_regression_preserved": positive_shape_support_required_preserved,
+            "hold004_positive_public_shape_input_material_bundle_confirmed": positive_shape_input_material_confirmed,
+            "hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed": positive_shape_public_e2e_confirmed,
+            "hold004_positive_public_shape_implementation_result_documented": (
+                positive_shape_implementation_result_documented
+            ),
+            "hold004_positive_public_shape_implementation_result_doc_ref": (
+                positive_shape_implementation_result_doc_ref
+            ),
+            "hold004_positive_public_shape_full_backend_suite_green_confirmed": False,
+            "hold004_positive_public_shape_release_allowed": False,
+            "hold004_step5_material_connection_schema_version": step5_schema_version,
+            "hold004_step5_candidate_gate_red_classified": step5_red_classified,
+            "hold004_step5_display_binding_red_present": step5_red_present,
+            "hold004_step5_candidate_gate_red_closed": step5_red_closed,
+            "hold004_step5_required_followup_fixes": step5_required_followup_fixes,
+            "hold004_step5_unresolved_red_refs": step5_unresolved_red_refs,
+            "hold004_step5_closed_red_refs": step5_closed_red_refs,
+            "hold004_step5_full_backend_suite_green_confirmed": False,
+            "hold004_step5_release_allowed": False,
             "split_green_is_full_backend_suite_green": False,
             "p7_complete_claim_allowed": False,
             "p8_start_allowed": False,
@@ -484,6 +780,20 @@ def assert_p7_release_decision_handoff_contract(handoff: Mapping[str, Any]) -> b
         raise ValueError("P7 release handoff must reference the backend suite split matrix")
     if data.get("source_long_run_gate_handoff_schema_version") != P7_LONG_RUN_GATE_HANDOFF_SCHEMA_VERSION:
         raise ValueError("P7 release handoff must source P7 Long-run Gate handoff material")
+    if data.get("hold004_phase16_implementation_result_doc_path") != P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH:
+        raise ValueError("P7 release handoff must reference the HOLD-004 Phase16 implementation result document")
+    if data.get("hold004_phase16_implementation_result_doc_ref") != P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF:
+        raise ValueError("P7 release handoff must keep the HOLD-004 Phase16 result doc ref stable")
+    if (
+        data.get("hold004_positive_public_shape_implementation_result_doc_path")
+        != P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH
+    ):
+        raise ValueError("P7 release handoff must reference the positive public shape implementation result document")
+    if (
+        data.get("hold004_positive_public_shape_implementation_result_doc_ref")
+        != P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF
+    ):
+        raise ValueError("P7 release handoff must keep the positive public shape result doc ref stable")
     if data.get("handoff_target_schema_version") != PRODUCT_RELEASE_DECISION_SCHEMA_VERSION:
         raise ValueError("P7 release handoff target schema changed")
     if data.get("release_allowed") is not False:
@@ -495,6 +805,10 @@ def assert_p7_release_decision_handoff_contract(handoff: Mapping[str, Any]) -> b
         "full_backend_suite_green_claim_allowed",
         "split_green_is_full_backend_suite_green",
         "split_green_promoted_to_full_suite_green",
+        "hold004_positive_public_shape_full_backend_suite_green_confirmed",
+        "hold004_positive_public_shape_release_allowed",
+        "hold004_step5_full_backend_suite_green_confirmed",
+        "hold004_step5_release_allowed",
     ):
         if data.get(key) is not False:
             raise ValueError(f"P7 release handoff must keep R10/R11 marker {key}=False")
@@ -587,6 +901,101 @@ def assert_p7_release_decision_handoff_contract(handoff: Mapping[str, Any]) -> b
         raise ValueError("P7 release handoff must not allow full backend suite green claim")
     if manual.get("full_backend_suite_hold_preserved") is not True or "P7-HOLD-004" not in hold_refs:
         raise ValueError("P7 release handoff must keep P7-HOLD-004 until full backend suite confirmation")
+    if manual.get("hold004_phase16_classified_red_present") is True:
+        if manual.get("hold004_phase16_candidate_boundary_registered") is not True:
+            raise ValueError("P7 release handoff must preserve classified HOLD-004 candidate boundary")
+        if "phase16_complete_composer_candidate_boundary" not in dedupe_identifiers(
+            manual.get("hold004_required_followup_fixes"),
+            limit=120,
+            max_length=160,
+        ):
+            raise ValueError("P7 release handoff must expose HOLD-004 Phase16 follow-up fixes")
+        if P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH not in dedupe_identifiers(
+            data.get("implementation_result_doc_refs"),
+            limit=40,
+            max_length=220,
+        ):
+            raise ValueError("P7 release handoff must expose HOLD-004 Phase16 implementation result doc refs")
+        if manual.get("hold004_phase16_implementation_result_documented") is not True:
+            raise ValueError("P7 release handoff must carry the HOLD-004 Phase16 implementation result marker")
+        if manual.get("hold004_phase16_implementation_result_doc_ref") != P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF:
+            raise ValueError("P7 release handoff must carry the stable HOLD-004 Phase16 result doc ref")
+    if data.get("hold004_positive_public_shape_boundary_schema_version"):
+        if data.get("hold004_positive_public_shape_boundary_schema_version") != P7_HOLD004_POSITIVE_PUBLIC_SHAPE_SCHEMA_VERSION:
+            raise ValueError("P7 release handoff positive public shape schema_version mismatch")
+        if data.get("hold004_positive_public_shape_boundary_status") != P7_HOLD004_POSITIVE_PUBLIC_SHAPE_REPAIRED_STATUS:
+            raise ValueError("P7 release handoff must keep positive public shape as repaired-pending-full-suite")
+        for key in (
+            "hold004_positive_public_shape_target_green_confirmed",
+            "hold004_positive_public_shape_repaired_target_green_pending_full_suite",
+            "hold004_positive_public_shape_true_self_denial_regression_preserved",
+            "hold004_positive_public_shape_emergency_regression_preserved",
+            "hold004_positive_public_shape_support_required_regression_preserved",
+            "hold004_positive_public_shape_input_material_bundle_confirmed",
+            "hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed",
+        ):
+            if data.get(key) is not True:
+                raise ValueError(f"P7 release handoff must keep {key}=True")
+        if data.get("hold004_positive_public_shape_full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 release handoff must not promote positive target green to full-suite green")
+        if data.get("hold004_positive_public_shape_release_allowed") is not False:
+            raise ValueError("P7 release handoff must keep positive public shape release_allowed=false")
+        if P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH not in dedupe_identifiers(
+            data.get("implementation_result_doc_refs"),
+            limit=40,
+            max_length=220,
+        ):
+            raise ValueError("P7 release handoff must expose the positive public shape implementation result doc refs")
+        if manual.get("hold004_positive_public_shape_implementation_result_documented") is not True:
+            raise ValueError("P7 release handoff must carry the positive public shape implementation result marker")
+        if (
+            manual.get("hold004_positive_public_shape_implementation_result_doc_ref")
+            != P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF
+        ):
+            raise ValueError("P7 release handoff must carry the stable positive public shape result doc ref")
+        for key in (
+            "hold004_positive_public_shape_target_green_confirmed",
+            "hold004_positive_public_shape_repaired_target_green_pending_full_suite",
+            "hold004_positive_public_shape_true_self_denial_regression_preserved",
+            "hold004_positive_public_shape_emergency_regression_preserved",
+            "hold004_positive_public_shape_support_required_regression_preserved",
+            "hold004_positive_public_shape_input_material_bundle_confirmed",
+            "hold004_positive_public_shape_public_e2e_labelled_two_stage_confirmed",
+        ):
+            if manual.get(key) is not True:
+                raise ValueError(f"P7 release manual HOLD status must keep {key}=True")
+        if manual.get("hold004_positive_public_shape_full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 release manual HOLD status must not claim positive public shape full-suite green")
+        if manual.get("hold004_positive_public_shape_release_allowed") is not False:
+            raise ValueError("P7 release manual HOLD status must keep positive public shape release_allowed=false")
+        if "positive_public_shape_target_green_pending_full_suite" not in blockers:
+            raise ValueError("P7 release handoff must keep positive public shape as pending full-suite follow-up")
+    if data.get("hold004_step5_material_connection_schema_version"):
+        if data.get("hold004_step5_material_connection_schema_version") != P7_HOLD004_STEP5_R6_MATERIAL_CONNECTION_SCHEMA_VERSION:
+            raise ValueError("P7 release handoff Step5 material schema_version mismatch")
+        if data.get("hold004_step5_candidate_gate_red_classified") is not True:
+            raise ValueError("P7 release handoff must classify the Step5 candidate-gate material")
+        if "step5_display_binding_contract_consistency" not in dedupe_identifiers(
+            data.get("hold004_step5_required_followup_fixes"),
+            limit=120,
+            max_length=160,
+        ):
+            raise ValueError("P7 release handoff must expose the Step5 display-binding follow-up")
+        if data.get("hold004_step5_full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 release handoff must not promote Step5 material to full-suite green")
+        if data.get("hold004_step5_release_allowed") is not False:
+            raise ValueError("P7 release handoff must keep Step5 release_allowed=false")
+        if data.get("hold004_step5_display_binding_red_present") is True and data.get("hold004_step5_candidate_gate_red_closed") is not True:
+            if P7_HOLD004_STEP5_RED_ID not in red_refs:
+                raise ValueError("P7 release handoff must keep unresolved Step5 red in red refs")
+            if P7_HOLD004_STEP5_RED_ID not in blockers:
+                raise ValueError("P7 release handoff must keep unresolved Step5 red as blocker")
+        if manual.get("hold004_step5_material_connection_schema_version") != data.get("hold004_step5_material_connection_schema_version"):
+            raise ValueError("P7 release handoff manual HOLD status must mirror Step5 schema")
+        if manual.get("hold004_step5_full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 release manual HOLD status must not claim Step5 full-suite green")
+        if manual.get("hold004_step5_release_allowed") is not False:
+            raise ValueError("P7 release manual HOLD status must keep Step5 release_allowed=false")
     if manual.get("split_green_is_full_backend_suite_green") is not False:
         raise ValueError("P7 release handoff must not convert split green into full-suite green")
     for key in ("p7_complete_claim_allowed", "p8_start_allowed", "release_allowed"):
@@ -631,6 +1040,10 @@ __all__ = [
     "P7_RELEASE_HANDOFF_SCOPE",
     "P7_RELEASE_HANDOFF_STEP",
     "P7_RELEASE_HANDOFF_TARGET_MODULE",
+    "P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH",
+    "P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF",
+    "P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_PATH",
+    "P7_HOLD004_POSITIVE_PUBLIC_SHAPE_IMPLEMENTATION_RESULT_DOC_REF",
     "assert_p7_release_decision_handoff_contract",
     "build_p7_release_decision_handoff",
     "build_p7_release_decision_handoff_material",

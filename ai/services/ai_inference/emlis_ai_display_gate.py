@@ -56,6 +56,10 @@ _STEP7_GATE_BINDING_TRACE_VERSION = "emlis.limited_composer_gate_binding_reflect
 _STEP7_GATE_BINDING_TARGET_STEP = "7_Gate_binding_reflection"
 GATE_BINDING_CONTRACT_VERSION = "emlis.gate_binding_contract.v2"
 _BINDING_DECISION_GATES = {"grounding", "display"}
+_DISPLAY_BINDING_FAIL_CLOSED_REASON = "display_sentence_binding_missing"
+_DISPLAY_BINDING_EXPECTED_COUNT_SOURCE_CANDIDATE_BODY = "candidate_body_line_count"
+_DISPLAY_BINDING_EXPECTED_COUNT_SOURCE_ACCEPTED_GROUNDING = "accepted_grounding_sentence_count"
+_DISPLAY_BINDING_COUNT_SOURCE_SENTENCE_BUNDLE = "sentence_binding_bundle"
 
 def _dedupe(values: Any) -> List[str]:
     if values is None:
@@ -300,6 +304,154 @@ def _gate_binding_fields(
         "raw_input_required_for_debug": False,
     }
     return fields
+
+
+def _display_binding_missing_exception_fields(binding_meta: Mapping[str, Any] | None) -> Dict[str, Any]:
+    """Return body-free exception flags for display binding missing decisions."""
+
+    binding = binding_meta if isinstance(binding_meta, Mapping) else {}
+    exception_allowed = bool(binding.get("binding_missing_exception_allowed"))
+    exception_id = str(
+        binding.get("binding_missing_exception_id")
+        or binding.get("binding_missing_exception_reason")
+        or ""
+    ).strip()
+    return {
+        "binding_missing_exception_allowed": exception_allowed,
+        "binding_missing_exception_id": exception_id,
+        "binding_missing_exception_valid": bool(exception_allowed and exception_id),
+    }
+
+
+def _accepted_grounding_expected_binding_count(gate_trace: Mapping[str, Any] | None) -> int:
+    """Return accepted grounding binding count when grounding is already complete.
+
+    R4-B keeps Display from inheriting a candidate body-line count when the
+    actual display decision is supported by the accepted grounding sentence
+    count.  This is meta-only and does not expose raw input or generated body.
+    """
+
+    trace = gate_trace if isinstance(gate_trace, Mapping) else {}
+    grounding = trace.get("grounding") if isinstance(trace.get("grounding"), Mapping) else {}
+    if not grounding:
+        return 0
+    if grounding.get("passed") is not True:
+        return 0
+    if grounding.get("binding_used") is not True or grounding.get("binding_required") is not True:
+        return 0
+    if grounding.get("binding_missing") is True:
+        return 0
+    expected = _safe_int(
+        grounding.get("expected_binding_count")
+        or grounding.get("binding_supported_sentence_count")
+        or grounding.get("binding_count")
+        or 0
+    )
+    count = _safe_int(
+        grounding.get("binding_count")
+        or grounding.get("binding_supported_sentence_count")
+        or expected
+    )
+    if expected > 0 and count >= expected:
+        return expected
+    return 0
+
+
+def _display_binding_fields_for_decision(
+    gate_trace: Mapping[str, Any] | None,
+    binding_meta: Mapping[str, Any] | None,
+    *,
+    binding_used_override: bool | None = None,
+) -> Dict[str, Any]:
+    """Build Display binding fields used by both decision and trace.
+
+    R4-A: if the resulting Display binding fields still have
+    ``binding_missing`` without a valid exception, Display must fail closed.
+
+    R4-B: if Grounding accepted 3/3 bound sentences but the candidate body-line
+    diagnostic still says 4, Display's expected binding count is aligned to the
+    accepted grounding sentence count.  This removes the meta contradiction
+    without relaxing Display Gate or adding a fixed surface.
+    """
+
+    fields = _gate_binding_fields(
+        binding_meta,
+        gate="display",
+        binding_used=bool(binding_used_override),
+    )
+    original_expected = _safe_int(fields.get("expected_binding_count"))
+    binding = binding_meta if isinstance(binding_meta, Mapping) else {}
+    candidate_body_sentence_count = _safe_int(
+        binding.get("candidate_body_sentence_count")
+        or binding.get("body_sentence_count")
+        or binding.get("body_line_count")
+        or fields.get("sentence_count")
+        or 0
+    )
+    diagnostic_expected = max(original_expected, candidate_body_sentence_count)
+    original_missing = bool(fields.get("binding_missing") or (diagnostic_expected and _safe_int(fields.get("binding_count")) < diagnostic_expected))
+    accepted_grounding_expected = _accepted_grounding_expected_binding_count(gate_trace)
+    binding_count = _safe_int(fields.get("binding_count"))
+    repair_applied = bool(
+        fields.get("binding_required")
+        and fields.get("binding_used")
+        and accepted_grounding_expected > 0
+        and diagnostic_expected > accepted_grounding_expected
+        and binding_count >= accepted_grounding_expected
+    )
+    if repair_applied:
+        fields["expected_binding_count"] = accepted_grounding_expected
+        fields["binding_missing"] = bool(binding_count < accepted_grounding_expected)
+        expected_source = _DISPLAY_BINDING_EXPECTED_COUNT_SOURCE_ACCEPTED_GROUNDING
+        repair_reason = "display_expected_count_aligned_to_accepted_grounding_sentence_count"
+    else:
+        expected_source = _DISPLAY_BINDING_EXPECTED_COUNT_SOURCE_CANDIDATE_BODY if original_expected else "none"
+        repair_reason = ""
+    exception_fields = _display_binding_missing_exception_fields(binding_meta)
+    fields.update(exception_fields)
+    fields["original_expected_binding_count"] = diagnostic_expected
+    fields["pre_repair_expected_binding_count"] = diagnostic_expected
+    fields["candidate_body_sentence_count"] = candidate_body_sentence_count
+    fields["original_binding_missing"] = original_missing
+    fields["expected_binding_count_source"] = expected_source
+    fields["display_binding_expected_count_source"] = expected_source
+    fields["binding_count_source"] = _DISPLAY_BINDING_COUNT_SOURCE_SENTENCE_BUNDLE if binding_count else "none"
+    fields["display_binding_trace_repair_applied"] = repair_applied
+    fields["display_binding_trace_repair_reason"] = repair_reason
+    fields["display_binding_contract_consistent"] = not bool(
+        fields.get("binding_required")
+        and fields.get("binding_used")
+        and fields.get("binding_missing")
+        and not fields.get("binding_missing_exception_valid")
+    )
+    reflection = fields.get("step7_gate_binding_reflection")
+    if isinstance(reflection, dict):
+        reflection.update(
+            {
+                "binding_missing": bool(fields.get("binding_missing")),
+                "expected_binding_count": _safe_int(fields.get("expected_binding_count")),
+                "original_expected_binding_count": diagnostic_expected,
+                "pre_repair_expected_binding_count": diagnostic_expected,
+                "candidate_body_sentence_count": candidate_body_sentence_count,
+                "expected_binding_count_source": expected_source,
+                "display_binding_expected_count_source": expected_source,
+                "binding_count_source": fields["binding_count_source"],
+                "display_binding_trace_repair_applied": repair_applied,
+                "display_binding_trace_repair_reason": repair_reason,
+                "display_binding_contract_consistent": bool(fields.get("display_binding_contract_consistent")),
+            }
+        )
+    return fields
+
+
+def _display_binding_missing_without_valid_exception(display_binding_fields: Mapping[str, Any] | None) -> bool:
+    fields = display_binding_fields if isinstance(display_binding_fields, Mapping) else {}
+    return bool(
+        fields.get("binding_required")
+        and fields.get("binding_used")
+        and fields.get("binding_missing")
+        and not fields.get("binding_missing_exception_valid")
+    )
 
 
 def _display_binding_used_from_trace(gate_trace: Mapping[str, Any] | None, binding_meta: Mapping[str, Any] | None) -> bool:
@@ -774,6 +926,7 @@ def _with_display_gate_trace(
     runtime_surface_pre_return_gate_report: Mapping[str, Any] | None = None,
     visible_surface_acceptance_gate_report: Mapping[str, Any] | None = None,
     strict_relation_fail_closed_meta: Mapping[str, Any] | None = None,
+    display_binding_fields_override: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     out = dict(gate_trace or {})
     strict_relation_fail_closed = dict(strict_relation_fail_closed_meta or out.get("strict_relation_fail_closed") or {})
@@ -808,14 +961,18 @@ def _with_display_gate_trace(
             }
         )
         out["strict_relation_fail_closed"] = strict_relation_fail_closed
-    binding_fields = _gate_binding_fields(
-        binding_meta,
-        gate="display",
-        binding_used=(
-            _display_binding_used_from_trace(out, binding_meta)
-            if binding_used_override is None
-            else bool(binding_used_override)
-        ),
+    binding_fields = (
+        dict(display_binding_fields_override)
+        if isinstance(display_binding_fields_override, Mapping)
+        else _display_binding_fields_for_decision(
+            out,
+            binding_meta,
+            binding_used_override=(
+                _display_binding_used_from_trace(out, binding_meta)
+                if binding_used_override is None
+                else bool(binding_used_override)
+            ),
+        )
     )
     kind = str(observation_reply_kind or "").strip()
     low_info_reasons = _dedupe(list(low_information_quality_rejection_reasons or []))
@@ -846,7 +1003,11 @@ def _with_display_gate_trace(
     out["display_gate"] = {
         "passed": observation_status == "passed",
         "observation_status": observation_status,
-        "comment_text_allowed": bool(observation_status == "passed" and str(comment_text or "").strip()),
+        "comment_text_allowed": bool(
+            observation_status == "passed"
+            and str(comment_text or "").strip()
+            and bool(binding_fields.get("display_binding_contract_consistent", True))
+        ),
         "comment_text_present": bool(str(comment_text or "").strip()),
         "rejection_reasons": list(rejection_reasons or []),
         "observation_reply_kind": kind,
@@ -885,7 +1046,11 @@ def _with_display_gate_trace(
         "strict_relation_surface_missing_after_repair": bool(strict_relation_fail_closed.get("strict_relation_surface_missing_after_repair")),
         "strict_relation_fail_closed_comment_text_allowed": False
         if bool(strict_relation_fail_closed.get("strict_relation_fail_closed_triggered"))
-        else bool(observation_status == "passed" and str(comment_text or "").strip()),
+        else bool(
+            observation_status == "passed"
+            and str(comment_text or "").strip()
+            and bool(binding_fields.get("display_binding_contract_consistent", True))
+        ),
         "display_gate_relaxed": False,
         **binding_fields,
     }
@@ -1220,6 +1385,11 @@ def decide_emlis_observation_display(
     if strict_relation_fail_closed.get("strict_relation_fail_closed_evaluated"):
         gate_trace["strict_relation_fail_closed"] = dict(strict_relation_fail_closed)
     display_binding_used = _display_binding_used_from_trace(gate_trace, binding_meta)
+    display_binding_fields = _display_binding_fields_for_decision(
+        gate_trace,
+        binding_meta,
+        binding_used_override=display_binding_used,
+    )
     reasons: List[str] = []
     observation_kind = str(observation_reply_kind or "").strip()
     low_information_quality_reasons: List[str] = []
@@ -1250,6 +1420,7 @@ def decide_emlis_observation_display(
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
                 visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
                 strict_relation_fail_closed_meta=strict_relation_fail_closed,
+                display_binding_fields_override=display_binding_fields,
             ),
         )
 
@@ -1279,6 +1450,9 @@ def decide_emlis_observation_display(
         if source in _UNAVAILABLE_SOURCES:
             reasons.append("empty_comment_text_without_candidate")
 
+    if _display_binding_missing_without_valid_exception(display_binding_fields):
+        reasons.append(_DISPLAY_BINDING_FAIL_CLOSED_REASON)
+
     if observation_kind == OBSERVATION_REPLY_KIND_LOW_INFORMATION:
         reasons.extend(low_information_quality_reasons)
 
@@ -1302,6 +1476,7 @@ def decide_emlis_observation_display(
                 runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
                 visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
                 strict_relation_fail_closed_meta=strict_relation_fail_closed,
+                display_binding_fields_override=display_binding_fields,
             ),
         )
 
@@ -1322,6 +1497,7 @@ def decide_emlis_observation_display(
             runtime_surface_pre_return_gate_report=runtime_surface_gate if runtime_surface_gate else None,
             visible_surface_acceptance_gate_report=visible_surface_gate if visible_surface_gate else None,
             strict_relation_fail_closed_meta=strict_relation_fail_closed,
+            display_binding_fields_override=display_binding_fields,
         ),
     )
 

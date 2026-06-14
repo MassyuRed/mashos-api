@@ -380,13 +380,61 @@ async def test_step5_candidate_generation_path_keeps_existing_gates_fail_closed(
     assert step5["display_gate_evaluated"] is True
     assert set(step5["gate_results"].keys()) == {"reader", "grounding", "template_echo", "display"}
 
-    # Step5 confirms generation path only. It must not bypass the existing gates.
-    assert step5["display_observation_status"] != "passed"
-    assert reply.comment_text == ""
-    assert step5["public_comment_text_present"] is False
+    # R4-C: Step5 confirms generation path and existing Gate preservation.
+    # After R4-B trace repair, the stale fail-closed expectation is replaced by
+    # explicit Display binding and public-assignment contract checks.
+    display_gate = step5["gate_results"]["display"]
+    grounding_gate = step5["gate_results"]["grounding"]
+    display_trace = reply.meta["multi_perspective"]["gate_trace"]["display_gate"]
+    assert step5["display_observation_status"] == "passed"
+    assert reply.comment_text.strip()
+    assert step5["public_comment_text_present"] is True
     assert step5["candidate_comment_text_present"] is True
     assert step5["non_passed_comment_text_empty"] is True
     assert step5["passed_only_comment_text_contract_preserved"] is True
+    assert display_gate["passed"] is True
+    assert display_gate["comment_text_allowed"] is True
+    assert display_gate["binding_required"] is True
+    assert display_gate["binding_used"] is True
+    assert display_gate["binding_present"] is True
+    assert display_gate["binding_missing"] is False
+    assert display_gate["binding_count"] == grounding_gate["binding_count"] == 3
+    assert display_gate["expected_binding_count"] == grounding_gate["expected_binding_count"] == 3
+    assert display_gate["pre_repair_expected_binding_count"] == 4
+    assert display_gate["candidate_body_sentence_count"] == 4
+    assert display_gate["display_binding_contract_consistent"] is True
+    assert display_gate["display_binding_trace_repair_applied"] is True
+    assert display_gate["display_binding_trace_repair_reason"] == "display_expected_count_aligned_to_accepted_grounding_sentence_count"
+    assert display_gate["display_binding_expected_count_source"] == "accepted_grounding_sentence_count"
+    assert display_gate["raw_input_included"] is False
+    assert display_gate["comment_text_body_included"] is False
+    assert display_gate["candidate_body_included"] is False
+    assert display_gate["surface_body_included"] is False
+
+    assert display_trace["passed"] is True
+    assert display_trace["binding_missing"] is False
+    assert display_trace["expected_binding_count"] == 3
+    assert display_trace["original_expected_binding_count"] == 4
+    assert display_trace["expected_binding_count_source"] == "accepted_grounding_sentence_count"
+    assert display_trace["display_binding_trace_repair_applied"] is True
+    assert display_trace["display_binding_contract_consistent"] is True
+
+    from emlis_ai_p7_hold004_step5_candidate_gate_classification import (
+        build_p7_hold004_step5_candidate_gate_observation,
+        build_p7_hold004_step5_display_binding_contract_decision_rule,
+    )
+
+    step5_observation = build_p7_hold004_step5_candidate_gate_observation(
+        step5_meta=step5,
+        runtime_meta=runtime,
+        reply_comment_text_present=bool(reply.comment_text),
+    )
+    assert step5_observation["display_binding_summary"]["display_binding_contract_consistent"] is True
+    assert step5_observation["public_assignment_summary"]["public_assignment_contract_consistent"] is True
+    step5_rule = build_p7_hold004_step5_display_binding_contract_decision_rule(observation=step5_observation)
+    assert step5_rule["status"] == "DECISION_RULE_FIXED_NO_CURRENT_RED"
+    assert step5_rule["current_public_assignment_allowed"] is True
+    assert step5_rule["release_allowed"] is False
 
     assert step5["fallback_used"] is False
     assert step5["fallback_observation_sentence_added"] is False
@@ -406,8 +454,12 @@ async def test_step5_candidate_generation_path_keeps_existing_gates_fail_closed(
     assert runtime["sentence_binding_count"] >= 1
     assert runtime["binding_present"] is True
     assert runtime["comment_text_contract"] == "passed_only"
-    assert runtime["public_comment_text_present"] is False
+    assert runtime["public_comment_text_present"] is True
     assert runtime["candidate_comment_text_present"] is True
+    assert runtime["binding_missing"] is False
+    assert runtime["binding_count"] == 3
+    assert runtime["expected_binding_count"] == 3
+    assert runtime["comment_text_publicly_assigned"] is True
     assert runtime["raw_input_included"] is False
     assert runtime["generated_candidate_text_included"] is False
 
@@ -537,7 +589,15 @@ async def test_step6_final_ap0_and_scorecard_connection_meta_is_visible(monkeypa
     assert step6["fixed_fallback_used"] is False
     assert step6["raw_input_included"] is False
     assert step6["generated_candidate_text_included"] is False
-    assert reply.comment_text == ""
+
+    # R4-C keeps Step6 meta-only: Step6 still does not assign public text.
+    # The public surface may already be present from the repaired Display Gate.
+    step5 = diagnostic["complete_initial_candidate_generation_path"]
+    display_gate = step5["gate_results"]["display"]
+    assert reply.comment_text.strip()
+    assert step5["public_comment_text_present"] is True
+    assert display_gate["display_binding_contract_consistent"] is True
+    assert display_gate["binding_missing"] is False
 
     assert phase_gate["step6_final_ap0_scorecard_connection_ready"] is True
     assert phase_gate["step6_final_ap0_scorecard_connected"] is True

@@ -31,6 +31,7 @@ from emlis_ai_complete_focus_selector import build_complete_coverage_plan
 from emlis_ai_complete_relation_graph_service import build_complete_relation_graph
 from emlis_ai_complete_sentence_planner import build_complete_sentence_binding_bundle_meta, build_complete_sentence_plan_v2
 from emlis_ai_complete_surface_realizer import (
+    COMPLETE_SURFACE_STATUS_READY,
     CompleteSurfaceRealizationV2,
     build_complete_surface_realization_v2,
     build_complete_surface_signature,
@@ -492,6 +493,184 @@ def _two_stage_unavailable_reason_summary(
     }
 
 
+_SURFACE_DISPLAY_QUALITY_BLOCKER_MARKERS = (
+    "tone_guard",
+    "ending_family_repetition",
+    "same_ending",
+    "template_like",
+    "anti_template",
+    "surface_signature_repeat",
+    "connector_family_repetition",
+    "predicate_family_repetition",
+)
+_SURFACE_STRUCTURAL_OR_SAFETY_BLOCKER_MARKERS = (
+    "surface_lines_missing",
+    "surface_text_missing",
+    "evidence_span_ids_missing",
+    "phrase_unit_ids_missing",
+    "relation_type_missing",
+    "predicate_key_missing",
+    "forbidden_surface",
+    "surface_sentence_ids_do_not_match_plan",
+    "surface_line_count_does_not_match_plan",
+    "two_stage_complete_sentence_plan_section_meta_missing",
+    "two_stage_complete_sentence_plan_observation_section_missing",
+    "two_stage_complete_sentence_plan_reception_section_missing",
+    "two_stage_required_but_unrealized",
+    "two_stage_complete_surface_realizer_label_missing",
+    "two_stage_complete_surface_realizer_section_empty",
+)
+
+
+def _contains_marker(value: Any, markers: Sequence[str]) -> bool:
+    text = _clean(value)
+    return any(marker in text for marker in markers)
+
+
+def _surface_validation_error_codes(surface_realization: CompleteSurfaceRealizationV2) -> Tuple[str, ...]:
+    try:
+        return _dedupe(surface_realization.validation_errors)
+    except Exception:
+        return tuple()
+
+
+def _candidate_path_two_stage_structural_ready(
+    surface_meta: Mapping[str, Any],
+    *,
+    state_answer_two_stage_meta: Mapping[str, Any] | None = None,
+    two_stage_section_plan_meta: Mapping[str, Any] | None = None,
+) -> bool:
+    summary = _json_safe_mapping(surface_meta.get("two_stage_surface_realization"))
+    decision = _two_stage_applicability_decision_from_surface_meta(
+        surface_meta,
+        state_answer_two_stage_meta=state_answer_two_stage_meta,
+        two_stage_section_plan_meta=two_stage_section_plan_meta,
+    )
+    required = bool(
+        decision.get("required")
+        or summary.get("required")
+        or (state_answer_two_stage_meta or {}).get("state_answer_two_stage_display_required")
+        or (two_stage_section_plan_meta or {}).get("two_stage_section_surface_plan_required")
+    )
+    if not required:
+        return True
+    section_counts = _json_safe_mapping(summary.get("section_line_counts"))
+    observation_non_empty = bool(summary.get("observation_section_non_empty") or int(section_counts.get("observation") or 0) > 0)
+    reception_non_empty = bool(summary.get("reception_section_non_empty") or int(section_counts.get("reception") or 0) > 0)
+    section_validation_errors = _dedupe(summary.get("validation_errors") or [])
+    structural_two_stage_errors = [
+        reason
+        for reason in section_validation_errors
+        if _contains_marker(reason, _SURFACE_STRUCTURAL_OR_SAFETY_BLOCKER_MARKERS) or str(reason).startswith("two_stage_")
+    ]
+    return bool(
+        summary.get("applied") is True
+        and summary.get("labels_present") is True
+        and summary.get("section_order_valid", True) is not False
+        and observation_non_empty
+        and reception_non_empty
+        and not structural_two_stage_errors
+    )
+
+
+def classify_complete_surface_readiness_for_candidate_path(
+    surface_realization: CompleteSurfaceRealizationV2 | Mapping[str, Any],
+    *,
+    state_answer_two_stage_meta: Mapping[str, Any] | None = None,
+    two_stage_section_plan_meta: Mapping[str, Any] | None = None,
+    internal_gate_failed_before_display_gate: bool = False,
+    internal_gate_reason_codes: Sequence[Any] | None = None,
+) -> dict[str, Any]:
+    """Classify whether a realized surface may become an internal candidate.
+
+    This is the R4-A boundary: structural surface readiness can allow candidate
+    generation before public display readiness.  It does not relax Tone,
+    Grounding, Template, Reader, or Display gates and it does not assign public
+    ``comment_text``.  Mapping input is accepted for body-free P7 classification
+    tests; runtime calls pass ``CompleteSurfaceRealizationV2``.
+    """
+
+    if isinstance(surface_realization, CompleteSurfaceRealizationV2):
+        surface_meta = surface_realization.as_meta(include_realized_text=False)
+        validation_errors = _surface_validation_error_codes(surface_realization)
+        surface_status = surface_realization.status
+        surface_ready_property = bool(surface_realization.ready)
+        text_material_generated = bool(surface_realization.realized_text and surface_realization.comment_text)
+        evidence_material_bound = bool(surface_realization.used_evidence_span_ids)
+        phrase_material_bound = bool(surface_realization.used_phrase_unit_ids)
+    else:
+        surface_meta = _json_safe_mapping(surface_realization)
+        validation_errors = _dedupe(surface_meta.get("validation_errors") or [])
+        surface_status = _clean(surface_meta.get("status")) or "unknown"
+        surface_ready_property = _bool(surface_meta.get("ready"))
+        two_stage_meta = _json_safe_mapping(surface_meta.get("two_stage_surface_realization"))
+        text_material_generated = bool(
+            surface_meta.get("comment_text_generated")
+            or surface_meta.get("two_stage_comment_text_generated")
+            or (two_stage_meta.get("applied") is True and two_stage_meta.get("labels_present") is True)
+        )
+        evidence_material_bound = bool(surface_meta.get("used_evidence_span_ids", ["body_free_evidence_marker"]))
+        phrase_material_bound = bool(surface_meta.get("used_phrase_unit_ids", ["body_free_phrase_marker"]))
+    structural_error_codes = tuple(
+        reason for reason in validation_errors if _contains_marker(reason, _SURFACE_STRUCTURAL_OR_SAFETY_BLOCKER_MARKERS)
+    )
+    display_quality_blocker_codes = tuple(
+        reason for reason in validation_errors if _contains_marker(reason, _SURFACE_DISPLAY_QUALITY_BLOCKER_MARKERS)
+    )
+    two_stage_structural_ready = _candidate_path_two_stage_structural_ready(
+        surface_meta,
+        state_answer_two_stage_meta=state_answer_two_stage_meta,
+        two_stage_section_plan_meta=two_stage_section_plan_meta,
+    )
+    surface_status_ready = surface_status == COMPLETE_SURFACE_STATUS_READY
+    surface_structural_ready_before_display_gate = bool(
+        surface_status_ready
+        and two_stage_structural_ready
+        and text_material_generated
+        and evidence_material_bound
+        and phrase_material_bound
+        and not structural_error_codes
+    )
+    surface_display_quality_blocked = bool(display_quality_blocker_codes or internal_gate_failed_before_display_gate)
+    candidate_allowed = bool(surface_structural_ready_before_display_gate)
+    return {
+        "schema_version": "emlis.complete_surface_candidate_boundary.v1",
+        "surface_status": surface_status,
+        "status": surface_status,
+        "surface_ready_property": surface_ready_property,
+        "surface_ready": surface_ready_property,
+        "surface_structural_ready_before_display_gate": surface_structural_ready_before_display_gate,
+        "surface_structural_ready": surface_structural_ready_before_display_gate,
+        "surface_display_quality_blocked_before_display_gate": surface_display_quality_blocked,
+        "surface_display_quality_blocked": surface_display_quality_blocked,
+        "display_ready_before_public_gate": bool(candidate_allowed and not surface_display_quality_blocked),
+        "candidate_generation_allowed_before_display_gate": candidate_allowed,
+        "candidate_status_before_display_gate": COMPLETE_COMPOSER_STATUS_GENERATED if candidate_allowed else COMPLETE_COMPOSER_STATUS_UNAVAILABLE,
+        "candidate_status_after_internal_gate": "rejected" if internal_gate_failed_before_display_gate else ("generated" if candidate_allowed else "unavailable"),
+        "two_stage_surface_structural_ready_before_display_gate": two_stage_structural_ready,
+        "text_material_generated_before_display_gate": text_material_generated,
+        "evidence_material_bound_before_display_gate": evidence_material_bound,
+        "phrase_material_bound_before_display_gate": phrase_material_bound,
+        "validation_error_codes": list(validation_errors),
+        "structural_error_codes": list(structural_error_codes),
+        "display_quality_blocker_codes": list(display_quality_blocker_codes),
+        "display_quality_reason_codes": list(display_quality_blocker_codes),
+        "complete_initial_internal_tone_guard_failed_before_display_gate": any("tone_guard" in str(reason) for reason in display_quality_blocker_codes),
+        "internal_gate_failed_before_display_gate": bool(internal_gate_failed_before_display_gate),
+        "internal_gate_reason_codes": list(_dedupe(internal_gate_reason_codes or [])),
+        "public_comment_text_assigned": False,
+        "comment_text_publicly_assigned": False,
+        "display_gate_relaxed": False,
+        "grounding_gate_relaxed": False,
+        "template_gate_relaxed": False,
+        "reader_gate_relaxed": False,
+        "fixed_sentence_template_added": False,
+        "runtime_fixture_branch_added": False,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+    }
+
+
 def _complete_self_repair_reasons(reasons: Iterable[Any]) -> Tuple[str, ...]:
     """Keep Complete self-repair handoff limited to reasons it can repair.
 
@@ -587,6 +766,98 @@ def _state_answer_two_stage_meta_from_payload(payload: Mapping[str, Any]) -> dic
         "two_stage_required_propagated_to_complete_composer": two_stage_required,
         "raw_input_included": False,
     }
+
+def build_complete_composer_body_free_metadata_summary(meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Return the R5 top-level, body-free Phase16/17 diagnostic summary.
+
+    The summary is intentionally flat so P7 HOLD-004 classifiers do not need to
+    open nested ``surface_realizer`` or realized-text payloads merely to decide
+    whether two-stage material was required/applied and whether a display/tone
+    blocker is separate from structural readiness.
+    """
+
+    data = _json_safe_mapping(meta)
+    surface = _json_safe_mapping(data.get("surface_realizer") or data.get("surface_meta"))
+    two_stage = _json_safe_mapping(data.get("two_stage_surface_realization") or surface.get("two_stage_surface_realization"))
+    boundary = _json_safe_mapping(data.get("surface_candidate_boundary") or data.get("complete_surface_candidate_readiness"))
+    section_counts = _json_safe_mapping(two_stage.get("section_line_counts") or data.get("two_stage_section_line_counts"))
+    observation_count = int(section_counts.get("observation") or 0)
+    reception_count = int(section_counts.get("reception") or 0)
+    observation_non_empty = bool(two_stage.get("observation_section_non_empty") or data.get("two_stage_observation_section_non_empty") or observation_count > 0)
+    reception_non_empty = bool(two_stage.get("reception_section_non_empty") or data.get("two_stage_reception_section_non_empty") or reception_count > 0)
+    two_stage_validation_errors = _dedupe(two_stage.get("validation_errors") or data.get("two_stage_validation_error_codes") or [])
+    surface_validation_errors = _dedupe(surface.get("validation_errors") or data.get("surface_validation_error_codes") or [])
+    labels_present = bool(two_stage.get("labels_present") or data.get("two_stage_surface_labels_present"))
+    required = bool(
+        two_stage.get("required")
+        or data.get("two_stage_surface_realization_required")
+        or data.get("two_stage_applicability_required")
+        or data.get("state_answer_two_stage_display_required")
+        or data.get("two_stage_section_surface_plan_required")
+        or data.get("two_stage_reception_surface_required")
+    )
+    applied = bool(two_stage.get("applied") or data.get("two_stage_surface_realization_applied"))
+    section_order_valid = two_stage.get("section_order_valid", data.get("two_stage_section_order_valid", True)) is not False
+    structural_ready = bool(
+        boundary.get("surface_structural_ready")
+        or boundary.get("surface_structural_ready_before_display_gate")
+        or data.get("two_stage_surface_structural_ready")
+        or data.get("surface_structural_ready_before_display_gate")
+        or (
+            required
+            and applied
+            and labels_present
+            and section_order_valid
+            and observation_non_empty
+            and reception_non_empty
+            and not any(str(error).startswith("two_stage_") for error in two_stage_validation_errors)
+        )
+    )
+    display_quality_reason_codes = _dedupe(
+        boundary.get("display_quality_reason_codes")
+        or boundary.get("display_quality_blocker_codes")
+        or data.get("surface_display_quality_reason_codes_before_display_gate")
+        or surface_validation_errors
+    )
+    display_blocked = bool(
+        boundary.get("surface_display_quality_blocked_before_display_gate")
+        or boundary.get("surface_display_quality_blocked")
+        or data.get("surface_display_quality_blocked_before_display_gate")
+        or data.get("surface_display_quality_blocked")
+        or any(_contains_marker(code, _SURFACE_DISPLAY_QUALITY_BLOCKER_MARKERS) for code in display_quality_reason_codes)
+        or (surface.get("ready") is False and structural_ready)
+    )
+    summary = {
+        "complete_composer_body_free_metadata_summary_supported": True,
+        "complete_composer_body_free_metadata_summary_version": "emlis.complete_composer.body_free_metadata_summary.v1",
+        "state_answer_two_stage_display_required": bool(data.get("state_answer_two_stage_display_required")),
+        "state_answer_section_labels_required": bool(data.get("state_answer_section_labels_required")),
+        "state_answer_expected_comment_text_shape": _clean(data.get("state_answer_expected_comment_text_shape")),
+        "two_stage_section_surface_plan_connected": bool(data.get("two_stage_section_surface_plan_connected")),
+        "two_stage_section_surface_plan_required": bool(data.get("two_stage_section_surface_plan_required")),
+        "two_stage_section_surface_plan_section_ids": list(data.get("two_stage_section_surface_plan_section_ids") or []),
+        "two_stage_surface_realization_required": required,
+        "two_stage_surface_realization_applied": applied,
+        "two_stage_surface_labels_present": labels_present,
+        "two_stage_section_order_valid": section_order_valid,
+        "two_stage_observation_section_non_empty": observation_non_empty,
+        "two_stage_reception_section_non_empty": reception_non_empty,
+        "two_stage_section_line_counts": {"observation": observation_count, "reception": reception_count},
+        "two_stage_validation_error_codes": list(two_stage_validation_errors),
+        "two_stage_surface_structural_ready": structural_ready,
+        "surface_status": _clean(surface.get("status") or data.get("surface_status") or "unknown"),
+        "surface_ready": bool(surface.get("ready")) if "ready" in surface else bool(data.get("surface_ready")),
+        "surface_validation_error_codes": list(surface_validation_errors),
+        "surface_display_quality_blocked_before_display_gate": display_blocked,
+        "surface_display_quality_reason_codes_before_display_gate": list(display_quality_reason_codes),
+        "comment_text_body_included": False,
+        "surface_body_included": False,
+        "candidate_body_included": False,
+        "raw_input_included": False,
+        "public_response_key_added": False,
+    }
+    return _json_safe_mapping(summary)
+
 
 def build_complete_composer_client_contract_meta() -> dict[str, Any]:
     term_meta = build_complete_composer_initial_term_meta(include_legacy_aliases=False)
@@ -722,17 +993,19 @@ def build_complete_composer_client_runtime_gate(
 
 def _unavailable_response(reason: str, *, coverage_scope: str = "complete_initial_unavailable", extra_meta: Mapping[str, Any] | None = None) -> dict[str, Any]:
     extra = _json_safe_mapping(extra_meta)
+    body_free_metadata_summary = build_complete_composer_body_free_metadata_summary(extra)
     phase17_reason_summary = build_phase17_self_repair_unavailable_reason_summary(
         primary_reason=reason,
         candidate_status=COMPLETE_COMPOSER_STATUS_UNAVAILABLE,
         surface_meta=_as_mapping(extra.get("surface_realizer") or extra.get("surface_meta")),
         grounding_meta=_as_mapping(extra.get("final_grounding") or extra.get("initial_grounding") or extra.get("grounding_meta")),
         self_repair_meta=_as_mapping(extra.get("self_repair")),
-        extra_meta={**extra, "rejection_reasons": [reason, *list(extra.get("rejection_reasons") or [])]},
+        extra_meta={**extra, **body_free_metadata_summary, "rejection_reasons": [reason, *list(extra.get("rejection_reasons") or [])]},
     )
     meta = {
         **build_complete_composer_client_contract_meta(),
         **extra,
+        **body_free_metadata_summary,
         "phase17_7_self_repair_unavailable_reason": phase17_reason_summary,
         "phase17_7_unavailable_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
         "phase17_7_self_repair_reason_codes": list(phase17_reason_summary.get("phase17_reason_codes") or []),
@@ -910,13 +1183,21 @@ class CocolonCompleteComposerClient:
                 **state_answer_two_stage_meta,
             },
         )
-        if not surface_realization.ready:
+        surface_candidate_boundary = classify_complete_surface_readiness_for_candidate_path(
+            surface_realization,
+            state_answer_two_stage_meta=state_answer_two_stage_meta,
+            two_stage_section_plan_meta=two_stage_section_surface_plan_meta,
+        )
+        if not surface_realization.ready and not surface_candidate_boundary["candidate_generation_allowed_before_display_gate"]:
             surface_meta = surface_realization.as_meta(include_realized_text=False)
             return _unavailable_response(
                 "complete_initial_surface_unavailable",
                 coverage_scope=coverage_group,
                 extra_meta={
+                    **state_answer_two_stage_meta,
+                    **two_stage_section_surface_plan_meta,
                     "surface_realizer": surface_meta,
+                    "surface_candidate_boundary": surface_candidate_boundary,
                     **_two_stage_unavailable_reason_summary(
                         surface_meta,
                         state_answer_two_stage_meta=state_answer_two_stage_meta,
@@ -957,7 +1238,7 @@ class CocolonCompleteComposerClient:
             )
             if repair_result.ready and not repair_result.aborted:
                 final_realization = repair_result.repaired_surface_realization
-            elif repair_result.aborted:
+            elif repair_result.aborted and surface_candidate_boundary.get("candidate_generation_allowed_before_display_gate") is not True:
                 return _unavailable_response(
                     "complete_initial_self_repair_aborted",
                     coverage_scope=coverage_group,
@@ -966,6 +1247,13 @@ class CocolonCompleteComposerClient:
                         "self_repair": repair_result.as_meta(include_realized_text=False),
                     },
                 )
+            elif repair_result.aborted:
+                # R4-A: a body-free, structurally ready surface that reached
+                # two-stage comment-text shape remains an internal candidate.
+                # The aborted repair is carried forward as display/internal-gate
+                # blocker metadata instead of being converted to candidate
+                # unavailability.  Outer gates still decide public visibility.
+                final_realization = surface_realization
 
         comment_text = final_realization.comment_text
         final_grounding_report = judge_complete_product_quality_grounding(
@@ -985,6 +1273,26 @@ class CocolonCompleteComposerClient:
                 list(getattr(final_grounding_report, "rejection_reasons", []) or [])
                 + list(getattr(final_grounding_report, "binding_rejection_reasons", []) or [])
             )
+        )
+        self_repair_aborted_before_display_gate = bool(repair_result is not None and repair_result.aborted)
+        final_surface_candidate_readiness = classify_complete_surface_readiness_for_candidate_path(
+            final_realization,
+            state_answer_two_stage_meta=state_answer_two_stage_meta,
+            two_stage_section_plan_meta=two_stage_section_surface_plan_meta,
+            internal_gate_failed_before_display_gate=self_repair_aborted_before_display_gate,
+            internal_gate_reason_codes=["complete_initial_self_repair_aborted"] if self_repair_aborted_before_display_gate else (),
+        )
+        surface_display_quality_blocked_before_display_gate = bool(
+            final_surface_candidate_readiness.get("surface_display_quality_blocked_before_display_gate")
+            or final_surface_candidate_readiness.get("surface_display_quality_blocked")
+        )
+        surface_display_quality_reason_codes = list(
+            final_surface_candidate_readiness.get("display_quality_reason_codes")
+            or final_surface_candidate_readiness.get("display_quality_blocker_codes")
+            or []
+        )
+        internal_gate_failed_before_display_gate = bool(
+            final_grounding_failed_before_display_gate or surface_display_quality_blocked_before_display_gate
         )
         # Phase18-3: Complete Initial candidate generation and public display
         # gate evaluation are separate contracts.  A Complete surface that has
@@ -1051,12 +1359,12 @@ class CocolonCompleteComposerClient:
             **build_complete_composer_client_contract_meta(),
             "status": COMPLETE_COMPOSER_STATUS_GENERATED,
             "candidate_status_before_display_gate": COMPLETE_COMPOSER_STATUS_GENERATED,
-            "candidate_status_after_internal_gate": "generated" if not final_grounding_failed_before_display_gate else "rejected",
+            "candidate_status_after_internal_gate": "generated" if not internal_gate_failed_before_display_gate else "rejected",
             "candidate_generated_before_display_gate": True,
             "complete_candidate_generated_before_display_gate": True,
             "complete_initial_candidate_generation_path_recovered": True,
             "ready": True,
-            "display_ready": not final_grounding_failed_before_display_gate,
+            "display_ready": not internal_gate_failed_before_display_gate,
             "composer_model": COMPLETE_COMPOSER_INITIAL_MODEL,
             "generation_method": COMPLETE_COMPOSER_GENERATION_METHOD,
             "generation_scope": COMPLETE_COMPOSER_GENERATION_SCOPE,
@@ -1083,6 +1391,12 @@ class CocolonCompleteComposerClient:
             "tone_policy_applied": True,
             "tone_meaning_added": False,
             "surface_realizer": surface_meta,
+            **build_complete_composer_body_free_metadata_summary({
+                **state_answer_two_stage_meta,
+                **two_stage_section_surface_plan_meta,
+                "surface_realizer": surface_meta,
+                "surface_candidate_boundary": final_surface_candidate_readiness,
+            }),
             "two_stage_surface_realization": _json_safe_mapping(surface_meta.get("two_stage_surface_realization")),
             "two_stage_applicability_decision": _two_stage_applicability_decision_from_surface_meta(
                 surface_meta,
@@ -1117,7 +1431,19 @@ class CocolonCompleteComposerClient:
             "complete_initial_internal_grounding_failed_before_display_gate": final_grounding_failed_before_display_gate,
             "internal_grounding_failed_before_display_gate": final_grounding_failed_before_display_gate,
             "internal_grounding_failure_reason_codes": final_grounding_failure_reason_codes,
+            "complete_initial_self_repair_aborted_before_display_gate": self_repair_aborted_before_display_gate,
+            "complete_surface_candidate_readiness": final_surface_candidate_readiness,
+            "surface_structural_ready_before_display_gate": bool(final_surface_candidate_readiness.get("surface_structural_ready")),
+            "surface_display_quality_blocked_before_display_gate": surface_display_quality_blocked_before_display_gate,
+            "surface_display_quality_reason_codes_before_display_gate": surface_display_quality_reason_codes,
+            "complete_initial_internal_tone_guard_failed_before_display_gate": any(
+                "tone_guard" in str(reason) for reason in surface_display_quality_reason_codes
+            ),
+            "complete_initial_internal_display_quality_failed_before_display_gate": surface_display_quality_blocked_before_display_gate,
+            "internal_gate_failed_before_display_gate": internal_gate_failed_before_display_gate,
+            "complete_initial_r4a_candidate_display_boundary_repair_applied": surface_display_quality_blocked_before_display_gate,
             "complete_initial_candidate_generation_display_gate_separated": True,
+            "public_comment_text_assigned": False,
             "display_gate_relaxed": False,
             "grounding_gate_relaxed": False,
             "grounding_input": grounding_meta,
@@ -1142,6 +1468,7 @@ class CocolonCompleteComposerClient:
             "relation_types": list(candidate.used_relation_ids),
             "comment_text_present": True,
             "comment_text_publicly_assigned": False,
+            "public_comment_text_assigned": False,
             "comment_text_key_written": False,
             "fallback_observation_sentence_added": False,
             "fixed_string_renderer_used": False,
@@ -1181,6 +1508,8 @@ __all__ = [
     "COMPLETE_COMPOSER_CLIENT_VERSION",
     "CompleteComposerClient",
     "CocolonCompleteComposerClient",
+    "build_complete_composer_body_free_metadata_summary",
+    "classify_complete_surface_readiness_for_candidate_path",
     "build_complete_composer_client_contract_meta",
     "build_complete_composer_client_runtime_gate",
 ]

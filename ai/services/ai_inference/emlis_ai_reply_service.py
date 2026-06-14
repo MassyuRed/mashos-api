@@ -3102,24 +3102,77 @@ def _complete_initial_gate_step5_trace(gate_trace: Dict[str, Any]) -> Dict[str, 
         "template_echo": gate_trace.get("template_echo") if isinstance(gate_trace.get("template_echo"), dict) else {},
         "display": gate_trace.get("display_gate") if isinstance(gate_trace.get("display_gate"), dict) else {},
     }
-    return {
-        key: {
-            "evaluated": bool(value),
+    result: Dict[str, Any] = {}
+    for key, value in gates.items():
+        gate = value if isinstance(value, dict) else {}
+        binding_used = bool(key in _BINDING_DECISION_GATES and gate.get("binding_used"))
+        binding_support_source = str(
+            gate.get("binding_support_source")
+            or (
+                "display_binding_aware_result"
+                if key == "display" and binding_used
+                else "declared_relation_binding"
+                if key == "grounding" and binding_used
+                else "none"
+            )
+        )
+        meta = {
+            "evaluated": bool(gate),
             "gate_binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
             "binding_contract_version": GATE_BINDING_CONTRACT_VERSION,
-            "passed": bool(value.get("passed")) if isinstance(value, dict) else False,
-            "rejection_reasons": _safe_step5_list(value.get("rejection_reasons")) if isinstance(value, dict) else [],
-            "binding_present": bool(value.get("binding_present") or value.get("binding_available")) if isinstance(value, dict) else False,
-            "binding_available": bool(value.get("binding_available") or value.get("binding_present")) if isinstance(value, dict) else False,
-            "binding_required": bool(key in _BINDING_DECISION_GATES and value.get("binding_required")) if isinstance(value, dict) else False,
-            "binding_used": bool(key in _BINDING_DECISION_GATES and value.get("binding_used")) if isinstance(value, dict) else False,
-            "binding_missing": bool(key in _BINDING_DECISION_GATES and value.get("binding_missing")) if isinstance(value, dict) else False,
-            "binding_count": int(value.get("binding_count") or 0) if isinstance(value, dict) else 0,
-            "expected_binding_count": int(value.get("expected_binding_count") or 0) if isinstance(value, dict) else 0,
-            "binding_support_source": str(value.get("binding_support_source") or ("display_binding_aware_result" if key == "display" and value.get("binding_used") else "declared_relation_binding" if key == "grounding" and value.get("binding_used") else "none")) if isinstance(value, dict) else "none",
+            "passed": bool(gate.get("passed")),
+            "rejection_reasons": _safe_step5_list(gate.get("rejection_reasons")),
+            "binding_present": bool(gate.get("binding_present") or gate.get("binding_available")),
+            "binding_available": bool(gate.get("binding_available") or gate.get("binding_present")),
+            "binding_required": bool(key in _BINDING_DECISION_GATES and gate.get("binding_required")),
+            "binding_used": binding_used,
+            "binding_missing": bool(key in _BINDING_DECISION_GATES and gate.get("binding_missing")),
+            "binding_count": int(gate.get("binding_count") or 0),
+            "expected_binding_count": int(gate.get("expected_binding_count") or 0),
+            "binding_support_source": binding_support_source,
         }
-        for key, value in gates.items()
-    }
+        if key == "display":
+            meta.update(
+                {
+                    "observation_status": str(gate.get("observation_status") or ""),
+                    "comment_text_allowed": bool(gate.get("comment_text_allowed")),
+                    "comment_text_present": bool(gate.get("comment_text_present")),
+                    "binding_missing_exception_allowed": bool(gate.get("binding_missing_exception_allowed")),
+                    "binding_missing_exception_id": str(gate.get("binding_missing_exception_id") or ""),
+                    "binding_missing_exception_valid": bool(gate.get("binding_missing_exception_valid")),
+                    "original_expected_binding_count": int(gate.get("original_expected_binding_count") or 0),
+                    "pre_repair_expected_binding_count": int(gate.get("pre_repair_expected_binding_count") or 0),
+                    "candidate_body_sentence_count": int(gate.get("candidate_body_sentence_count") or 0),
+                    "original_binding_missing": bool(gate.get("original_binding_missing")),
+                    "expected_binding_count_source": str(gate.get("expected_binding_count_source") or ""),
+                    "display_binding_expected_count_source": str(
+                        gate.get("display_binding_expected_count_source")
+                        or gate.get("expected_binding_count_source")
+                        or ""
+                    ),
+                    "binding_count_source": str(gate.get("binding_count_source") or ""),
+                    "display_binding_trace_repair_applied": bool(
+                        gate.get("display_binding_trace_repair_applied")
+                    ),
+                    "display_binding_trace_repair_reason": str(
+                        gate.get("display_binding_trace_repair_reason") or ""
+                    ),
+                    "display_binding_contract_consistent": bool(
+                        gate.get("display_binding_contract_consistent")
+                    ),
+                    "display_sentence_binding_fail_closed_reason": (
+                        "display_sentence_binding_missing"
+                        if "display_sentence_binding_missing" in _safe_step5_list(gate.get("rejection_reasons"))
+                        else ""
+                    ),
+                    "raw_input_included": False,
+                    "comment_text_body_included": False,
+                    "candidate_body_included": False,
+                    "surface_body_included": False,
+                }
+            )
+        result[key] = meta
+    return result
 
 
 def _build_step5_complete_initial_candidate_generation_meta(
@@ -3170,6 +3223,72 @@ def _build_step5_complete_initial_candidate_generation_meta(
     candidate_generated = bool(status == "generated" and composer_source == "ai_generated" and candidate_comment_text_present)
     gate_results = _complete_initial_gate_step5_trace(gate_trace)
     existing_gates_preserved = all(bool(gate_results.get(key, {}).get("evaluated")) for key in ("reader", "grounding", "template_echo", "display"))
+    display_gate = dict(gate_results.get("display") or {})
+    display_gate_passed = bool(display_gate.get("passed"))
+    display_binding_required = bool(display_gate.get("binding_required"))
+    display_binding_used = bool(display_gate.get("binding_used"))
+    display_binding_missing = bool(display_gate.get("binding_missing"))
+    display_binding_missing_exception_allowed = bool(display_gate.get("binding_missing_exception_allowed"))
+    display_binding_missing_exception_id = str(display_gate.get("binding_missing_exception_id") or "")
+    display_binding_missing_exception_valid = bool(
+        display_gate.get("binding_missing_exception_valid")
+        or (display_binding_missing_exception_allowed and display_binding_missing_exception_id)
+    )
+    display_binding_missing_without_exception = bool(
+        display_binding_required
+        and display_binding_used
+        and display_binding_missing
+        and not display_binding_missing_exception_valid
+    )
+    display_binding_contract_consistent = bool(
+        display_gate.get("display_binding_contract_consistent")
+    )
+    if display_gate_passed and display_binding_missing_without_exception:
+        display_binding_contract_consistent = False
+    public_comment_text_present = bool(public_comment_text)
+    public_assignment_allowed_by_display_gate = bool(
+        display_status == "passed" and display_gate_passed and display_binding_contract_consistent
+    )
+    public_assignment_contract_consistent = bool(
+        (not public_comment_text_present) or public_assignment_allowed_by_display_gate
+    )
+    public_assignment_blocked_by_binding_contract = bool(
+        public_comment_text_present and not display_binding_contract_consistent
+    )
+    if not candidate_generated:
+        step5_contract_classification = (
+            "candidate_not_generated" if generate_called else "blocked_before_candidate_generation"
+        )
+    elif not display_binding_contract_consistent:
+        step5_contract_classification = "candidate_generated_display_binding_inconsistent"
+    elif public_comment_text_present and public_assignment_contract_consistent:
+        step5_contract_classification = "candidate_generated_public_allowed"
+    elif display_status != "passed" or not public_comment_text_present:
+        step5_contract_classification = "candidate_generated_fail_closed"
+    else:
+        step5_contract_classification = "candidate_generated_display_binding_inconsistent"
+    step5_contract_boundary = {
+        "schema_version": "cocolon.emlis.p7.hold004.step5_meta_extension.runtime.v1",
+        "step": "Step5_candidate_generation_path_confirmation",
+        "step5_contract_classification": step5_contract_classification,
+        "candidate_path_confirmed": bool(generate_called and candidate_generated),
+        "gate_preservation_confirmed": existing_gates_preserved,
+        "display_binding_contract_consistent": display_binding_contract_consistent,
+        "public_assignment_contract_consistent": public_assignment_contract_consistent,
+        "display_binding_missing_without_exception": display_binding_missing_without_exception,
+        "display_binding_missing_exception_allowed": display_binding_missing_exception_allowed,
+        "display_binding_missing_exception_id": display_binding_missing_exception_id,
+        "display_binding_rejection_reason_expected": (
+            "display_sentence_binding_missing" if display_binding_missing_without_exception else ""
+        ),
+        "public_assignment_allowed_by_display_gate": public_assignment_allowed_by_display_gate,
+        "public_assignment_blocked_by_binding_contract": public_assignment_blocked_by_binding_contract,
+        "body_free": True,
+        "raw_input_included": False,
+        "comment_text_body_included": False,
+        "candidate_body_included": False,
+        "surface_body_included": False,
+    }
     non_passed_comment_text_empty = bool(display_status == "passed" or not public_comment_text)
     fallback_used = bool(
         composer_meta.get("fallback_observation_sentence_added")
@@ -3218,9 +3337,19 @@ def _build_step5_complete_initial_candidate_generation_meta(
         "binding_count": int(binding_source.get("binding_count") or len(sentence_bindings) or 0),
         "expected_binding_count": int(binding_source.get("expected_binding_count") or len(sentence_bindings) or 0),
         "candidate_comment_text_present": candidate_comment_text_present,
-        "public_comment_text_present": bool(public_comment_text),
+        "public_comment_text_present": public_comment_text_present,
+        "step5_contract_classification": step5_contract_classification,
+        "display_binding_contract_consistent": display_binding_contract_consistent,
+        "public_assignment_contract_consistent": public_assignment_contract_consistent,
+        "display_binding_missing_without_exception": display_binding_missing_without_exception,
+        "display_binding_missing_exception_allowed": display_binding_missing_exception_allowed,
+        "display_binding_missing_exception_id": display_binding_missing_exception_id,
+        "display_binding_rejection_reason_expected": step5_contract_boundary["display_binding_rejection_reason_expected"],
+        "public_assignment_allowed_by_display_gate": public_assignment_allowed_by_display_gate,
+        "public_assignment_blocked_by_binding_contract": public_assignment_blocked_by_binding_contract,
         "comment_text_contract": "passed_only",
-        "comment_text_publicly_assigned": bool(display_status == "passed" and public_comment_text),
+        "comment_text_publicly_assigned": bool(display_status == "passed" and public_comment_text_present),
+        "step5_contract_boundary": dict(step5_contract_boundary),
         "raw_input_included": False,
         "generated_candidate_text_included": False,
     }
@@ -3239,7 +3368,17 @@ def _build_step5_complete_initial_candidate_generation_meta(
         "composer_source": composer_source,
         "display_observation_status": display_status,
         "complete_initial_candidate_generation_display_gate_separated": generation_display_gate_separated,
-        "public_comment_text_present": bool(public_comment_text),
+        "public_comment_text_present": public_comment_text_present,
+        "step5_contract_classification": step5_contract_classification,
+        "display_binding_contract_consistent": display_binding_contract_consistent,
+        "public_assignment_contract_consistent": public_assignment_contract_consistent,
+        "display_binding_missing_without_exception": display_binding_missing_without_exception,
+        "display_binding_missing_exception_allowed": display_binding_missing_exception_allowed,
+        "display_binding_missing_exception_id": display_binding_missing_exception_id,
+        "display_binding_rejection_reason_expected": step5_contract_boundary["display_binding_rejection_reason_expected"],
+        "public_assignment_allowed_by_display_gate": public_assignment_allowed_by_display_gate,
+        "public_assignment_blocked_by_binding_contract": public_assignment_blocked_by_binding_contract,
+        "step5_contract_boundary": dict(step5_contract_boundary),
         "candidate_comment_text_present": candidate_comment_text_present,
         "non_passed_comment_text_empty": non_passed_comment_text_empty,
         "passed_only_comment_text_contract_preserved": non_passed_comment_text_empty,
@@ -3325,6 +3464,16 @@ def _attach_step5_complete_initial_candidate_generation_meta(
     diagnostic_summary["complete_initial_existing_gates_preserved_after_generation"] = bool(step5_meta.get("existing_reader_grounding_template_display_gates_preserved"))
     diagnostic_summary["complete_initial_non_passed_comment_text_empty"] = bool(step5_meta.get("non_passed_comment_text_empty"))
     diagnostic_summary["complete_initial_fallback_used"] = bool(step5_meta.get("fallback_used"))
+    diagnostic_summary["step5_contract_classification"] = str(step5_meta.get("step5_contract_classification") or "")
+    diagnostic_summary["step5_display_binding_contract_consistent"] = bool(step5_meta.get("display_binding_contract_consistent"))
+    diagnostic_summary["step5_public_assignment_contract_consistent"] = bool(step5_meta.get("public_assignment_contract_consistent"))
+    diagnostic_summary["step5_display_binding_missing_without_exception"] = bool(step5_meta.get("display_binding_missing_without_exception"))
+    diagnostic_summary["step5_display_binding_missing_exception_allowed"] = bool(step5_meta.get("display_binding_missing_exception_allowed"))
+    diagnostic_summary["step5_display_binding_missing_exception_id"] = str(step5_meta.get("display_binding_missing_exception_id") or "")
+    diagnostic_summary["step5_display_binding_rejection_reason_expected"] = str(step5_meta.get("display_binding_rejection_reason_expected") or "")
+    diagnostic_summary["step5_public_assignment_allowed_by_display_gate"] = bool(step5_meta.get("public_assignment_allowed_by_display_gate"))
+    diagnostic_summary["step5_public_assignment_blocked_by_binding_contract"] = bool(step5_meta.get("public_assignment_blocked_by_binding_contract"))
+    diagnostic_summary["step5_contract_boundary"] = dict(step5_meta.get("step5_contract_boundary") or {})
 
     phase_gate_meta["step5_candidate_generation_path_confirmed"] = True
     phase_gate_meta["step5_complete_initial_candidate_generation_attempted"] = bool(step5_meta.get("candidate_generation_attempted"))
@@ -3341,6 +3490,16 @@ def _attach_step5_complete_initial_candidate_generation_meta(
     phase_gate_meta["step5_template_gate_evaluated"] = bool(step5_meta.get("template_gate_evaluated"))
     phase_gate_meta["step5_display_gate_evaluated"] = bool(step5_meta.get("display_gate_evaluated"))
     phase_gate_meta["step5_runtime_sentence_binding_count"] = int(runtime.get("sentence_binding_count") or 0)
+    phase_gate_meta["step5_contract_classification"] = str(step5_meta.get("step5_contract_classification") or "")
+    phase_gate_meta["step5_display_binding_contract_consistent"] = bool(step5_meta.get("display_binding_contract_consistent"))
+    phase_gate_meta["step5_public_assignment_contract_consistent"] = bool(step5_meta.get("public_assignment_contract_consistent"))
+    phase_gate_meta["step5_display_binding_missing_without_exception"] = bool(step5_meta.get("display_binding_missing_without_exception"))
+    phase_gate_meta["step5_display_binding_missing_exception_allowed"] = bool(step5_meta.get("display_binding_missing_exception_allowed"))
+    phase_gate_meta["step5_display_binding_missing_exception_id"] = str(step5_meta.get("display_binding_missing_exception_id") or "")
+    phase_gate_meta["step5_display_binding_rejection_reason_expected"] = str(step5_meta.get("display_binding_rejection_reason_expected") or "")
+    phase_gate_meta["step5_public_assignment_allowed_by_display_gate"] = bool(step5_meta.get("public_assignment_allowed_by_display_gate"))
+    phase_gate_meta["step5_public_assignment_blocked_by_binding_contract"] = bool(step5_meta.get("public_assignment_blocked_by_binding_contract"))
+    phase_gate_meta["step5_contract_boundary"] = dict(step5_meta.get("step5_contract_boundary") or {})
 
 
 def _safe_step6_int(value: Any, default: int = 0) -> int:

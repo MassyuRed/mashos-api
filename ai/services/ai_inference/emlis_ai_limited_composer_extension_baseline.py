@@ -90,6 +90,36 @@ def _body_lines(text: Any) -> list[str]:
     return body
 
 
+def _is_two_stage_label_line(line: Any) -> bool:
+    text = _clean(line).replace(" ", "").replace("　", "")
+    return text in {"見えたこと:", "見えたこと：", "Emlisから:", "Emlisから："}
+
+
+def _display_binding_expected_count(
+    *,
+    body_lines: list[str],
+    binding_count: int,
+    binding_rows: list[Mapping[str, Any]],
+    binding_required: bool,
+) -> tuple[int, str, int, int]:
+    """Return the body-free expected count used by Display binding trace.
+
+    Labelled two-stage surfaces include section labels such as ``見えたこと`` and
+    ``Emlisから``.  Those labels are visible UI body lines, but they are not the
+    same unit as the accepted grounding sentence bindings.  R4-B keeps the
+    candidate body out of diagnostic material and records the count source
+    instead of treating label lines as missing sentence bindings.
+    """
+
+    if not binding_required:
+        return 0, "not_required", 0, 0
+    label_line_count = sum(1 for line in body_lines if _is_two_stage_label_line(line))
+    displayable_sentence_count = max(0, len(body_lines) - label_line_count)
+    if label_line_count:
+        return displayable_sentence_count, "displayable_sentence_count", displayable_sentence_count, label_line_count
+    return len(body_lines), "candidate_body_line_count", displayable_sentence_count, label_line_count
+
+
 def _binding_items_from_meta(meta: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], str, Mapping[str, Any]]:
     candidates: list[Any] = []
     source_key = ""
@@ -181,7 +211,17 @@ def build_limited_composer_binding_presence_meta(
     source = _clean(_candidate_attr(composer_candidate, "composer_source", ""))
     generated_text_present = bool(status == "generated" and source == "ai_generated" and text)
     binding_required = bool(generated_text_present)
-    expected_binding_count = len(body_lines) if binding_required else 0
+    (
+        expected_binding_count,
+        display_binding_expected_count_source,
+        displayable_sentence_count,
+        display_label_line_count,
+    ) = _display_binding_expected_count(
+        body_lines=body_lines,
+        binding_count=binding_count,
+        binding_rows=binding_rows,
+        binding_required=binding_required,
+    )
     binding_present = bool(binding_count > 0)
     binding_missing = bool(binding_required and binding_count < expected_binding_count)
     used_phrase_unit_ids = _dedupe(
@@ -212,7 +252,7 @@ def build_limited_composer_binding_presence_meta(
         "binding_required": binding_required,
         "binding_present": binding_present,
         "binding_missing": binding_missing,
-        "binding_missing_reason": ("sentence_binding_count_below_body_sentence_count" if binding_stage == "sentence_binding_type_added" else "sentence_binding_not_yet_attached") if binding_missing else "",
+        "binding_missing_reason": ("sentence_binding_count_below_display_expected_count" if binding_stage == "sentence_binding_type_added" else "sentence_binding_not_yet_attached") if binding_missing else "",
         "binding_used": False,
         "binding_count": binding_count,
         "expected_binding_count": expected_binding_count,
@@ -221,6 +261,11 @@ def build_limited_composer_binding_presence_meta(
         "body_sentence_count": len(body_lines),
         "candidate_body_sentence_count": len(body_lines),
         "body_line_count": len(body_lines),
+        "displayable_sentence_count": displayable_sentence_count,
+        "display_label_line_count": display_label_line_count,
+        "display_binding_expected_count_source": display_binding_expected_count_source,
+        "display_binding_count_source": "sentence_binding_bundle" if binding_count else "none",
+        "display_binding_trace_repaired": bool(display_binding_expected_count_source != "candidate_body_line_count"),
         "candidate_comment_text_present": bool(text),
         "composer_status": status,
         "composer_source": source,
@@ -282,6 +327,20 @@ def _gate_results_meta(gate_results: Any) -> dict[str, Any]:
                 "binding_missing": binding_missing,
                 "binding_count": int(meta.get("binding_count") or diagnostics.get("binding_count") or 0),
                 "expected_binding_count": int(meta.get("expected_binding_count") or diagnostics.get("expected_binding_count") or 0),
+                "display_binding_expected_count_source": _clean(
+                    meta.get("display_binding_expected_count_source")
+                    or diagnostics.get("display_binding_expected_count_source")
+                    or "unknown"
+                ),
+                "display_binding_count_source": _clean(
+                    meta.get("display_binding_count_source")
+                    or diagnostics.get("display_binding_count_source")
+                    or "unknown"
+                ),
+                "display_binding_trace_repaired": bool(
+                    meta.get("display_binding_trace_repaired")
+                    or diagnostics.get("display_binding_trace_repaired")
+                ),
                 "binding_support_source": _gate_support_source(gate=gate_key, binding_used=binding_used, diagnostics=diagnostics),
             }
     return out
@@ -328,6 +387,21 @@ def build_limited_composer_diagnostic_summary_extension_meta(
                 binding_used=bool(value.get("binding_used")),
                 diagnostics=value,
             )
+            if gate_key == "display":
+                value["display_binding_expected_count_source"] = _clean(
+                    value.get("display_binding_expected_count_source")
+                    or binding.get("display_binding_expected_count_source")
+                    or "unknown"
+                )
+                value["display_binding_count_source"] = _clean(
+                    value.get("display_binding_count_source")
+                    or binding.get("display_binding_count_source")
+                    or "unknown"
+                )
+                value["display_binding_trace_repaired"] = bool(
+                    value.get("display_binding_trace_repaired")
+                    or binding.get("display_binding_trace_repaired")
+                )
     first_failed_gate = ""
     first_failed_reason = ""
     for key in ("reader", "grounding", "template_echo", "display"):
