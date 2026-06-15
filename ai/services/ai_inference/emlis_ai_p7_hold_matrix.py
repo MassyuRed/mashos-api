@@ -50,6 +50,34 @@ from emlis_ai_p7_hold004_step5_candidate_gate_classification import (
     assert_p7_hold004_step5_meta_extension_contract,
     assert_p7_hold004_step5_material_connection_contract,
 )
+from emlis_ai_p7_hold004_backend_suite_execution_results import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_ID,
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID,
+    assert_p7_hold004_backend_suite_execution_summary_contract,
+)
+from emlis_ai_p7_hold004_backend_suite_group_inventory_plan import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID,
+    P7_HOLD004_BACKEND_SUITE_GROUP_DEFINITIONS,
+    P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID,
+)
+from emlis_ai_p7_hold004_backend_suite_split_consistency import (
+    P7_HOLD004_BACKEND_COLLECT_BASELINE_ID,
+    P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT,
+    P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
+)
+from emlis_ai_p7_red_closure_classification import (
+    P7_RED_CLOSURE_CLASSIFICATION_MATRIX_SCHEMA_VERSION,
+    assert_p7_red_closure_classification_matrix_contract,
+    build_p7_red_closure_classification_matrix,
+    p7_closed_red_refs_from_classification,
+    p7_unresolved_red_refs_from_classification,
+)
+from emlis_ai_p7_timeout_isolation import (
+    P7_E2E_ISOLATION_RESULT_SCHEMA_VERSION,
+    P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID,
+    assert_p7_e2e_isolation_result_contract,
+)
 
 P7_REAL_DEVICE_MODAL_READFEEL_CHECK_SCHEMA_VERSION: Final = "cocolon.emlis.p7.real_device_modal_readfeel_check.v1"
 P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION: Final = "cocolon.emlis.p7.backend_suite_split_matrix.v1"
@@ -164,6 +192,310 @@ def _connection_status(kind: str) -> str:
     if kind == "not_run":
         return "timeout_or_unconfirmed"
     return "timeout_or_unconfirmed"
+
+
+
+
+def _p7_hold004_group_02_current_counts() -> dict[str, int]:
+    for definition in P7_HOLD004_BACKEND_SUITE_GROUP_DEFINITIONS:
+        if definition.get("group_id") == "group_02_p7_hold004":
+            return {
+                "file_count": int(definition.get("file_count", 0) or 0),
+                "test_item_count": int(definition.get("test_item_count", 0) or 0),
+            }
+    return {"file_count": 0, "test_item_count": 0}
+
+
+def _matrix_current_baseline_connection(
+    *,
+    collect_baseline_id: Any = "",
+    inventory_id: Any = "",
+    plan_id: Any = "",
+    summary_id: Any = "",
+) -> dict[str, Any]:
+    group_02_counts = _p7_hold004_group_02_current_counts()
+    return {
+        "collect_baseline_id": clean_identifier(collect_baseline_id, default=P7_HOLD004_BACKEND_COLLECT_BASELINE_ID, max_length=160),
+        "group_inventory_id": clean_identifier(inventory_id, default=P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID, max_length=160),
+        "execution_plan_id": clean_identifier(plan_id, default=P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID, max_length=160),
+        "execution_summary_id": clean_identifier(summary_id, default=P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_ID, max_length=160),
+        "current_collect_file_count": P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT,
+        "current_collect_test_item_count": P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
+        "group_02_file_count": group_02_counts["file_count"],
+        "group_02_test_item_count": group_02_counts["test_item_count"],
+        "old_baseline_id": P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID,
+        "old_baseline_used_as_current": False,
+        "full_backend_suite_green_confirmed": False,
+        "release_allowed": False,
+        "body_free": True,
+    }
+
+
+def _backend_execution_summary_connection(
+    summary: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Normalize optional R5 execution summary material for R6/R7.
+
+    The summary is an observed split-run material, not a full backend-suite
+    green proof.  This helper exposes only body-free identifiers, status enums,
+    counts, and reason codes for matrix connection.
+    """
+
+    if summary is None:
+        return {
+            "connected": False,
+            "schema_version": "",
+            "summary_id": "",
+            "collect_baseline_id": "",
+            "inventory_id": "",
+            "plan_id": "",
+            "expected_group_count": 0,
+            "expected_total_batch_count": 0,
+            "current_collect_baseline_connected": False,
+            "current_group_inventory_connected": False,
+            "current_execution_plan_connected": False,
+            "old_baseline_not_used_as_current": False,
+            "backend_suite_group_02_file_count": 0,
+            "backend_suite_group_02_test_item_count": 0,
+            "backend_suite_group_02_count_current": False,
+            "matrix_current_baseline_connection": {},
+            "all_groups_executed": False,
+            "split_all_groups_green_confirmed": False,
+            "group_run_results_recorded": False,
+            "group_statuses": {},
+            "green_group_ids": [],
+            "failed_group_ids": [],
+            "timeout_group_ids": [],
+            "collection_failed_group_ids": [],
+            "interrupted_group_ids": [],
+            "blocked_group_ids": [],
+            "not_run_group_ids": [],
+            "partial_group_ids": [],
+            "first_red_present": False,
+            "first_timeout_present": False,
+            "required_followup_fixes": [],
+            "full_suite_group_status": "",
+            "reason_codes": [],
+        }
+
+    material = safe_mapping(summary)
+    assert_p7_hold004_backend_suite_execution_summary_contract(material)
+    assert_p7_no_body_payload_or_contract_mutation(
+        material,
+        source="p7_backend_suite_split_matrix.backend_suite_execution_summary",
+    )
+
+    group_statuses = {
+        clean_identifier(group_id, max_length=120): clean_identifier(status, default="NOT_RUN", max_length=80).upper()
+        for group_id, status in safe_mapping(material.get("group_statuses")).items()
+    }
+    failed_group_ids = dedupe_identifiers(material.get("failed_group_ids"), limit=40, max_length=120)
+    timeout_group_ids = dedupe_identifiers(material.get("timeout_group_ids"), limit=40, max_length=120)
+    collection_failed_group_ids = dedupe_identifiers(
+        material.get("collection_failed_group_ids"),
+        limit=40,
+        max_length=120,
+    )
+    interrupted_group_ids = dedupe_identifiers(material.get("interrupted_group_ids"), limit=40, max_length=120)
+    blocked_group_ids = dedupe_identifiers(material.get("blocked_group_ids"), limit=40, max_length=120)
+    not_run_group_ids = dedupe_identifiers(material.get("not_run_group_ids"), limit=40, max_length=120)
+    partial_group_ids = dedupe_identifiers(material.get("partial_group_ids"), limit=40, max_length=120)
+    split_all_green = material.get("split_all_groups_green_confirmed") is True
+    group_run_results_recorded = material.get("group_run_results_recorded") is True
+    collect_baseline_id = clean_identifier(material.get("collect_baseline_id"), max_length=160)
+    inventory_id = clean_identifier(material.get("inventory_id"), max_length=160)
+    plan_id = clean_identifier(material.get("plan_id"), max_length=160)
+    summary_id = clean_identifier(material.get("summary_id"), max_length=160)
+    group_02_counts = _p7_hold004_group_02_current_counts()
+    backend_suite_group_02_count_current = (
+        group_02_counts.get("file_count") == 19
+        and group_02_counts.get("test_item_count") == 252
+    )
+
+    if failed_group_ids:
+        full_suite_group_status = "red_until_repaired"
+    elif timeout_group_ids:
+        full_suite_group_status = "timeout_isolated"
+    elif collection_failed_group_ids or interrupted_group_ids or blocked_group_ids:
+        full_suite_group_status = "blocked"
+    elif group_run_results_recorded or split_all_green or partial_group_ids:
+        full_suite_group_status = "hold_unconfirmed"
+    else:
+        full_suite_group_status = ""
+
+    reason_codes = [
+        "backend_suite_execution_summary_connected",
+        "split_green_is_not_full_backend_suite_green" if split_all_green else "",
+        "backend_suite_group_execution_partial" if partial_group_ids else "",
+        "first_red_classification_required" if failed_group_ids else "",
+        "timeout_classification_required" if timeout_group_ids else "",
+        "timeout_isolated_not_green" if timeout_group_ids else "",
+        "collection_failed_blocks_execution" if collection_failed_group_ids else "",
+        "group_execution_interrupted" if interrupted_group_ids else "",
+        "blocked_by_previous_red" if blocked_group_ids else "",
+        "backend_suite_group_execution_not_run" if not_run_group_ids else "",
+    ]
+
+    first_red = safe_mapping(material.get("first_red"))
+    first_timeout = safe_mapping(material.get("first_timeout"))
+    return {
+        "connected": True,
+        "schema_version": clean_identifier(
+            material.get("schema_version"),
+            default=P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+            max_length=160,
+        ),
+        "summary_id": summary_id,
+        "collect_baseline_id": collect_baseline_id,
+        "inventory_id": inventory_id,
+        "plan_id": plan_id,
+        "expected_group_count": int(material.get("expected_group_count", 0) or 0),
+        "expected_total_batch_count": int(material.get("expected_total_batch_count", 0) or 0),
+        "current_collect_baseline_connected": collect_baseline_id == P7_HOLD004_BACKEND_COLLECT_BASELINE_ID,
+        "current_group_inventory_connected": inventory_id == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID,
+        "current_execution_plan_connected": plan_id == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID,
+        "old_baseline_not_used_as_current": collect_baseline_id != P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID,
+        "backend_suite_group_02_file_count": group_02_counts.get("file_count", 0),
+        "backend_suite_group_02_test_item_count": group_02_counts.get("test_item_count", 0),
+        "backend_suite_group_02_count_current": backend_suite_group_02_count_current,
+        "matrix_current_baseline_connection": _matrix_current_baseline_connection(
+            collect_baseline_id=collect_baseline_id,
+            inventory_id=inventory_id,
+            plan_id=plan_id,
+            summary_id=summary_id,
+        ),
+        "all_groups_executed": material.get("all_groups_executed") is True,
+        "split_all_groups_green_confirmed": split_all_green,
+        "group_run_results_recorded": group_run_results_recorded,
+        "group_statuses": group_statuses,
+        "green_group_ids": dedupe_identifiers(material.get("green_group_ids"), limit=40, max_length=120),
+        "failed_group_ids": failed_group_ids,
+        "timeout_group_ids": timeout_group_ids,
+        "collection_failed_group_ids": collection_failed_group_ids,
+        "interrupted_group_ids": interrupted_group_ids,
+        "blocked_group_ids": blocked_group_ids,
+        "not_run_group_ids": not_run_group_ids,
+        "partial_group_ids": partial_group_ids,
+        "first_red_present": first_red.get("present") is True,
+        "first_timeout_present": first_timeout.get("present") is True,
+        "required_followup_fixes": dedupe_identifiers(
+            material.get("required_followup_fixes"),
+            limit=160,
+            max_length=180,
+        ),
+        "full_suite_group_status": full_suite_group_status,
+        "reason_codes": dedupe_identifiers(reason_codes, limit=80, max_length=160),
+    }
+
+
+def _red_closure_connection(
+    *,
+    red_closure_classification_matrix: Mapping[str, Any] | None = None,
+    connection_timeout_isolation_result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize optional RED closure material for backend/R10 matrix connection.
+
+    RED closure material is the source of truth for P7-RED-003.  A raw
+    Product Quality Connection E2E pass from legacy ``observed_results`` is not
+    enough to close RED-003.
+    """
+
+    if red_closure_classification_matrix is None and connection_timeout_isolation_result is None:
+        return {
+            "connected": False,
+            "classification_schema_version": "",
+            "source_e2e_isolation_schema_version": "",
+            "source_e2e_isolation_result_kind": "",
+            "source_e2e_observed_status": "",
+            "closed_red_refs": [],
+            "unresolved_red_refs": [],
+            "product_quality_connection_timeout_closed": False,
+            "product_quality_connection_timeout_classified": False,
+            "product_quality_connection_timeout_isolated": False,
+            "positive_recovery_red_closed": None,
+            "connection_e2e_group_status": "",
+            "connection_e2e_release_blocking": True,
+            "connection_e2e_reason_codes": [],
+        }
+
+    if connection_timeout_isolation_result is not None:
+        isolation = safe_mapping(connection_timeout_isolation_result)
+        assert_p7_e2e_isolation_result_contract(isolation)
+        assert_p7_no_body_payload_or_contract_mutation(
+            isolation,
+            source="p7_backend_suite_split_matrix.connection_timeout_isolation_result",
+        )
+    else:
+        isolation = None
+
+    if red_closure_classification_matrix is not None:
+        classification = safe_mapping(red_closure_classification_matrix)
+    else:
+        classification = build_p7_red_closure_classification_matrix(
+            connection_timeout_isolation_result=isolation,
+        )
+    assert_p7_red_closure_classification_matrix_contract(classification)
+    assert_p7_no_body_payload_or_contract_mutation(
+        classification,
+        source="p7_backend_suite_split_matrix.red_closure_classification_matrix",
+    )
+
+    closed_red_refs = p7_closed_red_refs_from_classification(classification)
+    unresolved_red_refs = p7_unresolved_red_refs_from_classification(classification)
+    red003_closed = P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID in set(closed_red_refs)
+    red003_unresolved = P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID in set(unresolved_red_refs)
+    if red003_closed:
+        group_status = "closed_confirmed"
+        release_blocking = False
+        reason_codes = (
+            "red003_closed_by_structured_classification",
+            "product_quality_connection_e2e_closed_is_not_full_backend_suite_green",
+        )
+    elif red003_unresolved:
+        kind = clean_identifier(classification.get("source_e2e_isolation_result_kind"), default="timeout", max_length=80)
+        group_status = "timeout_isolated" if kind in {"timeout", "hang", "not_run"} else "red_until_repaired"
+        release_blocking = True
+        reason_codes = (
+            "red003_unresolved_by_structured_classification",
+            "product_quality_connection_e2e_timeout_or_unconfirmed",
+        )
+    else:
+        group_status = "timeout_or_unconfirmed"
+        release_blocking = True
+        reason_codes = ("product_quality_connection_e2e_timeout_or_unconfirmed",)
+
+    return {
+        "connected": True,
+        "classification_schema_version": clean_identifier(
+            classification.get("schema_version"),
+            default=P7_RED_CLOSURE_CLASSIFICATION_MATRIX_SCHEMA_VERSION,
+            max_length=160,
+        ),
+        "source_e2e_isolation_schema_version": clean_identifier(
+            classification.get("source_e2e_isolation_schema_version"),
+            default=P7_E2E_ISOLATION_RESULT_SCHEMA_VERSION,
+            max_length=160,
+        ),
+        "source_e2e_isolation_result_kind": clean_identifier(
+            classification.get("source_e2e_isolation_result_kind"),
+            default="",
+            max_length=80,
+        ),
+        "source_e2e_observed_status": clean_identifier(
+            classification.get("source_e2e_observed_status"),
+            default="",
+            max_length=120,
+        ),
+        "closed_red_refs": closed_red_refs,
+        "unresolved_red_refs": unresolved_red_refs,
+        "product_quality_connection_timeout_closed": red003_closed,
+        "product_quality_connection_timeout_classified": classification.get("product_quality_connection_timeout_classified") is True,
+        "product_quality_connection_timeout_isolated": classification.get("product_quality_connection_timeout_isolated") is True,
+        "positive_recovery_red_closed": classification.get("positive_recovery_red_closed"),
+        "connection_e2e_group_status": group_status,
+        "connection_e2e_release_blocking": release_blocking,
+        "connection_e2e_reason_codes": dedupe_identifiers(reason_codes, limit=20, max_length=160),
+    }
 
 
 def _hold004_phase16_material_summary(
@@ -383,7 +715,12 @@ def _hold004_step5_material_summary(
         limit=80,
         max_length=160,
     )
-    unresolved_red_refs = [] if step5_red_closed else dedupe_identifiers(
+    # R8 keeps the Step5 display-binding red visible to downstream backend split
+    # / release handoff material even when R4-C has replaced the stale target
+    # expectation.  R4-C closes the old fail-closed test expectation; R4-D still
+    # preserves the mixed contract conflict as HOLD material, so dropping the red
+    # ref here would make subset validation lose the blocker.
+    unresolved_red_refs = dedupe_identifiers(
         [
             *r5.get("unresolved_red_refs", []),
             *r6.get("unresolved_red_refs", []),
@@ -522,6 +859,9 @@ def assert_p7_real_device_modal_readfeel_check_contract(check: Mapping[str, Any]
 def build_p7_backend_suite_split_matrix(
     *,
     observed_results: Mapping[str, Any] | None = None,
+    backend_suite_execution_summary: Mapping[str, Any] | None = None,
+    red_closure_classification_matrix: Mapping[str, Any] | None = None,
+    connection_timeout_isolation_result: Mapping[str, Any] | None = None,
     real_device_check: Mapping[str, Any] | None = None,
     positive_recovery_red_closed: bool = True,
     hold004_phase16_classification: Mapping[str, Any] | None = None,
@@ -558,12 +898,43 @@ def build_p7_backend_suite_split_matrix(
         hold004_step5_meta_extension=hold004_step5_meta_extension,
         hold004_step5_material_connection=hold004_step5_material_connection,
     )
+    execution_summary_material = _backend_execution_summary_connection(
+        backend_suite_execution_summary,
+    )
+    red_closure_material = _red_closure_connection(
+        red_closure_classification_matrix=red_closure_classification_matrix,
+        connection_timeout_isolation_result=connection_timeout_isolation_result,
+    )
+    if isinstance(red_closure_material.get("positive_recovery_red_closed"), bool):
+        positive_recovery_red_closed = red_closure_material["positive_recovery_red_closed"] is True
 
     p7_core_status = _green_or_not_run(p7_core_kind)
     reuse_status = _green_or_not_run(reuse_kind)
     positive_status = _positive_status(positive_kind, positive_recovery_red_closed=positive_recovery_red_closed)
-    connection_status = _connection_status(connection_kind)
-    full_suite_status = "not_run" if full_kind in {"not_run", "unconfirmed", "timeout", "hang"} else "hold_unconfirmed"
+    connection_status = (
+        red_closure_material["connection_e2e_group_status"]
+        if red_closure_material["connected"]
+        else _connection_status(connection_kind)
+    )
+    if not red_closure_material["connected"] and connection_kind in {"passed", "green"}:
+        connection_reason_codes = (
+            "connection_e2e_passed_without_red_closure_material",
+            "product_quality_connection_e2e_pass_is_not_red003_closure",
+        )
+    elif red_closure_material["connected"]:
+        connection_reason_codes = tuple(red_closure_material["connection_e2e_reason_codes"])
+    else:
+        connection_reason_codes = ("product_quality_connection_e2e_timeout_or_unconfirmed",)
+    summary_full_status = clean_identifier(
+        execution_summary_material.get("full_suite_group_status"),
+        default="",
+        max_length=80,
+    )
+    full_suite_status = (
+        summary_full_status
+        if summary_full_status
+        else ("not_run" if full_kind in {"not_run", "unconfirmed", "timeout", "hang"} else "hold_unconfirmed")
+    )
     real_device_status = "green_confirmed" if real_device.get("status") == "verified" else "hold_unconfirmed"
 
     full_suite_reason_codes = dedupe_identifiers(
@@ -579,6 +950,11 @@ def build_p7_backend_suite_split_matrix(
             *hold004_step5_material["required_followup_fixes"],
             "positive_public_shape_target_green_pending_full_suite"
             if hold004_positive_material["target_green_confirmed"]
+            else "",
+            *execution_summary_material["required_followup_fixes"],
+            *execution_summary_material["reason_codes"],
+            "red003_closed_pending_backend_suite_hold"
+            if red_closure_material["product_quality_connection_timeout_closed"]
             else "",
         ],
         limit=80,
@@ -617,12 +993,16 @@ def build_p7_backend_suite_split_matrix(
         _group(
             "product_quality_connection_e2e",
             status=connection_status,
-            green_scope="isolated_timeout_only",
+            green_scope="isolated_red_closure_only"
+            if red_closure_material["product_quality_connection_timeout_closed"]
+            else "isolated_timeout_only",
             green_claim_allowed=False,
-            release_blocking=True,
+            release_blocking=red_closure_material["connection_e2e_release_blocking"],
             test_count_observed=_test_count(observed_results, "heavy_isolated_product_quality_connection_timeout", 0),
-            red_refs=("P7-RED-003",),
-            reason_codes=("product_quality_connection_e2e_timeout_or_unconfirmed",),
+            red_refs=()
+            if red_closure_material["product_quality_connection_timeout_closed"]
+            else (P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID,),
+            reason_codes=connection_reason_codes,
         ),
         _group(
             "real_device_submit_modal_readfeel",
@@ -649,7 +1029,16 @@ def build_p7_backend_suite_split_matrix(
                 limit=40,
                 max_length=120,
             ),
-            red_refs=hold004_step5_material["unresolved_red_refs"],
+            red_refs=dedupe_identifiers(
+                [
+                    *hold004_step5_material["unresolved_red_refs"],
+                    "p7_hold004_backend_suite_first_red"
+                    if execution_summary_material["failed_group_ids"]
+                    else "",
+                ],
+                limit=40,
+                max_length=160,
+            ),
             reason_codes=full_suite_reason_codes,
         ),
     ]
@@ -664,8 +1053,21 @@ def build_p7_backend_suite_split_matrix(
         limit=40,
         max_length=120,
     )
+    red003_source_unresolved_refs = (
+        list(red_closure_material["unresolved_red_refs"])
+        if red_closure_material["connected"]
+        else [P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID]
+    )
     unresolved_red_refs = dedupe_identifiers(
-        ["P7-RED-003", *hold004_step5_material["unresolved_red_refs"]],
+        [
+            *red003_source_unresolved_refs,
+            *hold004_step5_material["unresolved_red_refs"],
+        ],
+        limit=80,
+        max_length=160,
+    )
+    closed_red_refs = dedupe_identifiers(
+        red_closure_material["closed_red_refs"],
         limit=80,
         max_length=160,
     )
@@ -680,19 +1082,56 @@ def build_p7_backend_suite_split_matrix(
         ),
         "groups": groups,
         "group_statuses": {group["group_id"]: group["status"] for group in groups},
+        "fine_group_statuses": execution_summary_material["group_statuses"],
+        "backend_suite_execution_summary_connected": execution_summary_material["connected"],
+        "backend_suite_execution_summary_schema_version": execution_summary_material["schema_version"],
+        "backend_suite_execution_summary_id": execution_summary_material["summary_id"],
+        "backend_suite_execution_summary_collect_baseline_id": execution_summary_material["collect_baseline_id"],
+        "backend_suite_execution_summary_inventory_id": execution_summary_material["inventory_id"],
+        "backend_suite_execution_summary_plan_id": execution_summary_material["plan_id"],
+        "backend_suite_execution_summary_expected_group_count": execution_summary_material["expected_group_count"],
+        "backend_suite_execution_summary_expected_total_batch_count": execution_summary_material["expected_total_batch_count"],
+        "current_collect_baseline_connected": execution_summary_material["current_collect_baseline_connected"],
+        "current_group_inventory_connected": execution_summary_material["current_group_inventory_connected"],
+        "current_execution_plan_connected": execution_summary_material["current_execution_plan_connected"],
+        "old_baseline_not_used_as_current": execution_summary_material["old_baseline_not_used_as_current"],
+        "backend_suite_group_02_file_count": execution_summary_material["backend_suite_group_02_file_count"],
+        "backend_suite_group_02_test_item_count": execution_summary_material["backend_suite_group_02_test_item_count"],
+        "backend_suite_group_02_count_current": execution_summary_material["backend_suite_group_02_count_current"],
+        "matrix_current_baseline_connection": execution_summary_material["matrix_current_baseline_connection"],
+        "backend_suite_execution_summary_all_groups_executed": execution_summary_material["all_groups_executed"],
+        "backend_suite_execution_summary_group_run_results_recorded": execution_summary_material["group_run_results_recorded"],
+        "backend_suite_execution_summary_split_all_groups_green_confirmed": execution_summary_material["split_all_groups_green_confirmed"],
+        "backend_suite_execution_summary_green_group_ids": execution_summary_material["green_group_ids"],
+        "backend_suite_execution_summary_failed_group_ids": execution_summary_material["failed_group_ids"],
+        "backend_suite_execution_summary_timeout_group_ids": execution_summary_material["timeout_group_ids"],
+        "backend_suite_execution_summary_collection_failed_group_ids": execution_summary_material["collection_failed_group_ids"],
+        "backend_suite_execution_summary_interrupted_group_ids": execution_summary_material["interrupted_group_ids"],
+        "backend_suite_execution_summary_blocked_group_ids": execution_summary_material["blocked_group_ids"],
+        "backend_suite_execution_summary_not_run_group_ids": execution_summary_material["not_run_group_ids"],
+        "backend_suite_execution_summary_partial_group_ids": execution_summary_material["partial_group_ids"],
+        "backend_suite_execution_summary_first_red_present": execution_summary_material["first_red_present"],
+        "backend_suite_execution_summary_first_timeout_present": execution_summary_material["first_timeout_present"],
+        "split_all_groups_green_confirmed": execution_summary_material["split_all_groups_green_confirmed"],
+        "split_green_all_groups_confirmed": execution_summary_material["split_all_groups_green_confirmed"],
+        "red_closure_classification_connected": red_closure_material["connected"],
+        "red_closure_classification_schema_version": red_closure_material["classification_schema_version"],
+        "red_closure_source_e2e_isolation_schema_version": red_closure_material["source_e2e_isolation_schema_version"],
+        "red_closure_source_e2e_isolation_result_kind": red_closure_material["source_e2e_isolation_result_kind"],
+        "red_closure_source_e2e_observed_status": red_closure_material["source_e2e_observed_status"],
+        "closed_red_refs": closed_red_refs,
+        "product_quality_connection_timeout_classified": red_closure_material["product_quality_connection_timeout_classified"],
+        "product_quality_connection_timeout_closed": red_closure_material["product_quality_connection_timeout_closed"],
+        "product_quality_connection_timeout_isolated": red_closure_material["product_quality_connection_timeout_isolated"],
+        "product_quality_connection_e2e_status": connection_status,
         "unresolved_red_refs": unresolved_red_refs,
         "unresolved_hold_refs": unresolved_hold_refs,
         "required_followup_fixes": dedupe_identifiers(
             [
-                "full_backend_suite_green_unconfirmed",
-                *hold004_material["required_followup_fixes"],
-                *hold004_step5_material["required_followup_fixes"],
-                "positive_public_shape_target_green_pending_full_suite"
-                if hold004_positive_material["target_green_confirmed"]
-                else "",
+                *full_suite_reason_codes,
             ],
-            limit=80,
-            max_length=160,
+            limit=120,
+            max_length=180,
         ),
         "hold004_phase16_classification_schema_version": hold004_material["classification_schema_version"],
         "hold004_phase16_path_matrix_schema_version": hold004_material["path_matrix_schema_version"],
@@ -775,6 +1214,39 @@ def assert_p7_backend_suite_split_matrix_contract(matrix: Mapping[str, Any]) -> 
         raise ValueError("P7 R10 must not allow full backend suite green claim")
     if data.get("split_green_is_full_backend_suite_green") is not False:
         raise ValueError("P7 split green must not be treated as full backend suite green")
+    if data.get("split_all_groups_green_confirmed") is True:
+        if data.get("full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 split all-groups green must not become full backend suite green")
+        if data.get("split_green_can_close_p7_hold004") is not False:
+            raise ValueError("P7 split all-groups green must not close P7-HOLD-004")
+    if data.get("backend_suite_execution_summary_connected") is True:
+        if data.get("backend_suite_execution_summary_schema_version") != P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION:
+            raise ValueError("P7 backend split matrix execution summary schema_version mismatch")
+        if not isinstance(data.get("fine_group_statuses"), Mapping) or not data.get("fine_group_statuses"):
+            raise ValueError("P7 backend split matrix must expose fine group statuses when execution summary is connected")
+        if data.get("backend_suite_execution_summary_collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 backend split matrix must connect the current collect baseline id")
+        if data.get("backend_suite_execution_summary_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 backend split matrix must connect the current group inventory id")
+        if data.get("backend_suite_execution_summary_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 backend split matrix must connect the current execution plan id")
+        for key in ("current_collect_baseline_connected", "current_group_inventory_connected", "current_execution_plan_connected", "old_baseline_not_used_as_current", "backend_suite_group_02_count_current"):
+            if data.get(key) is not True:
+                raise ValueError(f"P7 backend split matrix must keep {key}=true")
+        connection = safe_mapping(data.get("matrix_current_baseline_connection"))
+        if connection.get("collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 backend split matrix current baseline connection collect id mismatch")
+        if connection.get("group_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 backend split matrix current baseline connection inventory id mismatch")
+        if connection.get("execution_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 backend split matrix current baseline connection plan id mismatch")
+        if connection.get("old_baseline_used_as_current") is not False:
+            raise ValueError("P7 backend split matrix must not use old baseline as current")
+    if data.get("red_closure_classification_connected") is True:
+        if data.get("red_closure_classification_schema_version") != P7_RED_CLOSURE_CLASSIFICATION_MATRIX_SCHEMA_VERSION:
+            raise ValueError("P7 backend split matrix RED closure schema_version mismatch")
+        if data.get("red_closure_source_e2e_isolation_schema_version") != P7_E2E_ISOLATION_RESULT_SCHEMA_VERSION:
+            raise ValueError("P7 backend split matrix RED closure E2E source schema_version mismatch")
     groups = data.get("groups")
     if not isinstance(groups, list) or len(groups) != len(_ALLOWED_BACKEND_GROUP_IDS):
         raise ValueError("P7 backend suite split matrix must include the fixed groups")
@@ -892,8 +1364,22 @@ def assert_p7_backend_suite_split_matrix_contract(matrix: Mapping[str, Any]) -> 
     ):
         if safe_mapping({key: data.get(key)}).get(key) is True:
             raise ValueError(f"P7 backend split matrix must keep {key}=False")
-    if "P7-RED-003" not in dedupe_identifiers(data.get("unresolved_red_refs"), limit=40, max_length=120):
-        raise ValueError("P7-RED-003 must remain visible in the R10 backend split matrix")
+    red003_ref = P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID
+    unresolved_red_refs = set(dedupe_identifiers(data.get("unresolved_red_refs"), limit=80, max_length=160))
+    closed_red_refs = set(dedupe_identifiers(data.get("closed_red_refs"), limit=80, max_length=160))
+    product_quality_group = next(
+        (safe_mapping(group) for group in groups if safe_mapping(group).get("group_id") == "product_quality_connection_e2e"),
+        {},
+    )
+    if data.get("product_quality_connection_timeout_closed") is True:
+        if red003_ref not in closed_red_refs or red003_ref in unresolved_red_refs:
+            raise ValueError("P7-RED-003 must be closed, not unresolved, when structured RED closure material is connected")
+        if product_quality_group.get("status") != "closed_confirmed":
+            raise ValueError("P7 backend split matrix must mark Product Quality Connection E2E closed when RED-003 is closed")
+        if red003_ref in dedupe_identifiers(product_quality_group.get("red_refs"), limit=40, max_length=160):
+            raise ValueError("closed P7-RED-003 must not remain on the Product Quality Connection group red_refs")
+    elif red003_ref not in unresolved_red_refs:
+        raise ValueError("P7-RED-003 must remain visible in the R10 backend split matrix until structured closure material closes it")
     assert_false_markers(safe_mapping(data.get("public_contract")), source="p7_backend_suite_split_matrix.public_contract")
     assert_false_markers(safe_mapping(data.get("body_free_markers")), source="p7_backend_suite_split_matrix.body_free_markers")
     assert_p7_no_body_payload_or_contract_mutation(data, source="p7_backend_suite_split_matrix")
@@ -905,6 +1391,9 @@ def build_p7_r10_hold_matrix(
     real_device_check: Mapping[str, Any] | None = None,
     backend_suite_split_matrix: Mapping[str, Any] | None = None,
     observed_results: Mapping[str, Any] | None = None,
+    backend_suite_execution_summary: Mapping[str, Any] | None = None,
+    red_closure_classification_matrix: Mapping[str, Any] | None = None,
+    connection_timeout_isolation_result: Mapping[str, Any] | None = None,
     hold004_phase16_classification: Mapping[str, Any] | None = None,
     hold004_path_matrix: Mapping[str, Any] | None = None,
     hold004_decision_rule: Mapping[str, Any] | None = None,
@@ -923,6 +1412,9 @@ def build_p7_r10_hold_matrix(
         if backend_suite_split_matrix is not None
         else build_p7_backend_suite_split_matrix(
             observed_results=observed_results,
+            backend_suite_execution_summary=backend_suite_execution_summary,
+            red_closure_classification_matrix=red_closure_classification_matrix,
+            connection_timeout_isolation_result=connection_timeout_isolation_result,
             real_device_check=real_device,
             hold004_phase16_classification=hold004_phase16_classification,
             hold004_path_matrix=hold004_path_matrix,
@@ -947,6 +1439,58 @@ def build_p7_r10_hold_matrix(
         "real_device_check_schema_version": real_device.get("schema_version"),
         "real_device_modal_readfeel_check_schema_version": real_device.get("schema_version"),
         "backend_suite_split_matrix_schema_version": backend.get("schema_version"),
+        "backend_suite_execution_summary_connected": backend.get("backend_suite_execution_summary_connected") is True,
+        "backend_suite_execution_summary_schema_version": backend.get("backend_suite_execution_summary_schema_version", ""),
+        "backend_suite_execution_summary_id": backend.get("backend_suite_execution_summary_id", ""),
+        "backend_suite_execution_summary_collect_baseline_id": backend.get("backend_suite_execution_summary_collect_baseline_id", ""),
+        "backend_suite_execution_summary_inventory_id": backend.get("backend_suite_execution_summary_inventory_id", ""),
+        "backend_suite_execution_summary_plan_id": backend.get("backend_suite_execution_summary_plan_id", ""),
+        "backend_suite_execution_summary_expected_group_count": int(backend.get("backend_suite_execution_summary_expected_group_count", 0) or 0),
+        "backend_suite_execution_summary_expected_total_batch_count": int(backend.get("backend_suite_execution_summary_expected_total_batch_count", 0) or 0),
+        "current_collect_baseline_connected": backend.get("current_collect_baseline_connected") is True,
+        "current_group_inventory_connected": backend.get("current_group_inventory_connected") is True,
+        "current_execution_plan_connected": backend.get("current_execution_plan_connected") is True,
+        "old_baseline_not_used_as_current": backend.get("old_baseline_not_used_as_current") is True,
+        "backend_suite_group_02_file_count": int(backend.get("backend_suite_group_02_file_count", 0) or 0),
+        "backend_suite_group_02_test_item_count": int(backend.get("backend_suite_group_02_test_item_count", 0) or 0),
+        "backend_suite_group_02_count_current": backend.get("backend_suite_group_02_count_current") is True,
+        "matrix_current_baseline_connection": safe_mapping(backend.get("matrix_current_baseline_connection")),
+        "backend_suite_execution_summary_all_groups_executed": backend.get("backend_suite_execution_summary_all_groups_executed") is True,
+        "backend_suite_execution_summary_group_run_results_recorded": backend.get("backend_suite_execution_summary_group_run_results_recorded") is True,
+        "backend_suite_execution_summary_split_all_groups_green_confirmed": backend.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True,
+        "backend_suite_execution_summary_failed_group_ids": dedupe_identifiers(
+            backend.get("backend_suite_execution_summary_failed_group_ids"),
+            limit=40,
+            max_length=120,
+        ),
+        "backend_suite_execution_summary_timeout_group_ids": dedupe_identifiers(
+            backend.get("backend_suite_execution_summary_timeout_group_ids"),
+            limit=40,
+            max_length=120,
+        ),
+        "backend_suite_execution_summary_not_run_group_ids": dedupe_identifiers(
+            backend.get("backend_suite_execution_summary_not_run_group_ids"),
+            limit=40,
+            max_length=120,
+        ),
+        "backend_suite_execution_summary_partial_group_ids": dedupe_identifiers(
+            backend.get("backend_suite_execution_summary_partial_group_ids"),
+            limit=40,
+            max_length=120,
+        ),
+        "fine_group_statuses": safe_mapping(backend.get("fine_group_statuses")),
+        "red_closure_classification_connected": backend.get("red_closure_classification_connected") is True,
+        "red_closure_classification_schema_version": backend.get("red_closure_classification_schema_version", ""),
+        "red_closure_source_e2e_isolation_schema_version": backend.get("red_closure_source_e2e_isolation_schema_version", ""),
+        "red_closure_source_e2e_isolation_result_kind": backend.get("red_closure_source_e2e_isolation_result_kind", ""),
+        "red_closure_source_e2e_observed_status": backend.get("red_closure_source_e2e_observed_status", ""),
+        "product_quality_connection_timeout_classified": backend.get("product_quality_connection_timeout_classified") is True,
+        "product_quality_connection_timeout_closed": backend.get("product_quality_connection_timeout_closed") is True,
+        "product_quality_connection_timeout_isolated": backend.get("product_quality_connection_timeout_isolated") is True,
+        "product_quality_connection_e2e_status": backend.get("product_quality_connection_e2e_status", ""),
+        "closed_red_refs": dedupe_identifiers(backend.get("closed_red_refs"), limit=80, max_length=160),
+        "split_all_groups_green_confirmed": backend.get("split_all_groups_green_confirmed") is True,
+        "split_green_all_groups_confirmed": backend.get("split_green_all_groups_confirmed") is True,
         "hold004_phase16_classification_schema_version": backend.get("hold004_phase16_classification_schema_version", ""),
         "hold004_phase16_path_matrix_schema_version": backend.get("hold004_phase16_path_matrix_schema_version", ""),
         "hold004_phase16_decision_rule_schema_version": backend.get("hold004_phase16_decision_rule_schema_version", ""),
@@ -1089,6 +1633,30 @@ def assert_p7_r10_hold_matrix_contract(matrix: Mapping[str, Any]) -> bool:
         raise ValueError("P7 R10 hold matrix must expose the real-device modal read-feel check schema")
     if data.get("backend_suite_split_matrix_schema_version") != P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION:
         raise ValueError("P7 R10 hold matrix must reference the backend-suite split matrix schema")
+    if data.get("backend_suite_execution_summary_connected") is True:
+        if data.get("backend_suite_execution_summary_schema_version") != P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION:
+            raise ValueError("P7 R10 hold matrix execution summary schema_version mismatch")
+        if not isinstance(data.get("fine_group_statuses"), Mapping) or not data.get("fine_group_statuses"):
+            raise ValueError("P7 R10 hold matrix must expose fine group statuses when execution summary is connected")
+        if data.get("backend_suite_execution_summary_collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 R10 hold matrix must connect the current collect baseline id")
+        if data.get("backend_suite_execution_summary_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 R10 hold matrix must connect the current group inventory id")
+        if data.get("backend_suite_execution_summary_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 R10 hold matrix must connect the current execution plan id")
+        for key in ("current_collect_baseline_connected", "current_group_inventory_connected", "current_execution_plan_connected", "old_baseline_not_used_as_current", "backend_suite_group_02_count_current"):
+            if data.get(key) is not True:
+                raise ValueError(f"P7 R10 hold matrix must keep {key}=true")
+        connection = safe_mapping(data.get("matrix_current_baseline_connection"))
+        if connection.get("collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 R10 hold matrix current baseline connection collect id mismatch")
+        if connection.get("old_baseline_used_as_current") is not False:
+            raise ValueError("P7 R10 hold matrix must not use old baseline as current")
+    if data.get("red_closure_classification_connected") is True:
+        if data.get("red_closure_classification_schema_version") != P7_RED_CLOSURE_CLASSIFICATION_MATRIX_SCHEMA_VERSION:
+            raise ValueError("P7 R10 hold matrix RED closure schema_version mismatch")
+        if data.get("red_closure_source_e2e_isolation_schema_version") != P7_E2E_ISOLATION_RESULT_SCHEMA_VERSION:
+            raise ValueError("P7 R10 hold matrix RED closure E2E source schema_version mismatch")
     if data.get("release_allowed") is not False or data.get("body_free") is not True:
         raise ValueError("P7 R10 hold matrix must stay body-free and release-closed")
     if data.get("full_backend_suite_green_confirmed") is not False:
@@ -1099,6 +1667,19 @@ def assert_p7_r10_hold_matrix_contract(matrix: Mapping[str, Any]) -> bool:
         raise ValueError("P7 R10 hold matrix must not equate split green with full-suite green")
     if data.get("split_green_promoted_to_full_suite_green") is not False:
         raise ValueError("P7 R10 hold matrix must not promote split green to full-suite green")
+    if data.get("split_all_groups_green_confirmed") is True:
+        if data.get("full_backend_suite_green_confirmed") is not False:
+            raise ValueError("P7 R10 split all-groups green must not become full backend suite green")
+    red003_ref = P7_PRODUCT_QUALITY_CONNECTION_TIMEOUT_RED_ID
+    unresolved_red_refs_for_red003 = set(dedupe_identifiers(data.get("unresolved_red_refs"), limit=80, max_length=160))
+    closed_red_refs_for_red003 = set(dedupe_identifiers(data.get("closed_red_refs"), limit=80, max_length=160))
+    if data.get("product_quality_connection_timeout_closed") is True:
+        if red003_ref not in closed_red_refs_for_red003 or red003_ref in unresolved_red_refs_for_red003:
+            raise ValueError("P7 R10 hold matrix must align closed P7-RED-003 with backend split matrix")
+        if data.get("product_quality_connection_e2e_status") != "closed_confirmed":
+            raise ValueError("P7 R10 hold matrix must expose Product Quality Connection E2E as closed_confirmed")
+    elif data.get("red_closure_classification_connected") is True and red003_ref not in unresolved_red_refs_for_red003:
+        raise ValueError("P7 R10 hold matrix must keep P7-RED-003 unresolved when structured material has not closed it")
     if data.get("real_device_submit_modal_readfeel_verified") is True and data.get("real_device_submit_confirmed") is not True:
         raise ValueError("P7 R10 hold matrix verified modal read-feel requires real-device submit confirmation")
     hold_refs = set(dedupe_identifiers(data.get("unresolved_hold_refs"), limit=80, max_length=120))

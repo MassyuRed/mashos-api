@@ -60,6 +60,19 @@ from emlis_ai_p7_hold004_step5_candidate_gate_classification import (
     P7_HOLD004_STEP5_RED_ID,
     assert_p7_hold004_step5_material_connection_contract,
 )
+from emlis_ai_p7_hold004_backend_suite_execution_results import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    assert_p7_hold004_backend_suite_execution_summary_contract,
+)
+from emlis_ai_p7_hold004_backend_suite_group_inventory_plan import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID,
+    P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID,
+)
+from emlis_ai_p7_hold004_backend_suite_split_consistency import (
+    P7_HOLD004_BACKEND_COLLECT_BASELINE_ID,
+    P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT,
+    P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
+)
 from emlis_ai_p7_release_handoff import (
     P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH,
     P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_REF,
@@ -82,7 +95,9 @@ P7_VALIDATION_MATRIX_SCHEMA_VERSION: Final = "cocolon.emlis.p7.validation_matrix
 P7_VALIDATION_MATRIX_STEP: Final = "P7-9_ValidationRegressionMatrix_20260612"
 P7_VALIDATION_MATRIX_SCOPE: Final = "P7_validation_regression_matrix"
 P7_IMPLEMENTATION_RESULT_DOC_PATH: Final = "docs/Cocolon_EmlisAI_P7_ProductQualityRunner_ImplementationResult_20260612.md"
+P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260614"
 P7_RED_HOLD_CLOSURE_VALIDATION_SUMMARY_SCHEMA_VERSION: Final = "cocolon.emlis.p7.red_hold_closure_validation_summary.v1"
+P7_HOLD004_MATRIX_CONSISTENCY_REPORT_SCHEMA_VERSION: Final = "cocolon.emlis.p7.hold004.matrix_consistency_report.v1"
 
 _ALLOWED_ROW_STATUSES: Final[frozenset[str]] = frozenset(
     {
@@ -116,6 +131,8 @@ _ALLOWED_CHECK_KINDS: Final[frozenset[str]] = frozenset(
         "p6_visible_expansion_boundary",
         "real_device_submit_modal_readfeel",
         "backend_suite_split_matrix",
+        "backend_suite_split_execution_summary",
+        "matrix_consistency_report",
         "r10_hold_matrix",
         "hold004_phase16_classified_red",
         "hold004_positive_public_shape_boundary",
@@ -271,6 +288,8 @@ def build_p7_validation_regression_matrix(
     human_qa_material_index: Mapping[str, Any] | None = None,
     p6_visible_boundary_validation: Mapping[str, Any] | None = None,
     real_device_check: Mapping[str, Any] | None = None,
+    backend_suite_execution_summary: Mapping[str, Any] | None = None,
+    matrix_consistency_report: Mapping[str, Any] | None = None,
     backend_suite_split_matrix: Mapping[str, Any] | None = None,
     r10_hold_matrix: Mapping[str, Any] | None = None,
     hold004_phase16_classification: Mapping[str, Any] | None = None,
@@ -327,6 +346,19 @@ def build_p7_validation_regression_matrix(
     assert_p7_red_closure_classification_matrix_contract(red_closure)
     real_device = safe_mapping(real_device_check) if real_device_check is not None else build_p7_real_device_modal_readfeel_check()
     assert_p7_real_device_modal_readfeel_check_contract(real_device)
+    backend_execution_summary = safe_mapping(backend_suite_execution_summary)
+    if backend_suite_execution_summary is not None:
+        assert_p7_hold004_backend_suite_execution_summary_contract(backend_execution_summary)
+        assert_p7_no_body_payload_or_contract_mutation(
+            backend_execution_summary,
+            source="p7_validation_matrix.backend_suite_execution_summary",
+        )
+    matrix_consistency = safe_mapping(matrix_consistency_report)
+    if matrix_consistency_report is not None:
+        assert_p7_no_body_payload_or_contract_mutation(
+            matrix_consistency,
+            source="p7_validation_matrix.matrix_consistency_report",
+        )
     positive_public_shape = safe_mapping(hold004_positive_public_shape_boundary)
     if hold004_positive_public_shape_boundary is not None:
         assert_p7_hold004_positive_public_shape_boundary_contract(positive_public_shape)
@@ -346,6 +378,9 @@ def build_p7_validation_regression_matrix(
         if backend_suite_split_matrix is not None
         else build_p7_backend_suite_split_matrix(
             observed_results=observed_results,
+            backend_suite_execution_summary=backend_execution_summary or None,
+            red_closure_classification_matrix=red_closure,
+            connection_timeout_isolation_result=connection_isolation,
             real_device_check=real_device,
             positive_recovery_red_closed=red_closure.get("positive_recovery_red_closed") is True,
             hold004_phase16_classification=hold004_phase16_classification,
@@ -363,6 +398,9 @@ def build_p7_validation_regression_matrix(
         else build_p7_r10_hold_matrix(
             real_device_check=real_device,
             backend_suite_split_matrix=backend_split,
+            backend_suite_execution_summary=backend_execution_summary or None,
+            red_closure_classification_matrix=red_closure,
+            connection_timeout_isolation_result=connection_isolation,
             hold004_phase16_classification=hold004_phase16_classification,
             hold004_path_matrix=hold004_path_matrix,
             hold004_decision_rule=hold004_decision_rule,
@@ -378,6 +416,8 @@ def build_p7_validation_regression_matrix(
         else build_p7_release_decision_handoff(
             runner_plan=plan,
             red_closure_classification=red_closure,
+            connection_timeout_isolation_result=connection_isolation,
+            backend_suite_execution_summary=backend_execution_summary or None,
             backend_suite_split_matrix=backend_split,
             r10_hold_matrix=r10_matrix,
             hold004_phase16_classification=hold004_phase16_classification,
@@ -437,6 +477,178 @@ def build_p7_validation_regression_matrix(
     real_device_status = "PASS" if real_device_verified else "HOLD_UNCONFIRMED"
     backend_split_full_green = backend_split.get("full_backend_suite_green_confirmed") is True
     backend_split_status = "PASS" if backend_split_full_green else "HOLD_UNCONFIRMED"
+    backend_execution_summary_connected = bool(
+        backend_split.get("backend_suite_execution_summary_connected") is True
+        or r10_matrix.get("backend_suite_execution_summary_connected") is True
+        or handoff.get("backend_suite_execution_summary_connected") is True
+        or backend_execution_summary
+    )
+    backend_execution_summary_schema_version = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_schema_version")
+        or r10_matrix.get("backend_suite_execution_summary_schema_version")
+        or handoff.get("backend_suite_execution_summary_schema_version")
+        or backend_execution_summary.get("schema_version"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_id")
+        or r10_matrix.get("backend_suite_execution_summary_id")
+        or handoff.get("backend_suite_execution_summary_id")
+        or backend_execution_summary.get("summary_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_collect_baseline_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_collect_baseline_id")
+        or r10_matrix.get("backend_suite_execution_summary_collect_baseline_id")
+        or handoff.get("backend_suite_execution_summary_collect_baseline_id")
+        or backend_execution_summary.get("collect_baseline_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_inventory_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_inventory_id")
+        or r10_matrix.get("backend_suite_execution_summary_inventory_id")
+        or handoff.get("backend_suite_execution_summary_inventory_id")
+        or backend_execution_summary.get("inventory_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_plan_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_plan_id")
+        or r10_matrix.get("backend_suite_execution_summary_plan_id")
+        or handoff.get("backend_suite_execution_summary_plan_id")
+        or backend_execution_summary.get("plan_id"),
+        default="",
+        max_length=160,
+    )
+    current_collect_baseline_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_collect_baseline_id == P7_HOLD004_BACKEND_COLLECT_BASELINE_ID
+        and backend_split.get("current_collect_baseline_connected") is True
+        and r10_matrix.get("current_collect_baseline_connected") is True
+        and handoff.get("current_collect_baseline_connected") is True
+    )
+    current_group_inventory_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_inventory_id == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID
+        and backend_split.get("current_group_inventory_connected") is True
+        and r10_matrix.get("current_group_inventory_connected") is True
+        and handoff.get("current_group_inventory_connected") is True
+    )
+    current_execution_plan_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_plan_id == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID
+        and backend_split.get("current_execution_plan_connected") is True
+        and r10_matrix.get("current_execution_plan_connected") is True
+        and handoff.get("current_execution_plan_connected") is True
+    )
+    old_baseline_not_used_as_current = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_collect_baseline_id != P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID
+        and backend_split.get("old_baseline_not_used_as_current") is True
+        and r10_matrix.get("old_baseline_not_used_as_current") is True
+        and handoff.get("old_baseline_not_used_as_current") is True
+    )
+    backend_suite_group_02_count_current = bool(
+        backend_execution_summary_connected
+        and backend_split.get("backend_suite_group_02_count_current") is True
+        and r10_matrix.get("backend_suite_group_02_count_current") is True
+        and handoff.get("backend_suite_group_02_count_current") is True
+    )
+    matrix_current_baseline_connection = safe_mapping(
+        backend_split.get("matrix_current_baseline_connection")
+        or r10_matrix.get("matrix_current_baseline_connection")
+        or handoff.get("matrix_current_baseline_connection")
+    )
+    backend_execution_summary_all_groups_executed = bool(
+        backend_split.get("backend_suite_execution_summary_all_groups_executed") is True
+        or r10_matrix.get("backend_suite_execution_summary_all_groups_executed") is True
+        or handoff.get("backend_suite_execution_summary_all_groups_executed") is True
+        or backend_execution_summary.get("all_groups_executed") is True
+    )
+    backend_execution_summary_group_run_results_recorded = bool(
+        backend_split.get("backend_suite_execution_summary_group_run_results_recorded") is True
+        or r10_matrix.get("backend_suite_execution_summary_group_run_results_recorded") is True
+        or handoff.get("backend_suite_execution_summary_group_run_results_recorded") is True
+        or backend_execution_summary.get("group_run_results_recorded") is True
+    )
+    backend_execution_summary_split_all_groups_green_confirmed = bool(
+        backend_split.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True
+        or r10_matrix.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True
+        or handoff.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True
+        or backend_execution_summary.get("split_all_groups_green_confirmed") is True
+    )
+    backend_execution_summary_failed_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_failed_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_failed_group_ids", []),
+            *handoff.get("backend_suite_execution_summary_failed_group_ids", []),
+            *backend_execution_summary.get("failed_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_timeout_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_timeout_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_timeout_group_ids", []),
+            *handoff.get("backend_suite_execution_summary_timeout_group_ids", []),
+            *backend_execution_summary.get("timeout_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_not_run_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_not_run_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_not_run_group_ids", []),
+            *handoff.get("backend_suite_execution_summary_not_run_group_ids", []),
+            *backend_execution_summary.get("not_run_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_partial_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_partial_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_partial_group_ids", []),
+            *handoff.get("backend_suite_execution_summary_partial_group_ids", []),
+            *backend_execution_summary.get("partial_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_status = "NOT_RUN"
+    if backend_execution_summary_connected:
+        if backend_execution_summary_failed_group_ids:
+            backend_execution_summary_status = "FAILED_ISOLATED"
+        elif backend_execution_summary_timeout_group_ids:
+            backend_execution_summary_status = "TIMEOUT_ISOLATED"
+        elif backend_execution_summary_split_all_groups_green_confirmed:
+            backend_execution_summary_status = "PASSED_ISOLATED"
+        else:
+            backend_execution_summary_status = "HOLD_UNCONFIRMED"
+    matrix_consistency_connected = bool(matrix_consistency_report is not None)
+    matrix_consistency_schema_version = clean_identifier(
+        matrix_consistency.get("schema_version"),
+        default="",
+        max_length=160,
+    )
+    matrix_consistency_status = clean_identifier(
+        matrix_consistency.get("consistency_status"),
+        default="NOT_RUN",
+        max_length=80,
+    ).upper()
+    matrix_consistency_row_status = (
+        "PASS"
+        if matrix_consistency_connected and matrix_consistency_status == "PASS"
+        else "BLOCKED"
+        if matrix_consistency_connected
+        else "NOT_RUN"
+    )
+    matrix_consistency_checks = safe_mapping(matrix_consistency.get("checks"))
     hold004_required_followup_fixes = dedupe_identifiers(
         [
             *backend_split.get("hold004_required_followup_fixes", []),
@@ -564,7 +776,11 @@ def build_p7_validation_regression_matrix(
         limit=120,
         max_length=160,
     )
-    step5_unresolved_red_refs = [] if step5_candidate_gate_red_closed else dedupe_identifiers(
+    # R8 subset validation must keep the Step5 display-binding red visible as
+    # P7-HOLD-004 material.  R4-C closes the stale fail-closed expectation, but
+    # R4-D keeps the mixed conflict as a release blocker until the next full
+    # backend-suite red classification is known.
+    step5_unresolved_red_refs = dedupe_identifiers(
         [
             *backend_split.get("hold004_step5_unresolved_red_refs", []),
             *r10_matrix.get("hold004_step5_unresolved_red_refs", []),
@@ -795,6 +1011,73 @@ def build_p7_validation_regression_matrix(
             reason_codes=("split_green_must_not_be_called_full_backend_suite_green",),
         ),
         _row(
+            "P7-VAL-016B",
+            check_kind="backend_suite_split_execution_summary",
+            source_ref="P7BackendSuiteExecutionSummaryV1",
+            observed_status=backend_execution_summary_status,
+            green_claim_scope="split_execution_summary_only_not_full_backend_suite_green",
+            green_claim_allowed=False,
+            red_or_hold_allowed=True,
+            release_blocking=backend_execution_summary_connected,
+            red_refs=(),
+            hold_refs=("P7-HOLD-004",) if backend_execution_summary_connected else (),
+            reason_codes=dedupe_identifiers(
+                [
+                    "backend_suite_execution_summary_connected"
+                    if backend_execution_summary_connected
+                    else "backend_suite_execution_summary_not_connected",
+                    "split_green_is_not_full_backend_suite_green"
+                    if backend_execution_summary_split_all_groups_green_confirmed
+                    else "",
+                    "backend_suite_group_execution_not_run"
+                    if backend_execution_summary_not_run_group_ids
+                    else "",
+                    "backend_suite_group_execution_partial"
+                    if backend_execution_summary_partial_group_ids
+                    else "",
+                    "first_red_classification_required"
+                    if backend_execution_summary_failed_group_ids
+                    else "",
+                    "timeout_classification_required"
+                    if backend_execution_summary_timeout_group_ids
+                    else "",
+                    "full_backend_suite_green_unconfirmed"
+                    if backend_execution_summary_connected
+                    else "",
+                ],
+                limit=80,
+                max_length=160,
+            ),
+        ),
+        _row(
+            "P7-VAL-016C",
+            check_kind="matrix_consistency_report",
+            source_ref="P7MatrixConsistencyReportV1",
+            observed_status=matrix_consistency_row_status,
+            green_claim_scope="matrix_consistency_only_not_release_ready",
+            green_claim_allowed=False,
+            red_or_hold_allowed=True,
+            release_blocking=matrix_consistency_row_status != "PASS",
+            red_refs=matrix_consistency.get("unresolved_red_refs", []),
+            hold_refs=matrix_consistency.get("unresolved_hold_refs", ["P7-HOLD-004"] if not matrix_consistency_connected else []),
+            reason_codes=dedupe_identifiers(
+                [
+                    "matrix_consistency_report_connected"
+                    if matrix_consistency_connected
+                    else "matrix_consistency_report_not_run",
+                    "matrix_consistency_report_must_not_allow_release",
+                    "full_backend_suite_green_false_across_matrices"
+                    if matrix_consistency_checks.get("full_backend_suite_green_false_across_matrices") is True
+                    else "",
+                    "split_green_not_promoted"
+                    if matrix_consistency_checks.get("split_green_not_promoted") is True
+                    else "",
+                ],
+                limit=80,
+                max_length=160,
+            ),
+        ),
+        _row(
             "P7-VAL-017",
             check_kind="r10_hold_matrix",
             source_ref="P7R10HoldMatrixV1",
@@ -925,6 +1208,36 @@ def build_p7_validation_regression_matrix(
         "full_backend_suite_green_confirmed": False,
         "full_backend_suite_green_claim_allowed": False,
         "full_backend_suite_hold_preserved": "P7-HOLD-004" in r10_hold_refs or backend_split_full_green,
+        "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+        "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+        "backend_suite_execution_summary_collect_baseline_id": backend_execution_summary_collect_baseline_id,
+        "backend_suite_execution_summary_inventory_id": backend_execution_summary_inventory_id,
+        "backend_suite_execution_summary_plan_id": backend_execution_summary_plan_id,
+        "current_collect_baseline_connected": current_collect_baseline_connected,
+        "current_group_inventory_connected": current_group_inventory_connected,
+        "current_execution_plan_connected": current_execution_plan_connected,
+        "old_baseline_not_used_as_current": old_baseline_not_used_as_current,
+        "backend_suite_group_02_count_current": backend_suite_group_02_count_current,
+        "matrix_current_baseline_connection": matrix_current_baseline_connection,
+        "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+        "backend_suite_execution_summary_group_run_results_recorded": (
+            backend_execution_summary_group_run_results_recorded
+        ),
+        "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+            backend_execution_summary_split_all_groups_green_confirmed
+        ),
+        "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+        "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+        "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+        "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
+        "matrix_consistency_report_connected": matrix_consistency_connected,
+        "matrix_consistency_report_schema_version": matrix_consistency_schema_version,
+        "matrix_consistency_report_status": matrix_consistency_status,
+        "matrix_consistency_report_row_status": matrix_consistency_row_status,
+        "matrix_consistency_report_red003_closure_consistent": matrix_consistency_checks.get("red003_closure_consistent") is True,
+        "matrix_consistency_report_hold004_preserved": matrix_consistency_checks.get("hold004_preserved_across_matrices") is True,
+        "matrix_consistency_report_split_green_not_promoted": matrix_consistency_checks.get("split_green_not_promoted") is True,
+        "matrix_consistency_report_can_allow_release": False,
         "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
         "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
         "hold004_public_adjacent_red_registered": hold004_adjacent_public_red_registered,
@@ -953,7 +1266,10 @@ def build_p7_validation_regression_matrix(
         "hold004_step5_unresolved_red_refs": step5_unresolved_red_refs,
         "hold004_step5_full_backend_suite_green_confirmed": False,
         "hold004_step5_release_allowed": False,
+        "split_green_is_full_backend_suite_green": False,
+        "split_green_can_close_p7_hold004": False,
         "split_green_promoted_to_full_suite_green": False,
+        "hold004_close_allowed": False,
         "release_handoff_final_consistent": release_handoff_final_consistent,
         "p7_complete": False,
         "p7_complete_claim_allowed": False,
@@ -1000,6 +1316,40 @@ def build_p7_validation_regression_matrix(
         "backend_suite_split_matrix_schema_version": clean_identifier(
             backend_split.get("schema_version"), default=P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION, max_length=128
         ),
+        "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+        "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+        "backend_suite_execution_summary_id": backend_execution_summary_id,
+        "backend_suite_execution_summary_collect_baseline_id": backend_execution_summary_collect_baseline_id,
+        "backend_suite_execution_summary_inventory_id": backend_execution_summary_inventory_id,
+        "backend_suite_execution_summary_plan_id": backend_execution_summary_plan_id,
+        "current_collect_baseline_connected": current_collect_baseline_connected,
+        "current_group_inventory_connected": current_group_inventory_connected,
+        "current_execution_plan_connected": current_execution_plan_connected,
+        "old_baseline_not_used_as_current": old_baseline_not_used_as_current,
+        "backend_suite_group_02_count_current": backend_suite_group_02_count_current,
+        "matrix_current_baseline_connection": matrix_current_baseline_connection,
+        "backend_suite_current_collect_file_count": P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT,
+        "backend_suite_current_collect_test_item_count": P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
+        "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+        "backend_suite_execution_summary_group_run_results_recorded": backend_execution_summary_group_run_results_recorded,
+        "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+            backend_execution_summary_split_all_groups_green_confirmed
+        ),
+        "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+        "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+        "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+        "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
+        "matrix_consistency_report_connected": matrix_consistency_connected,
+        "matrix_consistency_report_schema_version": matrix_consistency_schema_version,
+        "matrix_consistency_report_status": matrix_consistency_status,
+        "matrix_consistency_report_row_status": matrix_consistency_row_status,
+        "full_backend_suite_green_confirmed": False,
+        "full_backend_suite_green_claim_allowed": False,
+        "split_green_is_full_backend_suite_green": False,
+        "split_green_can_close_p7_hold004": False,
+        "hold004_close_allowed": False,
+        "p7_complete_claim_allowed": False,
+        "p8_start_allowed": False,
         "r10_hold_matrix_schema_version": clean_identifier(r10_matrix.get("schema_version"), default=P7_R10_HOLD_MATRIX_SCHEMA_VERSION, max_length=128),
         "implementation_result_doc_path": P7_IMPLEMENTATION_RESULT_DOC_PATH,
         "hold004_phase16_implementation_result_doc_path": P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH,
@@ -1065,8 +1415,38 @@ def build_p7_validation_regression_matrix(
             "real_device_submit_hold_preserved": "P7-HOLD-003" in r10_hold_refs or real_device_verified,
             "backend_suite_split_matrix_applied": True,
             "backend_suite_split_matrix_hold_preserved": "P7-HOLD-004" in r10_hold_refs,
+            "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+            "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+            "backend_suite_execution_summary_collect_baseline_id": backend_execution_summary_collect_baseline_id,
+            "backend_suite_execution_summary_inventory_id": backend_execution_summary_inventory_id,
+            "backend_suite_execution_summary_plan_id": backend_execution_summary_plan_id,
+            "current_collect_baseline_connected": current_collect_baseline_connected,
+            "current_group_inventory_connected": current_group_inventory_connected,
+            "current_execution_plan_connected": current_execution_plan_connected,
+            "old_baseline_not_used_as_current": old_baseline_not_used_as_current,
+            "backend_suite_group_02_count_current": backend_suite_group_02_count_current,
+            "matrix_current_baseline_connection": matrix_current_baseline_connection,
+            "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+            "backend_suite_execution_summary_group_run_results_recorded": (
+                backend_execution_summary_group_run_results_recorded
+            ),
+            "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+                backend_execution_summary_split_all_groups_green_confirmed
+            ),
+            "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+            "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+            "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+            "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
+            "matrix_consistency_report_connected": matrix_consistency_connected,
+            "matrix_consistency_report_schema_version": matrix_consistency_schema_version,
+            "matrix_consistency_report_status": matrix_consistency_status,
+            "matrix_consistency_report_row_status": matrix_consistency_row_status,
+            "matrix_consistency_report_can_allow_release": False,
             "backend_suite_split_green_is_full_backend_suite_green": False,
+            "split_green_is_full_backend_suite_green": False,
+            "split_green_can_close_p7_hold004": False,
             "split_green_promoted_to_full_suite_green": False,
+            "hold004_close_allowed": False,
             "full_backend_suite_hold_preserved": "P7-HOLD-004" in r10_hold_refs or backend_split_full_green,
             "r10_hold_matrix_applied": True,
             "release_handoff_final_consistent": release_handoff_final_consistent,
@@ -1148,10 +1528,58 @@ def assert_p7_validation_regression_matrix_contract(matrix: Mapping[str, Any]) -
         raise ValueError("P7 validation matrix must reference real-device HOLD check")
     if data.get("backend_suite_split_matrix_schema_version") != P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION:
         raise ValueError("P7 validation matrix must reference backend-suite split matrix")
+    if data.get("backend_suite_execution_summary_connected") is True:
+        if data.get("backend_suite_execution_summary_schema_version") != P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION:
+            raise ValueError("P7 validation matrix backend execution summary schema_version mismatch")
+        if data.get("backend_suite_execution_summary_collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 validation matrix must connect current collect baseline id")
+        if data.get("backend_suite_execution_summary_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 validation matrix must connect current group inventory id")
+        if data.get("backend_suite_execution_summary_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 validation matrix must connect current execution plan id")
+        for key in (
+            "current_collect_baseline_connected",
+            "current_group_inventory_connected",
+            "current_execution_plan_connected",
+            "old_baseline_not_used_as_current",
+            "backend_suite_group_02_count_current",
+        ):
+            if data.get(key) is not True:
+                raise ValueError(f"P7 validation matrix must keep {key}=true")
+        connection = safe_mapping(data.get("matrix_current_baseline_connection"))
+        if connection.get("collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 validation matrix current baseline connection collect id mismatch")
+        if connection.get("group_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 validation matrix current baseline connection inventory id mismatch")
+        if connection.get("execution_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 validation matrix current baseline connection plan id mismatch")
+        if connection.get("old_baseline_used_as_current") is not False:
+            raise ValueError("P7 validation matrix must not use old baseline as current")
+        if data.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True:
+            if safe_mapping(data.get("summary")).get("full_backend_suite_green_confirmed") is not False:
+                raise ValueError("P7 validation matrix must not promote split green to full-suite green")
+            if safe_mapping(data.get("summary")).get("split_green_promoted_to_full_suite_green") is not False:
+                raise ValueError("P7 validation matrix must keep split green promotion false")
+    if data.get("matrix_consistency_report_connected") is True:
+        if data.get("matrix_consistency_report_schema_version") != P7_HOLD004_MATRIX_CONSISTENCY_REPORT_SCHEMA_VERSION:
+            raise ValueError("P7 validation matrix matrix consistency report schema_version mismatch")
+        if safe_mapping(data.get("summary")).get("matrix_consistency_report_can_allow_release") is not False:
+            raise ValueError("P7 validation matrix must not let matrix consistency report allow release")
     if data.get("r10_hold_matrix_schema_version") != P7_R10_HOLD_MATRIX_SCHEMA_VERSION:
         raise ValueError("P7 validation matrix must reference R10 HOLD matrix")
     if data.get("release_allowed") is not False:
         raise ValueError("P7 validation matrix must not allow release")
+    for key in (
+        "full_backend_suite_green_confirmed",
+        "full_backend_suite_green_claim_allowed",
+        "split_green_is_full_backend_suite_green",
+        "split_green_can_close_p7_hold004",
+        "hold004_close_allowed",
+        "p7_complete_claim_allowed",
+        "p8_start_allowed",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7 validation matrix must keep {key} false")
     if data.get("body_free") is not True:
         raise ValueError("P7 validation matrix must be body-free")
     rows = data.get("matrix_rows")
@@ -1183,6 +1611,8 @@ def assert_p7_validation_regression_matrix_contract(matrix: Mapping[str, Any]) -
             "p6_visible_expansion_boundary",
             "real_device_submit_modal_readfeel",
             "backend_suite_split_matrix",
+            "backend_suite_split_execution_summary",
+            "matrix_consistency_report",
             "r10_hold_matrix",
             "hold004_phase16_classified_red",
             "hold004_positive_public_shape_boundary",
@@ -1198,7 +1628,10 @@ def assert_p7_validation_regression_matrix_contract(matrix: Mapping[str, Any]) -
         "real_device_submit_confirmed",
         "real_device_submit_modal_readfeel_verified",
         "backend_suite_split_green_is_full_backend_suite_green",
+        "split_green_is_full_backend_suite_green",
+        "split_green_can_close_p7_hold004",
         "split_green_promoted_to_full_suite_green",
+        "hold004_close_allowed",
         "release_allowed",
         "p7_complete_claim_allowed",
         "p8_start_allowed",
@@ -1207,6 +1640,7 @@ def assert_p7_validation_regression_matrix_contract(matrix: Mapping[str, Any]) -
         "hold004_positive_public_shape_release_allowed",
         "hold004_step5_full_backend_suite_green_confirmed",
         "hold004_step5_release_allowed",
+        "matrix_consistency_report_can_allow_release",
     ):
         if summary.get(key) is not False:
             raise ValueError(f"P7 validation summary must keep {key}=False")
@@ -1297,7 +1731,10 @@ def assert_p7_validation_regression_matrix_contract(matrix: Mapping[str, Any]) -
         "real_device_submit_modal_readfeel_verified",
         "full_backend_suite_green_confirmed",
         "full_backend_suite_green_claim_allowed",
+        "split_green_is_full_backend_suite_green",
+        "split_green_can_close_p7_hold004",
         "split_green_promoted_to_full_suite_green",
+        "hold004_close_allowed",
         "p7_complete",
         "p7_complete_claim_allowed",
         "p8_start_allowed",

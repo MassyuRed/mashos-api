@@ -39,6 +39,16 @@ from emlis_ai_p7_hold004_step5_candidate_gate_classification import (
     P7_HOLD004_STEP5_R6_MATERIAL_CONNECTION_SCHEMA_VERSION,
     P7_HOLD004_STEP5_RED_ID,
 )
+from emlis_ai_p7_hold004_backend_suite_execution_results import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID,
+    assert_p7_hold004_backend_suite_execution_summary_contract,
+)
+from emlis_ai_p7_hold004_backend_suite_group_inventory_plan import (
+    P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID,
+    P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID,
+)
+from emlis_ai_p7_hold004_backend_suite_split_consistency import P7_HOLD004_BACKEND_COLLECT_BASELINE_ID
 from emlis_ai_p7_hold_matrix import (
     P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION,
     P7_R10_HOLD_MATRIX_SCHEMA_VERSION,
@@ -58,7 +68,10 @@ from emlis_ai_p7_red_closure_classification import (
     p7_closed_red_refs_from_classification,
     p7_unresolved_red_refs_from_classification,
 )
-from emlis_ai_p7_timeout_isolation import build_p7_connection_e2e_r13_passed_observation_result
+from emlis_ai_p7_timeout_isolation import (
+    assert_p7_e2e_isolation_result_contract,
+    build_p7_connection_e2e_r13_passed_observation_result,
+)
 from emlis_ai_p7_runner_plan import P7_RUNNER_PLAN_SCHEMA_VERSION, assert_p7_runner_plan_contract, build_p7_runner_plan
 from emlis_ai_product_release_decision import (
     PRODUCT_RELEASE_DECISION_PHASE,
@@ -197,6 +210,7 @@ def _ledger_refs_by_status(ledger: Mapping[str, Any], status: str) -> list[str]:
     return dedupe_identifiers(refs, limit=80, max_length=120)
 
 
+
 def build_p7_release_decision_handoff(
     long_run_gate_handoff: Mapping[str, Any] | None = None,
     *,
@@ -204,7 +218,10 @@ def build_p7_release_decision_handoff(
     runner_plan: Mapping[str, Any] | None = None,
     red_ledger: Mapping[str, Any] | None = None,
     red_closure_classification: Mapping[str, Any] | None = None,
+    red_closure_classification_matrix: Mapping[str, Any] | None = None,
+    connection_timeout_isolation_result: Mapping[str, Any] | None = None,
     real_device_check: Mapping[str, Any] | None = None,
+    backend_suite_execution_summary: Mapping[str, Any] | None = None,
     backend_suite_split_matrix: Mapping[str, Any] | None = None,
     r10_hold_matrix: Mapping[str, Any] | None = None,
     hold004_phase16_classification: Mapping[str, Any] | None = None,
@@ -238,11 +255,30 @@ def build_p7_release_decision_handoff(
     assert_p7_red_ledger_contract(ledger)
     assert_p7_no_body_payload_or_contract_mutation(ledger, source="p7_release_handoff.red_ledger")
 
+    connection_isolation = safe_mapping(connection_timeout_isolation_result)
+    if connection_timeout_isolation_result is not None:
+        assert_p7_e2e_isolation_result_contract(connection_isolation)
+        assert_p7_no_body_payload_or_contract_mutation(
+            connection_isolation,
+            source="p7_release_handoff.connection_timeout_isolation_result",
+        )
+
+    backend_execution_summary = safe_mapping(backend_suite_execution_summary)
+    if backend_suite_execution_summary is not None:
+        assert_p7_hold004_backend_suite_execution_summary_contract(backend_execution_summary)
+        assert_p7_no_body_payload_or_contract_mutation(
+            backend_execution_summary,
+            source="p7_release_handoff.backend_suite_execution_summary",
+        )
+
+    classification_source = red_closure_classification_matrix or red_closure_classification
     classification = (
-        safe_mapping(red_closure_classification)
-        if red_closure_classification is not None
+        safe_mapping(classification_source)
+        if classification_source is not None
         else build_p7_red_closure_classification_matrix(
-            connection_timeout_isolation_result=build_p7_connection_e2e_r13_passed_observation_result()
+            connection_timeout_isolation_result=connection_isolation
+            if connection_timeout_isolation_result is not None
+            else build_p7_connection_e2e_r13_passed_observation_result()
         )
     )
     assert_p7_red_closure_classification_matrix_contract(classification)
@@ -268,6 +304,9 @@ def build_p7_release_decision_handoff(
         else build_p7_backend_suite_split_matrix(
             real_device_check=real_device,
             positive_recovery_red_closed=True,
+            backend_suite_execution_summary=backend_execution_summary or None,
+            red_closure_classification_matrix=classification,
+            connection_timeout_isolation_result=connection_isolation or None,
             hold004_phase16_classification=hold004_phase16_classification,
             hold004_path_matrix=hold004_path_matrix,
             hold004_decision_rule=hold004_decision_rule,
@@ -285,6 +324,9 @@ def build_p7_release_decision_handoff(
         else build_p7_r10_hold_matrix(
             real_device_check=real_device,
             backend_suite_split_matrix=backend_split,
+            backend_suite_execution_summary=backend_execution_summary or None,
+            red_closure_classification_matrix=classification,
+            connection_timeout_isolation_result=connection_isolation or None,
             hold004_phase16_classification=hold004_phase16_classification,
             hold004_path_matrix=hold004_path_matrix,
             hold004_decision_rule=hold004_decision_rule,
@@ -412,6 +454,130 @@ def build_p7_release_decision_handoff(
         limit=40,
         max_length=160,
     )
+    backend_execution_summary_connected = bool(
+        backend_split.get("backend_suite_execution_summary_connected") is True
+        or r10_matrix.get("backend_suite_execution_summary_connected") is True
+        or backend_execution_summary
+    )
+    backend_execution_summary_schema_version = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_schema_version")
+        or r10_matrix.get("backend_suite_execution_summary_schema_version")
+        or backend_execution_summary.get("schema_version"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_id")
+        or r10_matrix.get("backend_suite_execution_summary_id")
+        or backend_execution_summary.get("summary_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_collect_baseline_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_collect_baseline_id")
+        or r10_matrix.get("backend_suite_execution_summary_collect_baseline_id")
+        or backend_execution_summary.get("collect_baseline_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_inventory_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_inventory_id")
+        or r10_matrix.get("backend_suite_execution_summary_inventory_id")
+        or backend_execution_summary.get("inventory_id"),
+        default="",
+        max_length=160,
+    )
+    backend_execution_summary_plan_id = clean_identifier(
+        backend_split.get("backend_suite_execution_summary_plan_id")
+        or r10_matrix.get("backend_suite_execution_summary_plan_id")
+        or backend_execution_summary.get("plan_id"),
+        default="",
+        max_length=160,
+    )
+    current_collect_baseline_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_collect_baseline_id == P7_HOLD004_BACKEND_COLLECT_BASELINE_ID
+        and backend_split.get("current_collect_baseline_connected") is True
+        and r10_matrix.get("current_collect_baseline_connected") is True
+    )
+    current_group_inventory_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_inventory_id == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID
+        and backend_split.get("current_group_inventory_connected") is True
+        and r10_matrix.get("current_group_inventory_connected") is True
+    )
+    current_execution_plan_connected = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_plan_id == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID
+        and backend_split.get("current_execution_plan_connected") is True
+        and r10_matrix.get("current_execution_plan_connected") is True
+    )
+    old_baseline_not_used_as_current = bool(
+        backend_execution_summary_connected
+        and backend_execution_summary_collect_baseline_id != P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID
+        and backend_split.get("old_baseline_not_used_as_current") is True
+        and r10_matrix.get("old_baseline_not_used_as_current") is True
+    )
+    backend_suite_group_02_count_current = bool(
+        backend_execution_summary_connected
+        and backend_split.get("backend_suite_group_02_count_current") is True
+        and r10_matrix.get("backend_suite_group_02_count_current") is True
+    )
+    matrix_current_baseline_connection = safe_mapping(
+        backend_split.get("matrix_current_baseline_connection")
+        or r10_matrix.get("matrix_current_baseline_connection")
+    )
+    backend_execution_summary_all_groups_executed = bool(
+        backend_split.get("backend_suite_execution_summary_all_groups_executed") is True
+        or r10_matrix.get("backend_suite_execution_summary_all_groups_executed") is True
+        or backend_execution_summary.get("all_groups_executed") is True
+    )
+    backend_execution_summary_group_run_results_recorded = bool(
+        backend_split.get("backend_suite_execution_summary_group_run_results_recorded") is True
+        or r10_matrix.get("backend_suite_execution_summary_group_run_results_recorded") is True
+        or backend_execution_summary.get("group_run_results_recorded") is True
+    )
+    backend_execution_summary_split_all_groups_green_confirmed = bool(
+        backend_split.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True
+        or r10_matrix.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True
+        or backend_execution_summary.get("split_all_groups_green_confirmed") is True
+    )
+    backend_execution_summary_failed_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_failed_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_failed_group_ids", []),
+            *backend_execution_summary.get("failed_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_timeout_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_timeout_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_timeout_group_ids", []),
+            *backend_execution_summary.get("timeout_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_not_run_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_not_run_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_not_run_group_ids", []),
+            *backend_execution_summary.get("not_run_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
+    backend_execution_summary_partial_group_ids = dedupe_identifiers(
+        [
+            *backend_split.get("backend_suite_execution_summary_partial_group_ids", []),
+            *r10_matrix.get("backend_suite_execution_summary_partial_group_ids", []),
+            *backend_execution_summary.get("partial_group_ids", []),
+        ],
+        limit=40,
+        max_length=120,
+    )
     hold004_implementation_result_doc_refs = dedupe_identifiers(
         [
             P7_HOLD004_PHASE16_IMPLEMENTATION_RESULT_DOC_PATH
@@ -471,7 +637,10 @@ def build_p7_release_decision_handoff(
             *_listify(runner.get("candidate_blocked_or_review_required_reason_codes")),
             *hold004_required_followup_fixes,
             *step5_required_followup_fixes,
+            *backend_execution_summary.get("required_followup_fixes", []),
             "positive_public_shape_target_green_pending_full_suite" if positive_shape_target_green else "",
+            "split_green_is_not_full_backend_suite_green" if backend_execution_summary_split_all_groups_green_confirmed else "",
+            "un_split_full_backend_suite_green_not_confirmed" if backend_execution_summary_split_all_groups_green_confirmed else "",
         ],
         limit=160,
         max_length=160,
@@ -518,6 +687,27 @@ def build_p7_release_decision_handoff(
         "backend_suite_split_matrix_schema_version": clean_identifier(
             backend_split.get("schema_version"), default=P7_BACKEND_SUITE_SPLIT_MATRIX_SCHEMA_VERSION, max_length=128
         ),
+        "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+        "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+        "backend_suite_execution_summary_id": backend_execution_summary_id,
+        "backend_suite_execution_summary_collect_baseline_id": backend_execution_summary_collect_baseline_id,
+        "backend_suite_execution_summary_inventory_id": backend_execution_summary_inventory_id,
+        "backend_suite_execution_summary_plan_id": backend_execution_summary_plan_id,
+        "current_collect_baseline_connected": current_collect_baseline_connected,
+        "current_group_inventory_connected": current_group_inventory_connected,
+        "current_execution_plan_connected": current_execution_plan_connected,
+        "old_baseline_not_used_as_current": old_baseline_not_used_as_current,
+        "backend_suite_group_02_count_current": backend_suite_group_02_count_current,
+        "matrix_current_baseline_connection": matrix_current_baseline_connection,
+        "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+        "backend_suite_execution_summary_group_run_results_recorded": backend_execution_summary_group_run_results_recorded,
+        "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+            backend_execution_summary_split_all_groups_green_confirmed
+        ),
+        "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+        "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+        "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+        "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
         "source_long_run_gate_handoff_schema_version": clean_identifier(
             long_run.get("schema_version"), default=P7_LONG_RUN_GATE_HANDOFF_SCHEMA_VERSION, max_length=128
         ),
@@ -563,8 +753,11 @@ def build_p7_release_decision_handoff(
         "real_device_submit_modal_readfeel_verified": False,
         "full_backend_suite_green_confirmed": False,
         "full_backend_suite_green_claim_allowed": False,
+        "split_all_groups_green_confirmed": backend_execution_summary_split_all_groups_green_confirmed,
         "split_green_is_full_backend_suite_green": False,
+        "split_green_can_close_p7_hold004": False,
         "split_green_promoted_to_full_suite_green": False,
+        "hold004_close_allowed": False,
         "release_decision_applied": False,
         "release_rollout_applied": False,
         "product_gate_ready": False,
@@ -615,6 +808,19 @@ def build_p7_release_decision_handoff(
             "real_device_submit_confirmed": real_device.get("real_device_submit_confirmed") is True,
             "full_backend_suite_green_confirmed": backend_split.get("full_backend_suite_green_confirmed") is True,
             "full_backend_suite_green_claim_allowed": False,
+            "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+            "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+            "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+            "backend_suite_execution_summary_group_run_results_recorded": (
+                backend_execution_summary_group_run_results_recorded
+            ),
+            "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+                backend_execution_summary_split_all_groups_green_confirmed
+            ),
+            "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+            "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+            "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+            "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
             "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
             "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
             "hold004_public_adjacent_red_registered": hold004_adjacent_public_red_registered,
@@ -647,7 +853,13 @@ def build_p7_release_decision_handoff(
             "real_device_submit_confirmed": False,
             "full_backend_suite_green_confirmed": False,
             "full_backend_suite_green_claim_allowed": False,
+            "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+            "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+                backend_execution_summary_split_all_groups_green_confirmed
+            ),
             "split_green_promoted_to_full_suite_green": False,
+            "split_green_is_full_backend_suite_green": False,
+            "split_green_can_close_p7_hold004": False,
             "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
             "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
             "hold004_phase16_implementation_result_documented": bool(hold004_phase16_classified_red_present),
@@ -689,6 +901,19 @@ def build_p7_release_decision_handoff(
             "real_device_automated_test_green_can_close": False,
             "full_backend_suite_green_confirmed": backend_split.get("full_backend_suite_green_confirmed") is True,
             "full_backend_suite_green_claim_allowed": False,
+            "backend_suite_execution_summary_connected": backend_execution_summary_connected,
+            "backend_suite_execution_summary_schema_version": backend_execution_summary_schema_version,
+            "backend_suite_execution_summary_all_groups_executed": backend_execution_summary_all_groups_executed,
+            "backend_suite_execution_summary_group_run_results_recorded": (
+                backend_execution_summary_group_run_results_recorded
+            ),
+            "backend_suite_execution_summary_split_all_groups_green_confirmed": (
+                backend_execution_summary_split_all_groups_green_confirmed
+            ),
+            "backend_suite_execution_summary_failed_group_ids": backend_execution_summary_failed_group_ids,
+            "backend_suite_execution_summary_timeout_group_ids": backend_execution_summary_timeout_group_ids,
+            "backend_suite_execution_summary_not_run_group_ids": backend_execution_summary_not_run_group_ids,
+            "backend_suite_execution_summary_partial_group_ids": backend_execution_summary_partial_group_ids,
             "full_backend_suite_hold_preserved": "P7-HOLD-004" in hold_refs,
             "hold004_phase16_classified_red_present": hold004_phase16_classified_red_present,
             "hold004_phase16_candidate_boundary_registered": hold004_candidate_boundary_registered,
@@ -724,6 +949,7 @@ def build_p7_release_decision_handoff(
             "hold004_step5_full_backend_suite_green_confirmed": False,
             "hold004_step5_release_allowed": False,
             "split_green_is_full_backend_suite_green": False,
+            "split_green_can_close_p7_hold004": False,
             "p7_complete_claim_allowed": False,
             "p8_start_allowed": False,
             "release_allowed": False,
@@ -804,7 +1030,9 @@ def assert_p7_release_decision_handoff_contract(handoff: Mapping[str, Any]) -> b
         "full_backend_suite_green_confirmed",
         "full_backend_suite_green_claim_allowed",
         "split_green_is_full_backend_suite_green",
+        "split_green_can_close_p7_hold004",
         "split_green_promoted_to_full_suite_green",
+        "hold004_close_allowed",
         "hold004_positive_public_shape_full_backend_suite_green_confirmed",
         "hold004_positive_public_shape_release_allowed",
         "hold004_step5_full_backend_suite_green_confirmed",
@@ -827,6 +1055,36 @@ def assert_p7_release_decision_handoff_contract(handoff: Mapping[str, Any]) -> b
             raise ValueError(f"P7 release handoff must keep {key}=False")
     if data.get("body_free") is not True:
         raise ValueError("P7 release handoff must be body-free")
+    if data.get("backend_suite_execution_summary_connected") is True:
+        if data.get("backend_suite_execution_summary_schema_version") != P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION:
+            raise ValueError("P7 release handoff backend execution summary schema_version mismatch")
+        if data.get("backend_suite_execution_summary_collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 release handoff must connect current collect baseline id")
+        if data.get("backend_suite_execution_summary_inventory_id") != P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID:
+            raise ValueError("P7 release handoff must connect current group inventory id")
+        if data.get("backend_suite_execution_summary_plan_id") != P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID:
+            raise ValueError("P7 release handoff must connect current execution plan id")
+        for key in ("current_collect_baseline_connected", "current_group_inventory_connected", "current_execution_plan_connected", "old_baseline_not_used_as_current", "backend_suite_group_02_count_current"):
+            if data.get(key) is not True:
+                raise ValueError(f"P7 release handoff must keep {key}=true")
+        connection = safe_mapping(data.get("matrix_current_baseline_connection"))
+        if connection.get("collect_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+            raise ValueError("P7 release handoff current baseline connection collect id mismatch")
+        if connection.get("old_baseline_used_as_current") is not False:
+            raise ValueError("P7 release handoff must not use old baseline as current")
+        if data.get("split_green_is_full_backend_suite_green") is not False:
+            raise ValueError("P7 release handoff must not treat split green as full backend-suite green")
+        if data.get("split_green_can_close_p7_hold004") is not False:
+            raise ValueError("P7 release handoff must not close HOLD-004 from split execution summary")
+        if data.get("hold004_close_allowed") is not False:
+            raise ValueError("P7 release handoff must keep HOLD-004 close disallowed")
+        if data.get("backend_suite_execution_summary_split_all_groups_green_confirmed") is True:
+            if data.get("full_backend_suite_green_confirmed") is not False:
+                raise ValueError("P7 release handoff must not promote split green to full-suite green")
+            if data.get("split_green_promoted_to_full_suite_green") is not False:
+                raise ValueError("P7 release handoff must keep split green promotion false")
+            if "P7-HOLD-004" not in dedupe_identifiers(data.get("unresolved_hold_refs"), limit=160, max_length=160):
+                raise ValueError("P7 release handoff must keep HOLD-004 unresolved after split green")
     status = clean_identifier(data.get("release_input_status"), default="")
     if status not in _ALLOWED_INPUT_STATUSES:
         raise ValueError("P7 release input status changed")
