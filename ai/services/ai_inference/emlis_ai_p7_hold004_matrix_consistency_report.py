@@ -26,7 +26,17 @@ from emlis_ai_p7_contracts import (
     safe_mapping,
 )
 from emlis_ai_p7_hold004_backend_suite_execution_results import (
+    P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID,
     P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY,
+    P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF,
+    P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID,
+    P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION,
     assert_p7_hold004_backend_suite_execution_summary_contract,
     build_p7_hold004_current_backend_suite_execution_summary,
 )
@@ -72,7 +82,7 @@ P7_HOLD004_MATRIX_CONSISTENCY_REPORT_ID: Final = (
     "p7_hold004_matrix_consistency_report_20260615_current_snapshot"
 )
 P7_HOLD004_MATRIX_CONSISTENCY_HOLD_ID: Final = "P7-HOLD-004"
-P7_HOLD004_MATRIX_CONSISTENCY_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_MATRIX_CONSISTENCY_SOURCE_SNAPSHOT_REF: Final = "mashos-api(148).zip"
 P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260614"
 
 P7_HOLD004_MATRIX_CONSISTENCY_STATUS_PASS: Final = "PASS"
@@ -114,6 +124,9 @@ _REQUIRED_PASS_CHECKS: Final[tuple[str, ...]] = (
     "release_allowed_false_across_matrices",
     "p8_start_allowed_false_across_matrices",
     "body_free_markers_false_across_matrices",
+    "received_snapshot_blocking_status_consistent",
+    "received_snapshot_item_fingerprint_mismatch_resolved",
+    "active_baseline_refresh_projection_consistent",
 )
 
 
@@ -248,6 +261,126 @@ def _old_baseline_not_used_as_current(materials: Mapping[str, Mapping[str, Any]]
 
 def _backend_suite_group_02_count_current(materials: Mapping[str, Mapping[str, Any]]) -> bool:
     return _current_bool_true_across_matrices(materials, "backend_suite_group_02_count_current")
+
+
+_RECEIVED_SNAPSHOT_CONNECTION_MATERIAL_NAMES: Final[tuple[str, ...]] = (
+    "backend_suite_split_matrix",
+    "r10_hold_matrix",
+    "release_handoff",
+    "validation_matrix",
+)
+
+
+def _received_snapshot_connection_materials(
+    materials: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    return {
+        name: safe_mapping(materials.get(name))
+        for name in _RECEIVED_SNAPSHOT_CONNECTION_MATERIAL_NAMES
+        if isinstance(materials.get(name), Mapping)
+    }
+
+
+def _received_snapshot_blocking_status_consistent(materials: Mapping[str, Mapping[str, Any]]) -> bool:
+    connection_materials = _received_snapshot_connection_materials(materials)
+    if set(connection_materials) != set(_RECEIVED_SNAPSHOT_CONNECTION_MATERIAL_NAMES):
+        return False
+    statuses = {
+        clean_identifier(
+            _summary_field(material, "official_group_02_capture_readiness_status"),
+            default="",
+            max_length=160,
+        )
+        for material in connection_materials.values()
+    }
+    capture_blocked_flags = {
+        _summary_field(material, "official_group_02_capture_blocked") is True
+        for material in connection_materials.values()
+    }
+    run_allowed_flags = {
+        _summary_field(material, "official_group_02_capture_run_allowed") is True
+        for material in connection_materials.values()
+    }
+    recording_allowed_flags = {
+        _summary_field(material, "official_group_02_capture_result_recording_allowed") is True
+        for material in connection_materials.values()
+    }
+    mismatch_flags = {
+        _summary_field(material, "received_snapshot_item_fingerprint_mismatch_unresolved") is True
+        for material in connection_materials.values()
+    }
+    blocked_state_consistent = (
+        statuses == {P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH}
+        and capture_blocked_flags == {True}
+        and run_allowed_flags == {False}
+        and recording_allowed_flags == {False}
+        and mismatch_flags == {True}
+    )
+    post_adoption_ready_state_consistent = (
+        statuses == {P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY}
+        and capture_blocked_flags == {False}
+        and run_allowed_flags == {True}
+        and recording_allowed_flags == {True}
+        and mismatch_flags == {False}
+    )
+    return blocked_state_consistent or post_adoption_ready_state_consistent
+
+
+def _active_baseline_refresh_projection_consistent(materials: Mapping[str, Mapping[str, Any]]) -> bool:
+    connection_materials = _received_snapshot_connection_materials(materials)
+    if set(connection_materials) != set(_RECEIVED_SNAPSHOT_CONNECTION_MATERIAL_NAMES):
+        return False
+    schema_versions = {
+        clean_identifier(_summary_field(material, "active_baseline_refresh_schema_version"), default="", max_length=160)
+        for material in connection_materials.values()
+    }
+    refresh_ids = {
+        clean_identifier(_summary_field(material, "active_baseline_refresh_id"), default="", max_length=180)
+        for material in connection_materials.values()
+    }
+    runtime_status_ids = {
+        clean_identifier(_summary_field(material, "runtime_builder_refresh_status_id"), default="", max_length=180)
+        for material in connection_materials.values()
+    }
+    reconcile_ids = {
+        clean_identifier(_summary_field(material, "post_adoption_received_snapshot_reconcile_id"), default="", max_length=180)
+        for material in connection_materials.values()
+    }
+    applied_flags = {
+        _summary_field(material, "active_baseline_update_applied_to_runtime_builders") is True
+        for material in connection_materials.values()
+    }
+    source_refresh_flags = {
+        _summary_field(material, "source_snapshot_ref_updated_in_active_builders") is True
+        for material in connection_materials.values()
+    }
+    if schema_versions == {""} and refresh_ids == {""} and runtime_status_ids == {""} and reconcile_ids == {""}:
+        return applied_flags == {False} and source_refresh_flags == {False}
+    return (
+        schema_versions == {P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION}
+        and refresh_ids == {P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID}
+        and runtime_status_ids == {P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID}
+        and reconcile_ids == {P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID}
+        and applied_flags == {True}
+        and source_refresh_flags == {True}
+    )
+
+def _received_snapshot_item_fingerprint_mismatch_resolved(materials: Mapping[str, Mapping[str, Any]]) -> bool:
+    connection_materials = _received_snapshot_connection_materials(materials)
+    if set(connection_materials) != set(_RECEIVED_SNAPSHOT_CONNECTION_MATERIAL_NAMES):
+        return False
+    return all(
+        _summary_field(material, "received_snapshot_item_fingerprint_mismatch_unresolved") is not True
+        for material in connection_materials.values()
+    )
+
+
+def _first_received_snapshot_field(materials: Mapping[str, Mapping[str, Any]], key: str) -> Any:
+    for material in _received_snapshot_connection_materials(materials).values():
+        value = _summary_field(material, key)
+        if value is not None:
+            return value
+    return None
 
 
 def _matrix_current_baseline_connection_from_sources(
@@ -417,6 +550,9 @@ def build_p7_hold004_matrix_consistency_report(
         "release_allowed_false_across_matrices": _release_allowed_false(source_materials),
         "p8_start_allowed_false_across_matrices": _p8_start_allowed_false(source_materials),
         "body_free_markers_false_across_matrices": _body_free_markers_false(source_materials),
+        "received_snapshot_blocking_status_consistent": _received_snapshot_blocking_status_consistent(source_materials),
+        "received_snapshot_item_fingerprint_mismatch_resolved": _received_snapshot_item_fingerprint_mismatch_resolved(source_materials),
+        "active_baseline_refresh_projection_consistent": _active_baseline_refresh_projection_consistent(source_materials),
     }
     consistency_status = _determine_consistency_status(checks=checks, source_materials=source_materials)
 
@@ -432,6 +568,76 @@ def build_p7_hold004_matrix_consistency_report(
         r10_matrix=r10_matrix,
         handoff=handoff,
         validation=validation,
+    )
+    official_group_02_capture_readiness_schema_version = clean_identifier(
+        _first_received_snapshot_field(source_materials, "official_group_02_capture_readiness_schema_version"),
+        default=P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION,
+        max_length=160,
+    )
+    official_group_02_capture_readiness_status = clean_identifier(
+        _first_received_snapshot_field(source_materials, "official_group_02_capture_readiness_status"),
+        default=P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+        max_length=160,
+    )
+    official_group_02_capture_blocked = (
+        _first_received_snapshot_field(source_materials, "official_group_02_capture_blocked") is True
+    )
+    official_group_02_capture_run_allowed = (
+        _first_received_snapshot_field(source_materials, "official_group_02_capture_run_allowed") is True
+    )
+    official_group_02_capture_result_recording_allowed = (
+        _first_received_snapshot_field(source_materials, "official_group_02_capture_result_recording_allowed") is True
+    )
+    received_snapshot_baseline_fingerprint_reconciled = (
+        _first_received_snapshot_field(source_materials, "received_snapshot_baseline_fingerprint_reconciled") is True
+    )
+    received_snapshot_item_fingerprint_mismatch_unresolved = (
+        _first_received_snapshot_field(source_materials, "received_snapshot_item_fingerprint_mismatch_unresolved") is True
+    )
+    received_snapshot_blocker_refs = dedupe_identifiers(
+        [
+            *_refs(backend_split, "received_snapshot_blocker_refs"),
+            *_refs(r10_matrix, "received_snapshot_blocker_refs"),
+            *_refs(handoff, "received_snapshot_blocker_refs"),
+            *_refs(validation, "received_snapshot_blocker_refs"),
+            P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF
+            if received_snapshot_item_fingerprint_mismatch_unresolved
+            else "",
+        ],
+        limit=120,
+        max_length=160,
+    )
+
+    active_baseline_refresh_schema_version = clean_identifier(
+        _first_received_snapshot_field(source_materials, "active_baseline_refresh_schema_version"),
+        default="",
+        max_length=160,
+    )
+    active_baseline_refresh_id = clean_identifier(
+        _first_received_snapshot_field(source_materials, "active_baseline_refresh_id"),
+        default="",
+        max_length=180,
+    )
+    runtime_builder_refresh_status_id = clean_identifier(
+        _first_received_snapshot_field(source_materials, "runtime_builder_refresh_status_id"),
+        default="",
+        max_length=180,
+    )
+    post_adoption_received_snapshot_reconcile_id = clean_identifier(
+        _first_received_snapshot_field(source_materials, "post_adoption_received_snapshot_reconcile_id"),
+        default="",
+        max_length=180,
+    )
+    active_baseline_update_applied_to_runtime_builders = (
+        _first_received_snapshot_field(source_materials, "active_baseline_update_applied_to_runtime_builders") is True
+    )
+    source_snapshot_ref_updated_in_active_builders = (
+        _first_received_snapshot_field(source_materials, "source_snapshot_ref_updated_in_active_builders") is True
+    )
+    post_adoption_readiness_re_evaluated = (
+        _first_received_snapshot_field(source_materials, "post_adoption_readiness_re_evaluated") is True
+        or official_group_02_capture_readiness_schema_version
+        == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2
     )
 
     closed_red_refs = dedupe_identifiers(
@@ -511,6 +717,7 @@ def build_p7_hold004_matrix_consistency_report(
             "r10_hold_matrix_schema_version": r10_matrix.get("schema_version"),
             "release_handoff_schema_version": handoff.get("schema_version"),
             "validation_matrix_schema_version": validation.get("schema_version"),
+            "official_group_02_capture_readiness_schema_version": official_group_02_capture_readiness_schema_version,
         },
         "source_material_ids": {
             "backend_suite_execution_summary_id": clean_identifier(execution_summary.get("summary_id"), max_length=160),
@@ -524,6 +731,21 @@ def build_p7_hold004_matrix_consistency_report(
         },
         "consistency_status": consistency_status,
         "checks": checks,
+        "official_group_02_capture_readiness_schema_version": official_group_02_capture_readiness_schema_version,
+        "official_group_02_capture_readiness_status": official_group_02_capture_readiness_status,
+        "official_group_02_capture_blocked": official_group_02_capture_blocked,
+        "official_group_02_capture_run_allowed": official_group_02_capture_run_allowed,
+        "official_group_02_capture_result_recording_allowed": official_group_02_capture_result_recording_allowed,
+        "received_snapshot_baseline_fingerprint_reconciled": received_snapshot_baseline_fingerprint_reconciled,
+        "received_snapshot_item_fingerprint_mismatch_unresolved": received_snapshot_item_fingerprint_mismatch_unresolved,
+        "received_snapshot_blocker_refs": received_snapshot_blocker_refs,
+        "active_baseline_refresh_schema_version": active_baseline_refresh_schema_version,
+        "active_baseline_refresh_id": active_baseline_refresh_id,
+        "runtime_builder_refresh_status_id": runtime_builder_refresh_status_id,
+        "post_adoption_received_snapshot_reconcile_id": post_adoption_received_snapshot_reconcile_id,
+        "active_baseline_update_applied_to_runtime_builders": active_baseline_update_applied_to_runtime_builders,
+        "source_snapshot_ref_updated_in_active_builders": source_snapshot_ref_updated_in_active_builders,
+        "post_adoption_readiness_re_evaluated": post_adoption_readiness_re_evaluated,
         "current_collect_baseline_connected": checks["current_collect_baseline_connected"],
         "current_group_inventory_connected": checks["current_group_inventory_connected"],
         "current_execution_plan_connected": checks["current_execution_plan_connected"],
@@ -607,6 +829,13 @@ def assert_p7_hold004_matrix_consistency_report_contract(report: Mapping[str, An
     for key, expected in expected_input_versions.items():
         if inputs.get(key) != expected:
             raise ValueError(f"P7-HOLD-004 matrix consistency report input {key} mismatch")
+    input_readiness_schema = clean_identifier(
+        inputs.get("official_group_02_capture_readiness_schema_version"),
+        default="",
+        max_length=160,
+    )
+    if input_readiness_schema not in P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS:
+        raise ValueError("P7-HOLD-004 matrix consistency report input official group_02 readiness schema mismatch")
 
     status = clean_identifier(data.get("consistency_status"), max_length=80)
     if status not in P7_HOLD004_MATRIX_CONSISTENCY_ALLOWED_STATUSES:
@@ -619,6 +848,67 @@ def assert_p7_hold004_matrix_consistency_report_contract(report: Mapping[str, An
         missing = [key for key in _REQUIRED_PASS_CHECKS if checks.get(key) is not True]
         if missing:
             raise ValueError(f"P7-HOLD-004 matrix consistency PASS report has false checks: {missing}")
+
+    readiness_schema_version = clean_identifier(
+        data.get("official_group_02_capture_readiness_schema_version"),
+        default="",
+        max_length=160,
+    )
+    if readiness_schema_version not in P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS:
+        raise ValueError("P7-HOLD-004 matrix consistency report must carry official group_02 readiness schema")
+    readiness_after_refresh = readiness_schema_version == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2
+    if data.get("received_snapshot_item_fingerprint_mismatch_unresolved") is True:
+        if status == P7_HOLD004_MATRIX_CONSISTENCY_STATUS_PASS:
+            raise ValueError("P7-HOLD-004 matrix consistency report cannot PASS unresolved received snapshot mismatch")
+        if data.get("official_group_02_capture_readiness_status") != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH:
+            raise ValueError("P7-HOLD-004 matrix consistency report must expose received snapshot readiness blocker")
+        if data.get("official_group_02_capture_blocked") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report must keep official group_02 capture blocked")
+        if data.get("official_group_02_capture_run_allowed") is not False:
+            raise ValueError("P7-HOLD-004 matrix consistency report must keep group_02 run disallowed")
+        if data.get("official_group_02_capture_result_recording_allowed") is not False:
+            raise ValueError("P7-HOLD-004 matrix consistency report must keep group_02 result recording disallowed")
+        blocker_refs = set(dedupe_identifiers(data.get("received_snapshot_blocker_refs"), limit=120, max_length=160))
+        if P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF not in blocker_refs:
+            raise ValueError("P7-HOLD-004 matrix consistency report missing received snapshot blocker ref")
+        if checks.get("received_snapshot_blocking_status_consistent") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report received snapshot blocking status must be consistent")
+        if checks.get("received_snapshot_item_fingerprint_mismatch_resolved") is not False:
+            raise ValueError("P7-HOLD-004 matrix consistency report must not mark unresolved mismatch as resolved")
+    if readiness_after_refresh:
+        if data.get("official_group_02_capture_readiness_status") != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must expose official group_02 readiness as READY")
+        if data.get("received_snapshot_baseline_fingerprint_reconciled") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must carry reconciled received snapshot baseline")
+        if data.get("received_snapshot_item_fingerprint_mismatch_unresolved") is not False:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must resolve received snapshot item mismatch")
+        if data.get("official_group_02_capture_blocked") is not False:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must unblock official group_02 capture readiness")
+        if data.get("official_group_02_capture_run_allowed") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must allow official group_02 capture run")
+        if data.get("official_group_02_capture_result_recording_allowed") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must allow official group_02 result recording")
+        if checks.get("received_snapshot_blocking_status_consistent") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must keep readiness state consistent")
+        if checks.get("received_snapshot_item_fingerprint_mismatch_resolved") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must mark item mismatch resolved")
+        if checks.get("active_baseline_refresh_projection_consistent") is not True:
+            raise ValueError("P7-HOLD-004 matrix consistency report after refresh must project active baseline consistently")
+        for key in (
+            "active_baseline_update_applied_to_runtime_builders",
+            "source_snapshot_ref_updated_in_active_builders",
+            "post_adoption_readiness_re_evaluated",
+        ):
+            if data.get(key) is not True:
+                raise ValueError(f"P7-HOLD-004 matrix consistency report after refresh must keep {key}=true")
+        if data.get("active_baseline_refresh_schema_version") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION:
+            raise ValueError("P7-HOLD-004 matrix consistency report active refresh schema mismatch")
+        if data.get("active_baseline_refresh_id") != P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID:
+            raise ValueError("P7-HOLD-004 matrix consistency report active refresh id mismatch")
+        if data.get("runtime_builder_refresh_status_id") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID:
+            raise ValueError("P7-HOLD-004 matrix consistency report runtime refresh id mismatch")
+        if data.get("post_adoption_received_snapshot_reconcile_id") != P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID:
+            raise ValueError("P7-HOLD-004 matrix consistency report post-adoption reconcile id mismatch")
 
     for key in _RELEASE_CLOSED_KEYS:
         if data.get(key) is not False:

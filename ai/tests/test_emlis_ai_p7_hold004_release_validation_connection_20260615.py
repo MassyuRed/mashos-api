@@ -10,6 +10,8 @@ import pytest
 
 from emlis_ai_p7_hold004_backend_suite_execution_results import (
     P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF,
     assert_p7_hold004_backend_suite_execution_summary_contract,
     build_p7_hold004_backend_suite_execution_summary,
     build_p7_hold004_backend_suite_group_run_result,
@@ -54,6 +56,20 @@ def _assert_current_baseline_connection(material: dict[str, object]) -> None:
     assert connection["group_02_file_count"] == 19
     assert connection["group_02_test_item_count"] == 252
     assert connection["old_baseline_used_as_current"] is False
+    assert material["official_group_02_capture_readiness_status"] == (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert material["official_group_02_capture_blocked"] is True
+    assert material["official_group_02_capture_run_allowed"] is False
+    assert material["official_group_02_capture_result_recording_allowed"] is False
+    assert material["received_snapshot_baseline_fingerprint_reconciled"] is False
+    assert material["received_snapshot_item_fingerprint_mismatch_unresolved"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in material["received_snapshot_blocker_refs"]
+    followup_fixes = material.get(
+        "required_followup_fixes",
+        material.get("summary", {}).get("hold004_required_followup_fixes", []),
+    )
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in followup_fixes
 
 
 def _all_split_groups_green_summary() -> dict[str, object]:
@@ -181,6 +197,13 @@ def test_r9_validation_matrix_connects_execution_summary_row_and_keeps_hold004_o
     assert_p7_validation_regression_matrix_contract(matrix)
 
     rows_by_kind = _rows_by_kind(matrix)
+    readiness_row = rows_by_kind["official_group02_capture_readiness"]
+    assert readiness_row["observed_status"] == "BLOCKED"
+    assert readiness_row["green_claim_allowed"] is False
+    assert readiness_row["release_allowed"] is False
+    assert "P7-HOLD-004" in readiness_row["hold_refs"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in readiness_row["reason_codes"]
+
     execution_row = rows_by_kind["backend_suite_split_execution_summary"]
     assert execution_row["observed_status"] == "PASSED_ISOLATED"
     assert execution_row["green_claim_allowed"] is False
@@ -210,6 +233,10 @@ def test_r9_validation_matrix_accepts_matrix_consistency_report_as_material_not_
     assert_p7_validation_regression_matrix_contract(matrix)
 
     rows_by_kind = _rows_by_kind(matrix)
+    readiness_row = rows_by_kind["official_group02_capture_readiness"]
+    assert readiness_row["observed_status"] == "BLOCKED"
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in readiness_row["reason_codes"]
+
     consistency_row = rows_by_kind["matrix_consistency_report"]
     assert consistency_row["observed_status"] == "PASS"
     assert consistency_row["green_claim_allowed"] is False

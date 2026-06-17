@@ -9,6 +9,8 @@ import json
 import pytest
 
 from emlis_ai_p7_hold004_backend_suite_execution_results import (
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF,
     build_p7_hold004_backend_suite_execution_summary,
     build_p7_hold004_backend_suite_group_run_result,
 )
@@ -63,6 +65,16 @@ def _assert_report_current_baseline_connection(report: dict[str, object]) -> Non
     assert connection["full_backend_suite_green_confirmed"] is False
     assert connection["release_allowed"] is False
     assert connection["body_free"] is True
+    assert report["official_group_02_capture_readiness_status"] == (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert report["official_group_02_capture_blocked"] is True
+    assert report["official_group_02_capture_run_allowed"] is False
+    assert report["official_group_02_capture_result_recording_allowed"] is False
+    assert report["received_snapshot_baseline_fingerprint_reconciled"] is False
+    assert report["received_snapshot_item_fingerprint_mismatch_unresolved"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in report["received_snapshot_blocker_refs"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in report["required_followup_fixes"]
 
 
 def _all_split_groups_green_summary() -> dict[str, object]:
@@ -124,8 +136,9 @@ def test_r10_default_matrix_consistency_report_passes_while_preserving_hold004_a
     assert report["schema_version"] == P7_HOLD004_MATRIX_CONSISTENCY_REPORT_SCHEMA_VERSION
     assert report["implementation_step"] == P7_HOLD004_MATRIX_CONSISTENCY_REPORT_STEP
     assert report["report_id"] == P7_HOLD004_MATRIX_CONSISTENCY_REPORT_ID
-    assert report["consistency_status"] == "PASS"
-    assert all(report["checks"].values())
+    assert report["consistency_status"] == "REVIEW_REQUIRED"
+    assert report["checks"]["received_snapshot_blocking_status_consistent"] is True
+    assert report["checks"]["received_snapshot_item_fingerprint_mismatch_resolved"] is False
     _assert_report_current_baseline_connection(report)
     assert report["checks"]["hold004_preserved_across_matrices"] is True
     assert report["checks"]["current_collect_baseline_connected"] is True
@@ -154,7 +167,9 @@ def test_r10_report_accepts_structured_red003_closure_and_all_split_groups_green
     )
     assert_p7_hold004_matrix_consistency_report_contract(report)
 
-    assert report["consistency_status"] == "PASS"
+    assert report["consistency_status"] == "REVIEW_REQUIRED"
+    assert report["checks"]["received_snapshot_blocking_status_consistent"] is True
+    assert report["checks"]["received_snapshot_item_fingerprint_mismatch_resolved"] is False
     _assert_report_current_baseline_connection(report)
     assert report["backend_suite_execution_summary_split_all_groups_green_confirmed"] is True
     assert report["red003_closed"] is True
@@ -183,13 +198,17 @@ def test_r10_report_connects_to_validation_matrix_as_material_not_release_permis
     assert_p7_validation_regression_matrix_contract(matrix)
 
     rows_by_kind = _rows_by_kind(matrix)
+    readiness_row = rows_by_kind["official_group02_capture_readiness"]
+    assert readiness_row["observed_status"] == "BLOCKED"
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in readiness_row["reason_codes"]
+
     row = rows_by_kind["matrix_consistency_report"]
-    assert row["observed_status"] == "PASS"
+    assert row["observed_status"] == "BLOCKED"
     assert row["green_claim_allowed"] is False
     assert row["release_allowed"] is False
     assert "P7-HOLD-004" in row["hold_refs"]
     assert matrix["matrix_consistency_report_connected"] is True
-    assert matrix["matrix_consistency_report_status"] == "PASS"
+    assert matrix["matrix_consistency_report_status"] == "REVIEW_REQUIRED"
     assert matrix["summary"]["matrix_consistency_report_can_allow_release"] is False
     assert matrix["summary"]["current_collect_baseline_connected"] is True
     assert matrix["summary"]["current_group_inventory_connected"] is True

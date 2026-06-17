@@ -45,6 +45,18 @@ from emlis_ai_p7_hold004_backend_suite_split_consistency import (
     P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
     P7_HOLD004_BACKEND_SUITE_HOLD_ID,
 )
+from emlis_ai_p7_hold004_received_snapshot_baseline_fingerprint_reconcile import (
+    P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_RECEIVED_RECONCILE_STATUS_ITEM_FINGERPRINT_MISMATCH_UNCLASSIFIED,
+    P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID,
+    P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_SCHEMA_VERSION,
+    P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID,
+    P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION,
+    assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract,
+    assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract,
+    build_p7_hold004_received_snapshot_baseline_adoption_decision,
+    build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile,
+)
 
 P7_HOLD004_BACKEND_SUITE_SPLIT_CONSISTENCY_R4_R5_STEP: Final = (
     "P7-HOLD-004_CurrentSnapshotBaselineReconcile_R17_20260615"
@@ -61,11 +73,57 @@ P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_SCHEMA_VERSION: Final = (
 P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_DECISION_SCHEMA_VERSION: Final = (
     "cocolon.emlis.p7.hold004.official_group02_capture_adoption_decision.v1"
 )
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.official_group02_capture_readiness.v1"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2: Final = (
+    "cocolon.emlis.p7.hold004.official_group02_capture_readiness.v2"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS: Final[frozenset[str]] = frozenset(
+    {
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2,
+    }
+)
+P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.post_adoption_received_snapshot_reconcile.v1"
+)
+P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID: Final = (
+    "p7_hold004_post_adoption_received_snapshot_reconcile_20260616"
+)
+P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.runtime_builder_refresh_status.v1"
+)
+P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID: Final = (
+    "p7_hold004_runtime_builder_refresh_status_20260616"
+)
+P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID: Final = "p7_hold004_active_baseline_refresh_20260616"
+P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.group02_timeout_classification_plan.v1"
+)
 P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_ID: Final = (
     "p7_hold004_group_02_official_capture_adoption_rule_20260615"
 )
 P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_DECISION_ID: Final = (
     "p7_hold004_group_02_official_capture_adoption_decision_20260615"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STEP: Final = (
+    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R25_20260615"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_STEP: Final = (
+    "P7-HOLD-004_ActiveBaselineRuntimeBuilderRefresh_R39_OfficialGroup02CaptureReadinessReevaluation_20260616"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ID: Final = (
+    "p7_hold004_group_02_official_capture_readiness_20260615"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_ID: Final = (
+    "p7_hold004_official_group02_capture_readiness_20260616"
+)
+P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP: Final = (
+    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R28_20260615"
+)
+P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_ID: Final = (
+    "p7_hold004_group_02_timeout_classification_plan_20260615"
 )
 P7_HOLD004_GROUP02_OFFICIAL_CAPTURE_COMMAND_ID: Final = (
     "pytest_group_02_p7_hold004_capture_run_20260615"
@@ -84,7 +142,7 @@ P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION: Final = (
 P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_ID: Final = (
     "p7_hold004_backend_suite_execution_summary_20260615"
 )
-P7_HOLD004_BACKEND_R4_R5_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_BACKEND_R4_R5_SOURCE_SNAPSHOT_REF: Final = "mashos-api(148).zip"
 P7_HOLD004_PREVIOUS_BACKEND_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260614"
 
 P7_HOLD004_BACKEND_SUITE_RUN_KIND_CAPTURE: Final = "capture_run"
@@ -193,6 +251,46 @@ P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_STATUS_OR_COUNTS_MISMATCH: 
 P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_BODY_OR_CONTRACT: Final = (
     "REJECTED_BODY_PAYLOAD_OR_CONTRACT_MUTATION"
 )
+P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD: Final = (
+    "BLOCKED_BY_RECEIVED_SNAPSHOT_READINESS_GUARD"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY: Final = "READY_FOR_OFFICIAL_CAPTURE_RUN"
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH: Final = (
+    "BLOCKED_BY_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_SOURCE_IDENTITY_UNCLEAR: Final = (
+    "BLOCKED_BY_RECEIVED_SNAPSHOT_SOURCE_IDENTITY_UNCLEAR"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ACTIVE_BASELINE_NOT_CURRENT: Final = (
+    "BLOCKED_BY_ACTIVE_BASELINE_NOT_RECEIVED_CURRENT"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_COLLECT_COUNT_MISMATCH: Final = (
+    "BLOCKED_BY_COLLECT_COUNT_MISMATCH"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_FILE_FINGERPRINT_MISMATCH: Final = (
+    "BLOCKED_BY_FILE_FINGERPRINT_MISMATCH"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_UNSTABLE_COLLECT: Final = (
+    "BLOCKED_BY_UNSTABLE_COLLECT"
+)
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_STATUSES: Final[frozenset[str]] = frozenset(
+    {
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_SOURCE_IDENTITY_UNCLEAR,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ACTIVE_BASELINE_NOT_CURRENT,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_COLLECT_COUNT_MISMATCH,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_FILE_FINGERPRINT_MISMATCH,
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_UNSTABLE_COLLECT,
+    }
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF: Final = (
+    "received_snapshot_collect_item_fingerprint_mismatch"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_SOURCE_IDENTITY_BLOCKER_REF: Final = "source_snapshot_ref_identity_unclear"
+P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_GUARD_BLOCKER_REF: Final = (
+    "official_group_02_capture_readiness_guard_blocked"
+)
 P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_ALLOWED_STATUSES: Final[frozenset[str]] = frozenset(
     {
         P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED,
@@ -207,6 +305,7 @@ P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_ALLOWED_STATUSES: Final[frozenset[str]] = f
         P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_COLLECT_COUNT_MISMATCH,
         P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_STATUS_OR_COUNTS_MISMATCH,
         P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_BODY_OR_CONTRACT,
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD,
     }
 )
 P7_HOLD004_OFFICIAL_CAPTURE_RECORDABLE_ADOPTION_STATUSES: Final[frozenset[str]] = frozenset(
@@ -652,6 +751,9 @@ def build_p7_hold004_backend_suite_group_run_result(
         "timeout_capture": timeout_capture,
         "red_classification_required": normalized_status == P7_HOLD004_BACKEND_SUITE_STATUS_FAIL,
         "timeout_classification_required": normalized_status == P7_HOLD004_BACKEND_SUITE_STATUS_TIMEOUT,
+        "timeout_is_green": False,
+        "timeout_is_immediate_fail": False,
+        "timeout_requires_long_run_classification": normalized_status == P7_HOLD004_BACKEND_SUITE_STATUS_TIMEOUT,
         "reason_codes": dedupe_identifiers(list(reason_codes or []) + default_reasons, limit=80, max_length=160),
         "can_claim_group_green": green_status,
         "can_claim_full_backend_suite_green": False,
@@ -784,6 +886,8 @@ def assert_p7_hold004_backend_suite_group_run_result_contract(material: Mapping[
             raise ValueError("TIMEOUT group result last_known_phase invalid")
         if data.get("timeout_classification_required") is not True:
             raise ValueError("TIMEOUT group result must require timeout classification")
+        if data.get("timeout_requires_long_run_classification") is not True:
+            raise ValueError("TIMEOUT group result must require long-run timeout classification")
     else:
         if timeout_capture.get("elapsed_sec_bucket") not in ("", None):
             raise ValueError("non-TIMEOUT group result must not retain timeout elapsed bucket")
@@ -795,6 +899,13 @@ def assert_p7_hold004_backend_suite_group_run_result_contract(material: Mapping[
             raise ValueError("non-TIMEOUT group result must not claim slow group candidate")
         if data.get("timeout_classification_required") is not False:
             raise ValueError("non-TIMEOUT group result must not require timeout classification")
+        if data.get("timeout_requires_long_run_classification") is not False:
+            raise ValueError("non-TIMEOUT group result must not require long-run timeout classification")
+
+    if data.get("timeout_is_green") is not False:
+        raise ValueError("P7-HOLD-004 backend group run result must never mark timeout as green")
+    if data.get("timeout_is_immediate_fail") is not False:
+        raise ValueError("P7-HOLD-004 backend group run result must not treat timeout as immediate fail")
 
     green_status = status in P7_HOLD004_BACKEND_SUITE_GREEN_STATUSES
     if data.get("can_claim_group_green") is not green_status:
@@ -1269,6 +1380,439 @@ def assert_p7_hold004_official_group02_capture_adoption_rule_contract(material: 
     return True
 
 
+
+def _is_post_adoption_received_snapshot_reconcile(material: Mapping[str, Any]) -> bool:
+    return safe_mapping(material).get("schema_version") == P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION
+
+
+def _assert_post_adoption_received_snapshot_reconcile_like(material: Mapping[str, Any]) -> bool:
+    data = safe_mapping(material)
+    source = "p7_hold004_post_adoption_received_snapshot_reconcile_like"
+    if data.get("schema_version") != P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 post-adoption reconcile schema_version mismatch")
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 post-adoption reconcile scope mismatch")
+    if data.get("reconcile_id") != P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID:
+        raise ValueError("P7-HOLD-004 post-adoption reconcile id mismatch")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("git_checked") is not False:
+        raise ValueError("P7-HOLD-004 post-adoption reconcile source boundary mismatch")
+    for key in (
+        "received_snapshot_baseline_fingerprint_reconciled",
+        "source_snapshot_ref_current_for_received_zip",
+        "active_baseline_accepts_received_nodeids",
+        "post_adoption_reconcile_material_built",
+        "collect_only_is_not_execution_green",
+        "body_free",
+    ):
+        if data.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 post-adoption reconcile must keep {key}=true")
+    for key in (
+        "received_snapshot_item_fingerprint_mismatch_unresolved",
+        "historical_r21_r29_material_rewritten",
+        "execution_green_confirmed",
+        "official_group_02_capture_green_confirmed",
+        "can_claim_group_green",
+        "can_claim_full_backend_suite_green",
+        "full_backend_suite_green_confirmed",
+        "hold004_close_allowed",
+        "p7_complete",
+        "p8_start_allowed",
+        "release_allowed",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 post-adoption reconcile must keep {key}=false")
+    comparison = safe_mapping(data.get("comparison"))
+    for key in (
+        "counts_match",
+        "warnings_match",
+        "test_files_fingerprint_match",
+        "test_items_fingerprint_match",
+        "source_snapshot_ref_matches_received_zip_ref",
+        "source_snapshot_ref_current_for_received_zip",
+        "active_baseline_accepts_received_nodeids",
+    ):
+        if comparison.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 post-adoption reconcile comparison {key} must be true")
+    assert_false_markers(safe_mapping(data.get("public_contract")), source=f"{source}.public_contract")
+    assert_false_markers(safe_mapping(data.get("body_free_markers")), source=f"{source}.body_free_markers")
+    assert_p7_no_body_payload_or_contract_mutation(data, source=source)
+    return True
+
+
+def _assert_runtime_builder_refresh_status_like(material: Mapping[str, Any]) -> bool:
+    data = safe_mapping(material)
+    source = "p7_hold004_runtime_builder_refresh_status_like"
+    if data.get("schema_version") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 runtime builder refresh status schema_version mismatch")
+    if data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID or data.get("phase") != P7_PHASE:
+        raise ValueError("P7-HOLD-004 runtime builder refresh status scope mismatch")
+    if data.get("refresh_status_id") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID:
+        raise ValueError("P7-HOLD-004 runtime builder refresh status id mismatch")
+    for key in (
+        "active_baseline_update_applied_to_runtime_builders",
+        "source_snapshot_ref_updated_in_active_builders",
+        "current_collect_baseline_connected",
+        "received_snapshot_baseline_fingerprint_reconciled",
+        "source_snapshot_ref_current_for_received_zip",
+        "active_baseline_accepts_received_nodeids",
+        "collect_only_is_not_execution_green",
+        "body_free",
+    ):
+        if data.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 runtime builder refresh status must keep {key}=true")
+    for key in (
+        "received_snapshot_item_fingerprint_mismatch_unresolved",
+        "official_group_02_capture_run_allowed",
+        "official_group_02_capture_result_recording_allowed",
+        "official_group_02_capture_green_confirmed",
+        "can_claim_group_green",
+        "can_claim_full_backend_suite_green",
+        "full_backend_suite_green_confirmed",
+        "hold004_close_allowed",
+        "p7_complete",
+        "p8_start_allowed",
+        "release_allowed",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 runtime builder refresh status must keep {key}=false")
+    if data.get("current_active_baseline_id") != P7_HOLD004_BACKEND_COLLECT_BASELINE_ID:
+        raise ValueError("P7-HOLD-004 runtime builder refresh must use current collect baseline")
+    assert_false_markers(safe_mapping(data.get("public_contract")), source=f"{source}.public_contract")
+    assert_false_markers(safe_mapping(data.get("body_free_markers")), source=f"{source}.body_free_markers")
+    assert_p7_no_body_payload_or_contract_mutation(data, source=source)
+    return True
+
+
+def _readiness_status_and_blockers(
+    *,
+    received_snapshot_reconcile: Mapping[str, Any],
+    adoption_decision: Mapping[str, Any],
+) -> tuple[str, list[str]]:
+    comparison = safe_mapping(received_snapshot_reconcile.get("comparison"))
+    classification = safe_mapping(received_snapshot_reconcile.get("classification"))
+    blockers: list[str] = []
+
+    if not comparison.get("counts_match") or not comparison.get("warnings_match"):
+        blockers.extend(["received_snapshot_collect_count_mismatch", "received_snapshot_warning_count_mismatch"])
+        return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_COLLECT_COUNT_MISMATCH, blockers
+    if not comparison.get("test_files_fingerprint_match"):
+        blockers.append("received_snapshot_collect_file_fingerprint_mismatch")
+        return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_FILE_FINGERPRINT_MISMATCH, blockers
+
+    item_mismatch = bool(
+        comparison.get("test_items_fingerprint_match") is not True
+        or received_snapshot_reconcile.get("received_snapshot_item_fingerprint_mismatch_unresolved") is True
+        or classification.get("status") == P7_HOLD004_RECEIVED_RECONCILE_STATUS_ITEM_FINGERPRINT_MISMATCH_UNCLASSIFIED
+        or adoption_decision.get("adoption_status")
+        == P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH
+    )
+    if item_mismatch:
+        blockers.append(P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF)
+        blockers.append(P7_HOLD004_RECEIVED_SNAPSHOT_SOURCE_IDENTITY_BLOCKER_REF)
+        return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH, blockers
+
+    if not comparison.get("source_snapshot_ref_matches_received_zip_ref"):
+        blockers.append(P7_HOLD004_RECEIVED_SNAPSHOT_SOURCE_IDENTITY_BLOCKER_REF)
+        return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_SOURCE_IDENTITY_UNCLEAR, blockers
+    if not received_snapshot_reconcile.get("active_baseline_accepts_received_nodeids"):
+        blockers.append("active_baseline_does_not_accept_received_snapshot_nodeids")
+        return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ACTIVE_BASELINE_NOT_CURRENT, blockers
+
+    return P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY, []
+
+
+def build_p7_hold004_official_group02_capture_readiness(
+    *,
+    received_snapshot_reconcile: Mapping[str, Any] | None = None,
+    adoption_decision: Mapping[str, Any] | None = None,
+    adoption_rule: Mapping[str, Any] | None = None,
+    runtime_builder_refresh_status: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the official group_02 readiness guard.
+
+    Default behavior preserves the historical R25 guard.  When a R36
+    post-adoption reconcile and R37 runtime-builder refresh status are supplied,
+    this same readiness concept is re-evaluated for R39 without creating a
+    second readiness concept.  Ready means only that official capture may be
+    run and recorded; it is not group green, full backend-suite green, HOLD
+    closure, P7 completion, P8 start, or release readiness.
+    """
+
+    rule_material = (
+        safe_mapping(adoption_rule)
+        if adoption_rule is not None
+        else build_p7_hold004_official_group02_capture_adoption_rule()
+    )
+    assert_p7_hold004_official_group02_capture_adoption_rule_contract(rule_material)
+    reconcile_material = (
+        safe_mapping(received_snapshot_reconcile)
+        if received_snapshot_reconcile is not None
+        else build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile()
+    )
+    runtime_refresh_material = safe_mapping(runtime_builder_refresh_status)
+    post_adoption_reconcile = _is_post_adoption_received_snapshot_reconcile(reconcile_material)
+
+    if post_adoption_reconcile:
+        _assert_post_adoption_received_snapshot_reconcile_like(reconcile_material)
+        _assert_runtime_builder_refresh_status_like(runtime_refresh_material)
+        readiness_status = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY
+        blockers: list[str] = []
+        ready = True
+        schema_version = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2
+        step = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_STEP
+        readiness_id = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_ID
+        received_reconcile_schema_version = P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION
+        received_reconcile_id = P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID
+        adoption_decision_schema_version = ""
+        adoption_decision_id = ""
+        refresh_fields = {
+            "active_baseline_refresh_schema_version": P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION,
+            "active_baseline_refresh_id": clean_identifier(
+                runtime_refresh_material.get("active_baseline_refresh_id"),
+                default=P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID,
+                max_length=180,
+            ),
+            "runtime_builder_refresh_status_id": clean_identifier(
+                runtime_refresh_material.get("refresh_status_id"),
+                default=P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID,
+                max_length=180,
+            ),
+            "active_baseline_update_applied_to_runtime_builders": True,
+            "source_snapshot_ref_updated_in_active_builders": True,
+            "post_adoption_received_snapshot_reconcile_id": clean_identifier(
+                reconcile_material.get("reconcile_id"),
+                default=P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID,
+                max_length=180,
+            ),
+            "post_adoption_readiness_re_evaluated": True,
+        }
+    else:
+        assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract(reconcile_material)
+        adoption_material = (
+            safe_mapping(adoption_decision)
+            if adoption_decision is not None
+            else build_p7_hold004_received_snapshot_baseline_adoption_decision(
+                received_snapshot_reconcile=reconcile_material
+            )
+        )
+        assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract(adoption_material)
+        readiness_status, blockers = _readiness_status_and_blockers(
+            received_snapshot_reconcile=reconcile_material,
+            adoption_decision=adoption_material,
+        )
+        ready = readiness_status == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY
+        schema_version = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION
+        step = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STEP
+        readiness_id = P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ID
+        received_reconcile_schema_version = P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION
+        received_reconcile_id = P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID
+        adoption_decision_schema_version = P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_SCHEMA_VERSION
+        adoption_decision_id = P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID
+        refresh_fields = {
+            "active_baseline_refresh_schema_version": "",
+            "active_baseline_refresh_id": "",
+            "runtime_builder_refresh_status_id": "",
+            "active_baseline_update_applied_to_runtime_builders": False,
+            "source_snapshot_ref_updated_in_active_builders": False,
+            "post_adoption_received_snapshot_reconcile_id": "",
+            "post_adoption_readiness_re_evaluated": False,
+        }
+
+    blocker_refs = dedupe_identifiers(blockers, limit=40, max_length=180)
+    followups = dedupe_identifiers(
+        [
+            *blocker_refs,
+            "received_snapshot_baseline_fingerprint_reconcile_required" if not ready else "",
+            "received_snapshot_baseline_adoption_decision_required" if (not ready and not post_adoption_reconcile) else "",
+            "official_group_02_capture_blocked_until_received_snapshot_adoption" if not ready else "",
+            "group_02_official_full_run_not_executed" if ready else "",
+            "full_backend_suite_green_unconfirmed",
+        ],
+        limit=80,
+        max_length=180,
+    )
+
+    material = {
+        "schema_version": schema_version,
+        "phase": P7_PHASE,
+        "step": step,
+        "implementation_step": step,
+        "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
+        "readiness_id": readiness_id,
+        "received_reconcile_schema_version": received_reconcile_schema_version,
+        "received_reconcile_id": received_reconcile_id,
+        "received_adoption_decision_schema_version": adoption_decision_schema_version,
+        "received_adoption_decision_id": adoption_decision_id,
+        "adoption_rule_id": rule_material.get("adoption_rule_id"),
+        "collect_baseline_id": rule_material.get("collect_baseline_id"),
+        "inventory_id": rule_material.get("inventory_id"),
+        "plan_id": rule_material.get("plan_id"),
+        "source_mode": P7_SOURCE_MODE,
+        "source_snapshot_ref": P7_HOLD004_BACKEND_R4_R5_SOURCE_SNAPSHOT_REF,
+        "git_checked": P7_GIT_CHECKED,
+        **_current_baseline_boundary_fields(execution_summary_id=P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_ID),
+        **refresh_fields,
+        "readiness_status": readiness_status,
+        "blocker_refs": blocker_refs,
+        "received_snapshot_baseline_fingerprint_reconciled": bool(
+            reconcile_material.get("received_snapshot_baseline_fingerprint_reconciled") is True
+        ),
+        "received_snapshot_item_fingerprint_mismatch_unresolved": bool(
+            reconcile_material.get("received_snapshot_item_fingerprint_mismatch_unresolved") is True
+        ),
+        "source_snapshot_ref_current_for_received_zip": bool(
+            reconcile_material.get("source_snapshot_ref_current_for_received_zip") is True
+        ),
+        "active_baseline_accepts_received_nodeids": bool(
+            reconcile_material.get("active_baseline_accepts_received_nodeids") is True
+        ),
+        "group_id": P7_HOLD004_GROUP02_OFFICIAL_GROUP_ID,
+        "batch_id": P7_HOLD004_GROUP02_OFFICIAL_BATCH_ID,
+        "expected_group_file_count": rule_material.get("expected_group_file_count"),
+        "expected_group_test_item_count": rule_material.get("expected_group_test_item_count"),
+        "expected_warning_count": rule_material.get("expected_warning_count"),
+        "expected_timeout_budget_sec": rule_material.get("expected_timeout_budget_sec"),
+        "official_capture_run_allowed": ready,
+        "official_capture_result_recording_allowed": ready,
+        "official_group_02_capture_blocked": not ready,
+        "official_group_02_capture_green_confirmed": False,
+        "can_claim_group_green": False,
+        "can_claim_full_backend_suite_green": False,
+        **_release_closed_boundary(),
+        "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
+        "required_followup_fixes": followups,
+        "terminal_output_retained": False,
+        "stdout_retained": False,
+        "stderr_retained": False,
+        "raw_traceback_included": False,
+        "public_contract": _public_contract_boundary_flags(),
+        "body_free_markers": body_free_flags(include_history=True, include_reviewer=True, include_terminal=True),
+        "body_free": True,
+    }
+    assert_p7_hold004_official_group02_capture_readiness_contract(material)
+    return material
+
+
+def assert_p7_hold004_official_group02_capture_readiness_contract(material: Mapping[str, Any]) -> bool:
+    """Validate the R25 official group_02 readiness guard material."""
+
+    data = safe_mapping(material)
+    source = "p7_hold004_official_group02_capture_readiness"
+    schema_version = clean_identifier(data.get("schema_version"), max_length=160)
+    if schema_version not in P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS:
+        raise ValueError("P7-HOLD-004 official group_02 readiness schema_version changed")
+    after_refresh = schema_version == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 official group_02 readiness scope changed")
+    expected_step = (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_STEP
+        if after_refresh
+        else P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STEP
+    )
+    expected_id = (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_ID
+        if after_refresh
+        else P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ID
+    )
+    if data.get("implementation_step") != expected_step:
+        raise ValueError("P7-HOLD-004 official group_02 readiness implementation_step changed")
+    if data.get("readiness_id") != expected_id:
+        raise ValueError("P7-HOLD-004 official group_02 readiness id changed")
+    if after_refresh:
+        if data.get("received_reconcile_schema_version") != P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION:
+            raise ValueError("P7-HOLD-004 after-refresh readiness received reconcile schema mismatch")
+        if data.get("received_reconcile_id") != P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID:
+            raise ValueError("P7-HOLD-004 after-refresh readiness received reconcile id mismatch")
+        if data.get("received_adoption_decision_schema_version") != "" or data.get("received_adoption_decision_id") != "":
+            raise ValueError("P7-HOLD-004 after-refresh readiness must not pretend to use historical adoption decision")
+        if data.get("active_baseline_refresh_schema_version") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION:
+            raise ValueError("P7-HOLD-004 after-refresh readiness runtime refresh schema mismatch")
+        if data.get("runtime_builder_refresh_status_id") != P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID:
+            raise ValueError("P7-HOLD-004 after-refresh readiness runtime refresh id mismatch")
+        if data.get("active_baseline_refresh_id") != P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID:
+            raise ValueError("P7-HOLD-004 after-refresh readiness active refresh id mismatch")
+        for key in (
+            "active_baseline_update_applied_to_runtime_builders",
+            "source_snapshot_ref_updated_in_active_builders",
+            "post_adoption_readiness_re_evaluated",
+        ):
+            if data.get(key) is not True:
+                raise ValueError(f"P7-HOLD-004 after-refresh readiness must keep {key}=true")
+    else:
+        if data.get("received_reconcile_schema_version") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION:
+            raise ValueError("P7-HOLD-004 official group_02 readiness received reconcile schema mismatch")
+        if data.get("received_reconcile_id") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID:
+            raise ValueError("P7-HOLD-004 official group_02 readiness received reconcile id mismatch")
+        if data.get("received_adoption_decision_schema_version") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_SCHEMA_VERSION:
+            raise ValueError("P7-HOLD-004 official group_02 readiness adoption schema mismatch")
+        if data.get("received_adoption_decision_id") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID:
+            raise ValueError("P7-HOLD-004 official group_02 readiness adoption id mismatch")
+    if data.get("adoption_rule_id") != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_ID:
+        raise ValueError("P7-HOLD-004 official group_02 readiness rule id mismatch")
+    if data.get("group_id") != P7_HOLD004_GROUP02_OFFICIAL_GROUP_ID or data.get("batch_id") != P7_HOLD004_GROUP02_OFFICIAL_BATCH_ID:
+        raise ValueError("P7-HOLD-004 official group_02 readiness target changed")
+    if data.get("expected_group_file_count") != P7_HOLD004_GROUP02_OFFICIAL_FILE_COUNT:
+        raise ValueError("P7-HOLD-004 official group_02 readiness file count changed")
+    if data.get("expected_group_test_item_count") != P7_HOLD004_GROUP02_OFFICIAL_TEST_ITEM_COUNT:
+        raise ValueError("P7-HOLD-004 official group_02 readiness test item count changed")
+    if data.get("expected_warning_count") != P7_HOLD004_GROUP02_OFFICIAL_WARNINGS_COUNT:
+        raise ValueError("P7-HOLD-004 official group_02 readiness warning count changed")
+    status = clean_identifier(data.get("readiness_status"), max_length=160)
+    if status not in P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_STATUSES:
+        raise ValueError("P7-HOLD-004 official group_02 readiness status changed")
+    ready = status == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY
+    if data.get("official_capture_run_allowed") is not ready:
+        raise ValueError("P7-HOLD-004 official group_02 readiness run_allowed mismatch")
+    if data.get("official_capture_result_recording_allowed") is not ready:
+        raise ValueError("P7-HOLD-004 official group_02 readiness result_recording_allowed mismatch")
+    if data.get("official_group_02_capture_blocked") is not (not ready):
+        raise ValueError("P7-HOLD-004 official group_02 readiness blocked flag mismatch")
+    blockers = dedupe_identifiers(data.get("blocker_refs"), limit=40, max_length=180)
+    if not ready and not blockers:
+        raise ValueError("P7-HOLD-004 blocked readiness must keep blocker refs")
+    if ready and blockers:
+        raise ValueError("P7-HOLD-004 ready capture must not keep blocker refs")
+    if data.get("received_snapshot_item_fingerprint_mismatch_unresolved") is True:
+        if status != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH:
+            raise ValueError("P7-HOLD-004 unresolved item mismatch must block official capture")
+        if P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF not in blockers:
+            raise ValueError("P7-HOLD-004 unresolved item mismatch blocker missing")
+    if after_refresh:
+        if status != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY:
+            raise ValueError("P7-HOLD-004 after-refresh readiness must be READY")
+        for key in (
+            "received_snapshot_baseline_fingerprint_reconciled",
+            "source_snapshot_ref_current_for_received_zip",
+            "active_baseline_accepts_received_nodeids",
+        ):
+            if data.get(key) is not True:
+                raise ValueError(f"P7-HOLD-004 after-refresh readiness must keep {key}=true")
+        for key in (
+            "received_snapshot_item_fingerprint_mismatch_unresolved",
+            "official_group_02_capture_blocked",
+            "official_group_02_capture_green_confirmed",
+            "full_backend_suite_green_confirmed",
+            "hold004_close_allowed",
+            "p7_complete",
+            "p8_start_allowed",
+            "release_allowed",
+        ):
+            if data.get(key) is not False:
+                raise ValueError(f"P7-HOLD-004 after-refresh readiness must keep {key}=false")
+        followups = set(dedupe_identifiers(data.get("required_followup_fixes"), limit=80, max_length=180))
+        if "group_02_official_full_run_not_executed" not in followups:
+            raise ValueError("P7-HOLD-004 after-refresh readiness must keep group_02 run followup")
+        if "full_backend_suite_green_unconfirmed" not in followups:
+            raise ValueError("P7-HOLD-004 after-refresh readiness must keep full backend suite followup")
+    if data.get("can_claim_group_green") is not False or data.get("can_claim_full_backend_suite_green") is not False:
+        raise ValueError("P7-HOLD-004 readiness guard must not claim green")
+    for forbidden_flag in ("raw_traceback_included", "terminal_output_retained", "stdout_retained", "stderr_retained"):
+        if data.get(forbidden_flag) is not False:
+            raise ValueError(f"P7-HOLD-004 readiness guard must keep {forbidden_flag}=false")
+    _assert_common_release_closed_and_body_free(data, source=source)
+    return True
+
+
 def _official_group02_decision_status_from_result(
     *,
     result: Mapping[str, Any],
@@ -1349,15 +1893,38 @@ def build_p7_hold004_official_group02_capture_adoption_decision(
     run_result: Mapping[str, Any] | None = None,
     collect_only_test_item_count: Any = P7_HOLD004_GROUP02_OFFICIAL_TEST_ITEM_COUNT,
     rule: Mapping[str, Any] | None = None,
+    readiness: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build an R19 decision for whether a group_02 result may be official."""
+    """Build an R19/R25 decision for whether a group_02 result may be official."""
 
     rule_material = safe_mapping(rule) if rule is not None else build_p7_hold004_official_group02_capture_adoption_rule()
     assert_p7_hold004_official_group02_capture_adoption_rule_contract(rule_material)
+    readiness_material = (
+        safe_mapping(readiness)
+        if readiness is not None
+        else build_p7_hold004_official_group02_capture_readiness(adoption_rule=rule_material)
+    )
+    assert_p7_hold004_official_group02_capture_readiness_contract(readiness_material)
+
     collect_count = _coerce_non_negative_int(collect_only_test_item_count, default=0)
     result = safe_mapping(run_result)
     result_present = bool(result)
-    if not result_present:
+    status = _normalize_status_identifier(result.get("status")) if result_present else ""
+    counts = _observed_counts(safe_mapping(result.get("observed_counts"))) if result_present else _observed_counts({})
+
+    readiness_status = clean_identifier(readiness_material.get("readiness_status"), max_length=160)
+    if readiness_status != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY:
+        adoption_status = P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+        blockers = dedupe_identifiers(
+            [
+                P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_GUARD_BLOCKER_REF,
+                *readiness_material.get("blocker_refs", []),
+                "official_group_02_capture_run_not_recorded" if not result_present else "",
+            ],
+            limit=60,
+            max_length=180,
+        )
+    elif not result_present:
         adoption_status = P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED
         blockers = ["official_group_02_capture_run_not_recorded"]
     else:
@@ -1368,11 +1935,12 @@ def build_p7_hold004_official_group02_capture_adoption_decision(
 
     recordable = adoption_status in P7_HOLD004_OFFICIAL_CAPTURE_RECORDABLE_ADOPTION_STATUSES
     green = adoption_status == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_GREEN
-    status = _normalize_status_identifier(result.get("status")) if result_present else ""
-    counts = _observed_counts(safe_mapping(result.get("observed_counts"))) if result_present else _observed_counts({})
     followups = ["full_backend_suite_green_unconfirmed"]
     if blockers:
         followups.extend(blockers)
+    if readiness_status != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY:
+        followups.extend(readiness_material.get("required_followup_fixes", []))
+        followups.append("official_group_02_capture_blocked_until_received_snapshot_adoption")
     if adoption_status == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_RED:
         followups.append("first_red_classification_required")
     if adoption_status == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_TIMEOUT:
@@ -1389,6 +1957,13 @@ def build_p7_hold004_official_group02_capture_adoption_decision(
         "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
         "adoption_rule_id": P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_ID,
         "decision_id": P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_DECISION_ID,
+        "official_capture_readiness_schema_version": P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION,
+        "official_capture_readiness_id": readiness_material.get("readiness_id"),
+        "official_capture_readiness_status": readiness_status,
+        "received_reconcile_schema_version": readiness_material.get("received_reconcile_schema_version"),
+        "received_reconcile_id": readiness_material.get("received_reconcile_id"),
+        "received_adoption_decision_schema_version": readiness_material.get("received_adoption_decision_schema_version"),
+        "received_adoption_decision_id": readiness_material.get("received_adoption_decision_id"),
         "collect_baseline_id": rule_material.get("collect_baseline_id"),
         "inventory_id": rule_material.get("inventory_id"),
         "plan_id": rule_material.get("plan_id"),
@@ -1405,7 +1980,13 @@ def build_p7_hold004_official_group02_capture_adoption_decision(
         "run_result_status": status,
         "run_result_observed_counts": counts,
         "adoption_status": adoption_status,
-        "adoption_blockers": dedupe_identifiers(blockers, limit=40, max_length=180),
+        "adoption_blockers": dedupe_identifiers(blockers, limit=60, max_length=180),
+        "official_capture_run_allowed": readiness_material.get("official_capture_run_allowed") is True,
+        "official_capture_result_recording_allowed": readiness_material.get("official_capture_result_recording_allowed") is True,
+        "official_group_02_capture_blocked": readiness_material.get("official_group_02_capture_blocked") is True,
+        "received_snapshot_baseline_fingerprint_reconciled": readiness_material.get("received_snapshot_baseline_fingerprint_reconciled") is True,
+        "received_snapshot_item_fingerprint_mismatch_unresolved": readiness_material.get("received_snapshot_item_fingerprint_mismatch_unresolved") is True,
+        "received_snapshot_blocker_refs": dedupe_identifiers(readiness_material.get("blocker_refs"), limit=60, max_length=180),
         "official_capture_material_recordable": recordable,
         "official_group_02_capture_recorded": recordable,
         "official_group_02_capture_green_confirmed": green,
@@ -1423,7 +2004,7 @@ def build_p7_hold004_official_group02_capture_adoption_decision(
         "stderr_retained": False,
         **_release_closed_boundary(),
         "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
-        "required_followup_fixes": dedupe_identifiers(followups, limit=120, max_length=180),
+        "required_followup_fixes": dedupe_identifiers(followups, limit=140, max_length=180),
         "public_contract": _public_contract_boundary_flags(),
         "body_free_markers": body_free_flags(include_history=True, include_reviewer=True, include_terminal=True),
         "body_free": True,
@@ -1518,6 +2099,191 @@ def assert_p7_hold004_official_group02_capture_adoption_decision_contract(materi
     for forbidden_flag in ("raw_traceback_included", "terminal_output_retained", "stdout_retained", "stderr_retained"):
         if data.get(forbidden_flag) is not False:
             raise ValueError(f"P7-HOLD-004 official group_02 adoption decision must keep {forbidden_flag}=false")
+    _assert_common_release_closed_and_body_free(data, source=source)
+    return True
+
+
+def build_p7_hold004_group02_timeout_classification_plan(
+    *,
+    readiness: Mapping[str, Any] | None = None,
+    attempt_120_sec_completed: Any = False,
+    attempt_240_sec_completed: Any = False,
+) -> dict[str, Any]:
+    """Build the R28 body-free timeout/long-run policy for group_02.
+
+    The plan is recordable even while the R25 readiness guard is blocked, but
+    it does not authorize an official capture run until readiness becomes READY.
+    A timeout is neither green nor an immediate failure; it is routed to timeout
+    classification without retaining terminal output.
+    """
+
+    readiness_material = safe_mapping(readiness) if readiness is not None else build_p7_hold004_official_group02_capture_readiness()
+    assert_p7_hold004_official_group02_capture_readiness_contract(readiness_material)
+    readiness_status = clean_identifier(readiness_material.get("readiness_status"), max_length=160)
+    readiness_ready = readiness_status == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY
+    blocker_refs = dedupe_identifiers(readiness_material.get("blocker_refs"), limit=60, max_length=180)
+
+    material = {
+        "schema_version": P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION,
+        "phase": P7_PHASE,
+        "step": P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP,
+        "implementation_step": P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP,
+        "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
+        "plan_id": P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_ID,
+        "official_capture_readiness_schema_version": P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION,
+        "official_capture_readiness_id": readiness_material.get("readiness_id"),
+        "official_capture_readiness_status": readiness_status,
+        "readiness_blocker_refs": blocker_refs,
+        "source_mode": P7_SOURCE_MODE,
+        "source_snapshot_ref": P7_HOLD004_BACKEND_R4_R5_SOURCE_SNAPSHOT_REF,
+        "git_checked": P7_GIT_CHECKED,
+        "group_id": P7_HOLD004_GROUP02_OFFICIAL_GROUP_ID,
+        "batch_id": P7_HOLD004_GROUP02_OFFICIAL_BATCH_ID,
+        "timeout_budget_sec": 120,
+        "long_run_probe_budget_sec": 240,
+        "official_capture_run_allowed": readiness_ready,
+        "official_capture_result_recording_allowed": readiness_ready,
+        "official_capture_blocked_until_readiness_ready": not readiness_ready,
+        "prior_local_attempts": {
+            "attempt_120_sec_completed": _coerce_bool(attempt_120_sec_completed),
+            "attempt_240_sec_completed": _coerce_bool(attempt_240_sec_completed),
+            "official_green_confirmed": False,
+        },
+        "timeout_result_policy": {
+            "timeout_is_green": False,
+            "timeout_is_immediate_fail": False,
+            "timeout_classification_required": True,
+            "timeout_material_body_free_required": True,
+            "batch_split_requires_new_design": True,
+            "batch_green_is_group_green": False,
+            "collect_only_is_not_execution_green": True,
+            "readiness_guard_required_before_official_capture_run": True,
+        },
+        "timeout_material_allowed_after_readiness_ready": readiness_ready,
+        "can_claim_group_green": False,
+        "can_claim_full_backend_suite_green": False,
+        "full_backend_suite_green_confirmed": False,
+        "hold004_close_allowed": False,
+        "p7_complete": False,
+        "p8_start_allowed": False,
+        "release_allowed": False,
+        "terminal_output_retained": False,
+        "stdout_retained": False,
+        "stderr_retained": False,
+        "raw_traceback_included": False,
+        **_release_closed_boundary(),
+        "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
+        "required_followup_fixes": dedupe_identifiers(
+            [
+                *blocker_refs,
+                "official_group_02_capture_blocked_until_received_snapshot_adoption"
+                if not readiness_ready
+                else "",
+                "group_02_timeout_classification_required_when_timeout_occurs",
+                "group_02_long_run_or_batch_split_requires_separate_design",
+                "full_backend_suite_green_unconfirmed",
+            ],
+            limit=100,
+            max_length=180,
+        ),
+        "public_contract": _public_contract_boundary_flags(),
+        "body_free_markers": body_free_flags(include_history=True, include_reviewer=True, include_terminal=True),
+        "body_free": True,
+    }
+    assert_p7_hold004_group02_timeout_classification_plan_contract(material)
+    return material
+
+
+def assert_p7_hold004_group02_timeout_classification_plan_contract(material: Mapping[str, Any]) -> bool:
+    """Validate the R28 group_02 timeout/long-run classification plan."""
+
+    data = safe_mapping(material)
+    source = "p7_hold004_group02_timeout_classification_plan"
+    if data.get("schema_version") != P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan schema_version changed")
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan scope changed")
+    if data.get("implementation_step") != P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan implementation_step changed")
+    if data.get("plan_id") != P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_ID:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan id changed")
+    if data.get("official_capture_readiness_schema_version") != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan readiness schema mismatch")
+    if data.get("official_capture_readiness_id") != P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ID:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan readiness id mismatch")
+    readiness_status = clean_identifier(data.get("official_capture_readiness_status"), max_length=160)
+    if readiness_status not in P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_STATUSES:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan readiness status invalid")
+    readiness_ready = readiness_status == P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY
+    if data.get("official_capture_run_allowed") is not readiness_ready:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan official run allowed mismatch")
+    if data.get("official_capture_result_recording_allowed") is not readiness_ready:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan official result recording mismatch")
+    if data.get("official_capture_blocked_until_readiness_ready") is not (not readiness_ready):
+        raise ValueError("P7-HOLD-004 group_02 timeout plan readiness blocker mismatch")
+    blockers = dedupe_identifiers(data.get("readiness_blocker_refs"), limit=60, max_length=180)
+    if readiness_ready and blockers:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan ready state must not keep blockers")
+    if not readiness_ready and not blockers:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan blocked state must keep readiness blockers")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("source_snapshot_ref") != P7_HOLD004_BACKEND_R4_R5_SOURCE_SNAPSHOT_REF:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan source snapshot changed")
+    if data.get("git_checked") is not False:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan must not claim GitHub verification")
+    if data.get("group_id") != P7_HOLD004_GROUP02_OFFICIAL_GROUP_ID:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan group changed")
+    if data.get("batch_id") != P7_HOLD004_GROUP02_OFFICIAL_BATCH_ID:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan batch changed")
+    if data.get("timeout_budget_sec") != 120 or data.get("long_run_probe_budget_sec") != 240:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan budgets changed")
+
+    attempts = safe_mapping(data.get("prior_local_attempts"))
+    if set(attempts) != {"attempt_120_sec_completed", "attempt_240_sec_completed", "official_green_confirmed"}:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan prior attempt keys changed")
+    for key in ("attempt_120_sec_completed", "attempt_240_sec_completed", "official_green_confirmed"):
+        if not isinstance(attempts.get(key), bool):
+            raise ValueError(f"P7-HOLD-004 group_02 timeout prior attempt {key} must be bool")
+    if attempts.get("official_green_confirmed") is not False:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan must not claim official green")
+
+    policy = safe_mapping(data.get("timeout_result_policy"))
+    expected_policy = {
+        "timeout_is_green": False,
+        "timeout_is_immediate_fail": False,
+        "timeout_classification_required": True,
+        "timeout_material_body_free_required": True,
+        "batch_split_requires_new_design": True,
+        "batch_green_is_group_green": False,
+        "collect_only_is_not_execution_green": True,
+        "readiness_guard_required_before_official_capture_run": True,
+    }
+    if set(policy) != set(expected_policy):
+        raise ValueError("P7-HOLD-004 group_02 timeout policy keys changed")
+    for key, expected in expected_policy.items():
+        if policy.get(key) is not expected:
+            raise ValueError(f"P7-HOLD-004 group_02 timeout policy {key} mismatch")
+    if data.get("timeout_material_allowed_after_readiness_ready") is not readiness_ready:
+        raise ValueError("P7-HOLD-004 group_02 timeout material allowance mismatch")
+    for key in (
+        "can_claim_group_green",
+        "can_claim_full_backend_suite_green",
+        "full_backend_suite_green_confirmed",
+        "hold004_close_allowed",
+        "p7_complete",
+        "p8_start_allowed",
+        "release_allowed",
+        "terminal_output_retained",
+        "stdout_retained",
+        "stderr_retained",
+        "raw_traceback_included",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 group_02 timeout plan must keep {key}=false")
+    followups = set(dedupe_identifiers(data.get("required_followup_fixes"), limit=100, max_length=180))
+    if "group_02_timeout_classification_required_when_timeout_occurs" not in followups:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan must keep timeout classification followup")
+    if "group_02_long_run_or_batch_split_requires_separate_design" not in followups:
+        raise ValueError("P7-HOLD-004 group_02 timeout plan must keep split design followup")
     _assert_common_release_closed_and_body_free(data, source=source)
     return True
 
@@ -1725,7 +2491,11 @@ __all__ = [
     "P7_HOLD004_GROUP02_OFFICIAL_GROUP_ID",
     "P7_HOLD004_GROUP02_OFFICIAL_TEST_ITEM_COUNT",
     "P7_HOLD004_GROUP02_OFFICIAL_WARNINGS_COUNT",
+    "P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_ID",
+    "P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION",
+    "P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP",
     "P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED",
+    "P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD",
     "P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_GREEN",
     "P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_COLLECTION_FAILED",
     "P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_INTERRUPTED",
@@ -1741,14 +2511,35 @@ __all__ = [
     "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_ID",
     "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_RULE_SCHEMA_VERSION",
     "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_ADOPTION_STEP",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_SCHEMA_VERSION_V2",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ALLOWED_SCHEMA_VERSIONS",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_ID",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_ID",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STEP",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_AFTER_REFRESH_STEP",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_READY",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_SOURCE_IDENTITY_BLOCKER_REF",
+    "P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_GUARD_BLOCKER_REF",
+    "P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_SCHEMA_VERSION",
+    "P7_HOLD004_POST_ADOPTION_RECEIVED_SNAPSHOT_RECONCILE_ID",
+    "P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_SCHEMA_VERSION",
+    "P7_HOLD004_RUNTIME_BUILDER_REFRESH_STATUS_ID",
+    "P7_HOLD004_ACTIVE_BASELINE_REFRESH_ID",
     "assert_p7_hold004_backend_suite_execution_summary_contract",
+    "assert_p7_hold004_group02_timeout_classification_plan_contract",
     "assert_p7_hold004_official_group02_capture_adoption_decision_contract",
     "assert_p7_hold004_official_group02_capture_adoption_rule_contract",
+    "assert_p7_hold004_official_group02_capture_readiness_contract",
     "assert_p7_hold004_backend_suite_group_run_result_contract",
     "build_p7_hold004_backend_suite_execution_summary",
     "build_p7_hold004_backend_suite_group_run_result",
     "build_p7_hold004_current_backend_suite_execution_summary",
+    "build_p7_hold004_group02_timeout_classification_plan",
     "build_p7_hold004_official_group02_capture_adoption_decision",
     "build_p7_hold004_official_group02_capture_adoption_rule",
+    "build_p7_hold004_official_group02_capture_readiness",
     "normalize_p7_hold004_backend_suite_group_run_status",
 ]

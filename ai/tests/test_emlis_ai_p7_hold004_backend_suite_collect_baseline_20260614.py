@@ -31,6 +31,8 @@ from emlis_ai_p7_hold004_current_snapshot_baseline_reconcile import (
     build_p7_hold004_current_snapshot_baseline_reconcile,
 )
 from emlis_ai_p7_hold004_received_snapshot_baseline_fingerprint_reconcile import (
+    P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH,
+    P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN,
     P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT,
     P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH,
     P7_HOLD004_RECEIVED_COLLECT_COMMAND_ID,
@@ -39,20 +41,32 @@ from emlis_ai_p7_hold004_received_snapshot_baseline_fingerprint_reconcile import
     P7_HOLD004_RECEIVED_COLLECTED_TEST_ITEM_COUNT,
     P7_HOLD004_RECEIVED_RECONCILE_STATUS_ITEM_FINGERPRINT_MISMATCH_UNCLASSIFIED,
     P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUS_UNCLASSIFIED,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP,
     P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_SCHEMA_VERSION,
     P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION,
     P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_STEP,
     P7_HOLD004_RECEIVED_SNAPSHOT_COLLECT_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION,
+    P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP,
+    P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION,
+    P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP,
     P7_HOLD004_RECEIVED_SNAPSHOT_SCOPE_FREEZE_SCHEMA_VERSION,
     P7_HOLD004_RECEIVED_TEST_FILES_FINGERPRINT_SHA256,
     P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256,
     P7_HOLD004_RECEIVED_ZIP_REF,
+    assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract,
     assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract,
     assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract,
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract,
+    assert_p7_hold004_received_snapshot_r29_verification_procedure_contract,
     assert_p7_hold004_received_snapshot_collect_summary_contract,
     assert_p7_hold004_received_snapshot_scope_freeze_contract,
+    build_p7_hold004_received_snapshot_adoption_evidence_freeze,
     build_p7_hold004_received_snapshot_baseline_adoption_decision,
     build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile,
+    build_p7_hold004_received_snapshot_conditional_active_baseline_adoption,
+    build_p7_hold004_received_snapshot_r29_verification_procedure,
     build_p7_hold004_received_snapshot_collect_summary,
     build_p7_hold004_received_snapshot_scope_freeze,
 )
@@ -238,9 +252,9 @@ def test_r1_collect_baseline_records_current_collect_only_counts_and_fingerprint
     assert material["implementation_step"] == P7_HOLD004_BACKEND_COLLECT_BASELINE_STEP
     assert material["hold_id"] == "P7-HOLD-004"
     assert material["baseline_id"] == P7_HOLD004_BACKEND_COLLECT_BASELINE_ID
-    assert P7_HOLD004_BACKEND_COLLECT_BASELINE_ID == "p7_hold004_backend_collect_baseline_20260615"
+    assert P7_HOLD004_BACKEND_COLLECT_BASELINE_ID == "p7_hold004_backend_collect_baseline_20260615_received_148"
     assert material["source_mode"] == "local_snapshot"
-    assert material["source_snapshot_ref"] == "mashos-api(147).zip"
+    assert material["source_snapshot_ref"] == "mashos-api(148).zip"
     assert material["git_checked"] is False
     assert material["collect_command_id"] == P7_HOLD004_BACKEND_COLLECT_COMMAND_ID
     assert P7_HOLD004_BACKEND_COLLECT_COMMAND_ID == "pytest_collect_only_backend_20260615"
@@ -251,7 +265,7 @@ def test_r1_collect_baseline_records_current_collect_only_counts_and_fingerprint
     assert material["test_items_fingerprint_sha256"] == P7_HOLD004_CURRENT_TEST_ITEMS_FINGERPRINT_SHA256
     assert material["test_files_fingerprint_sha256"] == P7_HOLD004_CURRENT_TEST_FILES_FINGERPRINT_SHA256
     assert P7_HOLD004_CURRENT_TEST_ITEMS_FINGERPRINT_SHA256 == (
-        "fee1eca805564d0840dc5b23f60a7e2d6c7297d658a76dc4ce175e0137c261f1"
+        "4698ce5240707f71fc3678a0153a15626ba9718fbadad83294e57d11946c2e0d"
     )
     assert P7_HOLD004_CURRENT_TEST_FILES_FINGERPRINT_SHA256 == (
         "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
@@ -333,6 +347,8 @@ def test_r1_collect_summary_from_nodeids_keeps_only_counts_and_fingerprints() ->
     assert received_scope["implementation_scope"]["r22_received_collect_summary_body_free_added"] is True
     assert received_scope["implementation_scope"]["r23_reconcile_material_added"] is True
     assert received_scope["implementation_scope"]["r24_adoption_decision_added"] is True
+    assert received_scope["implementation_scope"]["r25_official_group02_readiness_guard_added"] is True
+    assert received_scope["implementation_scope"]["r26_matrix_handoff_validation_connected"] is True
     assert received_scope["implementation_scope"]["active_baseline_change_allowed"] is False
     assert received_scope["full_backend_suite_green_confirmed"] is False
     assert received_scope["hold004_close_allowed"] is False
@@ -544,6 +560,342 @@ def test_r1_collect_summary_from_nodeids_keeps_only_counts_and_fingerprints() ->
         received_adoption,
         source="r24_received_snapshot_baseline_adoption_decision_test",
     )
+
+    conditional_adoption = build_p7_hold004_received_snapshot_conditional_active_baseline_adoption(
+        received_snapshot_reconcile=received_reconcile,
+        adoption_decision=received_adoption,
+    )
+    assert conditional_adoption["schema_version"] == (
+        P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION
+    )
+    assert conditional_adoption["step"] == P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP
+    assert conditional_adoption["hold_id"] == "P7-HOLD-004"
+    assert conditional_adoption["received_zip_ref"] == "mashos-api(148).zip"
+    assert conditional_adoption["previous_active_baseline"]["baseline_id"] == (
+        "p7_hold004_backend_collect_baseline_20260615"
+    )
+    assert conditional_adoption["candidate_active_baseline"]["baseline_id"] == (
+        "p7_hold004_backend_collect_baseline_20260615_received_148"
+    )
+    assert conditional_adoption["candidate_active_baseline"]["source_snapshot_ref"] == "mashos-api(148).zip"
+    assert conditional_adoption["candidate_active_baseline"]["test_items_fingerprint_sha256"] == (
+        "4698ce5240707f71fc3678a0153a15626ba9718fbadad83294e57d11946c2e0d"
+    )
+    assert conditional_adoption["candidate_active_baseline"]["test_files_fingerprint_sha256"] == (
+        "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
+    )
+    assert conditional_adoption["adoption_status"] == (
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert conditional_adoption["adoption_conditions"]["root_cause_classified"] is False
+    assert conditional_adoption["adoption_conditions"]["repeated_collect_stable"] is False
+    assert conditional_adoption["active_baseline_adoption_ready"] is False
+    assert conditional_adoption["active_baseline_update_allowed"] is False
+    assert conditional_adoption["active_baseline_update_applied_to_runtime_builders"] is False
+    assert conditional_adoption["source_snapshot_ref_update_allowed"] is False
+    assert conditional_adoption["received_zip_promoted_to_source_snapshot_ref"] is False
+    assert conditional_adoption["official_group_02_capture_blocked_until_adopted"] is True
+    assert conditional_adoption["official_group_02_capture_run_allowed"] is False
+    assert conditional_adoption["official_group_02_capture_result_recording_allowed"] is False
+    assert conditional_adoption["full_backend_suite_green_confirmed"] is False
+    assert conditional_adoption["hold004_close_allowed"] is False
+    assert conditional_adoption["p7_complete"] is False
+    assert conditional_adoption["p8_start_allowed"] is False
+    assert conditional_adoption["release_allowed"] is False
+    assert "received_snapshot_item_fingerprint_root_cause_classification_required" in conditional_adoption[
+        "required_followup_fixes"
+    ]
+    assert "active_baseline_refresh_not_applied_to_runtime_builders" in conditional_adoption[
+        "required_followup_fixes"
+    ]
+    assert all(value is False for value in conditional_adoption["public_contract"].values())
+    assert all(value is False for value in conditional_adoption["body_free_markers"].values())
+    assert conditional_adoption["body_free"] is True
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(conditional_adoption)
+    assert_p7_no_body_payload_or_contract_mutation(
+        conditional_adoption,
+        source="r27_conditional_active_baseline_adoption_test",
+    )
+    assert conditional_adoption["adoption_conditions"]["adoption_evidence_freeze_satisfied"] is False
+    assert conditional_adoption["adoption_evidence_freeze_satisfied"] is False
+    assert conditional_adoption["r27_manual_boolean_only_adoption_ready_allowed"] is False
+    assert "received_snapshot_adoption_evidence_freeze_required" in conditional_adoption[
+        "required_followup_fixes"
+    ]
+
+    adoption_evidence_default = build_p7_hold004_received_snapshot_adoption_evidence_freeze(
+        received_snapshot_reconcile=received_reconcile,
+    )
+    assert adoption_evidence_default["schema_version"] == (
+        P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION
+    )
+    assert adoption_evidence_default["step"] == P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP
+    assert adoption_evidence_default["hold_id"] == "P7-HOLD-004"
+    assert adoption_evidence_default["received_zip_ref"] == "mashos-api(148).zip"
+    assert adoption_evidence_default["evidence_status"] == "BLOCKED_ADOPTION_EVIDENCE_UNVERIFIED"
+    assert adoption_evidence_default["can_mark_r27_conditions_satisfied"] is False
+    assert adoption_evidence_default["repeat_collect_evidence"]["provided_collect_run_count"] == 0
+    assert adoption_evidence_default["repeat_collect_evidence"]["satisfied"] is False
+    assert adoption_evidence_default["root_cause_evidence"]["root_cause_status"] == "UNCLASSIFIED"
+    assert adoption_evidence_default["root_cause_evidence"]["satisfied"] is False
+    assert adoption_evidence_default["source_identity_evidence"]["satisfied"] is False
+    assert adoption_evidence_default["test_semantics_evidence"]["test_semantics_review_outcome"] == "NOT_REVIEWED"
+    assert adoption_evidence_default["test_semantics_evidence"]["satisfied"] is False
+    assert adoption_evidence_default["post_adoption_connection_plan_evidence"][
+        "active_baseline_update_applied_to_runtime_builders"
+    ] is False
+    assert adoption_evidence_default["post_adoption_connection_plan_evidence"][
+        "source_snapshot_ref_updated_in_active_builders"
+    ] is False
+    assert adoption_evidence_default["r27_manual_boolean_only_adoption_ready_allowed"] is False
+    assert adoption_evidence_default["active_baseline_update_allowed"] is False
+    assert adoption_evidence_default["official_group_02_capture_run_allowed"] is False
+    assert adoption_evidence_default["release_allowed"] is False
+    assert all(value is False for value in adoption_evidence_default["public_contract"].values())
+    assert all(value is False for value in adoption_evidence_default["body_free_markers"].values())
+    assert adoption_evidence_default["body_free"] is True
+    assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(adoption_evidence_default)
+    assert_p7_no_body_payload_or_contract_mutation(
+        adoption_evidence_default,
+        source="pre_r29_received_snapshot_adoption_evidence_freeze_default_test",
+    )
+
+    manual_boolean_only_material = build_p7_hold004_received_snapshot_conditional_active_baseline_adoption(
+        received_snapshot_reconcile=received_reconcile,
+        adoption_decision=received_adoption,
+        repeated_collect_stable=True,
+        root_cause_status="BASELINE_CONSTANT_STALE",
+        source_identity_decision_recorded=True,
+        source_identity_accepted=True,
+        test_semantics_reviewed=True,
+        baseline_id_or_revision_update_planned=True,
+    )
+    assert manual_boolean_only_material["adoption_status"] == (
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN
+    )
+    assert manual_boolean_only_material["adoption_conditions"]["adoption_evidence_freeze_satisfied"] is False
+    assert manual_boolean_only_material["active_baseline_adoption_ready"] is False
+    assert manual_boolean_only_material["active_baseline_update_allowed"] is False
+    assert manual_boolean_only_material["source_snapshot_ref_update_allowed"] is False
+    assert manual_boolean_only_material["release_allowed"] is False
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(
+        manual_boolean_only_material
+    )
+
+    adoption_evidence_ready = build_p7_hold004_received_snapshot_adoption_evidence_freeze(
+        received_snapshot_reconcile=received_reconcile,
+        repeat_collect_run_count=2,
+        repeat_collect_counts_warnings_fingerprints_match=True,
+        root_cause_status="BASELINE_CONSTANT_STALE",
+        root_cause_review_recorded=True,
+        source_identity_decision_recorded=True,
+        source_identity_accepted=True,
+        test_semantics_reviewed=True,
+        test_semantics_review_outcome="NO_TEST_SEMANTIC_CHANGE_DETECTED",
+        baseline_id_or_revision_update_planned=True,
+        runtime_builder_update_plan_recorded=True,
+        matrix_handoff_update_plan_recorded=True,
+    )
+    assert adoption_evidence_ready["evidence_status"] == "SATISFIED_FOR_R27_CONDITIONAL_ADOPTION"
+    assert adoption_evidence_ready["can_mark_r27_conditions_satisfied"] is True
+    assert adoption_evidence_ready["repeat_collect_evidence"]["provided_collect_run_count"] == 2
+    assert adoption_evidence_ready["repeat_collect_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["root_cause_evidence"]["root_cause_status"] == "BASELINE_CONSTANT_STALE"
+    assert adoption_evidence_ready["root_cause_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["source_identity_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["test_semantics_evidence"]["test_semantics_review_outcome"] == (
+        "NO_TEST_SEMANTIC_CHANGE_DETECTED"
+    )
+    assert adoption_evidence_ready["test_semantics_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["baseline_traceability_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["post_adoption_connection_plan_evidence"]["satisfied"] is True
+    assert adoption_evidence_ready["r27_condition_inputs"] == {
+        "root_cause_status": "BASELINE_CONSTANT_STALE",
+        "repeated_collect_stable": True,
+        "source_identity_decision_recorded": True,
+        "source_identity_accepted": True,
+        "test_semantics_reviewed": True,
+        "baseline_id_or_revision_update_planned": True,
+    }
+    assert adoption_evidence_ready["r27_condition_projection"]["adoption_evidence_freeze_satisfied"] is True
+    assert adoption_evidence_ready["adoption_status_if_applied_to_r27"] == (
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+    )
+    assert adoption_evidence_ready["active_baseline_update_allowed"] is False
+    assert adoption_evidence_ready["release_allowed"] is False
+    assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(adoption_evidence_ready)
+
+    adoption_ready_material = build_p7_hold004_received_snapshot_conditional_active_baseline_adoption(
+        received_snapshot_reconcile=received_reconcile,
+        adoption_decision=received_adoption,
+        adoption_evidence_freeze=adoption_evidence_ready,
+    )
+    assert adoption_ready_material["adoption_status"] == (
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+    )
+    assert adoption_ready_material["root_cause_status"] == "BASELINE_CONSTANT_STALE"
+    assert adoption_ready_material["adoption_evidence_freeze_satisfied"] is True
+    assert adoption_ready_material["adoption_conditions"]["adoption_evidence_freeze_satisfied"] is True
+    assert adoption_ready_material["adoption_conditions"]["root_cause_classified"] is True
+    assert adoption_ready_material["adoption_conditions"]["repeated_collect_stable"] is True
+    assert adoption_ready_material["adoption_conditions"]["source_identity_decision_recorded"] is True
+    assert adoption_ready_material["adoption_conditions"]["source_identity_accepted"] is True
+    assert adoption_ready_material["adoption_conditions"]["test_semantics_reviewed"] is True
+    assert adoption_ready_material["active_baseline_adoption_ready"] is True
+    assert adoption_ready_material["active_baseline_update_allowed"] is True
+    assert adoption_ready_material["source_snapshot_ref_update_allowed"] is True
+    assert adoption_ready_material["same_baseline_id_hash_replacement_allowed"] is False
+    assert adoption_ready_material["active_baseline_update_applied_to_runtime_builders"] is False
+    assert adoption_ready_material["source_snapshot_ref_updated_in_active_builders"] is False
+    assert adoption_ready_material["official_group_02_capture_blocked_until_adopted"] is True
+    assert adoption_ready_material["official_group_02_capture_run_allowed"] is False
+    assert adoption_ready_material["can_claim_group_green"] is False
+    assert adoption_ready_material["can_claim_full_backend_suite_green"] is False
+    assert adoption_ready_material["release_allowed"] is False
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(adoption_ready_material)
+
+    r29_default = build_p7_hold004_received_snapshot_r29_verification_procedure()
+    assert r29_default["schema_version"] == (
+        P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION
+    )
+    assert r29_default["step"] == P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP
+    assert r29_default["hold_id"] == "P7-HOLD-004"
+    assert r29_default["scope_status"] == "R29_VERIFICATION_PROCEDURE_FIXED_RELEASE_CLOSED"
+    assert r29_default["received_zip_ref"] == "mashos-api(148).zip"
+    assert r29_default["active_source_snapshot_ref_at_receipt"] == "mashos-api(147).zip"
+    assert r29_default["implementation_scope"]["r29_verification_procedure_fixed"] is True
+    assert r29_default["implementation_scope"]["active_baseline_change_allowed"] is False
+    assert r29_default["implementation_scope"]["release_decision_change_allowed"] is False
+
+    checkpoint_ids = [entry["checkpoint_id"] for entry in r29_default["verification_sequence"]]
+    assert checkpoint_ids == [
+        "py_compile_material_contract_modules",
+        "p7_hold004_received_snapshot_focused_contract_subset",
+        "full_backend_collect_only_fingerprint_check",
+        "group_02_collect_only_boundary_check",
+        "group_02_full_run_conditional_capture_check",
+    ]
+    assert r29_default["verification_sequence"][-1]["execution_allowed_by_default"] is False
+    assert r29_default["verification_sequence"][-1]["allowed_when_readiness_status"] == (
+        "READY_FOR_OFFICIAL_CAPTURE_RUN"
+    )
+    assert all(entry["body_free"] is True for entry in r29_default["verification_sequence"])
+    assert all(entry["pytest_output_retained"] is False for entry in r29_default["verification_sequence"])
+    assert all(entry["nodeids_retained"] is False for entry in r29_default["verification_sequence"])
+    assert all(entry["stdout_retained"] is False for entry in r29_default["verification_sequence"])
+    assert all(entry["stderr_retained"] is False for entry in r29_default["verification_sequence"])
+    assert all(entry["raw_traceback_included"] is False for entry in r29_default["verification_sequence"])
+
+    full_collect_expectation = r29_default["expected_full_backend_collect_only"]
+    assert full_collect_expectation["collected_test_file_count"] == 425
+    assert full_collect_expectation["collected_test_item_count"] == 2856
+    assert full_collect_expectation["warnings_count"] == 1
+    assert full_collect_expectation["test_items_fingerprint_sha256"] == (
+        "4698ce5240707f71fc3678a0153a15626ba9718fbadad83294e57d11946c2e0d"
+    )
+    assert full_collect_expectation["test_files_fingerprint_sha256"] == (
+        "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
+    )
+    assert full_collect_expectation["active_baseline_item_fingerprint_match_expected"] is False
+    assert full_collect_expectation["active_baseline_file_fingerprint_match_expected"] is True
+    assert full_collect_expectation["collect_only_is_not_execution_green"] is True
+
+    group_collect_expectation = r29_default["expected_group02_collect_only"]
+    assert group_collect_expectation["group_id"] == "group_02_p7_hold004"
+    assert group_collect_expectation["collected_test_file_count"] == 19
+    assert group_collect_expectation["collected_test_item_count"] == 252
+    assert group_collect_expectation["warnings_count"] == 1
+    assert group_collect_expectation["timeout_budget_sec"] == 120
+    assert group_collect_expectation["long_run_probe_budget_sec"] == 240
+    assert group_collect_expectation["collect_only_is_not_group_green"] is True
+    assert group_collect_expectation["official_green_confirmed"] is False
+
+    boundaries = r29_default["green_claim_boundaries"]
+    assert boundaries["target_contract_subset_green_is_contract_green_only"] is True
+    assert boundaries["target_contract_subset_green_is_full_backend_suite_green"] is False
+    assert boundaries["full_collect_only_is_execution_green"] is False
+    assert boundaries["group02_collect_only_is_group_green"] is False
+    assert boundaries["group02_timeout_is_green"] is False
+    assert boundaries["group02_timeout_is_immediate_fail"] is False
+    assert boundaries["group02_pass_is_full_backend_suite_green"] is False
+    assert boundaries["official_group02_capture_requires_readiness_ready"] is True
+    assert boundaries["same_baseline_id_hash_replacement_blocked"] is True
+
+    adoption_inputs = r29_default["adoption_readiness_inputs"]
+    assert adoption_inputs["adoption_evidence_freeze_satisfied"] is False
+    assert adoption_inputs["conditional_active_baseline_adoption_ready"] is False
+    assert adoption_inputs["r29_applies_active_baseline_refresh"] is False
+    assert adoption_inputs["r29_closes_hold004"] is False
+    assert adoption_inputs["release_allowed_after_r29"] is False
+    assert r29_default["active_baseline_update_allowed"] is False
+    assert r29_default["official_group_02_capture_run_allowed"] is False
+    assert r29_default["official_group_02_capture_result_recording_allowed"] is False
+    assert r29_default["can_claim_group_green"] is False
+    assert r29_default["can_claim_full_backend_suite_green"] is False
+    assert r29_default["full_backend_suite_green_confirmed"] is False
+    assert r29_default["hold004_close_allowed"] is False
+    assert r29_default["p7_complete"] is False
+    assert r29_default["p8_start_allowed"] is False
+    assert r29_default["release_allowed"] is False
+    assert "r29_verification_procedure_fixed" in r29_default["required_followup_fixes"]
+    assert "active_baseline_refresh_not_applied_to_runtime_builders" in r29_default[
+        "required_followup_fixes"
+    ]
+    assert all(value is False for value in r29_default["public_contract"].values())
+    assert all(value is False for value in r29_default["body_free_markers"].values())
+    assert r29_default["body_free"] is True
+
+    r29_default_serialized = json.dumps(r29_default, ensure_ascii=False, sort_keys=True)
+    assert _SAMPLE_COMMENT_TEXT not in r29_default_serialized
+    assert _SAMPLE_TERMINAL_OUTPUT not in r29_default_serialized
+    assert "::test_" not in r29_default_serialized
+    assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(r29_default)
+    assert_p7_no_body_payload_or_contract_mutation(
+        r29_default,
+        source="r29_received_snapshot_verification_procedure_default_test",
+    )
+
+    r29_ready_projection = build_p7_hold004_received_snapshot_r29_verification_procedure(
+        adoption_evidence_freeze=adoption_evidence_ready,
+        conditional_active_baseline_adoption=adoption_ready_material,
+    )
+    assert r29_ready_projection["adoption_readiness_inputs"]["adoption_evidence_freeze_satisfied"] is True
+    assert r29_ready_projection["adoption_readiness_inputs"]["conditional_adoption_status"] == (
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+    )
+    assert r29_ready_projection["adoption_readiness_inputs"][
+        "conditional_active_baseline_adoption_ready"
+    ] is True
+    assert r29_ready_projection["adoption_readiness_inputs"]["conditional_material_update_allowed"] is True
+    assert r29_ready_projection["adoption_readiness_inputs"][
+        "active_baseline_update_applied_to_runtime_builders"
+    ] is False
+    assert r29_ready_projection["adoption_readiness_inputs"][
+        "source_snapshot_ref_updated_in_active_builders"
+    ] is False
+    assert r29_ready_projection["adoption_readiness_inputs"]["r29_applies_active_baseline_refresh"] is False
+    assert r29_ready_projection["release_allowed"] is False
+    assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(r29_ready_projection)
+
+    r29_timeout_claim = build_p7_hold004_received_snapshot_r29_verification_procedure()
+    r29_timeout_claim["green_claim_boundaries"]["group02_timeout_is_green"] = True
+    with pytest.raises(ValueError):
+        assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(r29_timeout_claim)
+
+    r29_release_claim = build_p7_hold004_received_snapshot_r29_verification_procedure()
+    r29_release_claim["release_allowed"] = True
+    with pytest.raises(ValueError):
+        assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(r29_release_claim)
+
+    r29_output_retention_claim = build_p7_hold004_received_snapshot_r29_verification_procedure()
+    r29_output_retention_claim["verification_sequence"][0]["stdout_retained"] = True
+    with pytest.raises(ValueError):
+        assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(r29_output_retention_claim)
+
+    evidence_claim = json.loads(json.dumps(adoption_evidence_default))
+    evidence_claim["can_mark_r27_conditions_satisfied"] = True
+    with pytest.raises(ValueError):
+        assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(evidence_claim)
 
     reconcile_claim = build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile()
     reconcile_claim["comparison"]["test_items_fingerprint_match"] = True

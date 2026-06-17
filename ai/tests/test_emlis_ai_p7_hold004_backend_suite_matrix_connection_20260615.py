@@ -6,6 +6,8 @@ import pytest
 
 from emlis_ai_p7_hold004_backend_suite_execution_results import (
     P7_HOLD004_BACKEND_SUITE_EXECUTION_SUMMARY_SCHEMA_VERSION,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF,
     assert_p7_hold004_backend_suite_execution_summary_contract,
     build_p7_hold004_backend_suite_execution_summary,
     build_p7_hold004_backend_suite_group_run_result,
@@ -74,6 +76,16 @@ def _assert_current_baseline_connection(material: dict[str, object]) -> None:
     assert connection["group_02_file_count"] == 19
     assert connection["group_02_test_item_count"] == 252
     assert connection["old_baseline_used_as_current"] is False
+    assert material["official_group_02_capture_readiness_status"] == (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert material["official_group_02_capture_blocked"] is True
+    assert material["official_group_02_capture_run_allowed"] is False
+    assert material["official_group_02_capture_result_recording_allowed"] is False
+    assert material["received_snapshot_baseline_fingerprint_reconciled"] is False
+    assert material["received_snapshot_item_fingerprint_mismatch_unresolved"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in material["received_snapshot_blocker_refs"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in material["required_followup_fixes"]
 
 
 def _all_split_groups_green_summary() -> dict[str, object]:

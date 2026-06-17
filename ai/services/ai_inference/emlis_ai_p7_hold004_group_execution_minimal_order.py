@@ -58,7 +58,7 @@ P7_HOLD004_GROUP_EXECUTION_MINIMAL_ORDER_STEP: Final = (
 P7_HOLD004_GROUP_EXECUTION_MINIMAL_ORDER_ID: Final = (
     "p7_hold004_group_execution_minimal_confirmation_order_20260615_current_snapshot"
 )
-P7_HOLD004_GROUP_EXECUTION_MINIMAL_ORDER_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_GROUP_EXECUTION_MINIMAL_ORDER_SOURCE_SNAPSHOT_REF: Final = "mashos-api(148).zip"
 
 _RELEASE_CLOSED_KEYS: Final[tuple[str, ...]] = (
     "full_backend_suite_green_confirmed",

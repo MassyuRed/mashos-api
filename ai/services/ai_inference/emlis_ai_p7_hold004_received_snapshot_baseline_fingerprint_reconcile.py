@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """P7-HOLD-004 received snapshot baseline fingerprint reconcile materials.
 
-R21/R24 scope only:
+R21/R26 scope only:
 - keep the active source snapshot reference and the newly received zip reference
   as separate identifiers;
 - record the received ``pytest --collect-only`` summary as body-free material;
@@ -10,6 +10,8 @@ R21/R24 scope only:
 - separate source identity and adoption decision so the received zip is not
   promoted to the active source_snapshot_ref while the item fingerprint mismatch
   remains unclassified;
+- freeze the evidence required before any R27 boolean can be called
+  adoption-ready;
 - do not update the active baseline, group inventory, execution plan, matrices,
   release handoff, RN UI, API contract, DB schema, or Emlis runtime behavior.
 
@@ -62,8 +64,26 @@ P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION: Fina
 P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_SCHEMA_VERSION: Final = (
     "cocolon.emlis.p7.hold004.received_snapshot_baseline_adoption_decision.v1"
 )
+P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.received_snapshot_conditional_active_baseline_adoption.v1"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.received_snapshot_adoption_evidence_freeze.v1"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.p7.hold004.received_snapshot_r29_verification_procedure.v1"
+)
 P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_STEP: Final = (
-    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R21_R24_20260615"
+    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R21_R26_20260615"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP: Final = (
+    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R27_20260615"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP: Final = (
+    "P7-HOLD-004_ReceivedSnapshotAdoptionEvidenceFreeze_PreR29_20260616"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP: Final = (
+    "P7-HOLD-004_ReceivedSnapshotBaselineFingerprintReconcile_R29_20260616"
 )
 P7_HOLD004_RECEIVED_SNAPSHOT_SCOPE_FREEZE_ID: Final = (
     "p7_hold004_received_snapshot_scope_freeze_20260615"
@@ -77,18 +97,27 @@ P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID: Final = (
 P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID: Final = (
     "p7_hold004_received_snapshot_baseline_adoption_decision_20260615"
 )
+P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID: Final = (
+    "p7_hold004_received_snapshot_conditional_active_baseline_adoption_20260615"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID: Final = (
+    "p7_hold004_received_snapshot_adoption_evidence_freeze_pre_r29_20260616"
+)
+P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_ID: Final = (
+    "p7_hold004_received_snapshot_r29_verification_procedure_20260616"
+)
 P7_HOLD004_RECEIVED_SNAPSHOT_CANDIDATE_NEW_BASELINE_ID: Final = (
     "p7_hold004_backend_collect_baseline_20260615_received_148"
 )
 P7_HOLD004_RECEIVED_COLLECT_COMMAND_ID: Final = "pytest_collect_only_backend_received_20260615"
 P7_HOLD004_RECEIVED_ZIP_REF: Final = "mashos-api(148).zip"
-P7_HOLD004_ACTIVE_BASELINE_ID_AT_RECEIPT: Final = P7_HOLD004_BACKEND_COLLECT_BASELINE_ID
-P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT: Final = P7_HOLD004_BACKEND_SOURCE_SNAPSHOT_REF
+P7_HOLD004_ACTIVE_BASELINE_ID_AT_RECEIPT: Final = "p7_hold004_backend_collect_baseline_20260615"
+P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT: Final = "mashos-api(147).zip"
 P7_HOLD004_ACTIVE_TEST_ITEMS_FINGERPRINT_SHA256_AT_RECEIPT: Final = (
-    P7_HOLD004_BACKEND_TEST_ITEMS_FINGERPRINT_SHA256
+    "fee1eca805564d0840dc5b23f60a7e2d6c7297d658a76dc4ce175e0137c261f1"
 )
 P7_HOLD004_ACTIVE_TEST_FILES_FINGERPRINT_SHA256_AT_RECEIPT: Final = (
-    P7_HOLD004_BACKEND_TEST_FILES_FINGERPRINT_SHA256
+    "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
 )
 
 P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT: Final = 425
@@ -161,6 +190,32 @@ P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFR
     "ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH"
 )
 P7_HOLD004_RECEIVED_ADOPTION_STATUS_REFERENCE_ONLY_NO_ACTIVE_UPDATE: Final = "REFERENCE_ONLY_NO_ACTIVE_UPDATE"
+P7_HOLD004_RECEIVED_CONDITIONAL_ADOPTION_STATUS_BLOCKED_CONDITIONS_UNMET: Final = (
+    "BLOCKED_CONDITIONS_UNMET"
+)
+P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN: Final = (
+    "BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN"
+)
+P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_BLOCKED_UNVERIFIED: Final = (
+    "BLOCKED_ADOPTION_EVIDENCE_UNVERIFIED"
+)
+P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_SATISFIED_FOR_R27_CONDITIONAL_ADOPTION: Final = (
+    "SATISFIED_FOR_R27_CONDITIONAL_ADOPTION"
+)
+P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NOT_REVIEWED: Final = "NOT_REVIEWED"
+P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NO_SEMANTIC_CHANGE_DETECTED: Final = (
+    "NO_TEST_SEMANTIC_CHANGE_DETECTED"
+)
+P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_ACCEPTED_AS_BASELINE_REFRESH: Final = (
+    "TEST_SEMANTIC_CHANGE_ACCEPTED_AS_BASELINE_REFRESH"
+)
+P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOMES: Final[frozenset[str]] = frozenset(
+    {
+        P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NOT_REVIEWED,
+        P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NO_SEMANTIC_CHANGE_DETECTED,
+        P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_ACCEPTED_AS_BASELINE_REFRESH,
+    }
+)
 P7_HOLD004_RECEIVED_ADOPTION_STATUSES: Final[frozenset[str]] = frozenset(
     {
         P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH,
@@ -171,7 +226,15 @@ P7_HOLD004_RECEIVED_ADOPTION_STATUSES: Final[frozenset[str]] = frozenset(
         P7_HOLD004_RECEIVED_ADOPTION_STATUS_REQUIRES_TEST_SEMANTICS_REVIEW,
         P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH,
         P7_HOLD004_RECEIVED_ADOPTION_STATUS_REFERENCE_ONLY_NO_ACTIVE_UPDATE,
+        P7_HOLD004_RECEIVED_CONDITIONAL_ADOPTION_STATUS_BLOCKED_CONDITIONS_UNMET,
+        P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN,
     }
+)
+
+P7_HOLD004_RECEIVED_ADOPTABLE_ROOT_CAUSE_STATUSES: Final[frozenset[str]] = frozenset(
+    status
+    for status in P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUSES
+    if status != P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUS_UNCLASSIFIED
 )
 
 P7_HOLD004_RECEIVED_COLLECT_STATUS_COLLECTED: Final = P7_HOLD004_BACKEND_COLLECT_STATUS_COLLECTED
@@ -228,8 +291,12 @@ _IMPLEMENTATION_SCOPE_FLAGS: Final[dict[str, bool]] = {
     "r22_received_collect_summary_body_free_added": True,
     "r23_reconcile_material_added": True,
     "r24_adoption_decision_added": True,
-    "r25_official_group02_readiness_guard_added": False,
-    "r26_matrix_handoff_validation_connected": False,
+    "r25_official_group02_readiness_guard_added": True,
+    "r26_matrix_handoff_validation_connected": True,
+    "r27_conditional_active_baseline_adoption_added": True,
+    "r28_group02_timeout_long_run_policy_added": True,
+    "pre_r29_received_snapshot_adoption_evidence_freeze_added": True,
+    "r29_verification_procedure_fixed": True,
     "runtime_behavior_change_allowed": False,
     "rn_change_allowed": False,
     "api_contract_change_allowed": False,
@@ -249,6 +316,23 @@ _REQUIRED_FOLLOWUP_FIXES: Final[tuple[str, ...]] = (
 _RECEIVED_SNAPSHOT_BLOCKER_REFS: Final[tuple[str, ...]] = (
     "received_snapshot_collect_item_fingerprint_mismatch",
     "source_snapshot_ref_identity_unclear",
+)
+_R29_VERIFICATION_CHECKPOINT_IDS: Final[tuple[str, ...]] = (
+    "py_compile_material_contract_modules",
+    "p7_hold004_received_snapshot_focused_contract_subset",
+    "full_backend_collect_only_fingerprint_check",
+    "group_02_collect_only_boundary_check",
+    "group_02_full_run_conditional_capture_check",
+)
+_R29_REQUIRED_GREEN_CLAIM_BOUNDARIES: Final[tuple[str, ...]] = (
+    "target_contract_subset_green_is_full_backend_suite_green",
+    "full_collect_only_is_execution_green",
+    "group02_collect_only_is_group_green",
+    "group02_timeout_is_green",
+    "group02_timeout_is_immediate_fail",
+    "group02_pass_is_full_backend_suite_green",
+    "r27_adoptable_status_alone_updates_active_baseline",
+    "r29_verification_procedure_closes_hold004",
 )
 
 
@@ -294,6 +378,10 @@ def _coerce_non_negative_int(value: Any, *, default: int = 0) -> int:
     return max(0, number)
 
 
+def _coerce_bool(value: Any) -> bool:
+    return value if isinstance(value, bool) else False
+
+
 def _is_sha256_hex(value: Any) -> bool:
     text = str(value or "").strip()
     return len(text) == _SHA256_HEX_LENGTH and all(ch in "0123456789abcdef" for ch in text)
@@ -307,11 +395,11 @@ def _active_baseline_at_receipt_material() -> dict[str, Any]:
     return {
         "baseline_id": P7_HOLD004_ACTIVE_BASELINE_ID_AT_RECEIPT,
         "source_snapshot_ref": P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT,
-        "collected_test_file_count": P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT,
-        "collected_test_item_count": P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT,
-        "warnings_count": P7_HOLD004_BACKEND_COLLECT_WARNINGS_COUNT,
-        "test_items_fingerprint_sha256": P7_HOLD004_BACKEND_TEST_ITEMS_FINGERPRINT_SHA256,
-        "test_files_fingerprint_sha256": P7_HOLD004_BACKEND_TEST_FILES_FINGERPRINT_SHA256,
+        "collected_test_file_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT,
+        "collected_test_item_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_ITEM_COUNT,
+        "warnings_count": P7_HOLD004_RECEIVED_COLLECT_WARNINGS_COUNT,
+        "test_items_fingerprint_sha256": P7_HOLD004_ACTIVE_TEST_ITEMS_FINGERPRINT_SHA256_AT_RECEIPT,
+        "test_files_fingerprint_sha256": P7_HOLD004_ACTIVE_TEST_FILES_FINGERPRINT_SHA256_AT_RECEIPT,
         "fingerprint_algorithm": P7_HOLD004_BACKEND_COLLECT_FINGERPRINT_ALGORITHM,
     }
 
@@ -325,6 +413,21 @@ def _received_default_collect_constants_material() -> dict[str, Any]:
         "test_items_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256,
         "test_files_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_FILES_FINGERPRINT_SHA256,
         "fingerprint_algorithm": P7_HOLD004_BACKEND_COLLECT_FINGERPRINT_ALGORITHM,
+    }
+
+
+def _candidate_active_baseline_material() -> dict[str, Any]:
+    return {
+        "baseline_id": P7_HOLD004_RECEIVED_SNAPSHOT_CANDIDATE_NEW_BASELINE_ID,
+        "source_snapshot_ref": P7_HOLD004_RECEIVED_ZIP_REF,
+        "collected_test_file_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT,
+        "collected_test_item_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_ITEM_COUNT,
+        "warnings_count": P7_HOLD004_RECEIVED_COLLECT_WARNINGS_COUNT,
+        "test_items_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256,
+        "test_files_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_FILES_FINGERPRINT_SHA256,
+        "fingerprint_algorithm": P7_HOLD004_BACKEND_COLLECT_FINGERPRINT_ALGORITHM,
+        "same_baseline_id_hash_replacement_allowed": False,
+        "previous_active_baseline_retained": True,
     }
 
 
@@ -762,6 +865,951 @@ def build_p7_hold004_received_snapshot_baseline_adoption_decision(
     return material
 
 
+def _normalize_root_cause_status(value: Any) -> str:
+    status = clean_identifier(
+        value,
+        default=P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUS_UNCLASSIFIED,
+        max_length=120,
+    ).upper()
+    if status not in P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUSES:
+        return P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUS_UNCLASSIFIED
+    return status
+
+
+def _normalize_test_semantics_review_outcome(value: Any) -> str:
+    outcome = clean_identifier(
+        value,
+        default=P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NOT_REVIEWED,
+        max_length=120,
+    ).upper()
+    if outcome not in P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOMES:
+        return P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NOT_REVIEWED
+    return outcome
+
+
+def build_p7_hold004_received_snapshot_adoption_evidence_freeze(
+    *,
+    received_snapshot_reconcile: Mapping[str, Any] | None = None,
+    repeat_collect_run_count: Any = 0,
+    repeat_collect_counts_warnings_fingerprints_match: Any = False,
+    root_cause_status: Any = None,
+    root_cause_review_recorded: Any = False,
+    source_identity_decision_recorded: Any = False,
+    source_identity_accepted: Any = False,
+    test_semantics_reviewed: Any = False,
+    test_semantics_review_outcome: Any = None,
+    baseline_id_or_revision_update_planned: Any = True,
+    runtime_builder_update_plan_recorded: Any = False,
+    matrix_handoff_update_plan_recorded: Any = False,
+) -> dict[str, Any]:
+    """Freeze the evidence required before R27 can be called adoption-ready.
+
+    This pre-R29 material prevents a caller from satisfying the R27 booleans by
+    assertion alone.  The material stores only counts, hashes, identifiers,
+    booleans, and enum-like statuses; it does not retain nodeids, pytest output,
+    traceback, or any Emlis/RN visible body.
+    """
+
+    reconcile = safe_mapping(received_snapshot_reconcile) or build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile()
+    assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract(reconcile)
+    active = safe_mapping(reconcile.get("active_baseline")) or _active_baseline_for_reconcile()
+    received = safe_mapping(reconcile.get("received_snapshot")) or _received_snapshot_for_reconcile()
+    comparison = safe_mapping(reconcile.get("comparison"))
+    classification = safe_mapping(reconcile.get("classification"))
+    candidate = _candidate_active_baseline_material()
+
+    repeat_run_count = _coerce_non_negative_int(repeat_collect_run_count)
+    repeat_fingerprint_match = _coerce_bool(repeat_collect_counts_warnings_fingerprints_match)
+    normalized_root_cause = _normalize_root_cause_status(
+        root_cause_status if root_cause_status is not None else classification.get("root_cause_status")
+    )
+    root_review_recorded = _coerce_bool(root_cause_review_recorded)
+    source_decision_recorded = _coerce_bool(source_identity_decision_recorded)
+    source_accepted = _coerce_bool(source_identity_accepted)
+    semantics_reviewed = _coerce_bool(test_semantics_reviewed)
+    semantics_outcome = _normalize_test_semantics_review_outcome(test_semantics_review_outcome)
+    baseline_update_planned = _coerce_bool(baseline_id_or_revision_update_planned)
+    runtime_plan_recorded = _coerce_bool(runtime_builder_update_plan_recorded)
+    matrix_plan_recorded = _coerce_bool(matrix_handoff_update_plan_recorded)
+
+    received_collect_is_expected = _received_snapshot_default_collect_match(received)
+    repeat_collect_satisfied = bool(
+        repeat_run_count >= 2 and repeat_fingerprint_match and received_collect_is_expected
+    )
+    root_cause_satisfied = bool(
+        root_review_recorded and normalized_root_cause in P7_HOLD004_RECEIVED_ADOPTABLE_ROOT_CAUSE_STATUSES
+    )
+    source_identity_satisfied = bool(
+        source_decision_recorded
+        and source_accepted
+        and received.get("received_zip_ref") == P7_HOLD004_RECEIVED_ZIP_REF
+        and active.get("source_snapshot_ref") == P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT
+        and candidate.get("source_snapshot_ref") == P7_HOLD004_RECEIVED_ZIP_REF
+    )
+    semantics_satisfied = bool(
+        semantics_reviewed
+        and semantics_outcome
+        in {
+            P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NO_SEMANTIC_CHANGE_DETECTED,
+            P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_ACCEPTED_AS_BASELINE_REFRESH,
+        }
+    )
+    baseline_traceability_satisfied = bool(
+        baseline_update_planned
+        and candidate.get("baseline_id") != active.get("baseline_id")
+        and candidate.get("same_baseline_id_hash_replacement_allowed") is False
+        and candidate.get("previous_active_baseline_retained") is True
+    )
+    post_adoption_plan_satisfied = bool(runtime_plan_recorded and matrix_plan_recorded)
+
+    r27_condition_inputs = {
+        "root_cause_status": normalized_root_cause,
+        "repeated_collect_stable": repeat_collect_satisfied,
+        "source_identity_decision_recorded": source_decision_recorded,
+        "source_identity_accepted": source_accepted,
+        "test_semantics_reviewed": semantics_satisfied,
+        "baseline_id_or_revision_update_planned": baseline_update_planned,
+    }
+    condition_projection = {
+        "received_zip_ref_is_expected": received.get("received_zip_ref") == P7_HOLD004_RECEIVED_ZIP_REF,
+        "received_collect_counts_match_expected": received_collect_is_expected,
+        "counts_and_warnings_match_active_or_refresh_scope": bool(
+            comparison.get("counts_match") is True and comparison.get("warning_count_match") is True
+        ),
+        "test_files_fingerprint_matches_active": bool(comparison.get("test_files_fingerprint_match") is True),
+        "item_fingerprint_diff_recorded_as_refresh_candidate": bool(
+            comparison.get("test_items_fingerprint_match") is not True
+            and received.get("test_items_fingerprint_sha256") == P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256
+        ),
+        "root_cause_classified": root_cause_satisfied,
+        "repeated_collect_stable": repeat_collect_satisfied,
+        "source_identity_decision_recorded": source_decision_recorded,
+        "source_identity_accepted": source_accepted,
+        "test_semantics_reviewed": semantics_satisfied,
+        "baseline_id_or_revision_update_planned": baseline_update_planned,
+        "candidate_baseline_id_changes": candidate["baseline_id"] != active.get("baseline_id"),
+        "same_baseline_id_hash_replacement_blocked": candidate["same_baseline_id_hash_replacement_allowed"] is False,
+        "previous_active_baseline_retained": candidate["previous_active_baseline_retained"] is True,
+        "public_contract_unchanged": True,
+        "runtime_contract_unchanged": True,
+    }
+    can_mark_r27_conditions_satisfied = bool(
+        repeat_collect_satisfied
+        and root_cause_satisfied
+        and source_identity_satisfied
+        and semantics_satisfied
+        and baseline_traceability_satisfied
+        and post_adoption_plan_satisfied
+        and all(condition_projection.values())
+    )
+    condition_projection["adoption_evidence_freeze_satisfied"] = can_mark_r27_conditions_satisfied
+    adoption_status_if_applied = _conditional_active_baseline_adoption_status(condition_projection)
+
+    material = {
+        "schema_version": P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION,
+        "phase": P7_PHASE,
+        "step": P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP,
+        "implementation_step": P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP,
+        "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
+        "evidence_freeze_id": P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID,
+        "received_reconcile_id": clean_identifier(
+            reconcile.get("reconcile_id"),
+            default=P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID,
+        ),
+        "source_mode": P7_SOURCE_MODE,
+        "git_checked": P7_GIT_CHECKED,
+        "received_zip_ref": clean_identifier(received.get("received_zip_ref"), default=P7_HOLD004_RECEIVED_ZIP_REF),
+        "active_baseline_id_at_receipt": clean_identifier(
+            active.get("baseline_id"),
+            default=P7_HOLD004_ACTIVE_BASELINE_ID_AT_RECEIPT,
+        ),
+        "candidate_new_baseline_id": candidate["baseline_id"],
+        "evidence_status": (
+            P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_SATISFIED_FOR_R27_CONDITIONAL_ADOPTION
+            if can_mark_r27_conditions_satisfied
+            else P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_BLOCKED_UNVERIFIED
+        ),
+        "repeat_collect_evidence": {
+            "required": True,
+            "minimum_collect_run_count": 2,
+            "provided_collect_run_count": repeat_run_count,
+            "counts_warnings_fingerprints_stable": repeat_fingerprint_match,
+            "received_collect_matches_recorded_default": received_collect_is_expected,
+            "nodeids_retained": False,
+            "pytest_output_retained": False,
+            "satisfied": repeat_collect_satisfied,
+        },
+        "root_cause_evidence": {
+            "required": True,
+            "root_cause_status": normalized_root_cause,
+            "root_cause_review_recorded": root_review_recorded,
+            "root_cause_unclassified": normalized_root_cause == P7_HOLD004_RECEIVED_ROOT_CAUSE_STATUS_UNCLASSIFIED,
+            "satisfied": root_cause_satisfied,
+        },
+        "source_identity_evidence": {
+            "required": True,
+            "source_identity_decision_recorded": source_decision_recorded,
+            "source_identity_accepted": source_accepted,
+            "received_zip_ref": P7_HOLD004_RECEIVED_ZIP_REF,
+            "active_source_snapshot_ref_at_receipt": P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT,
+            "candidate_source_snapshot_ref": candidate["source_snapshot_ref"],
+            "received_zip_promoted_to_source_snapshot_ref": False,
+            "satisfied": source_identity_satisfied,
+        },
+        "test_semantics_evidence": {
+            "required": True,
+            "test_semantics_reviewed": semantics_reviewed,
+            "test_semantics_review_outcome": semantics_outcome,
+            "nodeids_retained": False,
+            "pytest_output_retained": False,
+            "raw_traceback_included": False,
+            "satisfied": semantics_satisfied,
+        },
+        "baseline_traceability_evidence": {
+            "required": True,
+            "baseline_id_or_revision_update_planned": baseline_update_planned,
+            "candidate_baseline_id_changes": candidate["baseline_id"] != active.get("baseline_id"),
+            "same_baseline_id_hash_replacement_blocked": candidate["same_baseline_id_hash_replacement_allowed"] is False,
+            "previous_active_baseline_retained": candidate["previous_active_baseline_retained"] is True,
+            "satisfied": baseline_traceability_satisfied,
+        },
+        "post_adoption_connection_plan_evidence": {
+            "required_before_r29": True,
+            "runtime_builder_update_plan_recorded": runtime_plan_recorded,
+            "matrix_handoff_update_plan_recorded": matrix_plan_recorded,
+            "active_baseline_update_applied_to_runtime_builders": False,
+            "source_snapshot_ref_updated_in_active_builders": False,
+            "satisfied": post_adoption_plan_satisfied,
+        },
+        "r27_condition_inputs": r27_condition_inputs,
+        "r27_condition_projection": condition_projection,
+        "r27_manual_boolean_only_adoption_ready_allowed": False,
+        "can_mark_r27_conditions_satisfied": can_mark_r27_conditions_satisfied,
+        "adoption_status_if_applied_to_r27": adoption_status_if_applied,
+        "active_baseline_update_allowed": False,
+        "official_group_02_capture_run_allowed": False,
+        "official_group_02_capture_result_recording_allowed": False,
+        "can_claim_group_green": False,
+        "can_claim_full_backend_suite_green": False,
+        **_release_closed_boundary(),
+        "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
+        "required_followup_fixes": dedupe_identifiers(
+            [
+                "received_snapshot_adoption_evidence_freeze_required"
+                if not can_mark_r27_conditions_satisfied
+                else "received_snapshot_adoption_evidence_frozen_for_r27_conditions",
+                "received_snapshot_repeat_collect_stability_required"
+                if not repeat_collect_satisfied
+                else "",
+                "received_snapshot_item_fingerprint_root_cause_classification_required"
+                if not root_cause_satisfied
+                else "",
+                "received_snapshot_source_identity_decision_required"
+                if not source_identity_satisfied
+                else "",
+                "received_snapshot_test_semantics_review_required"
+                if not semantics_satisfied
+                else "",
+                "received_snapshot_post_adoption_runtime_matrix_plan_required"
+                if not post_adoption_plan_satisfied
+                else "",
+                "active_baseline_refresh_not_applied_to_runtime_builders",
+                "official_group_02_capture_blocked_until_received_snapshot_adoption",
+                "full_backend_suite_green_unconfirmed",
+            ],
+            limit=80,
+            max_length=200,
+        ),
+        "public_contract": _public_contract_boundary_flags(),
+        "body_free_markers": _body_free_markers(),
+        "body_free": True,
+    }
+    assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(material)
+    return material
+
+
+def _conditional_active_baseline_adoption_status(conditions: Mapping[str, bool]) -> str:
+    if not conditions.get("counts_and_warnings_match_active_or_refresh_scope", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_REJECTED_COUNT_MISMATCH
+    if not conditions.get("test_files_fingerprint_matches_active", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_REJECTED_FILE_FINGERPRINT_MISMATCH
+    if not conditions.get("root_cause_classified", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH
+    if not conditions.get("repeated_collect_stable", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNSTABLE_REPEAT_COLLECT
+    if not conditions.get("source_identity_decision_recorded", False) or not conditions.get(
+        "source_identity_accepted",
+        False,
+    ):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_SOURCE_SNAPSHOT_IDENTITY_UNCLEAR
+    if not conditions.get("test_semantics_reviewed", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_REQUIRES_TEST_SEMANTICS_REVIEW
+    if not conditions.get("adoption_evidence_freeze_satisfied", False):
+        return P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN
+    if not conditions.get("baseline_id_or_revision_update_planned", False):
+        return P7_HOLD004_RECEIVED_CONDITIONAL_ADOPTION_STATUS_BLOCKED_CONDITIONS_UNMET
+    if not conditions.get("candidate_baseline_id_changes", False) or not conditions.get(
+        "same_baseline_id_hash_replacement_blocked",
+        False,
+    ):
+        return P7_HOLD004_RECEIVED_CONDITIONAL_ADOPTION_STATUS_BLOCKED_CONDITIONS_UNMET
+    return P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+
+
+def build_p7_hold004_received_snapshot_conditional_active_baseline_adoption(
+    *,
+    received_snapshot_reconcile: Mapping[str, Any] | None = None,
+    adoption_decision: Mapping[str, Any] | None = None,
+    adoption_evidence_freeze: Mapping[str, Any] | None = None,
+    repeated_collect_stable: Any = False,
+    root_cause_status: Any = None,
+    source_identity_decision_recorded: Any = False,
+    source_identity_accepted: Any = False,
+    test_semantics_reviewed: Any = False,
+    baseline_id_or_revision_update_planned: Any = True,
+) -> dict[str, Any]:
+    """Build the R27 conditional active-baseline adoption material.
+
+    R27 records the exact conditions under which the received snapshot may
+    become the next active baseline.  The default material intentionally remains
+    blocked because the received item fingerprint mismatch is still
+    unclassified and no repeat-collect/source-identity evidence has been
+    supplied.
+    """
+
+    reconcile = safe_mapping(received_snapshot_reconcile) or build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile()
+    assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract(reconcile)
+    adoption = (
+        safe_mapping(adoption_decision)
+        if adoption_decision is not None
+        else build_p7_hold004_received_snapshot_baseline_adoption_decision(
+            received_snapshot_reconcile=reconcile,
+        )
+    )
+    assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract(adoption)
+
+    active = safe_mapping(reconcile.get("active_baseline")) or _active_baseline_for_reconcile()
+    received = safe_mapping(reconcile.get("received_snapshot")) or _received_snapshot_for_reconcile()
+    comparison = safe_mapping(reconcile.get("comparison"))
+    classification = safe_mapping(reconcile.get("classification"))
+    normalized_root_cause = _normalize_root_cause_status(
+        root_cause_status if root_cause_status is not None else classification.get("root_cause_status")
+    )
+    evidence = safe_mapping(adoption_evidence_freeze)
+    if evidence:
+        assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(evidence)
+        evidence_inputs = safe_mapping(evidence.get("r27_condition_inputs"))
+        normalized_root_cause = _normalize_root_cause_status(evidence_inputs.get("root_cause_status"))
+        repeated_collect_stable = evidence_inputs.get("repeated_collect_stable", repeated_collect_stable)
+        source_identity_decision_recorded = evidence_inputs.get(
+            "source_identity_decision_recorded",
+            source_identity_decision_recorded,
+        )
+        source_identity_accepted = evidence_inputs.get("source_identity_accepted", source_identity_accepted)
+        test_semantics_reviewed = evidence_inputs.get("test_semantics_reviewed", test_semantics_reviewed)
+        baseline_id_or_revision_update_planned = evidence_inputs.get(
+            "baseline_id_or_revision_update_planned",
+            baseline_id_or_revision_update_planned,
+        )
+    evidence_freeze_satisfied = bool(evidence.get("can_mark_r27_conditions_satisfied") is True) if evidence else False
+
+    candidate = _candidate_active_baseline_material()
+    conditions = {
+        "received_zip_ref_is_expected": received.get("received_zip_ref") == P7_HOLD004_RECEIVED_ZIP_REF,
+        "received_collect_counts_match_expected": (
+            received.get("collected_test_file_count") == P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT
+            and received.get("collected_test_item_count") == P7_HOLD004_RECEIVED_COLLECTED_TEST_ITEM_COUNT
+            and received.get("warnings_count") == P7_HOLD004_RECEIVED_COLLECT_WARNINGS_COUNT
+        ),
+        "counts_and_warnings_match_active_or_refresh_scope": bool(
+            comparison.get("counts_match") is True and comparison.get("warning_count_match") is True
+        ),
+        "test_files_fingerprint_matches_active": bool(comparison.get("test_files_fingerprint_match") is True),
+        "item_fingerprint_diff_recorded_as_refresh_candidate": bool(
+            comparison.get("test_items_fingerprint_match") is not True
+            and received.get("test_items_fingerprint_sha256") == P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256
+        ),
+        "root_cause_classified": normalized_root_cause in P7_HOLD004_RECEIVED_ADOPTABLE_ROOT_CAUSE_STATUSES,
+        "repeated_collect_stable": _coerce_bool(repeated_collect_stable),
+        "source_identity_decision_recorded": _coerce_bool(source_identity_decision_recorded),
+        "source_identity_accepted": _coerce_bool(source_identity_accepted),
+        "test_semantics_reviewed": _coerce_bool(test_semantics_reviewed),
+        "baseline_id_or_revision_update_planned": _coerce_bool(baseline_id_or_revision_update_planned),
+        "candidate_baseline_id_changes": candidate["baseline_id"] != active.get("baseline_id"),
+        "same_baseline_id_hash_replacement_blocked": candidate["same_baseline_id_hash_replacement_allowed"] is False,
+        "previous_active_baseline_retained": candidate["previous_active_baseline_retained"] is True,
+        "public_contract_unchanged": True,
+        "runtime_contract_unchanged": True,
+        "adoption_evidence_freeze_satisfied": evidence_freeze_satisfied,
+    }
+    adoption_status = _conditional_active_baseline_adoption_status(conditions)
+    adoption_ready = adoption_status == P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+
+    material = {
+        "schema_version": P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION,
+        "phase": P7_PHASE,
+        "step": P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP,
+        "implementation_step": P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP,
+        "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
+        "adoption_id": P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID,
+        "received_reconcile_id": clean_identifier(
+            reconcile.get("reconcile_id"),
+            default=P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID,
+        ),
+        "received_adoption_decision_id": clean_identifier(
+            adoption.get("decision_id"),
+            default=P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID,
+        ),
+        "source_mode": P7_SOURCE_MODE,
+        "git_checked": P7_GIT_CHECKED,
+        "received_zip_ref": clean_identifier(received.get("received_zip_ref"), default=P7_HOLD004_RECEIVED_ZIP_REF),
+        "previous_active_baseline": active,
+        "candidate_active_baseline": candidate,
+        "root_cause_status": normalized_root_cause,
+        "prior_r24_adoption_status": clean_identifier(
+            adoption.get("adoption_status"),
+            default=P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH,
+        ),
+        "adoption_status": adoption_status,
+        "adoption_conditions": conditions,
+        "adoption_evidence_freeze_id": clean_identifier(
+            evidence.get("evidence_freeze_id"),
+            default="",
+        ),
+        "adoption_evidence_freeze_satisfied": evidence_freeze_satisfied,
+        "r27_manual_boolean_only_adoption_ready_allowed": False,
+        "active_baseline_adoption_ready": adoption_ready,
+        "active_baseline_update_allowed": adoption_ready,
+        "active_baseline_update_applied_to_runtime_builders": False,
+        "source_snapshot_ref_update_allowed": adoption_ready,
+        "source_snapshot_ref_updated_in_active_builders": False,
+        "same_baseline_id_hash_replacement_allowed": False,
+        "received_zip_promoted_to_source_snapshot_ref": False,
+        "official_group_02_capture_blocked_until_adopted": True,
+        "official_group_02_capture_run_allowed": False,
+        "official_group_02_capture_result_recording_allowed": False,
+        "can_claim_group_green": False,
+        "can_claim_full_backend_suite_green": False,
+        "full_backend_suite_green_confirmed": False,
+        "hold004_close_allowed": False,
+        "p7_complete": False,
+        "p8_start_allowed": False,
+        "release_allowed": False,
+        "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
+        "required_followup_fixes": dedupe_identifiers(
+            [
+                "received_snapshot_item_fingerprint_root_cause_classification_required"
+                if not conditions["root_cause_classified"]
+                else "",
+                "received_snapshot_repeat_collect_stability_required"
+                if not conditions["repeated_collect_stable"]
+                else "",
+                "received_snapshot_source_identity_decision_required"
+                if not conditions["source_identity_decision_recorded"] or not conditions["source_identity_accepted"]
+                else "",
+                "received_snapshot_test_semantics_review_required"
+                if not conditions["test_semantics_reviewed"]
+                else "",
+                "received_snapshot_adoption_evidence_freeze_required"
+                if not conditions["adoption_evidence_freeze_satisfied"]
+                else "",
+                "active_baseline_refresh_not_applied_to_runtime_builders",
+                "official_group_02_capture_blocked_until_received_snapshot_adoption",
+                "full_backend_suite_green_unconfirmed",
+            ],
+            limit=80,
+            max_length=200,
+        ),
+        "public_contract": _public_contract_boundary_flags(),
+        "body_free_markers": _body_free_markers(),
+        "body_free": True,
+    }
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(material)
+    return material
+
+
+
+
+def _r29_body_free_command(
+    *,
+    checkpoint_id: str,
+    command_id: str,
+    command_kind: str,
+    argv: tuple[str, ...],
+    required: bool = True,
+    execution_allowed_by_default: bool = True,
+    allowed_when_readiness_status: str = "",
+) -> dict[str, Any]:
+    return {
+        "checkpoint_id": checkpoint_id,
+        "command_id": command_id,
+        "command_kind": command_kind,
+        "working_directory": "mashos-api/ai",
+        "argv": list(argv),
+        "required": bool(required),
+        "execution_allowed_by_default": bool(execution_allowed_by_default),
+        "allowed_when_readiness_status": allowed_when_readiness_status,
+        "nodeids_retained": False,
+        "pytest_output_retained": False,
+        "terminal_output_retained": False,
+        "stdout_retained": False,
+        "stderr_retained": False,
+        "raw_traceback_included": False,
+        "body_free": True,
+    }
+
+
+def _r29_verification_sequence() -> list[dict[str, Any]]:
+    return [
+        _r29_body_free_command(
+            checkpoint_id="py_compile_material_contract_modules",
+            command_id="py_compile_p7_hold004_received_snapshot_r21_r29_materials_20260616",
+            command_kind="py_compile",
+            argv=(
+                "python",
+                "-m",
+                "py_compile",
+                "services/ai_inference/emlis_ai_p7_hold004_received_snapshot_baseline_fingerprint_reconcile.py",
+                "services/ai_inference/emlis_ai_p7_hold004_backend_suite_execution_results.py",
+                "services/ai_inference/emlis_ai_p7_hold004_matrix_consistency_report.py",
+                "services/ai_inference/emlis_ai_p7_hold_matrix.py",
+                "services/ai_inference/emlis_ai_p7_release_handoff.py",
+                "services/ai_inference/emlis_ai_p7_validation_matrix.py",
+            ),
+        ),
+        _r29_body_free_command(
+            checkpoint_id="p7_hold004_received_snapshot_focused_contract_subset",
+            command_id="pytest_p7_hold004_received_snapshot_r21_r29_focused_contract_subset_20260616",
+            command_kind="pytest_focused_contract_subset",
+            argv=(
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+                "PYTHONPATH=services/ai_inference",
+                "pytest",
+                "-q",
+                "--tb=short",
+                "-p",
+                "pytest_asyncio.plugin",
+                "tests/test_emlis_ai_p7_hold004_backend_suite_collect_baseline_20260614.py",
+                "tests/test_emlis_ai_p7_hold004_backend_suite_group_result_20260614.py",
+                "tests/test_emlis_ai_p7_hold004_backend_suite_matrix_connection_20260615.py",
+                "tests/test_emlis_ai_p7_hold004_release_validation_connection_20260615.py",
+                "tests/test_emlis_ai_p7_hold004_matrix_consistency_report_20260615.py",
+            ),
+        ),
+        _r29_body_free_command(
+            checkpoint_id="full_backend_collect_only_fingerprint_check",
+            command_id="pytest_collect_only_backend_received_snapshot_r29_20260616",
+            command_kind="pytest_collect_only_full_backend",
+            argv=(
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+                "PYTHONPATH=services/ai_inference",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-p",
+                "pytest_asyncio.plugin",
+                "tests",
+            ),
+        ),
+        _r29_body_free_command(
+            checkpoint_id="group_02_collect_only_boundary_check",
+            command_id="pytest_collect_only_group_02_p7_hold004_r29_20260616",
+            command_kind="pytest_collect_only_group_02",
+            argv=(
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+                "PYTHONPATH=services/ai_inference",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-p",
+                "pytest_asyncio.plugin",
+                "tests/test_emlis_ai_p7_hold004_*.py",
+            ),
+        ),
+        _r29_body_free_command(
+            checkpoint_id="group_02_full_run_conditional_capture_check",
+            command_id="pytest_group_02_p7_hold004_full_run_conditional_r29_20260616",
+            command_kind="pytest_group_02_full_run_conditional",
+            argv=(
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+                "PYTHONPATH=services/ai_inference",
+                "pytest",
+                "-q",
+                "--tb=short",
+                "-p",
+                "pytest_asyncio.plugin",
+                "tests/test_emlis_ai_p7_hold004_*.py",
+            ),
+            required=False,
+            execution_allowed_by_default=False,
+            allowed_when_readiness_status="READY_FOR_OFFICIAL_CAPTURE_RUN",
+        ),
+    ]
+
+
+def _r29_expected_full_collect_summary() -> dict[str, Any]:
+    return {
+        "collected_test_file_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT,
+        "collected_test_item_count": P7_HOLD004_RECEIVED_COLLECTED_TEST_ITEM_COUNT,
+        "warnings_count": P7_HOLD004_RECEIVED_COLLECT_WARNINGS_COUNT,
+        "test_items_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_ITEMS_FINGERPRINT_SHA256,
+        "test_files_fingerprint_sha256": P7_HOLD004_RECEIVED_TEST_FILES_FINGERPRINT_SHA256,
+        "active_baseline_item_fingerprint_sha256_at_receipt": (
+            P7_HOLD004_ACTIVE_TEST_ITEMS_FINGERPRINT_SHA256_AT_RECEIPT
+        ),
+        "active_baseline_file_fingerprint_sha256_at_receipt": (
+            P7_HOLD004_ACTIVE_TEST_FILES_FINGERPRINT_SHA256_AT_RECEIPT
+        ),
+        "active_baseline_item_fingerprint_match_expected": False,
+        "active_baseline_file_fingerprint_match_expected": True,
+        "collect_only_is_not_execution_green": True,
+        "nodeids_retained": False,
+        "pytest_output_retained": False,
+        "body_free": True,
+    }
+
+
+def _r29_expected_group02_collect_summary() -> dict[str, Any]:
+    return {
+        "group_id": "group_02_p7_hold004",
+        "batch_id": "group_02_p7_hold004_batch_01",
+        "collected_test_file_count": 19,
+        "collected_test_item_count": 252,
+        "warnings_count": 1,
+        "timeout_budget_sec": 120,
+        "long_run_probe_budget_sec": 240,
+        "collect_only_is_not_execution_green": True,
+        "collect_only_is_not_group_green": True,
+        "official_green_confirmed": False,
+        "nodeids_retained": False,
+        "pytest_output_retained": False,
+        "body_free": True,
+    }
+
+
+def _r29_green_claim_boundaries() -> dict[str, bool]:
+    boundaries = {key: False for key in _R29_REQUIRED_GREEN_CLAIM_BOUNDARIES}
+    boundaries.update(
+        {
+            "target_contract_subset_green_is_contract_green_only": True,
+            "full_backend_suite_green_requires_full_execution_green": True,
+            "official_group02_capture_requires_readiness_ready": True,
+            "official_group02_timeout_requires_body_free_timeout_material": True,
+            "official_group02_fail_requires_first_failure_identifiers_only": True,
+            "previous_active_baseline_must_remain_traceable_after_adoption": True,
+            "same_baseline_id_hash_replacement_blocked": True,
+        }
+    )
+    return boundaries
+
+
+def _r29_adoption_readiness_inputs(
+    *,
+    adoption_evidence_freeze: Mapping[str, Any],
+    conditional_active_baseline_adoption: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "adoption_evidence_freeze_id": clean_identifier(
+            adoption_evidence_freeze.get("evidence_freeze_id"),
+            default=P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID,
+        ),
+        "adoption_evidence_status": clean_identifier(
+            adoption_evidence_freeze.get("evidence_status"),
+            default=P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_BLOCKED_UNVERIFIED,
+            max_length=160,
+        ),
+        "adoption_evidence_freeze_satisfied": bool(
+            adoption_evidence_freeze.get("can_mark_r27_conditions_satisfied") is True
+        ),
+        "conditional_adoption_id": clean_identifier(
+            conditional_active_baseline_adoption.get("adoption_id"),
+            default=P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID,
+        ),
+        "conditional_adoption_status": clean_identifier(
+            conditional_active_baseline_adoption.get("adoption_status"),
+            default=P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH,
+            max_length=160,
+        ),
+        "conditional_active_baseline_adoption_ready": bool(
+            conditional_active_baseline_adoption.get("active_baseline_adoption_ready") is True
+        ),
+        "conditional_material_update_allowed": bool(
+            conditional_active_baseline_adoption.get("active_baseline_update_allowed") is True
+        ),
+        "active_baseline_update_applied_to_runtime_builders": False,
+        "source_snapshot_ref_updated_in_active_builders": False,
+        "r29_applies_active_baseline_refresh": False,
+        "r29_closes_hold004": False,
+        "release_allowed_after_r29": False,
+    }
+
+
+def build_p7_hold004_received_snapshot_r29_verification_procedure(
+    *,
+    adoption_evidence_freeze: Mapping[str, Any] | None = None,
+    conditional_active_baseline_adoption: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the R29 body-free verification procedure material.
+
+    R29 fixes how to read validation results.  It does not execute the commands,
+    does not store command output, does not adopt the received snapshot, does not
+    record group_02 official green, and does not close P7-HOLD-004.
+    """
+
+    evidence = (
+        safe_mapping(adoption_evidence_freeze)
+        if adoption_evidence_freeze is not None
+        else build_p7_hold004_received_snapshot_adoption_evidence_freeze()
+    )
+    assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(evidence)
+    conditional = (
+        safe_mapping(conditional_active_baseline_adoption)
+        if conditional_active_baseline_adoption is not None
+        else build_p7_hold004_received_snapshot_conditional_active_baseline_adoption(
+            adoption_evidence_freeze=evidence,
+        )
+    )
+    assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(conditional)
+
+    material = {
+        "schema_version": P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION,
+        "phase": P7_PHASE,
+        "step": P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP,
+        "implementation_step": P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP,
+        "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
+        "verification_id": P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_ID,
+        "source_mode": P7_SOURCE_MODE,
+        "git_checked": P7_GIT_CHECKED,
+        "received_zip_ref": P7_HOLD004_RECEIVED_ZIP_REF,
+        "active_source_snapshot_ref_at_receipt": P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT,
+        "scope_status": "R29_VERIFICATION_PROCEDURE_FIXED_RELEASE_CLOSED",
+        "implementation_scope": dict(_IMPLEMENTATION_SCOPE_FLAGS),
+        "verification_sequence": _r29_verification_sequence(),
+        "expected_full_backend_collect_only": _r29_expected_full_collect_summary(),
+        "expected_group02_collect_only": _r29_expected_group02_collect_summary(),
+        "green_claim_boundaries": _r29_green_claim_boundaries(),
+        "adoption_readiness_inputs": _r29_adoption_readiness_inputs(
+            adoption_evidence_freeze=evidence,
+            conditional_active_baseline_adoption=conditional,
+        ),
+        "result_recording_policy": {
+            "r29_records_procedure_not_results": True,
+            "command_output_retained": False,
+            "pytest_output_retained": False,
+            "nodeids_retained": False,
+            "stdout_retained": False,
+            "stderr_retained": False,
+            "raw_traceback_included": False,
+            "body_free": True,
+        },
+        "blocker_refs": dedupe_identifiers(
+            [
+                *_RECEIVED_SNAPSHOT_BLOCKER_REFS,
+                "official_group_02_capture_green_unconfirmed",
+                "full_backend_suite_green_unconfirmed",
+            ],
+            limit=40,
+            max_length=200,
+        ),
+        "active_baseline_update_allowed": False,
+        "official_group_02_capture_run_allowed": False,
+        "official_group_02_capture_result_recording_allowed": False,
+        "can_claim_group_green": False,
+        "can_claim_full_backend_suite_green": False,
+        **_release_closed_boundary(),
+        "unresolved_hold_refs": [P7_HOLD004_BACKEND_SUITE_HOLD_ID],
+        "required_followup_fixes": dedupe_identifiers(
+            [
+                *_REQUIRED_FOLLOWUP_FIXES,
+                "r29_verification_procedure_fixed",
+                "full_backend_collect_only_must_be_checked_before_any_baseline_refresh",
+                "group_02_full_run_requires_readiness_ready_before_official_capture",
+                "group_02_timeout_requires_body_free_timeout_material",
+                "active_baseline_refresh_not_applied_to_runtime_builders",
+            ],
+            limit=80,
+            max_length=200,
+        ),
+        "public_contract": _public_contract_boundary_flags(),
+        "body_free_markers": _body_free_markers(),
+        "body_free": True,
+    }
+    assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(material)
+    return material
+
+
+def assert_p7_hold004_received_snapshot_r29_verification_procedure_contract(
+    material: Mapping[str, Any],
+) -> bool:
+    """Validate the R29 verification-procedure material."""
+
+    data = safe_mapping(material)
+    source = "p7_hold004_received_snapshot_r29_verification_procedure"
+    if data.get("schema_version") != P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 R29 verification procedure schema_version mismatch")
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 R29 verification procedure scope mismatch")
+    if data.get("implementation_step") != P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP:
+        raise ValueError("P7-HOLD-004 R29 verification procedure implementation_step mismatch")
+    if data.get("verification_id") != P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_ID:
+        raise ValueError("P7-HOLD-004 R29 verification procedure id mismatch")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("git_checked") is not False:
+        raise ValueError("P7-HOLD-004 R29 verification procedure source mode mismatch")
+    if data.get("received_zip_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 R29 verification procedure received zip mismatch")
+    if data.get("active_source_snapshot_ref_at_receipt") != P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT:
+        raise ValueError("P7-HOLD-004 R29 verification procedure active source mismatch")
+    if data.get("scope_status") != "R29_VERIFICATION_PROCEDURE_FIXED_RELEASE_CLOSED":
+        raise ValueError("P7-HOLD-004 R29 verification procedure status mismatch")
+
+    scope = safe_mapping(data.get("implementation_scope"))
+    for key in (
+        "r21_received_snapshot_constants_added",
+        "r22_received_collect_summary_body_free_added",
+        "r23_reconcile_material_added",
+        "r24_adoption_decision_added",
+        "r25_official_group02_readiness_guard_added",
+        "r26_matrix_handoff_validation_connected",
+        "r27_conditional_active_baseline_adoption_added",
+        "r28_group02_timeout_long_run_policy_added",
+        "pre_r29_received_snapshot_adoption_evidence_freeze_added",
+        "r29_verification_procedure_fixed",
+    ):
+        if scope.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 R29 verification procedure missing scope flag {key}")
+    for key in (
+        "runtime_behavior_change_allowed",
+        "rn_change_allowed",
+        "api_contract_change_allowed",
+        "db_change_allowed",
+        "active_baseline_change_allowed",
+        "release_decision_change_allowed",
+        "p8_implementation_allowed",
+    ):
+        if scope.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 R29 verification procedure must keep {key}=false")
+
+    sequence = list(data.get("verification_sequence") or [])
+    if [safe_mapping(item).get("checkpoint_id") for item in sequence] != list(_R29_VERIFICATION_CHECKPOINT_IDS):
+        raise ValueError("P7-HOLD-004 R29 verification sequence mismatch")
+    for item in sequence:
+        command = safe_mapping(item)
+        if command.get("body_free") is not True:
+            raise ValueError("P7-HOLD-004 R29 command must be body_free")
+        if not command.get("command_id") or not command.get("command_kind"):
+            raise ValueError("P7-HOLD-004 R29 command id/kind missing")
+        if command.get("working_directory") != "mashos-api/ai":
+            raise ValueError("P7-HOLD-004 R29 command working_directory mismatch")
+        if not isinstance(command.get("argv"), list) or not command.get("argv"):
+            raise ValueError("P7-HOLD-004 R29 command argv missing")
+        for retained_key in (
+            "nodeids_retained",
+            "pytest_output_retained",
+            "terminal_output_retained",
+            "stdout_retained",
+            "stderr_retained",
+            "raw_traceback_included",
+        ):
+            if command.get(retained_key) is not False:
+                raise ValueError(f"P7-HOLD-004 R29 command must keep {retained_key}=false")
+    final_command = safe_mapping(sequence[-1])
+    if final_command.get("execution_allowed_by_default") is not False:
+        raise ValueError("P7-HOLD-004 R29 group_02 full run must be blocked by default")
+    if final_command.get("allowed_when_readiness_status") != "READY_FOR_OFFICIAL_CAPTURE_RUN":
+        raise ValueError("P7-HOLD-004 R29 group_02 full run readiness status mismatch")
+
+    full_collect = safe_mapping(data.get("expected_full_backend_collect_only"))
+    expected_full = _r29_expected_full_collect_summary()
+    for key, expected in expected_full.items():
+        if full_collect.get(key) != expected:
+            raise ValueError(f"P7-HOLD-004 R29 full collect expectation {key} mismatch")
+    group_collect = safe_mapping(data.get("expected_group02_collect_only"))
+    expected_group = _r29_expected_group02_collect_summary()
+    for key, expected in expected_group.items():
+        if group_collect.get(key) != expected:
+            raise ValueError(f"P7-HOLD-004 R29 group_02 collect expectation {key} mismatch")
+
+    boundaries = safe_mapping(data.get("green_claim_boundaries"))
+    for key in _R29_REQUIRED_GREEN_CLAIM_BOUNDARIES:
+        if boundaries.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 R29 must keep {key}=false")
+    for key in (
+        "target_contract_subset_green_is_contract_green_only",
+        "full_backend_suite_green_requires_full_execution_green",
+        "official_group02_capture_requires_readiness_ready",
+        "official_group02_timeout_requires_body_free_timeout_material",
+        "official_group02_fail_requires_first_failure_identifiers_only",
+        "previous_active_baseline_must_remain_traceable_after_adoption",
+        "same_baseline_id_hash_replacement_blocked",
+    ):
+        if boundaries.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 R29 must keep {key}=true")
+
+    adoption_inputs = safe_mapping(data.get("adoption_readiness_inputs"))
+    if adoption_inputs.get("adoption_evidence_freeze_id") != P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID:
+        raise ValueError("P7-HOLD-004 R29 adoption evidence id mismatch")
+    if adoption_inputs.get("conditional_adoption_id") != P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID:
+        raise ValueError("P7-HOLD-004 R29 conditional adoption id mismatch")
+    if adoption_inputs.get("adoption_evidence_freeze_satisfied") is True:
+        if adoption_inputs.get("conditional_adoption_status") != (
+            P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+        ):
+            raise ValueError("P7-HOLD-004 R29 satisfied evidence must project adoptable conditional status")
+        if adoption_inputs.get("conditional_active_baseline_adoption_ready") is not True:
+            raise ValueError("P7-HOLD-004 R29 satisfied evidence must project conditional adoption ready")
+    else:
+        if adoption_inputs.get("conditional_adoption_status") == (
+            P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+        ):
+            raise ValueError("P7-HOLD-004 R29 blocked evidence must not project adoptable conditional status")
+    for key in (
+        "active_baseline_update_applied_to_runtime_builders",
+        "source_snapshot_ref_updated_in_active_builders",
+        "r29_applies_active_baseline_refresh",
+        "r29_closes_hold004",
+        "release_allowed_after_r29",
+    ):
+        if adoption_inputs.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 R29 adoption readiness must keep {key}=false")
+
+    result_policy = safe_mapping(data.get("result_recording_policy"))
+    if result_policy.get("r29_records_procedure_not_results") is not True:
+        raise ValueError("P7-HOLD-004 R29 must record procedure, not results")
+    for retained_key in (
+        "command_output_retained",
+        "pytest_output_retained",
+        "nodeids_retained",
+        "stdout_retained",
+        "stderr_retained",
+        "raw_traceback_included",
+    ):
+        if result_policy.get(retained_key) is not False:
+            raise ValueError(f"P7-HOLD-004 R29 result policy must keep {retained_key}=false")
+    if result_policy.get("body_free") is not True:
+        raise ValueError("P7-HOLD-004 R29 result policy must be body_free")
+
+    _assert_release_capture_closed_and_body_free(data, source=source)
+    blockers = set(dedupe_identifiers(data.get("blocker_refs"), limit=40, max_length=200))
+    for blocker in (
+        "received_snapshot_collect_item_fingerprint_mismatch",
+        "official_group_02_capture_green_unconfirmed",
+        "full_backend_suite_green_unconfirmed",
+    ):
+        if blocker not in blockers:
+            raise ValueError(f"P7-HOLD-004 R29 missing blocker {blocker}")
+    followups = set(dedupe_identifiers(data.get("required_followup_fixes"), limit=80, max_length=200))
+    for followup in (
+        "r29_verification_procedure_fixed",
+        "group_02_full_run_requires_readiness_ready_before_official_capture",
+        "active_baseline_refresh_not_applied_to_runtime_builders",
+    ):
+        if followup not in followups:
+            raise ValueError(f"P7-HOLD-004 R29 missing followup {followup}")
+    assert_false_markers(safe_mapping(data.get("body_free_markers")), source=f"{source}.body_free_markers")
+    assert_p7_no_body_payload_or_contract_mutation(data, source=source)
+    return True
+
+
 def _assert_release_capture_closed_and_body_free(data: Mapping[str, Any], *, source: str) -> None:
     for key in _RELEASE_CLOSED_KEYS:
         if data.get(key) is not False:
@@ -1134,12 +2182,325 @@ def assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract(
     return True
 
 
+def assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract(material: Mapping[str, Any]) -> bool:
+    """Validate the pre-R29 adoption evidence freeze material."""
+
+    data = safe_mapping(material)
+    source = "p7_hold004_received_snapshot_adoption_evidence_freeze"
+    if data.get("schema_version") != P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze schema_version mismatch")
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze scope mismatch")
+    if data.get("implementation_step") != P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze implementation_step mismatch")
+    if data.get("evidence_freeze_id") != P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze id mismatch")
+    if data.get("received_reconcile_id") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze reconcile id mismatch")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("git_checked") is not False:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze source mode mismatch")
+    if data.get("received_zip_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze received zip mismatch")
+    if data.get("candidate_new_baseline_id") != P7_HOLD004_RECEIVED_SNAPSHOT_CANDIDATE_NEW_BASELINE_ID:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze candidate baseline mismatch")
+
+    repeat = safe_mapping(data.get("repeat_collect_evidence"))
+    root = safe_mapping(data.get("root_cause_evidence"))
+    source_identity = safe_mapping(data.get("source_identity_evidence"))
+    semantics = safe_mapping(data.get("test_semantics_evidence"))
+    traceability = safe_mapping(data.get("baseline_traceability_evidence"))
+    connection_plan = safe_mapping(data.get("post_adoption_connection_plan_evidence"))
+    for section_name, section in (
+        ("repeat_collect_evidence", repeat),
+        ("root_cause_evidence", root),
+        ("source_identity_evidence", source_identity),
+        ("test_semantics_evidence", semantics),
+        ("baseline_traceability_evidence", traceability),
+        ("post_adoption_connection_plan_evidence", connection_plan),
+    ):
+        if section.get("satisfied") not in {True, False}:
+            raise ValueError(f"P7-HOLD-004 adoption evidence freeze {section_name}.satisfied must be bool")
+
+    if repeat.get("minimum_collect_run_count") != 2:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze repeat collect minimum mismatch")
+    if repeat.get("satisfied") is True:
+        if repeat.get("provided_collect_run_count", 0) < 2:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze repeat collect satisfied too early")
+        if repeat.get("counts_warnings_fingerprints_stable") is not True:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze repeat collect stability mismatch")
+        if repeat.get("received_collect_matches_recorded_default") is not True:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze received collect default mismatch")
+    for retained_key in ("nodeids_retained", "pytest_output_retained"):
+        if repeat.get(retained_key) is not False:
+            raise ValueError(f"P7-HOLD-004 adoption evidence freeze repeat collect must keep {retained_key}=false")
+
+    normalized_root = _normalize_root_cause_status(root.get("root_cause_status"))
+    if root.get("root_cause_status") != normalized_root:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze root cause invalid")
+    if root.get("satisfied") is True:
+        if root.get("root_cause_review_recorded") is not True:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze root cause review missing")
+        if normalized_root not in P7_HOLD004_RECEIVED_ADOPTABLE_ROOT_CAUSE_STATUSES:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze cannot satisfy unclassified root cause")
+
+    if source_identity.get("received_zip_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze source identity received zip mismatch")
+    if source_identity.get("active_source_snapshot_ref_at_receipt") != P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze source identity active snapshot mismatch")
+    if source_identity.get("candidate_source_snapshot_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze candidate source snapshot mismatch")
+    if source_identity.get("received_zip_promoted_to_source_snapshot_ref") is not False:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze must not promote source snapshot")
+    if source_identity.get("satisfied") is True and (
+        source_identity.get("source_identity_decision_recorded") is not True
+        or source_identity.get("source_identity_accepted") is not True
+    ):
+        raise ValueError("P7-HOLD-004 adoption evidence freeze source identity satisfied without decision")
+
+    outcome = _normalize_test_semantics_review_outcome(semantics.get("test_semantics_review_outcome"))
+    if semantics.get("test_semantics_review_outcome") != outcome:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze test semantics outcome invalid")
+    if semantics.get("satisfied") is True:
+        if semantics.get("test_semantics_reviewed") is not True:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze test semantics review missing")
+        if outcome == P7_HOLD004_RECEIVED_TEST_SEMANTICS_REVIEW_OUTCOME_NOT_REVIEWED:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze test semantics cannot be unreviewed")
+    for retained_key in ("nodeids_retained", "pytest_output_retained", "raw_traceback_included"):
+        if semantics.get(retained_key) is not False:
+            raise ValueError(f"P7-HOLD-004 adoption evidence freeze semantics must keep {retained_key}=false")
+
+    if traceability.get("satisfied") is True:
+        for key in (
+            "baseline_id_or_revision_update_planned",
+            "candidate_baseline_id_changes",
+            "same_baseline_id_hash_replacement_blocked",
+            "previous_active_baseline_retained",
+        ):
+            if traceability.get(key) is not True:
+                raise ValueError(f"P7-HOLD-004 adoption evidence freeze traceability requires {key}=true")
+    if connection_plan.get("satisfied") is True:
+        for key in ("runtime_builder_update_plan_recorded", "matrix_handoff_update_plan_recorded"):
+            if connection_plan.get(key) is not True:
+                raise ValueError(f"P7-HOLD-004 adoption evidence freeze connection plan requires {key}=true")
+    for key in ("active_baseline_update_applied_to_runtime_builders", "source_snapshot_ref_updated_in_active_builders"):
+        if connection_plan.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 adoption evidence freeze connection plan must keep {key}=false")
+
+    can_mark = data.get("can_mark_r27_conditions_satisfied") is True
+    if data.get("evidence_status") not in {
+        P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_BLOCKED_UNVERIFIED,
+        P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_SATISFIED_FOR_R27_CONDITIONAL_ADOPTION,
+    }:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze status invalid")
+    if can_mark:
+        if data.get("evidence_status") != P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_SATISFIED_FOR_R27_CONDITIONAL_ADOPTION:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze satisfied status mismatch")
+        for section_name, section in (
+            ("repeat_collect_evidence", repeat),
+            ("root_cause_evidence", root),
+            ("source_identity_evidence", source_identity),
+            ("test_semantics_evidence", semantics),
+            ("baseline_traceability_evidence", traceability),
+            ("post_adoption_connection_plan_evidence", connection_plan),
+        ):
+            if section.get("satisfied") is not True:
+                raise ValueError(f"P7-HOLD-004 adoption evidence freeze cannot satisfy without {section_name}")
+        if data.get("adoption_status_if_applied_to_r27") != P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze R27 status mismatch")
+    else:
+        if data.get("evidence_status") != P7_HOLD004_RECEIVED_ADOPTION_EVIDENCE_STATUS_BLOCKED_UNVERIFIED:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze blocked status mismatch")
+        if data.get("adoption_status_if_applied_to_r27") == P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH:
+            raise ValueError("P7-HOLD-004 adoption evidence freeze must not project adoptable while blocked")
+
+    projection = safe_mapping(data.get("r27_condition_projection"))
+    if projection.get("adoption_evidence_freeze_satisfied") is not can_mark:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze projection mismatch")
+    if data.get("r27_manual_boolean_only_adoption_ready_allowed") is not False:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze must reject manual boolean-only readiness")
+
+    for key in (
+        "active_baseline_update_allowed",
+        "official_group_02_capture_run_allowed",
+        "official_group_02_capture_result_recording_allowed",
+        "can_claim_group_green",
+        "can_claim_full_backend_suite_green",
+        "full_backend_suite_green_confirmed",
+        "hold004_close_allowed",
+        "p7_complete",
+        "p8_start_allowed",
+        "release_allowed",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 adoption evidence freeze must keep {key}=false")
+    unresolved_holds = set(dedupe_identifiers(data.get("unresolved_hold_refs"), limit=40, max_length=120))
+    if P7_HOLD004_BACKEND_SUITE_HOLD_ID not in unresolved_holds:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze must keep P7-HOLD-004 unresolved")
+    if data.get("body_free") is not True:
+        raise ValueError("P7-HOLD-004 adoption evidence freeze must keep body_free=true")
+    assert_false_markers(safe_mapping(data.get("public_contract")), source=f"{source}.public_contract")
+    assert_false_markers(safe_mapping(data.get("body_free_markers")), source=f"{source}.body_free_markers")
+    assert_p7_no_body_payload_or_contract_mutation(data, source=source)
+    return True
+
+
+def assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract(
+    material: Mapping[str, Any],
+) -> bool:
+    """Validate the R27 conditional active-baseline adoption material."""
+
+    data = safe_mapping(material)
+    source = "p7_hold004_received_snapshot_conditional_active_baseline_adoption"
+    if data.get("schema_version") != P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption schema_version mismatch")
+    if data.get("phase") != P7_PHASE or data.get("hold_id") != P7_HOLD004_BACKEND_SUITE_HOLD_ID:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption scope mismatch")
+    if data.get("implementation_step") != P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption implementation_step mismatch")
+    if data.get("adoption_id") != P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption id mismatch")
+    if data.get("received_reconcile_id") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption reconcile id mismatch")
+    if data.get("received_adoption_decision_id") != P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_ADOPTION_DECISION_ID:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption R24 decision id mismatch")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("git_checked") is not False:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption source mode mismatch")
+    if data.get("received_zip_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 conditional active baseline adoption received zip mismatch")
+
+    previous = safe_mapping(data.get("previous_active_baseline"))
+    expected_previous = _active_baseline_at_receipt_material()
+    for key, expected in expected_previous.items():
+        if previous.get(key) != expected:
+            raise ValueError(f"P7-HOLD-004 conditional adoption previous_active_baseline.{key} mismatch")
+
+    candidate = safe_mapping(data.get("candidate_active_baseline"))
+    expected_candidate = _candidate_active_baseline_material()
+    for key, expected in expected_candidate.items():
+        if candidate.get(key) != expected:
+            raise ValueError(f"P7-HOLD-004 conditional adoption candidate_active_baseline.{key} mismatch")
+    if candidate.get("baseline_id") == previous.get("baseline_id"):
+        raise ValueError("P7-HOLD-004 conditional adoption must not reuse the same baseline id")
+    if candidate.get("source_snapshot_ref") != P7_HOLD004_RECEIVED_ZIP_REF:
+        raise ValueError("P7-HOLD-004 conditional adoption candidate source snapshot mismatch")
+
+    conditions = safe_mapping(data.get("adoption_conditions"))
+    expected_condition_keys = {
+        "received_zip_ref_is_expected",
+        "received_collect_counts_match_expected",
+        "counts_and_warnings_match_active_or_refresh_scope",
+        "test_files_fingerprint_matches_active",
+        "item_fingerprint_diff_recorded_as_refresh_candidate",
+        "root_cause_classified",
+        "repeated_collect_stable",
+        "source_identity_decision_recorded",
+        "source_identity_accepted",
+        "test_semantics_reviewed",
+        "baseline_id_or_revision_update_planned",
+        "candidate_baseline_id_changes",
+        "same_baseline_id_hash_replacement_blocked",
+        "previous_active_baseline_retained",
+        "public_contract_unchanged",
+        "runtime_contract_unchanged",
+        "adoption_evidence_freeze_satisfied",
+    }
+    if set(conditions) != expected_condition_keys:
+        raise ValueError("P7-HOLD-004 conditional adoption condition keys mismatch")
+    for key in expected_condition_keys:
+        if not isinstance(conditions.get(key), bool):
+            raise ValueError(f"P7-HOLD-004 conditional adoption condition {key} must be bool")
+    for key in (
+        "received_zip_ref_is_expected",
+        "received_collect_counts_match_expected",
+        "counts_and_warnings_match_active_or_refresh_scope",
+        "test_files_fingerprint_matches_active",
+        "item_fingerprint_diff_recorded_as_refresh_candidate",
+        "baseline_id_or_revision_update_planned",
+        "candidate_baseline_id_changes",
+        "same_baseline_id_hash_replacement_blocked",
+        "previous_active_baseline_retained",
+        "public_contract_unchanged",
+        "runtime_contract_unchanged",
+    ):
+        if conditions.get(key) is not True:
+            raise ValueError(f"P7-HOLD-004 conditional adoption required invariant {key} must stay true")
+
+    root_cause = _normalize_root_cause_status(data.get("root_cause_status"))
+    if data.get("root_cause_status") != root_cause:
+        raise ValueError("P7-HOLD-004 conditional adoption root cause status invalid")
+    status = clean_identifier(data.get("adoption_status"), max_length=160)
+    if status not in P7_HOLD004_RECEIVED_ADOPTION_STATUSES:
+        raise ValueError("P7-HOLD-004 conditional adoption status invalid")
+    ready = status == P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH
+    if data.get("active_baseline_adoption_ready") is not ready:
+        raise ValueError("P7-HOLD-004 conditional adoption ready flag mismatch")
+    if data.get("active_baseline_update_allowed") is not ready:
+        raise ValueError("P7-HOLD-004 conditional adoption update_allowed mismatch")
+    if data.get("source_snapshot_ref_update_allowed") is not ready:
+        raise ValueError("P7-HOLD-004 conditional adoption source update_allowed mismatch")
+    if data.get("adoption_evidence_freeze_satisfied") is not conditions.get("adoption_evidence_freeze_satisfied"):
+        raise ValueError("P7-HOLD-004 conditional adoption evidence satisfied flag mismatch")
+    if data.get("r27_manual_boolean_only_adoption_ready_allowed") is not False:
+        raise ValueError("P7-HOLD-004 conditional adoption must reject manual boolean-only readiness")
+    if ready:
+        for required_key in (
+            "root_cause_classified",
+            "repeated_collect_stable",
+            "source_identity_decision_recorded",
+            "source_identity_accepted",
+            "test_semantics_reviewed",
+            "adoption_evidence_freeze_satisfied",
+        ):
+            if conditions.get(required_key) is not True:
+                raise ValueError(f"P7-HOLD-004 conditional adoption ready requires {required_key}=true")
+    else:
+        if conditions.get("root_cause_classified") is not True and status != P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH:
+            raise ValueError("P7-HOLD-004 conditional adoption unclassified root cause must block adoption")
+
+    for key in (
+        "active_baseline_update_applied_to_runtime_builders",
+        "source_snapshot_ref_updated_in_active_builders",
+        "same_baseline_id_hash_replacement_allowed",
+        "received_zip_promoted_to_source_snapshot_ref",
+        "official_group_02_capture_run_allowed",
+        "official_group_02_capture_result_recording_allowed",
+        "can_claim_group_green",
+        "can_claim_full_backend_suite_green",
+        "full_backend_suite_green_confirmed",
+        "hold004_close_allowed",
+        "p7_complete",
+        "p8_start_allowed",
+        "release_allowed",
+    ):
+        if data.get(key) is not False:
+            raise ValueError(f"P7-HOLD-004 conditional active adoption must keep {key}=false")
+    if data.get("official_group_02_capture_blocked_until_adopted") is not True:
+        raise ValueError("P7-HOLD-004 conditional adoption must keep official capture blocked until builders are updated")
+
+    unresolved_holds = set(dedupe_identifiers(data.get("unresolved_hold_refs"), limit=40, max_length=120))
+    if P7_HOLD004_BACKEND_SUITE_HOLD_ID not in unresolved_holds:
+        raise ValueError("P7-HOLD-004 conditional adoption must keep P7-HOLD-004 unresolved")
+    followups = set(dedupe_identifiers(data.get("required_followup_fixes"), limit=80, max_length=200))
+    if "active_baseline_refresh_not_applied_to_runtime_builders" not in followups:
+        raise ValueError("P7-HOLD-004 conditional adoption must keep runtime builder refresh followup")
+    if "full_backend_suite_green_unconfirmed" not in followups:
+        raise ValueError("P7-HOLD-004 conditional adoption must keep full backend suite green unconfirmed")
+    if data.get("body_free") is not True:
+        raise ValueError("P7-HOLD-004 conditional adoption must keep body_free=true")
+    assert_false_markers(safe_mapping(data.get("public_contract")), source=f"{source}.public_contract")
+    assert_false_markers(safe_mapping(data.get("body_free_markers")), source=f"{source}.body_free_markers")
+    assert_p7_no_body_payload_or_contract_mutation(data, source=source)
+    return True
+
+
 __all__ = [
     "P7_HOLD004_ACTIVE_BASELINE_ID_AT_RECEIPT",
     "P7_HOLD004_ACTIVE_SOURCE_SNAPSHOT_REF_AT_RECEIPT",
     "P7_HOLD004_ACTIVE_TEST_FILES_FINGERPRINT_SHA256_AT_RECEIPT",
     "P7_HOLD004_ACTIVE_TEST_ITEMS_FINGERPRINT_SHA256_AT_RECEIPT",
     "P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_UNCLASSIFIED_ITEM_FINGERPRINT_MISMATCH",
+    "P7_HOLD004_RECEIVED_ADOPTION_STATUS_ADOPTABLE_AS_RECEIVED_SNAPSHOT_BASELINE_REFRESH",
+    "P7_HOLD004_RECEIVED_ADOPTION_STATUS_BLOCKED_ADOPTION_EVIDENCE_NOT_FROZEN",
     "P7_HOLD004_RECEIVED_COLLECT_COMMAND_ID",
     "P7_HOLD004_RECEIVED_COLLECT_WARNINGS_COUNT",
     "P7_HOLD004_RECEIVED_COLLECTED_TEST_FILE_COUNT",
@@ -1151,9 +2512,18 @@ __all__ = [
     "P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_ID",
     "P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_SCHEMA_VERSION",
     "P7_HOLD004_RECEIVED_SNAPSHOT_BASELINE_FINGERPRINT_RECONCILE_STEP",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_ID",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_SCHEMA_VERSION",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_ADOPTION_EVIDENCE_FREEZE_STEP",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_ID",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_SCHEMA_VERSION",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_R29_VERIFICATION_PROCEDURE_STEP",
     "P7_HOLD004_RECEIVED_SNAPSHOT_CANDIDATE_NEW_BASELINE_ID",
     "P7_HOLD004_RECEIVED_SNAPSHOT_COLLECT_SUMMARY_ID",
     "P7_HOLD004_RECEIVED_SNAPSHOT_COLLECT_SUMMARY_SCHEMA_VERSION",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_ID",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_SCHEMA_VERSION",
+    "P7_HOLD004_RECEIVED_SNAPSHOT_CONDITIONAL_ACTIVE_BASELINE_ADOPTION_STEP",
     "P7_HOLD004_RECEIVED_SNAPSHOT_SCOPE_FREEZE_ID",
     "P7_HOLD004_RECEIVED_SNAPSHOT_SCOPE_FREEZE_SCHEMA_VERSION",
     "P7_HOLD004_RECEIVED_TEST_FILES_FINGERPRINT_SHA256",
@@ -1161,10 +2531,16 @@ __all__ = [
     "P7_HOLD004_RECEIVED_ZIP_REF",
     "assert_p7_hold004_received_snapshot_baseline_adoption_decision_contract",
     "assert_p7_hold004_received_snapshot_baseline_fingerprint_reconcile_contract",
+    "assert_p7_hold004_received_snapshot_adoption_evidence_freeze_contract",
+    "assert_p7_hold004_received_snapshot_conditional_active_baseline_adoption_contract",
+    "assert_p7_hold004_received_snapshot_r29_verification_procedure_contract",
     "assert_p7_hold004_received_snapshot_collect_summary_contract",
     "assert_p7_hold004_received_snapshot_scope_freeze_contract",
     "build_p7_hold004_received_snapshot_baseline_adoption_decision",
     "build_p7_hold004_received_snapshot_baseline_fingerprint_reconcile",
+    "build_p7_hold004_received_snapshot_adoption_evidence_freeze",
+    "build_p7_hold004_received_snapshot_conditional_active_baseline_adoption",
+    "build_p7_hold004_received_snapshot_r29_verification_procedure",
     "build_p7_hold004_received_snapshot_collect_summary",
     "build_p7_hold004_received_snapshot_scope_freeze",
 ]

@@ -21,17 +21,21 @@ from emlis_ai_p7_hold004_backend_suite_execution_results import (
     P7_HOLD004_BACKEND_SUITE_STATUS_PASS_WITH_SKIPS,
     P7_HOLD004_BACKEND_SUITE_STATUS_TIMEOUT,
     P7_HOLD004_GROUP02_OFFICIAL_TEST_ITEM_COUNT,
-    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED,
-    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_GREEN,
-    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_RED,
-    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_TIMEOUT,
-    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_BASELINE_MISMATCH,
+    P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION,
+    P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP,
+    P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD,
+    P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH,
+    P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF,
     assert_p7_hold004_backend_suite_group_run_result_contract,
+    assert_p7_hold004_group02_timeout_classification_plan_contract,
     assert_p7_hold004_official_group02_capture_adoption_decision_contract,
     assert_p7_hold004_official_group02_capture_adoption_rule_contract,
+    assert_p7_hold004_official_group02_capture_readiness_contract,
     build_p7_hold004_backend_suite_group_run_result,
+    build_p7_hold004_group02_timeout_classification_plan,
     build_p7_hold004_official_group02_capture_adoption_decision,
     build_p7_hold004_official_group02_capture_adoption_rule,
+    build_p7_hold004_official_group02_capture_readiness,
     normalize_p7_hold004_backend_suite_group_run_status,
 )
 from emlis_ai_p7_hold004_backend_suite_group_inventory_plan import (
@@ -135,6 +139,18 @@ def test_r4_pass_group_run_result_claims_group_green_only_without_release_or_ful
     assert all(official_rule["capture_adoption_conditions"].values())
     assert_p7_hold004_official_group02_capture_adoption_rule_contract(official_rule)
 
+    readiness = build_p7_hold004_official_group02_capture_readiness()
+    assert readiness["readiness_status"] == (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert readiness["official_capture_run_allowed"] is False
+    assert readiness["official_capture_result_recording_allowed"] is False
+    assert readiness["official_group_02_capture_blocked"] is True
+    assert readiness["can_claim_group_green"] is False
+    assert readiness["can_claim_full_backend_suite_green"] is False
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in readiness["blocker_refs"]
+    assert_p7_hold004_official_group02_capture_readiness_contract(readiness)
+
     official_group02_result = build_p7_hold004_backend_suite_group_run_result(
         group_id="group_02_p7_hold004",
         status=P7_HOLD004_BACKEND_SUITE_STATUS_PASS,
@@ -144,19 +160,25 @@ def test_r4_pass_group_run_result_claims_group_green_only_without_release_or_ful
     official_decision = build_p7_hold004_official_group02_capture_adoption_decision(
         run_result=official_group02_result
     )
-    assert official_decision["adoption_status"] == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_GREEN
-    assert official_decision["official_capture_material_recordable"] is True
-    assert official_decision["official_group_02_capture_recorded"] is True
-    assert official_decision["official_group_02_capture_green_confirmed"] is True
-    assert official_decision["can_claim_group_green"] is True
+    assert official_decision["adoption_status"] == (
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+    )
+    assert official_decision["official_capture_material_recordable"] is False
+    assert official_decision["official_group_02_capture_recorded"] is False
+    assert official_decision["official_group_02_capture_green_confirmed"] is False
+    assert official_decision["can_claim_group_green"] is False
     assert official_decision["can_claim_full_backend_suite_green"] is False
     assert official_decision["full_backend_suite_green_confirmed"] is False
     assert official_decision["hold004_close_allowed"] is False
     assert official_decision["p7_complete"] is False
     assert official_decision["p8_start_allowed"] is False
     assert official_decision["release_allowed"] is False
-    assert official_decision["adoption_blockers"] == []
-    assert "group_02_green_is_not_full_backend_suite_green" in official_decision["required_followup_fixes"]
+    assert official_decision["official_capture_run_allowed"] is False
+    assert official_decision["official_capture_result_recording_allowed"] is False
+    assert official_decision["official_group_02_capture_blocked"] is True
+    assert official_decision["received_snapshot_item_fingerprint_mismatch_unresolved"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_decision["adoption_blockers"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_decision["required_followup_fixes"]
     assert official_decision["terminal_output_retained"] is False
     assert official_decision["stdout_retained"] is False
     assert official_decision["stderr_retained"] is False
@@ -228,14 +250,18 @@ def test_r4_fail_group_run_result_captures_first_failure_identifiers_only_and_re
     official_fail_decision = build_p7_hold004_official_group02_capture_adoption_decision(
         run_result=official_fail
     )
-    assert official_fail_decision["adoption_status"] == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_RED
-    assert official_fail_decision["official_capture_material_recordable"] is True
+    assert official_fail_decision["adoption_status"] == (
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+    )
+    assert official_fail_decision["official_capture_material_recordable"] is False
     assert official_fail_decision["official_group_02_capture_green_confirmed"] is False
-    assert official_fail_decision["red_classification_required"] is True
+    assert official_fail_decision["red_classification_required"] is False
     assert official_fail_decision["can_claim_group_green"] is False
     assert official_fail_decision["can_claim_full_backend_suite_green"] is False
     assert official_fail_decision["release_allowed"] is False
-    assert "first_red_classification_required" in official_fail_decision["required_followup_fixes"]
+    assert official_fail_decision["official_group_02_capture_blocked"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_fail_decision["adoption_blockers"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_fail_decision["required_followup_fixes"]
     assert_p7_hold004_official_group02_capture_adoption_decision_contract(official_fail_decision)
 
     assert_p7_hold004_backend_suite_group_run_result_contract(result)
@@ -264,6 +290,9 @@ def test_r4_timeout_group_run_result_isolated_as_not_green_and_body_free() -> No
     assert result["can_claim_group_green"] is False
     assert result["can_claim_full_backend_suite_green"] is False
     assert result["timeout_classification_required"] is True
+    assert result["timeout_is_green"] is False
+    assert result["timeout_is_immediate_fail"] is False
+    assert result["timeout_requires_long_run_classification"] is True
     assert "timeout_isolated_not_green" in result["required_followup_fixes"]
     assert "timeout_classification_required" in result["required_followup_fixes"]
     assert result["full_backend_suite_green_confirmed"] is False
@@ -277,14 +306,77 @@ def test_r4_timeout_group_run_result_isolated_as_not_green_and_body_free() -> No
     official_timeout_decision = build_p7_hold004_official_group02_capture_adoption_decision(
         run_result=official_timeout
     )
-    assert official_timeout_decision["adoption_status"] == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_RECORDABLE_TIMEOUT
-    assert official_timeout_decision["official_capture_material_recordable"] is True
+    assert official_timeout_decision["adoption_status"] == (
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+    )
+    assert official_timeout_decision["official_capture_material_recordable"] is False
     assert official_timeout_decision["official_group_02_capture_green_confirmed"] is False
-    assert official_timeout_decision["timeout_classification_required"] is True
+    assert official_timeout_decision["timeout_classification_required"] is False
     assert official_timeout_decision["can_claim_group_green"] is False
     assert official_timeout_decision["release_allowed"] is False
-    assert "timeout_isolated_not_green" in official_timeout_decision["required_followup_fixes"]
+    assert official_timeout_decision["official_group_02_capture_blocked"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_timeout_decision["adoption_blockers"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in official_timeout_decision["required_followup_fixes"]
     assert_p7_hold004_official_group02_capture_adoption_decision_contract(official_timeout_decision)
+
+    timeout_plan = build_p7_hold004_group02_timeout_classification_plan()
+    assert timeout_plan["schema_version"] == P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_SCHEMA_VERSION
+    assert timeout_plan["step"] == P7_HOLD004_GROUP02_TIMEOUT_CLASSIFICATION_PLAN_STEP
+    assert timeout_plan["hold_id"] == "P7-HOLD-004"
+    assert timeout_plan["group_id"] == "group_02_p7_hold004"
+    assert timeout_plan["batch_id"] == "group_02_p7_hold004_batch_01"
+    assert timeout_plan["timeout_budget_sec"] == 120
+    assert timeout_plan["long_run_probe_budget_sec"] == 240
+    assert timeout_plan["official_capture_readiness_status"] == (
+        P7_HOLD004_OFFICIAL_GROUP02_CAPTURE_READINESS_STATUS_BLOCKED_BY_ITEM_FINGERPRINT_MISMATCH
+    )
+    assert timeout_plan["official_capture_run_allowed"] is False
+    assert timeout_plan["official_capture_result_recording_allowed"] is False
+    assert timeout_plan["official_capture_blocked_until_readiness_ready"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in timeout_plan[
+        "readiness_blocker_refs"
+    ]
+    assert timeout_plan["prior_local_attempts"] == {
+        "attempt_120_sec_completed": False,
+        "attempt_240_sec_completed": False,
+        "official_green_confirmed": False,
+    }
+    assert timeout_plan["timeout_result_policy"] == {
+        "timeout_is_green": False,
+        "timeout_is_immediate_fail": False,
+        "timeout_classification_required": True,
+        "timeout_material_body_free_required": True,
+        "batch_split_requires_new_design": True,
+        "batch_green_is_group_green": False,
+        "collect_only_is_not_execution_green": True,
+        "readiness_guard_required_before_official_capture_run": True,
+    }
+    assert timeout_plan["timeout_material_allowed_after_readiness_ready"] is False
+    assert timeout_plan["can_claim_group_green"] is False
+    assert timeout_plan["can_claim_full_backend_suite_green"] is False
+    assert timeout_plan["full_backend_suite_green_confirmed"] is False
+    assert timeout_plan["hold004_close_allowed"] is False
+    assert timeout_plan["p7_complete"] is False
+    assert timeout_plan["p8_start_allowed"] is False
+    assert timeout_plan["release_allowed"] is False
+    assert timeout_plan["terminal_output_retained"] is False
+    assert timeout_plan["stdout_retained"] is False
+    assert timeout_plan["stderr_retained"] is False
+    assert timeout_plan["raw_traceback_included"] is False
+    assert "group_02_timeout_classification_required_when_timeout_occurs" in timeout_plan[
+        "required_followup_fixes"
+    ]
+    assert "group_02_long_run_or_batch_split_requires_separate_design" in timeout_plan[
+        "required_followup_fixes"
+    ]
+    assert all(value is False for value in timeout_plan["public_contract"].values())
+    assert all(value is False for value in timeout_plan["body_free_markers"].values())
+    assert timeout_plan["body_free"] is True
+    assert_p7_hold004_group02_timeout_classification_plan_contract(timeout_plan)
+    assert_p7_no_body_payload_or_contract_mutation(
+        timeout_plan,
+        source="r28_group02_timeout_classification_plan_test",
+    )
 
     assert_p7_hold004_backend_suite_group_run_result_contract(result)
 
@@ -337,12 +429,15 @@ def test_r4_collection_failed_and_not_run_materials_keep_release_closed() -> Non
     assert not_run["release_allowed"] is False
 
     no_result_decision = build_p7_hold004_official_group02_capture_adoption_decision()
-    assert no_result_decision["adoption_status"] == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED
+    assert no_result_decision["adoption_status"] == (
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+    )
     assert no_result_decision["official_capture_material_recordable"] is False
     assert no_result_decision["official_group_02_capture_recorded"] is False
     assert no_result_decision["can_claim_group_green"] is False
     assert no_result_decision["release_allowed"] is False
     assert "official_group_02_capture_run_not_recorded" in no_result_decision["adoption_blockers"]
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in no_result_decision["adoption_blockers"]
     assert_p7_hold004_official_group02_capture_adoption_decision_contract(no_result_decision)
 
     old_baseline_result = build_p7_hold004_backend_suite_group_run_result(
@@ -355,12 +450,15 @@ def test_r4_collection_failed_and_not_run_materials_keep_release_closed() -> Non
     rejected_decision = build_p7_hold004_official_group02_capture_adoption_decision(
         run_result=old_baseline_result
     )
-    assert rejected_decision["adoption_status"] == P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_REJECTED_BASELINE_MISMATCH
+    assert rejected_decision["adoption_status"] == (
+        P7_HOLD004_OFFICIAL_CAPTURE_ADOPTION_STATUS_BLOCKED_BY_READINESS_GUARD
+    )
     assert rejected_decision["official_capture_material_recordable"] is False
     assert rejected_decision["official_group_02_capture_green_confirmed"] is False
     assert rejected_decision["can_claim_group_green"] is False
     assert rejected_decision["release_allowed"] is False
-    assert "collect_baseline_id_mismatch" in rejected_decision["adoption_blockers"]
+    assert rejected_decision["official_group_02_capture_blocked"] is True
+    assert P7_HOLD004_RECEIVED_SNAPSHOT_ITEM_FINGERPRINT_MISMATCH_BLOCKER_REF in rejected_decision["adoption_blockers"]
     assert_p7_hold004_official_group02_capture_adoption_decision_contract(rejected_decision)
 
     assert_p7_hold004_backend_suite_group_run_result_contract(collection_failed)

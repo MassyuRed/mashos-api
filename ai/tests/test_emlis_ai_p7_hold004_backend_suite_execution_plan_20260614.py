@@ -47,7 +47,7 @@ def test_r16_execution_plan_material_defines_current_order_timeout_budget_and_ba
     assert plan["hold_id"] == "P7-HOLD-004"
     assert plan["plan_id"] == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID
     assert plan["inventory_id"] == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID
-    assert plan["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615"
+    assert plan["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615_received_148"
     assert plan["source_mode"] == "local_snapshot"
     assert plan["source_snapshot_ref"] == P7_HOLD004_BACKEND_R2_R3_SOURCE_SNAPSHOT_REF
     assert plan["git_checked"] is False

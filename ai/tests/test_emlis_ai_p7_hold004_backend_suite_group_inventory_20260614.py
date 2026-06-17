@@ -48,7 +48,7 @@ def test_r15_group_inventory_material_uses_current_collect_baseline_without_gree
     assert inventory["implementation_step"] == P7_HOLD004_BACKEND_SUITE_SPLIT_CONSISTENCY_R2_R3_STEP
     assert inventory["hold_id"] == "P7-HOLD-004"
     assert inventory["inventory_id"] == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID
-    assert inventory["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615"
+    assert inventory["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615_received_148"
     assert inventory["source_mode"] == "local_snapshot"
     assert inventory["source_snapshot_ref"] == P7_HOLD004_BACKEND_R2_R3_SOURCE_SNAPSHOT_REF
     assert inventory["git_checked"] is False

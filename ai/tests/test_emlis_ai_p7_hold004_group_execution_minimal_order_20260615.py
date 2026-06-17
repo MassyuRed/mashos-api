@@ -36,7 +36,7 @@ def test_r16_minimal_confirmation_order_matches_current_design_order_and_keeps_e
     assert order["execution_plan_schema_version"] == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_SCHEMA_VERSION
     assert order["execution_plan_id"] == P7_HOLD004_BACKEND_SUITE_EXECUTION_PLAN_ID
     assert order["inventory_id"] == P7_HOLD004_BACKEND_SUITE_GROUP_INVENTORY_ID
-    assert order["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615"
+    assert order["collect_baseline_id"] == "p7_hold004_backend_collect_baseline_20260615_received_148"
     assert order["minimal_execution_order"] == list(P7_HOLD004_BACKEND_SUITE_EXECUTION_ORDER)
     assert order["group_count"] == 13
     assert order["total_batch_count"] == P7_HOLD004_BACKEND_SUITE_TOTAL_BATCH_COUNT

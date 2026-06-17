@@ -72,7 +72,7 @@ P7_HOLD004_BACKEND_SUITE_DEFAULT_PYTEST_ARGS_ID: Final = (
 P7_HOLD004_BACKEND_SUITE_COMMAND_SHAPE_ID: Final = (
     "pytest_group_or_batch_files_without_terminal_output_retention"
 )
-P7_HOLD004_BACKEND_R2_R3_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_BACKEND_R2_R3_SOURCE_SNAPSHOT_REF: Final = "mashos-api(148).zip"
 
 P7_HOLD004_BACKEND_SUITE_GROUP_IDS: Final[tuple[str, ...]] = (
     "group_01_contract",

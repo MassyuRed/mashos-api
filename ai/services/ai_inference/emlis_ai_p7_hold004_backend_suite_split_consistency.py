@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """P7-HOLD-004 backend-suite split consistency materials.
 
-R0/R1/R14 scope only:
+R0/R1/R14/R37 scope only:
 - keep the original R0 public/runtime boundary freeze closed;
-- serialize the active current backend ``pytest --collect-only`` baseline as the
-  20260615 local snapshot body-free material;
+- retain the 20260615 active baseline as previous active evidence;
+- expose the post-adoption received snapshot baseline as the current active
+  backend ``pytest --collect-only`` baseline for runtime material builders;
 - keep P7-HOLD-004, P7 completion, P8 start, full backend-suite green, and
   release readiness closed.
 
@@ -46,21 +47,31 @@ P7_HOLD004_BACKEND_COLLECT_BASELINE_SCHEMA_VERSION: Final = (
     "cocolon.emlis.p7.hold004.backend_collect_baseline.v1"
 )
 P7_HOLD004_BACKEND_COLLECT_BASELINE_STEP: Final = (
-    "P7-HOLD-004_CurrentSnapshotBaselineReconcile_R14_20260615"
+    "P7-HOLD-004_ActiveBaselineRuntimeBuilderRefresh_R37_20260616"
 )
 
 P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_FREEZE_ID: Final = (
     "p7_hold004_backend_suite_contract_boundary_freeze_20260614"
 )
-P7_HOLD004_BACKEND_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260615"
+P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_PREVIOUS_ACTIVE_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260615"
+P7_HOLD004_PREVIOUS_ACTIVE_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_PREVIOUS_ACTIVE_TEST_ITEMS_SHA256: Final = (
+    "fee1eca805564d0840dc5b23f60a7e2d6c7297d658a76dc4ce175e0137c261f1"
+)
+P7_HOLD004_PREVIOUS_ACTIVE_TEST_FILES_SHA256: Final = (
+    "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
+)
+P7_HOLD004_BACKEND_COLLECT_BASELINE_ID: Final = "p7_hold004_backend_collect_baseline_20260615_received_148"
 P7_HOLD004_BACKEND_COLLECT_COMMAND_ID: Final = "pytest_collect_only_backend_20260615"
-P7_HOLD004_BACKEND_SOURCE_SNAPSHOT_REF: Final = "mashos-api(147).zip"
+P7_HOLD004_BACKEND_SOURCE_SNAPSHOT_REF: Final = "mashos-api(148).zip"
+P7_HOLD004_BACKEND_ACTIVE_BASELINE_REFRESH_APPLIED: Final = True
 
 P7_HOLD004_BACKEND_COLLECTED_TEST_FILE_COUNT: Final = 425
 P7_HOLD004_BACKEND_COLLECTED_TEST_ITEM_COUNT: Final = 2856
 P7_HOLD004_BACKEND_COLLECT_WARNINGS_COUNT: Final = 1
 P7_HOLD004_BACKEND_TEST_ITEMS_SHA256: Final = (
-    "fee1eca805564d0840dc5b23f60a7e2d6c7297d658a76dc4ce175e0137c261f1"
+    "4698ce5240707f71fc3678a0153a15626ba9718fbadad83294e57d11946c2e0d"
 )
 P7_HOLD004_BACKEND_TEST_FILES_SHA256: Final = (
     "6866231daf68427dca2de1b2011feea49450f7b4a8b3c5b9dec0f9ccd5f3e9c6"
@@ -229,7 +240,7 @@ def build_p7_hold004_backend_suite_contract_boundary_freeze() -> dict[str, Any]:
         "hold_id": P7_HOLD004_BACKEND_SUITE_HOLD_ID,
         "boundary_id": P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_FREEZE_ID,
         "source_mode": P7_SOURCE_MODE,
-        "source_snapshot_ref": P7_HOLD004_BACKEND_SOURCE_SNAPSHOT_REF,
+        "source_snapshot_ref": P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_SOURCE_SNAPSHOT_REF,
         "git_checked": P7_GIT_CHECKED,
         "scope_status": "R0_CONTRACT_BOUNDARY_FROZEN",
         "implementation_scope": dict(_ALLOWED_IMPLEMENTATION_SCOPE),
@@ -363,8 +374,8 @@ def assert_p7_hold004_backend_suite_contract_boundary_freeze_contract(material: 
         raise ValueError("P7-HOLD-004 backend contract boundary implementation_step changed")
     if data.get("boundary_id") != P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_FREEZE_ID:
         raise ValueError("P7-HOLD-004 backend contract boundary id changed")
-    if data.get("source_mode") != P7_SOURCE_MODE or data.get("source_snapshot_ref") != P7_HOLD004_BACKEND_SOURCE_SNAPSHOT_REF:
-        raise ValueError("P7-HOLD-004 backend contract boundary must stay on the local snapshot")
+    if data.get("source_mode") != P7_SOURCE_MODE or data.get("source_snapshot_ref") != P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_SOURCE_SNAPSHOT_REF:
+        raise ValueError("P7-HOLD-004 backend contract boundary must stay on the R0 local snapshot")
     if data.get("git_checked") is not False:
         raise ValueError("P7-HOLD-004 backend contract boundary must not claim GitHub verification")
     if data.get("scope_status") != "R0_CONTRACT_BOUNDARY_FROZEN":
@@ -445,7 +456,13 @@ def assert_p7_hold004_backend_collect_baseline_contract(material: Mapping[str, A
 
 
 __all__ = [
+    "P7_HOLD004_BACKEND_ACTIVE_BASELINE_REFRESH_APPLIED",
     "P7_HOLD004_BACKEND_COLLECT_BASELINE_ID",
+    "P7_HOLD004_BACKEND_CONTRACT_BOUNDARY_SOURCE_SNAPSHOT_REF",
+    "P7_HOLD004_PREVIOUS_ACTIVE_COLLECT_BASELINE_ID",
+    "P7_HOLD004_PREVIOUS_ACTIVE_SOURCE_SNAPSHOT_REF",
+    "P7_HOLD004_PREVIOUS_ACTIVE_TEST_ITEMS_SHA256",
+    "P7_HOLD004_PREVIOUS_ACTIVE_TEST_FILES_SHA256",
     "P7_HOLD004_BACKEND_COLLECT_BASELINE_SCHEMA_VERSION",
     "P7_HOLD004_BACKEND_COLLECT_BASELINE_STEP",
     "P7_HOLD004_BACKEND_COLLECT_COMMAND_ID",
