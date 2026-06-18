@@ -457,9 +457,19 @@ def _build_phase20_13_post_final_gate_recovery_meta(
         if candidate_source_kind:
             meta["candidate_source_kind"] = candidate_source_kind
             meta["public_candidate_source_kind"] = candidate_source_kind
+            meta["selected_public_candidate_source_kind"] = candidate_source_kind
             meta["final_surface_origin_candidate_source_kind"] = (
                 candidate_source_kind if bool(applied) else ""
             )
+            meta["final_public_candidate_source_kind"] = candidate_source_kind if bool(applied) else ""
+            for key in (
+                "root_candidate_source_kind",
+                "recovery_input_candidate_source_kind",
+                "pre_public_candidate_source_kind",
+            ):
+                value = _clean(boundary.get(key))
+                if value:
+                    meta[key] = value
         if boundary.get("public_candidate_rebuilt_after_recovery") is not None:
             meta["public_candidate_rebuilt_after_recovery"] = bool(
                 boundary.get("public_candidate_rebuilt_after_recovery")
@@ -594,7 +604,12 @@ def _build_reply_service_gate_recovery_public_boundary_meta(
         "candidate_source_kind": candidate_source_kind,
         "public_candidate_source_kind": candidate_source_kind,
         "adopted_candidate_source_kind": candidate_source_kind if bool(adopted) else "",
+        "selected_public_candidate_source_kind": candidate_source_kind,
         "final_surface_origin_candidate_source_kind": candidate_source_kind if bool(adopted) else "",
+        "final_public_candidate_source_kind": candidate_source_kind if bool(adopted) else "",
+        "root_candidate_source_kind": _clean(candidate_summary.get("root_candidate_source_kind")),
+        "recovery_input_candidate_source_kind": _clean(candidate_summary.get("recovery_input_candidate_source_kind")),
+        "pre_public_candidate_source_kind": _clean(candidate_summary.get("pre_public_candidate_source_kind")),
         "composer_model": _clean(candidate_summary.get("composer_model")),
         "generation_method": _clean(candidate_summary.get("generation_method")),
         "public_surface_role": _clean(candidate_summary.get("public_surface_role")),
@@ -677,6 +692,30 @@ def _reply_service_gate_recovery_candidate_summary(gate_recovery_loop_result: An
             CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
             if normal_rebuild_attempted
             else ""
+        ),
+        "root_candidate_source_kind": _clean(
+            candidate_meta.get("root_candidate_source_kind")
+            or lineage.get("root_candidate_source_kind")
+            or lineage.get("original_candidate_source")
+            or candidate_meta.get("original_candidate_source_kind")
+        ),
+        "recovery_input_candidate_source_kind": _clean(
+            candidate_meta.get("recovery_input_candidate_source_kind")
+            or lineage.get("recovery_input_candidate_source_kind")
+        ),
+        "selected_public_candidate_source_kind": _clean(
+            candidate_meta.get("selected_public_candidate_source_kind")
+            or lineage.get("selected_public_candidate_source_kind")
+            or candidate_source_kind
+        ),
+        "pre_public_candidate_source_kind": _clean(
+            candidate_meta.get("pre_public_candidate_source_kind")
+            or lineage.get("pre_public_candidate_source_kind")
+        ),
+        "final_public_candidate_source_kind": _clean(
+            candidate_meta.get("final_public_candidate_source_kind")
+            or lineage.get("final_public_candidate_source_kind")
+            or candidate_source_kind
         ),
         "raw_input_included": False,
         "comment_text_body_included": False,

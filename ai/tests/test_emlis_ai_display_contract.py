@@ -566,24 +566,68 @@ async def test_step10_e2e_pre_connection_recovery_exposes_safe_surface_without_b
     assert step10["passed_comment_text_visible"] is True
     assert step10["non_passed_comment_text_suppressed"] is False
 
-    assert candidate["composer_model"] == "complete_initial_surface_recomposition_v1"
-    assert composer_meta["candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    # R6/R7: this case protects the split between the pre-public complete-initial
+    # attempt and the final public labelled two-stage surface.  The old single
+    # composer_model assertion treated complete-initial as final and hid RED-DC-002.
+    assert candidate["composer_model"] == "labelled_two_stage_surface_recomposition_v1"
+    assert composer_meta["candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
     assert composer_meta["public_surface_role"] == "public_observation_candidate"
-    assert composer_meta["original_candidate_present"] is False
-    assert composer_meta["source_unavailable_recovered"] is True
+    assert composer_meta["original_candidate_present"] is True
+    assert composer_meta["original_candidate_source_kind"] == "unavailable"
+    assert composer_meta["root_candidate_source_kind"] == "unavailable"
+    assert composer_meta["recovery_input_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert composer_meta["pre_public_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert composer_meta["selected_public_candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert composer_meta["final_public_candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert composer_meta["source_unavailable_recovered"] is False
+    assert composer_meta["complete_initial_surface_recomposition_used"] is False
+    assert composer_meta["labelled_two_stage_surface_recomposition_used"] is True
     assert composer_meta["normal_observation_rebuild_used"] is False
     assert composer_meta["gate_recovery_material_surface_used"] is False
-    assert composer_meta["body_free"] is True
     assert composer_meta["raw_input_included"] is False
     assert composer_meta["comment_text_body_included"] is False
 
+    complete_initial_summary = summary["complete_initial_surface_recomposition_summary"]
+    assert complete_initial_summary["attempted"] is True
+    assert complete_initial_summary["candidate_generated"] is True
+    assert complete_initial_summary["applied"] is False
+    assert complete_initial_summary["candidate_adopted_after_existing_gates"] is False
+    assert complete_initial_summary["passed_by_all_existing_gates"] is False
+    assert "visible_surface_acceptance_gate_failed" in complete_initial_summary["existing_gate_chain"]["blocked_reasons"]
+    assert complete_initial_summary["existing_gate_chain"]["visible_surface_acceptance_gate_passed"] is False
+    assert complete_initial_summary["raw_input_included"] is False
+    assert complete_initial_summary["comment_text_body_included"] is False
+
+    body_free_lineage = composer_meta["body_free_public_source_lineage"]
+    assert body_free_lineage["candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert body_free_lineage["recovery_input_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert body_free_lineage["pre_public_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert body_free_lineage["final_public_candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert body_free_lineage["complete_initial_surface_recomposition_attempted"] is True
+    assert body_free_lineage["complete_initial_surface_recomposition_final_used"] is False
+    assert body_free_lineage["labelled_two_stage_surface_recomposition_final_used"] is True
+    assert body_free_lineage["lineage_consistency_passed"] is True
+    assert body_free_lineage["body_free"] is True
+    assert body_free_lineage["raw_input_included"] is False
+    assert body_free_lineage["comment_text_body_included"] is False
+    assert body_free_lineage["candidate_body_included"] is False
+
     public_lineage = input_feedback_payload["emlis_ai"]["public_surface_lineage"]
-    assert public_lineage["candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert public_lineage["candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
     assert public_lineage["public_candidate_source_allowed"] is True
     assert public_lineage["public_candidate_source_forbidden"] is False
     assert public_lineage["public_surface_role"] == "public_observation_candidate"
-    assert public_lineage["complete_initial_surface_recomposition_used"] is True
-    assert public_lineage["labelled_two_stage_surface_recomposition_used"] is False
+    assert public_lineage["root_candidate_source_kind"] == "unavailable"
+    assert public_lineage["recovery_input_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert public_lineage["pre_public_candidate_source_kind"] == "complete_initial_surface_recomposition_candidate"
+    assert public_lineage["selected_public_candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert public_lineage["final_public_candidate_source_kind"] == "labelled_two_stage_surface_recomposition_candidate"
+    assert public_lineage["lineage_consistency_passed"] is True
+    assert public_lineage["complete_initial_surface_recomposition_attempted"] is True
+    assert public_lineage["complete_initial_surface_recomposition_used"] is False
+    assert public_lineage["complete_initial_surface_recomposition_final_used"] is False
+    assert public_lineage["labelled_two_stage_surface_recomposition_used"] is True
+    assert public_lineage["labelled_two_stage_surface_recomposition_final_used"] is True
     assert public_lineage["normal_observation_rebuild_used"] is False
     assert public_lineage["gate_recovery_material_surface_used_as_public_body"] is False
     assert public_lineage["diagnostic_recovery_surface_used_as_public_body"] is False

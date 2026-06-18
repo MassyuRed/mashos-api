@@ -261,7 +261,17 @@ def build_labelled_two_stage_surface_recomposition_candidate(
         limited_grounding_reception_surface_summary = limited_grounding_reception_surface_public_summary(
             limited_grounding_reception_surface_plan
         )
-    source_kind = _candidate_source_kind(original_composer_candidate)
+    recovery_input_source_kind = _candidate_source_kind(original_composer_candidate)
+    root_source_kind = _root_candidate_source_kind(
+        original_composer_candidate,
+        fallback_source_kind=recovery_input_source_kind,
+    )
+    root_surface_plain_or_unlabelled = _root_surface_plain_or_unlabelled(
+        original_composer_candidate,
+        default=not is_labelled_two_stage_comment_text_shape(
+            str(getattr(original_composer_candidate, "comment_text", "") or "")
+        ),
+    )
     used_evidence_span_ids = _evidence_span_ids(visible_slots=visible_slots, relation_ids=relation_ids)
     used_phrase_unit_ids = _phrase_unit_ids(
         topic=_topic_phrase(current_input=current_input, material_route=material_route),
@@ -276,12 +286,11 @@ def build_labelled_two_stage_surface_recomposition_candidate(
         relation_id_count=len(relation_ids),
         used_evidence_span_ids=used_evidence_span_ids,
         used_phrase_unit_ids=used_phrase_unit_ids,
-        original_candidate_source_kind=source_kind,
+        root_candidate_source_kind=root_source_kind,
+        recovery_input_candidate_source_kind=recovery_input_source_kind,
         original_candidate_status=_clean_identifier(getattr(original_composer_candidate, "status", ""), max_length=96),
         original_display_status=_clean_identifier(getattr(original_display_decision, "observation_status", ""), max_length=96),
-        original_surface_plain_or_unlabelled=not is_labelled_two_stage_comment_text_shape(
-            str(getattr(original_composer_candidate, "comment_text", "") or "")
-        ),
+        original_surface_plain_or_unlabelled=root_surface_plain_or_unlabelled,
         recovery_context=recovery_context,
         limited_grounding_reception_surface_summary=limited_grounding_reception_surface_summary,
     )
@@ -393,7 +402,8 @@ def _candidate_meta(
     relation_id_count: int,
     used_evidence_span_ids: Sequence[str],
     used_phrase_unit_ids: Sequence[str],
-    original_candidate_source_kind: str,
+    root_candidate_source_kind: str,
+    recovery_input_candidate_source_kind: str,
     original_candidate_status: str,
     original_display_status: str,
     original_surface_plain_or_unlabelled: bool,
@@ -413,11 +423,18 @@ def _candidate_meta(
         "composer_model": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_COMPOSER_MODEL,
         "generation_method": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_GENERATION_METHOD,
         "original_candidate_present": True,
-        "original_candidate_source_kind": original_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+        "original_candidate_source_kind": root_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+        "root_candidate_source_kind": root_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+        "recovery_input_candidate_source_kind": recovery_input_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+        "selected_public_candidate_source_kind": CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+        "pre_public_candidate_source_kind": recovery_input_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+        "final_public_candidate_source_kind": CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
         "original_candidate_status": original_candidate_status,
         "original_display_status": original_display_status,
         "original_surface_plain_or_unlabelled": bool(original_surface_plain_or_unlabelled),
         "original_surface_labelled_two_stage": not bool(original_surface_plain_or_unlabelled),
+        "root_surface_plain_or_unlabelled": bool(original_surface_plain_or_unlabelled),
+        "root_surface_labelled_two_stage": not bool(original_surface_plain_or_unlabelled),
         "source_unavailable_recovered": False,
         "labelled_two_stage_surface_recomposition_used": True,
         "normal_observation_rebuild_used": False,
@@ -496,7 +513,13 @@ def _candidate_meta(
         },
         "candidate_lineage": {
             "original_candidate_present": True,
-            "original_candidate_source": original_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+            "original_candidate_source": root_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+            "root_candidate_source_kind": root_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+            "recovery_input_candidate_source_kind": recovery_input_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+            "selected_public_candidate_source_kind": CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+            "pre_public_candidate_source_kind": recovery_input_candidate_source_kind or CANDIDATE_SOURCE_KIND_NONE,
+            "final_public_candidate_source_kind": CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
+            "recovery_context": _clean_identifier(recovery_context, max_length=96),
             "recovery_plan_used": True,
             "diagnostic_surface_used": False,
             "public_candidate_rebuilt_after_recovery": True,
@@ -622,6 +645,33 @@ def _display_decision_passed(display_decision: Any | None) -> bool:
         return False
     return _clean_identifier(getattr(display_decision, "observation_status", ""), max_length=96) == "passed"
 
+
+def _root_candidate_source_kind(candidate: Any | None, *, fallback_source_kind: str) -> str:
+    meta = _candidate_meta_source(candidate)
+    lineage = _as_mapping(meta.get("candidate_lineage"))
+    for value in (
+        meta.get("root_candidate_source_kind"),
+        lineage.get("root_candidate_source_kind"),
+        lineage.get("original_candidate_source"),
+        meta.get("original_candidate_source_kind"),
+        fallback_source_kind,
+        getattr(candidate, "composer_source", "") if candidate is not None else "",
+    ):
+        cleaned = _clean_identifier(value, max_length=128)
+        if cleaned:
+            return cleaned
+    return CANDIDATE_SOURCE_KIND_NONE
+
+
+def _root_surface_plain_or_unlabelled(candidate: Any | None, *, default: bool) -> bool:
+    meta = _candidate_meta_source(candidate)
+    for key in ("root_surface_plain_or_unlabelled", "original_surface_plain_or_unlabelled"):
+        if key in meta:
+            return bool(meta.get(key))
+    lineage = _as_mapping(meta.get("candidate_lineage"))
+    if "root_surface_plain_or_unlabelled" in lineage:
+        return bool(lineage.get("root_surface_plain_or_unlabelled"))
+    return bool(default)
 
 def _candidate_source_kind(candidate: Any | None) -> str:
     meta = _candidate_meta_source(candidate)

@@ -15,6 +15,9 @@ from collections.abc import Mapping
 from enum import Enum
 from typing import Any, Dict, Iterable, Optional
 
+from emlis_ai_body_free_public_source_lineage import (
+    sanitize_body_free_public_source_lineage_record,
+)
 from emlis_ai_complete_initial_surface_availability import (
     COMPLETE_INITIAL_SURFACE_AVAILABILITY_PUBLIC_META_KEY,
     build_complete_initial_surface_availability_summary,
@@ -71,6 +74,16 @@ PUBLIC_EMLIS_FEEDBACK_META_BOUNDARY_VERSION = "emlis.public_feedback_meta_bounda
 PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY = "public_surface_lineage"
 PUBLIC_SURFACE_LINEAGE_SCHEMA_VERSION = "cocolon.emlis.public_surface_lineage.v1"
 PUBLIC_SURFACE_LINEAGE_SOURCE_PHASE = "PublicObservationRecovery_P8_PublicMetaBoundaryProductQualityMeta"
+_PUBLIC_SURFACE_LINEAGE_FINAL_SOURCE_PRIORITY_PHASE_MARKERS = (
+    "DisplayContractRedClassification_R4_R5",
+    "DisplayContractRedClassification_R8",
+    "PublicMetaFinalSourceConsistency",
+    "Phase20-13_Post_Final_Gate_Recovery",
+    "Post_Final_Gate_Recovery",
+)
+_PUBLIC_SURFACE_LINEAGE_FINAL_SOURCE_PRIORITY_CONTEXTS = {
+    "post_final_pre_return_gate",
+}
 PUBLIC_EMLIS_FEEDBACK_META_TARGET_BYTES = 8 * 1024
 PUBLIC_EMLIS_FEEDBACK_META_HARD_BYTES = 12 * 1024
 PUBLIC_EMLIS_FEEDBACK_META_MAX_REJECTION_REASONS = 20
@@ -535,8 +548,8 @@ def _normal_observation_rebuild_candidate_sources(internal_meta: Mapping[str, An
         add(_safe_get(diagnostic_summary, "display_absence_summary"))
         add(_safe_get(diagnostic_summary, "public_feedback_diagnostic_summary"))
         add(_safe_get(diagnostic_summary, "step7_public_feedback_diagnostic_summary"))
-        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
         add(_safe_get(diagnostic_summary, "phase20_13_post_final_gate_recovery"))
+        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
     return sources
 
 
@@ -642,12 +655,19 @@ def _public_surface_lineage_sources(internal_meta: Mapping[str, Any]) -> list[Ma
         if mapping is None:
             return
         sources.append(mapping)
+        body_free_lineage = _safe_mapping(_safe_get(mapping, "body_free_public_source_lineage"))
+        if body_free_lineage is not None:
+            sanitized_lineage = sanitize_body_free_public_source_lineage_record(body_free_lineage)
+            final_source_kind = sanitized_lineage.get("final_public_candidate_source_kind")
+            if final_source_kind and final_source_kind != "none":
+                sources.append(sanitized_lineage)
         for nested_key in (
             "surface_origin",
             PUBLIC_SURFACE_LINEAGE_PUBLIC_META_KEY,
             "public_observation_surface_lineage",
             "public_candidate_builder",
             "candidate_lineage",
+            "body_free_public_source_lineage",
             "gate_recovery_public_boundary_decision",
             "reply_service_public_boundary",
             COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY,
@@ -665,9 +685,9 @@ def _public_surface_lineage_sources(internal_meta: Mapping[str, Any]) -> list[Ma
     add(_safe_get(internal_meta, "public_observation_surface_lineage"))
     add(_safe_get(internal_meta, "surface_origin"))
     add(_safe_get(internal_meta, "reply_service_public_boundary"))
+    add(_safe_get(internal_meta, "phase20_13_post_final_gate_recovery"))
     add(_safe_get(internal_meta, "phase20_5_gate_recovery_public_boundary"))
     add(_safe_get(internal_meta, "phase20_5_gate_recovery_public_candidate_builder"))
-    add(_safe_get(internal_meta, "phase20_13_post_final_gate_recovery"))
     add(_safe_get(internal_meta, COMPLETE_INITIAL_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
     add(_safe_get(internal_meta, LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
     phase_gate = _safe_mapping(_safe_get(internal_meta, "phase_gate"))
@@ -682,8 +702,9 @@ def _public_surface_lineage_sources(internal_meta: Mapping[str, Any]) -> list[Ma
         add(_safe_get(diagnostic_summary, LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_PUBLIC_META_KEY))
         add(_safe_get(diagnostic_summary, "normal_observation_rebuild"))
         add(_safe_get(diagnostic_summary, "product_surface_validation"))
-        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
+        add(_safe_get(diagnostic_summary, "body_free_public_source_lineage"))
         add(_safe_get(diagnostic_summary, "phase20_13_post_final_gate_recovery"))
+        add(_safe_get(diagnostic_summary, "phase20_5_gate_recovery_public_boundary"))
     return sources
 
 
@@ -711,21 +732,64 @@ def _first_safe_bool_from_sources_default(
     return default if value is None else value
 
 
+def _public_surface_lineage_final_source_priority(source: Mapping[str, Any]) -> bool:
+    """Return true for sources that describe the actual final public surface.
+
+    R8 keeps stale pre-public/public-lineage summaries from overriding the
+    post-final candidate actually returned to RN.  The check is body-free and
+    only reads source phase/context identifiers.
+    """
+
+    if not isinstance(source, Mapping):
+        return False
+    phase = str(
+        _safe_public_identifier(_safe_get(source, "source_phase"), max_length=160, default="")
+        or ""
+    )
+    context = str(
+        _safe_public_identifier(_safe_get(source, "recovery_context"), max_length=96, default="")
+        or ""
+    )
+    if context in _PUBLIC_SURFACE_LINEAGE_FINAL_SOURCE_PRIORITY_CONTEXTS:
+        return True
+    return any(marker in phase for marker in _PUBLIC_SURFACE_LINEAGE_FINAL_SOURCE_PRIORITY_PHASE_MARKERS)
+
+
 def _infer_public_surface_lineage_source_kind(sources: Iterable[Mapping[str, Any]]) -> str:
-    source_kind = _first_safe_public_identifier_from_sources(
-        sources,
+    source_list = list(sources)
+    final_priority_sources = [
+        source for source in source_list if _public_surface_lineage_final_source_priority(source)
+    ]
+    priority_source_kind = _first_safe_public_identifier_from_sources(
+        final_priority_sources,
+        (
+            "final_public_candidate_source_kind",
+            "final_surface_origin_candidate_source_kind",
+        ),
+    )
+    if priority_source_kind:
+        return priority_source_kind
+
+    for keys in (
+        (
+            "final_public_candidate_source_kind",
+            "final_surface_origin_candidate_source_kind",
+            "selected_public_candidate_source_kind",
+            "adopted_candidate_source_kind",
+            "public_candidate_source_kind",
+        ),
         (
             "candidate_source_kind",
             "source_kind",
-            "public_candidate_source_kind",
-            "adopted_candidate_source_kind",
-            "final_surface_origin_candidate_source_kind",
             "public_recovery_candidate_source_kind",
             "normal_observation_rebuild_source_kind",
         ),
-    )
-    if source_kind:
-        return source_kind
+    ):
+        source_kind = _first_safe_public_identifier_from_sources(source_list, keys)
+        if source_kind:
+            return source_kind
+
+    sources = source_list
 
     composer_model = _first_safe_public_identifier_from_sources(
         sources,
@@ -766,6 +830,80 @@ def _infer_public_surface_lineage_source_kind(sources: Iterable[Mapping[str, Any
         return CANDIDATE_SOURCE_KIND_GATE_RECOVERY_MATERIAL_SURFACE
     return ""
 
+
+def _infer_root_candidate_source_kind(sources: Iterable[Mapping[str, Any]]) -> str:
+    return _first_safe_public_identifier_from_sources(
+        sources,
+        (
+            "root_candidate_source_kind",
+            "original_candidate_source_kind",
+            "original_candidate_source",
+        ),
+    )
+
+
+def _infer_recovery_input_candidate_source_kind(sources: Iterable[Mapping[str, Any]]) -> str:
+    return _first_safe_public_identifier_from_sources(
+        sources,
+        (
+            "recovery_input_candidate_source_kind",
+            "pre_recovery_candidate_source_kind",
+        ),
+    )
+
+
+def _infer_pre_public_candidate_source_kind(sources: Iterable[Mapping[str, Any]]) -> str:
+    direct = _first_safe_public_identifier_from_sources(
+        sources,
+        (
+            "pre_public_candidate_source_kind",
+            "pre_public_source_kind",
+        ),
+    )
+    if direct:
+        return direct
+    # R3: phase20_5 is the pre-public adoption boundary.  Keep it available
+    # as body-free lineage, but do not let it masquerade as the final source.
+    for source in sources:
+        phase = _safe_public_identifier(_safe_get(source, "source_phase"), max_length=160, default=None)
+        context = _safe_public_identifier(_safe_get(source, "recovery_context"), max_length=96, default=None)
+        if (
+            "phase20_5" in str(phase or "")
+            or str(context or "") == "pre_public_display_gate"
+        ):
+            value = _safe_public_identifier(
+                _safe_get(source, "adopted_candidate_source_kind")
+                or _safe_get(source, "candidate_source_kind")
+                or _safe_get(source, "public_candidate_source_kind"),
+                max_length=128,
+                default=None,
+            )
+            if value:
+                return value
+    return ""
+
+
+def _source_kind_final_used(source_kind: str, expected: str) -> bool:
+    return bool(_safe_public_identifier(source_kind, max_length=128, default=None) == expected)
+
+
+def _complete_initial_recomposition_attempted(sources: Iterable[Mapping[str, Any]], pre_public_source_kind: str) -> bool:
+    if pre_public_source_kind == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE:
+        return True
+    return bool(
+        _first_safe_bool_from_sources_default(
+            sources,
+            (
+                "complete_initial_surface_recomposition_attempted",
+                "complete_initial_surface_recomposition_used",
+                "complete_initial_surface_recomposition_applied",
+                "p5_complete_initial_surface_recomposition_connected",
+                "candidate_generated",
+            ),
+            default=False,
+        )
+        is True
+    )
 
 def _public_surface_lineage_surface_requirement(sources: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     for source in sources:
@@ -827,31 +965,21 @@ def _build_public_surface_lineage_meta(internal_meta: Mapping[str, Any]) -> Opti
     if not public_role and source_kind in FORBIDDEN_PUBLIC_CANDIDATE_SOURCE_KINDS:
         public_role = PUBLIC_SURFACE_ROLE_DIAGNOSTIC_RECOVERY
 
-    complete_initial_used = bool(
-        source_kind == CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE
-        or _first_safe_bool_from_sources_default(
-            sources,
-            (
-                "complete_initial_surface_recomposition_used",
-                "complete_initial_surface_recomposition_applied",
-                "p5_complete_initial_surface_recomposition_applied",
-                "p5_complete_initial_surface_recomposition_connected",
-            ),
-            default=False,
-        ) is True
+    root_candidate_source_kind = _infer_root_candidate_source_kind(sources)
+    recovery_input_candidate_source_kind = _infer_recovery_input_candidate_source_kind(sources)
+    pre_public_candidate_source_kind = _infer_pre_public_candidate_source_kind(sources)
+    final_public_candidate_source_kind = source_kind
+    complete_initial_attempted = _complete_initial_recomposition_attempted(
+        sources,
+        pre_public_candidate_source_kind,
     )
-    labelled_two_stage_used = bool(
-        source_kind == CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE
-        or _first_safe_bool_from_sources_default(
-            sources,
-            (
-                "labelled_two_stage_recomposition_used",
-                "labelled_two_stage_surface_recomposition_used",
-                "labelled_two_stage_surface_recomposition_applied",
-                "p6_labelled_two_stage_surface_recomposition_connected",
-            ),
-            default=False,
-        ) is True
+    complete_initial_used = _source_kind_final_used(
+        source_kind,
+        CANDIDATE_SOURCE_KIND_COMPLETE_INITIAL_SURFACE_RECOMPOSITION_CANDIDATE,
+    )
+    labelled_two_stage_used = _source_kind_final_used(
+        source_kind,
+        CANDIDATE_SOURCE_KIND_LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_CANDIDATE,
     )
     normal_rebuild_used = bool(
         source_kind == CANDIDATE_SOURCE_KIND_NORMAL_OBSERVATION_REBUILD_CANDIDATE
@@ -909,13 +1037,22 @@ def _build_public_surface_lineage_meta(internal_meta: Mapping[str, Any]) -> Opti
         "schema_version": PUBLIC_SURFACE_LINEAGE_SCHEMA_VERSION,
         "source_phase": PUBLIC_SURFACE_LINEAGE_SOURCE_PHASE,
         "candidate_source_kind": source_kind,
+        "root_candidate_source_kind": root_candidate_source_kind or "",
+        "recovery_input_candidate_source_kind": recovery_input_candidate_source_kind or "",
+        "selected_public_candidate_source_kind": source_kind,
+        "pre_public_candidate_source_kind": pre_public_candidate_source_kind or "",
+        "final_public_candidate_source_kind": final_public_candidate_source_kind,
+        "lineage_consistency_passed": bool(source_kind == final_public_candidate_source_kind),
         "public_candidate_source_allowed": allowed_source,
         "public_candidate_source_forbidden": forbidden_source,
         "public_surface_role": public_role or "",
         "public_display_allowed_by_boundary": bool(public_allowed),
         "normal_observation_rebuild_used": bool(normal_rebuild_used),
+        "complete_initial_surface_recomposition_attempted": bool(complete_initial_attempted),
         "complete_initial_surface_recomposition_used": bool(complete_initial_used),
+        "complete_initial_surface_recomposition_final_used": bool(complete_initial_used),
         "labelled_two_stage_surface_recomposition_used": bool(labelled_two_stage_used),
+        "labelled_two_stage_surface_recomposition_final_used": bool(labelled_two_stage_used),
         "gate_recovery_material_surface_used_as_public_body": bool(gate_recovery_material_used),
         "diagnostic_recovery_surface_used_as_public_body": bool(diagnostic_recovery_used),
         "surface_requirement_family": family or "",

@@ -18,6 +18,12 @@ from typing import Any, Final
 import json
 import re
 
+from emlis_ai_body_free_public_source_lineage import (
+    BODY_FREE_PUBLIC_SOURCE_LINEAGE_SCHEMA_VERSION,
+    BODY_FREE_PUBLIC_SOURCE_LINEAGE_SOURCE_PHASE,
+    build_body_free_public_source_lineage_record as _canonical_body_free_public_source_lineage_record,
+    sanitize_body_free_public_source_lineage_record,
+)
 from emlis_ai_low_information_observation_composer import (
     assert_low_information_observation_composer_contract,
     compose_low_information_observation,
@@ -83,6 +89,7 @@ from emlis_ai_gate_recovery_public_constants import (
     CANDIDATE_SOURCE_KIND_SELF_DENIAL_SAFE_STATE_ANSWER,
     PUBLIC_SURFACE_ROLE_BLOCKED_NO_PUBLIC_CANDIDATE,
     PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
+    RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE,
     RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE,
     RECOVERY_CONTEXT_UNKNOWN,
 )
@@ -97,7 +104,6 @@ GATE_RECOVERY_PUBLIC_CANDIDATE_BUILDER_META_KEY: Final = (
     "phase20_5_gate_recovery_public_candidate_builder"
 )
 RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.recovery_observation_plan.v1"
-
 _SELECTION_KIND_NO_PUBLIC_CANDIDATE: Final = "no_public_candidate"
 _SELECTION_KIND_BOUND_REPAIRED_ORIGINAL: Final = "bounded_repaired_original_candidate"
 _SELECTION_KIND_LOW_INFORMATION: Final = "low_information_observation_composer"
@@ -615,6 +621,8 @@ def build_public_candidate_after_gate_recovery(
             selection_kind=selection_kind,
             original_candidate_present=original_composer_candidate is not None,
             original_source_kind=original_source_kind,
+            original_composer_candidate=original_composer_candidate,
+            recovery_context=recovery_context,
         )
         boundary = decide_gate_recovery_public_boundary(
             candidate=prepared,
@@ -1595,13 +1603,48 @@ def _candidate_with_public_lineage(
     selection_kind: str,
     original_candidate_present: bool,
     original_source_kind: str,
+    original_composer_candidate: Any | None,
+    recovery_context: str,
 ) -> Any:
     meta = _body_free_mapping(_candidate_meta(candidate))
     lineage = dict(_as_mapping(meta.get("candidate_lineage")))
+    root_source_kind = _root_candidate_source_kind(
+        candidate,
+        original_composer_candidate=original_composer_candidate,
+        fallback_source_kind=original_source_kind,
+    )
+    recovery_input_source_kind = _recovery_input_candidate_source_kind(
+        original_composer_candidate,
+        fallback_source_kind=original_source_kind or root_source_kind,
+    )
+    pre_public_source_kind = _pre_public_candidate_source_kind(
+        candidate_meta=meta,
+        candidate_lineage=lineage,
+        recovery_context=recovery_context,
+        recovery_input_source_kind=recovery_input_source_kind,
+        selected_source_kind=source_kind,
+    )
+    final_source_kind = _clean_identifier(source_kind, max_length=128) or CANDIDATE_SOURCE_KIND_NONE
+    body_free_lineage_record = build_body_free_public_source_lineage_record(
+        recovery_context=recovery_context,
+        recovery_pass_index=1,
+        root_candidate_source_kind=root_source_kind,
+        recovery_input_candidate_source_kind=recovery_input_source_kind,
+        selected_public_candidate_source_kind=source_kind,
+        pre_public_candidate_source_kind=pre_public_source_kind,
+        final_public_candidate_source_kind=final_source_kind,
+        surface_requirement=meta.get("surface_requirement"),
+    )
     lineage.update(
         {
             "original_candidate_present": bool(original_candidate_present),
-            "original_candidate_source": original_source_kind,
+            "original_candidate_source": root_source_kind,
+            "root_candidate_source_kind": root_source_kind,
+            "recovery_input_candidate_source_kind": recovery_input_source_kind,
+            "selected_public_candidate_source_kind": final_source_kind,
+            "pre_public_candidate_source_kind": pre_public_source_kind,
+            "final_public_candidate_source_kind": final_source_kind,
+            "recovery_context": _clean_identifier(recovery_context, max_length=96) or RECOVERY_CONTEXT_UNKNOWN,
             "recovery_plan_used": True,
             "diagnostic_surface_used": False,
             "public_candidate_rebuilt_after_recovery": True,
@@ -1609,12 +1652,25 @@ def _candidate_with_public_lineage(
     )
     meta.update(
         {
-            "candidate_source_kind": source_kind,
+            "candidate_source_kind": final_source_kind,
+            "original_candidate_source_kind": root_source_kind,
+            "root_candidate_source_kind": root_source_kind,
+            "recovery_input_candidate_source_kind": recovery_input_source_kind,
+            "selected_public_candidate_source_kind": final_source_kind,
+            "pre_public_candidate_source_kind": pre_public_source_kind,
+            "final_public_candidate_source_kind": final_source_kind,
             "public_surface_role": PUBLIC_SURFACE_ROLE_PUBLIC_OBSERVATION,
             "candidate_lineage": lineage,
+            "body_free_public_source_lineage": body_free_lineage_record,
             "public_candidate_builder": {
                 "schema_version": PUBLIC_RECOVERY_CANDIDATE_BUILDER_SCHEMA_VERSION,
                 "selection_kind": selection_kind,
+                "root_candidate_source_kind": root_source_kind,
+                "recovery_input_candidate_source_kind": recovery_input_source_kind,
+                "selected_public_candidate_source_kind": final_source_kind,
+                "pre_public_candidate_source_kind": pre_public_source_kind,
+                "final_public_candidate_source_kind": final_source_kind,
+                "recovery_context": _clean_identifier(recovery_context, max_length=96) or RECOVERY_CONTEXT_UNKNOWN,
                 "raw_input_included": False,
                 "comment_text_body_included": False,
                 "candidate_body_in_meta": False,
@@ -1639,6 +1695,120 @@ def _candidate_with_public_lineage(
             pass
     return candidate
 
+
+def build_body_free_public_source_lineage_record(
+    *,
+    recovery_context: str,
+    recovery_pass_index: int,
+    root_candidate_source_kind: str,
+    recovery_input_candidate_source_kind: str,
+    selected_public_candidate_source_kind: str,
+    pre_public_candidate_source_kind: str,
+    final_public_candidate_source_kind: str,
+    surface_requirement: Any = None,
+) -> dict[str, Any]:
+    """Return canonical R4 body-free lineage semantics for public recovery.
+
+    The implementation delegates to the shared R4 sanitizer so Gate Recovery and
+    public-meta summaries keep the same allow-listed, body-free shape.
+    """
+
+    return _canonical_body_free_public_source_lineage_record(
+        recovery_context=recovery_context,
+        recovery_pass_index=recovery_pass_index,
+        root_candidate_source_kind=root_candidate_source_kind,
+        recovery_input_candidate_source_kind=recovery_input_candidate_source_kind,
+        selected_public_candidate_source_kind=selected_public_candidate_source_kind,
+        pre_public_candidate_source_kind=pre_public_candidate_source_kind,
+        final_public_candidate_source_kind=final_public_candidate_source_kind,
+        surface_requirement=_as_mapping(surface_requirement),
+    )
+
+
+def _root_candidate_source_kind(
+    candidate: Any | None,
+    *,
+    original_composer_candidate: Any | None,
+    fallback_source_kind: str,
+) -> str:
+    """Return the root source without letting final recovery rewrite R5.
+
+    ``original_candidate_source_kind`` stays a root alias.  Nested/post-final
+    recovery may carry a final labelled source on the selected candidate, so R5
+    prefers the original composer candidate's explicit lineage before the final
+    candidate's legacy alias.
+    """
+
+    original_meta = _candidate_meta(original_composer_candidate)
+    original_lineage = _as_mapping(original_meta.get("candidate_lineage"))
+    for value in (
+        original_meta.get("root_candidate_source_kind"),
+        original_lineage.get("root_candidate_source_kind"),
+        original_lineage.get("original_candidate_source"),
+        original_meta.get("original_candidate_source_kind"),
+        getattr(original_composer_candidate, "composer_source", "")
+        if original_composer_candidate is not None
+        else "",
+    ):
+        cleaned = _clean_identifier(value, max_length=128)
+        if cleaned:
+            return cleaned
+
+    candidate_meta = _candidate_meta(candidate)
+    candidate_lineage = _as_mapping(candidate_meta.get("candidate_lineage"))
+    for value in (
+        candidate_meta.get("root_candidate_source_kind"),
+        candidate_lineage.get("root_candidate_source_kind"),
+        candidate_lineage.get("original_candidate_source"),
+    ):
+        cleaned = _clean_identifier(value, max_length=128)
+        if cleaned:
+            return cleaned
+
+    fallback = _clean_identifier(fallback_source_kind, max_length=128)
+    if fallback:
+        return fallback
+
+    candidate_legacy_original = _clean_identifier(
+        candidate_meta.get("original_candidate_source_kind"),
+        max_length=128,
+    )
+    return candidate_legacy_original or CANDIDATE_SOURCE_KIND_NONE
+
+
+def _recovery_input_candidate_source_kind(candidate: Any | None, *, fallback_source_kind: str) -> str:
+    value = _candidate_source_kind(candidate)
+    if value and value != CANDIDATE_SOURCE_KIND_NONE:
+        return value
+    meta = _candidate_meta(candidate)
+    composer_source = _clean_identifier(
+        meta.get("composer_source")
+        or (getattr(candidate, "composer_source", "") if candidate is not None else ""),
+        max_length=128,
+    )
+    return composer_source or _clean_identifier(fallback_source_kind, max_length=128) or CANDIDATE_SOURCE_KIND_NONE
+
+
+def _pre_public_candidate_source_kind(
+    *,
+    candidate_meta: Mapping[str, Any],
+    candidate_lineage: Mapping[str, Any],
+    recovery_context: str,
+    recovery_input_source_kind: str,
+    selected_source_kind: str,
+) -> str:
+    existing = _clean_identifier(
+        candidate_meta.get("pre_public_candidate_source_kind")
+        or candidate_lineage.get("pre_public_candidate_source_kind"),
+        max_length=128,
+    )
+    if existing:
+        return existing
+    if _clean_identifier(recovery_context, max_length=96) == RECOVERY_CONTEXT_PRE_PUBLIC_DISPLAY_GATE:
+        return _clean_identifier(selected_source_kind, max_length=128)
+    if _clean_identifier(recovery_context, max_length=96) == RECOVERY_CONTEXT_POST_FINAL_PRE_RETURN_GATE:
+        return _clean_identifier(recovery_input_source_kind, max_length=128)
+    return ""
 
 def _candidate_source_kind(candidate: Any | None) -> str:
     meta = _candidate_meta(candidate)
@@ -2185,9 +2355,27 @@ def _material_route_meta(material_route: Any) -> Mapping[str, Any]:
 
 def _candidate_lineage_dict(value: Mapping[str, Any]) -> dict[str, Any]:
     line = _as_mapping(value)
+    root_source_kind = _clean_identifier(
+        line.get("root_candidate_source_kind") or line.get("original_candidate_source"),
+        max_length=128,
+    )
     return {
         "original_candidate_present": bool(line.get("original_candidate_present")),
-        "original_candidate_source": _clean_identifier(line.get("original_candidate_source"), max_length=128),
+        "original_candidate_source": root_source_kind,
+        "root_candidate_source_kind": root_source_kind,
+        "recovery_input_candidate_source_kind": _clean_identifier(
+            line.get("recovery_input_candidate_source_kind"), max_length=128
+        ),
+        "selected_public_candidate_source_kind": _clean_identifier(
+            line.get("selected_public_candidate_source_kind"), max_length=128
+        ),
+        "pre_public_candidate_source_kind": _clean_identifier(
+            line.get("pre_public_candidate_source_kind"), max_length=128
+        ),
+        "final_public_candidate_source_kind": _clean_identifier(
+            line.get("final_public_candidate_source_kind"), max_length=128
+        ),
+        "recovery_context": _clean_identifier(line.get("recovery_context"), max_length=96),
         "recovery_plan_used": bool(line.get("recovery_plan_used")),
         "diagnostic_surface_used": bool(line.get("diagnostic_surface_used")),
         "public_candidate_rebuilt_after_recovery": bool(line.get("public_candidate_rebuilt_after_recovery")),
@@ -2305,6 +2493,10 @@ __all__ = [
     "BOUNDED_ORIGINAL_REPAIR_RESPONSE_SCHEMA_VERSION",
     "BOUNDED_ORIGINAL_REPAIR_SOURCE_PHASE",
     "RECOVERY_OBSERVATION_PLAN_SCHEMA_VERSION",
+    "BODY_FREE_PUBLIC_SOURCE_LINEAGE_SCHEMA_VERSION",
+    "BODY_FREE_PUBLIC_SOURCE_LINEAGE_SOURCE_PHASE",
+    "build_body_free_public_source_lineage_record",
+    "sanitize_body_free_public_source_lineage_record",
     "PublicRecoveryCandidateResult",
     "assert_public_recovery_candidate_result_meta",
     "build_public_candidate_after_gate_recovery",
