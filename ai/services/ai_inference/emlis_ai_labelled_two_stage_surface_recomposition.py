@@ -116,6 +116,64 @@ _FORBIDDEN_META_TEXT_KEYS: Final[frozenset[str]] = frozenset(
         "text",
     }
 )
+_RELATION_ID_SEMANTIC_ALIASES: Final[dict[str, tuple[str, ...]]] = {
+    "self_understanding_learning": ("self_observation",),
+    "value_or_self_understanding_material": ("self_observation", "value_preservation"),
+    "boundary_or_transition": ("future_intention",),
+    "relationship_material": ("relationship_wish",),
+    "support_received_material": ("relationship_wish",),
+    "relationship_boundary_state_answer": ("relationship_wish",),
+    "recovered_energy": ("recovered_energy",),
+    "future_intention": ("future_intention",),
+    "relationship_wish": ("relationship_wish",),
+    "comparison_baseline_shift": ("comparison_baseline_shift",),
+    "small_change_preservation": ("small_change_preservation",),
+    "value_preservation": ("value_preservation",),
+    "self_observation": ("self_observation",),
+}
+_SURFACE_SEMANTIC_FOCUS_GENERIC: Final = "generic_visible_material"
+_SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION: Final = "recovered_energy_future_direction"
+_SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_RELATIONSHIP_WISH: Final = "recovered_energy_relationship_wish"
+_SURFACE_SEMANTIC_FOCUS_COMPARISON_BASELINE_SMALL_CHANGE: Final = "comparison_baseline_small_change"
+_SURFACE_SEMANTIC_FOCUS_REQUIREMENTS: Final[dict[str, tuple[str, ...]]] = {
+    _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION: (
+        "show_recovered_energy_as_current_state",
+        "show_future_direction_as_next_effort",
+        "show_self_possibility_without_prediction",
+        "show_value_preservation_without_advice",
+        "keep_observation_and_reception_sections",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_RELATIONSHIP_WISH: (
+        "show_recovered_energy_as_current_state",
+        "show_relationship_wish_without_prediction",
+        "keep_observation_and_reception_sections",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_COMPARISON_BASELINE_SMALL_CHANGE: (
+        "show_comparison_baseline_without_self_blame",
+        "show_small_change_preservation",
+        "keep_observation_and_reception_sections",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_GENERIC: ("keep_observation_and_reception_sections",),
+}
+_BLOCKED_GENERIC_SIGNATURE_IDS_BY_FOCUS: Final[dict[str, tuple[str, ...]]] = {
+    _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION: (
+        "category_emotion_action_generic",
+        "next_handling_generic",
+        "generic_positive_reception",
+        "question_dominant_surface",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_RELATIONSHIP_WISH: (
+        "category_emotion_action_generic",
+        "next_handling_generic",
+        "question_dominant_surface",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_COMPARISON_BASELINE_SMALL_CHANGE: (
+        "category_emotion_action_generic",
+        "question_dominant_surface",
+    ),
+    _SURFACE_SEMANTIC_FOCUS_GENERIC: ("question_dominant_surface",),
+}
+
 _META_REQUIRED_KEYS: Final[frozenset[str]] = frozenset(
     {
         "schema_version",
@@ -272,11 +330,16 @@ def build_labelled_two_stage_surface_recomposition_candidate(
             str(getattr(original_composer_candidate, "comment_text", "") or "")
         ),
     )
+    surface_semantic_focus_summary = _surface_semantic_focus_summary(
+        current_input=current_input,
+        material_route=material_route,
+    )
     used_evidence_span_ids = _evidence_span_ids(visible_slots=visible_slots, relation_ids=relation_ids)
     used_phrase_unit_ids = _phrase_unit_ids(
         topic=_topic_phrase(current_input=current_input, material_route=material_route),
         feeling=_feeling_phrase(current_input=current_input),
         action=_action_phrase(current_input=current_input),
+        semantic_focus_id=str(surface_semantic_focus_summary.get("semantic_focus_id") or ""),
     )
     meta = _candidate_meta(
         surface_requirement=requirement,
@@ -293,6 +356,7 @@ def build_labelled_two_stage_surface_recomposition_candidate(
         original_surface_plain_or_unlabelled=root_surface_plain_or_unlabelled,
         recovery_context=recovery_context,
         limited_grounding_reception_surface_summary=limited_grounding_reception_surface_summary,
+        surface_semantic_focus_summary=surface_semantic_focus_summary,
     )
     assert_labelled_two_stage_surface_recomposition_meta(meta)
     return (
@@ -409,11 +473,13 @@ def _candidate_meta(
     original_surface_plain_or_unlabelled: bool,
     recovery_context: str,
     limited_grounding_reception_surface_summary: Mapping[str, Any] | None = None,
+    surface_semantic_focus_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     family = _clean_identifier(surface_requirement.get("surface_requirement_family"), max_length=96)
     material_quality_family = _clean_identifier(material_quality, max_length=96)
     limited_grounding_reception_required = material_quality_family in _LIMITED_GROUNDING_MATERIAL_QUALITIES
     limited_grounding_surface_summary = dict(_as_mapping(limited_grounding_reception_surface_summary))
+    semantic_focus_summary = _surface_semantic_focus_public_summary(surface_semantic_focus_summary)
     return {
         "schema_version": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SCHEMA_VERSION,
         "source_phase": LABELLED_TWO_STAGE_SURFACE_RECOMPOSITION_SOURCE_PHASE,
@@ -463,12 +529,18 @@ def _candidate_meta(
             "visible_slot_count": max(0, int(visible_slot_count or 0)),
             "unknown_slot_count": max(0, int(unknown_slot_count or 0)),
             "relation_id_count": max(0, int(relation_id_count or 0)),
+            "semantic_focus_id": semantic_focus_summary.get("semantic_focus_id", _SURFACE_SEMANTIC_FOCUS_GENERIC),
+            "semantic_material_count": len(tuple(semantic_focus_summary.get("semantic_material_ids") or ())),
             "claim_id_count": 0,
             "user_payload_serialized": False,
             "candidate_payload_serialized": False,
         },
         "labelled_two_stage_surface_recomposition_summary": {
             "existing_complete_material_connected": True,
+            "eligible_surface_semantic_focus": semantic_focus_summary,
+            "eligible_surface_semantic_focus_connected": bool(
+                semantic_focus_summary.get("semantic_focus_id") != _SURFACE_SEMANTIC_FOCUS_GENERIC
+            ),
             "limited_grounding_reception_used": limited_grounding_reception_required,
             "limited_grounding_reception_surface_plan_connected": bool(limited_grounding_surface_summary),
             "limited_grounding_reception_surface_summary": limited_grounding_surface_summary,
@@ -560,6 +632,11 @@ def _is_limited_grounding_reception(*, material_route: Any, surface_requirement:
 
 
 def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
+    focus = _surface_semantic_focus(
+        _semantic_material_ids_for_recomposition(current_input=current_input, material_route=material_route)
+    )
+    if focus == _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION:
+        return "今は、やってみたいと思えた気持ちを大事にしながら、次の頑張り方を探している状態に見えます。"
     topic = _topic_phrase(current_input=current_input, material_route=material_route)
     feeling = _feeling_phrase(current_input=current_input)
     action = _action_phrase(current_input=current_input)
@@ -567,7 +644,11 @@ def _compose_observation_sentence(*, current_input: Mapping[str, Any] | None, ma
 
 
 def _compose_reception_sentence(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
-    _ = material_route
+    focus = _surface_semantic_focus(
+        _semantic_material_ids_for_recomposition(current_input=current_input, material_route=material_route)
+    )
+    if focus == _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION:
+        return "自分にも出来るかもしれないと思えた瞬間を流さず、その気持ちを確かめようとしているところを、Emlisは受け取りました。"
     current = _as_mapping(current_input)
     memo = _clean(_first(("memo", "note", "description"), current))
     if any(marker in memo for marker in ("責め", "だめ", "ダメ", "嫌い", "否定")):
@@ -575,6 +656,101 @@ def _compose_reception_sentence(*, current_input: Mapping[str, Any] | None, mate
     if any(marker in memo for marker in ("嬉", "楽", "よかっ", "良かっ", "できた")):
         return "良かった動きも迷いもどちらかに寄せず、そのまま確かめようとしているところを、Emlisは受け取りました。"
     return "すぐに一つへまとめず、いま見えている動きをそのまま置こうとしているところを、Emlisは受け取りました。"
+
+
+def _semantic_material_ids_for_recomposition(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+) -> tuple[str, ...]:
+    """Return body-free semantic ids available to the labelled two-stage lane.
+
+    The helper reads material ids and safe relation aliases only.  It may look at
+    current_input to keep the signature aligned with other surface helpers, but
+    it never exports raw input text; callers only receive stable ids.
+    """
+
+    _ = current_input
+    route_meta = _material_route_meta(material_route)
+    seeds: list[Any] = []
+    for key in (
+        "semantic_material_ids",
+        "relation_material_ids",
+        "generic_relation_material_ids",
+        "visible_relation_material_ids",
+    ):
+        seeds.extend(_as_sequence(route_meta.get(key)))
+    out: list[str] = []
+    for seed in seeds:
+        cleaned = _clean_identifier(seed, max_length=128)
+        if not cleaned:
+            continue
+        for semantic_id in _RELATION_ID_SEMANTIC_ALIASES.get(cleaned, (cleaned,)):
+            semantic_cleaned = _clean_identifier(semantic_id, max_length=96)
+            if semantic_cleaned and semantic_cleaned not in out:
+                out.append(semantic_cleaned)
+    return tuple(out)
+
+
+def _surface_semantic_focus(semantic_ids: Sequence[str]) -> str:
+    ids = set(_dedupe(semantic_ids))
+    if {"recovered_energy", "future_intention"}.issubset(ids):
+        return _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_FUTURE_DIRECTION
+    if {"comparison_baseline_shift", "small_change_preservation"}.issubset(ids):
+        return _SURFACE_SEMANTIC_FOCUS_COMPARISON_BASELINE_SMALL_CHANGE
+    if {"relationship_wish", "recovered_energy"}.issubset(ids):
+        return _SURFACE_SEMANTIC_FOCUS_RECOVERED_ENERGY_RELATIONSHIP_WISH
+    return _SURFACE_SEMANTIC_FOCUS_GENERIC
+
+
+def _surface_semantic_focus_summary(
+    *,
+    current_input: Mapping[str, Any] | None,
+    material_route: Any,
+) -> dict[str, Any]:
+    semantic_ids = _semantic_material_ids_for_recomposition(
+        current_input=current_input,
+        material_route=material_route,
+    )
+    focus = _surface_semantic_focus(semantic_ids)
+    return {
+        "schema_version": "cocolon.emlis.surface_semantic_focus.v1",
+        "semantic_focus_id": focus,
+        "semantic_material_ids": list(semantic_ids),
+        "surface_role_requirements": list(
+            _SURFACE_SEMANTIC_FOCUS_REQUIREMENTS.get(focus, _SURFACE_SEMANTIC_FOCUS_REQUIREMENTS[_SURFACE_SEMANTIC_FOCUS_GENERIC])
+        ),
+        "blocked_generic_signature_ids": list(
+            _BLOCKED_GENERIC_SIGNATURE_IDS_BY_FOCUS.get(focus, _BLOCKED_GENERIC_SIGNATURE_IDS_BY_FOCUS[_SURFACE_SEMANTIC_FOCUS_GENERIC])
+        ),
+        "body_boundary": {
+            "body_free": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+    }
+
+
+def _surface_semantic_focus_public_summary(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    meta = _as_mapping(value)
+    focus = _clean_identifier(meta.get("semantic_focus_id"), max_length=96) or _SURFACE_SEMANTIC_FOCUS_GENERIC
+    semantic_ids = _dedupe(meta.get("semantic_material_ids") or ())
+    return {
+        "schema_version": "cocolon.emlis.surface_semantic_focus.v1",
+        "semantic_focus_id": focus,
+        "semantic_material_ids": list(semantic_ids),
+        "surface_role_requirements": list(
+            _dedupe(meta.get("surface_role_requirements") or _SURFACE_SEMANTIC_FOCUS_REQUIREMENTS.get(focus, ()))
+        ),
+        "blocked_generic_signature_ids": list(
+            _dedupe(meta.get("blocked_generic_signature_ids") or _BLOCKED_GENERIC_SIGNATURE_IDS_BY_FOCUS.get(focus, ()))
+        ),
+        "body_boundary": {
+            "body_free": True,
+            "raw_input_included": False,
+            "comment_text_body_included": False,
+        },
+    }
 
 
 def _topic_phrase(*, current_input: Mapping[str, Any] | None, material_route: Any) -> str:
@@ -797,12 +973,16 @@ def _evidence_span_ids(*, visible_slots: Sequence[str], relation_ids: Sequence[s
     return tuple(result)
 
 
-def _phrase_unit_ids(*, topic: str, feeling: str, action: str) -> tuple[str, ...]:
-    return (
+def _phrase_unit_ids(*, topic: str, feeling: str, action: str, semantic_focus_id: str = "") -> tuple[str, ...]:
+    ids = [
         f"p6_two_stage_topic_{_clean_identifier(topic, max_length=32) or 'topic'}",
         f"p6_two_stage_feeling_{_clean_identifier(feeling, max_length=32) or 'feeling'}",
         f"p6_two_stage_action_{_clean_identifier(action, max_length=32) or 'action'}",
-    )
+    ]
+    focus = _clean_identifier(semantic_focus_id, max_length=96)
+    if focus and focus != _SURFACE_SEMANTIC_FOCUS_GENERIC:
+        ids.append(f"p6_two_stage_semantic_focus_{focus}")
+    return tuple(ids)
 
 
 def _clean(value: Any) -> str:
