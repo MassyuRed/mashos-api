@@ -43,10 +43,24 @@ def _assert_body_free(test: unittest.TestCase, payload) -> None:
     test.assertFalse(payload.get("comment_text_included"))
 
 
-def _explicit_passed_reviews(case_ids) -> list[I7KarenLocalReview]:
+def _canonical_device_meta(surface_sha256: str) -> dict[str, object]:
+    return {
+        "generation_path": I7_CANONICAL_GENERATION_PATH,
+        "composer_source": I7_CANONICAL_COMPOSER_SOURCE,
+        "semantic_quality_gate": "passed",
+        "public_reply_path_connected": True,
+        "two_stage_contract_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "runtime_visible_contract_guard": "passed",
+        "visible_surface_sha256": surface_sha256,
+        "expected_local_surface_sha256": surface_sha256,
+    }
+
+
+def _explicit_passed_reviews(assessments) -> list[I7KarenLocalReview]:
     return [
         I7KarenLocalReview(
-            case_id=case_id,
+            case_id=assessment.case_id,
             snapshot_fingerprint="a" * 64,
             required_nucleus_retained="pass",
             required_relation_direction="pass",
@@ -59,8 +73,9 @@ def _explicit_passed_reviews(case_ids) -> list[I7KarenLocalReview]:
             wants_more_input_candidate="pass",
             fatal_reason_refs=(),
             verdict="local_human_pass",
+            reviewed_surface_sha256=assessment.surface_sha256,
         )
-        for case_id in case_ids
+        for assessment in assessments
     ]
 
 
@@ -110,6 +125,31 @@ class I7LocalProductReadFeelTests(unittest.TestCase):
         )
         for item in assessments:
             _assert_body_free(self, item.as_body_free_meta())
+
+    def test_semantic_meta_without_visible_contract_proof_is_not_device_evidence(self) -> None:
+        assessment = assess_i7_device_evidence(
+            case_id="A",
+            evidence_meta={
+                "generation_path": I7_CANONICAL_GENERATION_PATH,
+                "composer_source": I7_CANONICAL_COMPOSER_SOURCE,
+                "semantic_quality_gate": "passed",
+                "public_reply_path_connected": True,
+            },
+        )
+        self.assertEqual("runtime_mismatch", assessment.evidence_status)
+        self.assertIn("two_stage_contract_not_verified", assessment.reason_refs)
+        self.assertIn("mechanical_restatement_gate_not_verified", assessment.reason_refs)
+        self.assertIn("runtime_visible_contract_guard_not_verified", assessment.reason_refs)
+        self.assertIn("device_visible_surface_sha256_missing_or_invalid", assessment.reason_refs)
+        self.assertFalse(assessment.visible_surface_hash_verified)
+
+    def test_device_visible_body_hash_must_match_locally_reviewed_body(self) -> None:
+        meta = _canonical_device_meta("a" * 64)
+        meta["visible_surface_sha256"] = "b" * 64
+        assessment = assess_i7_device_evidence(case_id="A", evidence_meta=meta)
+        self.assertEqual("runtime_mismatch", assessment.evidence_status)
+        self.assertIn("device_visible_surface_sha256_mismatch", assessment.reason_refs)
+        self.assertFalse(assessment.visible_surface_hash_verified)
 
     def test_stale_or_incomplete_device_lane_blocks_p5_formal_24(self) -> None:
         local = []
@@ -164,15 +204,12 @@ class I7LocalProductReadFeelTests(unittest.TestCase):
                     grounded_meta=reply.meta["grounded_observation"],
                 )
             )
-        canonical_meta = {
-            "generation_path": I7_CANONICAL_GENERATION_PATH,
-            "composer_source": I7_CANONICAL_COMPOSER_SOURCE,
-            "semantic_quality_gate": "passed",
-            "public_reply_path_connected": True,
-        }
         device = [
-            assess_i7_device_evidence(case_id=f"device-{index}", evidence_meta=canonical_meta)
-            for index in range(1, 9)
+            assess_i7_device_evidence(
+                case_id=assessment.case_id,
+                evidence_meta=_canonical_device_meta(assessment.surface_sha256),
+            )
+            for assessment in local[:8]
         ]
         decision = decide_i7_progression(
             local_assessments=local,
@@ -200,25 +237,65 @@ class I7LocalProductReadFeelTests(unittest.TestCase):
                     grounded_meta=reply.meta["grounded_observation"],
                 )
             )
-        canonical_meta = {
-            "generation_path": I7_CANONICAL_GENERATION_PATH,
-            "composer_source": I7_CANONICAL_COMPOSER_SOURCE,
-            "semantic_quality_gate": "passed",
-            "public_reply_path_connected": True,
-        }
         device = [
-            assess_i7_device_evidence(case_id=f"device-{index}", evidence_meta=canonical_meta)
-            for index in range(1, 9)
+            assess_i7_device_evidence(
+                case_id=assessment.case_id,
+                evidence_meta=_canonical_device_meta(assessment.surface_sha256),
+            )
+            for assessment in local[:8]
         ]
         decision = decide_i7_progression(
             local_assessments=local,
-            actual_local_reviews=_explicit_passed_reviews(case.case_id for case in cases),
+            actual_local_reviews=_explicit_passed_reviews(local),
             device_assessments=device,
         )
         self.assertTrue(decision["actual_local_human_ready"])
+        self.assertTrue(decision["local_review_surface_hash_binding_passed"])
         self.assertTrue(decision["current_input_baseline_verified"])
         self.assertTrue(decision["p5_formal_24_start_allowed"])
         self.assertEqual("start_p5_formal_24_owned_history_blind_qa", decision["next_action_ref"])
+
+    def test_stale_human_review_hash_cannot_open_progression(self) -> None:
+        cases = (
+            *GROUND_OBSERVATION_I0_KNOWN_REGRESSION_CASES,
+            *GROUND_OBSERVATION_I6_BLIND_CASES,
+        )
+        local = []
+        for case in cases:
+            reply = _render(case.as_current_input())
+            local.append(
+                assess_i7_local_surface(
+                    case_id=case.case_id,
+                    surface_text=reply.comment_text,
+                    grounded_meta=reply.meta["grounded_observation"],
+                )
+            )
+        stale_reviews = _explicit_passed_reviews(local)
+        stale_reviews[0] = I7KarenLocalReview(
+            **{
+                **stale_reviews[0].as_body_free_meta(),
+                "reviewed_surface_sha256": "b" * 64,
+            }
+        )
+        device = [
+            assess_i7_device_evidence(
+                case_id=assessment.case_id,
+                evidence_meta=_canonical_device_meta(assessment.surface_sha256),
+            )
+            for assessment in local[:8]
+        ]
+        decision = decide_i7_progression(
+            local_assessments=local,
+            actual_local_reviews=stale_reviews,
+            device_assessments=device,
+        )
+        self.assertFalse(decision["actual_local_human_ready"])
+        self.assertFalse(decision["local_review_surface_hash_binding_passed"])
+        self.assertIn(
+            "actual_local_review_surface_sha256_mismatch",
+            decision["local_review_reason_refs"],
+        )
+        self.assertFalse(decision["p5_formal_24_start_allowed"])
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ from emlis_ai_grounded_sentence_surface import (
     GroundedSurfaceLine,
     build_grounded_sentence_plan,
     realize_grounded_sentence_plan,
+    split_two_stage_surface,
 )
 
 
@@ -94,37 +95,35 @@ def _delivery(plan) -> str:
 
 
 @pytest.mark.parametrize(
-    ("case_id", "expected"),
-    (
-        ("D", "integrated_into_relation"),
-        ("I6-D01", "integrated_into_relation"),
-        ("I6-D02", "separate_distinct_contribution"),
-        ("I6-D03", "separate_distinct_contribution"),
-        ("I6-C01", "integrated_into_relation"),
-        ("I6-S01", "integrated_into_observation"),
-    ),
+    "case_id",
+    ("D", "I6-D01", "I6-D02", "I6-D03", "I6-C01", "I6-S01"),
 )
-def test_ga2_a_plan_owns_body_free_follow_delivery(case_id: str, expected: str) -> None:
+def test_ga2_a_plan_owns_mandatory_separate_follow_delivery(case_id: str) -> None:
     plan = _artifacts(case_id)[0]
-    assert _delivery(plan) == expected
+    assert _delivery(plan) == "separate_distinct_contribution"
+    assert plan.response_plan.surface_shape == "two_stage"
+    assert plan.coverage_requirements.human_follow_required is True
     assert GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION == "cocolon.emlis.grounded_semantics.i2.v3"
 
 
 @pytest.mark.parametrize("case_id", ("D", "I6-D01"))
-def test_ga2_b_protective_counterdirection_is_integrated_once(case_id: str) -> None:
-    plan, _resolver, sentence_plan, _surface, report = _artifacts(case_id)
+def test_ga2_b_protective_counterdirection_has_distinct_reception_line(case_id: str) -> None:
+    plan, _resolver, sentence_plan, surface, report = _artifacts(case_id)
     follow = _follow_line(plan, sentence_plan)
-    assert follow.binding.line_role == "limited_opposition"
+    assert follow.binding.line_role == "human_follow"
     assert "human_follow:protective_counterdirection" in follow.binding.functional_atom_ids
-    assert "human_follow_delivery:integrated" in follow.binding.functional_atom_ids
-    assert not any(
-        line.binding.line_role == "human_follow" for line in sentence_plan.lines
-    )
+    assert "human_follow_delivery:separate" in follow.binding.functional_atom_ids
+    assert "human_follow_delivery:integrated" not in follow.binding.functional_atom_ids
+    observation, reception, issues = split_two_stage_surface(surface.text)
+    assert issues == ()
+    assert observation
+    assert reception
     assert report.public_observation_status == "passed"
+    assert report.two_stage_contract_gate == "passed"
 
 
 @pytest.mark.parametrize("case_id", ("I6-D02", "I6-D03"))
-def test_ga2_b_help_seeking_keeps_distinct_value_without_requoting_target(
+def test_ga2_b_help_seeking_keeps_distinct_value_in_reception_section(
     case_id: str,
 ) -> None:
     plan, resolver, sentence_plan, surface, report = _artifacts(case_id)
@@ -140,32 +139,53 @@ def test_ga2_b_help_seeking_keeps_distinct_value_without_requoting_target(
     )
     assert target_text
     target_anchor = target_text.split("、")[-1]
-    assert surface.text.count(target_anchor) == 1
+    observation, reception, issues = split_two_stage_surface(surface.text)
+    assert issues == ()
+    assert target_anchor in observation
+    assert target_anchor in reception
+    assert observation != reception
     assert report.public_observation_status == "passed"
 
 
 @pytest.mark.parametrize(
-    "case_id",
-    ("B", "C", "I6-L01", "I6-L02", "I6-L03", "I6-C01", "I6-C02", "I6-C03"),
+    ("case_id", "expected_role", "expected_modality"),
+    (
+        ("B", "concrete_effort", "action"),
+        ("C", "retained_intention", "intention"),
+        ("I6-L01", "retained_intention", "intention"),
+        ("I6-L02", "retained_intention", "intention"),
+        ("I6-L03", "retained_intention", "intention"),
+        ("I6-C01", "retained_intention", "intention"),
+        ("I6-C02", "retained_intention", "intention"),
+        ("I6-C03", "retained_intention", "intention"),
+    ),
 )
-def test_ga2_b_c_retained_intention_has_scoped_modality_without_generic_tail(
+def test_ga2_b_c_grounded_follow_has_scoped_separate_reception(
     case_id: str,
+    expected_role: str,
+    expected_modality: str,
 ) -> None:
     plan, _resolver, sentence_plan, surface, report = _artifacts(case_id)
     follow = _follow_line(plan, sentence_plan)
     assert {
-        "human_follow:retained_intention",
-        "human_follow_contribution:retained_intention",
-        "human_follow_delivery:integrated",
+        f"human_follow:{expected_role}",
+        f"human_follow_contribution:{expected_role}",
+        "human_follow_delivery:separate",
         "closure_role:human_follow",
-        "closure_modality:intention",
+        f"closure_modality:{expected_modality}",
         "closure_scope:selected_target",
     } <= set(follow.binding.functional_atom_ids)
+    assert follow.binding.line_role == "human_follow"
+    assert "human_follow_delivery:integrated" not in follow.binding.functional_atom_ids
     target_surface_line = next(
         line for line in surface.lines if line.sentence_id == follow.binding.sentence_id
     )
     assert target_surface_line.text.count("。") <= 2
+    observation, reception, issues = split_two_stage_surface(surface.text)
+    assert issues == ()
+    assert observation and reception and observation != reception
     assert report.public_observation_status == "passed"
+    assert report.two_stage_contract_gate == "passed"
 
 
 def test_ga2_c_action_relation_distinguishes_current_change_from_intention() -> None:
@@ -236,9 +256,9 @@ def test_ga2_d_gate_rejects_reintroduced_self_denial_duplicate() -> None:
         surface_result=mutated_surface,
         resolver=resolver,
     )
-    assert "human_follow_no_distinct_contribution" in report.rejection_reasons
-    assert "human_follow_repeats_relation_target" in report.rejection_reasons
-    assert "self_denial_counterdirection_duplicated" in report.rejection_reasons
+    assert "two_stage_reception_line_count_invalid" in report.rejection_reasons
+    assert "mandatory_two_stage_reception_plan_line_count_invalid" in report.rejection_reasons
+    assert "generic_follow_suffix_repeated" in report.rejection_reasons
 
 
 def test_ga2_d_gate_rejects_retained_intention_closure_mismatch() -> None:

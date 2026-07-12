@@ -151,8 +151,26 @@ async def render_emlis_ai_reply(
     if selected_sentence_plan is None or selected_surface is None or selected_gate is None:
         raise RuntimeError("grounded_reply_stage_not_evaluated")
 
+    visible_contract_guard_required = selected_surface.status == "generated"
+    visible_contract_guard_passed = bool(
+        not visible_contract_guard_required
+        or (
+            selected_gate.two_stage_contract_gate == "passed"
+            and selected_gate.mechanical_restatement_gate == "passed"
+            and selected_gate.two_stage_observation_section_present
+            and selected_gate.two_stage_reception_section_present
+        )
+    )
     public_status = selected_gate.public_observation_status
-    final_text = selected_surface.text.strip() if selected_gate.passed else ""
+    rejection_reasons = list(selected_gate.rejection_reasons)
+    if selected_gate.passed and not visible_contract_guard_passed:
+        public_status = "rejected"
+        rejection_reasons.append("runtime_visible_contract_guard_failed")
+    final_text = (
+        selected_surface.text.strip()
+        if selected_gate.passed and visible_contract_guard_passed
+        else ""
+    )
     response_kind = _response_kind(
         safety_kind=plan.safety_policy.safety_kind,
         material_quality=plan.input_profile.material_quality,
@@ -169,6 +187,13 @@ async def render_emlis_ai_reply(
             "public_reply_path_connected": True,
             "generation_method": "functional_atom_grounded_realizer",
             "composer_source": "grounded_plan_realizer",
+            "runtime_visible_contract_guard": (
+                "passed"
+                if visible_contract_guard_required and visible_contract_guard_passed
+                else "failed"
+                if visible_contract_guard_required
+                else "not_evaluated"
+            ),
         }
     )
 
@@ -182,7 +207,7 @@ async def render_emlis_ai_reply(
         "observation_reply_kind": reply_kind,
         "observation_trace_id": trace_id,
         "trace_id": trace_id,
-        "rejection_reasons": list(selected_gate.rejection_reasons),
+        "rejection_reasons": rejection_reasons,
         "generation_path": selected_gate.generation_path,
         "generation_method": "functional_atom_grounded_realizer",
         "composer_source": "grounded_plan_realizer",

@@ -1,0 +1,288 @@
+{
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S03",
+    "I6-L03",
+    "I6-C01",
+    "I6-D02"
+  ],
+  "cases": [
+    {
+      "case_id": "A",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "exact_current_input": {
+        "category": [
+          "生活"
+        ],
+        "emotions": [
+          "悲しみ",
+          "不安"
+        ],
+        "memo": "なんか今日は全部だるい。\n何もしたくない。",
+        "memo_action": ""
+      },
+      "local_comment_character_count": 137,
+      "local_comment_nonempty_line_count": 4,
+      "local_comment_sha256": "b9424d4a7834dd7fd807a9b160b56561710836b3941b78a3147d5e510f8572d3",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "B",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "exact_current_input": {
+        "category": [
+          "学習"
+        ],
+        "emotions": [
+          "自己理解"
+        ],
+        "memo": "今までは、人に対して何故？と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする。\n何故それを聞くの？とか聞く意味があるの？と考えてしまってうまくコミュニケーションが取れなくてもやもやしていたけど、物を見ることで人への興味が薄れた。\n私にとってはとても良い変化になった。\n\nそして学校、バイト、趣味で一人の時間が無くなったけど、人との話し方を思い出してきてる。やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった。\n少しずつだけど進歩してる。大丈夫。",
+        "memo_action": "創作をする時にリアルさを求めるなら日常に隠れている汚れや傷の意味を知れ。という授業があった。\n意味のない場所に傷や汚れは作れない、作ったとしても違和感になる。と、それから外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった。\n傷や汚れの場所、自分のこうかな？という憶測をメモしていった。"
+      },
+      "local_comment_character_count": 395,
+      "local_comment_nonempty_line_count": 6,
+      "local_comment_sha256": "01f937f670d4913fcf59af2074a6328db7b84c958705397f26d257fa8b65b1bc",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "C",
+      "current_input_sha256": "ab0c44e4eb1c9dc3d2ce6eef4b77a38a1d3c59d9b291cffd6feaf23165b9dcbd",
+      "exact_current_input": {
+        "category": [
+          "健康"
+        ],
+        "emotions": [
+          "自己理解"
+        ],
+        "memo": "「いきなり大きく変わろう」とするよりも、\n「昨日の自分よりほんの少し前に進めたらいい」\nそういう気持ちで過ごしていきたい。\n\n人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう。\nでも、本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う。\n\n昨日より少し出来たことが増えた。\n昨日より少し勇気が出せた。\n昨日より少し気持ちを言葉に出来た。\n\nそういう小さな変化を大切にしていきたい",
+        "memo_action": ""
+      },
+      "local_comment_character_count": 329,
+      "local_comment_nonempty_line_count": 6,
+      "local_comment_sha256": "c5207a3e3a7968409a8c247cdf8138a0a983b60e06bcf6df9e06d8489631047f",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "D",
+      "current_input_sha256": "233f853d6f5f59fff3e1e4667b8b1c02c474785e285612605a9319acfe373dd3",
+      "exact_current_input": {
+        "category": [
+          "人生",
+          "価値観"
+        ],
+        "emotions": [
+          "悲しみ"
+        ],
+        "memo": "1番自分を傷つけてるのは私だ\nずっとそれを続けて、いい事なんて絶対にない",
+        "memo_action": ""
+      },
+      "local_comment_character_count": 231,
+      "local_comment_nonempty_line_count": 5,
+      "local_comment_sha256": "79692ecaef75507705417ac3e156a3dd7b7c03d932c27e3c8e482d21d7f63f48",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "I6-S03",
+      "current_input_sha256": "d0b56eb75346e6654b04a6ace9fd91606eccf0b18e746055045110c0a9ee5a66",
+      "exact_current_input": {
+        "category": [
+          "日常"
+        ],
+        "emotions": [
+          "緊張"
+        ],
+        "memo": "胸の内側が苦しい感じ。",
+        "memo_action": ""
+      },
+      "local_comment_character_count": 119,
+      "local_comment_nonempty_line_count": 4,
+      "local_comment_sha256": "2e6064e24c1f2159addb666138a3b0099a3f90abda7e7cd2850dd8425f167241",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "I6-L03",
+      "current_input_sha256": "41b3dacaa242ee3d505ef4bd1540bb6ac8dba3cdb96acdba4313fc2d3bb5c516",
+      "exact_current_input": {
+        "category": [
+          "制作"
+        ],
+        "emotions": [
+          "好奇心"
+        ],
+        "memo": "陶器の釉薬が想定より淡く出た。失敗だと片づけそうになった。ただ光の当たり方では細かな模様が見えた。その特徴を残したいと思った。焼成条件はまだ不明だ。次の試作では温度だけ変えるつもりだ。",
+        "memo_action": "窯の温度と写真番号を作業帳へ記録した。"
+      },
+      "local_comment_character_count": 337,
+      "local_comment_nonempty_line_count": 6,
+      "local_comment_sha256": "ee77af2861448248bac466ab285098d0c7033955a6305f60cacaadcd5cf1b1e9",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "I6-C01",
+      "current_input_sha256": "0a68b63ee3e777a6c9e5d4a72b33f9f893c9a7e5d322723b2a9d03891e6a20d3",
+      "exact_current_input": {
+        "category": [
+          "業務"
+        ],
+        "emotions": [
+          "緊張"
+        ],
+        "memo": "周囲の処理速度を基準にすると、自分の手順が鈍く感じる。ただ誤入力は前回より減った。速さだけでなく確認の精度も見たい。",
+        "memo_action": "誤入力の件数を表に残した。"
+      },
+      "local_comment_character_count": 248,
+      "local_comment_nonempty_line_count": 5,
+      "local_comment_sha256": "7f126b17d1114d06e211178b9ec7f14ba24404fc9f7b9b18cd47ad0442c28280",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    },
+    {
+      "case_id": "I6-D02",
+      "current_input_sha256": "01657747b4a8ee477203f6fc0140074a24e4a848f5176f34e400da2437dc03da",
+      "exact_current_input": {
+        "category": [
+          "自己評価"
+        ],
+        "emotions": [
+          "孤独"
+        ],
+        "memo": "自分には存在する価値がない。それでも、相談先の番号は消さずに残した。",
+        "memo_action": ""
+      },
+      "local_comment_character_count": 206,
+      "local_comment_nonempty_line_count": 5,
+      "local_comment_sha256": "74f6437e91feadd2cfa5d52480b259b3442e4a66abc33fbec39ceb668f6b51ab",
+      "local_gate_expectations": {
+        "composer_source": "grounded_plan_realizer",
+        "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+        "mechanical_restatement_gate": "passed",
+        "product_readfeel_status": "not_evaluated",
+        "public_reply_path_connected": true,
+        "runtime_visible_contract_guard": "passed",
+        "semantic_quality_gate": "passed",
+        "two_stage_contract_gate": "passed"
+      }
+    }
+  ],
+  "device_acceptance": [
+    "visible_surface_sha256_equals_local_comment_sha256",
+    "mandatory_two_stage_labels_visible_once_in_order",
+    "both_sections_non_empty",
+    "no_mechanical_ledger_restatement",
+    "all_required_runtime_gates_passed",
+    "no_clipping_or_layout_breakage"
+  ],
+  "instructions": [
+    "use_each_exact_current_input_without_editing",
+    "capture_the_visible_emlis_body_and_modal_screenshot",
+    "compute_sha256_from_the_exact_returned_comment_text",
+    "compare_device_visible_surface_sha256_with_local_comment_sha256",
+    "record_required_runtime_gate_fields",
+    "stop_and_withdraw_the_packet_on_any_single_case_mismatch"
+  ],
+  "local_status": {
+    "actual_device_evidence_status": "not_started",
+    "p5_formal_24_start_allowed": false,
+    "p6_start_allowed": false,
+    "p8_start_allowed": false,
+    "product_readfeel_status": "not_evaluated",
+    "structural_candidate_ready": true
+  },
+  "packet_status": "ready_waiting_for_actual_device_visible_surface_evidence",
+  "progression_authority": "none_until_device_evidence_matches_local_visible_surface",
+  "repair_owner_sha256s": {
+    "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py": "5ab7653e515efc79e66edc27815fffd2dbb234eb2f225e8f4663c12363623a90",
+    "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py": "a60434401b1fccdd2a28fd64cdd55dce9817375d0868dd7c259a82030fbdaa7f",
+    "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py": "1f3ea3af980eae061cc5b2a884a07bb8b3f1fd984d27c5cb55c7a1ab8a50119a",
+    "ai/services/ai_inference/emlis_ai_reply_service.py": "cc77b7bec9ca4f1b7eb875eb8b26f39a8ed13c2b10266f8f92330a59bc90e1c2",
+    "ai/tests/helpers/emlis_ai_grounded_observation_i7_readfeel.py": "4d78bbc19e27892e43f3cdb526a986ab0a5a867a7a76b09a2f6b1e9e93db7b2c"
+  },
+  "required_device_evidence_fields": [
+    "generation_path",
+    "composer_source",
+    "semantic_quality_gate",
+    "public_reply_path_connected",
+    "two_stage_contract_gate",
+    "mechanical_restatement_gate",
+    "runtime_visible_contract_guard",
+    "visible_surface_sha256",
+    "expected_local_surface_sha256"
+  ],
+  "required_visible_contract": {
+    "both_sections_non_empty": true,
+    "label_order": "observation_then_reception",
+    "mechanical_restatement_forbidden": true,
+    "observation_label": "見えたこと：",
+    "reception_label": "Emlisから："
+  },
+  "schema_version": "cocolon.emlis.mandatory_two_stage.exact8_device_recheck.v1",
+  "screenshot_local_only": true,
+  "supersedes": "gate0_rr_gatea_ga8_exact8_20260712.json",
+  "valid_for_progression": false,
+  "withdrawal_ref": "gatea_ga7_ga8_actual_device_withdrawal_20260712.json"
+}

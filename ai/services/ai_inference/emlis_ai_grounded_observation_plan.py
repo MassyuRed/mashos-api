@@ -101,8 +101,6 @@ GroundedHumanFollowRole = Literal[
     "burden_expression",
 ]
 GroundedHumanFollowDelivery = Literal[
-    "integrated_into_relation",
-    "integrated_into_observation",
     "separate_distinct_contribution",
     "not_required",
 ]
@@ -2114,6 +2112,19 @@ def _grounded_human_follow_role_for_nucleus(
     ):
         return "protective_counterdirection"
 
+    # A nucleus that is structurally an action must remain an action even when
+    # the semantic analyser also attached an ``intention`` modality.  That
+    # combination occurs when a past action is expressed in a sentence whose
+    # wider arc contains purpose or change.  Treating it as a retained wish
+    # made the reception layer ignore the action and fall back to a generic
+    # "方向を保っている" sentence.  Strong action evidence therefore wins;
+    # a wish nucleus that merely carries ``operator:action`` does not.
+    if (
+        nucleus.kind == "action"
+        or "semantic_role:concrete_action_evidence" in attributes
+    ):
+        return "concrete_effort"
+
     retained_intention = bool(
         nucleus.kind == "wish"
         or nucleus.semantic_frame.modality in {"wish", "intention"}
@@ -2126,11 +2137,9 @@ def _grounded_human_follow_role_for_nucleus(
     if retained_intention:
         return "retained_intention"
     if (
-        nucleus.kind == "action"
-        or "operator:action" in attributes
+        "operator:action" in attributes
         or {
             "semantic_role:concrete_action",
-            "semantic_role:concrete_action_evidence",
         }
         & attributes
     ):
@@ -2193,59 +2202,31 @@ def classify_grounded_human_follow_delivery(
     required_relation_ids: Sequence[str],
     fact_boundary_nucleus_ids: Sequence[str] = (),
 ) -> GroundedHumanFollowDelivery:
-    """Choose a body-free contribution owner for the selected follow target.
+    """Keep the human reception contribution structurally separate.
 
-    This is a Plan semantic decision, not a surface-layout requirement.
-    SentencePlan may integrate the role into a relation/observation line when
-    that line already owns the target.  A separate line is reserved for a
-    genuinely different contribution such as preserved help-seeking.
+    ``見えたこと：`` and ``Emlisから：`` are a mandatory public-body
+    contract for every generated Emlis observation, including short-state and
+    limited-input observations.  A semantic observation line may cover the
+    same nucleus, but it must not absorb the human reception contribution.
+    Keeping the delivery separate prevents an internal ``human_follow`` atom
+    from being mistaken for a visible second section.
     """
 
     targets = tuple(target_nuclei)
     if not targets:
         return "not_required"
-    target_ids = {item.nucleus_id for item in targets}
-    required_relation_id_set = set(required_relation_ids)
-    required_relations = tuple(
-        relation
-        for relation in relations
-        if relation.relation_id in required_relation_id_set
+
+    # Retain the arguments in the contract because callers and tests use this
+    # classifier as the single body-free decision point.  They no longer alter
+    # the visible section layout.
+    _ = (
+        safety_kind,
+        material_quality,
+        required_nucleus_count,
+        relations,
+        required_relation_ids,
+        fact_boundary_nucleus_ids,
     )
-    target_relations = tuple(
-        relation
-        for relation in required_relations
-        if target_ids.intersection(
-            (relation.from_nucleus_id, relation.to_nucleus_id)
-        )
-    )
-    role = classify_grounded_human_follow_role(
-        safety_kind=safety_kind,
-        material_quality=material_quality,
-        required_nucleus_count=required_nucleus_count,
-        nuclei=targets,
-    )
-    if role == "help_seeking_preserved":
-        return "separate_distinct_contribution"
-    if (
-        safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
-        and role == "protective_counterdirection"
-        and target_relations
-        and set(fact_boundary_nucleus_ids).intersection(
-            endpoint
-            for relation in target_relations
-            for endpoint in (relation.from_nucleus_id, relation.to_nucleus_id)
-        )
-    ):
-        return "integrated_into_relation"
-    if target_relations:
-        return "integrated_into_relation"
-    if role in {
-        "integrated_current_state",
-        "retained_intention",
-        "valued_change",
-        "burden_expression",
-    }:
-        return "integrated_into_observation"
     return "separate_distinct_contribution"
 
 
@@ -2447,25 +2428,19 @@ def _build_response_and_policies(
     selected_follow = min(follow_candidates, key=follow_rank) if follow_candidates else None
     follow_ids = (selected_follow.nucleus_id,) if selected_follow is not None else primary_ids[:1]
 
-    text_nucleus_present = any(
-        any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
-        and item.kind != "other_explicit"
-        for item in nuclei
-    )
-    human_follow_required = bool(text_nucleus_present) and not separate_safety and material_quality != "empty"
+    observable_nucleus_present = bool(nuclei)
+    human_follow_required = bool(observable_nucleus_present) and not separate_safety and material_quality != "empty"
     if not human_follow_required:
         follow_ids = ()
 
     if separate_safety:
         surface_shape: Literal["plain", "two_stage", "multi_paragraph", "separate_safety_surface"] = "separate_safety_surface"
-    elif complexity == "long_arc":
-        surface_shape = "multi_paragraph"
-    elif material_quality in {"short_state_sufficient", "limited_grounding", "labels_only_limited", "empty"}:
+    elif material_quality == "empty":
         surface_shape = "plain"
-    elif complexity in {"multi", "single"}:
-        surface_shape = "two_stage"
     else:
-        surface_shape = "plain"
+        # Long inputs may use multiple paragraphs *inside* the two labelled
+        # sections.  They do not change the public body contract.
+        surface_shape = "two_stage"
 
     if safety_decision.safety_triage_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         response_kind = TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
@@ -2671,14 +2646,31 @@ def validate_grounded_observation_plan(
     safety_kind = plan.safety_policy.safety_kind
     separate_expected = safety_kind in {TRIAGE_SAFETY_SUPPORT_REQUIRED, TRIAGE_SAFETY_BLOCKED_EMERGENCY}
     if separate_expected:
+        if plan.response_plan.surface_shape != "separate_safety_surface":
+            issues.append("separate_safety_surface_shape_missing")
         if plan.surface_policy.content_source != "separate_safety_owner":
             issues.append("separate_safety_owner_not_preserved")
         if plan.surface_policy.generic_observation_surface_allowed:
             issues.append("generic_surface_allowed_for_separate_safety")
         if plan.safety_policy.grounded_plan_overlay_allowed:
             issues.append("grounded_overlay_allowed_for_separate_safety")
-    elif plan.surface_policy.content_source != "grounded_plan_only":
-        issues.append("grounded_content_source_missing")
+    else:
+        if plan.surface_policy.content_source != "grounded_plan_only":
+            issues.append("grounded_content_source_missing")
+        if plan.input_profile.material_quality == "empty":
+            if plan.response_plan.surface_shape != "plain":
+                issues.append("empty_input_surface_shape_must_be_plain")
+        else:
+            # Public Emlis observations always use the same two labelled
+            # sections.  Input length controls the number of paragraphs inside
+            # a section; it cannot switch the public body back to a plain or
+            # observation-only surface.
+            if plan.response_plan.surface_shape != "two_stage":
+                issues.append("mandatory_two_stage_surface_shape_missing")
+            if not plan.coverage_requirements.human_follow_required:
+                issues.append("mandatory_two_stage_human_follow_requirement_missing")
+            if not plan.response_plan.human_follow_target_ids:
+                issues.append("mandatory_two_stage_human_follow_target_missing")
     if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         if not plan.safety_policy.identity_claim_must_not_be_accepted_as_fact:
             issues.append("self_denial_identity_fact_boundary_missing")

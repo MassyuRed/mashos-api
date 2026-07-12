@@ -159,6 +159,11 @@ def test_exact8_builder_uses_frozen_helpers_and_order_only_after_pass() -> None:
             wants_more_input_candidate="pass",
             fatal_reason_refs=(),
             verdict="local_human_pass",
+            reviewed_surface_sha256=next(
+                item.surface_sha256
+                for item in assessments
+                if item.case_id == review.case_id
+            ),
         )
         for review in actual_reviews
     )

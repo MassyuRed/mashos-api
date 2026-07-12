@@ -442,6 +442,7 @@ class I6StaticReachabilityTests(unittest.TestCase):
             "_join_quotes",
             "_hedge_prefix",
             "_render_observation",
+            "_render_extra_context",
             "_render_observation_with_relations",
             "_render_relation",
             "_render_limited_scope",

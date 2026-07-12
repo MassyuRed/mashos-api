@@ -22,6 +22,7 @@ from emlis_ai_grounded_sentence_surface import (
     GroundedSentencePlan,
     GroundedSurfaceResult,
     expected_human_follow_role,
+    split_two_stage_surface,
     validate_grounded_sentence_plan,
     validate_grounded_surface_result,
 )
@@ -62,6 +63,14 @@ _SENSATION_FAMILIES: Final[dict[str, re.Pattern[str]]] = {
 _CERTAIN_RESULT_RE: Final = re.compile(
     r"(?:結果として|確定した|確実に|必ず|達成した|実現した|解決した|成功した)"
 )
+_LEDGER_NARRATION_RE: Final = re.compile(
+    r"(?:記|記録|記載)されています|(?:記録|入力)に(?:あります|置かれています)|"
+    r"この記録には|同じ記録には|(?:入力|記録)に書かれています|"
+    r"この順に書かれています|入力として受け取ります"
+)
+_RECEPTION_OWNER_RE: Final = re.compile(
+    r"(?:受け取|感じ|届|印象|大切|軽く扱|確かさ|前面にある|手放していない)"
+)
 
 
 def _dedupe(values: Any) -> tuple[str, ...]:
@@ -84,6 +93,14 @@ def _dedupe(values: Any) -> tuple[str, ...]:
 
 def _normalized(value: Any) -> str:
     return _NORMALIZE_RE.sub("", str(value or "")).lower()
+
+
+def _ledger_narration_visible(value: Any) -> bool:
+    # Source anchors may legitimately contain the same words.  The defect is
+    # the renderer's predicate outside those quoted anchors (for example
+    # ``「…」が記されています``), so inspect the generated remainder only.
+    residual = _QUOTED_ANCHOR_RE.sub("", str(value or ""))
+    return bool(_LEDGER_NARRATION_RE.search(residual))
 
 
 def _nucleus_source_text(nucleus: Any, resolver: EvidenceSpanResolver) -> str:
@@ -233,12 +250,14 @@ def _semantic_subcheck_reasons(
         if line.binding.line_role == "human_follow"
         and "human_follow_delivery:separate" in line.binding.functional_atom_ids
     )
-    relation_target_lines = tuple(
-        line
-        for line in sentence_plan.lines
-        if line.binding.relation_ids
-        and set(target_ids).intersection(line.binding.nucleus_ids)
-    )
+    if plan.coverage_requirements.human_follow_required:
+        if len(separate_follow_lines) != 1:
+            depth.append("mandatory_two_stage_reception_line_count_invalid")
+        if any(
+            "human_follow_delivery:integrated" in line.binding.functional_atom_ids
+            for line in sentence_plan.lines
+        ):
+            depth.append("mandatory_two_stage_integrated_follow_forbidden")
     for follow_line in separate_follow_lines:
         follow_role = next(
             (
@@ -248,21 +267,36 @@ def _semantic_subcheck_reasons(
             ),
             "",
         )
-        if not relation_target_lines:
+        if f"human_follow_contribution:{follow_role}" not in follow_line.binding.functional_atom_ids:
+            depth.append("human_follow_distinct_contribution_marker_missing")
+        if not follow_role:
+            depth.append("human_follow_role_missing")
+
+    surface_line_by_id = {
+        line.sentence_id: line
+        for line in surface_result.lines
+    }
+    observation_surface_texts = tuple(
+        line.text
+        for line in surface_result.lines
+        if line.binding.line_role != "human_follow"
+    )
+    for follow_line in separate_follow_lines:
+        realized = surface_line_by_id.get(follow_line.binding.sentence_id)
+        if realized is None:
+            depth.append("human_follow_surface_missing")
             continue
-        if follow_role == "protective_counterdirection":
-            depth.extend(
-                (
-                    "human_follow_no_distinct_contribution",
-                    "human_follow_repeats_relation_target",
-                    "self_denial_counterdirection_duplicated",
-                )
-            )
-        elif not {
-            f"human_follow_contribution:{follow_role}",
-            "human_follow_target_already_delivered",
-        } <= set(follow_line.binding.functional_atom_ids):
-            depth.append("human_follow_repeats_relation_target")
+        normalized_follow = _normalized(realized.text)
+        if any(
+            normalized_follow
+            and normalized_follow == _normalized(observation_text)
+            for observation_text in observation_surface_texts
+        ):
+            depth.append("human_follow_repeats_observation_surface")
+        if _ledger_narration_visible(realized.text):
+            anti_template.append("human_follow_ledger_narration_visible")
+        if not _RECEPTION_OWNER_RE.search(realized.text):
+            depth.append("human_follow_reception_owner_missing")
 
     for follow_line in follow_lines:
         role = next(
@@ -300,6 +334,14 @@ def _semantic_subcheck_reasons(
     surface_by_sentence = {
         line.sentence_id: line for line in surface_result.lines
     }
+    for surface_line in surface_result.lines:
+        if surface_line.binding.line_role == "human_follow":
+            continue
+        if _ledger_narration_visible(surface_line.text):
+            anti_template.append("observation_ledger_narration_visible")
+        residual = _normalized(_QUOTED_ANCHOR_RE.sub("", surface_line.text))
+        if len(residual) < 8:
+            depth.append("observation_surface_only_echo")
     stem_occurrences: dict[str, list[Any]] = {}
     for line in sentence_plan.lines:
         if line.binding.line_role not in {
@@ -353,11 +395,18 @@ def _semantic_subcheck_reasons(
         depth.append("required_arc_fragmented_without_reason")
 
     if plan.input_profile.material_quality == "short_state_sufficient" and len(required_nuclei) == 1:
-        if (
-            len(sentence_plan.lines) != 1
-            or any(line.binding.line_role == "human_follow" for line in sentence_plan.lines)
-        ):
-            anti_template.append("short_state_duplicate_anchor_loop")
+        observation_lines = tuple(
+            line
+            for line in sentence_plan.lines
+            if line.binding.line_role != "human_follow"
+        )
+        reception_lines = tuple(
+            line
+            for line in sentence_plan.lines
+            if line.binding.line_role == "human_follow"
+        )
+        if len(observation_lines) != 1 or len(reception_lines) != 1:
+            anti_template.append("short_state_two_stage_shape_invalid")
 
     for previous, current in zip(sentence_plan.lines, sentence_plan.lines[1:]):
         previous_set = set(previous.binding.nucleus_ids)
@@ -418,8 +467,10 @@ class GroundedObservationGateReport:
     required_coverage_gate: GateStatus
     text_semantic_retention_gate: GateStatus
     anti_template_gate: GateStatus
+    mechanical_restatement_gate: GateStatus
     question_dominance_gate: GateStatus
     depth_adequacy_gate: GateStatus
+    two_stage_contract_gate: GateStatus
     semantic_quality_gate: GateStatus
     public_observation_status: str
     public_comment_present: bool
@@ -440,6 +491,9 @@ class GroundedObservationGateReport:
     example_cue_route_used: bool
     label_only_assembly_used: bool
     synthetic_evidence_id_used: bool
+    mechanical_restatement_detected: bool
+    two_stage_observation_section_present: bool
+    two_stage_reception_section_present: bool
 
     @property
     def passed(self) -> bool:
@@ -457,8 +511,10 @@ class GroundedObservationGateReport:
             "required_coverage_gate": self.required_coverage_gate,
             "text_semantic_retention_gate": self.text_semantic_retention_gate,
             "anti_template_gate": self.anti_template_gate,
+            "mechanical_restatement_gate": self.mechanical_restatement_gate,
             "question_dominance_gate": self.question_dominance_gate,
             "depth_adequacy_gate": self.depth_adequacy_gate,
+            "two_stage_contract_gate": self.two_stage_contract_gate,
             "semantic_quality_gate": self.semantic_quality_gate,
             "delivery_status": self.public_observation_status,
             "public_observation_status": self.public_observation_status,
@@ -480,6 +536,10 @@ class GroundedObservationGateReport:
             "example_cue_route_used": self.example_cue_route_used,
             "label_only_assembly_used": self.label_only_assembly_used,
             "synthetic_evidence_id_used": self.synthetic_evidence_id_used,
+            "mechanical_restatement_detected": self.mechanical_restatement_detected,
+            "two_stage_required": self.two_stage_contract_gate != "not_evaluated",
+            "two_stage_observation_section_present": self.two_stage_observation_section_present,
+            "two_stage_reception_section_present": self.two_stage_reception_section_present,
             "delivery_status_separated_from_product_readfeel": True,
             "raw_input_included": False,
             "raw_text_included": False,
@@ -520,11 +580,12 @@ def evaluate_grounded_observation_gate(
         surface_result=surface_result,
         resolver=resolver,
     )
-
-    plan_valid = not plan_issues and not any(
-        reason.startswith(("unknown_nucleus:", "unknown_relation:", "source_plan_"))
-        for reason in sentence_issues
+    two_stage_observation, two_stage_reception, two_stage_reasons = split_two_stage_surface(
+        surface_result.text
     )
+
+    validation_issues = _dedupe((*plan_issues, *sentence_issues, *surface_issues))
+    plan_valid = not validation_issues
 
     binding_ids = tuple(
         span_id
@@ -584,6 +645,16 @@ def evaluate_grounded_observation_gate(
         and not surface_result.fixture_semantic_pattern_used
         and not surface_result.label_assembly_used
     ) and not anti_template_reasons
+    mechanical_restatement_detected = bool(
+        surface_result.status == "generated"
+        and _ledger_narration_visible(surface_result.text)
+    )
+    if surface_result.status == "generated":
+        mechanical_restatement_gate: GateStatus = (
+            "failed" if mechanical_restatement_detected else "passed"
+        )
+    else:
+        mechanical_restatement_gate = "not_evaluated"
     question_free = bool(
         not plan.response_plan.question_policy.allowed
         and all(not line.binding.contains_question for line in sentence_plan.lines)
@@ -604,20 +675,53 @@ def evaluate_grounded_observation_gate(
 
     separate_safety_owner = surface_result.status == "separate_safety_owner"
     generated = surface_result.status == "generated" and bool(surface_result.text.strip())
+    observation_plan_lines = tuple(
+        line
+        for line in sentence_plan.lines
+        if line.binding.line_role != "human_follow"
+    )
+    reception_plan_lines = tuple(
+        line
+        for line in sentence_plan.lines
+        if line.binding.line_role == "human_follow"
+    )
+    if separate_safety_owner or surface_result.status == "unavailable":
+        two_stage_contract_gate: GateStatus = "not_evaluated"
+        two_stage_contract_passed = True
+    else:
+        two_stage_contract_passed = bool(
+            generated
+            and plan.response_plan.surface_shape == "two_stage"
+            and not two_stage_reasons
+            and two_stage_observation
+            and two_stage_reception
+            and observation_plan_lines
+            and len(reception_plan_lines) == 1
+            and "human_follow_delivery:separate"
+            in reception_plan_lines[0].binding.functional_atom_ids
+            and not any(
+                "human_follow_delivery:integrated"
+                in line.binding.functional_atom_ids
+                for line in sentence_plan.lines
+            )
+        )
+        two_stage_contract_gate = "passed" if two_stage_contract_passed else "failed"
     all_semantic_gates_passed = bool(
         plan_valid
         and evidence_resolved
         and required_coverage
         and text_semantic_retained
         and anti_template
+        and not mechanical_restatement_detected
         and question_free
         and depth_adequate
+        and two_stage_contract_passed
         and generated
     )
 
     reasons: list[str] = []
     if not plan_valid:
-        reasons.extend(plan_issues or ("grounded_plan_invalid",))
+        reasons.extend(validation_issues or ("grounded_plan_invalid",))
     if not evidence_resolved:
         reasons.extend(unresolved_binding_ids or ("grounded_evidence_resolution_failed",))
     if not required_coverage:
@@ -626,10 +730,27 @@ def evaluate_grounded_observation_gate(
         reasons.extend(semantic_subcheck_reasons or ("grounded_text_semantic_retention_failed",))
     if not anti_template:
         reasons.extend(anti_template_reasons or ("grounded_anti_template_failed",))
+    if mechanical_restatement_detected:
+        reasons.append("grounded_mechanical_restatement_surface")
     if not question_free:
         reasons.append("grounded_question_dominance_failed")
     if not depth_adequate:
         reasons.extend(depth_reasons or ("grounded_depth_adequacy_failed",))
+    if not two_stage_contract_passed:
+        reasons.extend(two_stage_reasons)
+        if plan.response_plan.surface_shape != "two_stage":
+            reasons.append("mandatory_two_stage_plan_shape_missing")
+        if not observation_plan_lines:
+            reasons.append("mandatory_two_stage_observation_plan_line_missing")
+        if len(reception_plan_lines) != 1:
+            reasons.append("mandatory_two_stage_reception_plan_line_count_invalid")
+        elif (
+            "human_follow_delivery:separate"
+            not in reception_plan_lines[0].binding.functional_atom_ids
+        ):
+            reasons.append("mandatory_two_stage_reception_not_separate")
+        if not reasons:
+            reasons.append("mandatory_two_stage_contract_failed")
     if surface_result.status == "unavailable":
         reasons.append("grounded_surface_unavailable")
     if separate_safety_owner:
@@ -657,8 +778,10 @@ def evaluate_grounded_observation_gate(
         required_coverage_gate="passed" if required_coverage else "failed",
         text_semantic_retention_gate="passed" if text_semantic_retained else "failed",
         anti_template_gate="passed" if anti_template else "failed",
+        mechanical_restatement_gate=mechanical_restatement_gate,
         question_dominance_gate="passed" if question_free else "failed",
         depth_adequacy_gate="passed" if depth_adequate else "failed",
+        two_stage_contract_gate=two_stage_contract_gate,
         semantic_quality_gate=semantic_quality,
         public_observation_status=public_status,
         public_comment_present=bool(public_status == "passed" and generated),
@@ -679,6 +802,9 @@ def evaluate_grounded_observation_gate(
         example_cue_route_used=surface_result.fixture_semantic_pattern_used,
         label_only_assembly_used=surface_result.label_assembly_used,
         synthetic_evidence_id_used=surface_result.synthetic_evidence_id_used,
+        mechanical_restatement_detected=mechanical_restatement_detected,
+        two_stage_observation_section_present=bool(two_stage_observation),
+        two_stage_reception_section_present=bool(two_stage_reception),
     )
 
 

@@ -198,25 +198,23 @@ def test_self_denial_follow_roles_keep_protection_and_help_seeking_distinct(
     )
     assert expected_atom in follow.binding.functional_atom_ids
     assert "human_follow:burden_expression" not in follow.binding.functional_atom_ids
-    if expected_atom == "human_follow:protective_counterdirection":
-        assert follow.binding.line_role == "limited_opposition"
-        assert "human_follow_delivery:integrated" in follow.binding.functional_atom_ids
-    else:
-        assert follow.binding.line_role == "human_follow"
-        assert "human_follow_delivery:separate" in follow.binding.functional_atom_ids
+    assert follow.binding.line_role == "human_follow"
+    assert "human_follow_delivery:separate" in follow.binding.functional_atom_ids
+    assert "human_follow_delivery:integrated" not in follow.binding.functional_atom_ids
 
 
 def test_short_state_separate_duplicate_line_is_rejected() -> None:
     def mutate(plan: Any, sentence_plan: Any, surface: Any) -> tuple[Any, Any, Any]:
         duplicate = replace(
             sentence_plan.lines[0],
-            binding=replace(sentence_plan.lines[0].binding, sentence_id="sentence:2"),
+            binding=replace(sentence_plan.lines[0].binding, sentence_id="sentence:99"),
         )
         return plan, replace(sentence_plan, lines=(*sentence_plan.lines, duplicate)), surface
 
     report = _report("I6-S03", mutate=mutate)
     assert report.anti_template_gate == "failed"
-    assert "short_state_duplicate_anchor_loop" in report.rejection_reasons
+    assert "short_state_two_stage_shape_invalid" in report.rejection_reasons
+    assert "surface_semantic_repetition_without_new_role" in report.rejection_reasons
 
 
 def test_same_nucleus_repeated_without_new_role_is_rejected() -> None:

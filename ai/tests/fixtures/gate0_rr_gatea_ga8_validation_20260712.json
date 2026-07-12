@@ -1,8 +1,9 @@
 {
   "comment_text_included": false,
+  "product_validation_pass": false,
   "raw_input_included": false,
   "returned_surface_included": false,
-  "schema_version": "cocolon.emlis.gate0.validation.bodyfree.v2",
+  "schema_version": "cocolon.emlis.gate0.validation.withdrawn.bodyfree.v3",
   "source_snapshot_file_count": 1364,
   "source_snapshot_fingerprint": "a4eeace949fe127a96551d9eaaaee58e5ae58b85365434af7eb3e5c2a0457d26",
   "steps": {
@@ -45,14 +46,25 @@
       "return_code": 0
     }
   },
+  "superseded_by": "gatea_mandatory_two_stage_exact8_recheck_20260712.json",
+  "technical_validation_all_pass": true,
   "unclassified_failure_refs": [],
   "unresolved_stop_refs": [],
-  "validation_all_pass": true,
+  "valid_for_progression": false,
+  "validation_all_pass": false,
   "validation_order": [
     "GA3_V1_V2_targeted",
     "GA3_V3_safety_public",
     "GA3_V4_rn_contract_carried_forward",
     "GA4_full_collect",
     "GA5_full_backend"
+  ],
+  "withdrawal_reason_refs": [
+    "actual_device_revealed_mandatory_two_stage_missing",
+    "actual_device_revealed_mechanical_restatement",
+    "short_state_plain_was_unapproved_assistant_decision",
+    "internal_human_follow_was_mistaken_for_visible_second_stage",
+    "local_review_receipt_not_bound_to_exact_visible_surface",
+    "technical_gate_green_was_mistaken_for_product_readfeel_pass"
   ]
 }

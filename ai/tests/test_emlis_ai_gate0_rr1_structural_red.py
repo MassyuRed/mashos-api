@@ -261,33 +261,27 @@ def test_rr1_relation_lines_expose_endpoint_semantic_surface_role(
     )
 
 
-def test_rr1_a_anchor_is_one_delivery_unit_without_repeated_observation_opening() -> None:
+def test_rr1_a_keeps_one_observation_delivery_and_one_distinct_reception_delivery() -> None:
     _plan, _spans, _resolver, sentence_plan = _artifacts("A")
-    occurrences: dict[str, list[object]] = {}
-    for line in sentence_plan.lines:
-        for nucleus_id in line.binding.nucleus_ids:
-            occurrences.setdefault(nucleus_id, []).append(line)
-    duplicated = {
-        nucleus_id: lines
-        for nucleus_id, lines in occurrences.items()
-        if len(lines) > 1
-        and not any(
-            line.binding.line_role == "fact_boundary"
-            or "safety_support_owner" in line.binding.functional_atom_ids
-            for line in lines
-        )
-    }
-    assert duplicated == {}
-
     observation_lines = tuple(
         line
         for line in sentence_plan.lines
         if line.binding.line_role in {"primary_observation", "supporting_observation"}
     )
-    assert all(
-        left.surface_function != right.surface_function
-        for left, right in zip(observation_lines, observation_lines[1:])
+    reception_lines = tuple(
+        line for line in sentence_plan.lines if line.binding.line_role == "human_follow"
     )
+    assert len(observation_lines) == 1
+    assert len(reception_lines) == 1
+    assert "human_follow_delivery:separate" in reception_lines[0].binding.functional_atom_ids
+    assert "human_follow_delivery:integrated" not in reception_lines[0].binding.functional_atom_ids
+
+    observation_occurrences: dict[str, int] = {}
+    for line in observation_lines:
+        for nucleus_id in line.binding.nucleus_ids:
+            observation_occurrences[nucleus_id] = observation_occurrences.get(nucleus_id, 0) + 1
+    assert all(count == 1 for count in observation_occurrences.values())
+    assert set(reception_lines[0].binding.nucleus_ids).intersection(observation_occurrences)
 
 
 def test_rr1_b_dependent_fragments_are_planned_as_one_complete_clause_unit() -> None:

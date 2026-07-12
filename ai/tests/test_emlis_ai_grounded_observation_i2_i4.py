@@ -335,7 +335,7 @@ def test_i4_self_denial_has_fact_boundary_grounded_opposition_and_human_follow()
     assert plan.safety_policy.identity_claim_must_not_be_accepted_as_fact is True
     assert plan.coverage_requirements.fact_boundary_required is True
     assert roles[:2] == ["fact_boundary", "limited_opposition"]
-    assert roles == ["fact_boundary", "limited_opposition"]
+    assert roles == ["fact_boundary", "limited_opposition", "human_follow"]
     assert opposition_line.binding.relation_ids
     assert all(
         relation_index[item].retention == "required"
@@ -345,14 +345,17 @@ def test_i4_self_denial_has_fact_boundary_grounded_opposition_and_human_follow()
     assert "identity_claim_not_fact" in sentence_plan.lines[0].binding.functional_atom_ids
     assert "input_grounded_opposition" in opposition_line.binding.functional_atom_ids
     assert "evidence_bound_human_follow" in follow_line.binding.functional_atom_ids
-    assert "human_follow_delivery:integrated" in follow_line.binding.functional_atom_ids
+    assert follow_line.binding.line_role == "human_follow"
+    assert "human_follow_delivery:separate" in follow_line.binding.functional_atom_ids
     assert not resolver.unresolved_ids(opposition_line.binding.evidence_span_ids)
     assert not resolver.unresolved_ids(follow_line.binding.evidence_span_ids)
     assert sentence_plan.fact_boundary_covered is True
     assert sentence_plan.limited_opposition_covered is True
     assert sentence_plan.human_follow_covered is True
     assert result.required_coverage_preserved is True
-    assert "確定した事実としては扱いません" in result.text
+    assert "あなた自身について確定した事実ではありません" in result.text
+    assert "見えたこと：" in result.text
+    assert "Emlisから：" in result.text
     assert "あなたは悪くない" not in result.text
     assert "あなたには価値がある" not in result.text
 
@@ -449,16 +452,23 @@ def test_i4_recovery_stages_shrink_one_plan_without_losing_required_meaning() ->
     non_required_ids = {
         item.nucleus_id for item in plan.nuclei if item.retention != "required"
     }
-    assert non_required_ids & {
+    full_bound_ids = {
         nucleus_id
         for line in full_plan.lines
         for nucleus_id in line.binding.nucleus_ids
     }
-    assert not non_required_ids & {
+    optional_removed_bound_ids = {
         nucleus_id
         for line in optional_removed_plan.lines
         for nucleus_id in line.binding.nucleus_ids
     }
+    assert not non_required_ids & optional_removed_bound_ids
+    # A large required set already fills the visible two-stage budget.  Full
+    # recovery must not force a non-required item into that body merely to make
+    # the next recovery stage look different; that recreates ledger-style
+    # enumeration and overlong output.
+    assert len(plan.coverage_requirements.required_nucleus_ids) > 5
+    assert not non_required_ids & full_bound_ids
 
     for stage_result in sequence:
         stage_plan = build_grounded_sentence_plan(

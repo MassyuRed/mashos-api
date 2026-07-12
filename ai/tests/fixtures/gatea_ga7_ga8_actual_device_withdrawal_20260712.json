@@ -1,0 +1,62 @@
+{
+  "actual_device_failure_case_refs": [
+    "A",
+    "B"
+  ],
+  "comment_text_included": false,
+  "confirmed_facts": [
+    "actual_device_visible_surface_did_not_satisfy_mandatory_two_stage_contract",
+    "actual_device_visible_surface_used_mechanical_restatement_narration",
+    "the_short_state_plain_allowance_was_not_approved_by_mash",
+    "the_previous_local_review_receipt_had_no_per_case_visible_surface_hash_binding"
+  ],
+  "progression": {
+    "gate0_local_pass": false,
+    "next_action_ref": "mandatory_two_stage_current_input_surface_repair_then_exact8_device_recheck",
+    "old_exact8_packet_valid": false,
+    "p5_formal_24_start_allowed": false,
+    "p6_start_allowed": false,
+    "p8_start_allowed": false
+  },
+  "raw_input_included": false,
+  "replacement_packet_ref": "gatea_mandatory_two_stage_exact8_recheck_20260712.json",
+  "returned_surface_included": false,
+  "schema_version": "cocolon.emlis.gatea.ga7_ga8.actual_device_withdrawal.bodyfree.v1",
+  "superseded_artifacts": [
+    {
+      "file_ref": "gate0_rr_gatea_ga7_karen_review_20260712.json",
+      "pre_withdrawal_sha256": "77257163782bc3edb899a75b27dc80216c46ed88f48576e8f0ba088ea28c3548",
+      "valid_for_progression": false
+    },
+    {
+      "file_ref": "gate0_rr_gatea_ga8_decision_20260712.json",
+      "pre_withdrawal_sha256": "ba861e8f68a990908b0904576070eb1f19b5a47c3fa2d18bc85c1cf551f69680",
+      "valid_for_progression": false
+    },
+    {
+      "file_ref": "gate0_rr_gatea_ga8_exact8_20260712.json",
+      "pre_withdrawal_sha256": "43a402f6d4c802400ac7fb5065c899c51ac1ffa85e1d787331f87900a507ba8c",
+      "valid_for_progression": false
+    },
+    {
+      "file_ref": "gate0_rr_gatea_ga8_final_link_20260712.json",
+      "pre_withdrawal_sha256": "a44f92e02effd7898c7aab4761fec4ce86695e257fe732410b0119f3bd0f73e6",
+      "valid_for_progression": false
+    },
+    {
+      "file_ref": "gate0_rr_gatea_ga8_validation_20260712.json",
+      "pre_withdrawal_sha256": "e17a57fef4a6d8cf17b56fb97563ff716b6b8d3379d8d3f2e38bacc6aee2ba3f",
+      "valid_for_progression": false
+    }
+  ],
+  "withdrawal_date": "2026-07-12",
+  "withdrawal_effective": true,
+  "withdrawal_reason_refs": [
+    "actual_device_revealed_mandatory_two_stage_missing",
+    "actual_device_revealed_mechanical_restatement",
+    "short_state_plain_was_unapproved_assistant_decision",
+    "internal_human_follow_was_mistaken_for_visible_second_stage",
+    "local_review_receipt_not_bound_to_exact_visible_surface",
+    "technical_gate_green_was_mistaken_for_product_readfeel_pass"
+  ]
+}

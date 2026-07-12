@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import inspect
 
 import pytest
@@ -36,6 +37,7 @@ def _assessments() -> tuple[I7LocalReadFeelAssessment, ...]:
             character_count=1,
             line_count=1,
             candidate_status="candidate_pass",
+            surface_sha256=hashlib.sha256(case_id.encode("utf-8")).hexdigest(),
         )
         for case_id in _CASE_IDS
     )
@@ -59,6 +61,7 @@ def _reviews(*, repair: bool = False) -> tuple[I7KarenLocalReview, ...]:
             if repair and index == 1
             else (),
             verdict="repair_required" if repair and index == 1 else "local_human_pass",
+            reviewed_surface_sha256=hashlib.sha256(case_id.encode("utf-8")).hexdigest(),
         )
         for index, case_id in enumerate(_CASE_IDS, start=1)
     )

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Gate A GA1 structural REDs for post-FB172 current-input closure.
+"""Gate A GA1 structural contracts for post-FB172 current-input closure.
 
 The assertions describe contribution ownership, relation surface signatures,
 closure modality, clause integrity, and short-state controls.  They do not use
@@ -29,7 +29,9 @@ from emlis_ai_evidence_ledger_service import (
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from emlis_ai_grounded_sentence_surface import (
     build_grounded_sentence_plan,
+    expected_human_follow_role,
     realize_grounded_sentence_plan,
+    split_two_stage_surface,
 )
 
 
@@ -71,12 +73,12 @@ def _human_follow_role(line) -> str:
 def _semantic_contribution(line, follow_target_ids: set[str]) -> str:
     role = _human_follow_role(line)
     if role:
-        return role
+        return f"reception:{role}"
     if line.binding.line_role == "limited_opposition" and follow_target_ids.intersection(
         line.binding.nucleus_ids
     ):
-        return "protective_counterdirection"
-    return line.binding.line_role
+        return "observation:limited_opposition"
+    return f"observation:{line.binding.line_role}"
 
 
 def _terminal_surface_stem(text: str) -> str:
@@ -102,22 +104,19 @@ def test_ga1_r1_r2_same_target_lines_have_distinct_semantic_contributions(
 
 
 @pytest.mark.parametrize("case_id", ("D", "I6-D01"))
-def test_ga1_r3_self_denial_has_no_counterdirection_triple_delivery(
+def test_ga1_r3_self_denial_keeps_observation_boundary_and_reception_separate(
     case_id: str,
 ) -> None:
-    plan, sentence_plan, _surface = _artifacts(case_id)
-    roles = {line.binding.line_role for line in sentence_plan.lines}
-    target_ids = set(plan.response_plan.human_follow_target_ids)
-    duplicate_counterdirection = any(
-        line.binding.line_role == "human_follow"
-        and _human_follow_role(line) == "protective_counterdirection"
-        and target_ids.intersection(line.binding.nucleus_ids)
-        for line in sentence_plan.lines
-    )
-    assert not (
-        {"fact_boundary", "limited_opposition", "human_follow"} <= roles
-        and duplicate_counterdirection
-    )
+    _plan, sentence_plan, surface = _artifacts(case_id)
+    assert [line.binding.line_role for line in sentence_plan.lines].count("fact_boundary") == 1
+    assert [line.binding.line_role for line in sentence_plan.lines].count("limited_opposition") == 1
+    assert [line.binding.line_role for line in sentence_plan.lines].count("human_follow") == 1
+    follow = next(line for line in sentence_plan.lines if line.binding.line_role == "human_follow")
+    assert _human_follow_role(follow) == "protective_counterdirection"
+    assert "human_follow_delivery:separate" in _atoms(follow)
+    observation, reception, issues = split_two_stage_surface(surface.text)
+    assert issues == ()
+    assert observation and reception and observation != reception
 
 
 @pytest.mark.parametrize("case_id", ("I6-D02", "I6-D03"))
@@ -168,20 +167,30 @@ def test_ga1_r4_repeated_surface_stem_requires_distinct_role_expression(
     "case_id",
     ("B", "C", "I6-L01", "I6-L02", "I6-L03", "I6-C01", "I6-C02", "I6-C03"),
 )
-def test_ga1_r5_retained_intention_closure_declares_role_modality_and_scope(
+def test_ga1_r5_reception_closure_declares_actual_role_modality_and_scope(
     case_id: str,
 ) -> None:
     plan, sentence_plan, _surface = _artifacts(case_id)
-    target_ids = set(plan.response_plan.human_follow_target_ids)
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
+    target_ids = tuple(plan.response_plan.human_follow_target_ids)
+    expected_role = expected_human_follow_role(plan, target_ids, nucleus_index)
+    expected_modality = {
+        "retained_intention": "intention",
+        "protective_counterdirection": "protective_counterdirection",
+        "help_seeking_preserved": "help_seeking",
+        "concrete_effort": "action",
+        "valued_change": "change",
+        "integrated_current_state": "current_state",
+        "burden_expression": "burden",
+    }[expected_role]
     target_line = next(
-        line
-        for line in sentence_plan.lines
-        if target_ids.intersection(line.binding.nucleus_ids)
-        and "human_follow:retained_intention" in _atoms(line)
+        line for line in sentence_plan.lines if line.binding.line_role == "human_follow"
     )
     assert {
+        f"human_follow:{expected_role}",
+        "human_follow_delivery:separate",
         "closure_role:human_follow",
-        "closure_modality:intention",
+        f"closure_modality:{expected_modality}",
         "closure_scope:selected_target",
     } <= _atoms(target_line)
 
@@ -194,13 +203,20 @@ def test_ga1_r6_dependent_clause_control_remains_a_complete_bound_unit() -> None
 
 
 @pytest.mark.parametrize("case_id", ("I6-S01", "I6-S02", "I6-S03"))
-def test_ga1_r7_short_state_stays_one_line_without_duplicate_follow(
+def test_ga1_r7_short_state_is_a_short_but_complete_two_stage_surface(
     case_id: str,
 ) -> None:
-    plan, sentence_plan, _surface = _artifacts(case_id)
+    plan, sentence_plan, surface = _artifacts(case_id)
     assert len(plan.coverage_requirements.required_nucleus_ids) == 1
-    assert len(sentence_plan.lines) == 1
-    assert sentence_plan.lines[0].binding.line_role != "human_follow"
+    assert plan.response_plan.surface_shape == "two_stage"
+    assert len(sentence_plan.lines) == 2
+    assert tuple(line.binding.line_role for line in sentence_plan.lines) == (
+        "primary_observation",
+        "human_follow",
+    )
+    observation, reception, issues = split_two_stage_surface(surface.text)
+    assert issues == ()
+    assert observation and reception and observation != reception
 
 
 def test_ga1_r8_case_id_and_case_order_do_not_change_structural_decisions() -> None:

@@ -19,14 +19,11 @@
     "I6-D03"
   ],
   "comment_text_included": false,
-  "gatea_local_pass": true,
+  "gatea_local_pass": false,
   "hard_fatal_count": 0,
-  "local_human_pass_count": 16,
-  "raw_input_included": false,
-  "repair_required_count": 0,
-  "returned_surface_included": false,
-  "review_kind": "karen_local_product_read",
-  "reviews": [
+  "historical_claimed_gatea_local_pass": true,
+  "historical_claimed_local_human_pass_count": 16,
+  "historical_reviews": [
     {
       "case_id": "A",
       "fatal_reason_refs": [],
@@ -252,6 +249,24 @@
       "whole_input_balance": "pass"
     }
   ],
-  "schema_version": "cocolon.emlis.gatea.ga7.karen_local_review.bodyfree.v1",
-  "snapshot_fingerprint": "a4eeace949fe127a96551d9eaaaee58e5ae58b85365434af7eb3e5c2a0457d26"
+  "local_human_pass_count": 0,
+  "raw_input_included": false,
+  "receipt_status": "withdrawn_after_actual_device_failure",
+  "repair_required_count": 0,
+  "returned_surface_included": false,
+  "review_binding_status": "invalid_missing_per_case_visible_surface_sha256",
+  "review_kind": "karen_local_product_read",
+  "schema_version": "cocolon.emlis.gatea.ga7.review_withdrawal.bodyfree.v1",
+  "snapshot_fingerprint": "a4eeace949fe127a96551d9eaaaee58e5ae58b85365434af7eb3e5c2a0457d26",
+  "superseded_by": "gatea_mandatory_two_stage_exact8_recheck_20260712.json",
+  "valid_for_progression": false,
+  "valid_local_review_count": 0,
+  "withdrawal_reason_refs": [
+    "actual_device_revealed_mandatory_two_stage_missing",
+    "actual_device_revealed_mechanical_restatement",
+    "short_state_plain_was_unapproved_assistant_decision",
+    "internal_human_follow_was_mistaken_for_visible_second_stage",
+    "local_review_receipt_not_bound_to_exact_visible_surface",
+    "technical_gate_green_was_mistaken_for_product_readfeel_pass"
+  ]
 }

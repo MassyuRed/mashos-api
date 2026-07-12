@@ -207,6 +207,10 @@ def build_gate0_local_decision(
     review_reasons = validate_i7_karen_local_reviews(
         actual_local_reviews,
         expected_case_ids=expected_case_ids,
+        expected_surface_sha256_by_case={
+            item.case_id: item.surface_sha256
+            for item in local_assessments
+        },
     )
     automated_pass = bool(
         len(local_assessments) == 16

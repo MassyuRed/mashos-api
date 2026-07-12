@@ -232,13 +232,18 @@ def test_s03_preserves_source_predicate_without_new_sensation_family() -> None:
     assert "重さ" not in surface.text
 
 
-def test_s03_integrates_follow_without_duplicate_anchor_line() -> None:
-    _plan, _spans, _resolver, sentence_plan, _surface = _artifacts("I6-S03")
-    assert len(sentence_plan.lines) == 1
-    line = sentence_plan.lines[0]
-    assert line.binding.line_role == "primary_observation"
-    assert "human_follow:integrated_current_state" in line.binding.functional_atom_ids
+def test_s03_keeps_short_state_reception_in_a_separate_two_stage_line() -> None:
+    _plan, _spans, _resolver, sentence_plan, surface = _artifacts("I6-S03")
+    assert len(sentence_plan.lines) == 2
+    observation_line, reception_line = sentence_plan.lines
+    assert observation_line.binding.line_role == "primary_observation"
+    assert reception_line.binding.line_role == "human_follow"
+    assert "human_follow:integrated_current_state" in reception_line.binding.functional_atom_ids
+    assert "human_follow_delivery:separate" in reception_line.binding.functional_atom_ids
+    assert "human_follow_delivery:integrated" not in reception_line.binding.functional_atom_ids
     assert sentence_plan.human_follow_covered is True
+    assert surface.text.startswith("見えたこと：\n")
+    assert "\n\nEmlisから：\n" in surface.text
 
 
 @pytest.mark.parametrize(
@@ -271,4 +276,5 @@ def test_self_denial_counterdirection_follow_is_not_classified_as_burden(
     }
     assert "human_follow:protective_counterdirection" in atoms
     assert "human_follow:burden_expression" not in atoms
-    assert "human_follow_delivery:integrated" in atoms
+    assert "human_follow_delivery:separate" in atoms
+    assert "human_follow_delivery:integrated" not in atoms
