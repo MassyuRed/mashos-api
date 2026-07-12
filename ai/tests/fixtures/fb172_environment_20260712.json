@@ -1,0 +1,59 @@
+{
+  "schema_version": "cocolon.emlis.gate0.fb172.environment.bodyfree.v1",
+  "created_at_jst": "2026-07-12",
+  "official_snapshot": {
+    "source_snapshot_fingerprint": "88286e4499bcfa09d23d8db613f775a0890e2781cd22a2a7653badddaa50c340",
+    "source_snapshot_file_count": 1353,
+    "full_collect_count": 12700,
+    "full_backend_passed": 12526,
+    "full_backend_failed": 172,
+    "full_backend_skipped": 2,
+    "worker_count": 1,
+    "import_mode": "prepend",
+    "command_ref": "RR8_V5_full_backend_20260711"
+  },
+  "local_reproduction": {
+    "python_version": "3.12.13",
+    "pytest_version": "8.4.2",
+    "plugins": [
+      "pytest-asyncio==1.0.0"
+    ],
+    "os": "Linux 6.12.47",
+    "architecture": "x86_64",
+    "cwd_ref": "mashos-api",
+    "worker_count": 1,
+    "import_mode": "prepend",
+    "random_seed": "not_set",
+    "env_var_name_refs": [
+      "PYTHONPATH",
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "MYMODEL_APP_NAME"
+    ],
+    "env_values_included": false,
+    "clean_api_registry_result": "10 passed",
+    "full_collection_selected_api_registry_result": "2 passed / 12698 deselected",
+    "selected_170_pre_repair_result": "170 failed",
+    "b0_b1_b2_selected_post_repair_result": "122 passed",
+    "baseline_172_post_repair_result": "122 passed / 50 failed",
+    "full_collect_post_repair_result": "12704 collected / 0 errors",
+    "current_owner_targeted_post_repair_result": "181 passed",
+    "b3_b4_b5_selected_post_repair_result": "37 passed",
+    "b0_through_b5_selected_post_repair_result": "159 passed",
+    "baseline_172_post_b3_b5_result": "159 passed / 13 failed",
+    "full_collect_post_b3_b5_result": "12708 collected / 0 errors",
+    "migration_integrity_post_b3_b5_result": "18 passed",
+    "b6_b7_selected_post_repair_result": "13 passed",
+    "baseline_172_post_b6_b7_result": "172 passed",
+    "full_collect_post_b6_b7_result": "12712 collected / 0 errors",
+    "migration_inventory_current_owner_post_b6_b7_result": "21 passed",
+    "grounded_plan_surface_gate_targeted_post_b6_b7_result": "97 passed",
+    "validation_dependency_precedence_ref": "cocolon_test_deps_before_cocolon_pytest"
+  },
+  "b0_repair": {
+    "production_contract_changed": false,
+    "isolation_owner": "test subprocess",
+    "shared_app_module_state_used": false,
+    "route_existence_and_response_model_checked": true
+  }
+}

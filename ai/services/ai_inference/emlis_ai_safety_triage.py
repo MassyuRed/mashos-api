@@ -59,30 +59,38 @@ _EXPRESSION_DIFFICULTY_RE: Final = re.compile(
     r"うまく言えない|上手く言えない)",
     re.IGNORECASE,
 )
-_SELF_DENIAL_HARD_MARKER_RE: Final = re.compile(
-    r"((?:自分|私|わたし|俺|僕)(?:なんか|など|は|が|を|だけ|には|の)?[^。！？!?\n]{0,36}"
-    r"(?:嫌い|きらい|ダメ|だめ|駄目|価値がない|価値ない|いらない|最低|クズ|責め|追い込|"
-    r"許せない|好きになれない|下げ|続けられない人間|悪い)|"
-    r"自分を傷つけてるのは私|自分を傷つけているのは私|自分を傷つけてる|自分を傷つけている|"
-    r"自分のせい|私のせい|私が悪い|自分が悪い|いい事なんて絶対にない|いいことなんて絶対にない)",
+_SELF_REFERENCE_RE: Final = re.compile(
+    r"(?:自分|私|わたし|俺|おれ|僕|ぼく)",
     re.IGNORECASE,
 )
-# Keep inability-as-identity separate from expression difficulty.  General
-# exhaustion such as ``何もできないくらい消耗`` must remain normal observation
-# unless the text also contains self-worth / identity-denial markers.
+_SELF_WORTH_NEGATION_RE: Final = re.compile(
+    # ``最低でも15分`` is a lower-bound adverb, not a self-worth claim.
+    r"(?:嫌い|きらい|駄目|だめ|ダメ(?!ージ)|最低(?!でも|限)|クズ|いらない|必要ない|"
+    r"価値(?:が|は)?(?:ない|無い)|役に立たない|好きになれない|許せない|"
+    r"中途半端|失敗ばかり|悪い(?:人間|人|奴|やつ)?)",
+    re.IGNORECASE,
+)
+_SELF_DIRECTED_NEGATIVE_ACTION_RE: Final = re.compile(
+    r"(?:責め(?:て|る|続け)|追い込(?:ん|む|んで)|傷つけ(?:て|る|続け)|"
+    r"下げ(?:て|る|続け)|否定(?:して|し続け))",
+    re.IGNORECASE,
+)
+# Keep inability-as-identity separate from expression difficulty. General
+# exhaustion such as ``何もできないくらい消耗`` remains normal observation
+# unless the clause is explicitly self/identity shaped.
 _SELF_DENIAL_IDENTITY_INABILITY_RE: Final = re.compile(
-    r"((?:自分|私|わたし|俺|僕)(?:なんか|など|は|が|には)?[^。！？!?\n]{0,16}(?:何も|なにも|何にも)できない|"
-    r"(?:自分|私|わたし|俺|僕)(?:なんか|など|は|が)?[^。！？!?\n]{0,16}できない(?:人間|奴|やつ)|"
-    r"できない自分|できない人間)",
-    re.IGNORECASE,
-)
-_SELF_DENIAL_RE: Final = re.compile(
-    _SELF_DENIAL_HARD_MARKER_RE.pattern + r"|" + _SELF_DENIAL_IDENTITY_INABILITY_RE.pattern,
+    r"(?:(?:自分|私|わたし|俺|おれ|僕|ぼく)(?:なんか|など|は|が|には|も)?"
+    r"[^。！？!?\n]{0,24}(?:何も|なにも|何にも)できない|"
+    r"(?:何も|なにも|何にも)できない(?:自分|人間|奴|やつ)|"
+    r"できない(?:自分|人間|奴|やつ))",
     re.IGNORECASE,
 )
 _CONTINUATION_REFUSAL_RE: Final = re.compile(
-    r"(続けて[^。！？!?\n]{0,20}(?:いい事なんて絶対にない|いいことなんて絶対にない|良くない|よくない)|"
-    r"続けたくない|このままではない|このままじゃない)",
+    r"(?:続け(?:て|る|ていて|たら|ると|ること)[^。！？!?\n]{0,32}"
+    r"(?:良くない|よくない|いい(?:事|こと)[^。！？!?\n]{0,10}(?:ない|無い)|"
+    r"意味がない|やめたい|続けたくない|終わらせたい)|"
+    r"このまま[^。！？!?\n]{0,24}(?:良くない|よくない|だめ|ダメ|続けたくない)|"
+    r"(?:やめたい|続けたくない|もう続けない))",
     re.IGNORECASE,
 )
 
@@ -108,22 +116,32 @@ def _dedupe(values: Iterable[Any]) -> list[str]:
 
 
 def _is_self_denial_non_emergency(value: str) -> bool:
-    """Detect non-emergency self-denial without treating expression difficulty as identity denial.
+    """Detect self-worth/identity denial from broad clause structure.
 
-    P7-HOLD-004 narrows the older broad "self reference + できない" pattern.
-    Expression difficulty such as ``表現できない`` or ``言葉にできない`` stays on
-    the normal observation path unless a hard self-worth marker or an
-    identity-shaped inability marker is also present.  This helper returns only
-    booleans and never exposes matched text to meta.
+    The classifier does not rely on a known fixture sentence. Expression
+    difficulty stays on the normal observation path unless a separate
+    self-worth, self-directed harm, or identity-inability predicate is present.
     """
 
-    if _SELF_DENIAL_HARD_MARKER_RE.search(value):
-        return True
-    if _SELF_DENIAL_IDENTITY_INABILITY_RE.search(value):
-        return True
-    if _EXPRESSION_DIFFICULTY_RE.search(value):
+    has_self_reference = bool(_SELF_REFERENCE_RE.search(value))
+    has_worth_negation = bool(_SELF_WORTH_NEGATION_RE.search(value))
+    has_self_directed_negative_action = bool(_SELF_DIRECTED_NEGATIVE_ACTION_RE.search(value))
+    has_identity_inability = bool(_SELF_DENIAL_IDENTITY_INABILITY_RE.search(value))
+
+    if _EXPRESSION_DIFFICULTY_RE.search(value) and not (
+        has_worth_negation
+        or has_self_directed_negative_action
+        or has_identity_inability
+    ):
         return False
-    return False
+    return bool(
+        has_self_reference
+        and (
+            has_worth_negation
+            or has_self_directed_negative_action
+            or has_identity_inability
+        )
+    )
 
 
 def _text_from_current_input(current_input: Any | None) -> str:

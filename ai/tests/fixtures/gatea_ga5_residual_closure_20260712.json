@@ -1,0 +1,90 @@
+{
+  "schema_version": "cocolon.emlis.gatea.ga5.residual_closure.bodyfree.v1",
+  "cycle_id": "p7_gatea_post_fb172_current_input_closure_20260711",
+  "created_at_jst": "2026-07-12",
+  "source_archive_ref": "mashos-api_3(119).zip",
+  "source_archive_sha256": "2e5d64a4add336e8a17eda87ac98a6b857692abc7e74c34de05e6383e9045ee1",
+  "baseline_failure_set": {
+    "failure_set_id": "post_fb172_residual_fd8dc9bd19e9",
+    "failure_ref_count": 169,
+    "failure_refs_sha256": "fd8dc9bd19e95db6edcb8dce951dedc50a477865145c8f5c3d08c92e978fc34a",
+    "freeze_ref": "ai/tests/local_only/gatea_ga0_freeze_bodyfree_20260712.json",
+    "freeze_sha256": "6abc9b6299a90f7b0127b87fa98f0ca40e2bc9849c0e6362a7b50fbe51f2e6fa"
+  },
+  "current_owner_record_source": {
+    "ledger_ref": "ai/tests/fixtures/fb172_owner_ledger_20260712.json",
+    "ledger_sha256": "7a166e785c387c30cf89c6935da4c086cee6d870d8a121b4f6d7ffa796a3587c",
+    "join_key": "baseline_failure_ref",
+    "historical_ledger_mutated": false,
+    "projected_record_count": 169,
+    "owner_missing_count": 0,
+    "unclassified_count": 0,
+    "unresolved_stop_count": 0
+  },
+  "closure_batches": {
+    "O0": {
+      "record_count": 0,
+      "closure_kind": "environment_isolation",
+      "note": "The two clean-subprocess registry probes are outside the frozen 169 set; cwd-relative node IDs are normalized without changing production."
+    },
+    "O1": {
+      "record_count": 128,
+      "closure_kind": "historical_test_migration",
+      "source_batches": ["B1", "B2", "B6_STALE_OWNER_EXPECTATION"]
+    },
+    "O2": {
+      "record_count": 11,
+      "closure_kind": "semantic_obligation_migration",
+      "source_batches": ["B3"]
+    },
+    "O3": {
+      "record_count": 26,
+      "closure_kind": "hold_safety_public_contract_migration",
+      "source_batches": ["B4", "B5"]
+    },
+    "O4": {
+      "record_count": 1,
+      "closure_kind": "current_owner_contract_repair",
+      "source_batches": ["B6_CURRENT_CONTRACT_REGRESSION"]
+    },
+    "O5": {
+      "record_count": 3,
+      "closure_kind": "inventory_negative_reachability",
+      "source_batches": ["B7"]
+    }
+  },
+  "owner_families": [
+    "current_grounded_plan",
+    "current_sentence_surface",
+    "grounded_semantic_gate",
+    "safety_owner",
+    "public_feedback_contract",
+    "emotion_submit_e2e",
+    "rn_contract",
+    "historical_test_migration",
+    "inventory_negative_reachability",
+    "environment_collection",
+    "other_current_owner"
+  ],
+  "execution_boundary": {
+    "canonical_pytest_root": "mashos-api/ai",
+    "canonical_node_prefix": "tests/",
+    "archive_lineage_node_prefix": "ai/tests/",
+    "old_owner_restored": false,
+    "skip_or_xfail_used": false,
+    "exact_body_assert_added": false,
+    "production_contract_relaxed": false
+  },
+  "final_candidate_requirements": {
+    "ga3_v1_v3_green": true,
+    "ga4_collection_error_count": 0,
+    "ga5_failed_count": 0,
+    "ga5_error_count": 0,
+    "unclassified_failure_count": 0,
+    "current_owner_missing_count": 0,
+    "unresolved_stop_count": 0,
+    "new_skip_or_xfail_count": 0,
+    "source_fingerprint_stable_during_validation": true,
+    "rn_app_source_required_for_v4": true
+  }
+}

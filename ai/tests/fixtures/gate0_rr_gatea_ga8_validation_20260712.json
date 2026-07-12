@@ -1,0 +1,58 @@
+{
+  "comment_text_included": false,
+  "raw_input_included": false,
+  "returned_surface_included": false,
+  "schema_version": "cocolon.emlis.gate0.validation.bodyfree.v2",
+  "source_snapshot_file_count": 1364,
+  "source_snapshot_fingerprint": "a4eeace949fe127a96551d9eaaaee58e5ae58b85365434af7eb3e5c2a0457d26",
+  "steps": {
+    "full_backend": {
+      "command_ref": "GA68_GA5_full_backend_20260712",
+      "error_count": 0,
+      "failed_test_count": 0,
+      "passed": true,
+      "passed_test_count": 12832,
+      "return_code": 0,
+      "skipped_test_count": 2,
+      "warning_count": 4
+    },
+    "full_collect": {
+      "collected_test_count": 12834,
+      "collection_error_refs": [],
+      "command_ref": "GA68_GA4_full_collect_20260712",
+      "node_id_duplicate_count": 0,
+      "passed": true,
+      "return_code": 0
+    },
+    "rn_contract": {
+      "command_ref": "RR8_V3_rn_screens_20260711",
+      "evidence_mode": "carried_forward_no_rn_production_change",
+      "passed": true,
+      "passed_test_count": 36,
+      "return_code": 0,
+      "rn_production_source_changed_after_receipt": false
+    },
+    "safety_public_contract": {
+      "command_ref": "GA68_GA3_safety_public_20260712",
+      "passed": true,
+      "passed_test_count": 69,
+      "return_code": 0
+    },
+    "targeted": {
+      "command_ref": "GA68_GA3_targeted_20260712",
+      "passed": true,
+      "passed_test_count": 303,
+      "return_code": 0
+    }
+  },
+  "unclassified_failure_refs": [],
+  "unresolved_stop_refs": [],
+  "validation_all_pass": true,
+  "validation_order": [
+    "GA3_V1_V2_targeted",
+    "GA3_V3_safety_public",
+    "GA3_V4_rn_contract_carried_forward",
+    "GA4_full_collect",
+    "GA5_full_backend"
+  ]
+}

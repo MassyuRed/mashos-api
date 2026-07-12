@@ -37,14 +37,17 @@ def test_self_and_others_happiness_input_builds_arc_and_retention_plan():
     blocks = build_input_meaning_blocks(current_input=current_input, shaped_user_phrases=shaped, evidence=evidence)
     roles = {block.role for block in blocks}
 
-    assert "other_contribution" in roles
-    assert "self_dislike_from_halfway" in roles
-    assert "future_not_giving_up" in roles
-    assert "betrayal_fear" in roles
-    assert "own_happiness_wish" in roles
-    assert "concrete_life_wishes" in roles
-    assert "unreachable_wish" in roles
-    assert "present_effort_toward_wish" in roles
+    assert {"self_view", "limit_or_exhaustion", "not_want_to_quit", "wish_or_hope"} <= roles
+    assert not ({
+        "other_contribution",
+        "self_dislike_from_halfway",
+        "future_not_giving_up",
+        "betrayal_fear",
+        "own_happiness_wish",
+        "concrete_life_wishes",
+        "unreachable_wish",
+        "present_effort_toward_wish",
+    } & roles)
 
     coverage = build_meaning_coverage_plan(current_input=current_input, meaning_blocks=blocks)
     arc = build_whole_input_meaning_arc(meaning_blocks=blocks, evidence=evidence)
@@ -56,8 +59,11 @@ def test_self_and_others_happiness_input_builds_arc_and_retention_plan():
 
     assert coverage.clear_long_input is True
     assert arc is not None
-    assert arc.arc_key == "self_and_others_happiness_toward_unreachable_wish"
-    assert "own_happiness_wish" in retention.must_keep_block_keys
-    assert "betrayal_fear" in retention.must_keep_block_keys
-    assert "concrete_life_wishes" in retention.must_keep_block_keys
-    assert retention.min_must_keep_coverage_ratio >= 0.8
+    assert arc.arc_key == "generic_current_input_source_order"
+    assert arc.ordered_block_keys == [block.block_key for block in blocks]
+    assert arc.core_wish_keys
+    assert arc.fear_keys
+    assert blocks[0].block_key in retention.must_keep_block_keys
+    assert blocks[-1].block_key in retention.must_keep_block_keys
+    assert retention.reason == "structural_retention_without_example_roles"
+    assert retention.min_must_keep_coverage_ratio == 1.0

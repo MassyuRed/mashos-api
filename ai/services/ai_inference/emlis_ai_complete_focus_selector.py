@@ -485,6 +485,9 @@ class CompleteFocusItem:
     role: str
     relation_type: str
     focus_rank: int
+    canonical_nucleus_ids: Iterable[str] = dataclass_field(default_factory=tuple)
+    canonical_relation_ids: Iterable[str] = dataclass_field(default_factory=tuple)
+    source_evidence_span_ids: Iterable[str] = dataclass_field(default_factory=tuple)
     focus_role: str = "primary"
     polarity: str = "neutral"
     must_keep: bool = False
@@ -502,6 +505,12 @@ class CompleteFocusItem:
         object.__setattr__(self, "role", role)
         object.__setattr__(self, "relation_type", relation)
         object.__setattr__(self, "focus_rank", max(1, int(self.focus_rank or 1)))
+        object.__setattr__(self, "canonical_nucleus_ids", tuple(_dedupe(self.canonical_nucleus_ids)))
+        object.__setattr__(self, "canonical_relation_ids", tuple(_dedupe(self.canonical_relation_ids)))
+        source_evidence_span_ids = tuple(_dedupe(self.source_evidence_span_ids))
+        if not source_evidence_span_ids and self.evidence_span_id:
+            source_evidence_span_ids = (self.evidence_span_id,)
+        object.__setattr__(self, "source_evidence_span_ids", source_evidence_span_ids)
         object.__setattr__(self, "focus_role", _clean(self.focus_role) or "primary")
         object.__setattr__(self, "polarity", _clean(self.polarity) or "neutral")
         object.__setattr__(self, "must_keep", bool(self.must_keep))
@@ -548,6 +557,9 @@ class CompleteFocusItem:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             **_observation_forward_meta(self.meta),
             "focus_rank": self.focus_rank,
             "focus_role": self.focus_role,
@@ -569,6 +581,9 @@ class CompleteFocusItem:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             **_observation_forward_meta(self.meta),
             "focus_rank": self.focus_rank,
             "focus_role": self.focus_role,
@@ -703,6 +718,18 @@ class CompleteCoveragePlan:
         return tuple(_dedupe(item.phrase_unit_id for item in self.focus_items))
 
     @property
+    def canonical_nucleus_ids(self) -> Tuple[str, ...]:
+        return tuple(_dedupe(value for item in self.focus_items for value in item.canonical_nucleus_ids))
+
+    @property
+    def canonical_relation_ids(self) -> Tuple[str, ...]:
+        return tuple(_dedupe(value for item in self.focus_items for value in item.canonical_relation_ids))
+
+    @property
+    def source_evidence_span_ids(self) -> Tuple[str, ...]:
+        return tuple(_dedupe(value for item in self.focus_items for value in item.source_evidence_span_ids))
+
+    @property
     def relation_types(self) -> Tuple[str, ...]:
         return tuple(_dedupe(item.relation_type for item in self.focus_items))
 
@@ -774,6 +801,9 @@ class CompleteCoveragePlan:
             "optional_role_types": list(_dedupe(item.role for item in self.optional_items)),
             "used_evidence_span_ids": list(self.used_evidence_span_ids),
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             "relation_types": list(self.relation_types),
             "canonical_relation_types": list(self.canonical_relation_types),
             "relation_families": list(self.relation_families),
@@ -808,6 +838,9 @@ class CompleteCoveragePlan:
             "optional_material_ids": list(self.optional_material_ids),
             "used_evidence_span_ids": list(self.used_evidence_span_ids),
             "used_phrase_unit_ids": list(self.used_phrase_unit_ids),
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             "relation_types": list(self.relation_types),
             "canonical_relation_types": list(self.canonical_relation_types),
             "relation_families": list(self.relation_families),
@@ -995,6 +1028,9 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
                 role=role,
                 relation_type=relation,
                 focus_rank=rank,
+                canonical_nucleus_ids=row.get("canonical_nucleus_ids") or row.get("nucleus_ids") or (),
+                canonical_relation_ids=row.get("canonical_relation_ids") or row.get("relation_ids") or (),
+                source_evidence_span_ids=row.get("source_evidence_span_ids") or ((_clean(row.get("evidence_span_id")),) if _clean(row.get("evidence_span_id")) else ()),
                 focus_role="known_scope" if low_information else ("primary" if rank == 1 else ("support" if relation in policy.support_relations else "relation" if relation in policy.required_relations else "support")),
                 polarity=_clean(row.get("polarity")) or "neutral",
                 must_keep=bool(row.get("must_keep")) or rank == 1,
@@ -1018,6 +1054,9 @@ def _focus_items_for_rows(rows: Sequence[Mapping[str, Any]], policy: CoveragePol
                 role=role,
                 relation_type=relation,
                 focus_rank=optional_rank,
+                canonical_nucleus_ids=row.get("canonical_nucleus_ids") or row.get("nucleus_ids") or (),
+                canonical_relation_ids=row.get("canonical_relation_ids") or row.get("relation_ids") or (),
+                source_evidence_span_ids=row.get("source_evidence_span_ids") or ((_clean(row.get("evidence_span_id")),) if _clean(row.get("evidence_span_id")) else ()),
                 focus_role="optional_known_scope" if low_information else "optional",
                 polarity=_clean(row.get("polarity")) or "neutral",
                 must_keep=bool(row.get("must_keep")),

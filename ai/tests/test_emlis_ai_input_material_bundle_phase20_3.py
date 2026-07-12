@@ -8,6 +8,8 @@ from emlis_ai_input_material_bundle import (
     MATERIAL_QUALITY_LIMITED_GROUNDING,
     MATERIAL_QUALITY_LOW_INFORMATION,
     MATERIAL_QUALITY_SAFETY_TRIAGE_REQUIRED,
+    SEMANTIC_MATERIAL_SOURCE,
+    SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED,
     UNKNOWN_SLOT_CAUSE,
     UNKNOWN_SLOT_EVENT,
     VISIBLE_SLOT_EMOTION_DIRECTION,
@@ -87,7 +89,7 @@ def test_phase20_3_long_ambiguous_relation_becomes_limited_grounding() -> None:
     assert UNKNOWN_SLOT_CAUSE in bundle.unknown_slots
 
 
-def test_phase20_3_c_and_d_like_material_is_generic_relation_material_not_runtime_example_cue() -> None:
+def test_phase20_3_c_and_d_like_material_keeps_quality_but_delegates_semantics_to_canonical_plan() -> None:
     d_like_input = {
         "memo": "彼氏と別れたあと、友達が変わらず優しくしてくれて、感謝を別の形で返していきたい",
         "memo_action": "友達が私のために怒ってくれた",
@@ -106,15 +108,15 @@ def test_phase20_3_c_and_d_like_material_is_generic_relation_material_not_runtim
 
     assert d_meta["material_quality"] == MATERIAL_QUALITY_ELIGIBLE
     assert c_meta["material_quality"] == MATERIAL_QUALITY_ELIGIBLE
-    assert "relationship_material" in d_meta["relation_material_ids"]
-    assert "support_received_material" in d_meta["relation_material_ids"]
-    assert "gratitude_or_return_intent" in d_meta["relation_material_ids"]
-    assert "value_or_self_understanding_material" in c_meta["relation_material_ids"]
-    assert d_meta["c_d_specific_runtime_cue_used"] is False
-    assert c_meta["c_d_specific_runtime_cue_used"] is False
-    for forbidden in PHASE19_FORBIDDEN_IDS:
-        assert forbidden not in _encoded(d_meta)
-        assert forbidden not in _encoded(c_meta)
+    for meta in (d_meta, c_meta):
+        assert meta["relation_material_ids"] == []
+        assert meta["generic_relation_material_ids"] == []
+        assert meta["semantic_material_source"] == SEMANTIC_MATERIAL_SOURCE
+        assert meta["semantic_relation_material_generation_disabled"] is SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED
+        assert meta["text_present_semantics_owned_by_canonical_plan"] is True
+        assert meta["c_d_specific_runtime_cue_used"] is False
+        for forbidden in PHASE19_FORBIDDEN_IDS:
+            assert forbidden not in _encoded(meta)
 
 
 def test_phase20_3_material_quality_maps_to_internal_response_kind_without_public_enum_change() -> None:

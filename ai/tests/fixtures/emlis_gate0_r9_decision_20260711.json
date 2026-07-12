@@ -1,0 +1,22 @@
+{
+  "actual_local_review_count": 16,
+  "affected_suites_green": true,
+  "automated_candidate_pass": true,
+  "comment_text_included": false,
+  "decision_code": "GATE0_REPAIR_RETURN_STOPPED",
+  "device_evidence_status": "not_started",
+  "exact8_packet_generated": false,
+  "exact8_packet_generation_allowed": false,
+  "gate0_local_pass": false,
+  "hard_fatal_count": 0,
+  "local_human_pass_count": 7,
+  "p5_formal_24_start_allowed": false,
+  "p6_start_allowed": false,
+  "p8_start_allowed": false,
+  "raw_input_included": false,
+  "repair_required_count": 9,
+  "returned_surface_included": false,
+  "review_validation_reason_refs": [],
+  "schema_version": "cocolon.emlis.gate0.local_decision.bodyfree.v1",
+  "unclassified_failure_count": 0
+}

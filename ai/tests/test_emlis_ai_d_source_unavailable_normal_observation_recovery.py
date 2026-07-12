@@ -52,11 +52,6 @@ _FORBIDDEN_PHASE19_OR_CASE_ROUTE_TOKENS = (
     'case_id_runtime_condition_used": true',
 )
 _REQUIRED_VISIBLE_MATERIAL_SLOTS = {"relationship", "action", "change", "value"}
-_REQUIRED_RELATION_MATERIAL_IDS = {
-    "relationship_end",
-    "support_from_other",
-    "gratitude_or_return_intent",
-}
 _SOURCE_UNAVAILABLE_BLOCKER = "limited_composer_shallow_empty_candidate"
 _SENTENCE_PLAN_UNAVAILABLE = "sentence_plan_unavailable"
 _D_SOURCE_UNAVAILABLE_INPUT = {
@@ -241,7 +236,10 @@ async def test_d_source_unavailable_input_locks_safe_eligible_material_and_limit
     assert material_route.get("comment_text_required") is True
     assert material_route.get("public_input_feedback_allowed") is True
     assert _REQUIRED_VISIBLE_MATERIAL_SLOTS.issubset(set(material_route.get("visible_material_slots") or []))
-    assert _REQUIRED_RELATION_MATERIAL_IDS.issubset(set(material_route.get("relation_material_ids") or []))
+    # I4 withdraws relation semantics synthesized by the legacy material route.
+    # Canonical-plan ownership/path-truth metadata is connected at I5, so this
+    # integration regression only freezes the absence of legacy relation IDs.
+    assert material_route.get("relation_material_ids") == []
 
     assert availability.get("first_blocker_family") == "source_unavailable"
     assert availability.get("first_blocker_code") == _SOURCE_UNAVAILABLE_BLOCKER

@@ -1,0 +1,762 @@
+{
+  "canonical_versions": {
+    "grounded_observation_generation_path": "grounded_observation_plan_canonical_v1",
+    "grounded_observation_plan_schema": "cocolon.emlis.grounded_observation_plan.v1",
+    "grounded_observation_plan_semantic": "cocolon.emlis.grounded_semantics.i2.v1",
+    "grounded_sentence_plan_schema": "cocolon.emlis.grounded_sentence_plan.i3.v1",
+    "grounded_surface_result_schema": "cocolon.emlis.grounded_surface.i4.v1"
+  },
+  "case_count": 16,
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S01",
+    "I6-S02",
+    "I6-S03",
+    "I6-L01",
+    "I6-L02",
+    "I6-L03",
+    "I6-C01",
+    "I6-C02",
+    "I6-C03",
+    "I6-D01",
+    "I6-D02",
+    "I6-D03"
+  ],
+  "cases": [
+    {
+      "anchor_to_line_occurrence_signature_sha256": "e0fadcb8ccd8263f0126497954bfb8029ded392f0cbe200833990d9cdb03af9f",
+      "case_id": "A",
+      "current_body_sha256": "e0fd08345b146c209857b30c972078c78d1f995e52d8d1301feda7cb145b7d6d",
+      "follow_role_atom": "burden_expression",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "554e122c16c733931e844837a17a040b000458067cb5136df637c2f40b298306",
+      "plan_signature_sha256": "a85e2c54e9c68a5a005ebc58cd0b946f306f6ab6e6d2c3efad7710fc951ca155",
+      "reason_refs": [
+        "duplicate_anchor_follow_readfeel",
+        "repetitive_state_sentence_opening"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "coexistence"
+        }
+      ],
+      "sentence_plan_signature_sha256": "903287df912664f3e492bdc0816d4f51c2f567b434e0740a52bcd3e4a1ec89cb",
+      "surface_signature_sha256": "ea97fd768e8147b6be456ae7f82b0ab57d371611503d64d8f32a270d4dd7b5c7",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "64f4084bd314456f5fefdfb68663fd21e7979125431d5d711acbb602c885f01b",
+      "case_id": "B",
+      "current_body_sha256": "f31e7c7c59fb643bbc94e9098a661f70a6b18edcd61595c08d0de3e8bce9ecc2",
+      "follow_role_atom": "concrete_effort",
+      "follow_target_ids": [
+        "nucleus:s14"
+      ],
+      "normalized_current_input_sha256": "6c2db2f67f366f8593573f2cefee6371b52381ae1de93217e893836af84267f6",
+      "plan_signature_sha256": "6bd93a68e2cb57eb12cc6ac7f3950f18f0c46c9e6041c5679714fed5133e6223",
+      "reason_refs": [
+        "unnatural_dependent_clause_compaction"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r1",
+          "retention": "optional",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s5",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s6",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s6",
+          "relation_id": "relation:r3",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s7",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s7",
+          "relation_id": "relation:r4",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s8",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s8",
+          "relation_id": "relation:r5",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s9",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s9",
+          "relation_id": "relation:r6",
+          "retention": "optional",
+          "to_nucleus_id": "nucleus:s11",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s12",
+          "relation_id": "relation:r7",
+          "retention": "optional",
+          "to_nucleus_id": "nucleus:s13",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s13",
+          "relation_id": "relation:r8",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s14",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s14",
+          "relation_id": "relation:r9",
+          "retention": "optional",
+          "to_nucleus_id": "nucleus:s15",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s9",
+          "relation_id": "relation:r10",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s14",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "b1956e74b65550d3412a07c84fe0ff98e7d8a6ccafbb78229fb188b89da67020",
+      "surface_signature_sha256": "856f0d47eb18a8f98611a6d27117157c27f6f70227b39f9bbc96e1aaf681f77e",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "9085459249ddfc31cbe9e76922e8cbe12a057863bd3717facab366f564e6376c",
+      "case_id": "C",
+      "current_body_sha256": "634aa66dff798d778070d410207ca59eb00b61918db1ce752d403abcbcd04c11",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "6a84420b2f42d635d8a112c3465ccf597365c31d555c97ade69d4b2b3349f126",
+      "plan_signature_sha256": "78cbb4ed1b7f79479470f38b2a93df868eaa5b9a5cc7c4adaba60b4d8234e0d0",
+      "reason_refs": [
+        "human_follow_role_surface_mismatch",
+        "generic_change_tail_for_intention"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s6",
+          "type": "contrast"
+        },
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r3",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "shift_from_to"
+        },
+        {
+          "from_nucleus_id": "nucleus:s3",
+          "relation_id": "relation:r4",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s6",
+          "relation_id": "relation:r5",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s7",
+          "type": "self_evaluation_about_state"
+        },
+        {
+          "from_nucleus_id": "nucleus:s7",
+          "relation_id": "relation:r6",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s8",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s8",
+          "relation_id": "relation:r7",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s9",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s9",
+          "relation_id": "relation:r8",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s10",
+          "type": "shift_from_to"
+        }
+      ],
+      "sentence_plan_signature_sha256": "2f9e82d1d0d277a1514327615fb320bed9904a23387e0c7ef820b4c2721d8a1c",
+      "surface_signature_sha256": "1495d47b7c4a5a03ceaf260a3609203b687fae9f168c1fdc1d6cc505366d83d4",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "b4fd7cdd8d75961bc829c5fcb2cbc0c5005eeddb8d42858889b8819a42b1e448",
+      "case_id": "D",
+      "current_body_sha256": "704bf64d63c8ce16ce580d63fce8f74e1f8347502cd6b41126cc50d5240e2ca7",
+      "follow_role_atom": "protective_counterdirection",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "42e0453f08508131bee44f0e2ba19a5ff670de08f9dcc26c86cc553a7774d2e8",
+      "plan_signature_sha256": "e943f7301d6eb0a298b27a5050c80cad48db5c50668def61555a720c6a7500d8",
+      "reason_refs": [],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "continuation_or_refusal"
+        }
+      ],
+      "sentence_plan_signature_sha256": "ab3a1263dcc053aec595cd6a2cbeefc8f1727062c8696ad785183a914332adef",
+      "surface_signature_sha256": "fabf4db0712f3ce47cb16bd71b97d84c1dedf2708a889b29e06624a39d9e4478",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "556b14c1ffedcc0f6a1d57db9a0297bb1909086d14bb34b7b1adb06ea097a0a2",
+      "case_id": "I6-S01",
+      "current_body_sha256": "b7724d3eadfd665e3fda4db6eeb69c36fb2a413cdba15bd41f6cf80afb66e232",
+      "follow_role_atom": "integrated_current_state",
+      "follow_target_ids": [
+        "nucleus:s1"
+      ],
+      "normalized_current_input_sha256": "6074dfc4bd24c69ec984f22acfe3a58018dd2051c6387c815f31733a42d93747",
+      "plan_signature_sha256": "71a514abb629eb0683e77ce2eef3881b0143dad815711028a2ec769d6c4b6896",
+      "reason_refs": [],
+      "relations": [],
+      "sentence_plan_signature_sha256": "fe9ed284fdeeb8982c5492928cb784545ce5e0757d70a346b0452f5f86ebe090",
+      "surface_signature_sha256": "085fd348d32846ef586df457ea022663bc207a1ff6907b6734b4c679b052c615",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "556b14c1ffedcc0f6a1d57db9a0297bb1909086d14bb34b7b1adb06ea097a0a2",
+      "case_id": "I6-S02",
+      "current_body_sha256": "d8540853badd64960142d23b4993b7afb928792c45f96511b6debfcbee5fb235",
+      "follow_role_atom": "integrated_current_state",
+      "follow_target_ids": [
+        "nucleus:s1"
+      ],
+      "normalized_current_input_sha256": "3f0ea0b5d7e6d4029f9590c25d3a3919b50d7dc7ea1b6f91791f15eecda3b1f5",
+      "plan_signature_sha256": "26932c6b05887e72f950d9c40f0e195e9f7be762b49607de3fb3283258bf2e4a",
+      "reason_refs": [],
+      "relations": [],
+      "sentence_plan_signature_sha256": "fe9ed284fdeeb8982c5492928cb784545ce5e0757d70a346b0452f5f86ebe090",
+      "surface_signature_sha256": "085fd348d32846ef586df457ea022663bc207a1ff6907b6734b4c679b052c615",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "556b14c1ffedcc0f6a1d57db9a0297bb1909086d14bb34b7b1adb06ea097a0a2",
+      "case_id": "I6-S03",
+      "current_body_sha256": "ac8d767ef4cf15d4fe1f570857d8e6c80d96ef7862c80df7a9af6d37cfc82785",
+      "follow_role_atom": "integrated_current_state",
+      "follow_target_ids": [
+        "nucleus:s1"
+      ],
+      "normalized_current_input_sha256": "b557a01aa84cea842aa42bc017ea37331b2a43b6ea849035a3b93b3774a50fc4",
+      "plan_signature_sha256": "c6a1cb556311e03ae00c2af4b962ffae0907ac34302a353a6168b59403cf90a2",
+      "reason_refs": [],
+      "relations": [],
+      "sentence_plan_signature_sha256": "fe9ed284fdeeb8982c5492928cb784545ce5e0757d70a346b0452f5f86ebe090",
+      "surface_signature_sha256": "085fd348d32846ef586df457ea022663bc207a1ff6907b6734b4c679b052c615",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "2191b1e438a1df7b49e1a67ae0be608cc41df481e25c9e79e49d95126a6b6d65",
+      "case_id": "I6-L01",
+      "current_body_sha256": "db1ca63fea26b23b4b5da3ce955be503021d36d1c1a2ddf4ec5ee203ae0d97c7",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s7"
+      ],
+      "normalized_current_input_sha256": "d04652285db4126901093a059ac3c577ce8dbd9f8b10b31fba05c5a461ebeb86",
+      "plan_signature_sha256": "7db20a0cfaf6cb0d0e95ccfabce5b419b0e88f34d39d83f9d16ba2b9c7290693",
+      "reason_refs": [
+        "relation_surface_awkward_reversal",
+        "human_follow_role_surface_mismatch"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r2",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "preserves_despite"
+        },
+        {
+          "from_nucleus_id": "nucleus:s3",
+          "relation_id": "relation:r3",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r4",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s5",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s5",
+          "relation_id": "relation:r5",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s6",
+          "type": "contrast"
+        },
+        {
+          "from_nucleus_id": "nucleus:s6",
+          "relation_id": "relation:r6",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s7",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s7",
+          "relation_id": "relation:r7",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s8",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "10d90933d0e24929015954abf1d5fae452c42f51d8ce0b68029814447f23da34",
+      "surface_signature_sha256": "da20368ae7cdefef1c667378f9e32b4f0196475890f085991512fe0e00659d9a",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "26d5d4d5bfb597df0144634e50aed36ad60acf19153282f46846968ec5a20b34",
+      "case_id": "I6-L02",
+      "current_body_sha256": "09c9d81219e46c097efa90dfc5763ed0aa15a19e5773a9016294349632edfd8c",
+      "follow_role_atom": "burden_expression",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "28e691e631b53af72ea9ef06932a7ea7b9e2c4a15cfbf6d3ad7408530a131fb1",
+      "plan_signature_sha256": "3c95bb7f12e8aab45f1c9207c490199aacc9bc1668aca544f15578b89cddbb86",
+      "reason_refs": [
+        "human_follow_target_misses_retained_intention"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "contrast"
+        },
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "coexistence"
+        },
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r3",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s5",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s5",
+          "relation_id": "relation:r4",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s6",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s6",
+          "relation_id": "relation:r5",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s7",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s7",
+          "relation_id": "relation:r6",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s8",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "b78a58604c3f627a6c400f85cb0292cae64bc13a281c7c5ddb244cd953d334c8",
+      "surface_signature_sha256": "86c59626443898c37456ff057cae37f9faf3f5cad417fcb7e9bafa5d3bf6c99d",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "32d017bb5062d709997f9d5d16d4b0206a95f79c7afa0c94f0c3dd531b1ece8b",
+      "case_id": "I6-L03",
+      "current_body_sha256": "ce560e3132f5292c9c6a4658a2e9b660650611f20d907962b571a2aa997a2d53",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s5"
+      ],
+      "normalized_current_input_sha256": "b9db19136374f55a8b58b51304d8696aee2a6fc3694fffc33b6428bae08152b9",
+      "plan_signature_sha256": "9289ada3a84037090e469bfbdb5a7a90c734a1c71ce098ea3891c40c7d3e6591",
+      "reason_refs": [
+        "duplicated_predicate_in_reversal_surface",
+        "human_follow_role_surface_mismatch"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "preserves_despite"
+        },
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r3",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s5",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s5",
+          "relation_id": "relation:r4",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s6",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s6",
+          "relation_id": "relation:r5",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s7",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s7",
+          "relation_id": "relation:r6",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s8",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "b63f6f0e84990df37582661d13684fdeec34792cdbe97245beb5016dc2e228b9",
+      "surface_signature_sha256": "38874f8c8f70043ebbfc4035691b1e13090125665fad3a09a11c57dee6771d7c",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "a4bb9129f5c195159ebf61634b0e31ff12da11915f9263235eb7264fe8b57c76",
+      "case_id": "I6-C01",
+      "current_body_sha256": "9cfe70202ff43b89d2f927fb58d636e7a7803f9adfd46077a7672144859ce2ed",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s4"
+      ],
+      "normalized_current_input_sha256": "c5469716cd0147d15700b41c86e86c886730b2b2609cd7e7d6dce63fb70e7a71",
+      "plan_signature_sha256": "301724b078ec7297c5c72e75e0ffd70c4b7cd785dff40a3c2fcf83664687e80b",
+      "reason_refs": [
+        "relation_surface_awkward_reversal",
+        "human_follow_role_surface_mismatch"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "preserves_despite"
+        },
+        {
+          "from_nucleus_id": "nucleus:s3",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r3",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s5",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "3daf8340a4a1917646409da35ebdfc8304e73fbbcf443fb14318ff7a2e66d115",
+      "surface_signature_sha256": "4cfa79ef2632c084f40f1a8615276f1f00df43b53fd5777eb9e068f8c57a6c92",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "a4bb9129f5c195159ebf61634b0e31ff12da11915f9263235eb7264fe8b57c76",
+      "case_id": "I6-C02",
+      "current_body_sha256": "79fe262f4baabec6f97701d2579699d81bcbe33f2a8c55d4cee13a01967b7079",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s4"
+      ],
+      "normalized_current_input_sha256": "6bcef0bfaca01965a4f5dd7d2833d77ebdb0f60e7772af0e3fefd2718d1cbf51",
+      "plan_signature_sha256": "121c1d90ff1b86332e8a53b4f77e54c3170338ba352b841ec3e5f2c5e431f318",
+      "reason_refs": [
+        "human_follow_role_surface_mismatch",
+        "generic_change_tail_for_intention"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "contrast"
+        },
+        {
+          "from_nucleus_id": "nucleus:s3",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s4",
+          "relation_id": "relation:r3",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s5",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "1b9d7eaa737f8eaf4787cecb7d20a7c9b703038fd4cf2532e33dd6be44bf8776",
+      "surface_signature_sha256": "da27414e451f1663efd877d9ada15d1aab2caac413c6bfb8b7be9e805216ab2a",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "5ec82a7bb5f927ee1e6d2a4e81df7b4d713736c08f44a9a29c3e0b89f6b22947",
+      "case_id": "I6-C03",
+      "current_body_sha256": "15612399f561a394485f2ecaaf87bf59670d518523beb74636883d1166ecc740",
+      "follow_role_atom": "valued_change",
+      "follow_target_ids": [
+        "nucleus:s3"
+      ],
+      "normalized_current_input_sha256": "b6f379f921bfbdd40d14e817d9a65514ad2a60125ba369d10a38ac04b0218481",
+      "plan_signature_sha256": "e0c2658339d6b3f13b30de06d7122dc8bcbae0dbe983f3bb16dd8fa5b20c6b64",
+      "reason_refs": [
+        "relation_surface_awkward_reversal",
+        "human_follow_role_surface_mismatch"
+      ],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "preserves_despite"
+        },
+        {
+          "from_nucleus_id": "nucleus:s2",
+          "relation_id": "relation:r2",
+          "retention": "should",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "uncertain_connection"
+        },
+        {
+          "from_nucleus_id": "nucleus:s3",
+          "relation_id": "relation:r3",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s4",
+          "type": "action_supports_change"
+        }
+      ],
+      "sentence_plan_signature_sha256": "22145357f09ee0371574c7ca8f5c38cd0472ecfca090543e6d1b6fa0337737b7",
+      "surface_signature_sha256": "1606d6e656d126fa48a63ff18ed71b934e56f741bc6cf656f93788a1968bf908",
+      "verdict": "repair_required"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "c5f12d2be37555e7076b24da4903689c9366cae6c33239374db3243aa9264cd0",
+      "case_id": "I6-D01",
+      "current_body_sha256": "695dfb2234ef4d693ed315a365970893f608f7dc76310913e378f9fecb78cde6",
+      "follow_role_atom": "protective_counterdirection",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "15c4d7f3113a633c649a440d26c53be0e1c7ec1857e7d6379cb9753cbc20e8cc",
+      "plan_signature_sha256": "f99772c0b64a0b48980e0649117f837db82eb2186539f0a14a7ec30d31f45f8f",
+      "reason_refs": [],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "continuation_or_refusal"
+        }
+      ],
+      "sentence_plan_signature_sha256": "ab3a1263dcc053aec595cd6a2cbeefc8f1727062c8696ad785183a914332adef",
+      "surface_signature_sha256": "fabf4db0712f3ce47cb16bd71b97d84c1dedf2708a889b29e06624a39d9e4478",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "c5f12d2be37555e7076b24da4903689c9366cae6c33239374db3243aa9264cd0",
+      "case_id": "I6-D02",
+      "current_body_sha256": "7a827cbf59a8acf20eb0902c2835603185b8f348201cd0d5359cb3555fbb9d92",
+      "follow_role_atom": "help_seeking_preserved",
+      "follow_target_ids": [
+        "nucleus:s2"
+      ],
+      "normalized_current_input_sha256": "8e647aa9b6f61b50c879c437ad032a4e96b6bc88212da0958bffe37f73a8a048",
+      "plan_signature_sha256": "c0243b1919c29e246eafcaef9b7a88ef34265e6818dcee801df986b2c6f308db",
+      "reason_refs": [],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s2",
+          "type": "contrast"
+        }
+      ],
+      "sentence_plan_signature_sha256": "108282dc6872764361444c18ad2d08c9726bbb1b67e319e37a60c5caf72b0de6",
+      "surface_signature_sha256": "fabf4db0712f3ce47cb16bd71b97d84c1dedf2708a889b29e06624a39d9e4478",
+      "verdict": "local_human_pass"
+    },
+    {
+      "anchor_to_line_occurrence_signature_sha256": "f2dada6cdd104e50f685b0e464d6061aa522d1f744e8a72692d20e2e1c5e6279",
+      "case_id": "I6-D03",
+      "current_body_sha256": "e3e8dafadf9d5eed5d451868ac01e97aabb90cdcea212362887fabaf10d917e6",
+      "follow_role_atom": "help_seeking_preserved",
+      "follow_target_ids": [
+        "nucleus:s3"
+      ],
+      "normalized_current_input_sha256": "459110d78cb929723922fe51d34ebe96c8a4d045d62c4a79943a3bf79ae6a5a2",
+      "plan_signature_sha256": "879cdeb5349c94685aa08004d5dec36bbb5b464b3a436cfafe473976778edc36",
+      "reason_refs": [],
+      "relations": [
+        {
+          "from_nucleus_id": "nucleus:s1",
+          "relation_id": "relation:r1",
+          "retention": "required",
+          "to_nucleus_id": "nucleus:s3",
+          "type": "contrast"
+        }
+      ],
+      "sentence_plan_signature_sha256": "45ba06225d39ebec1cf717919731f301752c78960cec221eaf56e7ba3c0902c3",
+      "surface_signature_sha256": "5a66a7f379aa3aa76e9631acae5f414bf66c2407e5c80dc795f49880957442db",
+      "verdict": "local_human_pass"
+    }
+  ],
+  "collection_blockers": [
+    {
+      "canonical_replacement_owners": [
+        "emlis_ai_grounded_sentence_surface.build_plan_preserving_recovery_sequence",
+        "emlis_ai_reply_service.render_emlis_ai_reply"
+      ],
+      "missing_symbol": "_regeneration_reasons_for_retry",
+      "obsolete_import_owner": "emlis_ai_reply_service",
+      "production_restore_allowed": false,
+      "test_path": "ai/tests/test_emlis_ai_bounded_repair_reroute_step7.py"
+    },
+    {
+      "canonical_replacement_owners": [
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_sentence_surface.realize_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate",
+        "emlis_ai_reply_service.render_emlis_ai_reply"
+      ],
+      "missing_symbol": "_reply_service_recomposition_existing_gate_chain_summary",
+      "obsolete_import_owner": "emlis_ai_reply_service",
+      "production_restore_allowed": false,
+      "test_path": "ai/tests/test_emlis_ai_complete_initial_surface_recomposition_existing_gate_chain_p8.py"
+    }
+  ],
+  "comment_text_included": false,
+  "cycle_id": "gate0_readfeel_repair_20260711",
+  "raw_input_included": false,
+  "repair_case_ids": [
+    "A",
+    "B",
+    "C",
+    "I6-L01",
+    "I6-L02",
+    "I6-L03",
+    "I6-C01",
+    "I6-C02",
+    "I6-C03"
+  ],
+  "returned_surface_included": false,
+  "review": {
+    "decision_code": "GATE0_REPAIR_RETURN_STOPPED",
+    "generated_body_hashes_match_current_r8_comparison": true,
+    "hard_fatal_count": 0,
+    "local_human_pass_count": 7,
+    "r8_receipt_sha256": "dcb239693644c3c4a2ee7e13903509e0a90e1b1de5aa2bc627a89eeda09036e4",
+    "r9_decision_sha256": "1372eacd2092bfe0d054940898aa1e68b0b196d731ef38f2fff525580d952cfa",
+    "repair_required_count": 9,
+    "review_source_archive_sha256": "aa28df597b3ad0467a9196711535dc1d62f1306c8831be3a21e453e533ee3f22"
+  },
+  "schema_version": "cocolon.emlis.gate0.repair_freeze.bodyfree.v1",
+  "source_archive_ref": "mashos-api(207).zip",
+  "source_archive_sha256": "cfb378d93a7ff9d65542012ca3176cea6fb5f20f1a49756df16971eb37e93b00",
+  "source_file_sha256s": {
+    "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py": "737ae4917f2e450668ff99c1b19ca54e5ea27bfe37dbbc25169baa0e4bf0faf8",
+    "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py": "1e806a88456f3dfe4f0a6d6bcae1c14472908ac3fb739a4073527ea078bdc484",
+    "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py": "dfbb6e8546ab0eca2addfc64c45c1458375a07a1b35df1e17b106a56774e7d98",
+    "ai/services/ai_inference/emlis_ai_reply_service.py": "1eb3d7b65c72c6c7ba5aee44c2138ae6e7ea38b20228f16821f1a5d2e17ef80c",
+    "ai/tests/helpers/emlis_ai_grounded_observation_i0_inventory.py": "be936a9ff37435981c8c3a58f5b47a6f3de7557b46276a96b8adb611c63df828",
+    "ai/tests/helpers/emlis_ai_grounded_observation_i6_cases.py": "6d36cb6fc2de9bbbb0120747332e771fd7be39dcc86966e447f2ebea4cde2966",
+    "ai/tests/helpers/emlis_ai_grounded_observation_i7_readfeel.py": "219748a00db0d0ee3777b8916aaf4480c34854c22adf5c8e9a53fd1ca7ab8064",
+    "ai/tests/helpers/generate_emlis_ai_gate0_r8_r9_artifacts.py": "75cd304e37c082fa8a19b4dee742f1f0a4b33e9c683963b20445a380370bd393",
+    "ai/tests/test_emlis_ai_gate0_r1_semantic_retention.py": "d04d41995566bce1147bf504de012237bc49a04d59dde88f1ca7cac2de2838d8",
+    "ai/tests/test_emlis_ai_gate0_r5_semantic_subchecks.py": "2179d5a66a1c540132042309b496c1a4ce644863ec12b8f70a48179ceb983463",
+    "ai/tests/test_emlis_ai_gate0_r8_r10_boundary.py": "4ebadfc5daa76a381b8810eb75363a7541ea1e0413578230394271a17cbf018e"
+  },
+  "source_snapshot_algorithm": "sha256(relative_path_utf8 + NUL + lowercase_file_sha256_ascii), path_sorted",
+  "source_snapshot_excludes": [
+    "__pycache__",
+    ".pytest_cache",
+    "*.pyc",
+    "ai/tests/local_only/**",
+    "R8/R9/R10 and RR generated artifacts"
+  ],
+  "source_snapshot_file_count": 1348,
+  "source_snapshot_fingerprint": "8d80af59708affcc0b4ee66c694330e71a08cb7de8b9bc359ff70ffbf7ad2cfe",
+  "source_snapshot_includes": [
+    "ai/**/*.py",
+    "ai/**/*.json",
+    "requirements*.txt",
+    "pytest configuration"
+  ]
+}

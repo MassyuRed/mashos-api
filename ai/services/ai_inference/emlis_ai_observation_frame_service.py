@@ -110,16 +110,68 @@ def build_emlis_observation_frame(
         "worsening_awareness",
         "escape_or_limit",
         "balanced_self_awareness",
+        # I2 structure-first compatibility roles.  These carry grammar and
+        # source-order structure rather than example-specific topic labels.
+        "dual_holding",
+        "dual_feeling",
+        "limit_or_exhaustion",
+        "wish_or_hope",
+        "continuation_wish",
+        "state_awareness",
+        "self_view",
+        "not_want_to_quit",
+        "effort_direction",
+        "paced_progress",
     }
     if not (roles & observation_roles):
         return None
 
-    benefit = _first(by_role, "relief_or_benefit_in_constraint", "relief_source")
-    inconvenience = _first(by_role, "reality_gap_or_inconvenience", "collapse_anxiety", "fatigue_or_limit", "limit_or_exhaustion")
-    restriction = _first(by_role, "restriction_pressure", "self_suppression", "burden_avoidance")
-    normal_wish = _first(by_role, "normal_life_wish", "wish_or_hope", "continuation_wish")
-    worsening = _first(by_role, "worsening_awareness", "state_awareness", "self_understanding")
-    escape = _first(by_role, "escape_or_limit", "fatigue_or_limit", "limit_or_exhaustion")
+    benefit = _first(
+        by_role,
+        "relief_or_benefit_in_constraint",
+        "relief_source",
+        "paced_progress",
+        "effort_direction",
+    )
+    inconvenience = _first(
+        by_role,
+        "reality_gap_or_inconvenience",
+        "collapse_anxiety",
+        "fatigue_or_limit",
+        "limit_or_exhaustion",
+        "dual_feeling",
+        "self_view",
+    )
+    restriction = _first(
+        by_role,
+        "restriction_pressure",
+        "self_suppression",
+        "burden_avoidance",
+        "limit_or_exhaustion",
+        "dual_holding",
+    )
+    normal_wish = _first(
+        by_role,
+        "normal_life_wish",
+        "wish_or_hope",
+        "continuation_wish",
+        "dual_holding",
+    )
+    worsening = _first(
+        by_role,
+        "worsening_awareness",
+        "state_awareness",
+        "self_understanding",
+        "self_view",
+        "dual_feeling",
+    )
+    escape = _first(
+        by_role,
+        "escape_or_limit",
+        "fatigue_or_limit",
+        "limit_or_exhaustion",
+        "not_want_to_quit",
+    )
 
     required_roles: List[str] = ["primary_state"]
     primary_state = _join_summaries(benefit, inconvenience, normal_wish, worsening) or _join_summaries(*blocks[:2])

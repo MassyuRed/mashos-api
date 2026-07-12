@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Phase20-10 real-device recheck guards.
+"""Historical Phase20-10 local public-delivery regression guards.
 
-The uploaded real-device screenshots showed B/C/D opening the Emlis modal, but
-A stayed silent.  This test keeps the recheck focused on public behavior and on
-log fields requested by the Phase20-10 design: response_kind, public status,
-comment presence, safety triage, material quality, material slots, recovery
-attempts, public input_feedback eligibility, and RN modal eligibility.
+The local A/B/C/D names in this file belong to the earlier Phase20-10 delivery
+check; they are not the current core-repair A-D semantic fixtures. This test
+owns only public status, comment presence, Safety, canonical body-free metadata
+and RN modal eligibility.  It is not real-device evidence and never records a
+Product Read Feel result. Exact/sub-string response expectations belong to the
+separate grounded semantic-quality tests.
 """
 
 from collections.abc import Mapping
@@ -17,8 +18,7 @@ import pytest
 
 import emlis_ai_context_service as context_service
 import emlis_ai_reply_service as reply_service
-from emlis_ai_input_material_bundle import MATERIAL_QUALITY_LOW_INFORMATION
-from emlis_ai_observation_eligibility_router import EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY
+from emlis_ai_grounded_observation_gate import GROUND_OBSERVATION_REPLY_GENERATION_PATH
 from emlis_ai_public_feedback_meta import should_include_public_input_feedback
 from emlis_ai_response_contract import EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY
 from emlis_ai_safety_triage import (
@@ -29,29 +29,6 @@ from emlis_ai_safety_triage import (
 from emlis_ai_types import GreetingDecision
 
 
-_PHASE20_10_ENV = {
-    # This flag reproduces the production-like path from the real-device A log:
-    # a composer/scope stop happens before a generated candidate owns the
-    # surface.  Phase20 low-information observation must still recover through
-    # its own material-bundle branch without relaxing gates.
-    "COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED": "true",
-}
-_PHASE20_10_ENV_KEYS = (
-    "COCOLON_EMLIS_LIMITED_COMPOSER_ENABLED",
-    "COCOLON_EMLIS_AI_LIMITED_COMPOSER_ENABLED",
-    "EMLIS_AI_LIMITED_COMPOSER_ENABLED",
-    "COCOLON_LIMITED_COMPOSER_ENABLED",
-    "COCOLON_EMLIS_AI_DEFAULT_LIMITED_COMPOSER_ENABLED",
-    "EMLIS_AI_DEFAULT_LIMITED_COMPOSER_ENABLED",
-    "COCOLON_EMLIS_DEFAULT_COMPOSER",
-    "COCOLON_EMLIS_AI_DEFAULT_COMPOSER",
-    "EMLIS_AI_DEFAULT_COMPOSER",
-    "COCOLON_EMLIS_LIMITED_COMPOSER_ROLLOUT_STAGE",
-    "COCOLON_EMLIS_AI_LIMITED_COMPOSER_ROLLOUT_STAGE",
-    "EMLIS_AI_LIMITED_COMPOSER_ROLLOUT_STAGE",
-    "COCOLON_EMLIS_LIMITED_COMPOSER_ROLLOUT",
-    "EMLIS_AI_LIMITED_COMPOSER_ROLLOUT",
-)
 _FORBIDDEN_PHASE19_ROUTE_TOKENS = (
     "relationship_gratitude_recovery",
     "self_understanding_learning_shift",
@@ -70,8 +47,8 @@ def _patch_source_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async def fake_greeting(**_kwargs: Any) -> GreetingDecision:
         return GreetingDecision(
-            slot_name="phase20-10-real-device-recheck",
-            slot_key="phase20-10-real-device-recheck",
+            slot_name="phase20-10-historical-local-display",
+            slot_key="phase20-10-historical-local-display",
             greeting_text="Emlisです。",
             first_in_slot=False,
         )
@@ -101,14 +78,6 @@ def _patch_source_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
     }.items():
         if hasattr(context_service, name):
             monkeypatch.setattr(context_service, name, replacement)
-
-
-@pytest.fixture()
-def phase20_10_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in _PHASE20_10_ENV_KEYS:
-        monkeypatch.delenv(key, raising=False)
-    for key, value in _PHASE20_10_ENV.items():
-        monkeypatch.setenv(key, value)
 
 
 _A_INPUT = {
@@ -163,8 +132,7 @@ def _phase20_10_log_row(reply: Any) -> dict[str, Any]:
     comment_text = str(getattr(reply, "comment_text", "") or "").strip()
     internal = _mapping(meta.get(EMLIS_INTERNAL_RESPONSE_CONTRACT_META_KEY))
     safety = _mapping(meta.get(EMLIS_SAFETY_TRIAGE_META_KEY))
-    material_route = _mapping(meta.get(EMLIS_OBSERVATION_ELIGIBILITY_ROUTER_META_KEY))
-    gate = _mapping(meta.get("phase20_5_gate_recovery_loop") or meta.get("gate_recovery_loop"))
+    grounded = _mapping(meta.get("grounded_observation"))
     public_input_feedback_included = should_include_public_input_feedback(comment_text, meta)
     return {
         "request_id": str(meta.get("observation_trace_id") or ""),
@@ -172,19 +140,31 @@ def _phase20_10_log_row(reply: Any) -> dict[str, Any]:
         "public_observation_status": str(meta.get("observation_status") or internal.get("public_observation_status") or ""),
         "comment_text_presence": bool(comment_text),
         "safety_triage_kind": str(safety.get("safety_triage_kind") or internal.get("safety_triage_kind") or ""),
-        "material_quality": str(material_route.get("material_quality") or ""),
-        "visible_material_slots": list(material_route.get("visible_material_slots") or []),
-        "unknown_slots": list(material_route.get("unknown_slots") or []),
-        "gate_recovery_attempts": list(internal.get("repair_attempts") or gate.get("internal_response_repair_attempts") or []),
+        "material_quality": str(grounded.get("material_quality") or ""),
+        "generation_path": str(grounded.get("generation_path") or ""),
+        "composer_source": str(grounded.get("composer_source") or ""),
+        "semantic_quality_gate": str(grounded.get("semantic_quality_gate") or ""),
+        "product_readfeel_status": str(grounded.get("product_readfeel_status") or ""),
+        "public_reply_path_connected": grounded.get("public_reply_path_connected") is True,
         "public_input_feedback_presence": public_input_feedback_included,
         "rn_modal_opened": bool(public_input_feedback_included and meta.get("observation_status") == "passed"),
+        "evidence_scope": "historical_local_display_only",
+        "actual_device_evidence": False,
     }
 
 
+def _assert_current_canonical_display_meta(row: Mapping[str, Any]) -> None:
+    assert row["generation_path"] == GROUND_OBSERVATION_REPLY_GENERATION_PATH
+    assert row["composer_source"] == "grounded_plan_realizer"
+    assert row["semantic_quality_gate"] == "passed"
+    assert row["product_readfeel_status"] == "not_evaluated"
+    assert row["public_reply_path_connected"] is True
+    assert row["evidence_scope"] == "historical_local_display_only"
+    assert row["actual_device_evidence"] is False
+
+
 @pytest.mark.asyncio
-async def test_phase20_10_real_device_a_low_information_reappears_when_limited_composer_scope_stops(
-    phase20_10_env: None,
-) -> None:
+async def test_phase20_10_historical_local_a_uses_current_canonical_display_meta() -> None:
     reply = await reply_service.render_emlis_ai_reply(
         user_id="phase20-10-a-user",
         subscription_tier="free",
@@ -193,22 +173,15 @@ async def test_phase20_10_real_device_a_low_information_reappears_when_limited_c
         timezone_name="Asia/Tokyo",
     )
     row = _phase20_10_log_row(reply)
-    comment_text = str(getattr(reply, "comment_text", "") or "")
-
     assert row["request_id"]
     assert row["response_kind"] == "low_information_observation"
     assert row["public_observation_status"] == "passed"
     assert row["comment_text_presence"] is True
     assert row["safety_triage_kind"] == TRIAGE_SAFE_OBSERVATION
-    assert row["material_quality"] == MATERIAL_QUALITY_LOW_INFORMATION
-    assert row["visible_material_slots"]
-    assert row["unknown_slots"]
-    assert row["gate_recovery_attempts"]
+    assert row["material_quality"] == "short_state_sufficient"
     assert row["public_input_feedback_presence"] is True
     assert row["rn_modal_opened"] is True
-    assert "何があったか" in comment_text
-    assert "なんか今日は全部だるい" not in comment_text
-    assert "前から同じことで疲れている" not in comment_text
+    _assert_current_canonical_display_meta(row)
 
 
 @pytest.mark.asyncio
@@ -220,8 +193,7 @@ async def test_phase20_10_real_device_a_low_information_reappears_when_limited_c
         ("D", _D_INPUT, "normal_observation", TRIAGE_SAFE_OBSERVATION),
     ],
 )
-async def test_phase20_10_real_device_bcd_remain_displayable_without_phase19_runtime_routes(
-    phase20_10_env: None,
+async def test_phase20_10_historical_local_bcd_remain_canonical_and_displayable(
     case_id: str,
     current_input: Mapping[str, Any],
     expected_response_kind: str,
@@ -244,11 +216,7 @@ async def test_phase20_10_real_device_bcd_remain_displayable_without_phase19_run
     assert row["safety_triage_kind"] == expected_safety_triage
     assert row["public_input_feedback_presence"] is True
     assert row["rn_modal_opened"] is True
+    _assert_current_canonical_display_meta(row)
     for token in _FORBIDDEN_PHASE19_ROUTE_TOKENS:
         assert token not in dumped_meta
         assert token not in comment_text
-    if case_id == "B":
-        assert "事実として確定" in comment_text
-    else:
-        assert "見えたこと：" in comment_text
-        assert "Emlisから：" in comment_text

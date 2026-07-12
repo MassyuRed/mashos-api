@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 from fastapi.routing import APIRoute
 
@@ -127,6 +131,44 @@ def _route_map(app):
     return routes
 
 
+def _clean_subprocess_route_map():
+    """Read the production route contract without sharing pytest module state."""
+
+    root = Path(__file__).resolve().parents[2]
+    service_root = root / "services" / "ai_inference"
+    script = """
+import json
+from fastapi.routing import APIRoute
+import app as app_module
+
+routes = {}
+for route in app_module.app.router.routes:
+    if not isinstance(route, APIRoute):
+        continue
+    for method in route.methods or set():
+        if method in {"GET", "POST", "PATCH", "DELETE"}:
+            routes[f"{method} {route.path}"] = route.response_model is not None
+print(json.dumps(routes, sort_keys=True))
+"""
+    env = os.environ.copy()
+    env.setdefault("SUPABASE_URL", "https://example.supabase.co")
+    env.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role")
+    env.setdefault("MYMODEL_APP_NAME", "Cocolon Test App")
+    python_path = [str(root), str(root / "services"), str(service_root)]
+    if env.get("PYTHONPATH"):
+        python_path.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(python_path)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=root,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(completed.stdout)
+
+
 def test_policy_version_is_fixed():
     assert API_CONTRACT_POLICY_VERSION == "2026-04-20.myprofile-lookup.v1"
 
@@ -144,18 +186,17 @@ def test_registry_covers_phase6c_required_public_routes():
     assert not missing, f"Required public contract routes missing from registry: {missing}"
 
 
-def test_registry_routes_exist_in_fastapi_app(app_module):
-    route_map = _route_map(app_module.app)
-    missing = [f"{entry.method} {entry.path}" for entry in iter_public_api_contracts() if (entry.method, entry.path) not in route_map]
+def test_registry_routes_exist_in_fastapi_app():
+    route_map = _clean_subprocess_route_map()
+    missing = [f"{entry.method} {entry.path}" for entry in iter_public_api_contracts() if f"{entry.method} {entry.path}" not in route_map]
     assert not missing, f"Missing routes in FastAPI app: {missing}"
 
 
-def test_registry_routes_have_response_models(app_module):
-    route_map = _route_map(app_module.app)
+def test_registry_routes_have_response_models():
+    route_map = _clean_subprocess_route_map()
     missing = []
     for entry in iter_public_api_contracts():
-        route = route_map[(entry.method, entry.path)]
-        if route.response_model is None:
+        if route_map.get(f"{entry.method} {entry.path}") is not True:
             missing.append(f"{entry.method} {entry.path}")
     assert not missing, f"Routes missing response_model: {missing}"
 

@@ -471,6 +471,9 @@ class CompleteMaterialUnit:
     polarity: str = "neutral"
     must_keep: bool = False
     relation_type: str = ""
+    canonical_nucleus_ids: Iterable[str] = dataclass_field(default_factory=tuple)
+    canonical_relation_ids: Iterable[str] = dataclass_field(default_factory=tuple)
+    source_evidence_span_ids: Iterable[str] = dataclass_field(default_factory=tuple)
     source_anchor: Mapping[str, Any] = dataclass_field(default_factory=dict)
     quality_flags: Iterable[str] = dataclass_field(default_factory=tuple)
     rejection_reasons: Iterable[str] = dataclass_field(default_factory=tuple)
@@ -488,6 +491,12 @@ class CompleteMaterialUnit:
         object.__setattr__(self, "polarity", _clean(self.polarity) or "neutral")
         object.__setattr__(self, "must_keep", bool(self.must_keep))
         object.__setattr__(self, "relation_type", relation)
+        object.__setattr__(self, "canonical_nucleus_ids", tuple(_dedupe(self.canonical_nucleus_ids)))
+        object.__setattr__(self, "canonical_relation_ids", tuple(_dedupe(self.canonical_relation_ids)))
+        source_evidence_span_ids = tuple(_dedupe(self.source_evidence_span_ids))
+        if not source_evidence_span_ids and self.evidence_span_id:
+            source_evidence_span_ids = (self.evidence_span_id,)
+        object.__setattr__(self, "source_evidence_span_ids", source_evidence_span_ids)
         object.__setattr__(self, "source_anchor", _json_safe_mapping(self.source_anchor))
         object.__setattr__(self, "quality_flags", tuple(_dedupe(self.quality_flags)))
         object.__setattr__(self, "rejection_reasons", tuple(_dedupe(self.rejection_reasons)))
@@ -558,6 +567,9 @@ class CompleteMaterialUnit:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             "raw_input_included": False,
         }
         seed.update(_observation_forward_meta(self.meta))
@@ -574,6 +586,9 @@ class CompleteMaterialUnit:
             "role": self.role,
             "polarity": self.polarity,
             "must_keep": self.must_keep,
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             "quality_flags": list(self.quality_flags),
         }
 
@@ -591,6 +606,9 @@ class CompleteMaterialUnit:
             "relation_type": self.relation_type,
             "canonical_relation_type": self.canonical_relation_type,
             "relation_family": self.relation_family,
+            "canonical_nucleus_ids": list(self.canonical_nucleus_ids),
+            "canonical_relation_ids": list(self.canonical_relation_ids),
+            "source_evidence_span_ids": list(self.source_evidence_span_ids),
             **_observation_forward_meta(self.meta),
             "source_anchor": dict(self.source_anchor),
             "quality_flags": list(self.quality_flags),
@@ -1121,6 +1139,9 @@ def _material_from_phrase_unit(unit: Any, *, index: int, evidence_by_id: Mapping
         polarity=polarity,
         must_keep=must_keep,
         relation_type=relation,
+        canonical_nucleus_ids=row.get("canonical_nucleus_ids") or row.get("nucleus_ids") or (),
+        canonical_relation_ids=row.get("canonical_relation_ids") or row.get("relation_ids") or (),
+        source_evidence_span_ids=row.get("source_evidence_span_ids") or ((evidence_span_id,) if evidence_span_id else ()),
         source_anchor=anchor,
         quality_flags=quality_flags,
         meta={**grammar_fields, "material_source": "phrase_unit", "must_keep_preserved": True},
@@ -1175,6 +1196,7 @@ def _materials_from_evidence_span(span: Any, *, start_index: int) -> tuple[list[
                 polarity=polarity,
                 must_keep=must_keep,
                 relation_type=relation,
+                source_evidence_span_ids=(span_id,) if span_id else (),
                 source_anchor=anchor,
                 quality_flags=quality_flags,
                 meta={**grammar_fields, "material_source": "evidence_span", "must_keep_preserved": True},
@@ -1254,6 +1276,9 @@ def build_complete_material_bundle(
                 polarity=item.polarity,
                 must_keep=item.must_keep,
                 relation_type=item.relation_type,
+                canonical_nucleus_ids=item.canonical_nucleus_ids,
+                canonical_relation_ids=item.canonical_relation_ids,
+                source_evidence_span_ids=item.source_evidence_span_ids,
                 source_anchor=item.source_anchor,
                 quality_flags=item.quality_flags,
                 rejection_reasons=item.rejection_reasons,

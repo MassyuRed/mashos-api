@@ -1,0 +1,156 @@
+{
+  "arbitrary_input_allowed": false,
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S03",
+    "I6-L03",
+    "I6-C01",
+    "I6-D02"
+  ],
+  "cases": [
+    {
+      "case_id": "A",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "exact_current_input": {
+        "category": [
+          "生活"
+        ],
+        "emotions": [
+          "悲しみ",
+          "不安"
+        ],
+        "memo": "なんか今日は全部だるい。\n何もしたくない。",
+        "memo_action": ""
+      },
+      "local_comment_sha256": "0244468fcb4a1c160d18431cf72dbc9498d0fed2da0ebcd9e76c0199726a7ac0"
+    },
+    {
+      "case_id": "B",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "exact_current_input": {
+        "category": [
+          "学習"
+        ],
+        "emotions": [
+          "自己理解"
+        ],
+        "memo": "今までは、人に対して何故？と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする。\n何故それを聞くの？とか聞く意味があるの？と考えてしまってうまくコミュニケーションが取れなくてもやもやしていたけど、物を見ることで人への興味が薄れた。\n私にとってはとても良い変化になった。\n\nそして学校、バイト、趣味で一人の時間が無くなったけど、人との話し方を思い出してきてる。やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった。\n少しずつだけど進歩してる。大丈夫。",
+        "memo_action": "創作をする時にリアルさを求めるなら日常に隠れている汚れや傷の意味を知れ。という授業があった。\n意味のない場所に傷や汚れは作れない、作ったとしても違和感になる。と、それから外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった。\n傷や汚れの場所、自分のこうかな？という憶測をメモしていった。"
+      },
+      "local_comment_sha256": "4f41995f8f69f1f183e6cd083bb55efedfda23b01f52ebc95270b5cb1469c040"
+    },
+    {
+      "case_id": "C",
+      "current_input_sha256": "ab0c44e4eb1c9dc3d2ce6eef4b77a38a1d3c59d9b291cffd6feaf23165b9dcbd",
+      "exact_current_input": {
+        "category": [
+          "健康"
+        ],
+        "emotions": [
+          "自己理解"
+        ],
+        "memo": "「いきなり大きく変わろう」とするよりも、\n「昨日の自分よりほんの少し前に進めたらいい」\nそういう気持ちで過ごしていきたい。\n\n人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう。\nでも、本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う。\n\n昨日より少し出来たことが増えた。\n昨日より少し勇気が出せた。\n昨日より少し気持ちを言葉に出来た。\n\nそういう小さな変化を大切にしていきたい",
+        "memo_action": ""
+      },
+      "local_comment_sha256": "782289ecd5a8ac5df1234d6f2f22f5096ccd5f587bbcdd336b6935d5d70b1be1"
+    },
+    {
+      "case_id": "D",
+      "current_input_sha256": "233f853d6f5f59fff3e1e4667b8b1c02c474785e285612605a9319acfe373dd3",
+      "exact_current_input": {
+        "category": [
+          "人生",
+          "価値観"
+        ],
+        "emotions": [
+          "悲しみ"
+        ],
+        "memo": "1番自分を傷つけてるのは私だ\nずっとそれを続けて、いい事なんて絶対にない",
+        "memo_action": ""
+      },
+      "local_comment_sha256": "db543cdf6f4a0ce3a7c103a9e887138e0477cb433590db6c3828ad9eefc26e82"
+    },
+    {
+      "case_id": "I6-S03",
+      "current_input_sha256": "d0b56eb75346e6654b04a6ace9fd91606eccf0b18e746055045110c0a9ee5a66",
+      "exact_current_input": {
+        "category": [
+          "日常"
+        ],
+        "emotions": [
+          "緊張"
+        ],
+        "memo": "胸の内側が苦しい感じ。",
+        "memo_action": ""
+      },
+      "local_comment_sha256": "ac8d767ef4cf15d4fe1f570857d8e6c80d96ef7862c80df7a9af6d37cfc82785"
+    },
+    {
+      "case_id": "I6-L03",
+      "current_input_sha256": "41b3dacaa242ee3d505ef4bd1540bb6ac8dba3cdb96acdba4313fc2d3bb5c516",
+      "exact_current_input": {
+        "category": [
+          "制作"
+        ],
+        "emotions": [
+          "好奇心"
+        ],
+        "memo": "陶器の釉薬が想定より淡く出た。失敗だと片づけそうになった。ただ光の当たり方では細かな模様が見えた。その特徴を残したいと思った。焼成条件はまだ不明だ。次の試作では温度だけ変えるつもりだ。",
+        "memo_action": "窯の温度と写真番号を作業帳へ記録した。"
+      },
+      "local_comment_sha256": "512aa7bdb6cce7a6aed1596df160ef248e030a9a5d0f290392aa70efa6b21137"
+    },
+    {
+      "case_id": "I6-C01",
+      "current_input_sha256": "0a68b63ee3e777a6c9e5d4a72b33f9f893c9a7e5d322723b2a9d03891e6a20d3",
+      "exact_current_input": {
+        "category": [
+          "業務"
+        ],
+        "emotions": [
+          "緊張"
+        ],
+        "memo": "周囲の処理速度を基準にすると、自分の手順が鈍く感じる。ただ誤入力は前回より減った。速さだけでなく確認の精度も見たい。",
+        "memo_action": "誤入力の件数を表に残した。"
+      },
+      "local_comment_sha256": "f32eecf84aad1b5096b3db7c268070490c991e3741a29890da2efa04a9349f25"
+    },
+    {
+      "case_id": "I6-D02",
+      "current_input_sha256": "01657747b4a8ee477203f6fc0140074a24e4a848f5176f34e400da2437dc03da",
+      "exact_current_input": {
+        "category": [
+          "自己評価"
+        ],
+        "emotions": [
+          "孤独"
+        ],
+        "memo": "自分には存在する価値がない。それでも、相談先の番号は消さずに残した。",
+        "memo_action": ""
+      },
+      "local_comment_sha256": "882deb385d80aa7ee5f6b59137036f090e9d56c8dee6a740525be45d9bf651b2"
+    }
+  ],
+  "instructions": [
+    "use_each_exact_current_input_without_editing",
+    "capture_visible_emlis_body",
+    "capture_modal_screenshot_local_only",
+    "record_required_body_free_meta",
+    "record_clipping_pressure_or_layout_breakage"
+  ],
+  "p5_formal_24_started_here": false,
+  "p8_started_here": false,
+  "packet_status": "ready_waiting_for_device_evidence",
+  "required_meta_fields": [
+    "generation_path",
+    "composer_source",
+    "semantic_quality_gate",
+    "public_reply_path_connected"
+  ],
+  "schema_version": "cocolon.emlis.gate0.exact8_device_packet.v2",
+  "screenshot_local_only": true,
+  "source_snapshot_fingerprint": "a4eeace949fe127a96551d9eaaaee58e5ae58b85365434af7eb3e5c2a0457d26"
+}

@@ -37,8 +37,10 @@ def test_response_composition_plan_detects_self_sacrifice_to_boundary_care_flow(
     arc = build_reply_narrative_arc(composition_plan=plan, meaning_blocks=blocks)
 
     assert plan is not None
-    assert plan.narrative_pattern == "old_strategy_limit_realization_new_boundary"
-    assert plan.ordered_line_roles[:3] == ["greeting", "opening_thesis", "old_strategy"]
+    assert plan.narrative_pattern == "opening_background_tension_realization_direction_presence"
+    assert plan.ordered_line_roles[:3] == ["greeting", "opening_thesis", "background"]
+    assert "old_strategy" not in plan.ordered_line_roles
     assert arc is not None
+    assert arc.arc_key == "generic_current_input_narrative"
     assert "我慢" in arc.opening_thesis
-    assert "抱え" in arc.opening_thesis
+    assert arc.grounding_required is True

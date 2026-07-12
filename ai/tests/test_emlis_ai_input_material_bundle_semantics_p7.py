@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""P7 tests for generic semantic material ids in the input bundle.
-
-P7 expands body-free material semantics used by limited-grounding reception.
-These tests intentionally avoid case-id routes and fixed surface text: H/I/J are
-fixtures for semantic coverage, not runtime branches.
-"""
+"""Compatibility tests after I2 withdraws bundle-owned semantic cue ids."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 import json
 
+import pytest
+
 from emlis_ai_input_material_bundle import (
     MATERIAL_QUALITY_ELIGIBLE,
     MATERIAL_QUALITY_LIMITED_GROUNDING,
+    SEMANTIC_MATERIAL_SOURCE,
+    SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED,
     assert_emlis_input_material_bundle_meta,
     build_emlis_input_material_bundle,
 )
@@ -32,7 +31,7 @@ _FORBIDDEN_RAW_MARKERS = (
     "小さな変化",
     "そばに",
 )
-_SEMANTIC_IDS = {
+_WITHDRAWN_SEMANTIC_IDS = {
     "recovered_energy",
     "future_intention",
     "relationship_wish",
@@ -40,6 +39,10 @@ _SEMANTIC_IDS = {
     "small_change_preservation",
     "value_preservation",
     "self_observation",
+    "self_understanding_learning",
+    "value_or_self_understanding_material",
+    "relationship_category_direction",
+    "relationship_material",
 }
 
 
@@ -125,85 +128,63 @@ def _j_current_input() -> dict[str, object]:
     }
 
 
-def test_p7_h_material_bundle_adds_recovery_future_value_self_semantics_without_raw_text() -> None:
-    bundle = build_emlis_input_material_bundle(_h_current_input())
-    meta = bundle.as_meta()
+@pytest.mark.parametrize(
+    ("current_input", "expected_quality"),
+    [
+        (_h_current_input(), MATERIAL_QUALITY_ELIGIBLE),
+        (_i_current_input(), MATERIAL_QUALITY_LIMITED_GROUNDING),
+        (_j_current_input(), MATERIAL_QUALITY_LIMITED_GROUNDING),
+    ],
+)
+def test_p7_text_semantics_are_not_manufactured_by_input_material_bundle(
+    current_input: dict[str, object], expected_quality: str
+) -> None:
+    meta = build_emlis_input_material_bundle(current_input).as_meta()
 
-    assert bundle.material_quality == MATERIAL_QUALITY_ELIGIBLE
-    assert {"recovered_energy", "future_intention", "value_preservation", "self_observation"}.issubset(
-        set(meta["relation_material_ids"])
-    )
+    assert meta["material_quality"] == expected_quality
+    assert meta["relation_material_ids"] == []
+    assert meta["generic_relation_material_ids"] == []
+    assert meta["semantic_material_source"] == SEMANTIC_MATERIAL_SOURCE
+    assert meta["semantic_relation_material_generation_disabled"] is SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED
+    assert meta["text_present_semantics_owned_by_canonical_plan"] is True
+    assert not (_WITHDRAWN_SEMANTIC_IDS & set(meta["relation_material_ids"]))
     assert meta["case_specific_route_used"] is False
     assert meta["fixed_fallback_used"] is False
     assert_emlis_input_material_bundle_meta(meta)
     _assert_body_free(meta)
 
 
-def test_p7_i_material_bundle_adds_recovery_relationship_future_semantics_without_case_route() -> None:
-    bundle = build_emlis_input_material_bundle(_i_current_input())
-    meta = bundle.as_meta()
-
-    assert bundle.material_quality == MATERIAL_QUALITY_LIMITED_GROUNDING
-    assert {"recovered_energy", "relationship_wish", "future_intention"}.issubset(
-        set(meta["relation_material_ids"])
-    )
-    assert meta["case_specific_route_used"] is False
-    assert meta["phase19_runtime_cue_used"] is False
-    assert_emlis_input_material_bundle_meta(meta)
-    _assert_body_free(meta)
-
-
-def test_p7_j_material_bundle_adds_comparison_small_change_value_semantics_without_raw_text() -> None:
-    bundle = build_emlis_input_material_bundle(_j_current_input())
-    meta = bundle.as_meta()
-
-    assert bundle.material_quality == MATERIAL_QUALITY_LIMITED_GROUNDING
-    assert {"comparison_baseline_shift", "small_change_preservation", "value_preservation"}.issubset(
-        set(meta["relation_material_ids"])
-    )
-    assert "self_understanding_learning" in meta["relation_material_ids"]
-    assert "value_or_self_understanding_material" in meta["relation_material_ids"]
-    assert meta["case_specific_route_used"] is False
-    assert_emlis_input_material_bundle_meta(meta)
-    _assert_body_free(meta)
-
-
-def test_p7_category_alone_does_not_create_new_semantic_material_ids() -> None:
-    bundle = build_emlis_input_material_bundle(
+def test_p7_category_alone_does_not_create_content_bearing_semantic_ids() -> None:
+    meta = build_emlis_input_material_bundle(
         {
             "memo": "",
             "memo_action": "",
             "emotion_details": [{"type": "平穏", "strength": "medium"}],
             "category": ["恋愛"],
         }
-    )
-    meta = bundle.as_meta()
+    ).as_meta()
 
-    assert "relationship_category_direction" in meta["relation_material_ids"]
-    assert "relationship_material" in meta["relation_material_ids"]
-    assert not (_SEMANTIC_IDS & set(meta["relation_material_ids"]))
+    assert meta["relation_material_ids"] == []
+    assert meta["semantic_material_source"] == SEMANTIC_MATERIAL_SOURCE
+    assert meta["semantic_relation_material_generation_disabled"] is True
+    assert not (_WITHDRAWN_SEMANTIC_IDS & set(meta["relation_material_ids"]))
     assert_emlis_input_material_bundle_meta(meta)
     _assert_body_free(meta)
 
 
-def test_p7_limited_reception_plan_can_use_bundle_semantics_without_raw_current_input() -> None:
-    bundle = build_emlis_input_material_bundle(_i_current_input())
-    meta = bundle.as_meta()
+def test_p7_legacy_limited_reception_receives_no_bundle_semantics_without_current_input() -> None:
+    meta = build_emlis_input_material_bundle(_i_current_input()).as_meta()
     plan = build_limited_grounding_reception_surface_plan(
         current_input=None,
         material_route=meta,
         surface_requirement={"material_quality_family": "limited_grounding"},
     )
 
-    assert {"recovered_energy", "relationship_wish", "future_intention"}.issubset(
-        set(plan["semantic_material_ids"])
-    )
+    assert plan["semantic_material_ids"] == []
     assert plan["reception_required"] is True
     assert plan["question_policy"]["question_required"] is False
     assert_limited_grounding_reception_surface_meta(plan)
     summary = limited_grounding_reception_surface_public_summary(plan)
-    assert {"recovered_energy", "relationship_wish", "future_intention"}.issubset(
-        set(summary["semantic_material_ids"])
-    )
+    assert summary["semantic_material_ids"] == []
     _assert_body_free(plan)
     _assert_body_free(summary)

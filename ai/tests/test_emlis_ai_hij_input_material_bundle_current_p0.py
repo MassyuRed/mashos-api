@@ -13,6 +13,8 @@ import json
 from emlis_ai_input_material_bundle import (
     MATERIAL_QUALITY_ELIGIBLE,
     MATERIAL_QUALITY_LIMITED_GROUNDING,
+    SEMANTIC_MATERIAL_SOURCE,
+    SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED,
     UNKNOWN_SLOT_CAUSE,
     UNKNOWN_SLOT_EVENT,
     VISIBLE_SLOT_ACTION,
@@ -149,8 +151,11 @@ def test_p0_j_input_is_limited_grounding_with_self_understanding_change_material
     )
     assert UNKNOWN_SLOT_EVENT in bundle.unknown_slots
     assert UNKNOWN_SLOT_CAUSE in bundle.unknown_slots
-    assert "self_understanding_learning" in meta["relation_material_ids"]
-    assert "value_or_self_understanding_material" in meta["relation_material_ids"]
+    assert meta["relation_material_ids"] == []
+    assert meta["generic_relation_material_ids"] == []
+    assert meta["semantic_material_source"] == SEMANTIC_MATERIAL_SOURCE
+    assert meta["semantic_relation_material_generation_disabled"] is SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED
+    assert meta["text_present_semantics_owned_by_canonical_plan"] is True
     assert meta["low_information_is_bundle_material_shortage"] is False
     assert meta["case_specific_route_used"] is False
     assert "昨日の自分" not in _encoded(meta)

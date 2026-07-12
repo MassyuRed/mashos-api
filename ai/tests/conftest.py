@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+pytest_plugins = ("helpers.emlis_ai_fb172_migration",)
+
 _AI_ROOT = Path(__file__).resolve().parents[1]
 _AI_INFERENCE_PATH = _AI_ROOT / "services" / "ai_inference"
 

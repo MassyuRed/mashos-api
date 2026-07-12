@@ -40,15 +40,13 @@ def test_long_clear_input_is_split_into_required_meaning_blocks():
     )
     roles = {block.role for block in blocks}
 
-    assert "state_awareness" in roles
-    assert "effort_history" in roles
-    assert "continuation_wish" in roles
-    assert "not_want_to_quit" in roles
-    assert "fatigue_or_limit" in roles
-    assert "collapse_anxiety" in roles
-    assert "dual_holding" in roles
-    assert "paced_progress" in roles
-    assert "self_understanding" in roles
+    assert {"state_awareness", "limit_or_exhaustion", "dual_holding", "self_view"} <= roles
+    assert {"wish_or_hope", "continuation_wish", "not_want_to_quit"} & roles
+    assert not ({"effort_history", "fatigue_or_limit", "collapse_anxiety", "self_understanding"} & roles)
+    assert [int(block.block_key.split(":")[1]) for block in blocks] == sorted(
+        int(block.block_key.split(":")[1]) for block in blocks
+    )
+    assert all(block.summary for block in blocks)
 
     plan = build_meaning_coverage_plan(current_input=current_input, meaning_blocks=blocks)
     assert plan.clear_long_input is True

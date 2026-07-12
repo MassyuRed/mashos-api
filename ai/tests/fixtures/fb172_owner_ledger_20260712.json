@@ -1,0 +1,3821 @@
+{
+  "schema_version": "cocolon.emlis.gate0.fb172.owner_ledger.bodyfree.v1",
+  "created_at_jst": "2026-07-12",
+  "baseline_source_snapshot_fingerprint": "88286e4499bcfa09d23d8db613f775a0890e2781cd22a2a7653badddaa50c340",
+  "baseline_source_snapshot_file_count": 1353,
+  "official_failure_ref_count": 172,
+  "official_failure_refs_sha256": "cbd93f86451eef88cf2a3b6a3a53afc618a6ffa21da028d4a77ff92d73a58a7c",
+  "record_count": 172,
+  "unclassified_count": 0,
+  "current_owner_missing_count": 0,
+  "unresolved_stop_count": 0,
+  "batch_counts": {
+    "B0": 2,
+    "B1": 35,
+    "B2": 85,
+    "B3": 11,
+    "B4": 19,
+    "B5": 7,
+    "B6": 9,
+    "B7": 4
+  },
+  "implemented_batches": [
+    "B0",
+    "B1",
+    "B2",
+    "B3",
+    "B4",
+    "B5",
+    "B6",
+    "B7"
+  ],
+  "pending_batches": [],
+  "records": [
+    {
+      "baseline_failure_ref": "ai/tests/contract/test_api_contract_registry.py::test_registry_routes_exist_in_fastapi_app",
+      "primary_classification": "ENVIRONMENT_OR_ORDER_VARIANCE",
+      "planned_repair_batch": "B0",
+      "current_owner_refs": [
+        "FastAPI.app",
+        "ai/tests/contract/test_api_contract_registry._clean_subprocess_route_map"
+      ],
+      "valid_protected_obligations": [
+        "registered_route_exists",
+        "response_model_present"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "CLOSED_CLEAN_SUBPROCESS",
+      "replacement_test_refs": [
+        "ai/tests/contract/test_api_contract_registry.py::test_registry_routes_exist_in_fastapi_app"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/contract/test_api_contract_registry.py::test_registry_routes_have_response_models",
+      "primary_classification": "ENVIRONMENT_OR_ORDER_VARIANCE",
+      "planned_repair_batch": "B0",
+      "current_owner_refs": [
+        "FastAPI.app",
+        "ai/tests/contract/test_api_contract_registry._clean_subprocess_route_map"
+      ],
+      "valid_protected_obligations": [
+        "registered_route_exists",
+        "response_model_present"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "CLOSED_CLEAN_SUBPROCESS",
+      "replacement_test_refs": [
+        "ai/tests/contract/test_api_contract_registry.py::test_registry_routes_have_response_models"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_cocolon_text_generation_core_emlis_observation_adapter.py::test_phase2_render_meta_completes_scope_marker_without_common_core_regression",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_cocolon_text_generation_core_phase14_final_boundary.py::test_phase14_public_payload_keys_and_visible_names_remain_in_source",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B7",
+      "current_owner_refs": [
+        "ai/tests/helpers/emlis_ai_grounded_observation_i0_inventory.evaluate_ground_observation_i0_negative_reachability",
+        "emlis_ai_product_quality_contract_freeze.RN_EMLIS_OBSERVATION_TITLE"
+      ],
+      "valid_protected_obligations": [
+        "production_reachability_truth",
+        "retired_route_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b7_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_cocolon_text_generation_core_step15_stabilization.py::test_phase0_step15_render_meta_keeps_common_core_passed_but_public_surface_fail_closed",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_e2e_contract.py::test_step11_runtime_meta_is_attached_without_breaking_passed_only_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step3_passes_entry_ap0_to_registry_before_resolution",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step3_entry_ap0_red_is_injected_but_registry_still_fails_closed",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step4_resolution_meta_is_fixed_for_resolved_complete_initial",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step4_resolution_meta_splits_rollout_from_ap0_registry_block",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step4_resolution_meta_splits_safety_before_composer",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step5_candidate_generation_path_keeps_existing_gates_fail_closed",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step5_ap0_red_does_not_run_complete_generate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step6_final_ap0_and_scorecard_connection_meta_is_visible",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_entry_route.py::test_step6_rollout_red_still_records_final_ap0_and_scorecard_event",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step7_integration.py::test_step7_integration_ap0_red_fails_closed_before_candidate_generation",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step7_integration.py::test_step7_integration_rollout_red_is_visible_and_fails_closed",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step7_integration.py::test_step7_integration_ap0_green_and_rollout_green_resolves_complete_client",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step7_integration.py::test_step7_integration_stale_fail_closed_expectation_uses_binding_contract_consistency",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step7_integration.py::test_step7_integration_gate_passed_public_comment_uses_existing_display_gate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_initial_step9_fixture_qa.py::test_step9_fixture_qa_run_is_attached_to_complete_initial_reply_meta",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_product_quality_connection_e2e.py::test_step6_product_quality_scorecard_is_attached_to_complete_initial_reply_meta",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_product_quality_positive_recovery_e2e.py::test_step6_positive_recovery_e2e_repairs_reader_relation_not_expressed_without_relaxing_gates",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "required_relation_direction",
+        "canonical_gate_not_relaxed",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": true,
+      "production_change_applied": true,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/test_emlis_ai_fb172_b6_current_owner.py::test_fb172_b6_positive_recovery_preserves_required_relation_direction",
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_product_quality_positive_recovery_e2e.py::test_step6_positive_recovery_e2e_keeps_fail_closed_when_relation_surface_is_still_missing",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_complete_release_ladder_connection_e2e.py::test_step7_release_ladder_is_attached_to_complete_initial_reply_meta",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_composer_client_registry.py::test_render_uses_default_limited_composer_when_feature_flag_enabled",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_composer_client_registry.py::test_render_keeps_default_composer_connection_fail_closed_when_feature_flag_disabled",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_d_source_unavailable_normal_observation_recovery.py::test_d_source_unavailable_input_locks_safe_eligible_material_and_limited_shallow_empty",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_d_source_unavailable_normal_observation_recovery.py::test_d_source_unavailable_normal_observation_recovers_via_complete_initial_surface_recomposition",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_d_source_unavailable_normal_observation_recovery.py::test_d_source_unavailable_recomposition_candidate_passes_existing_gate_path_without_relaxing_gates",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_diagnostic_summary_exists_for_feature_flag_unavailable",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_diagnostic_summary_exists_for_passed_candidate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_diagnostic_summary_exists_for_rejected_candidate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_diagnostic_summary_exists_for_safety_blocked",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step03_scope_diagnostic_records_eligible_scope",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step03_scope_diagnostic_records_out_of_scope_reason",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step03_diagnostic_summary_classifies_out_of_scope_scope_reason",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_marks_rollout_off_before_composer",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_marks_internal_rollout_block",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_records_allowed_pre_connection_stages[internal-diagnostic-internal-user-input_extra0-diagnostic-internal-user-internal]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_records_allowed_pre_connection_stages[tutorial-diagnostic-tutorial-user-input_extra1--tutorial]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_records_allowed_pre_connection_stages[limited_cases-diagnostic-limited-user-input_extra2--limited_case]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step02_diagnostic_summary_records_allowed_pre_connection_stages[all-diagnostic-all-user-input_extra3--all]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_b_plan_normal_connection_matrix[off-diagnostic-step06-off-user-input_extra0--False-blocked_rollout]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_b_plan_normal_connection_matrix[internal-diagnostic-step06-internal-user-input_extra1-diagnostic-step06-internal-user-True-default_composer_connected]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_b_plan_normal_connection_matrix[tutorial-diagnostic-step06-tutorial-user-input_extra2--True-default_composer_connected]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_b_plan_normal_connection_matrix[limited_cases-diagnostic-step06-limited-user-input_extra3--True-default_composer_connected]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_b_plan_normal_connection_matrix[all-diagnostic-step06-all-user-input_extra4--True-default_composer_connected]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step04_composer_diagnostic_records_generated_profile",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step04_diagnostic_summary_surfaces_composer_stop_reason",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step05_gate_diagnostic_records_reader_failure",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step05_gate_diagnostic_records_grounding_failure",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step05_gate_diagnostic_records_template_failure",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step05_gate_diagnostic_records_display_failure",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_limited_cases_scope_block_is_scope_not_rollout",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step06_default_composer_env_connects_normal_route",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step08_coverage_matrix_maps_composer_reason_to_group",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step08_coverage_matrix_uses_evidence_roles_for_fake_composer",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary.py::test_step10_safety_blocks_before_composer_even_with_explicit_client",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary_v2.py::test_step2_diagnostic_summary_extension_records_pre_connection_without_binding",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary_v2.py::test_step2_diagnostic_summary_extension_marks_missing_binding_for_generated_body",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_diagnostic_summary_v2.py::test_step2_diagnostic_summary_extension_uses_sanitized_sentence_bindings",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_display_contract.py::test_step10_e2e_passed_candidate_exposes_comment_text_only_after_display_gate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_display_contract.py::test_phase5_passed_candidate_keeps_public_meta_sanitized",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_display_contract.py::test_step10_e2e_rejected_candidate_recovers_without_exposing_generated_body",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_display_contract.py::test_step10_e2e_pre_connection_recovery_exposes_safe_surface_without_body_leak",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_environment_state_output_surface_contract_completion.py::test_phase2_current_profile_surface_candidate_receives_scope_marker_before_runtime_gate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_gate_recovery_low_information_recovery_p6.py::test_p6_reply_service_boundary_ignores_diagnostic_binding_when_candidate_is_rebuilt_public",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_hij_reception_required_regression_p8.py::test_p8_hij_submit_e2e_returns_reception_required_public_feedback[p8_H_recovered_energy_future_direction]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_hij_reception_required_regression_p8.py::test_p8_hij_submit_e2e_returns_reception_required_public_feedback[p8_I_limited_recovered_energy_relationship_wish]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_hij_reception_required_regression_p8.py::test_p8_hij_submit_e2e_returns_reception_required_public_feedback[p8_J_limited_comparison_baseline_small_change]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_limited_composer_extension_exit_gate.py::test_step11_e2e_exit_gate_ready_after_limited_composer_passed_fixture",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_limited_composer_extension_exit_gate.py::test_step11_e2e_unavailable_fixture_preserves_fail_closed_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_limited_composer_extension_steps_0_1.py::test_step0_baseline_and_step1_visibility_mark_feature_flag_stop",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_limited_composer_extension_steps_0_1.py::test_step1_visibility_separates_connected_composer_rejection",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_limited_composer_extension_steps_0_1.py::test_step1_visibility_separates_gate_rejection_after_connection",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_low_information_red_cases.py::test_low_information_inputs_should_eventually_return_passed_low_information_observation[\\u75b2\\u308c\\u305f]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_low_information_red_cases.py::test_low_information_inputs_should_eventually_return_passed_low_information_observation[\\u306a\\u3093\\u304b\\u7121\\u7406]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_low_information_red_cases.py::test_low_information_inputs_should_eventually_return_passed_low_information_observation[\\u3042\\u308c\\u304c\\u307e\\u305f\\u3053\\u3046\\u306a\\u3063\\u3066\\u3001\\u7d50\\u5c40\\u3060\\u3081\\u3060\\u3063\\u305f\\u3002\\u3082\\u3046\\u7121\\u7406\\u304b\\u3082\\u3057\\u308c\\u306a\\u3044\\u3002]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_low_information_specificity_policy_step6.py::test_step6_public_low_information_repair_keeps_specific_safe_anchor_question",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_multi_perspective_pipeline.py::test_phase8_reply_orchestrator_allows_comment_text_only_after_display_gate_passes",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_multi_perspective_pipeline.py::test_phase8_reply_orchestrator_keeps_empty_comment_when_composer_is_unavailable",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_observation_diagnostic_reply_meta.py::test_step3_reply_meta_exposes_candidate_gate_repair_for_lockdown_without_text",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p4_runtime_backfill_hij_future_direction_generic_surface_guard_20260624.py::test_p4_r4_generic_surface_guard_detects_eligible_future_direction_generic_surface_body_free",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p4_runtime_backfill_hij_future_direction_generic_surface_guard_20260624.py::test_p4_r4_generic_surface_guard_accepts_current_runtime_h_surface_body_free",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p4_runtime_backfill_hij_future_direction_surface_audit_20260624.py::test_p4_r0_red_ledger_tracks_h_future_direction_surface_specificity_repair_body_free",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p4_runtime_backfill_hij_future_direction_surface_audit_20260624.py::test_p4_r1_material_candidate_lineage_audit_keeps_material_presence_separate_from_surface_drop",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p4_runtime_backfill_hij_future_direction_surface_repair_20260624.py::test_p4_r2_r3_eligible_future_direction_focus_reaches_labelled_two_stage_surface_body_free",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B6",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "current_runtime_semantics",
+        "canonical_public_contract"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b6_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p5_p6_split_test_matrix_handoff_r9_20260612.py::test_r9_latest_files_are_present_and_reply_service_is_wired_to_handoff_lock",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p5_p6_split_test_matrix_handoff_r9_20260612.py::test_r9_reply_service_keeps_internal_handoff_lock_static_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p7_hold004_phase16_composer_classification_20260613.py::test_r1_phase16_classification_material_separates_paths_without_closing_hold",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p7_hold004_positive_public_shape_boundary_20260614.py::test_r4_emotion_submit_positive_change_public_path_returns_labelled_two_stage_not_self_denial",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p7_hold004_step5_candidate_gate_classification_20260614.py::test_r4b_runtime_repair_removes_display_binding_missing_without_silencing_public_recovery",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_p7_hold004_step5_r7_r8_target_subset_validation_20260614.py::test_r7_runtime_target_step5_meta_preserves_gates_and_public_assignment_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase18_complete_initial_candidate_path.py::test_phase18_3_complete_initial_generates_candidate_before_display_gate_without_public_body_leak",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase18_diagnostic_classification_taxonomy.py::test_phase18_7_legacy_text_composer_candidate_keeps_passed_diagnostic_summary",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase18_low_information_public_repair_boundary.py::test_phase18_4_public_low_information_repair_contract_is_attached_without_contract_change[\\u75b2\\u308c\\u305f-\\u75b2\\u308c\\u306e\\u91cd\\u3055]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase18_low_information_public_repair_boundary.py::test_phase18_4_public_low_information_repair_contract_is_attached_without_contract_change[\\u306a\\u3093\\u304b\\u7121\\u7406-\\u7121\\u7406\\u304b\\u3082\\u3057\\u308c\\u306a\\u3044\\u611f\\u3058]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase18_low_information_public_repair_boundary.py::test_phase18_4_public_low_information_repair_contract_is_attached_without_contract_change[\\u5927\\u4e08\\u592b\\u304b\\u3069\\u3046\\u304b\\u4e0d\\u5b89-\\u5927\\u4e08\\u592b\\u304b\\u3069\\u3046\\u304b]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase20_9_phase19_withdrawal.py::test_phase20_9_production_services_do_not_keep_phase19_c_d_dedicated_tokens",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B7",
+      "current_owner_refs": [
+        "ai/tests/helpers/emlis_ai_grounded_observation_i0_inventory.evaluate_ground_observation_i0_negative_reachability"
+      ],
+      "valid_protected_obligations": [
+        "production_reachability_truth",
+        "retired_route_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b7_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase7_staged_release.py::test_step10_reply_service_runtime_block_reason_only_blocks_rollout",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase7_staged_release.py::test_phase7_internal_stage_blocks_non_allowlisted_default_client",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase7_staged_release.py::test_phase7_internal_stage_allows_allowlisted_user",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase7_staged_release.py::test_phase7_tutorial_stage_allows_tutorial_case",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_phase8_real_input_quality.py::test_phase8_render_meta_marks_emlis_stop_point_before_piece_analysis",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_normal_observation_does_not_promote_gate_recovery_surface",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_low_information_post_final_recovery_uses_p6_low_information_composer",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_normal_observation_post_final_recovery_uses_normal_rebuild_candidate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_limited_grounding_uses_p6_low_information_composer_not_material_surface",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_self_denial_prefers_safe_state_answer_over_generic_post_final_recovery",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_post_final_gate_recovery_phase20_13.py::test_phase20_13_safety_emergency_does_not_run_post_final_recovery_or_become_observation",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_product_readfeel_p4_r11_targeted_tests_20260624.py::test_r11_9_targeted_test_manifest_lists_current_r11_target_files",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B7",
+      "current_owner_refs": [
+        "ai/tests/helpers/emlis_ai_grounded_observation_i0_inventory.GROUND_OBSERVATION_I0_NEGATIVE_REACHABILITY_BOUNDARIES"
+      ],
+      "valid_protected_obligations": [
+        "production_reachability_truth",
+        "retired_route_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b7_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reception_assistance_dictionary.py::test_phase3_dictionary_covers_phase1_fixture_signal_ids_from_shared_evidence[self_blame_to_gentle_self_observation-expected_hints3]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_expected_relation_types.py::test_expected_relation_types_for_reader_uses_binding_sources_and_filters_edge_ids",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_expected_relation_types.py::test_expected_relation_types_for_reader_does_not_treat_edge_ids_as_relation_types",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_expected_relation_types.py::test_reply_reader_judge_receives_expected_relation_types",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_expected_relation_types.py::test_reply_reader_judge_falls_back_for_legacy_one_argument_test_doubles",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py::test_p4_reply_service_blocks_pre_public_gate_recovery_material_surface_adoption",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py::test_p4_reply_service_blocks_post_final_gate_recovery_material_surface_adoption",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py::test_p4_reply_service_decision_uses_surface_binding_meta_when_candidate_meta_is_missing",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py::test_p4_reply_service_allows_rebuilt_public_observation_candidate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_gate_recovery_public_boundary_p4.py::test_p4_runtime_does_not_adopt_leaky_pre_public_recovery_result",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_normal_observation_rebuild_p6.py::test_p6_reply_service_post_final_boundary_classifies_adopted_normal_rebuild_candidate",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_normal_observation_rebuild_p6.py::test_p6_phase20_13_post_final_meta_carries_normal_rebuild_origin_without_body",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_normal_observation_rebuild_p6.py::test_p6_step7_summary_marks_post_final_normal_rebuild_as_repair_success",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_reply_service_normal_observation_rebuild_p6.py::test_p6_post_final_recovery_guard_prevents_second_attempt",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_runtime_surface_pre_return_gate_step2.py::test_step2_reply_service_candidate_report_builder_sets_shallow_context_meta_only",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_scoped_grounding.py::test_render_records_scoped_grounding_when_default_limited_composer_enabled",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_scoped_grounding.py::test_step07_default_route_keeps_scoped_grounding_and_passed_only_comment",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_scorecard_harness.py::test_step9_scorecard_harness_is_attached_to_reply_meta",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_state_answer_visible_surface_qa.py::test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate[anxiety_standard]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_state_answer_visible_surface_qa.py::test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate[exhaustion_balanced]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_state_answer_visible_surface_qa.py::test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate[ambivalence_standard]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_state_answer_visible_surface_qa.py::test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate[joy_or_relief_standard]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_state_answer_visible_surface_qa.py::test_phase16_required_two_stage_generated_surfaces_do_not_bypass_label_gate[structure_question_observation_thickened]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_step16_rollout_metrics.py::test_step16_rollout_metrics_are_added_to_render_meta_for_limited_cases",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_step16_rollout_metrics.py::test_step16_rollout_metrics_classify_not_attempted_before_composer",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_step18_ap0_migration_decision.py::test_step18_runtime_meta_is_attached_without_changing_user_visible_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_step19_a_plan_equivalent_composer.py::test_step19_runtime_meta_is_attached_after_step18_without_breaking_passed_only",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_step20_long_term_quality.py::test_step20_runtime_meta_is_attached_as_qa_only_without_breaking_display_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_limited_surface_r7_20260612.py::test_r7_reply_service_imports_and_calls_limited_surface_boundary",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_limited_surface_r7_20260612.py::test_r7_actual_reply_keeps_runtime_meta_body_free_and_structure_question_limited",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_no_connect_regression_r8_20260612.py::test_r8_reply_service_and_public_meta_keep_no_connect_regression_markers",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_no_connect_regression_r8_20260612.py::test_r8_actual_reply_runtime_blocks_no_connect_family_visible_surface[daily-positive-current_input0-daily_positive]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_no_connect_regression_r8_20260612.py::test_r8_actual_reply_runtime_blocks_no_connect_family_visible_surface[target-judgement-current_input1-target_judgement]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_runtime_bridge_20260612.py::test_p6_runtime_bridge_reply_service_imports_p6_chain_builders",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_runtime_bridge_20260612.py::test_p6_runtime_bridge_reply_service_has_body_free_runtime_summary_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_runtime_bridge_20260612.py::test_p6_runtime_bridge_enforces_p5_handoff_no_connect_family_and_single_seed_boundaries",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_structure_insight_p6_runtime_bridge_20260612.py::test_p6_runtime_bridge_actual_reply_exposes_body_free_runtime_summary_after_p5_handoff",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_two_stage_required_gate_connection.py::test_phase16_1_reply_service_visible_gate_builder_carries_candidate_composer_meta",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_e2e_contract.py::test_user_label_connection_phase1_source_bundle_and_reply_service_connection_points_are_present",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B7",
+      "current_owner_refs": [
+        "ai/tests/helpers/emlis_ai_grounded_observation_i0_inventory.evaluate_ground_observation_i0_negative_reachability",
+        "emlis_ai_reply_service.render_emlis_ai_reply"
+      ],
+      "valid_protected_obligations": [
+        "production_reachability_truth",
+        "retired_route_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b7_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_body_free_public_meta_boundary_r4_20260612.py::test_r4_actual_reply_runtime_summary_keeps_human_qa_pending_and_public_contract_static",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_public_meta_human_qa_boundary_r4_20260612.py::test_r4_static_contract_tokens_are_present_without_removing_r3_boundary",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_public_meta_human_qa_boundary_r4_20260612.py::test_r4_actual_reply_separates_runtime_evaluated_from_human_qa_completion",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_runtime_bridge_20260612.py::test_p5_runtime_bridge_reply_service_imports_p5_chain_builders",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_runtime_bridge_20260612.py::test_p5_runtime_bridge_reply_service_has_body_free_step_summary_contract",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_runtime_bridge_20260612.py::test_p5_visible_connection_r3_keeps_phase8_connector_inside_p5_6_boundary_only",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_runtime_bridge_20260612.py::test_p5_runtime_bridge_actual_reply_exposes_body_free_runtime_summary",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_user_label_connection_p5_visible_connection_r3_boundary_20260612.py::test_r3_reply_service_calls_p5_6_boundary_not_old_phase8_visible_connector_directly",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B4",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply.p5_p6_overlay"
+      ],
+      "valid_protected_obligations": [
+        "p5_human_qa_pending",
+        "p6_dependency_hold",
+        "overlay_not_applied"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b4_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emlis_ai_visible_surface_acceptance_reply_path_step4.py::test_step4_reply_service_visible_surface_report_builder_is_meta_only",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase18_product_quality_e2e.py::test_phase18_9_emotion_submit_low_information_cases_return_public_feedback_without_contract_change[\\u75b2\\u308c\\u305f-emotions0-\\u75b2\\u308c\\u306e\\u91cd\\u3055]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase18_product_quality_e2e.py::test_phase18_9_emotion_submit_low_information_cases_return_public_feedback_without_contract_change[\\u306a\\u3093\\u304b\\u7121\\u7406-emotions1-\\u7121\\u7406\\u304b\\u3082\\u3057\\u308c\\u306a\\u3044\\u611f\\u3058]",
+      "primary_classification": "EXACT_SURFACE_EXPECTATION",
+      "planned_repair_batch": "B3",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan"
+      ],
+      "valid_protected_obligations": [
+        "bounded_observation",
+        "source_lexeme_retention",
+        "question_policy_false"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b3_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase18_product_quality_e2e.py::test_phase18_9_emotion_submit_low_information_cases_return_public_feedback_without_contract_change[\\u5927\\u4e08\\u592b\\u304b\\u3069\\u3046\\u304b\\u4e0d\\u5b89-emotions2-\\u5927\\u4e08\\u592b\\u304b\\u3069\\u3046\\u304b]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B2",
+      "current_owner_refs": [
+        "emlis_ai_reply_service.render_emlis_ai_reply",
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta"
+      ],
+      "valid_protected_obligations": [
+        "truthful_current_meta",
+        "public_meta_body_free",
+        "legacy_internal_meta_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b2_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase19_real_device_abcd_public_feedback_e2e.py::test_phase19_0_emotion_submit_real_device_abcd_public_feedback_contract[phase19_real_device_B_safety_boundary_self_harm_adjacent]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase19_real_device_abcd_public_feedback_e2e.py::test_phase19_0_emotion_submit_real_device_abcd_public_feedback_contract[phase19_real_device_C_generic_self_understanding_regression]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_phase19_real_device_abcd_public_feedback_e2e.py::test_phase19_0_emotion_submit_real_device_abcd_public_feedback_contract[phase19_real_device_D_generic_relationship_boundary_regression]",
+      "primary_classification": "CURRENT_CONTRACT_REGRESSION",
+      "planned_repair_batch": "B5",
+      "current_owner_refs": [
+        "emlis_ai_public_feedback_meta.build_public_emlis_input_feedback_meta",
+        "emotion_submit_service"
+      ],
+      "valid_protected_obligations": [
+        "passed_only_visibility",
+        "public_meta_body_free",
+        "safety_boundary"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b5_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase16_8_emotion_submit_path_returns_public_two_stage_input_feedback",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase17_8_emotion_submit_five_fixtures_return_public_two_stage_input_feedback[daily_unpleasant_encounter_A]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase17_8_emotion_submit_five_fixtures_return_public_two_stage_input_feedback[self_confidence_uncertainty_B]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase17_8_emotion_submit_five_fixtures_return_public_two_stage_input_feedback[positive_change_after_work_streaming]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase17_8_emotion_submit_five_fixtures_return_public_two_stage_input_feedback[self_blame_to_gentle_self_observation]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    },
+    {
+      "baseline_failure_ref": "ai/tests/test_emotion_submit_two_stage_reception_e2e.py::test_phase17_8_emotion_submit_five_fixtures_return_public_two_stage_input_feedback[independence_life_health_money_pace]",
+      "primary_classification": "STALE_OWNER_EXPECTATION",
+      "planned_repair_batch": "B1",
+      "current_owner_refs": [
+        "emlis_ai_grounded_observation_plan.build_grounded_observation_plan",
+        "emlis_ai_grounded_sentence_surface.build_grounded_sentence_plan",
+        "emlis_ai_grounded_observation_gate.evaluate_grounded_observation_gate"
+      ],
+      "valid_protected_obligations": [
+        "canonical_grounded_path",
+        "required_relation_binding",
+        "old_private_owner_absent"
+      ],
+      "production_change_allowed": false,
+      "closure_state": "MIGRATED_CURRENT_OWNER",
+      "replacement_test_refs": [
+        "ai/tests/helpers/emlis_ai_fb172_migration.py::_assert_b1_current_owner"
+      ],
+      "old_owner_restored": false,
+      "skip_or_xfail_used": false,
+      "exact_body_assert_added": false
+    }
+  ]
+}

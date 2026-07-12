@@ -1,89 +1,99 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Step 8 guards for complete-initial recomposition existing-gate passage.
+"""Historical file name retained for lineage.
 
-A recomposition candidate may be generated after limited source-unavailable,
-but it must only be adopted after the existing reader / grounding / template /
-runtime surface / visible surface / display gates pass.  These tests keep that
-boundary body-free and fail-closed without relaxing any gate.
+Current assertion owner is canonical Grounded Plan / Surface / Gate; this is
+not a resurrection of the former recomposition route.
 """
 
-from types import SimpleNamespace
+import asyncio
+from dataclasses import replace
+import inspect
+import json
 
-from emlis_ai_reply_service import _reply_service_recomposition_existing_gate_chain_summary
+from helpers.emlis_ai_grounded_observation_i0_inventory import (
+    GROUND_OBSERVATION_I0_KNOWN_REGRESSION_CASES,
+)
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_evidence_ledger_service import (
+    build_evidence_ledger,
+    build_evidence_span_resolver,
+)
+from emlis_ai_grounded_observation_gate import evaluate_grounded_observation_gate
+from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
+from emlis_ai_grounded_sentence_surface import (
+    build_grounded_sentence_plan,
+    realize_grounded_sentence_plan,
+)
+import emlis_ai_reply_service as reply_service
 
 
-def _gate(passed: bool, *reasons: str) -> SimpleNamespace:
-    return SimpleNamespace(passed=passed, rejection_reasons=list(reasons))
+def _canonical_artifacts():
+    case = next(
+        item for item in GROUND_OBSERVATION_I0_KNOWN_REGRESSION_CASES
+        if item.case_id == "C"
+    )
+    current_input = normalize_emlis_current_input(case.as_current_input())
+    spans = tuple(build_evidence_ledger(current_input))
+    resolver = build_evidence_span_resolver(spans, current_input=current_input)
+    plan = build_grounded_observation_plan(current_input, evidence_spans=spans)
+    sentence_plan = build_grounded_sentence_plan(plan, resolver)
+    surface = realize_grounded_sentence_plan(sentence_plan, plan, resolver)
+    return case, resolver, plan, sentence_plan, surface
 
 
-def test_p8_existing_gate_chain_marks_candidate_adopted_only_after_all_gates_pass() -> None:
-    summary = _reply_service_recomposition_existing_gate_chain_summary(
-        reader_report=_gate(True),
-        grounding_report=_gate(True),
-        template_echo_report=_gate(True),
-        runtime_surface_pre_return_gate_report={"passed": True, "rejection_reasons": []},
-        visible_surface_acceptance_gate_report={"passed": True, "rejection_reasons": []},
-        display_decision=SimpleNamespace(observation_status="passed", rejection_reasons=[]),
-        adopted=True,
+def test_p8_canonical_grounded_artifact_is_the_only_public_candidate() -> None:
+    case, resolver, plan, sentence_plan, surface = _canonical_artifacts()
+    gate = evaluate_grounded_observation_gate(
+        plan=plan,
+        sentence_plan=sentence_plan,
+        surface_result=surface,
+        resolver=resolver,
+    )
+    reply = asyncio.run(
+        reply_service.render_emlis_ai_reply(
+            user_id="p8-canonical-existing-gate-chain",
+            subscription_tier="free",
+            current_input=case.as_current_input(),
+        )
     )
 
-    assert summary["source_phase"] == "PublicObservationRecovery_P8_ReplyServiceExistingGateChain"
-    assert summary["reader_gate_evaluated"] is True
-    assert summary["reader_gate_passed"] is True
-    assert summary["grounding_gate_evaluated"] is True
-    assert summary["grounding_gate_passed"] is True
-    assert summary["template_gate_evaluated"] is True
-    assert summary["template_gate_passed"] is True
-    assert summary["runtime_surface_pre_return_gate_evaluated"] is True
-    assert summary["runtime_surface_pre_return_gate_passed"] is True
-    assert summary["visible_surface_acceptance_gate_evaluated"] is True
-    assert summary["visible_surface_acceptance_gate_passed"] is True
-    assert summary["display_gate_evaluated"] is True
-    assert summary["display_gate_passed"] is True
-    assert summary["passed_by_all_existing_gates"] is True
-    assert summary["candidate_adopted_after_existing_gates"] is True
-    assert summary["fail_closed_when_gate_failed"] is False
-    assert summary["display_gate_relaxed"] is False
-    assert summary["grounding_gate_relaxed"] is False
-    assert summary["template_gate_relaxed"] is False
-    assert summary["reader_gate_relaxed"] is False
-    assert summary["runtime_surface_gate_relaxed"] is False
-    assert summary["visible_surface_gate_relaxed"] is False
-    assert summary["raw_input_included"] is False
-    assert summary["comment_text_body_included"] is False
-    assert summary["candidate_body_in_meta"] is False
+    assert gate.passed is True
+    assert gate.semantic_quality_gate == "passed"
+    assert reply.comment_text == surface.text
+    assert reply.meta["generation_path"] == gate.generation_path
+    assert reply.meta["composer_source"] == "grounded_plan_realizer"
+    assert reply.meta["grounded_observation"]["public_reply_path_connected"] is True
+    assert reply.comment_text not in json.dumps(reply.meta, ensure_ascii=False)
 
 
-def test_p8_existing_gate_chain_fails_closed_when_any_existing_gate_fails_even_with_adoption_intent() -> None:
-    summary = _reply_service_recomposition_existing_gate_chain_summary(
-        reader_report=_gate(True),
-        grounding_report=_gate(True),
-        template_echo_report=_gate(True),
-        runtime_surface_pre_return_gate_report={"passed": True, "rejection_reasons": []},
-        visible_surface_acceptance_gate_report={
-            "passed": False,
-            "rejection_reasons": ["visible_surface_acceptance_gate_failed"],
-        },
-        display_decision=SimpleNamespace(
-            observation_status="unavailable",
-            rejection_reasons=["display_gate_failed"],
-        ),
-        adopted=True,
+def test_p8_grounded_gate_failure_cannot_be_adopted_or_relaxed() -> None:
+    _case, resolver, plan, sentence_plan, surface = _canonical_artifacts()
+    rejected_surface = replace(surface, completed_semantic_template_used=True)
+    gate = evaluate_grounded_observation_gate(
+        plan=plan,
+        sentence_plan=sentence_plan,
+        surface_result=rejected_surface,
+        resolver=resolver,
     )
 
-    assert summary["visible_surface_acceptance_gate_evaluated"] is True
-    assert summary["visible_surface_acceptance_gate_passed"] is False
-    assert summary["display_gate_evaluated"] is True
-    assert summary["display_gate_passed"] is False
-    assert summary["passed_by_all_existing_gates"] is False
-    assert summary["candidate_adopted_after_existing_gates"] is False
-    assert summary["fail_closed_when_gate_failed"] is True
-    assert "visible_surface_acceptance_gate_failed" in summary["blocked_reasons"]
-    assert "display_gate_failed" in summary["blocked_reasons"]
-    assert summary["display_gate_relaxed"] is False
-    assert summary["grounding_gate_relaxed"] is False
-    assert summary["raw_input_included"] is False
-    assert summary["comment_text_body_included"] is False
-    assert summary["candidate_body_in_meta"] is False
+    assert gate.passed is False
+    assert gate.semantic_quality_gate == "failed"
+    assert gate.anti_template_gate == "failed"
+    assert "grounded_anti_template_failed" in gate.rejection_reasons
+    meta = gate.as_body_free_meta()
+    assert meta["public_observation_status"] == "rejected"
+    assert meta["raw_input_included"] is False
+    assert meta["comment_text_included"] is False
+    assert rejected_surface.text not in json.dumps(meta, ensure_ascii=False)
+
+
+def test_p8_legacy_recomposition_adoption_owner_remains_absent() -> None:
+    source = inspect.getsource(reply_service)
+
+    assert reply_service.__all__ == ["render_emlis_ai_reply"]
+    assert "_reply_service_recomposition_existing_gate_chain_summary" not in source
+    assert "_regeneration_reasons_for_retry" not in source
+    assert "candidate_adopted_after_existing_gates" not in source
+    assert "legacy candidate adoption" not in source

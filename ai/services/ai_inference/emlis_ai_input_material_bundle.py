@@ -161,78 +161,8 @@ _CHANGE_RE: Final = re.compile(r"(変わ|変化|進歩|大丈夫|できるよう
 _TIME_RE: Final = re.compile(r"(今日|昨日|明日|最近|今|さっき|いつも|また|前|後|日常|朝|夜|週|月)")
 _VALUE_RE: Final = re.compile(r"(感謝|ありがた|優し|優しく|大事|大切|勇気|価値|返していきたい|守りたい|区切り)")
 _TARGET_RE: Final = re.compile(r"(対象|疑問|人|物|仕事|学校|体調|お金|生活|恋愛|価値観|学習|家族|関係|日常|メモ)")
-_GENERIC_RELATION_MATERIAL_PATTERNS: Final = {
-    "relationship_end": ("別れ", "別れた", "関係の終わり", "終わり"),
-    "support_from_other": ("友達", "友人", "優しく", "優しさ", "怒ってくれて", "私のために怒って"),
-    "gratitude_or_return_intent": ("感謝", "返していきたい", "別の形で", "ありがた"),
-    "self_understanding_learning": ("疑問", "対象", "人について", "人への興味", "人との話し方", "メモ", "進歩", "勇気"),
-    "boundary_or_transition": ("区切り", "大丈夫", "変わ", "行動", "日常", "傷", "汚れ"),
-}
-_SEMANTIC_MATERIAL_PATTERNS: Final = {
-    # P7: these are general, text-grounded material ids for limited reception.
-    # They are not H/I/J case routes and are not generated surface text.
-    "recovered_energy": (
-        "気力",
-        "やる気力",
-        "やってみたい",
-        "出来るかもしれない",
-        "できるかもしれない",
-        "挑戦",
-        "頑張",
-    ),
-    "future_intention": (
-        "このタイミング",
-        "逃したくない",
-        "逃したら",
-        "次どう頑張",
-        "つぎどう頑張",
-        "していきたい",
-        "出会えたら",
-        "過ごしていきたい",
-        "知って行きたい",
-        "知っていきたい",
-    ),
-    "relationship_wish": (
-        "そばに",
-        "側に",
-        "居てくれる",
-        "いてくれる",
-        "恋愛",
-        "出会え",
-        "素敵な人",
-        "存在",
-        "甘え",
-    ),
-    "comparison_baseline_shift": (
-        "昨日の自分",
-        "人と比べ",
-        "比べる相手",
-        "他の誰か",
-    ),
-    "small_change_preservation": (
-        "小さな変化",
-        "少し出来",
-        "少しでき",
-        "少し勇気",
-        "少し気持ちを言葉",
-        "言葉に出来",
-        "言葉にでき",
-        "少し前に進",
-        "ほんの少し前",
-    ),
-    "value_preservation": (
-        "大事",
-        "大切",
-    ),
-    "self_observation": (
-        "なぜ",
-        "なんで",
-        "どうして",
-        "自分について",
-        "思ったんだろう",
-        "基準",
-    ),
-}
+SEMANTIC_MATERIAL_SOURCE: Final = "canonical_grounded_observation_plan"
+SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED: Final = True
 
 
 def _clean(value: Any) -> str:
@@ -313,33 +243,14 @@ def _source_field_ids(bundle: EmlisCurrentInputBundle) -> tuple[str, ...]:
 
 
 def _generic_relation_material_ids(text: str, categories: Sequence[str]) -> tuple[str, ...]:
-    text_value = _clean(text)
-    category_value = " ".join(_clean(category) for category in categories)
-    haystack = "\n".join([text_value, category_value])
-    ids: list[str] = []
-    for material_id, patterns in _GENERIC_RELATION_MATERIAL_PATTERNS.items():
-        if any(pattern in haystack for pattern in patterns):
-            ids.append(material_id)
-    # P7 semantic material ids must be grounded in the user's written text.
-    # Category labels alone can show topic direction, but they must not create
-    # recovery/wish/comparison semantics by themselves.
-    if text_value:
-        for material_id, patterns in _SEMANTIC_MATERIAL_PATTERNS.items():
-            if any(pattern in text_value for pattern in patterns):
-                ids.append(material_id)
-    if any(category in {"人間関係", "恋愛", "家族"} for category in categories):
-        ids.append("relationship_category_direction")
-    # Phase20-3 uses generic material ids rather than Phase19 case cue ids.
-    # These compatibility aliases are intentionally broad relation materials,
-    # not reception modes and not completed surface selections.
-    if any(item in ids for item in ("relationship_end", "relationship_category_direction")):
-        ids.append("relationship_material")
-    if "support_from_other" in ids:
-        ids.append("support_received_material")
-    if "self_understanding_learning" in ids:
-        ids.append("value_or_self_understanding_material")
-    return _dedupe(ids)
+    """Compatibility field: semantic ids are now owned by the canonical plan.
 
+    Phase20 callers still receive the existing field shape, but text/category
+    vocabulary can no longer manufacture content-bearing semantic ids here.
+    """
+
+    del text, categories
+    return ()
 def _visible_material_slots(bundle: EmlisCurrentInputBundle) -> tuple[str, ...]:
     text = _joined_text(bundle)
     categories = _category_labels(bundle)
@@ -546,6 +457,9 @@ class EmlisInputMaterialBundle:
             "generic_relation_material_ids": list(self.generic_relation_material_ids),
             "generic_relation_material_count": len(self.generic_relation_material_ids),
             "relation_material_ids": list(self.generic_relation_material_ids),
+            "semantic_material_source": SEMANTIC_MATERIAL_SOURCE,
+            "semantic_relation_material_generation_disabled": SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED,
+            "text_present_semantics_owned_by_canonical_plan": True,
             "low_information_is_bundle_material_shortage": self.material_quality == MATERIAL_QUALITY_LOW_INFORMATION,
             "short_text_alone_decides_low_information": False,
             "low_information_is_length_only": False,
@@ -674,6 +588,8 @@ __all__ = [
     "MATERIAL_QUALITY_LIMITED_GROUNDING",
     "MATERIAL_QUALITY_LOW_INFORMATION",
     "MATERIAL_QUALITY_SAFETY_TRIAGE_REQUIRED",
+    "SEMANTIC_MATERIAL_SOURCE",
+    "SEMANTIC_RELATION_MATERIAL_GENERATION_DISABLED",
     "EmlisInputMaterialBundle",
     "VISIBLE_SLOT_EVENT",
     "VISIBLE_SLOT_TARGET",

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +17,21 @@ from emlis_ai_bounded_repair_reroute import (
     assert_bounded_repair_reroute_meta_only,
     decide_bounded_repair_reroute,
 )
-from emlis_ai_reply_service import _regeneration_reasons_for_retry
+from helpers.emlis_ai_grounded_observation_i0_inventory import (
+    GROUND_OBSERVATION_I0_KNOWN_REGRESSION_CASES,
+)
+from emlis_ai_current_input_bundle import normalize_emlis_current_input
+from emlis_ai_evidence_ledger_service import (
+    build_evidence_ledger,
+    build_evidence_span_resolver,
+)
+from emlis_ai_grounded_observation_gate import GROUND_OBSERVATION_REPLY_GENERATION_PATH
+from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
+from emlis_ai_grounded_sentence_surface import (
+    GROUND_RECOVERY_STAGES,
+    build_plan_preserving_recovery_sequence,
+)
+from emlis_ai_reply_service import render_emlis_ai_reply
 from emlis_ai_runtime_surface_pre_return_gate import build_runtime_surface_pre_return_gate_report
 from emlis_ai_visible_surface_acceptance_gate import (
     ACTION_RERENDER_SURFACE as VISIBLE_ACTION_RERENDER_SURFACE,
@@ -28,6 +44,32 @@ from fixtures.emlis_ai_runtime_surface_red_fixtures import RUNTIME_SURFACE_BASEL
 
 class DummyLimitedComposerClient:
     pass
+
+
+def _canonical_case_a():
+    return next(
+        case for case in GROUND_OBSERVATION_I0_KNOWN_REGRESSION_CASES
+        if case.case_id == "A"
+    )
+
+
+def _canonical_recovery_sequence():
+    current_input = normalize_emlis_current_input(_canonical_case_a().as_current_input())
+    spans = tuple(build_evidence_ledger(current_input))
+    resolver = build_evidence_span_resolver(spans, current_input=current_input)
+    plan = build_grounded_observation_plan(current_input, evidence_spans=spans)
+    return build_plan_preserving_recovery_sequence(plan, resolver)
+
+
+def _render_with(composer_client):
+    return asyncio.run(
+        render_emlis_ai_reply(
+            user_id="step7-canonical-recovery-owner",
+            subscription_tier="free",
+            current_input=_canonical_case_a().as_current_input(),
+            composer_client=composer_client,
+        )
+    )
 
 
 def _decision_from_report(report: dict[str, object], *extra_reasons: str) -> DisplayDecision:
@@ -167,22 +209,15 @@ def test_step7_passed_or_no_runtime_gate_is_no_repair() -> None:
     assert decision.repair_reasons == ("already_passed",)
 
 
-def test_step7_limited_composer_consumes_only_surface_rerender_reason_for_retry() -> None:
-    retry_reasons = _regeneration_reasons_for_retry(
-        [
-            "phase_not_complete",
-            "runtime_surface_pre_return_gate_failed",
-            "runtime_surface_pre_return_gate_action_rerender_shallow_v2",
-            "surface_template_major",
-        ],
-        DummyLimitedComposerClient(),
-    )
+def test_step7_canonical_recovery_sequence_preserves_one_grounded_plan() -> None:
+    sequence = _canonical_recovery_sequence()
 
-    assert "phase_not_complete" not in retry_reasons
-    assert "runtime_surface_pre_return_gate_failed" not in retry_reasons
-    assert retry_reasons == [
-        "runtime_surface_pre_return_gate_action_rerender_shallow_v2",
-    ]
+    assert tuple(item.recovery_stage for item in sequence) == GROUND_RECOVERY_STAGES
+    assert all(item.required_coverage_preserved for item in sequence)
+    assert all(item.required_nucleus_ids == sequence[0].required_nucleus_ids for item in sequence)
+    assert all(item.required_relation_ids == sequence[0].required_relation_ids for item in sequence)
+    assert all(not item.unresolved_evidence_span_ids for item in sequence)
+    assert all(item.synthetic_evidence_id_used is False for item in sequence)
 
 
 def test_step7_meta_contract_rejects_text_payload_or_gate_relaxation() -> None:
@@ -300,17 +335,16 @@ def test_step6_visible_surface_rerender_attempt_limit_remains_one_and_second_fai
     assert_bounded_repair_reroute_meta_only(meta)
 
 
-def test_step6_limited_composer_consumes_visible_surface_rerender_reason_for_retry() -> None:
-    retry_reasons = _regeneration_reasons_for_retry(
-        [
-            "phase_not_complete",
-            "visible_surface_acceptance_gate_failed",
-            "visible_surface_acceptance_gate_action_rerender_surface",
-            "surface_relation_skeleton_major",
-        ],
-        DummyLimitedComposerClient(),
-    )
+def test_step7_limited_composer_cannot_select_a_second_substantive_body_route() -> None:
+    canonical = _render_with(None)
+    limited = _render_with(DummyLimitedComposerClient())
 
-    assert retry_reasons == [
-        "visible_surface_acceptance_gate_action_rerender_surface",
-    ]
+    assert limited.comment_text == canonical.comment_text
+    for reply in (canonical, limited):
+        assert reply.meta["generation_path"] == GROUND_OBSERVATION_REPLY_GENERATION_PATH
+        assert reply.meta["composer_source"] == "grounded_plan_realizer"
+        assert reply.meta["semantic_quality_gate"] == "passed"
+        assert reply.meta["grounded_observation"]["public_reply_path_connected"] is True
+        assert reply.comment_text not in json.dumps(reply.meta, ensure_ascii=False)
+        assert reply.meta["raw_input_included"] is False
+        assert reply.meta["comment_text_body_included"] is False

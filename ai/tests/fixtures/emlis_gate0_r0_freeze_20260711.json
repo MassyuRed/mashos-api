@@ -1,0 +1,146 @@
+{
+  "schema_version": "cocolon.emlis.gate0.r0.freeze.v1",
+  "source_snapshot": {
+    "archive_ref": "mashos-api(204).zip",
+    "archive_sha256": "8cdcd9036db92596bd1a1ce47141f3c1af809e957ebe5e6352684413e94d8015",
+    "canonical_source_sha256": {
+      "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py": "2ea65ca124b6bcc1879388d8a97cdfb35f6390a8b907386d34361944b6473551",
+      "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py": "4d082b70362b6b36dfa73fcf2fab758f1041432e0ed4736026c497a67d1d49b8",
+      "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py": "a4f77c1be5a6228e28fac68ce42a4a70da476e6fda66dc16c977bd8bd4dd36c7",
+      "ai/services/ai_inference/emlis_ai_reply_service.py": "1eb3d7b65c72c6c7ba5aee44c2138ae6e7ea38b20228f16821f1a5d2e17ef80c"
+    }
+  },
+  "case_freeze": {
+    "case_count": 16,
+    "case_ids": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "I6-S01",
+      "I6-S02",
+      "I6-S03",
+      "I6-L01",
+      "I6-L02",
+      "I6-L03",
+      "I6-C01",
+      "I6-C02",
+      "I6-C03",
+      "I6-D01",
+      "I6-D02",
+      "I6-D03"
+    ],
+    "body_full_local_baseline_ref": "ai/tests/local_only/emlis_gate0_r0_baseline_20260711.json",
+    "generator_ref": "ai/tests/helpers/generate_emlis_ai_gate0_r0_baseline.py",
+    "input_hash_algorithm": "sha256_of_sorted_compact_normalized_current_input_json"
+  },
+  "runtime_owners": {
+    "root_module": "emlis_ai_reply_service",
+    "canonical_modules": {
+      "emlis_ai_grounded_observation_plan": {
+        "production_reachable": true,
+        "direct_callers": [
+          "emlis_ai_grounded_observation_gate",
+          "emlis_ai_grounded_sentence_surface",
+          "emlis_ai_reply_service"
+        ],
+        "direct_callees": [
+          "emlis_ai_current_input_bundle",
+          "emlis_ai_evidence_ledger_service",
+          "emlis_ai_observation_integrator_service",
+          "emlis_ai_perspective_board",
+          "emlis_ai_perspective_observers",
+          "emlis_ai_safety_triage",
+          "emlis_ai_types"
+        ]
+      },
+      "emlis_ai_grounded_sentence_surface": {
+        "production_reachable": true,
+        "direct_callers": [
+          "emlis_ai_grounded_observation_gate",
+          "emlis_ai_reply_service"
+        ],
+        "direct_callees": [
+          "emlis_ai_evidence_ledger_service",
+          "emlis_ai_grounded_observation_plan",
+          "emlis_ai_safety_triage"
+        ]
+      },
+      "emlis_ai_grounded_observation_gate": {
+        "production_reachable": true,
+        "direct_callers": [
+          "emlis_ai_reply_service"
+        ],
+        "direct_callees": [
+          "emlis_ai_evidence_ledger_service",
+          "emlis_ai_grounded_observation_plan",
+          "emlis_ai_grounded_sentence_surface"
+        ]
+      },
+      "emlis_ai_reply_service": {
+        "production_reachable": true,
+        "direct_callers": [
+          "emlis_ai_product_quality_measurement_runner",
+          "emotion_submit_service"
+        ],
+        "direct_callees": [
+          "emlis_ai_capability",
+          "emlis_ai_current_input_bundle",
+          "emlis_ai_evidence_ledger_service",
+          "emlis_ai_grounded_observation_gate",
+          "emlis_ai_grounded_observation_plan",
+          "emlis_ai_grounded_sentence_surface",
+          "emlis_ai_observation_integrator_service",
+          "emlis_ai_perspective_board",
+          "emlis_ai_perspective_observers",
+          "emlis_ai_response_contract",
+          "emlis_ai_safety_triage",
+          "emlis_ai_types"
+        ]
+      }
+    }
+  },
+  "pre_r1_selected_suite": {
+    "command_scope": "grounded I1-I7 plus I0 inventory, excluding historical Phase20-10",
+    "passed": 73,
+    "failed": 3,
+    "subtests_passed": 41,
+    "failure_classifications": [
+      {
+        "classification": "snapshot_fingerprint_mismatch",
+        "test_ref": "test_i0_received_snapshot_fingerprints_are_frozen",
+        "actual_production_defect": false
+      },
+      {
+        "classification": "runtime_ownership_mismatch",
+        "test_ref": "test_i0_runtime_reachability_ownership_matches_actual_import_graph",
+        "actual_production_defect": false
+      },
+      {
+        "classification": "legacy_phrase_reachability_mismatch",
+        "test_ref": "test_i0_known_fixture_phrase_occurrences_cannot_increase_in_reachable_runtime",
+        "actual_production_defect": false
+      }
+    ],
+    "unclassified_failure_count": 0
+  },
+  "historical_phase20_10_suite": {
+    "passed": 3,
+    "failed": 1,
+    "failure_classification": "historical_meta_contract_mismatch",
+    "failure_test_ref": "test_phase20_10_real_device_a_low_information_reappears_when_limited_composer_scope_stops",
+    "actual_value": "empty_current_meta_field",
+    "historical_expected_value": "low_information",
+    "actual_device_evidence_claimed": false,
+    "unclassified_failure_count": 0
+  },
+  "r1_red_suite": {
+    "test_file_ref": "ai/tests/test_emlis_ai_gate0_r1_semantic_retention.py",
+    "expected_status_at_r1": "intentional_red",
+    "failed": 11,
+    "passed": 0,
+    "exact_completed_body_asserted": false,
+    "production_fixture_branch_required": false,
+    "production_code_changed": false
+  }
+}
