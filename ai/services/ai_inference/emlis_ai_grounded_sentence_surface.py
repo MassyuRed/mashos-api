@@ -15,18 +15,31 @@ smaller surface shapes.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import re
 from typing import Any, Final, Literal
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_observation_plan import (
     GROUND_OBSERVATION_PLAN_SCHEMA_VERSION,
+    GroundedHumanReceptionPlan,
     GroundedObservationPlan,
     GroundedSemanticNucleus,
     GroundedSemanticRelation,
     classify_grounded_human_follow_delivery,
     classify_grounded_human_follow_role,
+    validate_grounded_human_reception_plan,
+)
+from emlis_ai_grounded_human_reception import (
+    GroundedHumanReceptionSurface,
+    GroundedHumanReceptionSurfaceError,
+    realize_grounded_human_reception,
+    reception_active_acts,
+    reception_effective_reference_mode,
+    reception_effective_speaker_presence,
+    reception_terminal_predicate_kind,
+    resolve_grounded_reception_referent,
+    validate_grounded_human_reception_surface,
 )
 from emlis_ai_safety_triage import (
     TRIAGE_SAFETY_BLOCKED_EMERGENCY,
@@ -119,6 +132,8 @@ _LEADING_CONNECTOR_RE: Final = re.compile(
     r"と考えて(?:いたけど|しまって)|とか|という)[、,\s]*"
 )
 _QUESTION_RE: Final = re.compile(r"[?？]")
+_RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
+_RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]*)」")
 _RETENTION_RANK: Final = {"optional": 0, "should": 1, "required": 2}
 _FRAGMENT_DELETE_TRANSLATION: Final = str.maketrans("", "", "「」?？")
 _SEPARATE_SAFETY_KINDS: Final = frozenset(
@@ -581,8 +596,82 @@ def _observation_surface_atoms(
     )
 
 
+def _reception_contract_atoms(
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: RecoveryStage,
+) -> tuple[str, ...]:
+    acts = reception_active_acts(reception_plan, recovery_stage)
+    secondary_follow_elements = (
+        reception_plan.secondary_follow_elements
+        if recovery_stage == "full"
+        else ()
+    )
+    afterglow_follow_element = (
+        reception_plan.afterglow_follow_element
+        if recovery_stage == "full"
+        else None
+    )
+    return _dedupe(
+        (
+            *[f"reception_act:{act}" for act in acts],
+            *(
+                (
+                    f"reception_follow_primary:"
+                    f"{reception_plan.primary_follow_element}",
+                )
+                if reception_plan.primary_follow_element is not None
+                else ()
+            ),
+            *[
+                f"reception_follow_secondary:{element}"
+                for element in secondary_follow_elements
+            ],
+            *(
+                (
+                    f"reception_follow_afterglow:"
+                    f"{afterglow_follow_element}",
+                )
+                if afterglow_follow_element is not None
+                else ()
+            ),
+            *(
+                (f"reception_stance:{reception_plan.stance}",)
+                if reception_plan.stance is not None
+                else ()
+            ),
+            *(
+                (
+                    "reception_speaker:"
+                    f"{reception_effective_speaker_presence(reception_plan, recovery_stage)}",
+                )
+            ),
+            (
+                "reception_reference:"
+                f"{reception_effective_reference_mode(reception_plan, recovery_stage)}"
+            ),
+            f"reception_quote_policy:{reception_plan.quote_policy.mode}",
+            f"reception_quote_anchor_max:{reception_plan.quote_policy.max_anchor_count}",
+            (
+                "reception_quote_visible_chars_max:"
+                f"{reception_plan.quote_policy.max_anchor_visible_chars}"
+            ),
+            "reception_sentence_budget:one_or_two",
+            f"reception_sentence_min:{reception_plan.sentence_policy.min_sentences}",
+            f"reception_sentence_max:{reception_plan.sentence_policy.max_sentences}",
+            "reception_distinctness:required",
+            *[
+                "reception_terminal_predicate:"
+                f"{reception_terminal_predicate_kind(act)}"
+                for act in acts
+            ],
+        )
+    )
+
+
 def _human_follow_atoms(
     role: str,
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: RecoveryStage,
     *,
     target_already_delivered: bool = False,
 ) -> tuple[str, ...]:
@@ -604,6 +693,7 @@ def _human_follow_atoms(
             "closure_role:human_follow",
             f"closure_modality:{modality}",
             "closure_scope:selected_target",
+            *_reception_contract_atoms(reception_plan, recovery_stage),
             *(
                 ("human_follow_target_already_delivered",)
                 if target_already_delivered
@@ -611,6 +701,18 @@ def _human_follow_atoms(
             ),
         )
     )
+
+
+def _required_reception_plan(
+    plan: GroundedObservationPlan,
+    follow_ids: Sequence[str],
+) -> GroundedHumanReceptionPlan:
+    reception_plan = plan.response_plan.human_reception_plan
+    if reception_plan is None or not reception_plan.required:
+        raise GroundedSentenceSurfaceError("human_reception_plan_missing")
+    if tuple(reception_plan.target_nucleus_ids) != tuple(follow_ids):
+        raise GroundedSentenceSurfaceError("human_reception_target_mismatch")
+    return reception_plan
 
 
 def _semantic_endpoint_surface_form(
@@ -642,7 +744,11 @@ def _make_line(
 ) -> GroundedSentencePlanLine:
     atom_ids = _dedupe(
         [
-            "source_anchor_quote",
+            *(
+                ("source_anchor_quote",)
+                if surface_function != "render_human_follow"
+                else ()
+            ),
             f"surface_function:{surface_function}",
             f"line_role:{line_role}",
             f"recovery:{recovery_stage}",
@@ -1072,6 +1178,13 @@ def _build_self_denial_lines(
         plan.coverage_requirements.human_follow_required
         and follow_ids
     ):
+        reception_plan = _required_reception_plan(plan, follow_ids)
+        reception_nucleus_ids = _dedupe(
+            (
+                *reception_plan.target_nucleus_ids,
+                *reception_plan.support_nucleus_ids,
+            )
+        )
         if follow_delivery != "separate_distinct_contribution":
             raise GroundedSentenceSurfaceError(
                 "mandatory_two_stage_follow_delivery_not_separate"
@@ -1085,7 +1198,7 @@ def _build_self_denial_lines(
                 sentence_number=sentence_number,
                 line_role="human_follow",
                 surface_function="render_human_follow",
-                nucleus_ids=follow_ids,
+                nucleus_ids=reception_nucleus_ids,
                 relation_ids=(),
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
@@ -1094,6 +1207,8 @@ def _build_self_denial_lines(
                 extra_atoms=(
                     *_human_follow_atoms(
                         follow_role,
+                        reception_plan,
+                        recovery_stage,
                         target_already_delivered=target_already_delivered,
                     ),
                     "no_personality_guarantee",
@@ -1287,6 +1402,13 @@ def _build_regular_lines(
             sentence_number += 1
 
     if plan.coverage_requirements.human_follow_required and follow_ids:
+        reception_plan = _required_reception_plan(plan, follow_ids)
+        reception_nucleus_ids = _dedupe(
+            (
+                *reception_plan.target_nucleus_ids,
+                *reception_plan.support_nucleus_ids,
+            )
+        )
         target_already_delivered = any(
             set(follow_ids).intersection(line.binding.nucleus_ids)
             for line in lines
@@ -1296,7 +1418,7 @@ def _build_regular_lines(
                 sentence_number=sentence_number,
                 line_role="human_follow",
                 surface_function="render_human_follow",
-                nucleus_ids=follow_ids,
+                nucleus_ids=reception_nucleus_ids,
                 relation_ids=(),
                 nucleus_index=nucleus_index,
                 relation_index=relation_index,
@@ -1305,6 +1427,8 @@ def _build_regular_lines(
                 extra_atoms=(
                     *_human_follow_atoms(
                         follow_role,
+                        reception_plan,
+                        recovery_stage,
                         target_already_delivered=target_already_delivered,
                     ),
                     "no_personality_guarantee",
@@ -1910,311 +2034,43 @@ def _render_human_follow(
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
 ) -> str:
-    if not binding.nucleus_ids:
-        return ""
-    joined = _join_quotes(_quotes_for_nuclei(binding.nucleus_ids, nucleus_index, resolver))
-    target_nuclei = tuple(
-        nucleus_index[item]
-        for item in binding.nucleus_ids
-        if item in nucleus_index
+    reception_plan = plan.response_plan.human_reception_plan
+    if reception_plan is None or not reception_plan.required:
+        raise GroundedSentenceSurfaceError("human_reception_plan_missing")
+    expected_nucleus_ids = _dedupe(
+        (
+            *reception_plan.target_nucleus_ids,
+            *reception_plan.support_nucleus_ids,
+        )
     )
-    required_nuclei = tuple(
-        nucleus_index[item]
-        for item in plan.coverage_requirements.required_nucleus_ids
-        if item in nucleus_index
-    )
-    required_attributes = {
-        code
-        for nucleus in required_nuclei
-        for code in nucleus.semantic_frame.attribute_codes
-    }
-    required_relations = tuple(
-        relation
-        for relation in plan.relations
-        if relation.relation_id in plan.coverage_requirements.required_relation_ids
-    )
-    required_relation_types = {relation.type for relation in required_relations}
-    required_relation_surface_roles = {
-        relation_surface_role(relation, nucleus_index)
-        for relation in required_relations
-    }
-    atoms = set(binding.functional_atom_ids)
-    if target_nuclei and all(
-        all(field in {"emotion_details", "emotions", "category"} for field in nucleus.source_fields)
-        for nucleus in target_nuclei
-    ):
-        return (
-            "具体的な出来事は入力にないため、そこは広げません。"
-            "選ばれた状態は、今ここに置かれた気持ちとして丁寧に受け取りました。"
+    if binding.nucleus_ids != expected_nucleus_ids:
+        raise GroundedSentenceSurfaceError("human_reception_target_mismatch")
+    try:
+        reception = realize_grounded_human_reception(
+            reception_plan,
+            nucleus_index,
+            resolver,
+            recovery_stage=_plan_recovery_stage(binding),
         )
-    if "human_follow:help_seeking_preserved" in atoms:
-        if "human_follow_target_already_delivered" in atoms:
-            if any(
-                nucleus.kind == "action"
-                or "operator:action" in nucleus.semantic_frame.attribute_codes
-                for nucleus in target_nuclei
-            ):
-                if joined:
-                    return (
-                        f"苦しい自己評価だけで終わらず、{joined}という助けにつながる行動を実際に残しています。"
-                        "その行動を、先の言葉とは別にある大切な事実として受け取りました。"
-                    )
-                return (
-                    "苦しい自己評価だけで終わらず、助けにつながる行動を実際に残しています。"
-                    "その行動を、先の言葉とは別にある大切な事実として受け取りました。"
-                )
-            if joined:
-                return (
-                    f"苦しい自己評価だけで終わらず、{joined}という助けにつながるものも残しています。"
-                    "その反対向きを、先の言葉とは別にある大切な事実として受け取りました。"
-                )
-            return (
-                "苦しい自己評価だけで終わらず、助けにつながるものも残しています。"
-                "その反対向きを、先の言葉とは別にある大切な事実として受け取りました。"
-            )
-        if joined:
-            return (
-                f"苦しい自己評価の中でも、{joined}という助けにつながるものは手放していません。"
-                "そこに残っている反対向きを、大切に受け取りました。"
-            )
-        return (
-            "苦しい自己評価の中でも、助けにつながるものは手放していません。"
-            "そこに残っている反対向きを、大切に受け取りました。"
-        )
-    if "human_follow:protective_counterdirection" in atoms:
-        if joined:
-            return (
-                f"苦しい自己評価だけで終わらず、{joined}という、そこから離れる方向の言葉も残っています。"
-                "その反対向きを、自己評価とは別にある大切な部分として受け取りました。"
-            )
-        return (
-            "苦しい自己評価だけで終わらず、そこから離れる方向の言葉も残っています。"
-            "その反対向きを、自己評価とは別にある大切な部分として受け取りました。"
-        )
-    if "human_follow:concrete_effort" in atoms:
-        action_relation = next(
-            (
-                relation
-                for relation in plan.relations
-                if relation.relation_id in plan.coverage_requirements.required_relation_ids
-                and relation.type == "action_supports_change"
-                and set(binding.nucleus_ids).intersection(
-                    (relation.from_nucleus_id, relation.to_nucleus_id)
-                )
-            ),
-            None,
-        )
-        if action_relation is not None:
-            left = _join_quotes(
-                _quotes_for_nuclei(
-                    (action_relation.from_nucleus_id,),
-                    nucleus_index,
-                    resolver,
-                )
-            )
-            right = _join_quotes(
-                _quotes_for_nuclei(
-                    (action_relation.to_nucleus_id,),
-                    nucleus_index,
-                    resolver,
-                )
-            )
-            surface_role = relation_surface_role(action_relation, nucleus_index)
-            action_nucleus = nucleus_index.get(action_relation.to_nucleus_id)
-            if left and right and surface_role == "intention_evidenced_by_action":
-                if action_nucleus is not None and action_nucleus.semantic_frame.modality == "intention":
-                    return (
-                        f"{left}という方向を、{right}という動きで支え始めています。"
-                        "これからの気持ちだけでなく、すでに始めた行動を根拠に置いていると受け取りました。"
-                    )
-                if required_relation_surface_roles.intersection(
-                    {"comparison_to_counterevidence", "coexisting_comparison_and_evidence"}
-                ):
-                    return (
-                        f"{left}という方向を、{right}という具体的な準備まで進めています。"
-                        "比べたときの印象だけで終わらず、自分で確かめる基準を作っていると受け取りました。"
-                    )
-                if plan.input_profile.semantic_complexity == "long_arc":
-                    return (
-                        f"{left}という方向を、{right}という具体的な準備まで進めています。"
-                        "願いだけで終わらせず、次に動くための足場を先に作っていると受け取りました。"
-                    )
-                return (
-                    f"{left}という方向を、{right}という具体的な準備まで進めています。"
-                    "願いだけで終わらせず、次に確かめられる形へ移しているところとして受け取りました。"
-                )
-            if left and right:
-                return (
-                    f"{left}という変化に、{right}という実際の動きが伴っています。"
-                    "自分の中の感覚だけでなく、行動でも確かめられる変化として届きました。"
-                )
-        if "action_supports_change" in required_relation_types:
-            return (
-                "考えや変化が、実際の行動まで移っています。"
-                "気持ちの中だけではなく動きとして確かめられる点に、今回の変化の確かさを感じます。"
-            )
-        return (
-            "考えたことを、実際の行動へ移しています。"
-            "その動きを、今回の中で確かに起きた変化として受け取りました。"
-        )
-    if "human_follow:valued_change" in atoms:
-        if joined:
-            return (
-                f"{joined}という具体的な変化を、自分の言葉で確かめています。"
-                "励ますためだけではなく、実際に起きたことを根拠に置いた受け止めとして届きました。"
-            )
-        return (
-            "自分の中で起きた変化を、具体的な部分と一緒に確かめています。"
-            "その変化を自分の言葉で認めているところを、大切に受け取りました。"
-        )
-    if "human_follow:retained_intention" in atoms:
-        target_ids = set(binding.nucleus_ids)
-        action_relation = next(
-            (
-                relation
-                for relation in required_relations
-                if relation.type == "action_supports_change"
-                and target_ids.intersection(
-                    (relation.from_nucleus_id, relation.to_nucleus_id)
-                )
-            ),
-            None,
-        )
-        action_quote = ""
-        related_quote = ""
-        target_is_action = False
-        if action_relation is not None:
-            endpoint_ids = (
-                action_relation.from_nucleus_id,
-                action_relation.to_nucleus_id,
-            )
-            strong_action_ids = tuple(
-                nucleus_id
-                for nucleus_id in endpoint_ids
-                if nucleus_id in nucleus_index
-                and (
-                    nucleus_index[nucleus_id].kind == "action"
-                    or "semantic_role:concrete_action_evidence"
-                    in nucleus_index[nucleus_id].semantic_frame.attribute_codes
-                )
-            )
-            action_ids = strong_action_ids or tuple(
-                nucleus_id
-                for nucleus_id in endpoint_ids
-                if nucleus_id in nucleus_index
-                and "operator:action"
-                in nucleus_index[nucleus_id].semantic_frame.attribute_codes
-            )
-            target_is_action = bool(target_ids.intersection(action_ids))
-            other_ids = tuple(
-                nucleus_id for nucleus_id in endpoint_ids if nucleus_id not in target_ids
-            )
-            action_quote = _join_quotes(
-                _quotes_for_nuclei(
-                    action_ids if not target_is_action else tuple(target_ids),
-                    nucleus_index,
-                    resolver,
-                )
-            )
-            related_quote = _join_quotes(
-                _quotes_for_nuclei(other_ids, nucleus_index, resolver)
-            )
+    except GroundedHumanReceptionSurfaceError as exc:
+        raise GroundedSentenceSurfaceError(str(exc)) from exc
+    return reception.text
 
-        if "semantic_role:limiting_unknown" in required_attributes:
-            if joined and action_quote and not target_is_action:
-                return (
-                    f"{joined}という方向を、まだ分からない範囲を残しながら、"
-                    f"{action_quote}という準備へつなげています。"
-                    "不明さを消さず、次に確かめる形を作っていると受け取りました。"
-                )
-            if joined:
-                return (
-                    f"{joined}という方向を、まだ分からない範囲を残したまま保っています。"
-                    "不明さを消さず、次に確かめる範囲を絞っていると受け取りました。"
-                )
-            return (
-                "まだ分からない範囲を残しながら、次に保ちたい方向は失われていません。"
-                "不明さを消さず、その方向を手放していないと受け取りました。"
-            )
-        if action_relation is not None and joined:
-            if target_is_action:
-                if related_quote:
-                    return (
-                        f"{related_quote}という捉え方に、実際の行動が伴っています。"
-                        "自分を励ます言葉だけでなく、動いた事実を根拠に置いていると受け取りました。"
-                    )
-                return (
-                    "これからの気持ちだけでなく、すでに実際の行動があります。"
-                    "動いた事実を根拠に置いているところを大切に受け取りました。"
-                )
-            if action_quote:
-                if required_relation_surface_roles.intersection(
-                    {
-                        "comparison_to_counterevidence",
-                        "coexisting_comparison_and_evidence",
-                    }
-                ):
-                    return (
-                        f"{joined}という方向が、{action_quote}という確かめ方まで具体化しています。"
-                        "周囲との比較だけで閉じず、自分の変化を見られる基準を作っていると受け取りました。"
-                    )
-                return (
-                    f"{joined}という方向が、{action_quote}という準備まで具体化しています。"
-                    "願いだけで終わらせず、次に動ける形を先に作っていると受け取りました。"
-                )
-        if joined:
-            return (
-                f"{joined}という、これから保ちたい方向が最後まで残っています。"
-                "ほかの状態と並んでも、その向きを手放していないと受け取りました。"
-            )
-        return (
-            "これから保ちたい方向が、最後まで残っています。"
-            "ほかの状態と並んでも、その向きを手放していないと受け取りました。"
-        )
-    if "human_follow:integrated_current_state" in atoms:
-        if "lexical:no_new_sensation_family" in required_attributes:
-            if joined:
-                return (
-                    f"{joined}が、今かなり前面にあることははっきり届いています。"
-                    "理由をこちらで決めつけず、今そこにある位置と感覚のまま受け取りました。"
-                )
-            return (
-                "短い言葉ですが、今どこにどんな感覚があるかははっきり届いています。"
-                "その感覚が前面にある状態として、軽く扱わずに受け取りました。"
-            )
-        if joined:
-            return (
-                f"{joined}と書いた状態が、今かなり前面にあることははっきり届いています。"
-                "短い言葉のままでも、その負荷を軽く扱わずに受け取りました。"
-            )
-        return (
-            "短い言葉ですが、今の状態ははっきり届いています。"
-            "その負荷が前面にある状態として、軽く扱わずに受け取りました。"
-        )
-    if "operator:refusal" in required_attributes and len(required_nuclei) >= 2:
-        return (
-            "短い言葉ですが、重さだけでなく、何かへ向かう力まで落ちている状態が伝わります。"
-            "今はその負荷が、気持ちと行動の両方に及んでいるように受け取りました。"
-        )
-    negative_required_count = sum(
-        nucleus.semantic_frame.polarity == "negative"
-        for nucleus in required_nuclei
-    )
-    if negative_required_count >= 2:
-        return (
-            "一つだけではない負荷が、同じところに重なっています。"
-            "その重なりが今の前面にある状態として、軽く扱わずに受け取りました。"
-        )
-    if joined:
-        return (
-            "短い言葉の中にも、今の負荷ははっきり表れています。"
-            "その重さを、今ここにある状態として軽く扱わずに受け取りました。"
-        )
-    return (
-        "今ここに置かれた負荷は、軽く扱えるものではありません。"
-        "入力から言える範囲のまま、今の状態として受け取りました。"
-    )
 
+def _plan_recovery_stage(binding: GroundedSentenceBinding) -> RecoveryStage:
+    """Read the body-free recovery atom without coupling the R4 realizer."""
+
+    stage = next(
+        (
+            atom.split(":", 1)[1]
+            for atom in binding.functional_atom_ids
+            if atom.startswith("recovery:")
+        ),
+        "",
+    )
+    if stage not in GROUND_RECOVERY_STAGES:
+        raise GroundedSentenceSurfaceError("human_reception_recovery_stage_missing")
+    return stage  # type: ignore[return-value]
 
 def _apply_integrated_human_follow(
     text: str,
@@ -2424,14 +2280,98 @@ def build_grounded_surface_result(
     return realize_grounded_sentence_plan(sentence_plan, plan, resolver)
 
 
+def build_reception_recovery_sentence_plan(
+    base_sentence_plan: GroundedSentencePlan,
+    plan: GroundedObservationPlan,
+    resolver: EvidenceSpanResolver,
+    *,
+    recovery_stage: RecoveryStage,
+) -> GroundedSentencePlan:
+    """Change only reception recovery while preserving observation lines."""
+
+    if recovery_stage not in GROUND_RECOVERY_STAGES:
+        raise GroundedSentenceSurfaceError(
+            f"unsupported_recovery_stage:{recovery_stage}"
+        )
+    if base_sentence_plan.status != "generated":
+        candidate = replace(
+            base_sentence_plan,
+            recovery_stage=recovery_stage,
+        )
+    else:
+        reception_plan = plan.response_plan.human_reception_plan
+        if reception_plan is None or not reception_plan.required:
+            raise GroundedSentenceSurfaceError("human_reception_plan_missing")
+        contract_atoms = _reception_contract_atoms(
+            reception_plan,
+            recovery_stage,
+        )
+        lines: list[GroundedSentencePlanLine] = []
+        for line in base_sentence_plan.lines:
+            if line.binding.line_role != "human_follow":
+                lines.append(line)
+                continue
+            atom_ids: list[str] = []
+            contract_inserted = False
+            for atom in line.binding.functional_atom_ids:
+                if atom.startswith("recovery:"):
+                    atom_ids.append(f"recovery:{recovery_stage}")
+                elif atom.startswith("reception_"):
+                    if not contract_inserted:
+                        atom_ids.extend(contract_atoms)
+                        contract_inserted = True
+                else:
+                    atom_ids.append(atom)
+            if not contract_inserted:
+                atom_ids.extend(contract_atoms)
+            lines.append(
+                replace(
+                    line,
+                    binding=replace(
+                        line.binding,
+                        functional_atom_ids=_dedupe(atom_ids),
+                    ),
+                )
+            )
+        candidate = replace(
+            base_sentence_plan,
+            recovery_stage=recovery_stage,
+            lines=tuple(lines),
+        )
+    issues = validate_grounded_sentence_plan(candidate, plan, resolver)
+    if issues:
+        raise GroundedSentenceSurfaceError(
+            "invalid_grounded_reception_recovery_plan:" + ",".join(issues)
+        )
+    return candidate
+
+
 def build_plan_preserving_recovery_sequence(
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
 ) -> tuple[GroundedSurfaceResult, ...]:
     """Render all I4 shrink stages while retaining the required nucleus."""
 
+    base_sentence_plan = build_grounded_sentence_plan(
+        plan,
+        resolver,
+        recovery_stage="full",
+    )
     return tuple(
-        build_grounded_surface_result(plan, resolver, recovery_stage=stage)
+        realize_grounded_sentence_plan(
+            (
+                base_sentence_plan
+                if stage == "full"
+                else build_reception_recovery_sentence_plan(
+                    base_sentence_plan,
+                    plan,
+                    resolver,
+                    recovery_stage=stage,
+                )
+            ),
+            plan,
+            resolver,
+        )
         for stage in GROUND_RECOVERY_STAGES
     )
 
@@ -2542,15 +2482,149 @@ def validate_grounded_sentence_plan(
     if plan.coverage_requirements.human_follow_required and not sentence_plan.human_follow_covered:
         issues.append("human_follow_not_covered")
     if plan.coverage_requirements.human_follow_required:
+        reception_plan = plan.response_plan.human_reception_plan
         reception_lines = tuple(
             line
             for line in sentence_plan.lines
             if line.binding.line_role == "human_follow"
         )
+        if reception_plan is None or not reception_plan.required:
+            issues.append("human_reception_plan_missing")
         if len(reception_lines) != 1:
             issues.append("two_stage_reception_line_count_invalid")
-        elif "human_follow_delivery:separate" not in reception_lines[0].binding.functional_atom_ids:
-            issues.append("two_stage_reception_line_missing")
+        else:
+            reception_line = reception_lines[0]
+            binding = reception_line.binding
+            atoms = tuple(binding.functional_atom_ids)
+            reception_atoms = tuple(
+                atom for atom in atoms if atom.startswith("reception_")
+            )
+            if "human_follow_delivery:separate" not in atoms:
+                issues.append("two_stage_reception_line_missing")
+            if reception_line.surface_function != "render_human_follow":
+                issues.append("human_reception_surface_owner_invalid")
+            if binding.relation_ids or any(
+                atom.startswith("relation:")
+                or atom.startswith("relation_surface_role:")
+                for atom in atoms
+            ):
+                issues.append("human_reception_relation_owner_forbidden")
+            if any(
+                atom.startswith("observation_surface_role:")
+                or atom.startswith("semantic_arc:")
+                for atom in atoms
+            ):
+                issues.append("human_reception_observation_atom_forbidden")
+            if any(
+                atom in {"identity_claim_not_fact", "input_grounded_opposition"}
+                for atom in atoms
+            ):
+                issues.append("human_reception_fact_boundary_owner_forbidden")
+
+            if reception_plan is not None:
+                issues.extend(
+                    validate_grounded_human_reception_plan(
+                        reception_plan,
+                        expected_target_ids=plan.response_plan.human_follow_target_ids,
+                        nucleus_index=nucleus_index,
+                        resolver=resolver,
+                        safety_kind=plan.safety_policy.safety_kind,
+                        material_quality=plan.input_profile.material_quality,
+                    )
+                )
+                expected_nucleus_ids = _dedupe(
+                    (
+                        *reception_plan.target_nucleus_ids,
+                        *reception_plan.support_nucleus_ids,
+                    )
+                )
+                if binding.nucleus_ids != expected_nucleus_ids:
+                    issues.append("human_reception_target_mismatch")
+                if (
+                    binding.evidence_span_ids
+                    != tuple(reception_plan.source_evidence_span_ids)
+                ):
+                    issues.append("human_reception_source_evidence_mismatch")
+                if resolver.unresolved_ids(
+                    reception_plan.source_evidence_span_ids
+                ):
+                    issues.append("human_reception_source_evidence_unresolved")
+
+                expected_contract_atoms = _reception_contract_atoms(
+                    reception_plan,
+                    sentence_plan.recovery_stage,
+                )
+                expected_acts = tuple(
+                    f"reception_act:{act}"
+                    for act in reception_active_acts(
+                        reception_plan,
+                        sentence_plan.recovery_stage,
+                    )
+                )
+                actual_acts = tuple(
+                    atom
+                    for atom in reception_atoms
+                    if atom.startswith("reception_act:")
+                )
+                if not actual_acts:
+                    issues.append("human_reception_act_missing")
+                elif actual_acts != expected_acts:
+                    issues.append("human_reception_act_mismatch")
+                if reception_atoms != expected_contract_atoms:
+                    issues.append("human_reception_contract_atom_mismatch")
+                if not set(
+                    atom
+                    for atom in expected_contract_atoms
+                    if atom.startswith("reception_follow_")
+                ).issubset(reception_atoms):
+                    issues.append("human_reception_follow_contract_missing")
+                if not {
+                    f"reception_stance:{reception_plan.stance}",
+                    (
+                        "reception_speaker:"
+                        f"{reception_effective_speaker_presence(reception_plan, sentence_plan.recovery_stage)}"
+                    ),
+                }.issubset(reception_atoms):
+                    issues.append("human_reception_stance_contract_missing")
+                if not {
+                    (
+                        "reception_reference:"
+                        f"{reception_effective_reference_mode(reception_plan, sentence_plan.recovery_stage)}"
+                    ),
+                    (
+                        "reception_quote_policy:"
+                        f"{reception_plan.quote_policy.mode}"
+                    ),
+                }.issubset(reception_atoms):
+                    issues.append("human_reception_reference_policy_missing")
+                if not {
+                    "reception_sentence_budget:one_or_two",
+                    (
+                        "reception_sentence_min:"
+                        f"{reception_plan.sentence_policy.min_sentences}"
+                    ),
+                    (
+                        "reception_sentence_max:"
+                        f"{reception_plan.sentence_policy.max_sentences}"
+                    ),
+                }.issubset(reception_atoms):
+                    issues.append("human_reception_sentence_budget_invalid")
+                if "reception_distinctness:required" not in reception_atoms:
+                    issues.append(
+                        "human_reception_distinctness_contract_missing"
+                    )
+                bounded_counterposition = (
+                    "bounded_counter_self_denial"
+                    in reception_active_acts(
+                        reception_plan,
+                        sentence_plan.recovery_stage,
+                    )
+                )
+                if bounded_counterposition and not {
+                    "reception_speaker:explicit_emlis",
+                    "reception_reference:explicit_emlis_counterposition",
+                }.issubset(reception_atoms):
+                    issues.append("self_denial_explicit_stance_missing")
         if reception_lines and sentence_plan.lines[-1] is not reception_lines[-1]:
             issues.append("two_stage_reception_line_must_be_last")
         if any(
@@ -2559,11 +2633,13 @@ def validate_grounded_sentence_plan(
                 atom.startswith("human_follow:")
                 or atom.startswith("human_follow_delivery:")
                 or atom.startswith("human_follow_contribution:")
+                or atom.startswith("reception_")
                 for atom in line.binding.functional_atom_ids
             )
             for line in sentence_plan.lines
         ):
             issues.append("human_follow_atom_leaked_into_observation_section")
+            issues.append("human_reception_atom_leaked_into_observation_section")
     if plan.safety_policy.safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
         opposition_required = (
             _self_denial_opposition_relation(plan, nucleus_index, relation_index)
@@ -2623,6 +2699,71 @@ def validate_grounded_surface_result(
                 issues.append(f"surface_line_empty:{line.sentence_id}")
             for span_id in resolver.unresolved_ids(line.binding.evidence_span_ids):
                 issues.append(f"surface_unresolved_evidence:{line.sentence_id}:{span_id}")
+
+        if plan.coverage_requirements.human_follow_required:
+            reception_plan = plan.response_plan.human_reception_plan
+            reception_lines = tuple(
+                line
+                for line in result.lines
+                if line.binding.line_role == "human_follow"
+            )
+            if reception_plan is None or not reception_plan.required:
+                issues.append("human_reception_plan_missing")
+            elif len(reception_lines) != 1:
+                issues.append("human_reception_surface_line_count_invalid")
+            else:
+                reception_line = reception_lines[0]
+                quote_values = tuple(
+                    _RECEPTION_QUOTE_RE.findall(reception_line.text)
+                )
+                terminal_kinds = tuple(
+                    atom.split(":", 1)[1]
+                    for atom in reception_line.binding.functional_atom_ids
+                    if atom.startswith("reception_terminal_predicate:")
+                )
+                active_acts = reception_active_acts(
+                    reception_plan,
+                    sentence_plan.recovery_stage,
+                )
+                grounded_referent = resolve_grounded_reception_referent(
+                    reception_plan,
+                    {item.nucleus_id: item for item in plan.nuclei},
+                    resolver,
+                    recovery_stage=sentence_plan.recovery_stage,
+                    act=active_acts[0],
+                )
+                reception_surface = GroundedHumanReceptionSurface(
+                    text=reception_line.text,
+                    terminal_predicate_kinds=terminal_kinds,
+                    sentence_count=len(
+                        tuple(
+                            part.strip()
+                            for part in _RECEPTION_SENTENCE_END_RE.split(
+                                reception_line.text
+                            )
+                            if part.strip()
+                        )
+                    ),
+                    referent_kind="sentence_plan_bound",
+                    realized_reception_acts=active_acts,
+                    grounded_nucleus_ids=grounded_referent.nucleus_ids,
+                    grounded_evidence_span_ids=(
+                        grounded_referent.evidence_span_ids
+                    ),
+                    source_anchor_count=len(quote_values),
+                    source_anchor_max_visible_chars=max(
+                        (len(value) for value in quote_values),
+                        default=0,
+                    ),
+                    recovery_stage=sentence_plan.recovery_stage,
+                )
+                issues.extend(
+                    validate_grounded_human_reception_surface(
+                        reception_surface,
+                        reception_plan,
+                        resolver,
+                    )
+                )
     elif result.status == "separate_safety_owner":
         if plan.safety_policy.safety_kind not in _SEPARATE_SAFETY_KINDS:
             issues.append("unexpected_separate_safety_owner")
@@ -2666,6 +2807,7 @@ __all__ = [
     "build_grounded_sentence_plan",
     "realize_grounded_sentence_plan",
     "build_grounded_surface_result",
+    "build_reception_recovery_sentence_plan",
     "build_plan_preserving_recovery_sequence",
     "validate_grounded_sentence_plan",
     "validate_grounded_surface_result",

@@ -20,6 +20,7 @@ GROUND_OBSERVATION_I0_INPUT_SAMPLE_SHA256: Final = "4df8dbf79137bf9fe22503132f1b
 GROUND_OBSERVATION_I0_INTENTIONALLY_MODIFIED_PATHS: Final[frozenset[str]] = frozenset(
     {
         "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+        "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
         "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
         "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
         "ai/services/ai_inference/emlis_ai_reply_service.py",
@@ -136,11 +137,12 @@ class KnownRegressionCase:
 
 
 GROUND_OBSERVATION_I0_FILE_FINGERPRINTS: Final[tuple[SnapshotFileFingerprint, ...]] = (
-    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "a60434401b1fccdd2a28fd64cdd55dce9817375d0868dd7c259a82030fbdaa7f", REACHABILITY_PRODUCTION),
-    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py", "1f3ea3af980eae061cc5b2a884a07bb8b3f1fd984d27c5cb55c7a1ab8a50119a", REACHABILITY_PRODUCTION),
-    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_observation_gate.py", "5ab7653e515efc79e66edc27815fffd2dbb234eb2f225e8f4663c12363623a90", REACHABILITY_PRODUCTION),
+    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_observation_plan.py", "5c547baf7085826a22d51a3f3909dfd2e76928a8fa0a683b39e8d9f0753a1ccd", REACHABILITY_PRODUCTION),
+    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_human_reception.py", "a7621935b5b65423255b4e2dc7d7f5b2a1e5423dbb512678e9914b92ff82dcad", REACHABILITY_PRODUCTION),
+    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py", "60ef44687ab30f303def782736260c60b6fd2aa31260eac17b56bf71a76cfae9", REACHABILITY_PRODUCTION),
+    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_grounded_observation_gate.py", "bf13930bf76b7b8232a35e481dae8604b70d9a1c07464275025191030d08eee9", REACHABILITY_PRODUCTION),
     SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_evidence_ledger_service.py", "17e51d7ff39535d60f81ad17582f36ab252301502a3a3328e703d116cea7f9e2", REACHABILITY_PRODUCTION),
-    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_reply_service.py", "cc77b7bec9ca4f1b7eb875eb8b26f39a8ed13c2b10266f8f92330a59bc90e1c2", REACHABILITY_PRODUCTION),
+    SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_reply_service.py", "96a7df89fe6453dea719c8e4332a74e37a7c6f6f223321bd38a2315a4b756559", REACHABILITY_PRODUCTION),
     SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_complete_surface_realizer.py", "1b95855db2179e693caf35bcd7d74a2bb0e09a6852bed83a7fdca2e0fd233d59", REACHABILITY_SHADOW),
     SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_complete_initial_surface_recomposition.py", "8c492e29607578d58ad0344d4f9ce480958fb25d6b71e51bdbfa0a3a2d0e645e", REACHABILITY_SHADOW),
     SnapshotFileFingerprint("ai/services/ai_inference/emlis_ai_limited_grounding_reception_surface.py", "796a08428984e69763813905f83329129adc53eee32bac4e4b66fed255e253dc", REACHABILITY_SHADOW),
@@ -164,6 +166,7 @@ GROUND_OBSERVATION_I0_RUNTIME_MODULE_OWNERSHIP: Final[tuple[RuntimeModuleOwnersh
         "emlis_ai_grounded_observation_plan",
         REACHABILITY_PRODUCTION,
         (
+            "emlis_ai_grounded_human_reception",
             "emlis_ai_grounded_observation_gate",
             "emlis_ai_grounded_sentence_surface",
             "emlis_ai_reply_service",
@@ -187,12 +190,32 @@ GROUND_OBSERVATION_I0_RUNTIME_MODULE_OWNERSHIP: Final[tuple[RuntimeModuleOwnersh
         ),
     ),
     RuntimeModuleOwnership(
+        "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+        "emlis_ai_grounded_human_reception",
+        REACHABILITY_PRODUCTION,
+        (
+            "emlis_ai_grounded_observation_gate",
+            "emlis_ai_grounded_sentence_surface",
+        ),
+        (
+            "emlis_ai_evidence_ledger_service",
+            "emlis_ai_grounded_observation_plan",
+        ),
+        (
+            "ai/tests/test_emlis_ai_grounded_human_reception_r3_sentence_plan.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r4_surface.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r5_gate.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r6_local_qa.py",
+        ),
+    ),
+    RuntimeModuleOwnership(
         "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
         "emlis_ai_grounded_sentence_surface",
         REACHABILITY_PRODUCTION,
         ("emlis_ai_grounded_observation_gate", "emlis_ai_reply_service"),
         (
             "emlis_ai_evidence_ledger_service",
+            "emlis_ai_grounded_human_reception",
             "emlis_ai_grounded_observation_plan",
             "emlis_ai_safety_triage",
         ),
@@ -211,11 +234,14 @@ GROUND_OBSERVATION_I0_RUNTIME_MODULE_OWNERSHIP: Final[tuple[RuntimeModuleOwnersh
         ("emlis_ai_reply_service",),
         (
             "emlis_ai_evidence_ledger_service",
+            "emlis_ai_grounded_human_reception",
             "emlis_ai_grounded_observation_plan",
             "emlis_ai_grounded_sentence_surface",
         ),
         (
             "ai/tests/test_emlis_ai_grounded_observation_i5.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r5_gate.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r6_local_qa.py",
             "ai/tests/test_emlis_ai_gate0_r5_semantic_subchecks.py",
             "ai/tests/test_emlis_ai_complete_initial_surface_recomposition_existing_gate_chain_p8.py",
             "ai/tests/test_emlis_ai_mandatory_two_stage_runtime_contract_20260712.py",
@@ -245,6 +271,8 @@ GROUND_OBSERVATION_I0_RUNTIME_MODULE_OWNERSHIP: Final[tuple[RuntimeModuleOwnersh
             "ai/tests/test_emlis_ai_complete_initial_surface_recomposition_existing_gate_chain_p8.py",
             "ai/tests/test_emlis_ai_grounded_observation_i5.py",
             "ai/tests/test_emlis_ai_grounded_observation_i6.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r5_gate.py",
+            "ai/tests/test_emlis_ai_grounded_human_reception_r6_local_qa.py",
             "ai/tests/test_emlis_ai_mandatory_two_stage_runtime_contract_20260712.py",
         ),
     ),
@@ -254,6 +282,7 @@ GROUND_OBSERVATION_I0_RUNTIME_MODULE_OWNERSHIP: Final[tuple[RuntimeModuleOwnersh
         REACHABILITY_PRODUCTION,
         (
             "cocolon_environment_state_output_frame",
+            "emlis_ai_grounded_human_reception",
             "emlis_ai_grounded_observation_gate",
             "emlis_ai_grounded_observation_plan",
             "emlis_ai_grounded_sentence_surface",

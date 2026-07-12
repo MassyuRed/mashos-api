@@ -1,0 +1,36 @@
+{
+  "actual_device_two_stage_display": "pass",
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S03",
+    "I6-L03",
+    "I6-C01",
+    "I6-D02"
+  ],
+  "current_input_comprehension_foundation": "pass",
+  "evidence_basis": {
+    "design_evaluation_case_count": 8,
+    "design_ref": "Cocolon_EmlisAI_GroundedHumanReception_DistinctnessRepair_DetailedDesign_ImplementationOrder_20260712.md",
+    "design_ref_sha256": "fbf10f63da1ac0ef7a46b2107559fa3c276cf2163884987a9ead0117a908fe45",
+    "device_archive_logical_ref": "実機確認結果１.zip",
+    "raw_comment_sha256_machine_match": "not_confirmed"
+  },
+  "fixture_ref": "grounded_human_reception_exact8_v2_20260712.json",
+  "fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+  "human_reception_distinctness": "repair_required",
+  "p5_formal_24_start_allowed": false,
+  "p6_start_allowed": false,
+  "p8_start_allowed": false,
+  "product_readfeel": "human_fail_or_repair_required",
+  "progression_authority": "none",
+  "raw_input_included": false,
+  "returned_surface_included": false,
+  "schema_version": "cocolon.emlis.grounded_human_reception.actual_device_status.v1",
+  "section_hash_manifest_ref": "grounded_human_reception_section_hashes_20260712.json",
+  "section_hash_manifest_sha256": "0c0be6ed1ac8bed3ce1de7a2f054946c4fd98532e3594403e0f409d95dc3416a",
+  "technical_gate_pass_is_product_pass": false,
+  "valid_for_progression": false
+}

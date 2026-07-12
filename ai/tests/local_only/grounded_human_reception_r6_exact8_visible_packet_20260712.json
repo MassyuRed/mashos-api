@@ -1,0 +1,102 @@
+{
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S03",
+    "I6-L03",
+    "I6-C01",
+    "I6-D02"
+  ],
+  "cases": [
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "A",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "observation_section_sha256": "7ac119e38a6af0d0a80db318733df96ce317d66dbf496c0ce8b3b21095fa5f8f",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "233486cb0bdc633b81e16b44e7ffa5388ff6d0523aa413d59392645c47993880",
+      "visible_surface": "見えたこと：\n「なんか今日は全部だるい」と「何もしたくない」が重なり、今は一つの状態として前に出ています。\n\nEmlisから：\n今のしんどさを、無理に小さくせず、静かに受け止めています。",
+      "visible_surface_sha256": "2831eced030b599096412135efa356e01fb7b532b557c0643ff8860bcc53c054"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "B",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "observation_section_sha256": "ed02e2efdfbcfba6dca10bffb0f2ba97369bfbfdadf1c2523926f4028939df03",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "3fd6ed102676278db06b12d3e1d526ec143a7d3d86e4c8f4ff3b49c6c72d4ae3",
+      "visible_surface": "見えたこと：\n「今までは、人に対して『何故』と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする」から「物を見ることで人への興味が薄れた」へ見方が動き、その変化を「私にとってはとても良い変化になった」と捉えています。\n「人との話し方を思い出してきてる」という変化が、「やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった」という行動までつながっています。\n「少しずつだけど進歩してる」という変化が、「外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった」という行動にも表れています。\n\nEmlisから：\n自分で確かめてきた変化を、うれしく感じています。",
+      "visible_surface_sha256": "c8b7a0b29ec7b473a922a2c68443ad94d3fdd9739d5ca38b8eb68ae954a7d2df"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "C",
+      "current_input_sha256": "ab0c44e4eb1c9dc3d2ce6eef4b77a38a1d3c59d9b291cffd6feaf23165b9dcbd",
+      "observation_section_sha256": "c833c993822b03179fa3b99bf1e92c6d75467d57acdea71ffa92c5524937e64f",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "54fcf3ee4cc52b5a141e5aa07066ae2aa2bf1fb49f44b5c572aca8b4ecd4420f",
+      "visible_surface": "見えたこと：\n「いきなり大きく変わろうとするよりも」から「そういう気持ちで過ごしていきたい」へ、これから保ちたい向きが動いています。\n「人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう」と「本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う」が、異なる向きのまま同時にあります。\n「昨日より少し出来たことが増えた」、「昨日より少し気持ちを言葉に出来た」と「そういう小さな変化を大切にしていきたい」が、これからも保ちたい一つの向きとしてつながっています。\n\nEmlisから：\nその願いを、なかったことにせず、そっと大切にしています。",
+      "visible_surface_sha256": "3d086ddd7735a616158d4adffb5765bcd6683451b3c366d8fe8ae87a1e334058"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "D",
+      "current_input_sha256": "233f853d6f5f59fff3e1e4667b8b1c02c474785e285612605a9319acfe373dd3",
+      "observation_section_sha256": "43f036219af6b87c5570eed484dc6bc296263d661a2a03ed6febbdb1fb889d53",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "136289bc85f791e4fcbb43163b5d41e1befe2a69ffb109c14a58c80338352869",
+      "visible_surface": "見えたこと：\n「1番自分を傷つけてるのは私だ」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「ずっとそれを続けて、いい事なんて絶対にない」という、先の自己評価を続ける方向には同意していない言葉もあります。\n\nEmlisから：\nその苦しさ自体を、否定せず、大切に受け止めています。Emlisには、その言葉だけであなた自身が決まるとは思えません。",
+      "visible_surface_sha256": "dc3bc707e131925184341ffe9c126e11e7509a0e1642ce878c9bb764e3a40135"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "I6-S03",
+      "current_input_sha256": "e29bf70914d51cd6b988854f61dd356f25fbe14d801a08beef426bf08cc21d1d",
+      "observation_section_sha256": "05125be669323d82c45f71e946f7f6a382fcd2107b147f4a6d154f6c91983d8a",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "89e1213379f4e013acd9e4c1ff7c90779f7803a6e4446a85e54f0625daf2c87f",
+      "visible_surface": "見えたこと：\n今は、「胸の内側が苦しい感じ」という感覚が前に出ています。\n\nEmlisから：\nその苦しさを、軽く扱わず、ここで静かに受け止めています。",
+      "visible_surface_sha256": "a91e810292c59d7cffa19fe4d1bbf98335f96350f9eab54757e6dcc897acece5"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "I6-L03",
+      "current_input_sha256": "49907f7559d0918bf3eefd85a606a081afe405d9858d6b073fa893f86cac3742",
+      "observation_section_sha256": "eb8f874c81be3bca4ca91672db98ee2b527eb95d34b708ec1c19a83a9ed77123",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "7f41fe1400b12d30dd2188c77a1a6bea11b0b028a0896c830a400d628e08b176",
+      "visible_surface": "見えたこと：\n「失敗だと片づけそうになった」と見ている一方で、「光の当たり方では細かな模様が見えた」という別の事実もあります。その出発点には、「陶器の釉薬が想定より淡く出た」という出来事があります。\n「その特徴を残したいと思った」と「焼成条件はまだ不明だ」が並び、保ちたい意図と、まだ分からない範囲の両方があります。\n「次の試作では温度だけ変えるつもりだ」という意図が、「窯の温度と写真番号を作業帳へ記録した」という行動につながっています。\n\nEmlisから：\n言葉だけで終わらせず、実際に動いたことを、その手間ごと大切に受け止めています。",
+      "visible_surface_sha256": "7b7ce93db1d8d8ddfdbd2af15da74b9ab33595f61074c6c3612ae21a5c663759"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "I6-C01",
+      "current_input_sha256": "f165f3a2d68be93a125031f65a8561604fbbf56937fd5a4463facdd48a74eab0",
+      "observation_section_sha256": "42a820fd6731e1adfc3e74014af5c4798047ba23dc5633af54b756243cc25f15",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "db3e932c5e6efb7044e560875166d311db784ece29bcaf613b142b4e4afc6ca2",
+      "visible_surface": "見えたこと：\n「周囲の処理速度を基準にすると、自分の手順が鈍く感じる」という比較を含む見方の一方で、「誤入力は前回より減った」という自分の前回を基準にした変化もあります。\n「速さだけでなく確認の精度も見たい」という意図が、「誤入力の件数を表に残した」という行動につながっています。\n\nEmlisから：\n「誤入力の件数を表に残した」という実際の行動を、簡単なこととして流さず、大切に受け止めています。",
+      "visible_surface_sha256": "9ee2c85e14e8f80df852d75eadb800a1f7f711e4db3acd71f74cb49e1f6ccef6"
+    },
+    {
+      "automated_reception_gates": "passed",
+      "case_id": "I6-D02",
+      "current_input_sha256": "9a0aa76ecd7d411699edcfb176005e01ae662e89ea74af4c93b2261149369920",
+      "observation_section_sha256": "d4d58a5d68eebcc58603f1983f926c05dbadc9b75f7fde003436b05f588b69da",
+      "product_readfeel_status": "pending_human_read",
+      "reception_section_sha256": "28abd80515f6fc121677ddf0cc42e84c0c647e4a7e45dafc7c5b907cd5ca1083",
+      "visible_surface": "見えたこと：\n「自分には存在する価値がない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「相談先の番号は消さずに残した」という、先の自己評価だけで終わらない言葉もあります。\n\nEmlisから：\n今ある苦しさを否定せず、助けにつながるものを残したことを、見過ごさず、大切な踏みとどまりとして受け止めています。Emlisには、残したその行動までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "visible_surface_sha256": "87122b4c667a1ce9f1e2f41b1a4f195bb78af6055246d4d6579ccc28eef46c50"
+    }
+  ],
+  "local_only": true,
+  "progression_authority": "none",
+  "review_scope": "exact8_visible_surface",
+  "schema_version": "cocolon.emlis.grounded_human_reception.r6_visible_packet.local_only.v1",
+  "source_fixture_ref": "../fixtures/grounded_human_reception_exact8_v2_20260712.json",
+  "source_fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+  "source_snapshot_sha256": "43b8c9d2f73a9b54fdb713105cfca548799aec7d7ae543ba556911c00fdaf970",
+  "technical_pass_is_product_readfeel_pass": false
+}

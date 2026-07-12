@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 from dataclasses import replace
 from pathlib import Path
+import re
 
 import pytest
 
@@ -142,7 +143,18 @@ def test_ga2_b_help_seeking_keeps_distinct_value_in_reception_section(
     observation, reception, issues = split_two_stage_surface(surface.text)
     assert issues == ()
     assert target_anchor in observation
-    assert target_anchor in reception
+    assert target_anchor not in reception
+    assert {
+        "reception_act:hold_help_seeking",
+        "reception_act:bounded_counter_self_denial",
+        "reception_quote_policy:no_full_quote_replay",
+        "reception_distinctness:required",
+    } <= set(follow.binding.functional_atom_ids)
+    reception_plan = plan.response_plan.human_reception_plan
+    assert reception_plan is not None
+    assert follow.binding.evidence_span_ids == reception_plan.source_evidence_span_ids
+    assert follow.binding.relation_ids == ()
+    assert re.search(r"(?:助け|踏みとどまり).*(?:大切|受け止)", reception)
     assert observation != reception
     assert report.public_observation_status == "passed"
 
@@ -356,6 +368,10 @@ def test_ga2_e_surface_is_deterministic_and_has_no_case_specific_source_branch()
         / "services"
         / "ai_inference"
         / "emlis_ai_grounded_observation_plan.py",
+        Path(__file__).parents[1]
+        / "services"
+        / "ai_inference"
+        / "emlis_ai_grounded_human_reception.py",
         Path(__file__).parents[1]
         / "services"
         / "ai_inference"

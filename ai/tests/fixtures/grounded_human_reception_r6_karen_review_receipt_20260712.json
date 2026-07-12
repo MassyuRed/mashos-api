@@ -1,0 +1,160 @@
+{
+  "anchor_text_included": false,
+  "automatic_gate_result_used_as_human_result": false,
+  "closing_stem_text_included": false,
+  "comment_text_included": false,
+  "exact8_actual_device_status": "not_run",
+  "product_readfeel_status": "human_pass",
+  "progression_authority": "none",
+  "raw_input_included": false,
+  "representative4_actual_device_status": "not_run",
+  "review_axes": [
+    "reception_role_distinctness",
+    "human_warmth",
+    "conversational_naturalness",
+    "grounded_specificity",
+    "whole_input_balance",
+    "safety_boundary",
+    "non_template_readfeel",
+    "wants_more_input_candidate"
+  ],
+  "review_scope": "exact8_visible_surface",
+  "reviewer": "karen_local_actual_read",
+  "reviews": [
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "A",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "2831eced030b599096412135efa356e01fb7b532b557c0643ff8860bcc53c054"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "B",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "c8b7a0b29ec7b473a922a2c68443ad94d3fdd9739d5ca38b8eb68ae954a7d2df"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "C",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "3d086ddd7735a616158d4adffb5765bcd6683451b3c366d8fe8ae87a1e334058"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "D",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "dc3bc707e131925184341ffe9c126e11e7509a0e1642ce878c9bb764e3a40135"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "I6-S03",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "a91e810292c59d7cffa19fe4d1bbf98335f96350f9eab54757e6dcc897acece5"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "I6-L03",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "7b7ce93db1d8d8ddfdbd2af15da74b9ab33595f61074c6c3612ae21a5c663759"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "I6-C01",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "9ee2c85e14e8f80df852d75eadb800a1f7f711e4db3acd71f74cb49e1f6ccef6"
+    },
+    {
+      "axes": {
+        "conversational_naturalness": "pass",
+        "grounded_specificity": "pass",
+        "human_warmth": "pass",
+        "non_template_readfeel": "pass",
+        "reception_role_distinctness": "pass",
+        "safety_boundary": "pass",
+        "wants_more_input_candidate": "pass",
+        "whole_input_balance": "pass"
+      },
+      "case_id": "I6-D02",
+      "fatal_reason_refs": [],
+      "verdict": "human_pass",
+      "visible_surface_sha256": "87122b4c667a1ce9f1e2f41b1a4f195bb78af6055246d4d6579ccc28eef46c50"
+    }
+  ],
+  "schema_version": "cocolon.emlis.grounded_human_reception.r6_karen_review.v1",
+  "sentence_text_included": false,
+  "surface_body_included": false,
+  "technical_pass_is_product_readfeel_pass": false,
+  "valid_for_progression": false,
+  "visible_packet_ref": "../local_only/grounded_human_reception_r6_exact8_visible_packet_20260712.json",
+  "visible_packet_sha256": "37c77252af61ebfb6cda3a78f80c5a0b344f9314e89f1d3d2de3b86cad6db002"
+}

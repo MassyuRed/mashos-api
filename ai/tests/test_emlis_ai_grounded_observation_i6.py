@@ -53,6 +53,7 @@ SERVICE_ROOT = AI_ROOT / "services" / "ai_inference"
 CANONICAL_PRODUCTION_FILES = (
     SERVICE_ROOT / "emlis_ai_reply_service.py",
     SERVICE_ROOT / "emlis_ai_grounded_observation_plan.py",
+    SERVICE_ROOT / "emlis_ai_grounded_human_reception.py",
     SERVICE_ROOT / "emlis_ai_grounded_sentence_surface.py",
     SERVICE_ROOT / "emlis_ai_grounded_observation_gate.py",
 )

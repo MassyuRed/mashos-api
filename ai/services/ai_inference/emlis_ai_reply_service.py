@@ -23,11 +23,17 @@ from emlis_ai_evidence_ledger_service import (
     build_evidence_ledger,
     build_evidence_span_resolver,
 )
-from emlis_ai_grounded_observation_gate import evaluate_grounded_observation_gate
+from emlis_ai_grounded_observation_gate import (
+    RECEPTION_GATE_REPORT_FIELDS,
+    GroundedObservationGateReport,
+    evaluate_grounded_observation_gate,
+    grounded_gate_meta_is_body_free,
+)
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from emlis_ai_grounded_sentence_surface import (
     GROUND_RECOVERY_STAGES,
     build_grounded_sentence_plan,
+    build_reception_recovery_sentence_plan,
     realize_grounded_sentence_plan,
 )
 from emlis_ai_observation_integrator_service import integrate_perspective_board
@@ -69,6 +75,12 @@ def _reply_kind(response_kind: str) -> str:
     if response_kind == ResponseKind.LOW_INFORMATION_OBSERVATION.value:
         return "low_information_observation"
     return response_kind
+
+
+def _safe_grounded_gate_meta_fallback(report: Any) -> Dict[str, Any]:
+    """Rebuild the exact body-free report envelope without virtual overrides."""
+
+    return GroundedObservationGateReport.as_body_free_meta(report)
 
 
 async def render_emlis_ai_reply(
@@ -120,12 +132,22 @@ async def render_emlis_ai_reply(
     selected_surface = None
     selected_gate = None
     attempted_stages: List[str] = []
+    base_sentence_plan = build_grounded_sentence_plan(
+        plan,
+        resolver,
+        recovery_stage="full",
+    )
     for recovery_stage in GROUND_RECOVERY_STAGES:
         attempted_stages.append(recovery_stage)
-        sentence_plan = build_grounded_sentence_plan(
-            plan,
-            resolver,
-            recovery_stage=recovery_stage,
+        sentence_plan = (
+            base_sentence_plan
+            if recovery_stage == "full"
+            else build_reception_recovery_sentence_plan(
+                base_sentence_plan,
+                plan,
+                resolver,
+                recovery_stage=recovery_stage,
+            )
         )
         surface_result = realize_grounded_sentence_plan(
             sentence_plan,
@@ -161,14 +183,51 @@ async def render_emlis_ai_reply(
             and selected_gate.two_stage_reception_section_present
         )
     )
+    reception_contract_guard_required = selected_surface.status == "generated"
+    reception_contract_guard_passed = bool(
+        not reception_contract_guard_required
+        or (
+            selected_gate.reception_gate_required
+            and selected_gate.all_reception_gates_passed
+            and all(
+                getattr(selected_gate, field_name) == "passed"
+                for field_name in RECEPTION_GATE_REPORT_FIELDS
+            )
+        )
+    )
+
+    raw_gate_meta = selected_gate.as_body_free_meta()
+    gate_meta_body_free_passed = grounded_gate_meta_is_body_free(raw_gate_meta)
+    gate_meta = (
+        raw_gate_meta
+        if gate_meta_body_free_passed
+        else _safe_grounded_gate_meta_fallback(selected_gate)
+    )
+    if not grounded_gate_meta_is_body_free(gate_meta):
+        raise RuntimeError("grounded_gate_meta_safe_fallback_invalid")
+
+    final_contract_guard_passed = bool(
+        visible_contract_guard_passed
+        and reception_contract_guard_passed
+        and gate_meta_body_free_passed
+    )
     public_status = selected_gate.public_observation_status
     rejection_reasons = list(selected_gate.rejection_reasons)
-    if selected_gate.passed and not visible_contract_guard_passed:
+    if selected_gate.passed and not final_contract_guard_passed:
         public_status = "rejected"
-        rejection_reasons.append("runtime_visible_contract_guard_failed")
+        if not visible_contract_guard_passed:
+            rejection_reasons.append("runtime_visible_contract_guard_failed")
+        if not reception_contract_guard_passed:
+            rejection_reasons.append(
+                "runtime_reception_contract_guard_failed"
+            )
+        if not gate_meta_body_free_passed:
+            rejection_reasons.append(
+                "grounded_gate_meta_body_free_guard_failed"
+            )
     final_text = (
         selected_surface.text.strip()
-        if selected_gate.passed and visible_contract_guard_passed
+        if selected_gate.passed and final_contract_guard_passed
         else ""
     )
     response_kind = _response_kind(
@@ -177,7 +236,6 @@ async def render_emlis_ai_reply(
     )
     reply_kind = _reply_kind(response_kind)
 
-    gate_meta = selected_gate.as_body_free_meta()
     gate_meta.update(
         {
             "recovery_steps": list(attempted_stages),
@@ -192,6 +250,25 @@ async def render_emlis_ai_reply(
                 if visible_contract_guard_required and visible_contract_guard_passed
                 else "failed"
                 if visible_contract_guard_required
+                else "not_evaluated"
+            ),
+            "runtime_reception_contract_guard": (
+                "passed"
+                if reception_contract_guard_required
+                and reception_contract_guard_passed
+                else "failed"
+                if reception_contract_guard_required
+                else "not_evaluated"
+            ),
+            "runtime_gate_meta_body_free_guard": (
+                "passed" if gate_meta_body_free_passed else "failed"
+            ),
+            "runtime_final_contract_guard": (
+                "passed"
+                if selected_surface.status == "generated"
+                and final_contract_guard_passed
+                else "failed"
+                if selected_surface.status == "generated"
                 else "not_evaluated"
             ),
         }
@@ -233,7 +310,7 @@ async def render_emlis_ai_reply(
         "db_physical_name_changed": False,
         "rn_visible_contract_changed": False,
         "p5_p6_overlay": {
-            "base_current_input_gate_passed": selected_gate.passed,
+            "base_current_input_gate_passed": bool(final_text),
             "overlay_applied": False,
             "p5_status": "human_qa_pending",
             "p6_status": "p5_dependency_hold",

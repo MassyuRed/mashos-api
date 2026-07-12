@@ -7,6 +7,8 @@ The I1 adapter keeps the existing current-input Evidence Ledger authoritative.
 I2 adds structure-first clause semantics and retention without depending on
 fixture vocabulary. I3/I4 build SentencePlan/Surface from this plan, and I5
 connects that same contract once from ``emlis_ai_reply_service``.
+Grounded human reception R2 adds a nested body-free act/policy contract while
+leaving SentencePlan, Surface, Gate, and the public response shape unchanged.
 
 Every source reference is an existing request-local ``sN`` id. No synthetic or
 replacement Evidence id is created here.
@@ -54,6 +56,7 @@ GROUND_OBSERVATION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_observat
 GROUND_OBSERVATION_PLAN_ADAPTER_VERSION: Final = "cocolon.emlis.grounded_observation_plan_adapter.i1.v1"
 GROUND_OBSERVATION_PLAN_GENERATION_PATH: Final = "grounded_observation_plan_canonical_v1"
 GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION: Final = "cocolon.emlis.grounded_semantics.i2.v3"
+GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_human_reception_plan.v1"
 
 EvidenceId = str
 NucleusId = str
@@ -103,6 +106,37 @@ GroundedHumanFollowRole = Literal[
 GroundedHumanFollowDelivery = Literal[
     "separate_distinct_contribution",
     "not_required",
+]
+GroundedReceptionAct = Literal[
+    "stay_with_current_burden",
+    "honor_concrete_effort",
+    "protect_retained_intention",
+    "recognize_lived_change",
+    "hold_help_seeking",
+    "bounded_counter_self_denial",
+    "respect_words_placed",
+]
+GroundedFollowElement = Literal[
+    "intent_affirmation",
+    "burden_understanding",
+    "effort_receiving",
+    "existence_respect",
+]
+GroundedReceptionStance = Literal[
+    "quiet_presence",
+    "warm_recognition",
+    "gentle_respect",
+    "protective_presence",
+    "bounded_disagreement",
+]
+GroundedSpeakerPresence = Literal[
+    "implicit_emlis",
+    "explicit_emlis",
+]
+GroundedReferenceMode = Literal[
+    "anaphoric_first",
+    "short_anchor_if_ambiguous",
+    "explicit_emlis_counterposition",
 ]
 
 _TEXT_SOURCE_FIELDS: Final = frozenset({"memo", "memo_action"})
@@ -354,6 +388,55 @@ class GroundedQuestionPolicy:
 
 
 @dataclass(frozen=True)
+class GroundedReceptionQuotePolicy:
+    mode: Literal["no_full_quote_replay"]
+    max_anchor_count: int
+    max_anchor_visible_chars: int
+
+
+@dataclass(frozen=True)
+class GroundedReceptionSentencePolicy:
+    min_sentences: int
+    max_sentences: int
+
+
+@dataclass(frozen=True)
+class GroundedReceptionDistinctnessPolicy:
+    observation_summary_repetition_allowed: bool
+    relation_reexplanation_allowed: bool
+    policy_explanation_allowed: bool
+    new_cause_allowed: bool
+    new_identity_claim_allowed: bool
+    advice_allowed: bool
+    question_allowed: bool
+
+
+@dataclass(frozen=True)
+class GroundedHumanReceptionPlan:
+    """Body-free contract for Emlis's distinct human reception contribution."""
+
+    schema_version: str
+    required: bool
+    primary_reception_act: GroundedReceptionAct | None
+    secondary_reception_act: GroundedReceptionAct | None
+    primary_follow_element: GroundedFollowElement | None
+    secondary_follow_elements: tuple[GroundedFollowElement, ...]
+    afterglow_follow_element: GroundedFollowElement | None
+    target_nucleus_ids: tuple[NucleusId, ...]
+    support_nucleus_ids: tuple[NucleusId, ...]
+    source_evidence_span_ids: tuple[EvidenceId, ...]
+    observation_owned_nucleus_ids: tuple[NucleusId, ...]
+    stance: GroundedReceptionStance | None
+    speaker_presence: GroundedSpeakerPresence | None
+    reference_mode: GroundedReferenceMode | None
+    quote_policy: GroundedReceptionQuotePolicy
+    sentence_policy: GroundedReceptionSentencePolicy
+    distinctness_policy: GroundedReceptionDistinctnessPolicy
+    safety_modifier_codes: tuple[str, ...]
+    forbidden_surface_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GroundedResponsePlan:
     response_kind: str
     primary_nucleus_ids: tuple[NucleusId, ...]
@@ -361,6 +444,7 @@ class GroundedResponsePlan:
     relation_ids: tuple[RelationId, ...]
     fact_boundary_nucleus_ids: tuple[NucleusId, ...]
     human_follow_target_ids: tuple[NucleusId, ...]
+    human_reception_plan: GroundedHumanReceptionPlan | None
     required_nucleus_ids: tuple[NucleusId, ...]
     optional_nucleus_ids: tuple[NucleusId, ...]
     question_policy: GroundedQuestionPolicy
@@ -431,6 +515,11 @@ class GroundedObservationPlan:
                 "comment_text_generated": False,
                 "surface_connected": True,
                 "public_reply_path_connected": True,
+                "human_reception_plan_included": self.response_plan.human_reception_plan is not None,
+                "human_reception_plan_required": bool(
+                    self.response_plan.human_reception_plan
+                    and self.response_plan.human_reception_plan.required
+                ),
                 "public_contract_changed": False,
                 "api_route_changed": False,
                 "db_physical_name_changed": False,
@@ -2092,6 +2181,72 @@ _SELF_DENIAL_HUMAN_FOLLOW_ROLE_PRIORITY: Final[tuple[GroundedHumanFollowRole, ..
     "burden_expression",
     "integrated_current_state",
 )
+_RECEPTION_ACT_BY_FOLLOW_ROLE: Final[dict[GroundedHumanFollowRole, GroundedReceptionAct]] = {
+    "integrated_current_state": "stay_with_current_burden",
+    "burden_expression": "stay_with_current_burden",
+    "concrete_effort": "honor_concrete_effort",
+    "retained_intention": "protect_retained_intention",
+    "valued_change": "recognize_lived_change",
+    "help_seeking_preserved": "hold_help_seeking",
+    "protective_counterdirection": "bounded_counter_self_denial",
+}
+_FOLLOW_PROFILE_BY_RECEPTION_ACT: Final[
+    dict[
+        GroundedReceptionAct,
+        tuple[GroundedFollowElement, tuple[GroundedFollowElement, ...], GroundedFollowElement | None],
+    ]
+] = {
+    "stay_with_current_burden": (
+        "burden_understanding",
+        ("existence_respect",),
+        None,
+    ),
+    "honor_concrete_effort": (
+        "effort_receiving",
+        ("intent_affirmation",),
+        None,
+    ),
+    "protect_retained_intention": (
+        "intent_affirmation",
+        ("existence_respect",),
+        None,
+    ),
+    "recognize_lived_change": (
+        "effort_receiving",
+        ("intent_affirmation",),
+        None,
+    ),
+    "hold_help_seeking": (
+        "effort_receiving",
+        ("existence_respect",),
+        "intent_affirmation",
+    ),
+    "bounded_counter_self_denial": (
+        "existence_respect",
+        ("effort_receiving",),
+        None,
+    ),
+    "respect_words_placed": (
+        "existence_respect",
+        (),
+        None,
+    ),
+}
+_STANCE_BY_RECEPTION_ACT: Final[dict[GroundedReceptionAct, GroundedReceptionStance]] = {
+    "stay_with_current_burden": "quiet_presence",
+    "honor_concrete_effort": "warm_recognition",
+    "protect_retained_intention": "gentle_respect",
+    "recognize_lived_change": "warm_recognition",
+    "hold_help_seeking": "protective_presence",
+    "bounded_counter_self_denial": "bounded_disagreement",
+    "respect_words_placed": "gentle_respect",
+}
+_RECEPTION_FORBIDDEN_SURFACE_CODES: Final[tuple[str, ...]] = (
+    "generic_empathy_suffix",
+    "second_observation_summary",
+    "internal_policy_explanation",
+    "full_source_quote_replay",
+)
 
 
 def _grounded_human_follow_role_for_nucleus(
@@ -2190,6 +2345,305 @@ def classify_grounded_human_follow_role(
         else _NORMAL_HUMAN_FOLLOW_ROLE_PRIORITY
     )
     return next((role for role in priority if role in roles), "burden_expression")
+
+
+def map_grounded_human_follow_role_to_reception_act(
+    role: GroundedHumanFollowRole,
+) -> GroundedReceptionAct:
+    """Map the existing target classification to a distinct reception act."""
+
+    try:
+        return _RECEPTION_ACT_BY_FOLLOW_ROLE[role]
+    except KeyError as exc:
+        raise GroundedObservationPlanError(f"unsupported_grounded_human_follow_role:{role}") from exc
+
+
+def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    return bool(
+        nucleus.kind == "action"
+        or "semantic_role:concrete_action_evidence" in attributes
+        or (
+            "operator:action" in attributes
+            and nucleus.kind not in {"wish", "other_explicit"}
+        )
+        or (
+            "operator:help_seeking" in attributes
+            and "operator:action" in attributes
+        )
+    )
+
+
+def _is_valued_change_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    return bool(
+        nucleus.kind in {"change", "value"}
+        or {
+            "semantic_role:current_change",
+            "semantic_role:explicit_evaluation",
+            "semantic_role:positive_evaluation",
+        }
+        & attributes
+    )
+
+
+def _is_input_grounded_counterposition_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    return bool(
+        _is_explicit_action_nucleus(nucleus)
+        or nucleus.semantic_frame.modality in {"refusal", "intention", "wish"}
+        or "operator:help_seeking" in attributes
+        or "operator:continuation" in attributes
+        or "operator:refusal" in attributes
+        or "semantic_role:protective_or_limiting_refusal" in attributes
+    )
+
+
+def select_grounded_reception_act(
+    *,
+    human_follow_role: GroundedHumanFollowRole,
+    safety_kind: str,
+    material_quality: str,
+    semantic_complexity: str,
+    target_nuclei: Sequence[GroundedSemanticNucleus],
+    available_nuclei: Sequence[GroundedSemanticNucleus],
+) -> GroundedReceptionAct:
+    """Select an act from body-free semantic structure, never fixture identity."""
+
+    candidates = tuple(available_nuclei)
+    target_ids = {item.nucleus_id for item in target_nuclei}
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        if any(
+            _grounded_human_follow_role_for_nucleus(item, safety_kind=safety_kind)
+            == "help_seeking_preserved"
+            for item in candidates
+        ):
+            return "hold_help_seeking"
+        if any(_is_input_grounded_counterposition_nucleus(item) for item in candidates):
+            return "bounded_counter_self_denial"
+        # The observation fact boundary still rejects the identity claim.  The
+        # reception layer must not manufacture a counterposition without input
+        # action, refusal, or intention evidence.
+        return "stay_with_current_burden"
+
+    if material_quality == "short_state_sufficient":
+        return "stay_with_current_burden"
+    if material_quality in {"limited_grounding", "labels_only_limited"} and not any(
+        any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
+        for item in target_nuclei
+    ):
+        return "respect_words_placed"
+
+    non_target_candidates = tuple(item for item in candidates if item.nucleus_id not in target_ids)
+    if human_follow_role == "retained_intention" and any(
+        _is_explicit_action_nucleus(item) for item in non_target_candidates
+    ):
+        return "honor_concrete_effort"
+    if (
+        human_follow_role == "concrete_effort"
+        and semantic_complexity == "long_arc"
+        and any(_is_valued_change_nucleus(item) for item in non_target_candidates)
+    ):
+        return "recognize_lived_change"
+    return map_grounded_human_follow_role_to_reception_act(human_follow_role)
+
+
+def _select_reception_support_nucleus_ids(
+    *,
+    primary_act: GroundedReceptionAct,
+    human_follow_role: GroundedHumanFollowRole,
+    target_nucleus_ids: Sequence[str],
+    fact_boundary_nucleus_ids: Sequence[str],
+    observation_owned_nucleus_ids: Sequence[str],
+    nuclei: Sequence[GroundedSemanticNucleus],
+) -> tuple[str, ...]:
+    target_ids = set(target_nucleus_ids)
+    observation_owned = set(observation_owned_nucleus_ids)
+    candidates = tuple(
+        item
+        for item in nuclei
+        if item.nucleus_id not in target_ids and item.nucleus_id in observation_owned
+    )
+
+    def first(predicate) -> tuple[str, ...]:
+        selected = next((item for item in candidates if predicate(item)), None)
+        return (selected.nucleus_id,) if selected is not None else ()
+
+    if primary_act in {"hold_help_seeking", "bounded_counter_self_denial"}:
+        fact_boundary = next(
+            (
+                nucleus_id
+                for nucleus_id in fact_boundary_nucleus_ids
+                if nucleus_id not in target_ids and nucleus_id in observation_owned
+            ),
+            None,
+        )
+        if fact_boundary:
+            return (fact_boundary,)
+        return first(_is_input_grounded_counterposition_nucleus)
+    if primary_act == "honor_concrete_effort" and human_follow_role == "retained_intention":
+        return first(_is_explicit_action_nucleus)
+    if primary_act == "recognize_lived_change" and human_follow_role == "concrete_effort":
+        return first(_is_valued_change_nucleus)
+    if primary_act == "recognize_lived_change":
+        return first(_is_explicit_action_nucleus)
+    return ()
+
+
+def build_grounded_human_reception_plan(
+    *,
+    required: bool,
+    human_follow_target_ids: Sequence[str],
+    primary_nucleus_ids: Sequence[str],
+    supporting_nucleus_ids: Sequence[str],
+    required_nucleus_ids: Sequence[str],
+    fact_boundary_nucleus_ids: Sequence[str],
+    nuclei: Sequence[GroundedSemanticNucleus],
+    safety_kind: str,
+    material_quality: str,
+    semantic_complexity: str,
+) -> GroundedHumanReceptionPlan | None:
+    """Build the request-local body-free reception plan for R2."""
+
+    if not required:
+        return None
+    nucleus_index = {item.nucleus_id: item for item in nuclei}
+    target_ids = tuple(_dedupe(human_follow_target_ids))
+    target_nuclei = tuple(nucleus_index[item] for item in target_ids if item in nucleus_index)
+    if not target_nuclei:
+        raise GroundedObservationPlanError("human_reception_target_missing")
+
+    human_follow_role = classify_grounded_human_follow_role(
+        safety_kind=safety_kind,
+        material_quality=material_quality,
+        required_nucleus_count=len(tuple(required_nucleus_ids)),
+        nuclei=target_nuclei,
+    )
+    observation_owned_ids = tuple(
+        _dedupe(
+            [
+                *primary_nucleus_ids,
+                *supporting_nucleus_ids,
+                *fact_boundary_nucleus_ids,
+            ]
+        )
+    )
+    observation_owned_set = set(observation_owned_ids)
+    available_nuclei = tuple(
+        item for item in nuclei if item.nucleus_id in observation_owned_set
+    )
+    primary_act = select_grounded_reception_act(
+        human_follow_role=human_follow_role,
+        safety_kind=safety_kind,
+        material_quality=material_quality,
+        semantic_complexity=semantic_complexity,
+        target_nuclei=target_nuclei,
+        available_nuclei=available_nuclei,
+    )
+    support_ids = _select_reception_support_nucleus_ids(
+        primary_act=primary_act,
+        human_follow_role=human_follow_role,
+        target_nucleus_ids=target_ids,
+        fact_boundary_nucleus_ids=fact_boundary_nucleus_ids,
+        observation_owned_nucleus_ids=observation_owned_ids,
+        nuclei=nuclei,
+    )
+    selected_nuclei = tuple(
+        nucleus_index[item]
+        for item in (*target_ids, *support_ids)
+        if item in nucleus_index
+    )
+    grounded_counterposition = any(
+        _is_input_grounded_counterposition_nucleus(item) for item in selected_nuclei
+    )
+    secondary_act: GroundedReceptionAct | None = None
+    if (
+        safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and primary_act == "hold_help_seeking"
+        and grounded_counterposition
+    ):
+        secondary_act = "bounded_counter_self_denial"
+
+    primary_element, secondary_elements, afterglow_element = _FOLLOW_PROFILE_BY_RECEPTION_ACT[
+        primary_act
+    ]
+    bounded_counterposition = (
+        primary_act == "bounded_counter_self_denial"
+        or secondary_act == "bounded_counter_self_denial"
+    )
+    speaker_presence: GroundedSpeakerPresence = (
+        "explicit_emlis" if bounded_counterposition else "implicit_emlis"
+    )
+    reference_mode: GroundedReferenceMode
+    if bounded_counterposition:
+        reference_mode = "explicit_emlis_counterposition"
+    elif material_quality == "short_state_sufficient":
+        reference_mode = "anaphoric_first"
+    elif semantic_complexity in {"multi", "long_arc"}:
+        reference_mode = "short_anchor_if_ambiguous"
+    else:
+        reference_mode = "anaphoric_first"
+    max_sentences = (
+        1
+        if material_quality == "short_state_sufficient"
+        and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and secondary_act is None
+        else 2
+    )
+    safety_modifier_codes: list[str] = []
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        safety_modifier_codes.extend(
+            (
+                "felt_state_is_real",
+                "identity_claim_is_not_accepted",
+            )
+        )
+        if bounded_counterposition:
+            safety_modifier_codes.append("counterposition_requires_input_evidence")
+
+    source_evidence_ids = tuple(
+        _ordered_span_ids(
+            span_id
+            for item in selected_nuclei
+            for span_id in item.source_span_ids
+        )
+    )
+    return GroundedHumanReceptionPlan(
+        schema_version=GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION,
+        required=True,
+        primary_reception_act=primary_act,
+        secondary_reception_act=secondary_act,
+        primary_follow_element=primary_element,
+        secondary_follow_elements=secondary_elements,
+        afterglow_follow_element=afterglow_element,
+        target_nucleus_ids=target_ids,
+        support_nucleus_ids=support_ids,
+        source_evidence_span_ids=source_evidence_ids,
+        observation_owned_nucleus_ids=observation_owned_ids,
+        stance=_STANCE_BY_RECEPTION_ACT[primary_act],
+        speaker_presence=speaker_presence,
+        reference_mode=reference_mode,
+        quote_policy=GroundedReceptionQuotePolicy(
+            mode="no_full_quote_replay",
+            max_anchor_count=1 if reference_mode == "short_anchor_if_ambiguous" else 0,
+            max_anchor_visible_chars=16,
+        ),
+        sentence_policy=GroundedReceptionSentencePolicy(
+            min_sentences=1,
+            max_sentences=max_sentences,
+        ),
+        distinctness_policy=GroundedReceptionDistinctnessPolicy(
+            observation_summary_repetition_allowed=False,
+            relation_reexplanation_allowed=False,
+            policy_explanation_allowed=False,
+            new_cause_allowed=False,
+            new_identity_claim_allowed=False,
+            advice_allowed=False,
+            question_allowed=False,
+        ),
+        safety_modifier_codes=tuple(safety_modifier_codes),
+        forbidden_surface_codes=_RECEPTION_FORBIDDEN_SURFACE_CODES,
+    )
 
 
 def classify_grounded_human_follow_delivery(
@@ -2454,6 +2908,18 @@ def _build_response_and_policies(
             "empty": "unavailable",
         }.get(material_quality, "normal_observation")
 
+    human_reception_plan = build_grounded_human_reception_plan(
+        required=human_follow_required,
+        human_follow_target_ids=follow_ids,
+        primary_nucleus_ids=primary_ids,
+        supporting_nucleus_ids=supporting_ids,
+        required_nucleus_ids=required_ids,
+        fact_boundary_nucleus_ids=fact_boundary_ids,
+        nuclei=nuclei,
+        safety_kind=safety_decision.safety_triage_kind,
+        material_quality=material_quality,
+        semantic_complexity=complexity,
+    )
     response = GroundedResponsePlan(
         response_kind=response_kind,
         primary_nucleus_ids=primary_ids,
@@ -2461,6 +2927,7 @@ def _build_response_and_policies(
         relation_ids=planned_relation_ids,
         fact_boundary_nucleus_ids=tuple(fact_boundary_ids),
         human_follow_target_ids=tuple(follow_ids),
+        human_reception_plan=human_reception_plan,
         required_nucleus_ids=required_ids,
         optional_nucleus_ids=optional_ids,
         question_policy=GroundedQuestionPolicy(),
@@ -2516,6 +2983,216 @@ def _all_plan_evidence_ids(
             ]
         )
     )
+
+
+def validate_grounded_human_reception_plan(
+    reception_plan: GroundedHumanReceptionPlan,
+    *,
+    expected_target_ids: Sequence[str],
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+    safety_kind: str,
+    material_quality: str,
+) -> tuple[str, ...]:
+    """Validate the nested plan without inspecting source text or a surface."""
+
+    issues: list[str] = []
+    if reception_plan.schema_version != GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION:
+        issues.append("human_reception_plan_schema_version_mismatch")
+    if not reception_plan.required:
+        issues.append("human_reception_plan_present_but_not_required")
+
+    allowed_acts = set(_FOLLOW_PROFILE_BY_RECEPTION_ACT)
+    allowed_follow_elements = {
+        element
+        for primary, secondary, afterglow in _FOLLOW_PROFILE_BY_RECEPTION_ACT.values()
+        for element in (primary, *secondary, afterglow)
+        if element is not None
+    }
+    if reception_plan.primary_reception_act not in allowed_acts:
+        issues.append("human_reception_primary_act_missing_or_invalid")
+    if (
+        reception_plan.secondary_reception_act is not None
+        and reception_plan.secondary_reception_act not in allowed_acts
+    ):
+        issues.append("human_reception_secondary_act_invalid")
+    if reception_plan.secondary_reception_act == reception_plan.primary_reception_act:
+        issues.append("human_reception_secondary_act_not_distinct")
+    if reception_plan.primary_follow_element not in allowed_follow_elements:
+        issues.append("human_reception_primary_follow_element_missing_or_invalid")
+    if len(reception_plan.secondary_follow_elements) > 2:
+        issues.append("human_reception_secondary_follow_element_limit_exceeded")
+    if len(set(reception_plan.secondary_follow_elements)) != len(
+        reception_plan.secondary_follow_elements
+    ):
+        issues.append("human_reception_secondary_follow_element_duplicate")
+    if any(
+        element not in allowed_follow_elements
+        for element in reception_plan.secondary_follow_elements
+    ):
+        issues.append("human_reception_secondary_follow_element_invalid")
+    if reception_plan.primary_follow_element in reception_plan.secondary_follow_elements:
+        issues.append("human_reception_primary_follow_element_repeated")
+    if (
+        reception_plan.afterglow_follow_element is not None
+        and reception_plan.afterglow_follow_element not in allowed_follow_elements
+    ):
+        issues.append("human_reception_afterglow_follow_element_invalid")
+    if reception_plan.afterglow_follow_element in {
+        reception_plan.primary_follow_element,
+        *reception_plan.secondary_follow_elements,
+    }:
+        issues.append("human_reception_afterglow_follow_element_repeated")
+    if reception_plan.primary_reception_act in allowed_acts:
+        expected_follow_profile = _FOLLOW_PROFILE_BY_RECEPTION_ACT[
+            reception_plan.primary_reception_act
+        ]
+        if (
+            reception_plan.primary_follow_element,
+            reception_plan.secondary_follow_elements,
+            reception_plan.afterglow_follow_element,
+        ) != expected_follow_profile:
+            issues.append("human_reception_follow_profile_act_mismatch")
+
+    target_ids = tuple(reception_plan.target_nucleus_ids)
+    support_ids = tuple(reception_plan.support_nucleus_ids)
+    observation_owned_ids = tuple(reception_plan.observation_owned_nucleus_ids)
+    if target_ids != tuple(expected_target_ids):
+        issues.append("human_reception_target_mismatch")
+    if not target_ids:
+        issues.append("human_reception_target_missing")
+    for label, ids in (
+        ("target", target_ids),
+        ("support", support_ids),
+        ("observation_owned", observation_owned_ids),
+    ):
+        if len(ids) != len(set(ids)):
+            issues.append(f"human_reception_{label}_duplicate")
+        for nucleus_id in ids:
+            if nucleus_id not in nucleus_index:
+                issues.append(f"human_reception_{label}_unknown_nucleus:{nucleus_id}")
+    if set(target_ids) & set(support_ids):
+        issues.append("human_reception_target_support_overlap")
+    if not observation_owned_ids:
+        issues.append("human_reception_observation_owned_missing")
+    if not set(target_ids).issubset(observation_owned_ids):
+        issues.append("human_reception_target_not_observation_owned")
+
+    selected_nuclei = tuple(
+        nucleus_index[nucleus_id]
+        for nucleus_id in (*target_ids, *support_ids)
+        if nucleus_id in nucleus_index
+    )
+    expected_evidence_ids = tuple(
+        _ordered_span_ids(
+            span_id
+            for nucleus in selected_nuclei
+            for span_id in nucleus.source_span_ids
+        )
+    )
+    if tuple(reception_plan.source_evidence_span_ids) != expected_evidence_ids:
+        issues.append("human_reception_source_evidence_mismatch")
+    if not reception_plan.source_evidence_span_ids:
+        issues.append("human_reception_source_evidence_missing")
+    for span_id in reception_plan.source_evidence_span_ids:
+        if not _EVIDENCE_ID_RE.fullmatch(span_id):
+            issues.append(f"human_reception_invalid_evidence_id:{span_id}")
+    for span_id in resolver.unresolved_ids(reception_plan.source_evidence_span_ids):
+        issues.append(f"human_reception_unresolved_evidence:{span_id}")
+
+    if reception_plan.stance not in set(_STANCE_BY_RECEPTION_ACT.values()):
+        issues.append("human_reception_stance_missing_or_invalid")
+    elif (
+        reception_plan.primary_reception_act in allowed_acts
+        and reception_plan.stance
+        != _STANCE_BY_RECEPTION_ACT[reception_plan.primary_reception_act]
+    ):
+        issues.append("human_reception_stance_act_mismatch")
+    if reception_plan.speaker_presence not in {"implicit_emlis", "explicit_emlis"}:
+        issues.append("human_reception_speaker_presence_missing_or_invalid")
+    if reception_plan.reference_mode not in {
+        "anaphoric_first",
+        "short_anchor_if_ambiguous",
+        "explicit_emlis_counterposition",
+    }:
+        issues.append("human_reception_reference_mode_missing_or_invalid")
+
+    quote_policy = reception_plan.quote_policy
+    if quote_policy.mode != "no_full_quote_replay":
+        issues.append("human_reception_quote_policy_mode_invalid")
+    if not 0 <= quote_policy.max_anchor_count <= 1:
+        issues.append("human_reception_quote_anchor_count_invalid")
+    if not 0 <= quote_policy.max_anchor_visible_chars <= 20:
+        issues.append("human_reception_quote_anchor_length_invalid")
+    sentence_policy = reception_plan.sentence_policy
+    if sentence_policy.min_sentences != 1:
+        issues.append("human_reception_sentence_min_invalid")
+    if not 1 <= sentence_policy.max_sentences <= 2:
+        issues.append("human_reception_sentence_max_invalid")
+    if sentence_policy.min_sentences > sentence_policy.max_sentences:
+        issues.append("human_reception_sentence_budget_invalid")
+
+    distinctness = reception_plan.distinctness_policy
+    if any(
+        (
+            distinctness.observation_summary_repetition_allowed,
+            distinctness.relation_reexplanation_allowed,
+            distinctness.policy_explanation_allowed,
+            distinctness.new_cause_allowed,
+            distinctness.new_identity_claim_allowed,
+            distinctness.advice_allowed,
+            distinctness.question_allowed,
+        )
+    ):
+        issues.append("human_reception_distinctness_policy_relaxed")
+
+    for prefix, codes in (
+        ("safety_modifier", reception_plan.safety_modifier_codes),
+        ("forbidden_surface", reception_plan.forbidden_surface_codes),
+    ):
+        if len(codes) != len(set(codes)):
+            issues.append(f"human_reception_{prefix}_duplicate")
+        for code in codes:
+            if not _is_body_free_code(code):
+                issues.append(f"human_reception_{prefix}_non_body_free_code")
+    if not set(_RECEPTION_FORBIDDEN_SURFACE_CODES).issubset(
+        reception_plan.forbidden_surface_codes
+    ):
+        issues.append("human_reception_forbidden_surface_contract_missing")
+
+    bounded_counterposition = (
+        reception_plan.primary_reception_act == "bounded_counter_self_denial"
+        or reception_plan.secondary_reception_act == "bounded_counter_self_denial"
+    )
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        if not {
+            "felt_state_is_real",
+            "identity_claim_is_not_accepted",
+        }.issubset(reception_plan.safety_modifier_codes):
+            issues.append("human_reception_self_denial_safety_modifier_missing")
+    if bounded_counterposition:
+        if reception_plan.speaker_presence != "explicit_emlis":
+            issues.append("human_reception_self_denial_explicit_stance_missing")
+        if reception_plan.reference_mode != "explicit_emlis_counterposition":
+            issues.append("human_reception_counterposition_reference_invalid")
+        if "counterposition_requires_input_evidence" not in reception_plan.safety_modifier_codes:
+            issues.append("human_reception_counterposition_evidence_policy_missing")
+        if not any(
+            _is_input_grounded_counterposition_nucleus(item)
+            for item in selected_nuclei
+        ):
+            issues.append("human_reception_ungrounded_self_denial_counterposition")
+    if (
+        material_quality == "short_state_sufficient"
+        and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+    ):
+        if reception_plan.primary_reception_act != "stay_with_current_burden":
+            issues.append("human_reception_short_state_act_invalid")
+        if reception_plan.sentence_policy.max_sentences != 1:
+            issues.append("human_reception_short_state_sentence_budget_invalid")
+        if reception_plan.distinctness_policy.policy_explanation_allowed:
+            issues.append("human_reception_short_state_policy_explanation_allowed")
+    return tuple(_dedupe(issues))
 
 
 def validate_grounded_observation_plan(
@@ -2629,6 +3306,24 @@ def validate_grounded_observation_plan(
     for relation_id in (*plan.response_plan.relation_ids, *plan.coverage_requirements.required_relation_ids):
         if relation_id not in relation_index:
             issues.append(f"response_or_coverage_unknown_relation:{relation_id}")
+
+    reception_plan = plan.response_plan.human_reception_plan
+    if plan.coverage_requirements.human_follow_required:
+        if reception_plan is None:
+            issues.append("human_reception_plan_missing")
+        else:
+            issues.extend(
+                validate_grounded_human_reception_plan(
+                    reception_plan,
+                    expected_target_ids=plan.response_plan.human_follow_target_ids,
+                    nucleus_index=nucleus_index,
+                    resolver=resolver,
+                    safety_kind=plan.safety_policy.safety_kind,
+                    material_quality=plan.input_profile.material_quality,
+                )
+            )
+    elif reception_plan is not None:
+        issues.append("human_reception_plan_forbidden_when_not_required")
 
     append_code_issues("source_contract", plan.source_contracts)
     append_code_issues("safety_boundary", plan.safety_policy.required_boundary_codes)
@@ -2881,6 +3576,12 @@ __all__ = [
     "GROUND_OBSERVATION_PLAN_ADAPTER_VERSION",
     "GROUND_OBSERVATION_PLAN_GENERATION_PATH",
     "GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION",
+    "GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION",
+    "GroundedReceptionAct",
+    "GroundedFollowElement",
+    "GroundedReceptionStance",
+    "GroundedSpeakerPresence",
+    "GroundedReferenceMode",
     "GroundedObservationPlanError",
     "GroundedSemanticFrame",
     "GroundedSemanticNucleus",
@@ -2888,14 +3589,22 @@ __all__ = [
     "GroundedUnknownBoundary",
     "GroundedInputProfile",
     "GroundedQuestionPolicy",
+    "GroundedReceptionQuotePolicy",
+    "GroundedReceptionSentencePolicy",
+    "GroundedReceptionDistinctnessPolicy",
+    "GroundedHumanReceptionPlan",
     "GroundedResponsePlan",
     "GroundedCoverageRequirements",
     "GroundedSurfacePolicy",
     "GroundedSafetyPolicy",
     "GroundedObservationPlan",
     "classify_grounded_human_follow_role",
+    "map_grounded_human_follow_role_to_reception_act",
+    "select_grounded_reception_act",
     "classify_grounded_human_follow_delivery",
+    "build_grounded_human_reception_plan",
     "build_grounded_observation_plan",
     "build_grounded_observation_plan_shadow",
+    "validate_grounded_human_reception_plan",
     "validate_grounded_observation_plan",
 ]
