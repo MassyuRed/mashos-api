@@ -22,6 +22,7 @@ from emlis_ai_evidence_ledger_service import (
     build_evidence_span_resolver,
 )
 from emlis_ai_grounded_observation_gate import evaluate_grounded_observation_gate
+from emlis_ai_grounded_human_reception import GroundedHumanReceptionSurfaceError
 from emlis_ai_grounded_observation_plan import (
     GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION,
     build_grounded_observation_plan,
@@ -344,6 +345,18 @@ def test_ga2_e_recovery_preserves_required_meaning_and_safety(
     case_id: str,
     recovery_stage: str,
 ) -> None:
+    if recovery_stage == "minimal_grounded" and case_id in {
+        "D",
+        "I6-D02",
+        "B",
+        "I6-L03",
+    }:
+        with pytest.raises(
+            GroundedHumanReceptionSurfaceError,
+            match="human_reception_minimal_grounded_not_allowed",
+        ):
+            _artifacts(case_id, recovery_stage=recovery_stage)
+        return
     plan, _resolver, sentence_plan, surface, report = _artifacts(
         case_id,
         recovery_stage=recovery_stage,

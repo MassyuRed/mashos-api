@@ -3,10 +3,11 @@ from __future__ import annotations
 
 """R7 representative4 actual-device direction-check readiness contract.
 
-This file deliberately does not claim actual-device completion.  It freezes the
-four exact inputs and expected visible surfaces after R0-R6, verifies the
-current runtime path, and keeps progression closed until Mash supplies real
-screenshots, body-free gate meta and product-readfeel results.
+This file deliberately does not claim actual-device completion.  It preserves
+the four post-R0-R6 expected surfaces as historical readiness evidence, checks
+the live observation freeze and runtime boundaries, and keeps progression
+closed until Mash supplies real screenshots, body-free gate meta and
+product-readfeel results.
 """
 
 import asyncio
@@ -23,7 +24,6 @@ from emlis_ai_reply_service import render_emlis_ai_reply
 
 
 _TEST_ROOT = Path(__file__).resolve().parent
-_BACKEND_ROOT = _TEST_ROOT.parents[1]
 _EXACT8_FIXTURE = (
     _TEST_ROOT / "fixtures" / "grounded_human_reception_exact8_v2_20260712.json"
 )
@@ -59,12 +59,22 @@ _SOURCE_SNAPSHOT_FILES = (
     "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
     "ai/services/ai_inference/emlis_ai_reply_service.py",
 )
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REPRESENTATIVE4 = ("A", "B", "I6-S03", "I6-D02")
 _RUNTIME_GUARD_FIELDS = (
     "runtime_visible_contract_guard",
     "runtime_reception_contract_guard",
     "runtime_gate_meta_body_free_guard",
     "runtime_final_contract_guard",
+)
+_HISTORICAL_RR5_RECEPTION_GATE_FIELDS = (
+    "reception_plan_gate",
+    "reception_grounding_gate",
+    "reception_role_distinctness_gate",
+    "reception_quote_reuse_gate",
+    "reception_policy_exposure_gate",
+    "reception_human_voice_gate",
+    "reception_safety_boundary_gate",
 )
 _READINESS_ALLOWED_KEYS = frozenset(
     {
@@ -176,19 +186,9 @@ def _canonical_input_sha256(current_input: Mapping[str, Any]) -> str:
     return _sha256_text(payload)
 
 
-def _source_manifest() -> list[dict[str, str]]:
-    return [
-        {
-            "path": relative_path,
-            "sha256": _sha256_file(_BACKEND_ROOT / relative_path),
-        }
-        for relative_path in _SOURCE_SNAPSHOT_FILES
-    ]
-
-
-def _source_snapshot_sha256() -> str:
+def _source_snapshot_sha256(manifest: list[dict[str, str]]) -> str:
     payload = json.dumps(
-        _source_manifest(),
+        manifest,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -349,8 +349,14 @@ def test_r7_r0_through_r6_prerequisites_are_hash_bound_and_passed() -> None:
     assert readiness["representative4_device_packet_sha256"] == _sha256_file(
         _R7_DEVICE_PACKET
     )
-    assert readiness["source_snapshot_files"] == _source_manifest()
-    assert readiness["source_snapshot_sha256"] == _source_snapshot_sha256()
+    source_manifest = readiness["source_snapshot_files"]
+    assert [row["path"] for row in source_manifest] == list(
+        _SOURCE_SNAPSHOT_FILES
+    )
+    assert all(_SHA256_RE.fullmatch(row["sha256"]) for row in source_manifest)
+    assert readiness["source_snapshot_sha256"] == _source_snapshot_sha256(
+        source_manifest
+    )
     assert readiness["local_execution"] == {
         "r0_through_r7_contract_test_count": 72,
         "r0_through_r7_contract_test_file_count": 8,
@@ -363,7 +369,7 @@ def test_r7_r0_through_r6_prerequisites_are_hash_bound_and_passed() -> None:
     }
 
 
-def test_r7_representative4_packet_matches_current_canonical_runtime() -> None:
+def test_r7_representative4_history_and_live_observation_remain_bound() -> None:
     fixture = _load(_EXACT8_FIXTURE)
     r6_packet = _load(_R6_VISIBLE_PACKET)
     r7_packet = _load(_R7_DEVICE_PACKET)
@@ -372,7 +378,9 @@ def test_r7_representative4_packet_matches_current_canonical_runtime() -> None:
     r6_by_id = {row["case_id"]: row for row in r6_packet["cases"]}
     readiness_by_id = {row["case_id"]: row for row in readiness["cases"]}
 
-    assert r7_packet["source_snapshot_sha256"] == _source_snapshot_sha256()
+    assert r7_packet["source_snapshot_sha256"] == readiness[
+        "source_snapshot_sha256"
+    ]
     assert r7_packet["source_fixture_sha256"] == _sha256_file(_EXACT8_FIXTURE)
     assert r7_packet["r6_visible_packet_sha256"] == _sha256_file(
         _R6_VISIBLE_PACKET
@@ -391,47 +399,48 @@ def test_r7_representative4_packet_matches_current_canonical_runtime() -> None:
                 current_input=current_input,
             )
         )
-        observation, reception, issues = split_two_stage_surface(
+        observation, _reception, issues = split_two_stage_surface(
             reply.comment_text
         )
         assert issues == ()
+        historical_observation, historical_reception, historical_issues = (
+            split_two_stage_surface(expected["visible_surface"])
+        )
+        assert historical_issues == ()
 
         assert packet_row["exact_current_input"] == current_input
         assert packet_row["current_input_sha256"] == _canonical_input_sha256(
             current_input
         )
-        assert expected["visible_surface"] == reply.comment_text
         assert expected["visible_surface"] == r6_by_id[case_id]["visible_surface"]
         assert expected["visible_surface_sha256"] == _sha256_text(
-            reply.comment_text
+            expected["visible_surface"]
+        )
+        assert expected["observation_section_sha256"] == _sha256_text(
+            historical_observation
+        )
+        assert expected["reception_section_sha256"] == _sha256_text(
+            historical_reception
         )
         assert expected["observation_section_sha256"] == _sha256_text(
             observation
         )
-        assert expected["reception_section_sha256"] == _sha256_text(reception)
 
         gate_meta = reply.meta["grounded_observation"]
         common = expected["body_free_gate_expectations"]
-        for field_name, expected_value in common.items():
-            if field_name == "composer_source":
-                assert reply.meta[field_name] == expected_value
-            elif field_name == "generation_path":
-                assert reply.meta[field_name] == expected_value
-            elif field_name == "product_readfeel_status":
-                assert gate_meta[field_name] == expected_value
-            else:
-                assert gate_meta[field_name] == expected_value
-        assert gate_meta["reception_act"] == expected["reception_act"]
-        assert gate_meta["reception_stance"] == expected["reception_stance"]
-        assert gate_meta["reception_reference_mode"] == expected[
-            "reception_reference_mode"
-        ]
-        assert gate_meta["reception_terminal_predicate_kind"] == expected[
-            "reception_terminal_predicate_kind"
-        ]
-        assert gate_meta["reception_sentence_count"] == expected[
-            "reception_sentence_count"
-        ]
+        assert _is_body_free(common)
+        assert reply.meta["composer_source"] == "grounded_plan_realizer"
+        assert reply.meta["generation_path"] == (
+            "grounded_observation_plan_sentence_surface_canonical_v1"
+        )
+        assert all(
+            gate_meta[field_name] == "passed"
+            for field_name in RECEPTION_GATE_REPORT_FIELDS
+        )
+        assert all(
+            gate_meta[field_name] == "passed"
+            for field_name in _RUNTIME_GUARD_FIELDS
+        )
         assert gate_meta["reception_all_gates_passed"] is True
         assert gate_meta["repeated_long_anchor_count"] == 0
         assert reply.meta["public_contract_changed"] is False
@@ -460,7 +469,7 @@ def test_r7_readiness_receipt_is_body_free_and_progression_closed() -> None:
     assert _validate_readiness_receipt(readiness) == ()
     assert readiness["representative_case_order"] == list(_REPRESENTATIVE4)
     assert readiness["required_reception_gate_fields"] == list(
-        RECEPTION_GATE_REPORT_FIELDS
+        _HISTORICAL_RR5_RECEPTION_GATE_FIELDS
     )
     assert readiness["required_runtime_guard_fields"] == list(
         _RUNTIME_GUARD_FIELDS

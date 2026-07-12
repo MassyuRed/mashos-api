@@ -13,6 +13,7 @@ from emlis_ai_evidence_ledger_service import (
     build_evidence_span_resolver,
 )
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
+from emlis_ai_grounded_human_reception import reception_active_acts
 from emlis_ai_grounded_sentence_surface import (
     GROUND_RECOVERY_STAGES,
     build_grounded_sentence_plan,
@@ -90,11 +91,7 @@ def test_r3_exact8_binds_one_final_reception_line_to_plan_role_and_evidence() ->
 
         expected_acts = tuple(
             f"reception_act:{act}"
-            for act in (
-                reception.primary_reception_act,
-                reception.secondary_reception_act,
-            )
-            if act is not None
+            for act in reception_active_acts(reception, "full")
         )
         assert tuple(
             atom for atom in reception_atoms if atom.startswith("reception_act:")
@@ -129,10 +126,11 @@ def test_r3_exact8_binds_one_final_reception_line_to_plan_role_and_evidence() ->
             f"reception_speaker:{reception.speaker_presence}",
             f"reception_reference:{reception.reference_mode}",
             "reception_quote_policy:no_full_quote_replay",
-            "reception_sentence_budget:one_or_two",
-            f"reception_sentence_min:{reception.sentence_policy.min_sentences}",
-            f"reception_sentence_max:{reception.sentence_policy.max_sentences}",
+            "reception_sentence_budget:one_to_three",
+            f"reception_sentence_min:{reception.depth_policy.min_sentences}",
+            f"reception_sentence_max:{reception.depth_policy.max_sentences}",
             "reception_distinctness:required",
+            "reception_non_enumeration:required",
             "human_follow_delivery:separate",
             "closure_role:human_follow",
         } <= set(atoms)
@@ -165,13 +163,28 @@ def test_r3_exact8_binds_one_final_reception_line_to_plan_role_and_evidence() ->
 
 def test_r3_recovery_stages_keep_the_reception_role_separate_and_grounded() -> None:
     for case in _load_cases():
-        for recovery_stage in GROUND_RECOVERY_STAGES:
-            plan, sentence_plan, resolver = _artifacts(
-                case["exact_current_input"],
-                recovery_stage=recovery_stage,
+        plan, sentence_plan, resolver = _artifacts(
+            case["exact_current_input"],
+            recovery_stage="full",
+        )
+        reception = plan.response_plan.human_reception_plan
+        assert reception is not None
+        eligible_stages = tuple(
+            stage
+            for stage in GROUND_RECOVERY_STAGES
+            if stage != "minimal_grounded"
+            or (
+                reception.depth_policy.level == "minimal"
+                and reception.depth_policy.safety_mode == "standard"
+                and len(reception.moves) == 1
             )
-            reception = plan.response_plan.human_reception_plan
-            assert reception is not None
+        )
+        for recovery_stage in eligible_stages:
+            if recovery_stage != "full":
+                plan, sentence_plan, resolver = _artifacts(
+                    case["exact_current_input"],
+                    recovery_stage=recovery_stage,
+                )
             line = _human_line(sentence_plan)
             reception_atoms = tuple(
                 atom
@@ -183,14 +196,9 @@ def test_r3_recovery_stages_keep_the_reception_role_separate_and_grounded() -> N
             assert line.binding.evidence_span_ids == reception.source_evidence_span_ids
             assert f"recovery:{recovery_stage}" in line.binding.functional_atom_ids
             assert "human_follow_delivery:separate" in line.binding.functional_atom_ids
-            expected_acts = (
-                reception.primary_reception_act,
-                *(
-                    (reception.secondary_reception_act,)
-                    if recovery_stage == "full"
-                    and reception.secondary_reception_act is not None
-                    else ()
-                ),
+            expected_acts = reception_active_acts(
+                reception,
+                recovery_stage,
             )
             assert tuple(
                 atom.split(":", 1)[1]

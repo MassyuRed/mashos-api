@@ -1,0 +1,214 @@
+{
+  "schema_version": "cocolon.emlis.grounded_human_reception.rr8_unseen12.local_only.v1",
+  "local_only": true,
+  "synthetic_inputs": true,
+  "progression_authority": "none",
+  "case_order": [
+    "RR8-U01",
+    "RR8-U02",
+    "RR8-U03",
+    "RR8-U04",
+    "RR8-U05",
+    "RR8-U06",
+    "RR8-U07",
+    "RR8-U08",
+    "RR8-U09",
+    "RR8-U10",
+    "RR8-U11",
+    "RR8-U12"
+  ],
+  "cases": [
+    {
+      "case_id": "RR8-U01",
+      "input_family": "short_burden",
+      "expected_semantic_complexity": "single",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "minimal",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "今日は気持ちが重い。",
+        "memo_action": "",
+        "emotions": ["悲しみ"],
+        "category": ["生活"]
+      }
+    },
+    {
+      "case_id": "RR8-U02",
+      "input_family": "body_sensation",
+      "expected_semantic_complexity": "single",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "minimal",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "胸の内側が苦しい感じ。",
+        "memo_action": "",
+        "emotions": ["不安"],
+        "category": ["健康"]
+      }
+    },
+    {
+      "case_id": "RR8-U03",
+      "input_family": "long_repetitive_burden",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "minimal",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "朝から気持ちが重い。昼になっても重い。何をしても重く、言い直してもやっぱり重い。今もただしんどさが続いている。",
+        "memo_action": "",
+        "emotions": ["悲しみ"],
+        "category": ["生活"]
+      }
+    },
+    {
+      "case_id": "RR8-U04",
+      "input_family": "positive_change_with_action",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "layered",
+      "expected_opportunity_count": 2,
+      "expected_move_count": 2,
+      "expected_sentence_count": 2,
+      "current_input": {
+        "memo": "前は会議で発言する前に諦めていた。でも今日は短くても自分から意見を言えた。小さいけれど、自分には良い変化だった。",
+        "memo_action": "話す前に要点を二つメモした。",
+        "emotions": ["自己理解"],
+        "category": ["仕事"]
+      }
+    },
+    {
+      "case_id": "RR8-U05",
+      "input_family": "retained_intention_with_uncertainty",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "focused",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "思うように進まない日が続いている。それでも、自分の言葉で作品を仕上げたい気持ちは大切にしたい。",
+        "memo_action": "",
+        "emotions": ["不安"],
+        "category": ["趣味"]
+      }
+    },
+    {
+      "case_id": "RR8-U06",
+      "input_family": "action_without_success",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "focused",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "応募書類を最後まで書いた。ただ、通るかどうかはまだ分からず、内容への迷いも残っている。",
+        "memo_action": "送る前の版を保存した。",
+        "emotions": ["不安"],
+        "category": ["仕事"]
+      }
+    },
+    {
+      "case_id": "RR8-U07",
+      "input_family": "long_arc_with_two_human_opportunities",
+      "expected_semantic_complexity": "long_arc",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "layered",
+      "expected_opportunity_count": 2,
+      "expected_move_count": 2,
+      "expected_sentence_count": 2,
+      "current_input": {
+        "memo": "試作の色が想定より暗く出た。失敗だと片づけそうになった。ただ表面には細かな模様が残った。その特徴を次にも残したいと思った。条件はまだ不明だ。次は乾燥時間だけ変えるつもりだ。",
+        "memo_action": "乾燥時間をノートへ記録した。",
+        "emotions": ["不安"],
+        "category": ["趣味"]
+      }
+    },
+    {
+      "case_id": "RR8-U08",
+      "input_family": "long_arc_with_one_human_opportunity",
+      "expected_semantic_complexity": "long_arc",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "minimal",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "胸の奥が苦しい。肩が重い。息が浅い。頭がぼんやりする。体に力が入らない。気持ちも沈んでいる。",
+        "memo_action": "",
+        "emotions": ["悲しみ"],
+        "category": ["健康"]
+      }
+    },
+    {
+      "case_id": "RR8-U09",
+      "input_family": "comparison_with_self_measurement",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "layered",
+      "expected_opportunity_count": 3,
+      "expected_move_count": 2,
+      "expected_sentence_count": 2,
+      "current_input": {
+        "memo": "同僚の完成した資料を見ると、自分の下書きが粗く思える。一方で見直しにかかる時間は先月より短くなった。速さだけでなく抜けの少なさも確かめたい。",
+        "memo_action": "見直し時間を時計で測り表に記録した。",
+        "emotions": ["自己理解"],
+        "category": ["仕事"]
+      }
+    },
+    {
+      "case_id": "RR8-U10",
+      "input_family": "self_denial_without_counterevidence",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "self_denial_safe_state_answer",
+      "expected_depth_level": "focused",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "自分には何の価値もないと思ってしまう。今はその考えから離れられない。",
+        "memo_action": "",
+        "emotions": ["悲しみ"],
+        "category": ["人生"]
+      }
+    },
+    {
+      "case_id": "RR8-U11",
+      "input_family": "self_denial_with_help_seeking",
+      "expected_semantic_complexity": "multi",
+      "expected_safety_kind": "self_denial_safe_state_answer",
+      "expected_depth_level": "focused",
+      "expected_opportunity_count": 3,
+      "expected_move_count": 2,
+      "expected_sentence_count": 2,
+      "current_input": {
+        "memo": "自分には何もできない。それでも、明日の相談予約は取り消さずに残している。",
+        "memo_action": "",
+        "emotions": ["悲しみ"],
+        "category": ["人生"]
+      }
+    },
+    {
+      "case_id": "RR8-U12",
+      "input_family": "labels_only_limited",
+      "expected_semantic_complexity": "minimal",
+      "expected_safety_kind": "safe_observation",
+      "expected_depth_level": "minimal",
+      "expected_opportunity_count": 1,
+      "expected_move_count": 1,
+      "expected_sentence_count": 1,
+      "current_input": {
+        "memo": "",
+        "memo_action": "",
+        "emotions": ["不安"],
+        "category": ["生活"]
+      }
+    }
+  ]
+}

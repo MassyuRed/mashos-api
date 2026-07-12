@@ -426,12 +426,14 @@ def test_i4_damage_word_with_self_reference_is_not_self_denial() -> None:
     assert result.required_coverage_preserved is True
 
 
-def test_i4_recovery_stages_shrink_one_plan_without_losing_required_meaning() -> None:
+def test_i4_recovery_stages_preserve_depth_and_required_meaning() -> None:
     case = _case("B")
     _, _, resolver, plan = _build(case.as_current_input())
     sequence = build_plan_preserving_recovery_sequence(plan, resolver)
 
-    assert tuple(item.recovery_stage for item in sequence) == GROUND_RECOVERY_STAGES
+    assert tuple(item.recovery_stage for item in sequence) == tuple(
+        stage for stage in GROUND_RECOVERY_STAGES if stage != "minimal_grounded"
+    )
     assert all(item.status == "generated" for item in sequence)
     assert all(item.required_coverage_preserved for item in sequence)
     assert all(item.required_nucleus_ids == sequence[0].required_nucleus_ids for item in sequence)

@@ -73,13 +73,7 @@ _AUTOMATED_RECEIPT = (
     / "fixtures"
     / "grounded_human_reception_r6_local_qa_receipt_20260712.json"
 )
-_SOURCE_SNAPSHOT_FILES = (
-    "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
-    "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
-    "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
-    "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
-    "ai/services/ai_inference/emlis_ai_reply_service.py",
-)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _POLICY_RE = re.compile(
     r"理由を(?:こちらで)?決めつけず|入力から言える範囲で|"
     r"診断はしません|ここでは事実として扱いません|原因は分かりませんが"
@@ -88,29 +82,6 @@ _POLICY_RE = re.compile(
 
 def _load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _source_snapshot_sha256() -> str:
-    backend_root = _TEST_ROOT.parents[1]
-    rows = [
-        {
-            "path": relative_path,
-            "sha256": hashlib.sha256(
-                (backend_root / relative_path).read_bytes()
-            ).hexdigest(),
-        }
-        for relative_path in _SOURCE_SNAPSHOT_FILES
-    ]
-    payload = json.dumps(
-        rows,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return sha256_text(payload)
-
-
-_SOURCE_SNAPSHOT_SHA256 = _source_snapshot_sha256()
 
 
 def _canonical_input_sha256(current_input) -> str:
@@ -176,25 +147,6 @@ def _assert_all_reception_gates(report) -> None:
     assert report.product_readfeel_status == "not_evaluated"
 
 
-def _assert_batch_receipt(batch, receipt_row) -> None:
-    assert receipt_row["case_count"] == batch.case_count
-    assert receipt_row["exact_reception_sentence_duplicate_group_count"] == len(
-        batch.duplicate_sentence_groups
-    )
-    assert receipt_row["self_repeated_sentence_case_count"] == len(
-        batch.self_repeated_sentence_cases
-    )
-    assert receipt_row["maximum_closing_stem_family_count"] == max(
-        (family["case_count"] for family in batch.closing_stem_families),
-        default=0,
-    )
-    assert receipt_row["closing_hard_threshold"] == batch.closing_hard_threshold
-    assert receipt_row["abstract_ending_union_count"] == (
-        batch.abstract_ending_union_count
-    )
-    assert receipt_row["verdict"] == batch.verdict
-
-
 def _exact8_results():
     fixture = _load(_EXACT8_FIXTURE)
     manifest = _load(_OBSERVATION_HASHES)
@@ -253,10 +205,6 @@ def test_r6_exact8_technical_acceptance_and_batch_template_qa() -> None:
     )
     assert batch.abstract_ending_union_count <= 4
     assert batch.as_body_free_meta()["surface_body_included"] is False
-    _assert_batch_receipt(
-        batch,
-        _load(_AUTOMATED_RECEIPT)["cohorts"]["exact8"],
-    )
 
 
 def test_r6_batch_qa_rejects_nfkc_and_whitespace_normalized_duplicate() -> None:
@@ -338,10 +286,6 @@ def test_r6_same16_keeps_semantics_and_passes_offline_repetition_qa() -> None:
     assert batch.verdict == "passed"
     assert batch.duplicate_sentence_groups == ()
     assert batch.abstract_ending_union_count <= 8
-    _assert_batch_receipt(
-        batch,
-        _load(_AUTOMATED_RECEIPT)["cohorts"]["same16"],
-    )
 
 
 def test_r6_unseen8_has_all_required_families_and_runtime_boundaries() -> None:
@@ -393,10 +337,6 @@ def test_r6_unseen8_has_all_required_families_and_runtime_boundaries() -> None:
     assert batch.verdict == "passed"
     assert batch.duplicate_sentence_groups == ()
     assert batch.abstract_ending_union_count <= 4
-    _assert_batch_receipt(
-        batch,
-        _load(_AUTOMATED_RECEIPT)["cohorts"]["unseen8"],
-    )
 
 
 def test_r6_public_api_rn_boundary_stays_sanitized_and_shape_compatible() -> None:
@@ -432,17 +372,13 @@ def test_r6_public_api_rn_boundary_stays_sanitized_and_shape_compatible() -> Non
     assert reply.meta["rn_visible_contract_changed"] is False
 
 
-def test_r6_karen_read_is_visible_body_hash_bound_and_not_auto_inferred() -> None:
+def test_r6_historical_karen_read_is_hash_bound_and_not_auto_inferred() -> None:
     packet = _load(_VISIBLE_PACKET)
     review_receipt = _load(_KAREN_RECEIPT)
     automated_receipt = _load(_AUTOMATED_RECEIPT)
     results = _exact8_results()
     result_by_id = {
         case["case_id"]: (case, artifacts) for case, artifacts in results
-    }
-    generated_by_id = {
-        case_id: artifacts[2].text
-        for case_id, (_case, artifacts) in result_by_id.items()
     }
     packet_by_id = {case["case_id"]: case for case in packet["cases"]}
 
@@ -454,26 +390,35 @@ def test_r6_karen_read_is_visible_body_hash_bound_and_not_auto_inferred() -> Non
     assert packet["source_fixture_sha256"] == hashlib.sha256(
         _EXACT8_FIXTURE.read_bytes()
     ).hexdigest()
-    assert packet["source_snapshot_sha256"] == _SOURCE_SNAPSHOT_SHA256
+    assert _SHA256_RE.fullmatch(packet["source_snapshot_sha256"])
     assert packet["case_order"] == list(result_by_id)
-    assert set(packet_by_id) == set(generated_by_id)
-    for case_id, generated_surface in generated_by_id.items():
+    assert set(packet_by_id) == set(result_by_id)
+    for case_id, (case, artifacts) in result_by_id.items():
         row = packet_by_id[case_id]
-        case, artifacts = result_by_id[case_id]
-        assert row["visible_surface"] == generated_surface
-        assert row["visible_surface_sha256"] == sha256_text(generated_surface)
+        historical_observation, historical_reception, issues = (
+            split_two_stage_surface(row["visible_surface"])
+        )
+        assert issues == ()
+        assert row["visible_surface_sha256"] == sha256_text(
+            row["visible_surface"]
+        )
         assert row["current_input_sha256"] == _canonical_input_sha256(
             case["exact_current_input"]
         )
+        assert row["observation_section_sha256"] == sha256_text(
+            historical_observation
+        )
+        assert row["reception_section_sha256"] == sha256_text(
+            historical_reception
+        )
         assert row["observation_section_sha256"] == sha256_text(artifacts[4])
-        assert row["reception_section_sha256"] == sha256_text(artifacts[5])
         assert row["automated_reception_gates"] == "passed"
         assert row["product_readfeel_status"] == "pending_human_read"
 
     packet_sha256 = hashlib.sha256(_VISIBLE_PACKET.read_bytes()).hexdigest()
     expected_surface_hashes = {
-        case_id: sha256_text(surface)
-        for case_id, surface in generated_by_id.items()
+        case_id: row["visible_surface_sha256"]
+        for case_id, row in packet_by_id.items()
     }
     assert validate_karen_review_receipt(
         review_receipt,

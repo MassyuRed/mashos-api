@@ -32,6 +32,10 @@ from emlis_ai_grounded_observation_gate import (
 from emlis_ai_grounded_observation_plan import build_grounded_observation_plan
 from emlis_ai_grounded_sentence_surface import (
     GROUND_RECOVERY_STAGES,
+    GROUND_SURFACE_GENERATION_PATH,
+    GROUND_SURFACE_RESULT_SCHEMA_VERSION,
+    GroundedSentenceSurfaceError,
+    GroundedSurfaceResult,
     build_grounded_sentence_plan,
     build_reception_recovery_sentence_plan,
     realize_grounded_sentence_plan,
@@ -132,28 +136,48 @@ async def render_emlis_ai_reply(
     selected_surface = None
     selected_gate = None
     attempted_stages: List[str] = []
+    skipped_stages: List[str] = []
+    recovery_failure_codes: List[str] = []
     base_sentence_plan = build_grounded_sentence_plan(
         plan,
         resolver,
         recovery_stage="full",
     )
     for recovery_stage in GROUND_RECOVERY_STAGES:
+        reception_plan = plan.response_plan.human_reception_plan
+        if (
+            recovery_stage == "minimal_grounded"
+            and reception_plan is not None
+            and (
+                reception_plan.depth_policy.level != "minimal"
+                or reception_plan.depth_policy.safety_mode != "standard"
+                or len(reception_plan.moves) != 1
+            )
+        ):
+            skipped_stages.append(recovery_stage)
+            continue
         attempted_stages.append(recovery_stage)
-        sentence_plan = (
-            base_sentence_plan
-            if recovery_stage == "full"
-            else build_reception_recovery_sentence_plan(
-                base_sentence_plan,
+        try:
+            sentence_plan = (
+                base_sentence_plan
+                if recovery_stage == "full"
+                else build_reception_recovery_sentence_plan(
+                    base_sentence_plan,
+                    plan,
+                    resolver,
+                    recovery_stage=recovery_stage,
+                )
+            )
+            surface_result = realize_grounded_sentence_plan(
+                sentence_plan,
                 plan,
                 resolver,
-                recovery_stage=recovery_stage,
             )
-        )
-        surface_result = realize_grounded_sentence_plan(
-            sentence_plan,
-            plan,
-            resolver,
-        )
+        except GroundedSentenceSurfaceError:
+            recovery_failure_codes.append(
+                f"recovery_stage_surface_failed:{recovery_stage}"
+            )
+            continue
         gate_report = evaluate_grounded_observation_gate(
             plan=plan,
             sentence_plan=sentence_plan,
@@ -170,8 +194,36 @@ async def render_emlis_ai_reply(
         }:
             break
 
-    if selected_sentence_plan is None or selected_surface is None or selected_gate is None:
-        raise RuntimeError("grounded_reply_stage_not_evaluated")
+    if (
+        selected_sentence_plan is None
+        or selected_surface is None
+        or selected_gate is None
+    ):
+        selected_sentence_plan = base_sentence_plan
+        selected_surface = GroundedSurfaceResult(
+            schema_version=GROUND_SURFACE_RESULT_SCHEMA_VERSION,
+            generation_path=GROUND_SURFACE_GENERATION_PATH,
+            status="generated",
+            recovery_stage=base_sentence_plan.recovery_stage,
+            text="",
+            lines=(),
+            required_nucleus_ids=base_sentence_plan.required_nucleus_ids,
+            covered_required_nucleus_ids=(),
+            required_relation_ids=base_sentence_plan.required_relation_ids,
+            covered_required_relation_ids=(),
+            unresolved_evidence_span_ids=(),
+            required_coverage_preserved=False,
+            fact_boundary_covered=False,
+            human_follow_covered=False,
+            limited_opposition_covered=False,
+        )
+        selected_gate = evaluate_grounded_observation_gate(
+            plan=plan,
+            sentence_plan=selected_sentence_plan,
+            surface_result=selected_surface,
+            resolver=resolver,
+            product_readfeel_status="not_evaluated",
+        )
 
     visible_contract_guard_required = selected_surface.status == "generated"
     visible_contract_guard_passed = bool(
@@ -211,10 +263,22 @@ async def render_emlis_ai_reply(
         and reception_contract_guard_passed
         and gate_meta_body_free_passed
     )
+    final_return_eligible = bool(
+        selected_surface.status == "generated"
+        and selected_gate.passed
+        and selected_gate.public_observation_status == "passed"
+        and final_contract_guard_passed
+    )
     public_status = selected_gate.public_observation_status
     rejection_reasons = list(selected_gate.rejection_reasons)
-    if selected_gate.passed and not final_contract_guard_passed:
-        public_status = "rejected"
+    if selected_surface.status == "generated":
+        public_status = "passed" if final_return_eligible else "rejected"
+        if selected_gate.passed != (
+            selected_gate.public_observation_status == "passed"
+        ):
+            rejection_reasons.append(
+                "runtime_gate_public_status_inconsistent"
+            )
         if not visible_contract_guard_passed:
             rejection_reasons.append("runtime_visible_contract_guard_failed")
         if not reception_contract_guard_passed:
@@ -227,7 +291,7 @@ async def render_emlis_ai_reply(
             )
     final_text = (
         selected_surface.text.strip()
-        if selected_gate.passed and final_contract_guard_passed
+        if final_return_eligible
         else ""
     )
     response_kind = _response_kind(
@@ -239,6 +303,8 @@ async def render_emlis_ai_reply(
     gate_meta.update(
         {
             "recovery_steps": list(attempted_stages),
+            "recovery_skipped_stages": list(skipped_stages),
+            "recovery_failure_codes": list(recovery_failure_codes),
             "semantic_plan_schema_version": plan.schema_version,
             "sentence_plan_schema_version": selected_sentence_plan.schema_version,
             "surface_schema_version": selected_surface.schema_version,
@@ -266,7 +332,7 @@ async def render_emlis_ai_reply(
             "runtime_final_contract_guard": (
                 "passed"
                 if selected_surface.status == "generated"
-                and final_contract_guard_passed
+                and final_return_eligible
                 else "failed"
                 if selected_surface.status == "generated"
                 else "not_evaluated"

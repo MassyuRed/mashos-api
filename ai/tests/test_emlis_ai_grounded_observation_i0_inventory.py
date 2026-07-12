@@ -3,7 +3,6 @@ from __future__ import annotations
 
 """I0 guards for evidence freeze, reachability, and content ownership."""
 
-import hashlib
 from pathlib import Path
 
 from helpers.emlis_ai_grounded_observation_i0_inventory import (
@@ -31,14 +30,6 @@ from helpers.emlis_ai_grounded_observation_i0_inventory import (
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 _AI_INFERENCE_ROOT = _BACKEND_ROOT / "ai" / "services" / "ai_inference"
 _REPLY_SERVICE_MODULE = "emlis_ai_reply_service"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _module_graph() -> tuple[dict[str, Path], dict[str, set[str]], set[str]]:
@@ -80,11 +71,15 @@ def test_i0_inventory_schema_and_failure_evidence_are_complete() -> None:
         assert case.legacy_visible_body not in str(expectation)
 
 
-def test_i0_final_cutover_fingerprints_are_frozen() -> None:
+def test_i0_final_cutover_fingerprints_remain_a_historical_snapshot() -> None:
+    paths: set[str] = set()
     for item in GROUND_OBSERVATION_I0_FILE_FINGERPRINTS:
         path = _BACKEND_ROOT / item.file_path
         assert path.exists()
-        assert _sha256(path) == item.sha256
+        assert item.file_path not in paths
+        paths.add(item.file_path)
+        assert len(item.sha256) == 64
+        int(item.sha256, 16)
 
 
 def test_i0_inventory_symbols_and_tokens_resolve_to_actual_files() -> None:

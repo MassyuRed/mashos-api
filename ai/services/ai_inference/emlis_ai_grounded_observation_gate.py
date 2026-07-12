@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Body-free semantic gate for the canonical grounded reply path (I5).
+"""Body-free semantic and RR6 Depth/Move Gate for the canonical reply path.
 
 The gate consumes the plan, sentence plan, realized surface, and the request-
 local Evidence resolver that actually produced the candidate.  It does not
@@ -13,7 +13,14 @@ import re
 from typing import Any, Final, Literal, Mapping
 
 from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
-from emlis_ai_grounded_human_reception import reception_terminal_predicate_kind
+from emlis_ai_grounded_human_reception import (
+    GroundedHumanReceptionSurfaceError,
+    realize_grounded_human_reception,
+    reception_active_moves,
+    reception_effective_sentence_budget,
+    reception_move_predicate_family,
+    reception_terminal_predicate_kind,
+)
 from emlis_ai_grounded_observation_plan import (
     GroundedObservationPlan,
     validate_grounded_human_reception_plan,
@@ -30,7 +37,9 @@ from emlis_ai_grounded_sentence_surface import (
 )
 
 
-GROUND_OBSERVATION_GATE_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_observation_gate.i5.v1"
+GROUND_OBSERVATION_GATE_SCHEMA_VERSION: Final = (
+    "cocolon.emlis.grounded_observation_gate.rr6.v2"
+)
 GROUND_OBSERVATION_REPLY_GENERATION_PATH: Final = "grounded_observation_plan_sentence_surface_canonical_v1"
 
 GateStatus = Literal["passed", "failed", "not_evaluated"]
@@ -44,6 +53,11 @@ RECEPTION_GATE_REPORT_FIELDS: Final = (
     "reception_policy_exposure_gate",
     "reception_human_voice_gate",
     "reception_safety_boundary_gate",
+    "reception_depth_plan_gate",
+    "reception_move_realization_gate",
+    "reception_depth_proportionality_gate",
+    "reception_move_distinctness_gate",
+    "reception_non_enumeration_gate",
 )
 
 _NORMALIZE_RE: Final = re.compile(r"[\s\u3000、。,.!！?？「」『』（）()・:：;；]")
@@ -80,10 +94,6 @@ _LEDGER_NARRATION_RE: Final = re.compile(
     r"この記録には|同じ記録には|(?:入力|記録)に書かれています|"
     r"この順に書かれています|入力として受け取ります"
 )
-_RECEPTION_OWNER_RE: Final = re.compile(
-    r"(?:受け取|受け止|感じ|届|印象|大切|軽く扱|小さくせず|"
-    r"確かさ|前面にある|手放していない)"
-)
 _RECEPTION_POLICY_EXPOSURE_RE: Final = re.compile(
     r"理由を(?:こちらで)?決めつけず|入力から言える範囲で|"
     r"診断はしません|ここでは事実として扱いません|原因は分かりませんが"
@@ -100,6 +110,15 @@ _RECEPTION_RELATION_NARRATION_RE: Final = re.compile(
     r"(?:変化|考え|気持ち|意図|願い).{0,24}(?:が|から).{0,24}"
     r"(?:行動|変化|結果).{0,10}(?:生ん|つなが|表れ)|"
     r"(?:という|の)(?:構造|関係|つながり)(?:です|になっています)"
+)
+_RECEPTION_ANALYSIS_END_RE: Final = re.compile(
+    r"(?:という|の)(?:構造|関係|傾向|パターン)(?:です|に見えます)|"
+    r"(?:分析|整理|分類)(?:できます|しました|すると)"
+)
+_RECEPTION_FIELD_ENUMERATION_RE: Final = re.compile(
+    r"(?:memo|メモ).{0,80}(?:memo_action|行動).{0,80}"
+    r"(?:emotion|感情).{0,80}(?:category|カテゴリ)",
+    re.IGNORECASE,
 )
 _RECEPTION_GENERIC_SUFFIX_RE: Final = re.compile(
     r"^(?:大切に|静かに)?受け止め(?:ます|ています|たいです)[。.!！]*$"
@@ -123,27 +142,6 @@ _RECEPTION_IDENTITY_ACCEPTANCE_RE: Final = re.compile(
 _RECEPTION_QUOTE_RE: Final = re.compile(r"「([^」]+)」")
 _RECEPTION_SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _GROUNDED_GATE_BODY_FREE_CODE_RE: Final = re.compile(r"^[A-Za-z0-9_.:/-]*$")
-_RECEPTION_RESPONSE_PATTERNS: Final[dict[str, re.Pattern[str]]] = {
-    "stay_with_current_burden": re.compile(
-        r"(?:負荷|しんどさ|苦しさ|つらさ|言葉).{0,48}"
-        r"(?:軽く扱|小さくせず).{0,24}受け止"
-    ),
-    "honor_concrete_effort": re.compile(
-        r"(?:行動|動いたこと|手を動かしたこと|記録へ移したこと|働きかけ)"
-        r".{0,64}(?:大切|受け止)"
-    ),
-    "protect_retained_intention": re.compile(
-        r"(?:願い|大切にしたいもの).{0,48}(?:大切|なかったこと|消さず)"
-    ),
-    "recognize_lived_change": re.compile(r"変化.{0,48}(?:感じ|受け止)"),
-    "hold_help_seeking": re.compile(
-        r"(?:助け|踏みとどまり).{0,64}(?:大切|受け止)"
-    ),
-    "bounded_counter_self_denial": re.compile(
-        r"苦しさ.{0,64}否定せず.*Emlis.{0,80}自身.{0,32}思えません"
-    ),
-    "respect_words_placed": re.compile(r"言葉.{0,48}(?:大切|受け止)"),
-}
 
 
 def _dedupe(values: Any) -> tuple[str, ...]:
@@ -368,7 +366,10 @@ def _semantic_subcheck_reasons(
             depth.append("human_follow_repeats_observation_surface")
         if _ledger_narration_visible(realized.text):
             anti_template.append("human_follow_ledger_narration_visible")
-        if not _RECEPTION_OWNER_RE.search(realized.text):
+        if not any(
+            atom.startswith("reception_move_predicate:")
+            for atom in follow_line.binding.functional_atom_ids
+        ):
             depth.append("human_follow_reception_owner_missing")
 
     for follow_line in follow_lines:
@@ -561,7 +562,7 @@ def _evaluate_reception_gates(
     tuple[str, ...],
     dict[str, Any],
 ]:
-    """Evaluate the R5 reception layer without serializing visible bodies."""
+    """Evaluate RR6 Depth/Move contracts without serializing visible bodies."""
 
     unavailable = surface_result.status in {
         "separate_safety_owner",
@@ -581,6 +582,15 @@ def _evaluate_reception_gates(
                 "reception_stance": "",
                 "reception_reference_mode": "",
                 "reception_terminal_predicate_kind": "",
+                "reception_depth_level": "",
+                "reception_safety_mode": "",
+                "reception_opportunity_count": 0,
+                "reception_planned_move_count": 0,
+                "reception_realized_move_count": 0,
+                "reception_move_roles": (),
+                "reception_surface_strategies": (),
+                "reception_terminal_predicate_families": (),
+                "raw_character_count_used": False,
                 "reception_sentence_count": 0,
                 "repeated_long_anchor_count": 0,
             },
@@ -604,15 +614,14 @@ def _evaluate_reception_gates(
     human_surface_line = (
         human_surface_lines[0] if len(human_surface_lines) == 1 else None
     )
+    nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
 
     reception_act = ""
-    active_reception_acts: tuple[str, ...] = ()
     reception_stance = ""
     reception_reference_mode = ""
     terminal_predicate_kind = ""
     if human_line is not None:
         reception_acts = _reception_atoms(human_line, "reception_act:")
-        active_reception_acts = reception_acts
         reception_stances = _reception_atoms(human_line, "reception_stance:")
         reception_references = _reception_atoms(
             human_line,
@@ -631,20 +640,72 @@ def _evaluate_reception_gates(
             terminal_predicates[0] if terminal_predicates else ""
         )
 
+    active_moves = ()
+    realized_reception = None
+    recovery_contract_valid = True
+    if reception_plan is not None:
+        try:
+            active_moves = reception_active_moves(
+                reception_plan,
+                sentence_plan.recovery_stage,
+            )
+            reception_effective_sentence_budget(
+                reception_plan,
+                sentence_plan.recovery_stage,
+            )
+        except (
+            GroundedHumanReceptionSurfaceError,
+            AttributeError,
+            KeyError,
+            TypeError,
+        ):
+            recovery_contract_valid = False
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_recovery_depth_contract_invalid"
+            )
+            reasons_by_gate["reception_move_realization_gate"].append(
+                "reception_recovery_move_contract_invalid"
+            )
+            reasons_by_gate["reception_depth_proportionality_gate"].append(
+                "reception_recovery_proportionality_invalid"
+            )
+        if human_line is not None and recovery_contract_valid:
+            try:
+                realized_reception = realize_grounded_human_reception(
+                    reception_plan,
+                    nucleus_index,
+                    resolver,
+                    recovery_stage=sentence_plan.recovery_stage,
+                    clause_plans=human_line.reception_clause_plans,
+                )
+            except (
+                GroundedHumanReceptionSurfaceError,
+                AttributeError,
+                KeyError,
+                TypeError,
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_canonical_realization_failed"
+                )
+
     if reception_plan is None:
         reasons_by_gate["reception_plan_gate"].append(
             "reception_plan_missing"
         )
     else:
-        nucleus_index = {item.nucleus_id: item for item in plan.nuclei}
-        reception_plan_issues = validate_grounded_human_reception_plan(
-            reception_plan,
-            expected_target_ids=plan.response_plan.human_follow_target_ids,
-            nucleus_index=nucleus_index,
-            resolver=resolver,
-            safety_kind=plan.safety_policy.safety_kind,
-            material_quality=plan.input_profile.material_quality,
-        )
+        try:
+            reception_plan_issues = validate_grounded_human_reception_plan(
+                reception_plan,
+                expected_target_ids=plan.response_plan.human_follow_target_ids,
+                nucleus_index=nucleus_index,
+                resolver=resolver,
+                safety_kind=plan.safety_policy.safety_kind,
+                material_quality=plan.input_profile.material_quality,
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            reception_plan_issues = (
+                "reception_plan_validation_contract_invalid",
+            )
         reasons_by_gate["reception_plan_gate"].extend(
             reception_plan_issues
         )
@@ -667,6 +728,120 @@ def _evaluate_reception_gates(
         if not reception_reference_mode:
             reasons_by_gate["reception_plan_gate"].append(
                 "reception_reference_atom_missing"
+            )
+
+    depth = (
+        getattr(reception_plan, "depth_policy", None)
+        if reception_plan is not None
+        else None
+    )
+    if reception_plan is None or depth is None:
+        reasons_by_gate["reception_depth_plan_gate"].append(
+            "reception_depth_plan_missing"
+        )
+    else:
+        if depth.level not in {"minimal", "focused", "layered"}:
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_depth_level_invalid"
+            )
+        if depth.safety_mode not in {
+            "standard",
+            "self_denial_bounded",
+            "help_seeking_bounded",
+        }:
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_safety_mode_invalid"
+            )
+        if depth.raw_character_count_used is not False:
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_raw_character_count_used"
+            )
+        if depth.opportunity_count != len(reception_plan.opportunities):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_opportunity_count_mismatch"
+            )
+        if (
+            depth.selected_move_count != len(reception_plan.moves)
+            or not 1 <= len(reception_plan.moves) <= 3
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_selected_move_count_invalid"
+            )
+        if not 1 <= depth.min_sentences <= depth.max_sentences <= 3:
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_depth_sentence_budget_invalid"
+            )
+        if not 1 <= depth.min_realized_moves <= max(
+            1,
+            len(reception_plan.moves),
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_depth_move_budget_invalid"
+            )
+        expected_level = (
+            "focused"
+            if depth.safety_mode != "standard"
+            else "layered"
+            if len(reception_plan.moves) >= 2
+            else "minimal"
+            if reception_plan.moves
+            and reception_plan.moves[0].reception_act
+            in {"stay_with_current_burden", "respect_words_placed"}
+            else "focused"
+        )
+        if (
+            depth.level != expected_level
+            or f"depth:{expected_level}"
+            not in depth.selection_reason_codes
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_canonical_depth_classification_mismatch"
+            )
+        if depth.level == "minimal" and (
+            len(reception_plan.moves) != 1
+            or depth.min_sentences != 1
+            or depth.max_sentences != 1
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_minimal_depth_contract_invalid"
+            )
+        if depth.level == "focused" and (
+            len(reception_plan.moves) not in {1, 2}
+            or depth.max_sentences > 2
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_focused_depth_contract_invalid"
+            )
+        if depth.level == "layered" and (
+            len(reception_plan.moves) not in {2, 3}
+            or depth.min_sentences < 2
+            or depth.min_realized_moves < 2
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_layered_depth_contract_invalid"
+            )
+        active_roles = {move.move_role for move in active_moves}
+        active_acts = {move.reception_act for move in active_moves}
+        planned_counterposition = any(
+            move.move_role == "bounded_counterposition"
+            for move in reception_plan.moves
+        )
+        if depth.safety_mode == "self_denial_bounded" and (
+            "felt_response" not in active_roles
+            or (
+                planned_counterposition
+                and "bounded_counterposition" not in active_roles
+            )
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_self_denial_safety_move_missing"
+            )
+        if depth.safety_mode == "help_seeking_bounded" and (
+            "hold_help_seeking" not in active_acts
+            or "bounded_counterposition" not in active_roles
+        ):
+            reasons_by_gate["reception_depth_plan_gate"].append(
+                "reception_help_seeking_safety_move_missing"
             )
 
     if reception_plan is None or human_line is None:
@@ -709,6 +884,126 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_grounding_gate"].append(
             "reception_question_added"
         )
+
+    if reception_plan is None or human_line is None or not active_moves:
+        reasons_by_gate["reception_move_realization_gate"].append(
+            "reception_move_realization_contract_missing"
+        )
+    else:
+        active_ids = tuple(move.move_id for move in active_moves)
+        required_ids = {
+            move.move_id for move in reception_plan.moves if move.required
+        }
+        if not required_ids.issubset(active_ids):
+            reasons_by_gate["reception_move_realization_gate"].append(
+                "reception_required_move_missing"
+            )
+        atom_ids = set(human_line.binding.functional_atom_ids)
+        expected_move_atoms = {
+            item
+            for move in active_moves
+            for item in (
+                f"reception_move:{move.move_id}",
+                f"reception_move_role:{move.move_id}:{move.move_role}",
+                f"reception_move_act:{move.move_id}:{move.reception_act}",
+                (
+                    "reception_surface_strategy:"
+                    f"{move.move_id}:{move.surface_strategy}"
+                ),
+                (
+                    "reception_move_predicate:"
+                    f"{move.move_id}:{reception_move_predicate_family(move)}"
+                ),
+            )
+        }
+        if not expected_move_atoms.issubset(atom_ids):
+            reasons_by_gate["reception_move_realization_gate"].append(
+                "reception_move_contract_atom_missing"
+            )
+        for move in active_moves:
+            if (
+                not move.target_nucleus_ids
+                or any(
+                    nucleus_id not in nucleus_index
+                    for nucleus_id in (
+                        *move.target_nucleus_ids,
+                        *move.support_nucleus_ids,
+                    )
+                )
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_move_target_unresolved"
+                )
+            if (
+                not move.source_evidence_span_ids
+                or resolver.unresolved_ids(move.source_evidence_span_ids)
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_move_evidence_unresolved"
+                )
+        if realized_reception is None:
+            reasons_by_gate["reception_move_realization_gate"].append(
+                "reception_realized_move_diagnostics_missing"
+            )
+        else:
+            expected_roles = tuple(move.move_role for move in active_moves)
+            expected_families = tuple(
+                reception_move_predicate_family(move)
+                for move in active_moves
+            )
+            if realized_reception.realized_move_ids != active_ids:
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_realized_move_id_mismatch"
+                )
+            if realized_reception.realized_move_roles != expected_roles:
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_realized_move_role_mismatch"
+                )
+            if realized_reception.move_predicate_families != expected_families:
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_realized_predicate_family_mismatch"
+                )
+            if realized_reception.text.strip() != reception_text.strip():
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_canonical_surface_mismatch"
+                )
+            if (
+                human_surface_line is None
+                or human_surface_line.text.strip()
+                != realized_reception.text.strip()
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_surface_line_mismatch"
+                )
+            allowed_nuclei = {
+                nucleus_id
+                for move in active_moves
+                for nucleus_id in (
+                    *move.target_nucleus_ids,
+                    *move.support_nucleus_ids,
+                )
+            }
+            allowed_evidence = {
+                span_id
+                for move in active_moves
+                for span_id in move.source_evidence_span_ids
+            }
+            if (
+                not realized_reception.grounded_nucleus_ids
+                or set(realized_reception.grounded_nucleus_ids)
+                != allowed_nuclei
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_realized_nucleus_grounding_mismatch"
+                )
+            if (
+                not realized_reception.grounded_evidence_span_ids
+                or set(realized_reception.grounded_evidence_span_ids)
+                != allowed_evidence
+            ):
+                reasons_by_gate["reception_move_realization_gate"].append(
+                    "reception_realized_evidence_grounding_mismatch"
+                )
 
     if human_line is None:
         reasons_by_gate["reception_role_distinctness_gate"].append(
@@ -779,39 +1074,215 @@ def _evaluate_reception_gates(
         )
 
     reception_sentence_count = _sentence_count(reception_text)
+    realized_move_count = (
+        len(realized_reception.realized_move_ids)
+        if realized_reception is not None
+        else 0
+    )
+    if reception_plan is None or realized_reception is None:
+        reasons_by_gate["reception_depth_proportionality_gate"].append(
+            "reception_depth_realization_missing"
+        )
+    else:
+        level = reception_plan.depth_policy.level
+        proportional = {
+            "minimal": (
+                realized_move_count == 1
+                and reception_sentence_count == 1
+            ),
+            "focused": (
+                1 <= realized_move_count <= 2
+                and 1 <= reception_sentence_count <= 2
+            ),
+            "layered": (
+                2 <= realized_move_count <= 3
+                and 2 <= reception_sentence_count <= 3
+            ),
+        }.get(level, False)
+        if not proportional:
+            reasons_by_gate["reception_depth_proportionality_gate"].append(
+                "reception_depth_proportionality_mismatch"
+            )
+        try:
+            min_sentences, max_sentences = reception_effective_sentence_budget(
+                reception_plan,
+                sentence_plan.recovery_stage,
+            )
+        except GroundedHumanReceptionSurfaceError:
+            reasons_by_gate["reception_depth_proportionality_gate"].append(
+                "reception_effective_sentence_budget_invalid"
+            )
+        else:
+            if not min_sentences <= reception_sentence_count <= max_sentences:
+                reasons_by_gate[
+                    "reception_depth_proportionality_gate"
+                ].append("reception_sentence_depth_budget_mismatch")
+        if realized_move_count < reception_plan.depth_policy.min_realized_moves:
+            reasons_by_gate["reception_depth_proportionality_gate"].append(
+                "reception_realized_move_budget_below_minimum"
+            )
+
+    if reception_plan is None or not active_moves:
+        reasons_by_gate["reception_move_distinctness_gate"].append(
+            "reception_move_distinctness_contract_missing"
+        )
+    else:
+        move_signatures = tuple(
+            (
+                move.reception_act,
+                move.target_nucleus_ids,
+                move.move_role,
+                reception_move_predicate_family(move),
+            )
+            for move in active_moves
+        )
+        predicate_families = tuple(
+            reception_move_predicate_family(move) for move in active_moves
+        )
+        if len(move_signatures) != len(set(move_signatures)):
+            reasons_by_gate["reception_move_distinctness_gate"].append(
+                "reception_duplicate_move_contribution"
+            )
+        if len(predicate_families) != len(set(predicate_families)):
+            reasons_by_gate["reception_move_distinctness_gate"].append(
+                "reception_duplicate_predicate_family"
+            )
+        visible_units = tuple(
+            _normalized(part)
+            for part in _RECEPTION_SENTENCE_END_RE.split(reception_text)
+            if _normalized(part)
+        )
+        if len(visible_units) != len(set(visible_units)):
+            reasons_by_gate["reception_move_distinctness_gate"].append(
+                "reception_duplicate_visible_contribution"
+            )
+        required_ids = {
+            move.move_id for move in reception_plan.moves if move.required
+        }
+        realized_ids = set(
+            realized_reception.realized_move_ids
+            if realized_reception is not None
+            else ()
+        )
+        if not required_ids.issubset(realized_ids):
+            reasons_by_gate["reception_move_distinctness_gate"].append(
+                "reception_required_move_absorbed"
+            )
+
+    if reception_plan is None or human_line is None:
+        reasons_by_gate["reception_non_enumeration_gate"].append(
+            "reception_non_enumeration_contract_missing"
+        )
+    else:
+        if len(active_moves) > 3:
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_selected_move_limit_exceeded"
+            )
+        if (
+            reception_plan.distinctness_policy.all_input_enumeration_allowed
+            or "reception_non_enumeration:required"
+            not in human_line.binding.functional_atom_ids
+        ):
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_non_enumeration_policy_missing"
+            )
+        if human_line.binding.relation_ids:
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_relation_enumeration_visible"
+            )
+        if _RECEPTION_FIELD_ENUMERATION_RE.search(reception_text):
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_input_field_enumeration_visible"
+            )
+        if _RECEPTION_RELATION_NARRATION_RE.search(reception_text):
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_relation_reexplanation_visible"
+            )
+        observation_units = tuple(
+            _normalized(part)
+            for part in _RECEPTION_SENTENCE_END_RE.split(observation_text)
+            if len(_normalized(part)) >= 8
+        )
+        replayed_units = sum(
+            bool(unit and unit in normalized_reception)
+            for unit in observation_units
+        )
+        if replayed_units >= 2 or (
+            observation_units
+            and normalized_reception == _normalized(observation_text)
+        ):
+            reasons_by_gate["reception_non_enumeration_gate"].append(
+                "reception_observation_structure_reenumerated"
+            )
+
     if not reception_text.strip():
         reasons_by_gate["reception_human_voice_gate"].append(
             "reception_surface_empty"
         )
-    if reception_sentence_count not in {1, 2}:
-        reasons_by_gate["reception_human_voice_gate"].append(
-            "reception_sentence_budget_invalid"
+    terminal_predicates = (
+        _reception_atoms(human_line, "reception_terminal_predicate:")
+        if human_line is not None
+        else ()
+    )
+    if (
+        not terminal_predicates
+        or any(
+            not value.startswith("human_response_")
+            for value in terminal_predicates
         )
-    if not terminal_predicate_kind.startswith("human_response_"):
+    ):
         reasons_by_gate["reception_human_voice_gate"].append(
             "reception_human_terminal_predicate_missing"
         )
-    elif reception_act:
-        try:
-            expected_terminal_predicate = reception_terminal_predicate_kind(
-                reception_act
-            )
-        except ValueError:
-            expected_terminal_predicate = ""
-        if terminal_predicate_kind != expected_terminal_predicate:
-            reasons_by_gate["reception_human_voice_gate"].append(
-                "reception_terminal_predicate_act_mismatch"
-            )
+    expected_terminal_predicates = tuple(
+        reception_terminal_predicate_kind(move.reception_act)
+        for move in active_moves
+    )
+    if terminal_predicates and terminal_predicates != expected_terminal_predicates:
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_terminal_predicate_act_mismatch"
+        )
+    expected_predicate_families = tuple(
+        reception_move_predicate_family(move) for move in active_moves
+    )
+    if realized_reception is None or (
+        realized_reception.move_predicate_families
+        != expected_predicate_families
+    ):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_human_move_predicate_family_missing"
+        )
+    elif any(
+        not family.startswith("human_response_")
+        for family in realized_reception.move_predicate_families
+    ):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_non_human_move_predicate_family"
+        )
+    if _RECEPTION_ANALYSIS_END_RE.search(reception_text):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_analysis_ending_visible"
+        )
+    if _RECEPTION_POLICY_EXPOSURE_RE.search(reception_text):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_policy_voice_visible"
+        )
+    if _RECEPTION_ADVICE_RE.search(reception_text):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_advice_voice_visible"
+        )
+    if "?" in reception_text or "？" in reception_text:
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_question_voice_visible"
+        )
+    if _RECEPTION_RELATION_NARRATION_RE.search(reception_text):
+        reasons_by_gate["reception_human_voice_gate"].append(
+            "reception_observation_voice_visible"
+        )
     if _RECEPTION_GENERIC_SUFFIX_RE.fullmatch(reception_text.strip()):
         reasons_by_gate["reception_human_voice_gate"].append(
             "reception_generic_empathy_suffix_only"
         )
-    if reception_act:
-        response_pattern = _RECEPTION_RESPONSE_PATTERNS.get(reception_act)
-        if response_pattern is None or not response_pattern.search(reception_text):
-            reasons_by_gate["reception_human_voice_gate"].append(
-                "reception_act_specific_human_response_missing"
-            )
 
     if _RECEPTION_IDENTITY_ACCEPTANCE_RE.search(reception_text):
         reasons_by_gate["reception_safety_boundary_gate"].append(
@@ -833,8 +1304,18 @@ def _evaluate_reception_gates(
         reasons_by_gate["reception_safety_boundary_gate"].append(
             "reception_risk_judgment_added"
         )
-    if "bounded_counter_self_denial" in active_reception_acts:
-        if not reception_plan.support_nucleus_ids:
+    counter_moves = tuple(
+        move
+        for move in active_moves
+        if move.move_role == "bounded_counterposition"
+    )
+    if counter_moves:
+        if any(
+            not (*move.target_nucleus_ids, *move.support_nucleus_ids)
+            or not move.source_evidence_span_ids
+            or resolver.unresolved_ids(move.source_evidence_span_ids)
+            for move in counter_moves
+        ):
             reasons_by_gate["reception_safety_boundary_gate"].append(
                 "reception_self_denial_counterposition_ungrounded"
             )
@@ -866,6 +1347,35 @@ def _evaluate_reception_gates(
             "reception_stance": reception_stance,
             "reception_reference_mode": reception_reference_mode,
             "reception_terminal_predicate_kind": terminal_predicate_kind,
+            "reception_depth_level": getattr(depth, "level", ""),
+            "reception_safety_mode": getattr(depth, "safety_mode", ""),
+            "reception_opportunity_count": (
+                len(reception_plan.opportunities)
+                if reception_plan is not None
+                else 0
+            ),
+            "reception_planned_move_count": (
+                len(reception_plan.moves)
+                if reception_plan is not None
+                else 0
+            ),
+            "reception_realized_move_count": realized_move_count,
+            "reception_move_roles": (
+                realized_reception.realized_move_roles
+                if realized_reception is not None
+                else ()
+            ),
+            "reception_surface_strategies": tuple(
+                move.surface_strategy for move in active_moves
+            ),
+            "reception_terminal_predicate_families": (
+                realized_reception.move_predicate_families
+                if realized_reception is not None
+                else ()
+            ),
+            "raw_character_count_used": bool(
+                getattr(depth, "raw_character_count_used", False)
+            ),
             "reception_sentence_count": reception_sentence_count,
             "repeated_long_anchor_count": repeated_long_anchor_count,
         },
@@ -893,6 +1403,11 @@ class GroundedObservationGateReport:
     reception_policy_exposure_gate: GateStatus
     reception_human_voice_gate: GateStatus
     reception_safety_boundary_gate: GateStatus
+    reception_depth_plan_gate: GateStatus
+    reception_move_realization_gate: GateStatus
+    reception_depth_proportionality_gate: GateStatus
+    reception_move_distinctness_gate: GateStatus
+    reception_non_enumeration_gate: GateStatus
     semantic_quality_gate: GateStatus
     public_observation_status: str
     public_comment_present: bool
@@ -921,6 +1436,15 @@ class GroundedObservationGateReport:
     reception_stance: str
     reception_reference_mode: str
     reception_terminal_predicate_kind: str
+    reception_depth_level: str
+    reception_safety_mode: str
+    reception_opportunity_count: int
+    reception_planned_move_count: int
+    reception_realized_move_count: int
+    reception_move_roles: tuple[str, ...]
+    reception_surface_strategies: tuple[str, ...]
+    reception_terminal_predicate_families: tuple[str, ...]
+    raw_character_count_used: bool
     reception_sentence_count: int
     repeated_long_anchor_count: int
 
@@ -961,6 +1485,11 @@ class GroundedObservationGateReport:
             "reception_policy_exposure_gate": self.reception_policy_exposure_gate,
             "reception_human_voice_gate": self.reception_human_voice_gate,
             "reception_safety_boundary_gate": self.reception_safety_boundary_gate,
+            "reception_depth_plan_gate": self.reception_depth_plan_gate,
+            "reception_move_realization_gate": self.reception_move_realization_gate,
+            "reception_depth_proportionality_gate": self.reception_depth_proportionality_gate,
+            "reception_move_distinctness_gate": self.reception_move_distinctness_gate,
+            "reception_non_enumeration_gate": self.reception_non_enumeration_gate,
             "semantic_quality_gate": self.semantic_quality_gate,
             "delivery_status": self.public_observation_status,
             "public_observation_status": self.public_observation_status,
@@ -992,6 +1521,19 @@ class GroundedObservationGateReport:
             "reception_stance": self.reception_stance,
             "reception_reference_mode": self.reception_reference_mode,
             "reception_terminal_predicate_kind": self.reception_terminal_predicate_kind,
+            "reception_depth_level": self.reception_depth_level,
+            "reception_safety_mode": self.reception_safety_mode,
+            "reception_opportunity_count": self.reception_opportunity_count,
+            "reception_planned_move_count": self.reception_planned_move_count,
+            "reception_realized_move_count": self.reception_realized_move_count,
+            "reception_move_roles": list(self.reception_move_roles),
+            "reception_surface_strategies": list(
+                self.reception_surface_strategies
+            ),
+            "reception_terminal_predicate_families": list(
+                self.reception_terminal_predicate_families
+            ),
+            "raw_character_count_used": self.raw_character_count_used,
             "reception_sentence_count": self.reception_sentence_count,
             "repeated_long_anchor_count": self.repeated_long_anchor_count,
             "delivery_status_separated_from_product_readfeel": True,
@@ -1084,9 +1626,27 @@ def evaluate_grounded_observation_gate(
     if product_readfeel_status not in {"not_evaluated", "human_pass", "human_fail"}:
         raise ValueError("unsupported_product_readfeel_status")
 
-    plan_issues = validate_grounded_observation_plan(plan, resolver)
-    sentence_issues = validate_grounded_sentence_plan(sentence_plan, plan, resolver)
-    surface_issues = validate_grounded_surface_result(surface_result, sentence_plan, plan, resolver)
+    try:
+        plan_issues = validate_grounded_observation_plan(plan, resolver)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        plan_issues = ("grounded_plan_validation_contract_invalid",)
+    try:
+        sentence_issues = validate_grounded_sentence_plan(
+            sentence_plan,
+            plan,
+            resolver,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError):
+        sentence_issues = ("grounded_sentence_validation_contract_invalid",)
+    try:
+        surface_issues = validate_grounded_surface_result(
+            surface_result,
+            sentence_plan,
+            plan,
+            resolver,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError):
+        surface_issues = ("grounded_surface_validation_contract_invalid",)
     semantic_subcheck_reasons, anti_template_reasons, depth_reasons = _semantic_subcheck_reasons(
         plan=plan,
         sentence_plan=sentence_plan,
@@ -1331,6 +1891,21 @@ def evaluate_grounded_observation_gate(
         reception_safety_boundary_gate=reception_gate_statuses[
             "reception_safety_boundary_gate"
         ],
+        reception_depth_plan_gate=reception_gate_statuses[
+            "reception_depth_plan_gate"
+        ],
+        reception_move_realization_gate=reception_gate_statuses[
+            "reception_move_realization_gate"
+        ],
+        reception_depth_proportionality_gate=reception_gate_statuses[
+            "reception_depth_proportionality_gate"
+        ],
+        reception_move_distinctness_gate=reception_gate_statuses[
+            "reception_move_distinctness_gate"
+        ],
+        reception_non_enumeration_gate=reception_gate_statuses[
+            "reception_non_enumeration_gate"
+        ],
         semantic_quality_gate=semantic_quality,
         public_observation_status=public_status,
         public_comment_present=bool(public_status == "passed" and generated),
@@ -1364,6 +1939,33 @@ def evaluate_grounded_observation_gate(
         ],
         reception_terminal_predicate_kind=reception_gate_diagnostics[
             "reception_terminal_predicate_kind"
+        ],
+        reception_depth_level=reception_gate_diagnostics[
+            "reception_depth_level"
+        ],
+        reception_safety_mode=reception_gate_diagnostics[
+            "reception_safety_mode"
+        ],
+        reception_opportunity_count=reception_gate_diagnostics[
+            "reception_opportunity_count"
+        ],
+        reception_planned_move_count=reception_gate_diagnostics[
+            "reception_planned_move_count"
+        ],
+        reception_realized_move_count=reception_gate_diagnostics[
+            "reception_realized_move_count"
+        ],
+        reception_move_roles=reception_gate_diagnostics[
+            "reception_move_roles"
+        ],
+        reception_surface_strategies=reception_gate_diagnostics[
+            "reception_surface_strategies"
+        ],
+        reception_terminal_predicate_families=reception_gate_diagnostics[
+            "reception_terminal_predicate_families"
+        ],
+        raw_character_count_used=reception_gate_diagnostics[
+            "raw_character_count_used"
         ],
         reception_sentence_count=reception_gate_diagnostics[
             "reception_sentence_count"

@@ -1,0 +1,195 @@
+{
+  "schema_version": "cocolon.emlis.grounded_human_reception.rr8_local_qa_receipt.v1",
+  "design_source_sha256": "bef049a1751e636dc05bc065c90e297ab5bded23208bfd52523f8e36ae0c22f4",
+  "source_snapshot_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    }
+  ],
+  "source_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac",
+  "exact8_fixture_ref": "grounded_human_reception_exact8_v2_20260712.json",
+  "exact8_fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+  "unseen12_fixture_ref": "../local_only/grounded_human_reception_rr8_unseen12_20260713.json",
+  "unseen12_fixture_sha256": "d53740015a091898d776caec56d11517ff7d4aaf44c5a48172cde54ef3cb132d",
+  "automated_qa_order": [
+    "type_and_unit",
+    "opportunity_tests",
+    "depth_and_move_plan_tests",
+    "sentence_plan_and_clause_plan_tests",
+    "surface_tests",
+    "gate_tests",
+    "recovery_tests",
+    "exact8",
+    "same16",
+    "unseen12",
+    "api_db_rn_boundary_regression",
+    "relevant_backend_regression",
+    "compile"
+  ],
+  "automated_qa_order_status": {
+    "type_and_unit": "passed",
+    "opportunity_tests": "passed",
+    "depth_and_move_plan_tests": "passed",
+    "sentence_plan_and_clause_plan_tests": "passed",
+    "surface_tests": "passed",
+    "gate_tests": "passed",
+    "recovery_tests": "passed",
+    "exact8": "passed",
+    "same16": "passed",
+    "unseen12": "passed",
+    "api_db_rn_boundary_regression": "passed",
+    "relevant_backend_regression": "passed",
+    "compile": "passed"
+  },
+  "type_validation_mode": "contract_unit_import_compile",
+  "cohorts": {
+    "exact8": {
+      "qa_meta_sha256": "f1be5f4926ed5739fb6c85690afdf481845a6e4459ebd30c79b5c086689a276e",
+      "case_count": 8,
+      "verdict": "passed",
+      "depth_distribution": {
+        "focused": 2,
+        "layered": 4,
+        "minimal": 2
+      },
+      "exact_sentence_duplicate_group_count": 0,
+      "maximum_closing_stem_family_count": 2,
+      "maximum_terminal_lexeme_family_count": 2,
+      "maximum_skeleton_family_count": 2,
+      "maximum_opening_strategy_family_count": 4,
+      "rich_input_case_count": 6,
+      "rich_one_line_case_count": 0,
+      "one_line_rich_input_rate_basis_points": 0,
+      "short_water_filling_case_count": 0,
+      "meaningful_support_unutilized_case_count": 0,
+      "clipped_anchor_case_count": 0,
+      "surface_set_sha256": "1851e85eb8c995f863dcc49253684baaab912cc3ad39d826065476cf1f9eecf5",
+      "threshold_basis": "design_exact8_plus_local_opening_calibration"
+    },
+    "same16": {
+      "qa_meta_sha256": "667b4f4b18b8529d8a34cfa0611fc75ab437d4471565c9e2f470eee52bbe4012",
+      "case_count": 16,
+      "verdict": "passed",
+      "depth_distribution": {
+        "focused": 4,
+        "layered": 8,
+        "minimal": 4
+      },
+      "exact_sentence_duplicate_group_count": 0,
+      "maximum_closing_stem_family_count": 4,
+      "maximum_terminal_lexeme_family_count": 4,
+      "maximum_skeleton_family_count": 4,
+      "maximum_opening_strategy_family_count": 8,
+      "rich_input_case_count": 12,
+      "rich_one_line_case_count": 0,
+      "one_line_rich_input_rate_basis_points": 0,
+      "short_water_filling_case_count": 0,
+      "meaningful_support_unutilized_case_count": 0,
+      "clipped_anchor_case_count": 0,
+      "surface_set_sha256": "bea116a056ae321392b624892c9ff2c4088c4d47f69af03a42092e56f591d628",
+      "threshold_basis": "exact8_ratio_scaled_to_16"
+    },
+    "unseen12": {
+      "qa_meta_sha256": "69288f6e2ce40d85feee206e3327acdc55c4f0d0bc1d80e14adb001b93f28cf4",
+      "case_count": 12,
+      "verdict": "passed",
+      "depth_distribution": {
+        "focused": 4,
+        "layered": 3,
+        "minimal": 5
+      },
+      "exact_sentence_duplicate_group_count": 0,
+      "maximum_closing_stem_family_count": 2,
+      "maximum_terminal_lexeme_family_count": 6,
+      "maximum_skeleton_family_count": 5,
+      "maximum_opening_strategy_family_count": 5,
+      "rich_input_case_count": 4,
+      "rich_one_line_case_count": 0,
+      "one_line_rich_input_rate_basis_points": 0,
+      "short_water_filling_case_count": 0,
+      "meaningful_support_unutilized_case_count": 0,
+      "clipped_anchor_case_count": 0,
+      "surface_set_sha256": "c4c300c77b0020fb9835bf06393d55ffa6b0910d76bb2999e9e71457d5debd2d",
+      "threshold_basis": "exact8_ratio_scaled_to_12_ceiling"
+    }
+  },
+  "boundary_regression": {
+    "body_free_gate_meta": "passed",
+    "public_api_contract": "unchanged",
+    "db_contract": "unchanged",
+    "rn_visible_contract": "unchanged",
+    "public_contract_changed": false,
+    "api_route_changed": false,
+    "db_physical_name_changed": false,
+    "rn_visible_contract_changed": false
+  },
+  "local_test_execution": {
+    "rr0_through_rr8_contract_test_count": 223,
+    "rr0_through_rr8_contract_test_file_count": 17,
+    "rr9_contract_test_count": 7,
+    "rr9_contract_test_file_count": 1,
+    "relevant_backend_regression_test_count": 342,
+    "relevant_backend_regression_test_file_count": 22,
+    "relevant_backend_regression_test_files": [
+      "test_emlis_ai_grounded_human_reception_r0_baseline.py",
+      "test_emlis_ai_grounded_human_reception_r1_red.py",
+      "test_emlis_ai_grounded_human_reception_r2_plan.py",
+      "test_emlis_ai_grounded_human_reception_r3_sentence_plan.py",
+      "test_emlis_ai_grounded_human_reception_r4_surface.py",
+      "test_emlis_ai_grounded_human_reception_r5_gate.py",
+      "test_emlis_ai_grounded_observation_i0_inventory.py",
+      "test_emlis_ai_grounded_observation_plan_i1.py",
+      "test_emlis_ai_grounded_observation_i2_i4.py",
+      "test_emlis_ai_grounded_observation_i5.py",
+      "test_emlis_ai_grounded_observation_i6.py",
+      "test_emlis_ai_grounded_observation_i7.py",
+      "test_emlis_ai_gate0_rr3_rr5_surface_contract.py",
+      "test_emlis_ai_gatea_ga1_structural_red.py",
+      "test_emlis_ai_gatea_ga2_contract.py",
+      "test_emlis_ai_mandatory_two_stage_runtime_contract_20260712.py",
+      "test_emlis_ai_fb172_b6_current_owner.py",
+      "test_emlis_ai_runtime_surface_pre_return_gate.py",
+      "test_emotion_submit_two_stage_reception_e2e.py",
+      "test_emotion_submit_public_feedback_meta_boundary.py",
+      "test_emlis_ai_phase20_7_public_boundary_rn_contract.py",
+      "test_emlis_ai_phase20_10_real_device_recheck.py"
+    ],
+    "failed_test_count": 0,
+    "warning_count": 1,
+    "warning_ref": "existing_pydantic_v1_root_validator_deprecation",
+    "compile_status": "passed"
+  },
+  "technical_acceptance": "passed",
+  "product_readfeel_status": "separate_rr9_human_receipt",
+  "rr9_human_review_receipt_ref": "grounded_human_reception_rr9_karen_review_receipt_20260713.json",
+  "rr9_human_review_receipt_sha256": "cbab31aa13d74ff5ed1e01c96807f2f160b15bedbe11b2d4e5361f304901db3d",
+  "technical_pass_is_product_readfeel_pass": false,
+  "actual_device_result_included": false,
+  "raw_input_included": false,
+  "surface_body_included": false,
+  "comment_text_included": false,
+  "anchor_text_included": false,
+  "sentence_text_included": false,
+  "closing_stem_text_included": false,
+  "progression_authority": "none",
+  "representative4_actual_device_status": "not_run",
+  "exact8_actual_device_status": "not_run",
+  "valid_for_progression": false
+}

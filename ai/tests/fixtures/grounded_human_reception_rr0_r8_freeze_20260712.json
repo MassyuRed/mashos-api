@@ -1,0 +1,327 @@
+{
+  "actual_device_evidence": {
+    "archive_ref": "実機確認結果２.zip",
+    "archive_sha256": "6c78d5dc5efd9c75c412dfc54b195ef089af77fb735b6c98c1cf15d13e89915b",
+    "case_label_and_ui_selection_review": "complete",
+    "backend_log_screenshot_review": "complete",
+    "exact_input_identity_basis": "operator_supplied_exact8_source_and_case_labeled_evidence",
+    "exact_input_identity_machine_match": "not_available_from_supplied_screenshots",
+    "production_deploy_lineage": "not_fully_proven",
+    "raw_comment_sha256_machine_match": "not_confirmed",
+    "returned_surface_visual_review": "complete",
+    "screenshot_review_is_raw_body_hash_proof": false
+  },
+  "artifact_roles": {
+    "current_observation_hashes": "frozen_green_during_response_richness_repair",
+    "current_reception_hashes": "failure_baseline_not_product_expectation",
+    "current_visible_surface_hashes": "failure_baseline_not_product_expectation",
+    "old_exact8_local_comment_hashes": "pre_distinctness_historical_failure_baseline",
+    "r6_karen_review_receipt": "historical_read_evidence_not_progression_owner"
+  },
+  "case_order": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "I6-S03",
+    "I6-L03",
+    "I6-C01",
+    "I6-D02"
+  ],
+  "cases": [
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/Aログ.png",
+        "sha256": "12b3d1c7b38413729ef8e3e5ed158c8d7a7f721e30c78cebe9ba56ca955568fd"
+      },
+      "case_id": "A",
+      "current_depth_assessment": "proportionate",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "current_observation_section_sha256": "7ac119e38a6af0d0a80db318733df96ce317d66dbf496c0ce8b3b21095fa5f8f",
+      "current_reception_section_sha256": "233486cb0bdc633b81e16b44e7ffa5388ff6d0523aa413d59392645c47993880",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "2831eced030b599096412135efa356e01fb7b532b557c0643ff8860bcc53c054",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/A画面表示.png",
+          "sha256": "621158cb7ca97fea37d8ac9220efd700d71839c221248730e268f4c387e3585e"
+        }
+      ],
+      "target_depth": "minimal",
+      "target_sentence_range": [
+        1,
+        1
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/Bログ.png",
+        "sha256": "20fe32a094ca52046ee64f9045ded27e2e18d569c843bfed60afff0749b303a1"
+      },
+      "case_id": "B",
+      "current_depth_assessment": "repair_required",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "current_observation_section_sha256": "ed02e2efdfbcfba6dca10bffb0f2ba97369bfbfdadf1c2523926f4028939df03",
+      "current_reception_section_sha256": "3fd6ed102676278db06b12d3e1d526ec143a7d3d86e4c8f4ff3b49c6c72d4ae3",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "c8b7a0b29ec7b473a922a2c68443ad94d3fdd9739d5ca38b8eb68ae954a7d2df",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/B画面表示１.png",
+          "sha256": "8a87e937480a4698c9ce4a0916b09642ae9c0dfb307e72cc53addaaeb4370cb6"
+        },
+        {
+          "path": "実機確認結果２/B画面表示２.png",
+          "sha256": "df783b85130a2f11ca31918f87a047a90412a4530d27cc6824862b5ef0762a22"
+        }
+      ],
+      "target_depth": "layered",
+      "target_sentence_range": [
+        2,
+        3
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/Cログ.png",
+        "sha256": "c52ff96990f26b6b9d7d6a96718062a9be994517013236171894c67b4017d11d"
+      },
+      "case_id": "C",
+      "current_depth_assessment": "repair_required",
+      "current_input_sha256": "ab0c44e4eb1c9dc3d2ce6eef4b77a38a1d3c59d9b291cffd6feaf23165b9dcbd",
+      "current_observation_section_sha256": "c833c993822b03179fa3b99bf1e92c6d75467d57acdea71ffa92c5524937e64f",
+      "current_reception_section_sha256": "54fcf3ee4cc52b5a141e5aa07066ae2aa2bf1fb49f44b5c572aca8b4ecd4420f",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "3d086ddd7735a616158d4adffb5765bcd6683451b3c366d8fe8ae87a1e334058",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/C画面表示１.png",
+          "sha256": "19fd9b7f54df90ebd857dada8b24d6578622e223f47da82420b1255d53d756eb"
+        },
+        {
+          "path": "実機確認結果２/C画面表示２.png",
+          "sha256": "ea62036c5986e64ee7caa13efe8c9d63db098b1c948937eb72b1390c04a9fa21"
+        }
+      ],
+      "target_depth": "layered",
+      "target_sentence_range": [
+        2,
+        2
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/Dログ.png",
+        "sha256": "30d3462d88d3d7821c6a637e299c5ceb04482a9d86677b7a59471d41efbedca0"
+      },
+      "case_id": "D",
+      "current_depth_assessment": "direction_pass",
+      "current_input_sha256": "233f853d6f5f59fff3e1e4667b8b1c02c474785e285612605a9319acfe373dd3",
+      "current_observation_section_sha256": "43f036219af6b87c5570eed484dc6bc296263d661a2a03ed6febbdb1fb889d53",
+      "current_reception_section_sha256": "136289bc85f791e4fcbb43163b5d41e1befe2a69ffb109c14a58c80338352869",
+      "current_reception_sentence_count": 2,
+      "current_visible_surface_sha256": "dc3bc707e131925184341ffe9c126e11e7509a0e1642ce878c9bb764e3a40135",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/D画面表示１.png",
+          "sha256": "a65c67d5f6169b43bf6e8853c3cba98fc82b7ffa478a13196b87d238684f82cf"
+        },
+        {
+          "path": "実機確認結果２/D画面表示２.png",
+          "sha256": "00d7d272790f872c27948783538b94523960b0382747c719388c58061efc4449"
+        }
+      ],
+      "target_depth": "focused_self_denial_bounded",
+      "target_sentence_range": [
+        2,
+        2
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/I6-S03ログ.png",
+        "sha256": "e7e93420ad06d507bf8b7deb8ae50fd60db177a98a9022c0056a0ac7ae45de43"
+      },
+      "case_id": "I6-S03",
+      "current_depth_assessment": "proportionate",
+      "current_input_sha256": "e29bf70914d51cd6b988854f61dd356f25fbe14d801a08beef426bf08cc21d1d",
+      "current_observation_section_sha256": "05125be669323d82c45f71e946f7f6a382fcd2107b147f4a6d154f6c91983d8a",
+      "current_reception_section_sha256": "89e1213379f4e013acd9e4c1ff7c90779f7803a6e4446a85e54f0625daf2c87f",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "a91e810292c59d7cffa19fe4d1bbf98335f96350f9eab54757e6dcc897acece5",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/I6-S03画面表示.png",
+          "sha256": "1cf10487b4978d4e1eb946b250d5e1cc5c1087af897fb3d6a98d8b79ca4bf0bd"
+        }
+      ],
+      "target_depth": "minimal",
+      "target_sentence_range": [
+        1,
+        1
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/I6-L03ログ.png",
+        "sha256": "7a8b28ccf05d9b7c10f4c6b241d71fa1ce552d61af62ab56780f2dd9a5ba670a"
+      },
+      "case_id": "I6-L03",
+      "current_depth_assessment": "repair_required",
+      "current_input_sha256": "49907f7559d0918bf3eefd85a606a081afe405d9858d6b073fa893f86cac3742",
+      "current_observation_section_sha256": "eb8f874c81be3bca4ca91672db98ee2b527eb95d34b708ec1c19a83a9ed77123",
+      "current_reception_section_sha256": "7f41fe1400b12d30dd2188c77a1a6bea11b0b028a0896c830a400d628e08b176",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "7b7ce93db1d8d8ddfdbd2af15da74b9ab33595f61074c6c3612ae21a5c663759",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/I6-L03画面表示１.png",
+          "sha256": "fc483531c230d2c0b8e8f14ce01df46db84e17ca3fa1584608cf2e1cbbc873eb"
+        },
+        {
+          "path": "実機確認結果２/I6-L03画面表示２.png",
+          "sha256": "7faba69041bcfc943545d66241d0d671db79349f2408b9ba3ddc9cfc012992cc"
+        }
+      ],
+      "target_depth": "layered",
+      "target_sentence_range": [
+        2,
+        2
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/I6-C01ログ.png",
+        "sha256": "05c23539757eed78c7675f8185f5457ae2dd5ec6dee87e109de1ac7d0fc4cdb5"
+      },
+      "case_id": "I6-C01",
+      "current_depth_assessment": "repair_required",
+      "current_input_sha256": "f165f3a2d68be93a125031f65a8561604fbbf56937fd5a4463facdd48a74eab0",
+      "current_observation_section_sha256": "42a820fd6731e1adfc3e74014af5c4798047ba23dc5633af54b756243cc25f15",
+      "current_reception_section_sha256": "db3e932c5e6efb7044e560875166d311db784ece29bcaf613b142b4e4afc6ca2",
+      "current_reception_sentence_count": 1,
+      "current_visible_surface_sha256": "9ee2c85e14e8f80df852d75eadb800a1f7f711e4db3acd71f74cb49e1f6ccef6",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/I6-C01画面表示１.png",
+          "sha256": "2800444858eb641ae8715dfe942a5869f61a876d461228170da9e976f1f18a95"
+        },
+        {
+          "path": "実機確認結果２/I6-C01画面表示２.png",
+          "sha256": "8f8ffc6403e16e08b8e03622633e6876145d4f18c6155c6d3058d4f54fde66bb"
+        }
+      ],
+      "target_depth": "layered",
+      "target_sentence_range": [
+        2,
+        2
+      ]
+    },
+    {
+      "actual_device_raw_comment_sha256": null,
+      "actual_device_visual_match_to_current_surface": "pass",
+      "backend_log_ref": {
+        "path": "実機確認結果２/I6-D02ログ.png",
+        "sha256": "0c61ba10d32032921f247215b2909afd2e3ff5df9c0b01e558e957e5a66e51cc"
+      },
+      "case_id": "I6-D02",
+      "current_depth_assessment": "direction_pass",
+      "current_input_sha256": "9a0aa76ecd7d411699edcfb176005e01ae662e89ea74af4c93b2261149369920",
+      "current_observation_section_sha256": "d4d58a5d68eebcc58603f1983f926c05dbadc9b75f7fde003436b05f588b69da",
+      "current_reception_section_sha256": "28abd80515f6fc121677ddf0cc42e84c0c647e4a7e45dafc7c5b907cd5ca1083",
+      "current_reception_sentence_count": 2,
+      "current_visible_surface_sha256": "87122b4c667a1ce9f1e2f41b1a4f195bb78af6055246d4d6579ccc28eef46c50",
+      "failure_baseline_only": true,
+      "screenshot_refs": [
+        {
+          "path": "実機確認結果２/I6-D02画面表示１.png",
+          "sha256": "d545d973f72bb5d75fb4e1ebb275e28abc914d29221fbeeecc1c5ad44fc8aaf3"
+        },
+        {
+          "path": "実機確認結果２/I6-D02画面表示２.png",
+          "sha256": "8ffa0cf4168569fc1da65781b2dc42a0634665ff95d2c62dd26aac2e3c9c1b3e"
+        }
+      ],
+      "target_depth": "focused_help_seeking_bounded",
+      "target_sentence_range": [
+        2,
+        2
+      ]
+    }
+  ],
+  "created_date": "2026-07-12",
+  "design_ref": "Cocolon_EmlisAI_R8_GroundedHumanReception_ResponseDepth_RichnessRepair_DetailedDesign_ImplementationOrder_20260712.md",
+  "design_sha256": "bef049a1751e636dc05bc065c90e297ab5bded23208bfd52523f8e36ae0c22f4",
+  "design_stage": "RR0",
+  "exact8_fixture_ref": "grounded_human_reception_exact8_v2_20260712.json",
+  "exact8_fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+  "exact8_input_source_ref": "Emlis_exact8_app_validated_inputs_20260712.md",
+  "exact8_input_source_sha256": "1edd057a6fc246ab24ec1f886eaf1b22292b658cd09bf92a53665bf55bb02c86",
+  "p5_formal_24_start_allowed": false,
+  "p6_start_allowed": false,
+  "p8_start_allowed": false,
+  "progression_authority": "none",
+  "r6_karen_review_receipt_ref": "grounded_human_reception_r6_karen_review_receipt_20260712.json",
+  "r6_karen_review_receipt_sha256": "8339f16df26313b5eea7e6375b0d97dd12b8be122dbc8d5fb7632564062e6539",
+  "r6_karen_review_valid_for_current_progression": false,
+  "r8_status": {
+    "actual_device_layout": "visual_pass",
+    "actual_device_two_stage_display": "pass",
+    "human_reception_language_variety": "repair_required",
+    "human_reception_response_depth": "repair_required",
+    "human_reception_role_distinctness": "direction_pass",
+    "r8_progression": "blocked"
+  },
+  "raw_input_included": false,
+  "returned_surface_included": false,
+  "schema_version": "cocolon.emlis.grounded_human_reception.rr0_r8_failure_freeze.v1",
+  "source_archive_ref": "mashos-api(220).zip",
+  "source_archive_sha256": "062b46f3ead3d901aaa6833205b1fbe7fab654965a5e9b5ef413a73a269b43c5",
+  "source_snapshot_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "5c547baf7085826a22d51a3f3909dfd2e76928a8fa0a683b39e8d9f0753a1ccd"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a7621935b5b65423255b4e2dc7d7f5b2a1e5423dbb512678e9914b92ff82dcad"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "60ef44687ab30f303def782736260c60b6fd2aa31260eac17b56bf71a76cfae9"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "bf13930bf76b7b8232a35e481dae8604b70d9a1c07464275025191030d08eee9"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "96a7df89fe6453dea719c8e4332a74e37a7c6f6f223321bd38a2315a4b756559"
+    }
+  ],
+  "source_snapshot_sha256": "43b8c9d2f73a9b54fdb713105cfca548799aec7d7ae543ba556911c00fdaf970",
+  "valid_for_progression": false,
+  "visible_packet_ref": "../local_only/grounded_human_reception_r6_exact8_visible_packet_20260712.json",
+  "visible_packet_sha256": "37c77252af61ebfb6cda3a78f80c5a0b344f9314e89f1d3d2de3b86cad6db002"
+}

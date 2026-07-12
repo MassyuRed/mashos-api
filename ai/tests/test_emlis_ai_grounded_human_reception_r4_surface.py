@@ -24,6 +24,8 @@ from emlis_ai_evidence_ledger_service import (
 )
 from emlis_ai_grounded_human_reception import (
     realize_grounded_human_reception,
+    reception_active_acts,
+    reception_effective_sentence_budget,
     reception_terminal_predicate_kind,
     validate_grounded_human_reception_surface,
 )
@@ -141,9 +143,9 @@ def test_r4_exact8_keeps_observation_hash_and_realizes_distinct_human_acts() -> 
         assert reception.strip()
         assert reception == reception.strip()
         assert (
-            reception_plan.sentence_policy.min_sentences
+            reception_plan.depth_policy.min_sentences
             <= _sentence_count(reception)
-            <= reception_plan.sentence_policy.max_sentences
+            <= reception_plan.depth_policy.max_sentences
         )
 
         quote_values = tuple(_QUOTE_RE.findall(reception))
@@ -176,11 +178,7 @@ def test_r4_exact8_keeps_observation_hash_and_realizes_distinct_human_acts() -> 
         assert _ACT_SURFACE_RESPONSIBILITY[primary_act].search(reception)
         expected_terminal_kinds = tuple(
             reception_terminal_predicate_kind(act)
-            for act in (
-                reception_plan.primary_reception_act,
-                reception_plan.secondary_reception_act,
-            )
-            if act is not None
+            for act in reception_active_acts(reception_plan, "full")
         )
         assert tuple(
             atom.split(":", 1)[1]
@@ -262,7 +260,17 @@ def test_r4_reception_recovery_is_act_specific_deterministic_and_stays_separate(
         primary_act = reception_plan.primary_reception_act
         assert primary_act is not None
 
-        for stage in GROUND_RECOVERY_STAGES:
+        eligible_stages = tuple(
+            stage
+            for stage in GROUND_RECOVERY_STAGES
+            if stage != "minimal_grounded"
+            or (
+                reception_plan.depth_policy.level == "minimal"
+                and reception_plan.depth_policy.safety_mode == "standard"
+                and len(reception_plan.moves) == 1
+            )
+        )
+        for stage in eligible_stages:
             first = realize_grounded_human_reception(
                 reception_plan,
                 nucleus_index,
@@ -278,24 +286,16 @@ def test_r4_reception_recovery_is_act_specific_deterministic_and_stays_separate(
             assert first == second
             assert first.text
             assert first.recovery_stage == stage
+            expected_acts = reception_active_acts(reception_plan, stage)
             assert first.terminal_predicate_kinds[0] == (
-                reception_terminal_predicate_kind(primary_act)
-            )
-            expected_acts = (
-                primary_act,
-                *(
-                    (reception_plan.secondary_reception_act,)
-                    if stage == "full"
-                    and reception_plan.secondary_reception_act is not None
-                    else ()
-                ),
+                reception_terminal_predicate_kind(expected_acts[0])
             )
             assert first.realized_reception_acts == expected_acts
-            assert (
-                reception_plan.sentence_policy.min_sentences
-                <= first.sentence_count
-                <= reception_plan.sentence_policy.max_sentences
+            min_sentences, max_sentences = reception_effective_sentence_budget(
+                reception_plan,
+                stage,
             )
+            assert min_sentences <= first.sentence_count <= max_sentences
             assert first.source_anchor_count <= (
                 reception_plan.quote_policy.max_anchor_count
             )
@@ -323,8 +323,10 @@ def test_r4_recovery_sequence_preserves_observation_and_changes_only_reception()
     assert {stage_observation for stage_observation, _reception, _issues in sections} == {
         observation
     }
-    assert len({stage_reception for _observation, stage_reception, _issues in sections}) >= 3
-    assert tuple(item.recovery_stage for item in sequence) == GROUND_RECOVERY_STAGES
+    assert len({stage_reception for _observation, stage_reception, _issues in sections}) >= 2
+    assert tuple(item.recovery_stage for item in sequence) == tuple(
+        stage for stage in GROUND_RECOVERY_STAGES if stage != "minimal_grounded"
+    )
 
 
 def test_r4_surface_validator_rejects_policy_quote_question_and_role_mutations() -> None:
@@ -414,7 +416,7 @@ def test_r4_surface_validator_rejects_policy_quote_question_and_role_mutations()
     )
 
 
-def test_r4_general_secondary_act_is_realized_when_the_r2_contract_allows_it() -> None:
+def test_r4_legacy_secondary_field_no_longer_drives_the_v2_move_surface() -> None:
     case = next(case for case in _load(_FIXTURE)["cases"] if case["case_id"] == "B")
     plan, _sentence_plan, _surface, _observation, _reception, _report, resolver = (
         _artifacts(case["exact_current_input"])
@@ -439,13 +441,11 @@ def test_r4_general_secondary_act_is_realized_when_the_r2_contract_allows_it() -
         nucleus_index,
         resolver,
     )
-    assert realized.realized_reception_acts == (
-        "recognize_lived_change",
-        "protect_retained_intention",
-    )
-    assert realized.terminal_predicate_kinds == (
-        "human_response_recognize_change",
-        "human_response_protect_intention",
+    expected_acts = reception_active_acts(reception_plan, "full")
+    assert realized.realized_reception_acts == expected_acts
+    assert "protect_retained_intention" not in expected_acts
+    assert realized.terminal_predicate_kinds == tuple(
+        reception_terminal_predicate_kind(act) for act in expected_acts
     )
     assert realized.sentence_count == 2
     assert validate_grounded_human_reception_surface(

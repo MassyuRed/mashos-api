@@ -3,16 +3,15 @@ from __future__ import annotations
 
 """Functional realizer for the distinct Grounded Human Reception layer.
 
-The realizer consumes the body-free reception plan produced by I2/R2.  It
-does not use case ids, source bodies, relations, or a completed observation as
-selection cues.  It may resolve one policy-bounded source anchor only after an
-act is selected.  Surface text is composed from a semantic referent, an
-act-specific human response predicate, speaker/stance grammar, and at most one
-afterglow.
+RR5 consumes the body-free Move sequence produced by RR2/RR3 and the ClausePlan
+binding produced by RR4. RR7 keeps that same Move ownership through recovery;
+only an optional third Move may be removed. It does not use case ids, source
+bodies, or a completed observation as selection cues. Surface text is composed
+from move-scoped semantic referents and deterministic role/act families.
 """
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 import re
 from typing import Final, Literal
 
@@ -20,6 +19,7 @@ from emlis_ai_evidence_ledger_service import EvidenceSpanResolver
 from emlis_ai_grounded_observation_plan import (
     GroundedHumanReceptionPlan,
     GroundedReceptionAct,
+    GroundedReceptionMovePlan,
     GroundedSemanticNucleus,
 )
 
@@ -30,6 +30,11 @@ ReceptionRecoveryStage = Literal[
     "integrated",
     "hedged",
     "minimal_grounded",
+]
+ReceptionConnectorPolicy = Literal[
+    "none",
+    "grounded_reason",
+    "contrast_safe",
 ]
 
 _RECOVERY_STAGES: Final = frozenset(
@@ -59,6 +64,46 @@ _STANCE_BY_ACT: Final[dict[GroundedReceptionAct, str]] = {
     "bounded_counter_self_denial": "bounded_disagreement",
     "respect_words_placed": "gentle_respect",
 }
+_MOVE_ROLE_ORDER: Final = {
+    "attention": 0,
+    "significance": 1,
+    "felt_response": 2,
+    "bounded_counterposition": 3,
+}
+_MOVE_ROLE_BY_SURFACE_STRATEGY: Final = {
+    "quiet_referent_first": "felt_response",
+    "emlis_attention_first": "attention",
+    "referent_significance_first": "significance",
+    "felt_response_first": "felt_response",
+    "explicit_emlis_counterposition": "bounded_counterposition",
+}
+_MOVE_PREDICATE_FAMILY_BY_ROLE_ACT: Final[dict[tuple[str, str], str]] = {
+    ("attention", "stay_with_current_burden"): "human_response_attention_not_overlooked",
+    ("attention", "honor_concrete_effort"): "human_response_attention_stood_out",
+    ("attention", "protect_retained_intention"): "human_response_attention_stood_out",
+    ("attention", "recognize_lived_change"): "human_response_attention_stood_out",
+    ("attention", "hold_help_seeking"): "human_response_attention_not_overlooked",
+    ("attention", "respect_words_placed"): "human_response_attention_not_overlooked",
+    ("significance", "stay_with_current_burden"): "human_response_significance_not_minimized",
+    ("significance", "honor_concrete_effort"): "human_response_significance_effort_made_concrete",
+    (
+        "significance",
+        "protect_retained_intention",
+    ): "human_response_significance_intention_preserved",
+    ("significance", "recognize_lived_change"): "human_response_significance_change_confirmed",
+    ("significance", "hold_help_seeking"): "human_response_significance_help_preserved",
+    ("significance", "respect_words_placed"): "human_response_significance_words_placed",
+    ("felt_response", "stay_with_current_burden"): "human_response_quiet_presence",
+    ("felt_response", "honor_concrete_effort"): "human_response_felt_respect_for_effort",
+    ("felt_response", "protect_retained_intention"): "human_response_felt_gentle_respect",
+    ("felt_response", "recognize_lived_change"): "human_response_recognize_change",
+    ("felt_response", "hold_help_seeking"): "human_response_hold_help_seeking",
+    ("felt_response", "respect_words_placed"): "human_response_quiet_presence",
+    (
+        "bounded_counterposition",
+        "bounded_counter_self_denial",
+    ): "human_response_bounded_counterposition",
+}
 _SENTENCE_END_RE: Final = re.compile(r"[。！？!?]+")
 _QUESTION_RE: Final = re.compile(r"[?？]")
 _QUOTE_RE: Final = re.compile(r"「([^」]*)」")
@@ -82,12 +127,14 @@ _ACT_RESPONSIBILITY_RE: Final[dict[GroundedReceptionAct, re.Pattern[str]]] = {
     ),
     "honor_concrete_effort": re.compile(
         r"(?:行動|動いたこと|動かしたこと|記録へ移したこと|働きかけ)"
-        r".{0,48}(?:大切|受け止)"
+        r".{0,48}(?:大切|受け止|軽いこととして流さ|軽く扱わ)"
     ),
     "protect_retained_intention": re.compile(
         r"(?:願い|大切にしたいもの).{0,40}(?:大切|なかったこと|消さず)"
     ),
-    "recognize_lived_change": re.compile(r"変化.{0,40}(?:感じ|受け止)"),
+    "recognize_lived_change": re.compile(
+        r"変化.{0,40}(?:感じ|受け止|見過ご|軽く扱|軽いこと|流したく)"
+    ),
     "hold_help_seeking": re.compile(
         r"(?:助け|踏みとどまり).{0,48}(?:大切|受け止)"
     ),
@@ -101,6 +148,19 @@ _ANCHOR_DELETE_TRANSLATION: Final = str.maketrans("", "", "「」『』?？!！"
 
 class GroundedHumanReceptionSurfaceError(ValueError):
     """Raised when a grounded reception cannot satisfy its R4 contract."""
+
+
+@dataclass(frozen=True)
+class GroundedReceptionClausePlan:
+    """Body-free RR4 binding of one surface sentence to one or two Moves."""
+
+    sentence_slot: int
+    move_ids: tuple[str, ...]
+    opening_strategy: str
+    connector_policy: ReceptionConnectorPolicy
+    terminal_predicate_family: str
+    quote_budget: int
+    speaker_presence: str
 
 
 @dataclass(frozen=True)
@@ -132,6 +192,10 @@ class GroundedHumanReceptionSurface:
     sentence_count: int
     referent_kind: str
     realized_reception_acts: tuple[GroundedReceptionAct, ...]
+    realized_move_ids: tuple[str, ...]
+    realized_move_roles: tuple[str, ...]
+    move_predicate_families: tuple[str, ...]
+    realized_clause_move_ids: tuple[tuple[str, ...], ...]
     grounded_nucleus_ids: tuple[str, ...]
     grounded_evidence_span_ids: tuple[str, ...]
     source_anchor_count: int
@@ -150,23 +214,220 @@ def reception_terminal_predicate_kind(act: GroundedReceptionAct) -> str:
         ) from exc
 
 
+def reception_move_predicate_family(move: GroundedReceptionMovePlan) -> str:
+    """Return the deterministic RR5 family for one role/act contribution."""
+
+    try:
+        return _MOVE_PREDICATE_FAMILY_BY_ROLE_ACT[
+            (move.move_role, move.reception_act)
+        ]
+    except KeyError as exc:
+        raise GroundedHumanReceptionSurfaceError(
+            "unsupported_reception_move_role_act:"
+            f"{move.move_role}:{move.reception_act}"
+        ) from exc
+
+
+def reception_active_moves(
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: ReceptionRecoveryStage,
+) -> tuple[GroundedReceptionMovePlan, ...]:
+    """Return the RR7 Move-preserving sequence for one recovery stage."""
+
+    moves = tuple(reception_plan.moves)
+    if not moves:
+        raise GroundedHumanReceptionSurfaceError("human_reception_move_missing")
+    if recovery_stage not in _RECOVERY_STAGES:
+        raise GroundedHumanReceptionSurfaceError(
+            f"unsupported_reception_recovery_stage:{recovery_stage}"
+        )
+    if any(move.move_role not in _MOVE_ROLE_ORDER for move in moves):
+        raise GroundedHumanReceptionSurfaceError(
+            "unsupported_reception_move_role"
+        )
+    for move in moves:
+        reception_move_predicate_family(move)
+    original_order = {move.move_id: index for index, move in enumerate(moves)}
+    ordered = tuple(
+        sorted(
+            moves,
+            key=lambda move: (
+                _MOVE_ROLE_ORDER[move.move_role],
+                original_order[move.move_id],
+            ),
+        )
+    )
+    if recovery_stage == "full":
+        return ordered
+    if recovery_stage == "minimal_grounded":
+        if (
+            reception_plan.depth_policy.level != "minimal"
+            or reception_plan.depth_policy.safety_mode != "standard"
+            or len(ordered) != 1
+        ):
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_minimal_grounded_not_allowed"
+            )
+        return ordered
+
+    retained = ordered
+    if (
+        recovery_stage == "optional_removed"
+        and len(moves) == 3
+        and not moves[2].required
+    ):
+        optional_move_id = moves[2].move_id
+        retained = tuple(
+            move for move in ordered if move.move_id != optional_move_id
+        )
+    required_ids = {
+        move.move_id for move in reception_plan.moves if move.required
+    }
+    if not required_ids.issubset(move.move_id for move in retained):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_recovery_required_move_missing"
+        )
+    if len(retained) < reception_plan.depth_policy.min_realized_moves:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_recovery_move_budget_below_minimum"
+        )
+    retained_roles = {move.move_role for move in retained}
+    retained_acts = {move.reception_act for move in retained}
+    if (
+        reception_plan.depth_policy.safety_mode == "self_denial_bounded"
+        and (
+            "felt_response" not in retained_roles
+            or (
+                any(
+                    move.move_role == "bounded_counterposition"
+                    for move in moves
+                )
+                and "bounded_counterposition" not in retained_roles
+            )
+        )
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_recovery_safety_move_missing"
+        )
+    if (
+        reception_plan.depth_policy.safety_mode == "help_seeking_bounded"
+        and (
+            "hold_help_seeking" not in retained_acts
+            or "bounded_counterposition" not in retained_roles
+        )
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_recovery_safety_move_missing"
+        )
+    return retained
+
+
+def build_grounded_reception_clause_plans(
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: ReceptionRecoveryStage,
+) -> tuple[GroundedReceptionClausePlan, ...]:
+    """Bind active Moves to deterministic one- or two-Move sentence slots."""
+
+    moves = reception_active_moves(reception_plan, recovery_stage)
+    quote_available = bool(
+        recovery_stage in {"full", "optional_removed"}
+        and reception_plan.quote_policy.max_anchor_count > 0
+    )
+    move_groups: tuple[tuple[GroundedReceptionMovePlan, ...], ...] = tuple(
+        (move,) for move in moves
+    )
+    if (
+        recovery_stage == "integrated"
+        and len(moves) == 3
+        and reception_plan.depth_policy.max_moves_per_sentence >= 2
+        and reception_plan.depth_policy.min_sentences <= 2
+        and not any(
+            move.move_role == "bounded_counterposition"
+            for move in moves[:2]
+        )
+    ):
+        move_groups = (moves[:2], moves[2:])
+
+    clauses: list[GroundedReceptionClausePlan] = []
+    for sentence_slot, group in enumerate(move_groups, start=1):
+        opening_move = group[0]
+        terminal_move = group[-1]
+        quote_budget = int(
+            quote_available
+            and any(
+                move.reference_mode == "short_anchor_if_ambiguous"
+                for move in group
+            )
+        )
+        if quote_budget:
+            quote_available = False
+        clauses.append(
+            GroundedReceptionClausePlan(
+                sentence_slot=sentence_slot,
+                move_ids=tuple(move.move_id for move in group),
+                opening_strategy=opening_move.surface_strategy,
+                connector_policy=(
+                    "contrast_safe"
+                    if terminal_move.move_role == "bounded_counterposition"
+                    else "none"
+                ),
+                terminal_predicate_family=reception_move_predicate_family(
+                    terminal_move
+                ),
+                quote_budget=quote_budget,
+                speaker_presence=terminal_move.speaker_presence,
+            )
+        )
+    return tuple(clauses)
+
+
+def reception_effective_sentence_budget(
+    reception_plan: GroundedHumanReceptionPlan,
+    recovery_stage: ReceptionRecoveryStage,
+) -> tuple[int, int]:
+    """Return the RR7 sentence budget without weakening original depth."""
+
+    if recovery_stage == "full":
+        return (
+            reception_plan.depth_policy.min_sentences,
+            reception_plan.depth_policy.max_sentences,
+        )
+    clause_count = len(
+        build_grounded_reception_clause_plans(
+            reception_plan,
+            recovery_stage,
+        )
+    )
+    if reception_plan.depth_policy.level == "layered" and clause_count < 2:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_layered_recovery_collapsed"
+        )
+    safety_requires_two_sentences = bool(
+        reception_plan.depth_policy.safety_mode == "help_seeking_bounded"
+        or (
+            reception_plan.depth_policy.safety_mode == "self_denial_bounded"
+            and any(
+                move.move_role == "bounded_counterposition"
+                for move in reception_plan.moves
+            )
+        )
+    )
+    if safety_requires_two_sentences and clause_count < 2:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_safety_recovery_collapsed"
+        )
+    return clause_count, clause_count
+
+
 def reception_active_acts(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: ReceptionRecoveryStage,
 ) -> tuple[GroundedReceptionAct, ...]:
     """Return the acts retained by one reception-only recovery stage."""
 
-    primary = reception_plan.primary_reception_act
-    if primary is None:
-        raise GroundedHumanReceptionSurfaceError("human_reception_act_missing")
-    return (
-        primary,
-        *(
-            (reception_plan.secondary_reception_act,)
-            if recovery_stage == "full"
-            and reception_plan.secondary_reception_act is not None
-            else ()
-        ),
+    return tuple(
+        move.reception_act
+        for move in reception_active_moves(reception_plan, recovery_stage)
     )
 
 
@@ -195,6 +456,8 @@ def reception_effective_reference_mode(
         in reception_active_acts(reception_plan, recovery_stage)
     ):
         return "explicit_emlis_counterposition"
+    if recovery_stage in {"integrated", "hedged", "minimal_grounded"}:
+        return "anaphoric_first"
     if reception_plan.reference_mode == "explicit_emlis_counterposition":
         return "anaphoric_first"
     return reception_plan.reference_mode or "anaphoric_first"
@@ -253,6 +516,34 @@ def _grounding_evidence_span_ids(
         for span_id in nucleus.source_span_ids
     )
     return evidence_ids[:1] if recovery_stage == "minimal_grounded" else evidence_ids
+
+
+def _compact_bound_anchor(candidate: str, max_chars: int) -> str:
+    """Return a readable source-bound excerpt without a mid-token cutoff."""
+
+    safe_boundary = re.compile(
+        r"[、,.!?！？？をへ]|"
+        r"(?<=[㐀-鿿])の(?=[㐀-鿿])|"
+        r"(?<=[㐀-鿿])と(?=[㐀-鿿])"
+    )
+    suffixes = tuple(
+        suffix
+        for match in safe_boundary.finditer(candidate)
+        if (
+            2
+            <= len(
+                suffix := candidate[match.end() :].strip(
+                    " 　、,。．."
+                )
+            )
+            <= max_chars
+        )
+        and not suffix.startswith(("、", ",", "。", "."))
+    )
+    # Every returned value is one contiguous source substring.  This keeps
+    # Japanese quotation marks truthful while still selecting a grammatical
+    # suffix instead of cutting a token at the character limit.
+    return max(suffixes, key=len, default="")
 
 
 def _short_bound_anchor(
@@ -318,7 +609,15 @@ def _short_bound_anchor(
             if len(candidate) > max_chars:
                 if not allow_truncation:
                     continue
-                candidate = candidate[: max_chars - 1].rstrip("、,") + "…"
+                # A quoted anchor must remain a readable, verbatim source
+                # span.  A raw prefix plus an ellipsis can stop mid-word and
+                # sound machine-clipped. Prefer the longest source suffix
+                # beginning at a punctuation/particle boundary; if none fits,
+                # fall back to the semantic anaphor instead of fabricating a
+                # clipped quote.
+                candidate = _compact_bound_anchor(candidate, max_chars)
+                if not candidate:
+                    continue
             return candidate
     return ""
 
@@ -499,6 +798,46 @@ def resolve_grounded_reception_referent(
     )
 
 
+def _scoped_reception_plan_for_move(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+) -> GroundedHumanReceptionPlan:
+    """Create an ephemeral compatibility view for one Move's grounding."""
+
+    return replace(
+        reception_plan,
+        moves=(move,),
+        primary_reception_act=move.reception_act,
+        secondary_reception_act=None,
+        target_nucleus_ids=move.target_nucleus_ids,
+        support_nucleus_ids=move.support_nucleus_ids,
+        source_evidence_span_ids=move.source_evidence_span_ids,
+        stance=_STANCE_BY_ACT[move.reception_act],
+        speaker_presence=move.speaker_presence,
+        reference_mode=move.reference_mode,
+    )
+
+
+def resolve_grounded_reception_move_referent(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    resolver: EvidenceSpanResolver,
+    *,
+    allow_short_anchor: bool,
+) -> GroundedReceptionReferent:
+    """Resolve one RR5 referent using only that Move's nucleus/evidence IDs."""
+
+    return resolve_grounded_reception_referent(
+        _scoped_reception_plan_for_move(reception_plan, move),
+        nucleus_index,
+        resolver,
+        recovery_stage="full",
+        act=move.reception_act,
+        allow_short_anchor=allow_short_anchor,
+    )
+
+
 def _predicate_fragment(
     act: GroundedReceptionAct,
     recovery_stage: ReceptionRecoveryStage,
@@ -649,6 +988,11 @@ def _bounded_counterposition_fragment(
     preserved_help_step: bool = False,
     preserved_counterdirection: bool = False,
 ) -> str:
+    if preserved_help_step and preserved_action:
+        return (
+            "Emlisには、助けへ向けて残したその行動までなかったことにして、"
+            "その言葉だけであなた自身が決まるとは思えません"
+        )
     if preserved_help_step:
         return (
             "Emlisには、助けへ向かうその一歩までなかったことにして、"
@@ -661,10 +1005,359 @@ def _bounded_counterposition_fragment(
         )
     if preserved_counterdirection:
         return (
-            "Emlisには、そこに残した向きまでなかったことにして、"
+            "Emlisには、その自己評価だけでは終わらない別の思いも見失わずに、"
             "その言葉だけであなた自身が決まるとは思えません"
         )
     return "Emlisには、その言葉だけであなた自身が決まるとは思えません"
+
+
+def _move_attributes(
+    move: GroundedReceptionMovePlan,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+) -> frozenset[str]:
+    return frozenset(
+        code
+        for nucleus_id in (
+            *move.target_nucleus_ids,
+            *move.support_nucleus_ids,
+        )
+        if nucleus_id in nucleus_index
+        for code in nucleus_index[nucleus_id].semantic_frame.attribute_codes
+    )
+
+
+def _realize_full_move_sentence(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+    referent: GroundedReceptionReferent,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+) -> str:
+    """Realize one deterministic role/act contribution, never a case template."""
+
+    role = move.move_role
+    act = move.reception_act
+    text = referent.text
+    strategy = move.surface_strategy
+    if _MOVE_ROLE_BY_SURFACE_STRATEGY.get(strategy) != role:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_move_surface_strategy_mismatch:"
+            f"{role}:{strategy}"
+        )
+
+    if strategy == "explicit_emlis_counterposition":
+        attributes = _move_attributes(move, nucleus_index)
+        return _bounded_counterposition_fragment(
+            preserved_help_step="operator:help_seeking" in attributes,
+            preserved_action="operator:action" in attributes,
+            preserved_counterdirection=bool(
+                {
+                    "operator:continuation",
+                    "operator:refusal",
+                    "semantic_role:protective_or_limiting_refusal",
+                }
+                & attributes
+            ),
+        )
+
+    if strategy == "emlis_attention_first":
+        if act == "honor_concrete_effort":
+            return (
+                f"{text}が特に印象に残り、"
+                "その手間を大切に思います"
+            )
+        if act == "recognize_lived_change":
+            return f"{text}が特に印象に残り、見過ごしたくないと感じます"
+        if act == "protect_retained_intention":
+            attributes = _move_attributes(move, nucleus_index)
+            target_rank = next(
+                (
+                    index
+                    for index, nucleus_id in enumerate(
+                        reception_plan.observation_owned_nucleus_ids
+                    )
+                    if nucleus_id in move.target_nucleus_ids
+                ),
+                0,
+            )
+            if "operator:positive_change" in attributes:
+                return (
+                    "変化の中にも残っているその願いが、"
+                    "なかったことにしたくないほど印象に残りました"
+                )
+            if target_rank >= 3:
+                return (
+                    f"{text}を、なかったことにせず、"
+                    "見過ごさずにいたいです"
+                )
+            return f"{text}が、なかったことにしたくないほど印象に残りました"
+        if act == "hold_help_seeking":
+            return f"{text}が、見過ごしたくないものとして印象に残りました"
+        if act == "stay_with_current_burden":
+            return f"{text}を、見過ごしたくありません"
+        return f"{text}が、静かに印象に残りました"
+
+    if strategy == "referent_significance_first":
+        if act == "honor_concrete_effort":
+            return f"{text}を、軽いこととして流さず大切に思います"
+        if act == "protect_retained_intention":
+            return f"{text}を、消さずにそっと残しておきたいです"
+        if act == "recognize_lived_change":
+            return f"{text}を、軽い変化として扱いたくありません"
+        if act == "hold_help_seeking":
+            return f"{text}を、大切な一歩として残しておきたいです"
+        return f"{text}を、軽く扱いたくありません"
+
+    if strategy not in {"quiet_referent_first", "felt_response_first"}:
+        raise GroundedHumanReceptionSurfaceError(
+            f"unsupported_reception_surface_strategy:{strategy}"
+        )
+
+    if act == "stay_with_current_burden":
+        if reception_plan.depth_policy.safety_mode == "self_denial_bounded":
+            attributes = _move_attributes(move, nucleus_index)
+            if "detected_type:value" in attributes:
+                return (
+                    "その自己評価にある苦しさを、否定せず、"
+                    "軽く扱わず受け止めています"
+                )
+            return (
+                "今そこにある苦しさを、否定せず、"
+                "無理に小さくせず受け止めています"
+            )
+        return _join_object_predicate(
+            referent,
+            _predicate_fragment(
+                act,
+                "full",
+                referent_kind=referent.kind,
+            ),
+            stance_adverb=_stance_adverb("quiet_presence", "full"),
+        )
+    if act == "recognize_lived_change":
+        attributes = _move_attributes(move, nucleus_index)
+        explicitly_valued = bool(
+            {
+                "semantic_role:explicit_evaluation",
+                "semantic_role:positive_evaluation",
+                "operator:value",
+            }
+            & attributes
+        )
+        if explicitly_valued:
+            if "semantic_role:embedded_turn" in attributes:
+                return f"{text}を、うれしい変化だと感じます"
+            if "operator:contrast" in attributes:
+                return f"{text}に、静かなうれしさを感じます"
+            return f"{text}を、うれしく感じます"
+        if "semantic_role:embedded_turn" in attributes:
+            return f"{text}を、軽く扱わずにいたいです"
+        if "operator:contrast" in attributes:
+            return f"{text}を、見過ごしたくありません"
+        if "semantic_role:explicit_result" in attributes:
+            if "semantic_role:contrast_before" in attributes:
+                return f"{text}を、見過ごさずにいたいです"
+            return f"{text}を、軽いこととして流したくありません"
+        return f"{text}を、見過ごさずにいたいです"
+    if act == "protect_retained_intention":
+        return f"{text}を、そっと大切にしたいです"
+    if act == "honor_concrete_effort":
+        return f"{text}を、その手間ごと大切に思います"
+    if act == "hold_help_seeking":
+        prefix = (
+            "今ある苦しさを否定せず、"
+            if reception_plan.depth_policy.safety_mode == "help_seeking_bounded"
+            else ""
+        )
+        return f"{prefix}{text}を、大切な一歩として見過ごしたくありません"
+    if act == "respect_words_placed":
+        return f"{text}を、そのまま静かに大切に受け止めています"
+    raise GroundedHumanReceptionSurfaceError(
+        f"unsupported_reception_move_act:{act}"
+    )
+
+
+def _hedge_move_sentence(text: str) -> str:
+    """Weaken assertion while retaining the Move's visible responsibility."""
+
+    replacements = (
+        ("見過ごしたくありません", "見過ごさずにいたいです"),
+        ("見過ごしたくないと感じます", "見過ごさずにいたいと感じています"),
+        ("扱いたくありません", "扱わずにいたいです"),
+        (
+            "その手間ごと大切に思います",
+            "その手間ごと軽く扱わずにいたいです",
+        ),
+        (
+            "その手間を大切に思います",
+            "その手間を軽いこととして流さずにいたいです",
+        ),
+        (
+            "うれしい変化だと感じます",
+            "うれしい変化として受け止めたいです",
+        ),
+        ("受け止めています", "受け止めたいです"),
+        ("受け止めます", "受け止めたいです"),
+        ("印象に残りました", "印象に残っています"),
+        ("うれしく感じます", "うれしく感じています"),
+        ("うれしさを感じます", "うれしさを感じています"),
+    )
+    for source, replacement in replacements:
+        if source in text:
+            return text.replace(source, replacement, 1)
+    return text
+
+
+def _realize_move_sentence(
+    reception_plan: GroundedHumanReceptionPlan,
+    move: GroundedReceptionMovePlan,
+    referent: GroundedReceptionReferent,
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    recovery_stage: ReceptionRecoveryStage,
+) -> str:
+    """Realize every recovery stage from the same Move-owned surface path."""
+
+    text = _realize_full_move_sentence(
+        reception_plan,
+        move,
+        referent,
+        nucleus_index,
+    )
+    return (
+        _hedge_move_sentence(text)
+        if recovery_stage == "hedged"
+        and move.move_role != "bounded_counterposition"
+        else text
+    )
+
+
+def _integrate_move_sentences(first: str, second: str) -> str:
+    """Join two complete Move contributions without deleting either one."""
+
+    lead_endings = (
+        ("見過ごしたくないと感じます", "見過ごしたくないと感じ"),
+        (
+            "なかったことにしたくないほど印象に残りました",
+            "なかったことにしたくないほど印象に残り",
+        ),
+        ("印象に残りました", "印象に残り"),
+        ("見過ごしたくありません", "見過ごさず"),
+        ("見過ごさずにいたいです", "見過ごさずにいたいと感じ"),
+        ("残しておきたいです", "残しておきたく"),
+        ("大切にしたいです", "大切にしたく"),
+        ("扱いたくありません", "扱わずにいたく"),
+        ("大切に思います", "大切に思い"),
+        ("受け止めています", "受け止めており"),
+        ("受け止めます", "受け止め"),
+        ("感じます", "感じ"),
+    )
+    clean_first = first.rstrip("。")
+    clean_second = second.rstrip("。")
+    for ending, lead in lead_endings:
+        if clean_first.endswith(ending):
+            return f"{clean_first[:-len(ending)]}{lead}、{clean_second}"
+    raise GroundedHumanReceptionSurfaceError(
+        "human_reception_integrated_lead_unsupported"
+    )
+
+
+def _validate_clause_plan_binding(
+    reception_plan: GroundedHumanReceptionPlan,
+    clauses: Sequence[GroundedReceptionClausePlan],
+    recovery_stage: ReceptionRecoveryStage,
+) -> tuple[GroundedReceptionMovePlan, ...]:
+    active_moves = reception_active_moves(reception_plan, recovery_stage)
+    move_index = {move.move_id: move for move in active_moves}
+    canonical_clauses = build_grounded_reception_clause_plans(
+        reception_plan,
+        recovery_stage,
+    )
+    if len(clauses) != len(canonical_clauses):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_clause_count_mismatch"
+        )
+    if tuple(clause.sentence_slot for clause in clauses) != tuple(
+        range(1, len(clauses) + 1)
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_clause_slot_invalid"
+        )
+    flattened_ids = tuple(
+        move_id for clause in clauses for move_id in clause.move_ids
+    )
+    expected_ids = tuple(move.move_id for move in active_moves)
+    if len(flattened_ids) != len(set(flattened_ids)):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_clause_move_duplicate"
+        )
+    if flattened_ids != expected_ids:
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_clause_move_binding_mismatch"
+        )
+    if sum(clause.quote_budget for clause in clauses) > (
+        reception_plan.quote_policy.max_anchor_count
+    ):
+        raise GroundedHumanReceptionSurfaceError(
+            "human_reception_clause_quote_budget_exceeded"
+        )
+    for clause, canonical_clause in zip(clauses, canonical_clauses):
+        if not 1 <= len(clause.move_ids) <= min(
+            2,
+            reception_plan.depth_policy.max_moves_per_sentence,
+        ):
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_move_limit_invalid"
+            )
+        moves = tuple(move_index[move_id] for move_id in clause.move_ids)
+        if any(
+            move.move_role == "bounded_counterposition" for move in moves
+        ) and len(moves) != 1:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_counterposition_clause_not_independent"
+            )
+        if len(moves) == 2 and recovery_stage != "integrated":
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_multi_move_clause_wrong_stage"
+            )
+        if len(moves) == 2 and len(clauses) < (
+            reception_plan.depth_policy.min_sentences
+        ):
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_integrated_depth_below_minimum"
+            )
+        opening_move = moves[0]
+        terminal_move = moves[-1]
+        if clause.terminal_predicate_family != reception_move_predicate_family(
+            terminal_move
+        ):
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_predicate_family_mismatch"
+            )
+        if clause.opening_strategy != opening_move.surface_strategy:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_opening_strategy_mismatch"
+            )
+        if clause.speaker_presence != terminal_move.speaker_presence:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_speaker_mismatch"
+            )
+        expected_connector = (
+            "contrast_safe"
+            if terminal_move.move_role == "bounded_counterposition"
+            else "none"
+        )
+        if clause.connector_policy != expected_connector:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_connector_policy_mismatch"
+            )
+        if clause.quote_budget not in {0, 1}:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_quote_budget_invalid"
+            )
+        if clause.quote_budget != canonical_clause.quote_budget:
+            raise GroundedHumanReceptionSurfaceError(
+                "human_reception_clause_quote_budget_mismatch"
+            )
+    return active_moves
 
 
 def _afterglow_clause(
@@ -797,14 +1490,19 @@ def validate_grounded_human_reception_surface(
     issues: list[str] = []
     if not surface.text.strip():
         issues.append("human_reception_surface_empty")
-    sentence_policy = reception_plan.sentence_policy
     actual_sentence_count = _sentence_count(surface.text)
     if surface.sentence_count != actual_sentence_count:
         issues.append("human_reception_sentence_diagnostic_mismatch")
+    try:
+        min_sentences, max_sentences = reception_effective_sentence_budget(
+            reception_plan,
+            surface.recovery_stage,
+        )
+    except GroundedHumanReceptionSurfaceError as exc:
+        issues.append(str(exc))
+        min_sentences, max_sentences = (1, 0)
     if not (
-        sentence_policy.min_sentences
-        <= actual_sentence_count
-        <= sentence_policy.max_sentences
+        min_sentences <= actual_sentence_count <= max_sentences
     ):
         issues.append("human_reception_sentence_budget_exceeded")
     if _QUESTION_RE.search(surface.text):
@@ -831,7 +1529,12 @@ def validate_grounded_human_reception_surface(
     if surface.recovery_stage not in _RECOVERY_STAGES:
         issues.append("unsupported_reception_recovery_stage")
         active_acts: tuple[GroundedReceptionAct, ...] = ()
+        active_moves: tuple[GroundedReceptionMovePlan, ...] = ()
     else:
+        active_moves = reception_active_moves(
+            reception_plan,
+            surface.recovery_stage,
+        )
         active_acts = reception_active_acts(
             reception_plan,
             surface.recovery_stage,
@@ -843,9 +1546,30 @@ def validate_grounded_human_reception_surface(
     )
     if surface.terminal_predicate_kinds != expected_kinds:
         issues.append("human_reception_terminal_predicate_mismatch")
+    expected_move_ids = tuple(move.move_id for move in active_moves)
+    expected_move_roles = tuple(move.move_role for move in active_moves)
+    expected_move_families = tuple(
+        reception_move_predicate_family(move) for move in active_moves
+    )
+    if surface.realized_move_ids != expected_move_ids:
+        issues.append("human_reception_realized_move_mismatch")
+    if surface.realized_move_roles != expected_move_roles:
+        issues.append("human_reception_realized_move_role_mismatch")
+    if surface.move_predicate_families != expected_move_families:
+        issues.append("human_reception_move_predicate_family_mismatch")
+    flattened_clause_moves = tuple(
+        move_id
+        for move_ids in surface.realized_clause_move_ids
+        for move_id in move_ids
+    )
+    if flattened_clause_moves != expected_move_ids:
+        issues.append("human_reception_realized_clause_move_mismatch")
     if any(
         not kind.startswith("human_response_")
-        for kind in surface.terminal_predicate_kinds
+        for kind in (
+            *surface.terminal_predicate_kinds,
+            *surface.move_predicate_families,
+        )
     ):
         issues.append("human_reception_non_human_terminal_predicate")
     for act in active_acts:
@@ -863,24 +1587,37 @@ def validate_grounded_human_reception_surface(
         issues.append("self_denial_explicit_stance_missing")
     if not bounded_counterposition and "Emlis" in surface.text:
         issues.append("human_reception_implicit_speaker_overstated")
-    allowed_nucleus_ids = set(
-        (
-            *reception_plan.target_nucleus_ids,
-            *reception_plan.support_nucleus_ids,
+    allowed_nucleus_ids = {
+        nucleus_id
+        for move in active_moves
+        for nucleus_id in (
+            *move.target_nucleus_ids,
+            *move.support_nucleus_ids,
         )
-    )
+    }
+    allowed_evidence_span_ids = {
+        span_id
+        for move in active_moves
+        for span_id in move.source_evidence_span_ids
+    }
     if (
         not surface.grounded_nucleus_ids
-        or not set(surface.grounded_nucleus_ids).issubset(allowed_nucleus_ids)
+        or set(surface.grounded_nucleus_ids) != allowed_nucleus_ids
     ):
         issues.append("human_reception_surface_grounding_mismatch")
     if (
         not surface.grounded_evidence_span_ids
-        or not set(surface.grounded_evidence_span_ids).issubset(
-            reception_plan.source_evidence_span_ids
-        )
+        or set(surface.grounded_evidence_span_ids)
+        != allowed_evidence_span_ids
     ):
         issues.append("human_reception_surface_evidence_mismatch")
+    if (
+        any(move.required for move in reception_plan.moves)
+        and not {
+            move.move_id for move in reception_plan.moves if move.required
+        }.issubset(surface.realized_move_ids)
+    ):
+        issues.append("human_reception_required_move_missing")
     if surface.recovery_stage == "minimal_grounded":
         if (
             len(surface.realized_reception_acts) != 1
@@ -904,8 +1641,9 @@ def realize_grounded_human_reception(
     resolver: EvidenceSpanResolver,
     *,
     recovery_stage: ReceptionRecoveryStage = "full",
+    clause_plans: Sequence[GroundedReceptionClausePlan] | None = None,
 ) -> GroundedHumanReceptionSurface:
-    """Realize one deterministic, grounded, distinct reception contribution."""
+    """Realize deterministic Move contributions from one body-free ClausePlan."""
 
     if recovery_stage not in _RECOVERY_STAGES:
         raise GroundedHumanReceptionSurfaceError(
@@ -915,61 +1653,88 @@ def realize_grounded_human_reception(
         raise GroundedHumanReceptionSurfaceError(
             "human_reception_plan_present_but_not_required"
         )
-    active_acts = reception_active_acts(reception_plan, recovery_stage)
-    primary_referent = resolve_grounded_reception_referent(
-        reception_plan,
-        nucleus_index,
-        resolver,
-        recovery_stage=recovery_stage,
-        act=active_acts[0],
-    )
-    secondary_referent = None
-    if len(active_acts) > 1 and active_acts[1] != "bounded_counter_self_denial":
-        secondary_referent = resolve_grounded_reception_referent(
+    active_moves = reception_active_moves(reception_plan, recovery_stage)
+    active_acts = tuple(move.reception_act for move in active_moves)
+    resolved_clause_plans = tuple(
+        clause_plans
+        if clause_plans is not None
+        else build_grounded_reception_clause_plans(
             reception_plan,
-            nucleus_index,
-            resolver,
-            recovery_stage=recovery_stage,
-            act=active_acts[1],
-            allow_short_anchor=not primary_referent.source_anchor_used,
+            recovery_stage,
         )
-    clauses, terminal_kinds = _compose_reception_clauses(
+    )
+    _validate_clause_plan_binding(
         reception_plan,
-        primary_referent,
-        secondary_referent,
+        resolved_clause_plans,
         recovery_stage,
     )
+    move_index = {move.move_id: move for move in active_moves}
+
+    clauses: list[str] = []
+    referents: list[GroundedReceptionReferent] = []
+    anchor_used = False
+    for clause_plan in resolved_clause_plans:
+        move_sentences: list[str] = []
+        for move_id in clause_plan.move_ids:
+            move = move_index[move_id]
+            referent = resolve_grounded_reception_move_referent(
+                reception_plan,
+                move,
+                nucleus_index,
+                resolver,
+                allow_short_anchor=bool(
+                    clause_plan.quote_budget and not anchor_used
+                ),
+            )
+            anchor_used = anchor_used or referent.source_anchor_used
+            referents.append(referent)
+            move_sentences.append(
+                _realize_move_sentence(
+                    reception_plan,
+                    move,
+                    referent,
+                    nucleus_index,
+                    recovery_stage,
+                )
+            )
+        clauses.append(
+            move_sentences[0]
+            if len(move_sentences) == 1
+            else _integrate_move_sentences(
+                move_sentences[0],
+                move_sentences[1],
+            )
+        )
+    terminal_kinds = tuple(
+        reception_terminal_predicate_kind(move.reception_act)
+        for move in active_moves
+    )
+
     text = "".join(f"{clause.rstrip('。')}。" for clause in clauses if clause.strip())
     quote_values = tuple(_QUOTE_RE.findall(text))
     surface = GroundedHumanReceptionSurface(
         text=text,
         terminal_predicate_kinds=terminal_kinds,
         sentence_count=_sentence_count(text),
-        referent_kind=(
-            primary_referent.kind
-            if secondary_referent is None
-            else f"{primary_referent.kind}+{secondary_referent.kind}"
-        ),
+        referent_kind="+".join(referent.kind for referent in referents),
         realized_reception_acts=active_acts,
+        realized_move_ids=tuple(move.move_id for move in active_moves),
+        realized_move_roles=tuple(move.move_role for move in active_moves),
+        move_predicate_families=tuple(
+            reception_move_predicate_family(move) for move in active_moves
+        ),
+        realized_clause_move_ids=tuple(
+            clause.move_ids for clause in resolved_clause_plans
+        ),
         grounded_nucleus_ids=_dedupe(
-            (
-                *primary_referent.nucleus_ids,
-                *(
-                    secondary_referent.nucleus_ids
-                    if secondary_referent is not None
-                    else ()
-                ),
-            )
+            nucleus_id
+            for referent in referents
+            for nucleus_id in referent.nucleus_ids
         ),
         grounded_evidence_span_ids=_dedupe(
-            (
-                *primary_referent.evidence_span_ids,
-                *(
-                    secondary_referent.evidence_span_ids
-                    if secondary_referent is not None
-                    else ()
-                ),
-            )
+            span_id
+            for referent in referents
+            for span_id in referent.evidence_span_ids
         ),
         source_anchor_count=len(quote_values),
         source_anchor_max_visible_chars=max(
@@ -992,15 +1757,22 @@ def realize_grounded_human_reception(
 
 __all__ = [
     "ReceptionRecoveryStage",
+    "ReceptionConnectorPolicy",
     "GroundedHumanReceptionSurfaceError",
+    "GroundedReceptionClausePlan",
     "GroundedReceptionReferent",
     "GroundedHumanResponsePredicate",
     "GroundedHumanReceptionSurface",
     "reception_terminal_predicate_kind",
+    "reception_move_predicate_family",
+    "reception_active_moves",
     "reception_active_acts",
+    "build_grounded_reception_clause_plans",
+    "reception_effective_sentence_budget",
     "reception_effective_speaker_presence",
     "reception_effective_reference_mode",
     "resolve_grounded_reception_referent",
+    "resolve_grounded_reception_move_referent",
     "validate_grounded_human_reception_surface",
     "realize_grounded_human_reception",
 ]

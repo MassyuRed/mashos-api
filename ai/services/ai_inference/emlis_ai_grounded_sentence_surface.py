@@ -10,8 +10,8 @@ functional grammar around source anchors, and keeps Safety ownership intact.
 
 The same plan contract covers normal/long input, short-state sufficient input,
 truly-limited input, and the self-denial Safety overlay. Recovery never selects
-an older fixed body: it rebuilds the same required meaning with progressively
-smaller surface shapes.
+an older fixed body: it rebuilds the same required Moves without silently
+collapsing layered or bounded reception to a minimal surface.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -31,14 +31,17 @@ from emlis_ai_grounded_observation_plan import (
     validate_grounded_human_reception_plan,
 )
 from emlis_ai_grounded_human_reception import (
-    GroundedHumanReceptionSurface,
+    GroundedReceptionClausePlan,
     GroundedHumanReceptionSurfaceError,
+    build_grounded_reception_clause_plans,
     realize_grounded_human_reception,
     reception_active_acts,
+    reception_active_moves,
     reception_effective_reference_mode,
+    reception_effective_sentence_budget,
     reception_effective_speaker_presence,
+    reception_move_predicate_family,
     reception_terminal_predicate_kind,
-    resolve_grounded_reception_referent,
     validate_grounded_human_reception_surface,
 )
 from emlis_ai_safety_triage import (
@@ -47,7 +50,7 @@ from emlis_ai_safety_triage import (
     TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER,
 )
 
-GROUND_SENTENCE_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_sentence_plan.i3.v1"
+GROUND_SENTENCE_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_sentence_plan.rr4.v2"
 GROUND_SURFACE_RESULT_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_surface.i4.v1"
 GROUND_SURFACE_GENERATION_PATH: Final = "grounded_sentence_surface_canonical_v1"
 DIRECTIONAL_GROUNDED_RELATION_TYPES: Final = frozenset(
@@ -203,6 +206,7 @@ class GroundedSentenceBinding:
 class GroundedSentencePlanLine:
     binding: GroundedSentenceBinding
     surface_function: SurfaceFunction
+    reception_clause_plans: tuple[GroundedReceptionClausePlan, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -600,7 +604,17 @@ def _reception_contract_atoms(
     reception_plan: GroundedHumanReceptionPlan,
     recovery_stage: RecoveryStage,
 ) -> tuple[str, ...]:
-    acts = reception_active_acts(reception_plan, recovery_stage)
+    moves = reception_active_moves(reception_plan, recovery_stage)
+    acts = tuple(move.reception_act for move in moves)
+    clauses = build_grounded_reception_clause_plans(
+        reception_plan,
+        recovery_stage,
+    )
+    clause_by_move_id = {
+        move_id: clause
+        for clause in clauses
+        for move_id in clause.move_ids
+    }
     secondary_follow_elements = (
         reception_plan.secondary_follow_elements
         if recovery_stage == "full"
@@ -611,9 +625,59 @@ def _reception_contract_atoms(
         if recovery_stage == "full"
         else None
     )
+    min_sentences, max_sentences = reception_effective_sentence_budget(
+        reception_plan,
+        recovery_stage,
+    )
     return _dedupe(
         (
             *[f"reception_act:{act}" for act in acts],
+            f"reception_depth:{reception_plan.depth_policy.level}",
+            f"reception_safety_mode:{reception_plan.depth_policy.safety_mode}",
+            f"reception_move_count:{len(moves)}",
+            f"reception_clause_count:{len(clauses)}",
+            "reception_raw_character_count_used:false",
+            *[
+                f"reception_move:{move.move_id}"
+                for move in moves
+            ],
+            *[
+                f"reception_move_role:{move.move_id}:{move.move_role}"
+                for move in moves
+            ],
+            *[
+                f"reception_move_act:{move.move_id}:{move.reception_act}"
+                for move in moves
+            ],
+            *[
+                (
+                    "reception_surface_strategy:"
+                    f"{move.move_id}:{move.surface_strategy}"
+                )
+                for move in moves
+            ],
+            *[
+                (
+                    "reception_sentence_slot:"
+                    f"{move.move_id}:"
+                    f"{clause_by_move_id[move.move_id].sentence_slot}"
+                )
+                for move in moves
+            ],
+            *[
+                (
+                    "reception_move_required:"
+                    f"{move.move_id}:{str(move.required).lower()}"
+                )
+                for move in moves
+            ],
+            *[
+                (
+                    "reception_move_predicate:"
+                    f"{move.move_id}:{reception_move_predicate_family(move)}"
+                )
+                for move in moves
+            ],
             *(
                 (
                     f"reception_follow_primary:"
@@ -655,10 +719,11 @@ def _reception_contract_atoms(
                 "reception_quote_visible_chars_max:"
                 f"{reception_plan.quote_policy.max_anchor_visible_chars}"
             ),
-            "reception_sentence_budget:one_or_two",
-            f"reception_sentence_min:{reception_plan.sentence_policy.min_sentences}",
-            f"reception_sentence_max:{reception_plan.sentence_policy.max_sentences}",
+            "reception_sentence_budget:one_to_three",
+            f"reception_sentence_min:{min_sentences}",
+            f"reception_sentence_max:{max_sentences}",
             "reception_distinctness:required",
+            "reception_non_enumeration:required",
             *[
                 "reception_terminal_predicate:"
                 f"{reception_terminal_predicate_kind(act)}"
@@ -741,6 +806,7 @@ def _make_line(
     recovery_stage: RecoveryStage,
     required: bool = True,
     extra_atoms: Sequence[str] = (),
+    reception_clause_plans: Sequence[GroundedReceptionClausePlan] = (),
 ) -> GroundedSentencePlanLine:
     atom_ids = _dedupe(
         [
@@ -792,7 +858,11 @@ def _make_line(
         contains_question=False,
         required=required,
     )
-    return GroundedSentencePlanLine(binding=binding, surface_function=surface_function)
+    return GroundedSentencePlanLine(
+        binding=binding,
+        surface_function=surface_function,
+        reception_clause_plans=tuple(reception_clause_plans),
+    )
 
 
 def _internal_relation_ids(
@@ -1179,6 +1249,10 @@ def _build_self_denial_lines(
         and follow_ids
     ):
         reception_plan = _required_reception_plan(plan, follow_ids)
+        reception_clause_plans = build_grounded_reception_clause_plans(
+            reception_plan,
+            recovery_stage,
+        )
         reception_nucleus_ids = _dedupe(
             (
                 *reception_plan.target_nucleus_ids,
@@ -1204,6 +1278,7 @@ def _build_self_denial_lines(
                 relation_index=relation_index,
                 claim_scope=claim_scope,
                 recovery_stage=recovery_stage,
+                reception_clause_plans=reception_clause_plans,
                 extra_atoms=(
                     *_human_follow_atoms(
                         follow_role,
@@ -1403,6 +1478,10 @@ def _build_regular_lines(
 
     if plan.coverage_requirements.human_follow_required and follow_ids:
         reception_plan = _required_reception_plan(plan, follow_ids)
+        reception_clause_plans = build_grounded_reception_clause_plans(
+            reception_plan,
+            recovery_stage,
+        )
         reception_nucleus_ids = _dedupe(
             (
                 *reception_plan.target_nucleus_ids,
@@ -1424,6 +1503,7 @@ def _build_regular_lines(
                 relation_index=relation_index,
                 claim_scope=claim_scope,
                 recovery_stage=recovery_stage,
+                reception_clause_plans=reception_clause_plans,
                 extra_atoms=(
                     *_human_follow_atoms(
                         follow_role,
@@ -2030,6 +2110,7 @@ def _render_limited_opposition(
 
 def _render_human_follow(
     binding: GroundedSentenceBinding,
+    clause_plans: Sequence[GroundedReceptionClausePlan],
     plan: GroundedObservationPlan,
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
     resolver: EvidenceSpanResolver,
@@ -2037,6 +2118,7 @@ def _render_human_follow(
     reception_plan = plan.response_plan.human_reception_plan
     if reception_plan is None or not reception_plan.required:
         raise GroundedSentenceSurfaceError("human_reception_plan_missing")
+    recovery_stage = _plan_recovery_stage(binding)
     expected_nucleus_ids = _dedupe(
         (
             *reception_plan.target_nucleus_ids,
@@ -2045,12 +2127,19 @@ def _render_human_follow(
     )
     if binding.nucleus_ids != expected_nucleus_ids:
         raise GroundedSentenceSurfaceError("human_reception_target_mismatch")
+    if binding.evidence_span_ids != tuple(
+        reception_plan.source_evidence_span_ids
+    ):
+        raise GroundedSentenceSurfaceError(
+            "human_reception_source_evidence_mismatch"
+        )
     try:
         reception = realize_grounded_human_reception(
             reception_plan,
             nucleus_index,
             resolver,
-            recovery_stage=_plan_recovery_stage(binding),
+            recovery_stage=recovery_stage,
+            clause_plans=clause_plans,
         )
     except GroundedHumanReceptionSurfaceError as exc:
         raise GroundedSentenceSurfaceError(str(exc)) from exc
@@ -2121,7 +2210,13 @@ def _realize_line(
             resolver,
         )
     if line.surface_function == "render_human_follow":
-        return _render_human_follow(line.binding, plan, nucleus_index, resolver)
+        return _render_human_follow(
+            line.binding,
+            line.reception_clause_plans,
+            plan,
+            nucleus_index,
+            resolver,
+        )
     raise GroundedSentenceSurfaceError(f"unsupported_surface_function:{line.surface_function}")
 
 
@@ -2302,10 +2397,17 @@ def build_reception_recovery_sentence_plan(
         reception_plan = plan.response_plan.human_reception_plan
         if reception_plan is None or not reception_plan.required:
             raise GroundedSentenceSurfaceError("human_reception_plan_missing")
-        contract_atoms = _reception_contract_atoms(
-            reception_plan,
-            recovery_stage,
-        )
+        try:
+            contract_atoms = _reception_contract_atoms(
+                reception_plan,
+                recovery_stage,
+            )
+            recovery_clause_plans = build_grounded_reception_clause_plans(
+                reception_plan,
+                recovery_stage,
+            )
+        except GroundedHumanReceptionSurfaceError as exc:
+            raise GroundedSentenceSurfaceError(str(exc)) from exc
         lines: list[GroundedSentencePlanLine] = []
         for line in base_sentence_plan.lines:
             if line.binding.line_role != "human_follow":
@@ -2327,6 +2429,7 @@ def build_reception_recovery_sentence_plan(
             lines.append(
                 replace(
                     line,
+                    reception_clause_plans=recovery_clause_plans,
                     binding=replace(
                         line.binding,
                         functional_atom_ids=_dedupe(atom_ids),
@@ -2350,16 +2453,18 @@ def build_plan_preserving_recovery_sequence(
     plan: GroundedObservationPlan,
     resolver: EvidenceSpanResolver,
 ) -> tuple[GroundedSurfaceResult, ...]:
-    """Render all I4 shrink stages while retaining the required nucleus."""
+    """Render eligible RR7 stages without weakening the original depth."""
 
     base_sentence_plan = build_grounded_sentence_plan(
         plan,
         resolver,
         recovery_stage="full",
     )
-    return tuple(
-        realize_grounded_sentence_plan(
-            (
+    surfaces: list[GroundedSurfaceResult] = []
+    reception_plan = plan.response_plan.human_reception_plan
+    for stage in GROUND_RECOVERY_STAGES:
+        try:
+            sentence_plan = (
                 base_sentence_plan
                 if stage == "full"
                 else build_reception_recovery_sentence_plan(
@@ -2368,12 +2473,27 @@ def build_plan_preserving_recovery_sequence(
                     resolver,
                     recovery_stage=stage,
                 )
-            ),
-            plan,
-            resolver,
+            )
+        except GroundedSentenceSurfaceError:
+            if (
+                stage == "minimal_grounded"
+                and reception_plan is not None
+                and (
+                    reception_plan.depth_policy.level != "minimal"
+                    or reception_plan.depth_policy.safety_mode != "standard"
+                    or len(reception_plan.moves) != 1
+                )
+            ):
+                continue
+            raise
+        surfaces.append(
+            realize_grounded_sentence_plan(
+                sentence_plan,
+                plan,
+                resolver,
+            )
         )
-        for stage in GROUND_RECOVERY_STAGES
-    )
+    return tuple(surfaces)
 
 
 def validate_grounded_sentence_plan(
@@ -2398,6 +2518,13 @@ def validate_grounded_sentence_plan(
     seen_sentence_ids: set[str] = set()
     for line in sentence_plan.lines:
         binding = line.binding
+        if (
+            binding.line_role != "human_follow"
+            and line.reception_clause_plans
+        ):
+            issues.append(
+                f"reception_clause_plan_leaked:{binding.sentence_id}"
+            )
         if binding.sentence_id in seen_sentence_ids:
             issues.append(f"duplicate_sentence_id:{binding.sentence_id}")
         seen_sentence_ids.add(binding.sentence_id)
@@ -2503,6 +2630,28 @@ def validate_grounded_sentence_plan(
                 issues.append("two_stage_reception_line_missing")
             if reception_line.surface_function != "render_human_follow":
                 issues.append("human_reception_surface_owner_invalid")
+            expected_clause_plans = (
+                build_grounded_reception_clause_plans(
+                    reception_plan,
+                    sentence_plan.recovery_stage,
+                )
+                if reception_plan is not None
+                else ()
+            )
+            if not reception_line.reception_clause_plans:
+                issues.append("human_reception_clause_plan_missing")
+            elif (
+                reception_line.reception_clause_plans
+                != expected_clause_plans
+            ):
+                issues.append("human_reception_clause_plan_mismatch")
+            flattened_move_ids = tuple(
+                move_id
+                for clause in reception_line.reception_clause_plans
+                for move_id in clause.move_ids
+            )
+            if len(flattened_move_ids) != len(set(flattened_move_ids)):
+                issues.append("human_reception_clause_move_duplicate")
             if binding.relation_ids or any(
                 atom.startswith("relation:")
                 or atom.startswith("relation_surface_role:")
@@ -2578,40 +2727,51 @@ def validate_grounded_sentence_plan(
                     if atom.startswith("reception_follow_")
                 ).issubset(reception_atoms):
                     issues.append("human_reception_follow_contract_missing")
+                expected_speaker = reception_effective_speaker_presence(
+                    reception_plan,
+                    sentence_plan.recovery_stage,
+                )
                 if not {
                     f"reception_stance:{reception_plan.stance}",
-                    (
-                        "reception_speaker:"
-                        f"{reception_effective_speaker_presence(reception_plan, sentence_plan.recovery_stage)}"
-                    ),
+                    f"reception_speaker:{expected_speaker}",
                 }.issubset(reception_atoms):
                     issues.append("human_reception_stance_contract_missing")
+                expected_reference_mode = reception_effective_reference_mode(
+                    reception_plan,
+                    sentence_plan.recovery_stage,
+                )
                 if not {
-                    (
-                        "reception_reference:"
-                        f"{reception_effective_reference_mode(reception_plan, sentence_plan.recovery_stage)}"
-                    ),
+                    f"reception_reference:{expected_reference_mode}",
                     (
                         "reception_quote_policy:"
                         f"{reception_plan.quote_policy.mode}"
                     ),
                 }.issubset(reception_atoms):
                     issues.append("human_reception_reference_policy_missing")
+                try:
+                    (
+                        expected_min_sentences,
+                        expected_max_sentences,
+                    ) = reception_effective_sentence_budget(
+                        reception_plan,
+                        sentence_plan.recovery_stage,
+                    )
+                except GroundedHumanReceptionSurfaceError as exc:
+                    issues.append(str(exc))
+                    expected_min_sentences, expected_max_sentences = (0, 0)
                 if not {
-                    "reception_sentence_budget:one_or_two",
-                    (
-                        "reception_sentence_min:"
-                        f"{reception_plan.sentence_policy.min_sentences}"
-                    ),
-                    (
-                        "reception_sentence_max:"
-                        f"{reception_plan.sentence_policy.max_sentences}"
-                    ),
+                    "reception_sentence_budget:one_to_three",
+                    f"reception_sentence_min:{expected_min_sentences}",
+                    f"reception_sentence_max:{expected_max_sentences}",
                 }.issubset(reception_atoms):
                     issues.append("human_reception_sentence_budget_invalid")
                 if "reception_distinctness:required" not in reception_atoms:
                     issues.append(
                         "human_reception_distinctness_contract_missing"
+                    )
+                if "reception_non_enumeration:required" not in reception_atoms:
+                    issues.append(
+                        "human_reception_non_enumeration_contract_missing"
                     )
                 bounded_counterposition = (
                     "bounded_counter_self_denial"
@@ -2721,49 +2881,58 @@ def validate_grounded_surface_result(
                     for atom in reception_line.binding.functional_atom_ids
                     if atom.startswith("reception_terminal_predicate:")
                 )
-                active_acts = reception_active_acts(
-                    reception_plan,
-                    sentence_plan.recovery_stage,
+                reception_plan_line = next(
+                    line
+                    for line in sentence_plan.lines
+                    if line.binding.line_role == "human_follow"
                 )
-                grounded_referent = resolve_grounded_reception_referent(
-                    reception_plan,
-                    {item.nucleus_id: item for item in plan.nuclei},
-                    resolver,
-                    recovery_stage=sentence_plan.recovery_stage,
-                    act=active_acts[0],
-                )
-                reception_surface = GroundedHumanReceptionSurface(
-                    text=reception_line.text,
-                    terminal_predicate_kinds=terminal_kinds,
-                    sentence_count=len(
-                        tuple(
-                            part.strip()
-                            for part in _RECEPTION_SENTENCE_END_RE.split(
-                                reception_line.text
-                            )
-                            if part.strip()
+                try:
+                    expected_reception_surface = (
+                        realize_grounded_human_reception(
+                            reception_plan,
+                            {
+                                item.nucleus_id: item
+                                for item in plan.nuclei
+                            },
+                            resolver,
+                            recovery_stage=sentence_plan.recovery_stage,
+                            clause_plans=(
+                                reception_plan_line.reception_clause_plans
+                            ),
                         )
-                    ),
-                    referent_kind="sentence_plan_bound",
-                    realized_reception_acts=active_acts,
-                    grounded_nucleus_ids=grounded_referent.nucleus_ids,
-                    grounded_evidence_span_ids=(
-                        grounded_referent.evidence_span_ids
-                    ),
-                    source_anchor_count=len(quote_values),
-                    source_anchor_max_visible_chars=max(
-                        (len(value) for value in quote_values),
-                        default=0,
-                    ),
-                    recovery_stage=sentence_plan.recovery_stage,
-                )
-                issues.extend(
-                    validate_grounded_human_reception_surface(
-                        reception_surface,
-                        reception_plan,
-                        resolver,
                     )
-                )
+                except GroundedHumanReceptionSurfaceError as exc:
+                    issues.append(
+                        "human_reception_surface_contract_invalid:"
+                        f"{exc}"
+                    )
+                else:
+                    reception_surface = replace(
+                        expected_reception_surface,
+                        text=reception_line.text,
+                        terminal_predicate_kinds=terminal_kinds,
+                        sentence_count=len(
+                            tuple(
+                                part.strip()
+                                for part in _RECEPTION_SENTENCE_END_RE.split(
+                                    reception_line.text
+                                )
+                                if part.strip()
+                            )
+                        ),
+                        source_anchor_count=len(quote_values),
+                        source_anchor_max_visible_chars=max(
+                            (len(value) for value in quote_values),
+                            default=0,
+                        ),
+                    )
+                    issues.extend(
+                        validate_grounded_human_reception_surface(
+                            reception_surface,
+                            reception_plan,
+                            resolver,
+                        )
+                    )
     elif result.status == "separate_safety_owner":
         if plan.safety_policy.safety_kind not in _SEPARATE_SAFETY_KINDS:
             issues.append("unexpected_separate_safety_owner")
@@ -2796,6 +2965,7 @@ __all__ = [
     "DIRECTIONAL_GROUNDED_RELATION_TYPES",
     "GROUND_RECOVERY_STAGES",
     "GroundedSentenceSurfaceError",
+    "GroundedReceptionClausePlan",
     "SurfaceClauseUnit",
     "GroundedSentenceBinding",
     "GroundedSentencePlanLine",

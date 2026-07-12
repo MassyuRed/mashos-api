@@ -7,8 +7,9 @@ The I1 adapter keeps the existing current-input Evidence Ledger authoritative.
 I2 adds structure-first clause semantics and retention without depending on
 fixture vocabulary. I3/I4 build SentencePlan/Surface from this plan, and I5
 connects that same contract once from ``emlis_ai_reply_service``.
-Grounded human reception R2 adds a nested body-free act/policy contract while
-leaving SentencePlan, Surface, Gate, and the public response shape unchanged.
+Grounded human reception RR2/RR3 adds a nested body-free opportunity/depth/move
+contract while leaving SentencePlan, Surface, Gate, and the public response
+shape unchanged.
 
 Every source reference is an existing request-local ``sN`` id. No synthetic or
 replacement Evidence id is created here.
@@ -56,7 +57,7 @@ GROUND_OBSERVATION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_observat
 GROUND_OBSERVATION_PLAN_ADAPTER_VERSION: Final = "cocolon.emlis.grounded_observation_plan_adapter.i1.v1"
 GROUND_OBSERVATION_PLAN_GENERATION_PATH: Final = "grounded_observation_plan_canonical_v1"
 GROUND_OBSERVATION_PLAN_SEMANTIC_VERSION: Final = "cocolon.emlis.grounded_semantics.i2.v3"
-GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_human_reception_plan.v1"
+GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION: Final = "cocolon.emlis.grounded_human_reception_plan.v2"
 
 EvidenceId = str
 NucleusId = str
@@ -136,6 +137,38 @@ GroundedSpeakerPresence = Literal[
 GroundedReferenceMode = Literal[
     "anaphoric_first",
     "short_anchor_if_ambiguous",
+    "explicit_emlis_counterposition",
+]
+GroundedReceptionOpportunityFamily = Literal[
+    "current_burden",
+    "concrete_effort",
+    "retained_intention",
+    "lived_change",
+    "help_seeking",
+    "counterdirection",
+    "words_placed",
+]
+GroundedReceptionDepthLevel = Literal[
+    "minimal",
+    "focused",
+    "layered",
+]
+GroundedReceptionSafetyMode = Literal[
+    "standard",
+    "self_denial_bounded",
+    "help_seeking_bounded",
+]
+GroundedReceptionMoveRole = Literal[
+    "attention",
+    "significance",
+    "felt_response",
+    "bounded_counterposition",
+]
+GroundedReceptionSurfaceStrategy = Literal[
+    "quiet_referent_first",
+    "emlis_attention_first",
+    "referent_significance_first",
+    "felt_response_first",
     "explicit_emlis_counterposition",
 ]
 
@@ -404,6 +437,7 @@ class GroundedReceptionSentencePolicy:
 class GroundedReceptionDistinctnessPolicy:
     observation_summary_repetition_allowed: bool
     relation_reexplanation_allowed: bool
+    all_input_enumeration_allowed: bool
     policy_explanation_allowed: bool
     new_cause_allowed: bool
     new_identity_claim_allowed: bool
@@ -412,11 +446,64 @@ class GroundedReceptionDistinctnessPolicy:
 
 
 @dataclass(frozen=True)
+class GroundedReceptionOpportunity:
+    """Body-free chance to make one distinct human reception contribution."""
+
+    opportunity_id: str
+    family: GroundedReceptionOpportunityFamily
+    reception_act: GroundedReceptionAct
+    target_nucleus_ids: tuple[NucleusId, ...]
+    support_nucleus_ids: tuple[NucleusId, ...]
+    source_evidence_span_ids: tuple[EvidenceId, ...]
+    retention: Retention
+    priority: int
+    source_field_count: int
+    safety_required: bool
+
+
+@dataclass(frozen=True)
+class GroundedReceptionDepthPolicy:
+    """Semantic response depth; raw input length is never an input."""
+
+    level: GroundedReceptionDepthLevel
+    safety_mode: GroundedReceptionSafetyMode
+    opportunity_count: int
+    selected_move_count: int
+    selection_reason_codes: tuple[str, ...]
+    raw_character_count_used: bool
+    min_sentences: int
+    max_sentences: int
+    min_realized_moves: int
+    max_moves_per_sentence: int
+
+
+@dataclass(frozen=True)
+class GroundedReceptionMovePlan:
+    """One grounded human contribution for the later RR4/RR5 surface owner."""
+
+    move_id: str
+    move_role: GroundedReceptionMoveRole
+    reception_act: GroundedReceptionAct
+    target_nucleus_ids: tuple[NucleusId, ...]
+    support_nucleus_ids: tuple[NucleusId, ...]
+    source_evidence_span_ids: tuple[EvidenceId, ...]
+    follow_elements: tuple[GroundedFollowElement, ...]
+    speaker_presence: GroundedSpeakerPresence
+    reference_mode: GroundedReferenceMode
+    surface_strategy: GroundedReceptionSurfaceStrategy
+    required: bool
+    distinct_from_move_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class GroundedHumanReceptionPlan:
     """Body-free contract for Emlis's distinct human reception contribution."""
 
     schema_version: str
     required: bool
+    opportunities: tuple[GroundedReceptionOpportunity, ...]
+    depth_policy: GroundedReceptionDepthPolicy
+    moves: tuple[GroundedReceptionMovePlan, ...]
     primary_reception_act: GroundedReceptionAct | None
     secondary_reception_act: GroundedReceptionAct | None
     primary_follow_element: GroundedFollowElement | None
@@ -697,7 +784,7 @@ def _clause_signals(span: EvidenceSpan, *, kind: NucleusKind) -> _ClauseSignals:
         polarity = "positive"
     elif kind in {"reaction", "constraint", "self_evaluation"}:
         polarity = "negative"
-    elif kind in {"value", "change", "wish"}:
+    elif kind in {"value", "wish"}:
         polarity = "positive"
     else:
         polarity = "neutral"
@@ -2246,7 +2333,37 @@ _RECEPTION_FORBIDDEN_SURFACE_CODES: Final[tuple[str, ...]] = (
     "second_observation_summary",
     "internal_policy_explanation",
     "full_source_quote_replay",
+    "all_input_enumeration",
+    "duplicate_reception_move",
 )
+_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY: Final[
+    dict[GroundedReceptionOpportunityFamily, GroundedReceptionAct]
+] = {
+    "current_burden": "stay_with_current_burden",
+    "concrete_effort": "honor_concrete_effort",
+    "retained_intention": "protect_retained_intention",
+    "lived_change": "recognize_lived_change",
+    "help_seeking": "hold_help_seeking",
+    "counterdirection": "bounded_counter_self_denial",
+    "words_placed": "respect_words_placed",
+}
+_OPPORTUNITY_FAMILY_BY_RECEPTION_ACT: Final[
+    dict[GroundedReceptionAct, GroundedReceptionOpportunityFamily]
+] = {
+    reception_act: family
+    for family, reception_act in _RECEPTION_ACT_BY_OPPORTUNITY_FAMILY.items()
+}
+_OPPORTUNITY_FAMILY_ORDER: Final[tuple[GroundedReceptionOpportunityFamily, ...]] = (
+    "help_seeking",
+    "counterdirection",
+    "concrete_effort",
+    "lived_change",
+    "retained_intention",
+    "current_burden",
+    "words_placed",
+)
+_OPPORTUNITY_ID_RE: Final = re.compile(r"^ro[1-9][0-9]*$")
+_MOVE_ID_RE: Final = re.compile(r"^rm[1-9][0-9]*$")
 
 
 def _grounded_human_follow_role_for_nucleus(
@@ -2267,22 +2384,15 @@ def _grounded_human_follow_role_for_nucleus(
     ):
         return "protective_counterdirection"
 
-    # A nucleus that is structurally an action must remain an action even when
-    # the semantic analyser also attached an ``intention`` modality.  That
-    # combination occurs when a past action is expressed in a sentence whose
-    # wider arc contains purpose or change.  Treating it as a retained wish
-    # made the reception layer ignore the action and fall back to a generic
-    # "方向を保っている" sentence.  Strong action evidence therefore wins;
-    # a wish nucleus that merely carries ``operator:action`` does not.
-    if (
-        nucleus.kind == "action"
-        or "semantic_role:concrete_action_evidence" in attributes
-    ):
+    # Performed action evidence wins over a wider-arc intention label.  A
+    # merely unperformed negative action (for example an inability to move)
+    # must remain an intention/burden rather than becoming "effort".
+    if _is_explicit_action_nucleus(nucleus):
         return "concrete_effort"
 
     retained_intention = bool(
         nucleus.kind == "wish"
-        or nucleus.semantic_frame.modality in {"wish", "intention"}
+        or nucleus.semantic_frame.modality == "wish"
         or {
             "semantic_role:retained_intention",
             "semantic_role:next_intention",
@@ -2291,13 +2401,7 @@ def _grounded_human_follow_role_for_nucleus(
     )
     if retained_intention:
         return "retained_intention"
-    if (
-        "operator:action" in attributes
-        or {
-            "semantic_role:concrete_action",
-        }
-        & attributes
-    ):
+    if _is_reception_performed_action_nucleus(nucleus):
         return "concrete_effort"
     if nucleus.kind in {"change", "value"} or {
         "semantic_role:current_change",
@@ -2360,16 +2464,53 @@ def map_grounded_human_follow_role_to_reception_act(
 
 def _is_explicit_action_nucleus(nucleus: GroundedSemanticNucleus) -> bool:
     attributes = set(nucleus.semantic_frame.attribute_codes)
+    if (
+        "operator:help_seeking" in attributes
+        and "operator:action" in attributes
+    ):
+        return True
+    if "operator:wish" in attributes:
+        return False
+    result_evidence = bool(
+        {
+            "operator:result",
+            "operator:positive_change",
+            "operator:shift",
+        }
+        & attributes
+    )
+    unperformed_negative_intention = bool(
+        nucleus.semantic_frame.modality == "intention"
+        and nucleus.semantic_frame.polarity == "negative"
+        and "operator:negation" in attributes
+        and not result_evidence
+    )
+    if unperformed_negative_intention:
+        return False
+    if "semantic_role:concrete_action_evidence" in attributes:
+        return True
     return bool(
         nucleus.kind == "action"
-        or "semantic_role:concrete_action_evidence" in attributes
+        and nucleus.semantic_frame.modality == "fact"
+    )
+
+
+def _is_reception_performed_action_nucleus(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    """Accept performed action semantics without treating plans as actions."""
+
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    return bool(
+        _is_explicit_action_nucleus(nucleus)
         or (
-            "operator:action" in attributes
-            and nucleus.kind not in {"wish", "other_explicit"}
-        )
-        or (
-            "operator:help_seeking" in attributes
+            nucleus.semantic_frame.modality == "fact"
             and "operator:action" in attributes
+            and {
+                "semantic_role:concrete_action",
+                "semantic_role:concrete_action_evidence",
+            }
+            & attributes
         )
     )
 
@@ -2391,11 +2532,27 @@ def _is_input_grounded_counterposition_nucleus(nucleus: GroundedSemanticNucleus)
     attributes = set(nucleus.semantic_frame.attribute_codes)
     return bool(
         _is_explicit_action_nucleus(nucleus)
-        or nucleus.semantic_frame.modality in {"refusal", "intention", "wish"}
+        or nucleus.semantic_frame.modality == "refusal"
+        or (
+            nucleus.kind == "wish"
+            and nucleus.semantic_frame.modality in {"intention", "wish"}
+        )
         or "operator:help_seeking" in attributes
         or "operator:continuation" in attributes
         or "operator:refusal" in attributes
         or "semantic_role:protective_or_limiting_refusal" in attributes
+    )
+
+
+def _is_reception_grounded_counterposition_nucleus(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    """Recognize grounded action for RR2 without advancing the legacy Surface."""
+
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    return bool(
+        _is_input_grounded_counterposition_nucleus(nucleus)
+        or _is_reception_performed_action_nucleus(nucleus)
     )
 
 
@@ -2436,7 +2593,8 @@ def select_grounded_reception_act(
 
     non_target_candidates = tuple(item for item in candidates if item.nucleus_id not in target_ids)
     if human_follow_role == "retained_intention" and any(
-        _is_explicit_action_nucleus(item) for item in non_target_candidates
+        _is_reception_performed_action_nucleus(item)
+        for item in non_target_candidates
     ):
         return "honor_concrete_effort"
     if (
@@ -2490,6 +2648,592 @@ def _select_reception_support_nucleus_ids(
     return ()
 
 
+def _is_reception_lived_change_nucleus(
+    nucleus: GroundedSemanticNucleus,
+) -> bool:
+    """Require an input-grounded positive/valued change, not a provisional miss."""
+
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    if "semantic_role:provisional_evaluation" in attributes:
+        return False
+    explicit_positive_evidence = bool(
+        {
+            "operator:positive_change",
+            "semantic_role:explicit_result",
+            "semantic_role:explicit_evaluation",
+            "semantic_role:positive_evaluation",
+        }
+        & attributes
+    )
+    adverse_source_claim_without_positive_evidence = bool(
+        any(
+            code.startswith(
+                (
+                    "source_claim:pressure.",
+                    "source_claim:conflict.",
+                    "source_claim:limit.",
+                )
+            )
+            for code in attributes
+        )
+        and not explicit_positive_evidence
+    )
+    if adverse_source_claim_without_positive_evidence:
+        # A generic change/feeling parse is not evidence that a repeated
+        # burden is a welcome lived change.  Keep adverse-only text in the
+        # current-burden reception family unless the semantic layer recorded
+        # an explicit positive change/result/evaluation.
+        return False
+    return bool(
+        nucleus.semantic_frame.polarity == "positive"
+        and explicit_positive_evidence
+    )
+
+
+def _reception_opportunity_families_for_nucleus(
+    nucleus: GroundedSemanticNucleus,
+    *,
+    safety_kind: str,
+) -> tuple[GroundedReceptionOpportunityFamily, ...]:
+    """Map body-free nucleus semantics to distinct human contribution families."""
+
+    attributes = set(nucleus.semantic_frame.attribute_codes)
+    has_text_source = any(field in _TEXT_SOURCE_FIELDS for field in nucleus.source_fields)
+    if "operator:help_seeking" in attributes:
+        return (
+            "help_seeking",
+            *(
+                ("counterdirection",)
+                if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+                else ()
+            ),
+        )
+    if (
+        safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and _is_reception_grounded_counterposition_nucleus(nucleus)
+        and nucleus.kind != "self_evaluation"
+    ):
+        return ("counterdirection",)
+    if _is_reception_performed_action_nucleus(nucleus):
+        return ("concrete_effort",)
+    if (
+        nucleus.kind == "wish"
+        or nucleus.semantic_frame.modality == "wish"
+        or {
+            "semantic_role:retained_intention",
+            "semantic_role:next_intention",
+        }
+        & attributes
+    ):
+        return ("retained_intention",)
+    if _is_reception_lived_change_nucleus(nucleus):
+        return ("lived_change",)
+    if has_text_source and (
+        nucleus.semantic_frame.polarity == "negative"
+        or nucleus.semantic_frame.modality in {"feeling", "refusal", "uncertain"}
+        or nucleus.kind
+        in {
+            "state",
+            "reaction",
+            "constraint",
+            "self_evaluation",
+            "uncertainty",
+        }
+    ):
+        return ("current_burden",)
+    # A text-grounded but otherwise neutral nucleus still gives us something
+    # present-tense to stay with.  ``words_placed`` is the deliberately narrow
+    # fallback for labels-only / limited material.
+    return ("current_burden",) if has_text_source else ("words_placed",)
+
+
+def _opportunity_nucleus_rank(
+    nucleus: GroundedSemanticNucleus,
+    *,
+    human_follow_target_ids: set[str],
+    legacy_support_ids: set[str],
+    relation_connected_ids: set[str],
+) -> tuple[Any, ...]:
+    return (
+        0 if nucleus.nucleus_id in human_follow_target_ids else 1,
+        0 if nucleus.nucleus_id in legacy_support_ids else 1,
+        -_RETENTION_RANK[nucleus.retention],
+        0 if nucleus.nucleus_id in relation_connected_ids else 1,
+        0 if nucleus.grounding_kind in {"explicit", "user_stated_relation"} else 1,
+        -float(nucleus.certainty),
+        -float(nucleus.priority),
+        _span_number(nucleus.source_span_ids[0] if nucleus.source_span_ids else ""),
+    )
+
+
+def _opportunity_priority(
+    nucleus: GroundedSemanticNucleus,
+    *,
+    family: GroundedReceptionOpportunityFamily,
+    human_follow_target_ids: set[str],
+    relation_connected_ids: set[str],
+    safety_required: bool,
+) -> int:
+    family_rank = len(_OPPORTUNITY_FAMILY_ORDER) - _OPPORTUNITY_FAMILY_ORDER.index(
+        family
+    )
+    return int(
+        _RETENTION_RANK[nucleus.retention] * 100
+        + family_rank * 10
+        + (40 if nucleus.nucleus_id in human_follow_target_ids else 0)
+        + (20 if nucleus.nucleus_id in relation_connected_ids else 0)
+        + (200 if safety_required else 0)
+        + round(float(nucleus.priority) * 5)
+    )
+
+
+def build_grounded_reception_opportunities(
+    *,
+    human_follow_target_ids: Sequence[str],
+    primary_nucleus_ids: Sequence[str],
+    supporting_nucleus_ids: Sequence[str],
+    fact_boundary_nucleus_ids: Sequence[str],
+    nuclei: Sequence[GroundedSemanticNucleus],
+    relations: Sequence[GroundedSemanticRelation],
+    primary_reception_act: GroundedReceptionAct,
+    safety_kind: str,
+    material_quality: str,
+) -> tuple[GroundedReceptionOpportunity, ...]:
+    """Build a deterministic body-free RR2 opportunity inventory.
+
+    The selector reads only semantic fields, ids, retention, relation
+    membership, and Safety.  It never receives a case id, source body,
+    expected hash, completed sentence, or raw character count.
+    """
+
+    nucleus_index = {item.nucleus_id: item for item in nuclei}
+    observation_owned_ids = tuple(
+        _dedupe(
+            [
+                *primary_nucleus_ids,
+                *supporting_nucleus_ids,
+                *fact_boundary_nucleus_ids,
+            ]
+        )
+    )
+    owned_nuclei = tuple(
+        nucleus_index[nucleus_id]
+        for nucleus_id in observation_owned_ids
+        if nucleus_id in nucleus_index
+    )
+    text_nucleus_present = any(
+        any(field in _TEXT_SOURCE_FIELDS for field in item.source_fields)
+        for item in owned_nuclei
+    )
+    relation_connected_ids = {
+        nucleus_id
+        for relation in relations
+        if relation.retention in {"required", "should"}
+        for nucleus_id in (relation.from_nucleus_id, relation.to_nucleus_id)
+    }
+    follow_ids = set(human_follow_target_ids)
+    legacy_support_ids = set(supporting_nucleus_ids)
+    candidates_by_family: dict[
+        GroundedReceptionOpportunityFamily,
+        list[GroundedSemanticNucleus],
+    ] = {}
+    for nucleus in owned_nuclei:
+        has_text_source = any(
+            field in _TEXT_SOURCE_FIELDS for field in nucleus.source_fields
+        )
+        if text_nucleus_present and not has_text_source:
+            continue
+        for family in _reception_opportunity_families_for_nucleus(
+            nucleus,
+            safety_kind=safety_kind,
+        ):
+            candidates_by_family.setdefault(family, []).append(nucleus)
+
+    # The established short-state contract is deliberately one quiet burden
+    # move.  A terse wish/action must not be inflated merely because its lone
+    # nucleus has a richer semantic label; Safety remains the only exception.
+    if (
+        material_quality == "short_state_sufficient"
+        and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and owned_nuclei
+    ):
+        candidates_by_family = {"current_burden": list(owned_nuclei)}
+
+    # Preserve the established body-free primary selector as the compatibility
+    # anchor.  Its classification can be more specific than the nucleus-kind
+    # mapper (for example, an event carrying a valued-change role).  This does
+    # not invent a contribution: it binds that already-selected act to the
+    # same request-local human-follow target and evidence.
+    compatibility_family = _OPPORTUNITY_FAMILY_BY_RECEPTION_ACT[
+        primary_reception_act
+    ]
+    if compatibility_family not in candidates_by_family:
+        compatibility_nuclei = [
+            nucleus_index[nucleus_id]
+            for nucleus_id in human_follow_target_ids
+            if nucleus_id in nucleus_index
+        ]
+        if not compatibility_nuclei:
+            compatibility_nuclei = list(owned_nuclei[:1])
+        compatibility_family_is_grounded = bool(
+            compatibility_family != "lived_change"
+            or any(
+                _is_reception_lived_change_nucleus(nucleus)
+                for nucleus in compatibility_nuclei
+            )
+        )
+        if compatibility_nuclei and compatibility_family_is_grounded:
+            candidates_by_family[compatibility_family] = compatibility_nuclei
+
+    concrete_families = set(candidates_by_family) - {"words_placed"}
+    if concrete_families and compatibility_family != "words_placed":
+        candidates_by_family.pop("words_placed", None)
+    richer_families = concrete_families - {"current_burden"}
+    if (
+        richer_families
+        and safety_kind != TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+        and material_quality != "short_state_sufficient"
+        and compatibility_family != "current_burden"
+    ):
+        candidates_by_family.pop("current_burden", None)
+
+    rows: list[GroundedReceptionOpportunity] = []
+    for family in _OPPORTUNITY_FAMILY_ORDER:
+        family_candidates = tuple(candidates_by_family.get(family, ()))
+        if not family_candidates:
+            continue
+        representative = min(
+            family_candidates,
+            key=lambda item: (
+                0
+                if family == "lived_change"
+                and {
+                    "semantic_role:explicit_evaluation",
+                    "semantic_role:positive_evaluation",
+                }
+                & set(item.semantic_frame.attribute_codes)
+                else 1,
+                *_opportunity_nucleus_rank(
+                    item,
+                    human_follow_target_ids=follow_ids,
+                    legacy_support_ids=legacy_support_ids,
+                    relation_connected_ids=relation_connected_ids,
+                ),
+            ),
+        )
+        target_ids: tuple[str, ...] = (representative.nucleus_id,)
+        support_ids: tuple[str, ...] = ()
+        if family == "counterdirection" and fact_boundary_nucleus_ids:
+            fact_id = next(
+                (
+                    nucleus_id
+                    for nucleus_id in fact_boundary_nucleus_ids
+                    if nucleus_id in nucleus_index
+                ),
+                None,
+            )
+            if fact_id is not None and fact_id != representative.nucleus_id:
+                target_ids = (fact_id,)
+                support_ids = (representative.nucleus_id,)
+        selected_nuclei = tuple(
+            nucleus_index[nucleus_id]
+            for nucleus_id in (*target_ids, *support_ids)
+            if nucleus_id in nucleus_index
+        )
+        evidence_ids = tuple(
+            _ordered_span_ids(
+                span_id
+                for item in selected_nuclei
+                for span_id in item.source_span_ids
+            )
+        )
+        safety_required = bool(
+            safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+            and family in {"help_seeking", "counterdirection"}
+        )
+        retention = max(
+            (item.retention for item in selected_nuclei),
+            key=lambda value: _RETENTION_RANK[value],
+        )
+        rows.append(
+            GroundedReceptionOpportunity(
+                opportunity_id="",
+                family=family,
+                reception_act=_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY[family],
+                target_nucleus_ids=target_ids,
+                support_nucleus_ids=support_ids,
+                source_evidence_span_ids=evidence_ids,
+                retention=retention,
+                priority=_opportunity_priority(
+                    representative,
+                    family=family,
+                    human_follow_target_ids=follow_ids,
+                    relation_connected_ids=relation_connected_ids,
+                    safety_required=safety_required,
+                ),
+                source_field_count=len(
+                    {
+                        field
+                        for item in selected_nuclei
+                        for field in item.source_fields
+                    }
+                ),
+                safety_required=safety_required,
+            )
+        )
+
+    rows.sort(
+        key=lambda item: (
+            -item.priority,
+            _OPPORTUNITY_FAMILY_ORDER.index(item.family),
+            _span_number(
+                item.source_evidence_span_ids[0]
+                if item.source_evidence_span_ids
+                else ""
+            ),
+        )
+    )
+    return tuple(
+        replace(item, opportunity_id=f"ro{index}")
+        for index, item in enumerate(rows, start=1)
+    )
+
+
+def _opportunities_are_distinct(
+    left: GroundedReceptionOpportunity,
+    right: GroundedReceptionOpportunity,
+) -> bool:
+    return bool(
+        left.family != right.family
+        or left.reception_act != right.reception_act
+        or set(left.target_nucleus_ids) != set(right.target_nucleus_ids)
+    )
+
+
+def _select_reception_opportunities(
+    opportunities: Sequence[GroundedReceptionOpportunity],
+    *,
+    legacy_primary_act: GroundedReceptionAct,
+    safety_kind: str,
+    semantic_complexity: str,
+) -> tuple[GroundedReceptionOpportunity, ...]:
+    inventory = tuple(opportunities)
+    if not inventory:
+        raise GroundedObservationPlanError("human_reception_opportunity_missing")
+    primary = next(
+        (
+            item
+            for item in inventory
+            if item.reception_act == legacy_primary_act
+        ),
+        inventory[0],
+    )
+    selected: list[GroundedReceptionOpportunity] = [primary]
+    by_family = {item.family: item for item in inventory}
+
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        if primary.family == "help_seeking":
+            support_order = ("counterdirection",)
+        elif primary.family == "counterdirection":
+            support_order = ("current_burden",)
+        else:
+            support_order = ("counterdirection",)
+    else:
+        support_order_by_primary = {
+            "concrete_effort": ("lived_change", "retained_intention"),
+            "lived_change": ("concrete_effort", "retained_intention"),
+            "retained_intention": ("lived_change", "concrete_effort"),
+            "current_burden": (
+                "concrete_effort",
+                "retained_intention",
+                "lived_change",
+            ),
+            "help_seeking": (
+                "lived_change",
+                "concrete_effort",
+                "retained_intention",
+            ),
+            "counterdirection": ("current_burden",),
+            "words_placed": (),
+        }
+        support_order = support_order_by_primary[primary.family]
+
+    support_limit = 2 if semantic_complexity == "long_arc" else 1
+    selected_support_count = 0
+    for family in support_order:
+        candidate = by_family.get(family)
+        if candidate is None or candidate.retention not in {"required", "should"}:
+            continue
+        if all(_opportunities_are_distinct(candidate, item) for item in selected):
+            selected.append(candidate)
+            selected_support_count += 1
+            if selected_support_count >= support_limit:
+                break
+
+    required_safety = tuple(
+        item
+        for item in inventory
+        if item.safety_required and item not in selected
+    )
+    for item in required_safety:
+        if len(selected) >= 3:
+            raise GroundedObservationPlanError(
+                "human_reception_required_safety_move_exceeds_limit"
+            )
+        if all(_opportunities_are_distinct(item, other) for other in selected):
+            selected.append(item)
+    return tuple(selected)
+
+
+def _move_roles_by_opportunity_family(
+    selected: Sequence[GroundedReceptionOpportunity],
+) -> dict[str, GroundedReceptionMoveRole]:
+    families = {item.family for item in selected}
+    result: dict[str, GroundedReceptionMoveRole] = {}
+    for item in selected:
+        if item.family == "counterdirection":
+            role: GroundedReceptionMoveRole = "bounded_counterposition"
+        elif item.family in {"current_burden", "help_seeking", "words_placed"}:
+            role = "felt_response"
+        elif {"concrete_effort", "lived_change"} <= families:
+            role = "attention" if item.family == "concrete_effort" else "felt_response"
+        elif {"lived_change", "retained_intention"} <= families:
+            role = "attention" if item.family == "lived_change" else "felt_response"
+        elif {"concrete_effort", "retained_intention"} <= families:
+            role = "attention" if item.family == "retained_intention" else "felt_response"
+        elif item.family == "concrete_effort":
+            role = "attention"
+        elif item.family == "retained_intention":
+            role = "significance"
+        else:
+            role = "felt_response"
+        result[item.opportunity_id] = role
+    return result
+
+
+def _surface_strategy_for_move(
+    opportunity: GroundedReceptionOpportunity,
+    role: GroundedReceptionMoveRole,
+) -> GroundedReceptionSurfaceStrategy:
+    if role == "bounded_counterposition":
+        return "explicit_emlis_counterposition"
+    if opportunity.family == "current_burden":
+        return "quiet_referent_first"
+    if role == "attention":
+        return "emlis_attention_first"
+    if role == "significance":
+        return "referent_significance_first"
+    return "felt_response_first"
+
+
+def _build_reception_depth_policy_and_moves(
+    opportunities: Sequence[GroundedReceptionOpportunity],
+    *,
+    legacy_primary_act: GroundedReceptionAct,
+    legacy_reference_mode: GroundedReferenceMode,
+    safety_kind: str,
+    semantic_complexity: str,
+) -> tuple[GroundedReceptionDepthPolicy, tuple[GroundedReceptionMovePlan, ...]]:
+    selected = _select_reception_opportunities(
+        opportunities,
+        legacy_primary_act=legacy_primary_act,
+        safety_kind=safety_kind,
+        semantic_complexity=semantic_complexity,
+    )
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        safety_mode: GroundedReceptionSafetyMode = (
+            "help_seeking_bounded"
+            if any(item.family == "help_seeking" for item in selected)
+            else "self_denial_bounded"
+        )
+        level: GroundedReceptionDepthLevel = "focused"
+        min_sentences = 2 if len(selected) >= 2 else 1
+        max_sentences = 2
+    else:
+        safety_mode = "standard"
+        if len(selected) >= 2:
+            level = "layered"
+            min_sentences = 2
+            max_sentences = min(3, len(selected))
+        elif selected[0].family in {"current_burden", "words_placed"}:
+            level = "minimal"
+            min_sentences = max_sentences = 1
+        else:
+            level = "focused"
+            min_sentences = max_sentences = 1
+
+    roles = _move_roles_by_opportunity_family(selected)
+    moves: list[GroundedReceptionMovePlan] = []
+    for index, opportunity in enumerate(selected, start=1):
+        role = roles[opportunity.opportunity_id]
+        primary_element, secondary_elements, afterglow_element = (
+            _FOLLOW_PROFILE_BY_RECEPTION_ACT[opportunity.reception_act]
+        )
+        follow_elements = tuple(
+            _dedupe(
+                [
+                    primary_element,
+                    *secondary_elements,
+                    *(
+                        (afterglow_element,)
+                        if afterglow_element is not None
+                        else ()
+                    ),
+                ]
+            )
+        )[:3]
+        explicit = role == "bounded_counterposition"
+        moves.append(
+            GroundedReceptionMovePlan(
+                move_id=f"rm{index}",
+                move_role=role,
+                reception_act=opportunity.reception_act,
+                target_nucleus_ids=opportunity.target_nucleus_ids,
+                support_nucleus_ids=opportunity.support_nucleus_ids,
+                source_evidence_span_ids=opportunity.source_evidence_span_ids,
+                follow_elements=follow_elements,
+                speaker_presence="explicit_emlis" if explicit else "implicit_emlis",
+                reference_mode=(
+                    "explicit_emlis_counterposition"
+                    if explicit
+                    else legacy_reference_mode
+                    if index == 1
+                    else "anaphoric_first"
+                ),
+                surface_strategy=_surface_strategy_for_move(opportunity, role),
+                required=(
+                    opportunity.safety_required
+                    or opportunity.retention in {"required", "should"}
+                ),
+                distinct_from_move_ids=tuple(item.move_id for item in moves),
+            )
+        )
+
+    min_realized_moves = sum(1 for item in moves if item.required)
+    policy = GroundedReceptionDepthPolicy(
+        level=level,
+        safety_mode=safety_mode,
+        opportunity_count=len(tuple(opportunities)),
+        selected_move_count=len(moves),
+        selection_reason_codes=(
+            "selection:semantic_opportunity_inventory",
+            "selection:distinct_human_contributions",
+            "selection:raw_character_count_unused",
+            f"depth:{level}",
+            f"safety:{safety_mode}",
+        ),
+        raw_character_count_used=False,
+        min_sentences=min_sentences,
+        max_sentences=max_sentences,
+        min_realized_moves=max(1, min_realized_moves),
+        # RR7 may safely integrate one pair only when three selected Moves
+        # can still satisfy the layered two-sentence lower bound. Full
+        # realization remains one Move per sentence.
+        max_moves_per_sentence=2 if len(moves) == 3 else 1,
+    )
+    return policy, tuple(moves)
+
+
 def build_grounded_human_reception_plan(
     *,
     required: bool,
@@ -2499,11 +3243,12 @@ def build_grounded_human_reception_plan(
     required_nucleus_ids: Sequence[str],
     fact_boundary_nucleus_ids: Sequence[str],
     nuclei: Sequence[GroundedSemanticNucleus],
+    relations: Sequence[GroundedSemanticRelation],
     safety_kind: str,
     material_quality: str,
     semantic_complexity: str,
 ) -> GroundedHumanReceptionPlan | None:
-    """Build the request-local body-free reception plan for R2."""
+    """Build the request-local body-free RR2/RR3 reception plan."""
 
     if not required:
         return None
@@ -2583,6 +3328,54 @@ def build_grounded_human_reception_plan(
         reference_mode = "short_anchor_if_ambiguous"
     else:
         reference_mode = "anaphoric_first"
+
+    opportunities = build_grounded_reception_opportunities(
+        human_follow_target_ids=target_ids,
+        primary_nucleus_ids=primary_nucleus_ids,
+        supporting_nucleus_ids=supporting_nucleus_ids,
+        fact_boundary_nucleus_ids=fact_boundary_nucleus_ids,
+        nuclei=nuclei,
+        relations=relations,
+        primary_reception_act=primary_act,
+        safety_kind=safety_kind,
+        material_quality=material_quality,
+    )
+    depth_policy, moves = _build_reception_depth_policy_and_moves(
+        opportunities,
+        legacy_primary_act=primary_act,
+        legacy_reference_mode=reference_mode,
+        safety_kind=safety_kind,
+        semantic_complexity=semantic_complexity,
+    )
+    # RR4 keeps the public follow target stable while expanding the aggregate
+    # compatibility grounding to every selected Move.  ClausePlan remains the
+    # owner of each individual Move binding; the aggregate fields keep the
+    # existing Gate and recovery perimeter evidence-complete.
+    move_nucleus_ids = tuple(
+        _dedupe(
+            nucleus_id
+            for move in moves
+            for nucleus_id in (
+                *move.target_nucleus_ids,
+                *move.support_nucleus_ids,
+            )
+        )
+    )
+    support_ids = tuple(
+        nucleus_id
+        for nucleus_id in move_nucleus_ids
+        if nucleus_id not in set(target_ids)
+    )
+    selected_nuclei = tuple(
+        nucleus_index[nucleus_id]
+        for nucleus_id in (*target_ids, *support_ids)
+        if nucleus_id in nucleus_index
+    )
+    # The compatibility primary remains aligned with the first planned Move.
+    primary_act = moves[0].reception_act
+    primary_element, secondary_elements, afterglow_element = (
+        _FOLLOW_PROFILE_BY_RECEPTION_ACT[primary_act]
+    )
     max_sentences = (
         1
         if material_quality == "short_state_sufficient"
@@ -2598,7 +3391,9 @@ def build_grounded_human_reception_plan(
                 "identity_claim_is_not_accepted",
             )
         )
-        if bounded_counterposition:
+        if bounded_counterposition or any(
+            move.move_role == "bounded_counterposition" for move in moves
+        ):
             safety_modifier_codes.append("counterposition_requires_input_evidence")
 
     source_evidence_ids = tuple(
@@ -2611,6 +3406,9 @@ def build_grounded_human_reception_plan(
     return GroundedHumanReceptionPlan(
         schema_version=GROUND_HUMAN_RECEPTION_PLAN_SCHEMA_VERSION,
         required=True,
+        opportunities=opportunities,
+        depth_policy=depth_policy,
+        moves=moves,
         primary_reception_act=primary_act,
         secondary_reception_act=secondary_act,
         primary_follow_element=primary_element,
@@ -2635,6 +3433,7 @@ def build_grounded_human_reception_plan(
         distinctness_policy=GroundedReceptionDistinctnessPolicy(
             observation_summary_repetition_allowed=False,
             relation_reexplanation_allowed=False,
+            all_input_enumeration_allowed=False,
             policy_explanation_allowed=False,
             new_cause_allowed=False,
             new_identity_claim_allowed=False,
@@ -2916,6 +3715,7 @@ def _build_response_and_policies(
         required_nucleus_ids=required_ids,
         fact_boundary_nucleus_ids=fact_boundary_ids,
         nuclei=nuclei,
+        relations=relations,
         safety_kind=safety_decision.safety_triage_kind,
         material_quality=material_quality,
         semantic_complexity=complexity,
@@ -3009,6 +3809,357 @@ def validate_grounded_human_reception_plan(
         for element in (primary, *secondary, afterglow)
         if element is not None
     }
+    allowed_families = set(_RECEPTION_ACT_BY_OPPORTUNITY_FAMILY)
+    observation_owned_set = set(reception_plan.observation_owned_nucleus_ids)
+    opportunities = tuple(reception_plan.opportunities)
+    if not opportunities:
+        issues.append("human_reception_opportunity_missing")
+    opportunity_index: dict[str, GroundedReceptionOpportunity] = {}
+    opportunity_signatures: set[tuple[Any, ...]] = set()
+    for index, opportunity in enumerate(opportunities, start=1):
+        expected_id = f"ro{index}"
+        if not _OPPORTUNITY_ID_RE.fullmatch(opportunity.opportunity_id):
+            issues.append("human_reception_opportunity_id_invalid")
+        if opportunity.opportunity_id != expected_id:
+            issues.append("human_reception_opportunity_order_invalid")
+        if opportunity.opportunity_id in opportunity_index:
+            issues.append("human_reception_opportunity_id_duplicate")
+        opportunity_index[opportunity.opportunity_id] = opportunity
+        if opportunity.family not in allowed_families:
+            issues.append("human_reception_opportunity_family_invalid")
+        elif (
+            opportunity.reception_act
+            != _RECEPTION_ACT_BY_OPPORTUNITY_FAMILY[opportunity.family]
+        ):
+            issues.append("human_reception_opportunity_act_mismatch")
+
+        opportunity_target_ids = tuple(opportunity.target_nucleus_ids)
+        opportunity_support_ids = tuple(opportunity.support_nucleus_ids)
+        if not opportunity_target_ids:
+            issues.append("human_reception_opportunity_target_missing")
+        if len(opportunity_target_ids) != len(set(opportunity_target_ids)):
+            issues.append("human_reception_opportunity_target_duplicate")
+        if len(opportunity_support_ids) != len(set(opportunity_support_ids)):
+            issues.append("human_reception_opportunity_support_duplicate")
+        if set(opportunity_target_ids) & set(opportunity_support_ids):
+            issues.append("human_reception_opportunity_target_support_overlap")
+        for nucleus_id in (*opportunity_target_ids, *opportunity_support_ids):
+            if nucleus_id not in nucleus_index:
+                issues.append(
+                    f"human_reception_opportunity_unknown_nucleus:{nucleus_id}"
+                )
+            elif nucleus_id not in observation_owned_set:
+                issues.append(
+                    f"human_reception_opportunity_not_observation_owned:{nucleus_id}"
+                )
+
+        opportunity_nuclei = tuple(
+            nucleus_index[nucleus_id]
+            for nucleus_id in (*opportunity_target_ids, *opportunity_support_ids)
+            if nucleus_id in nucleus_index
+        )
+        expected_opportunity_evidence = tuple(
+            _ordered_span_ids(
+                span_id
+                for nucleus in opportunity_nuclei
+                for span_id in nucleus.source_span_ids
+            )
+        )
+        opportunity_evidence = tuple(opportunity.source_evidence_span_ids)
+        if not opportunity_evidence:
+            issues.append("human_reception_opportunity_evidence_missing")
+        if opportunity_evidence != expected_opportunity_evidence:
+            issues.append("human_reception_opportunity_evidence_mismatch")
+        for span_id in opportunity_evidence:
+            if not _EVIDENCE_ID_RE.fullmatch(span_id):
+                issues.append(
+                    f"human_reception_opportunity_invalid_evidence:{span_id}"
+                )
+        for span_id in resolver.unresolved_ids(opportunity_evidence):
+            issues.append(
+                f"human_reception_opportunity_unresolved_evidence:{span_id}"
+            )
+
+        if opportunity.retention not in _RETENTION_RANK:
+            issues.append("human_reception_opportunity_retention_invalid")
+        elif opportunity_nuclei:
+            expected_retention = max(
+                (nucleus.retention for nucleus in opportunity_nuclei),
+                key=lambda value: _RETENTION_RANK[value],
+            )
+            if opportunity.retention != expected_retention:
+                issues.append("human_reception_opportunity_retention_mismatch")
+        if (
+            not isinstance(opportunity.priority, int)
+            or isinstance(opportunity.priority, bool)
+            or opportunity.priority <= 0
+        ):
+            issues.append("human_reception_opportunity_priority_invalid")
+        expected_source_field_count = len(
+            {
+                field
+                for nucleus in opportunity_nuclei
+                for field in nucleus.source_fields
+            }
+        )
+        if opportunity.source_field_count != expected_source_field_count:
+            issues.append("human_reception_opportunity_source_field_count_mismatch")
+        if not isinstance(opportunity.safety_required, bool):
+            issues.append("human_reception_opportunity_safety_required_invalid")
+        expected_safety_required = bool(
+            safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER
+            and opportunity.family in {"help_seeking", "counterdirection"}
+        )
+        if opportunity.safety_required is not expected_safety_required:
+            issues.append("human_reception_opportunity_safety_required_mismatch")
+        signature = (
+            opportunity.family,
+            opportunity.reception_act,
+            opportunity_target_ids,
+            opportunity_support_ids,
+        )
+        if signature in opportunity_signatures:
+            issues.append("human_reception_opportunity_duplicate")
+        opportunity_signatures.add(signature)
+        if opportunity.family == "counterdirection" and not any(
+            _is_reception_grounded_counterposition_nucleus(nucleus)
+            for nucleus in opportunity_nuclei
+        ):
+            issues.append("human_reception_opportunity_ungrounded_counterposition")
+
+    depth_policy = reception_plan.depth_policy
+    moves = tuple(reception_plan.moves)
+    if depth_policy.level not in {"minimal", "focused", "layered"}:
+        issues.append("human_reception_depth_level_invalid")
+    if depth_policy.safety_mode not in {
+        "standard",
+        "self_denial_bounded",
+        "help_seeking_bounded",
+    }:
+        issues.append("human_reception_depth_safety_mode_invalid")
+    if depth_policy.opportunity_count != len(opportunities):
+        issues.append("human_reception_depth_opportunity_count_mismatch")
+    if depth_policy.selected_move_count != len(moves):
+        issues.append("human_reception_depth_selected_move_count_mismatch")
+    if depth_policy.raw_character_count_used is not False:
+        issues.append("human_reception_depth_raw_character_count_forbidden")
+    if not depth_policy.selection_reason_codes:
+        issues.append("human_reception_depth_selection_reason_missing")
+    if len(depth_policy.selection_reason_codes) != len(
+        set(depth_policy.selection_reason_codes)
+    ):
+        issues.append("human_reception_depth_selection_reason_duplicate")
+    if any(
+        not _is_body_free_code(code)
+        for code in depth_policy.selection_reason_codes
+    ):
+        issues.append("human_reception_depth_selection_reason_non_body_free_code")
+    if not 1 <= depth_policy.min_sentences <= depth_policy.max_sentences <= 3:
+        issues.append("human_reception_depth_sentence_budget_invalid")
+    if not 1 <= depth_policy.max_moves_per_sentence <= 2:
+        issues.append("human_reception_depth_moves_per_sentence_invalid")
+    if not 1 <= len(moves) <= 3:
+        issues.append("human_reception_move_count_invalid")
+    if not 1 <= depth_policy.min_realized_moves <= max(1, len(moves)):
+        issues.append("human_reception_depth_min_realized_moves_invalid")
+    required_move_count = sum(1 for move in moves if move.required)
+    if depth_policy.min_realized_moves != max(1, required_move_count):
+        issues.append("human_reception_depth_min_realized_moves_mismatch")
+    if depth_policy.level == "minimal" and (
+        len(moves) != 1
+        or depth_policy.min_sentences != 1
+        or depth_policy.max_sentences != 1
+    ):
+        issues.append("human_reception_depth_minimal_contract_invalid")
+    if depth_policy.level == "focused":
+        if len(moves) not in {1, 2}:
+            issues.append("human_reception_depth_focused_contract_invalid")
+        if depth_policy.max_sentences > 2:
+            issues.append(
+                "human_reception_depth_focused_sentence_budget_invalid"
+            )
+    if depth_policy.level == "layered" and (
+        len(moves) < 2 or depth_policy.min_sentences < 2
+    ):
+        issues.append("human_reception_depth_layered_contract_invalid")
+
+    allowed_move_roles = {
+        "attention",
+        "significance",
+        "felt_response",
+        "bounded_counterposition",
+    }
+    allowed_surface_strategies = {
+        "quiet_referent_first",
+        "emlis_attention_first",
+        "referent_significance_first",
+        "felt_response_first",
+        "explicit_emlis_counterposition",
+    }
+    move_index: dict[str, GroundedReceptionMovePlan] = {}
+    selected_opportunity_ids: set[str] = set()
+    move_signatures: set[tuple[Any, ...]] = set()
+    for index, move in enumerate(moves, start=1):
+        expected_id = f"rm{index}"
+        if not _MOVE_ID_RE.fullmatch(move.move_id):
+            issues.append("human_reception_move_id_invalid")
+        if move.move_id != expected_id:
+            issues.append("human_reception_move_order_invalid")
+        if move.move_id in move_index:
+            issues.append("human_reception_move_id_duplicate")
+        move_index[move.move_id] = move
+        if move.move_role not in allowed_move_roles:
+            issues.append("human_reception_move_role_invalid")
+        if move.reception_act not in allowed_acts:
+            issues.append("human_reception_move_act_invalid")
+        move_target_ids = tuple(move.target_nucleus_ids)
+        move_support_ids = tuple(move.support_nucleus_ids)
+        if not move_target_ids:
+            issues.append("human_reception_move_target_missing")
+        if len(move_target_ids) != len(set(move_target_ids)):
+            issues.append("human_reception_move_target_duplicate")
+        if len(move_support_ids) != len(set(move_support_ids)):
+            issues.append("human_reception_move_support_duplicate")
+        if set(move_target_ids) & set(move_support_ids):
+            issues.append("human_reception_move_target_support_overlap")
+        for nucleus_id in (*move_target_ids, *move_support_ids):
+            if nucleus_id not in nucleus_index:
+                issues.append(f"human_reception_move_unknown_nucleus:{nucleus_id}")
+            elif nucleus_id not in observation_owned_set:
+                issues.append(
+                    f"human_reception_move_not_observation_owned:{nucleus_id}"
+                )
+        move_nuclei = tuple(
+            nucleus_index[nucleus_id]
+            for nucleus_id in (*move_target_ids, *move_support_ids)
+            if nucleus_id in nucleus_index
+        )
+        expected_move_evidence = tuple(
+            _ordered_span_ids(
+                span_id
+                for nucleus in move_nuclei
+                for span_id in nucleus.source_span_ids
+            )
+        )
+        move_evidence = tuple(move.source_evidence_span_ids)
+        if not move_evidence:
+            issues.append("human_reception_move_evidence_missing")
+        if move_evidence != expected_move_evidence:
+            issues.append("human_reception_move_evidence_mismatch")
+        for span_id in move_evidence:
+            if not _EVIDENCE_ID_RE.fullmatch(span_id):
+                issues.append(f"human_reception_move_invalid_evidence:{span_id}")
+        for span_id in resolver.unresolved_ids(move_evidence):
+            issues.append(f"human_reception_move_unresolved_evidence:{span_id}")
+
+        matching_opportunities = tuple(
+            opportunity
+            for opportunity in opportunities
+            if (
+                opportunity.reception_act == move.reception_act
+                and opportunity.target_nucleus_ids == move_target_ids
+                and opportunity.support_nucleus_ids == move_support_ids
+                and opportunity.source_evidence_span_ids == move_evidence
+            )
+        )
+        if not matching_opportunities:
+            issues.append("human_reception_move_without_opportunity")
+        else:
+            opportunity = matching_opportunities[0]
+            if opportunity.opportunity_id in selected_opportunity_ids:
+                issues.append("human_reception_move_opportunity_duplicate")
+            selected_opportunity_ids.add(opportunity.opportunity_id)
+            expected_move_required = bool(
+                opportunity.safety_required
+                or opportunity.retention in {"required", "should"}
+            )
+            if move.required is not expected_move_required:
+                issues.append("human_reception_move_required_mismatch")
+            if move.surface_strategy != _surface_strategy_for_move(
+                opportunity,
+                move.move_role,
+            ):
+                issues.append("human_reception_move_surface_strategy_mismatch")
+        if not 1 <= len(move.follow_elements) <= 3:
+            issues.append("human_reception_move_follow_element_count_invalid")
+        if len(move.follow_elements) != len(set(move.follow_elements)):
+            issues.append("human_reception_move_follow_element_duplicate")
+        if any(
+            element not in allowed_follow_elements
+            for element in move.follow_elements
+        ):
+            issues.append("human_reception_move_follow_element_invalid")
+        if move.speaker_presence not in {"implicit_emlis", "explicit_emlis"}:
+            issues.append("human_reception_move_speaker_presence_invalid")
+        if move.reference_mode not in {
+            "anaphoric_first",
+            "short_anchor_if_ambiguous",
+            "explicit_emlis_counterposition",
+        }:
+            issues.append("human_reception_move_reference_mode_invalid")
+        if move.surface_strategy not in allowed_surface_strategies:
+            issues.append("human_reception_move_surface_strategy_invalid")
+        if not isinstance(move.required, bool):
+            issues.append("human_reception_move_required_invalid")
+        expected_distinct_ids = tuple(f"rm{item}" for item in range(1, index))
+        if tuple(move.distinct_from_move_ids) != expected_distinct_ids:
+            issues.append("human_reception_move_distinct_reference_invalid")
+        move_signature = (
+            move.reception_act,
+            move_target_ids,
+            move.move_role,
+        )
+        if move_signature in move_signatures:
+            issues.append("human_reception_move_duplicate")
+        move_signatures.add(move_signature)
+        if move.move_role == "bounded_counterposition":
+            if move.reception_act != "bounded_counter_self_denial":
+                issues.append("human_reception_counterposition_move_act_invalid")
+            if move.speaker_presence != "explicit_emlis":
+                issues.append("human_reception_counterposition_move_speaker_invalid")
+            if move.reference_mode != "explicit_emlis_counterposition":
+                issues.append("human_reception_counterposition_move_reference_invalid")
+            if move.surface_strategy != "explicit_emlis_counterposition":
+                issues.append("human_reception_counterposition_move_strategy_invalid")
+            if not any(
+                _is_reception_grounded_counterposition_nucleus(nucleus)
+                for nucleus in move_nuclei
+            ):
+                issues.append("human_reception_move_ungrounded_counterposition")
+
+    if moves and reception_plan.primary_reception_act != moves[0].reception_act:
+        issues.append("human_reception_primary_act_move_mismatch")
+    # RR4 still owns the compatibility-field cutover.  Until then an internal
+    # caller may set the legacy secondary act for the existing renderer; new
+    # production plans keep standard-mode secondary acts empty.
+    for opportunity in opportunities:
+        if (
+            opportunity.safety_required
+            and opportunity.opportunity_id not in selected_opportunity_ids
+        ):
+            issues.append("human_reception_required_safety_opportunity_unselected")
+
+    counter_moves = tuple(
+        move for move in moves if move.move_role == "bounded_counterposition"
+    )
+    help_moves = tuple(
+        move for move in moves if move.reception_act == "hold_help_seeking"
+    )
+    if safety_kind == TRIAGE_SELF_DENIAL_SAFE_STATE_ANSWER:
+        expected_safety_mode = (
+            "help_seeking_bounded" if help_moves else "self_denial_bounded"
+        )
+        if depth_policy.safety_mode != expected_safety_mode:
+            issues.append("human_reception_depth_safety_mode_mismatch")
+        grounded_counter_opportunity = any(
+            opportunity.family == "counterdirection"
+            for opportunity in opportunities
+        )
+        if grounded_counter_opportunity and not counter_moves:
+            issues.append("human_reception_required_counterposition_move_missing")
+    elif depth_policy.safety_mode != "standard":
+        issues.append("human_reception_depth_standard_safety_mode_required")
+
     if reception_plan.primary_reception_act not in allowed_acts:
         issues.append("human_reception_primary_act_missing_or_invalid")
     if (
@@ -3137,6 +4288,7 @@ def validate_grounded_human_reception_plan(
         (
             distinctness.observation_summary_repetition_allowed,
             distinctness.relation_reexplanation_allowed,
+            distinctness.all_input_enumeration_allowed,
             distinctness.policy_explanation_allowed,
             distinctness.new_cause_allowed,
             distinctness.new_identity_claim_allowed,
@@ -3178,7 +4330,7 @@ def validate_grounded_human_reception_plan(
         if "counterposition_requires_input_evidence" not in reception_plan.safety_modifier_codes:
             issues.append("human_reception_counterposition_evidence_policy_missing")
         if not any(
-            _is_input_grounded_counterposition_nucleus(item)
+            _is_reception_grounded_counterposition_nucleus(item)
             for item in selected_nuclei
         ):
             issues.append("human_reception_ungrounded_self_denial_counterposition")
@@ -3582,6 +4734,11 @@ __all__ = [
     "GroundedReceptionStance",
     "GroundedSpeakerPresence",
     "GroundedReferenceMode",
+    "GroundedReceptionOpportunityFamily",
+    "GroundedReceptionDepthLevel",
+    "GroundedReceptionSafetyMode",
+    "GroundedReceptionMoveRole",
+    "GroundedReceptionSurfaceStrategy",
     "GroundedObservationPlanError",
     "GroundedSemanticFrame",
     "GroundedSemanticNucleus",
@@ -3592,6 +4749,9 @@ __all__ = [
     "GroundedReceptionQuotePolicy",
     "GroundedReceptionSentencePolicy",
     "GroundedReceptionDistinctnessPolicy",
+    "GroundedReceptionOpportunity",
+    "GroundedReceptionDepthPolicy",
+    "GroundedReceptionMovePlan",
     "GroundedHumanReceptionPlan",
     "GroundedResponsePlan",
     "GroundedCoverageRequirements",
@@ -3602,6 +4762,7 @@ __all__ = [
     "map_grounded_human_follow_role_to_reception_act",
     "select_grounded_reception_act",
     "classify_grounded_human_follow_delivery",
+    "build_grounded_reception_opportunities",
     "build_grounded_human_reception_plan",
     "build_grounded_observation_plan",
     "build_grounded_observation_plan_shadow",

@@ -116,7 +116,7 @@ def _report(plan, sentence_plan, surface, resolver):
     )
 
 
-def test_r5_exact8_requires_all_seven_reception_gates_and_body_free_meta() -> None:
+def test_r5_exact8_requires_all_runtime_reception_gates_and_body_free_meta() -> None:
     for case in _cases():
         plan, sentence_plan, surface, resolver = _artifacts(
             case["exact_current_input"]
@@ -137,7 +137,20 @@ def test_r5_exact8_requires_all_seven_reception_gates_and_body_free_meta() -> No
         assert report.reception_terminal_predicate_kind.startswith(
             "human_response_"
         )
-        assert 1 <= report.reception_sentence_count <= 2
+        assert report.reception_depth_level in {"minimal", "focused", "layered"}
+        assert report.reception_safety_mode in {
+            "standard",
+            "self_denial_bounded",
+            "help_seeking_bounded",
+        }
+        assert 1 <= report.reception_realized_move_count <= 3
+        assert report.reception_realized_move_count == len(
+            report.reception_move_roles
+        )
+        assert report.reception_realized_move_count == len(
+            report.reception_terminal_predicate_families
+        )
+        assert 1 <= report.reception_sentence_count <= 3
         assert report.repeated_long_anchor_count == 0
         assert grounded_gate_meta_is_body_free(meta) is True
         payload = json.dumps(meta, ensure_ascii=False, sort_keys=True)
@@ -149,12 +162,24 @@ def test_r5_exact8_requires_all_seven_reception_gates_and_body_free_meta() -> No
         assert meta["product_readfeel_status"] == "not_evaluated"
 
 
-def test_r5_all_recovery_profiles_keep_all_seven_reception_gates_connected() -> None:
+def test_r5_eligible_recovery_profiles_keep_all_reception_gates_connected() -> None:
     for case in _cases():
         plan, base_sentence_plan, _surface, resolver = _artifacts(
             case["exact_current_input"]
         )
-        for recovery_stage in GROUND_RECOVERY_STAGES:
+        reception_plan = plan.response_plan.human_reception_plan
+        assert reception_plan is not None
+        eligible_stages = tuple(
+            stage
+            for stage in GROUND_RECOVERY_STAGES
+            if stage != "minimal_grounded"
+            or (
+                reception_plan.depth_policy.level == "minimal"
+                and reception_plan.depth_policy.safety_mode == "standard"
+                and len(reception_plan.moves) == 1
+            )
+        )
+        for recovery_stage in eligible_stages:
             sentence_plan = (
                 base_sentence_plan
                 if recovery_stage == "full"
