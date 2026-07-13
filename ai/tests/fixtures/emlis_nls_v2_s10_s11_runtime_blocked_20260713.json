@@ -1,0 +1,100 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.s10_s11.runtime_blocked.v1",
+  "decision_date": "2026-07-13",
+  "decision": "blocked_fail_closed",
+  "design_sha256": "b2441917ee80b22c84973c4205bc1cb1a9c471037fe270391438cbd7d7694752",
+  "source_archive": {
+    "received_ref": "mashos-api_6(102).zip",
+    "sha256": "a2c8262219309a991c8b13afd474e8387285de1873053f7eb2b3f65773909386",
+    "matches_step8_step9_tree_excluding_pycache": true
+  },
+  "prerequisite_evidence": {
+    "holdout_a": {
+      "receipt_ref": "emlis_nls_v2_s8_holdout_a_receipt_20260713.json",
+      "receipt_sha256": "16c6040caf3d12304cc54955f874667b5cc24836d2f6e8f103b8a2578c848cf1",
+      "evaluation_run_count": 1,
+      "overall_status": "stop",
+      "v2_clearly_better_count": 5,
+      "same_count": 3,
+      "v1_clearly_better_count": 6,
+      "paired_pass": false,
+      "roadmap_product_target_pass": false,
+      "distribution_pass": false
+    },
+    "holdout_b": {
+      "receipt_ref": "emlis_nls_v2_s9_holdout_b_receipt_20260713.json",
+      "receipt_sha256": "9f23860ecbad2408710eedc220144a185555cc81b56323647b2de6179dbda495",
+      "evaluation_run_count": 0,
+      "overall_status": "not_evaluated",
+      "opened_for_evaluation": false,
+      "fixture_parsed": false
+    },
+    "both_holdouts_pass": false,
+    "runtime_progression_allowed": false
+  },
+  "block_reason_codes": [
+    "HOLDOUT_A_FAILED",
+    "HOLDOUT_A_V1_PREFERENCE_STOP_CONDITION",
+    "HOLDOUT_B_NOT_EVALUATED_BY_DESIGN",
+    "BOTH_HOLDOUTS_PASS_PREREQUISITE_UNMET",
+    "V2_NOT_QUALIFIED",
+    "SHADOW_EVIDENCE_UNAVAILABLE"
+  ],
+  "step10_runtime_preconnection_shadow": {
+    "status": "not_executed",
+    "shadow_run_count": 0,
+    "v1_v2_simultaneous_runtime_generation_enabled": false,
+    "v2_runtime_import_added": false,
+    "v2_body_written_to_public_meta": false,
+    "v2_body_written_to_db": false,
+    "public_response_changed": false,
+    "latency_measurement_performed": false,
+    "latency_budget_ms": null,
+    "latency_budget_invented": false,
+    "fallback_rate_measurement_performed": false,
+    "gate_result_runtime_measurement_performed": false,
+    "grounded_sentence_surface_connection_attempted": false,
+    "completion_status": "blocked_by_prior_holdout_stop"
+  },
+  "step11_runtime_owner_switch": {
+    "status": "not_executed",
+    "owner_switch_count": 0,
+    "owner_before": "grounded_sentence_surface_canonical_v1",
+    "owner_after": "grounded_sentence_surface_canonical_v1",
+    "v2_internal_switch_added": false,
+    "v1_fallback_path_changed": false,
+    "fallback_acceptance_rate": null,
+    "fallback_acceptance_rate_invented": false,
+    "final_v2_text_forwarded_to_two_stage_surface": false,
+    "completion_status": "blocked_v2_not_qualified_and_shadow_absent"
+  },
+  "runtime_boundary": {
+    "production_owner": "v1",
+    "v2_state": "offline_only",
+    "runtime_source_modified_count": 0,
+    "runtime_source_files": [
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+        "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+        "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+        "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+      }
+    ],
+    "api_contract_changed": false,
+    "db_contract_changed": false,
+    "rn_contract_changed": false,
+    "public_contract_diff_count": 0
+  },
+  "production_files_modified": [],
+  "holdout_files_modified": [],
+  "candidate_bodies_included": false,
+  "selected_bodies_included": false,
+  "raw_holdout_body_included": false,
+  "next_action": "new_design_decision_required_without_opening_holdout_b"
+}

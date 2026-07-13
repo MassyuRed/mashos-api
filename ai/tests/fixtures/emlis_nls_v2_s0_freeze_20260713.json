@@ -1,0 +1,196 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.step0_design_freeze.v1",
+  "created_date": "2026-07-13",
+  "design_stage": "step0_design_freeze",
+  "current_product_status": "repair_required",
+  "implementation_scope": [
+    "current_input_first_reply",
+    "emlis_reception_content_planning_v2",
+    "multi_candidate_surface_generation_v2",
+    "hard_gate_v2",
+    "soft_selector_v2",
+    "offline_v1_v2_comparison",
+    "exact8_regression",
+    "unused_input_generalization"
+  ],
+  "implementation_out_of_scope": [
+    "external_ai_api",
+    "local_llm",
+    "general_chat",
+    "conversation_history_dialogue",
+    "p5_user_label_connection",
+    "p6_structure_insight",
+    "p7_question_system",
+    "p8_question_system",
+    "new_rn_screen_or_flow",
+    "db_migration",
+    "db_physical_rename",
+    "db_write_path_change",
+    "api_response_key_change",
+    "piece_change",
+    "analysis_change",
+    "subscription_change",
+    "exact8_specific_reply",
+    "completed_sentence_template_collection"
+  ],
+  "received_artifacts": [
+    {
+      "role": "design_source",
+      "received_ref": "Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV2_DetailedDesign_ImplementationOrder_20260713(1).md",
+      "logical_ref": "Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV2_DetailedDesign_ImplementationOrder_20260713.md",
+      "sha256": "b2441917ee80b22c84973c4205bc1cb1a9c471037fe270391438cbd7d7694752"
+    },
+    {
+      "role": "premise_archive",
+      "received_ref": "Cocolon_前提資料(334).zip",
+      "design_basis_ref": "Cocolon_前提資料(333).zip",
+      "sha256": "0fc80fb9b7bcf34fe8eb6cca8c34b19a43461c88bb64a53ca8a8de7cb03e16b9",
+      "byte_identical_to_design_basis": true
+    },
+    {
+      "role": "implemented_docs_archive",
+      "received_ref": "EmlisAIの実装済み資料(132).zip",
+      "sha256": "34b1a2744fc336540607c4f7006c136f5fae29a38b411f5298c331268e8f1585"
+    },
+    {
+      "role": "rn_source_archive",
+      "received_ref": "Cocolon(297).zip",
+      "design_basis_ref": "Cocolon(296).zip",
+      "sha256": "625a58d773d5ed8ac7da3e28d032f7467533f8bb1e3a011e457883a267f3a21e",
+      "byte_identical_to_design_basis": true
+    },
+    {
+      "role": "backend_source_archive",
+      "received_ref": "mashos-api(222).zip",
+      "design_basis_ref": "mashos-api(221).zip",
+      "sha256": "a5efd0e7cd110c9bb95ba543d1c68c1094951b7de160ef9cf91341eb41b5bae1",
+      "byte_identical_to_design_basis": true
+    }
+  ],
+  "source_snapshot_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177",
+      "owner_role": "observation_plan"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298",
+      "owner_role": "v1_reception_plan_and_surface"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0",
+      "owner_role": "two_stage_sentence_surface"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f",
+      "owner_role": "semantic_and_reception_gate"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6",
+      "owner_role": "production_reply_orchestrator"
+    }
+  ],
+  "source_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac",
+  "evaluation_artifact_roles": {
+    "exact8": {
+      "fixture_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+      "role": "input_identity_semantic_safety_two_stage_regression_and_v1_comparison",
+      "holdout": false,
+      "v2_expected_text": false
+    },
+    "existing_unseen12": {
+      "fixture_ref": "../local_only/grounded_human_reception_rr8_unseen12_20260713.json",
+      "fixture_sha256": "d53740015a091898d776caec56d11517ff7d4aaf44c5a48172cde54ef3cb132d",
+      "role": "development_and_regression_only",
+      "holdout": false
+    },
+    "latest_actual_device_images": {
+      "design_recorded_archive_ref": "実機確認結果３.zip",
+      "directly_reprovided_for_step0": false,
+      "role": "design_recorded_product_problem_basis_not_runtime_hash_proof",
+      "product_status": "repair_required"
+    },
+    "latest_local_qa_result": {
+      "ref": "ai/docs/Cocolon_EmlisAI_GroundedHumanReception_RR8_RR9_LocalQA_KarenReadFeel_ImplementationResult_20260713.md",
+      "sha256": "3fde1de56a6fd544edc4f121d8cf4b0d4f523908b20c5ebaf20425025d2e73b2",
+      "role": "historical_v1_technical_and_local_read_evidence"
+    },
+    "latest_device_readiness_result": {
+      "ref": "ai/docs/Cocolon_EmlisAI_GroundedHumanReception_RR10_Representative4_ActualDeviceDirectionCheck_ImplementationResult_20260713.md",
+      "sha256": "d306af56a6d8aab340b8425cac1ee84929f567e499c741b0f7eddb7119dced43",
+      "role": "historical_device_readiness_not_current_v2_product_pass"
+    }
+  },
+  "unchanged_contracts": [
+    "emotion_submit_route",
+    "api_response_keys",
+    "input_feedback_comment_text",
+    "input_feedback_observation_status",
+    "rn_visibility_predicate",
+    "two_stage_visible_order",
+    "db_physical_names",
+    "db_write_paths",
+    "legacy_facade_and_bridge",
+    "account_subscription_entitlement",
+    "user_data_protection",
+    "grounding_and_safety",
+    "body_free_public_meta",
+    "deterministic_runtime"
+  ],
+  "public_contract_snapshot": {
+    "route": "/emotion/submit",
+    "comment_path": "input_feedback.comment_text",
+    "status_path": "input_feedback.emlis_ai.observation_status",
+    "visibility_predicate": "status_passed_and_comment_nonempty",
+    "two_stage_order": "observation_then_reception",
+    "rn_owner_files": [
+      {
+        "path": "screens/input/inputFeedbackModel.js",
+        "sha256": "d8873321b97846114da796b19aada0a694bc23a0ae604e585da6bbea1c8a606b"
+      },
+      {
+        "path": "screens/input/InputFeedbackReplyModal.js",
+        "sha256": "3b0f54d104aa88411cb9be8a26c663dc789411d69e5fd84aa44356c39255916d"
+      },
+      {
+        "path": "screens/input/useInputFeedbackModal.js",
+        "sha256": "fa23691c58ba2a420134aa3edc32e79d5f132c55a186d4c3012b664547df143c"
+      },
+      {
+        "path": "screens/InputScreen.js",
+        "sha256": "6c82c1ac5bdd9a8eef06f64986f3a054ed6971f01a5ed154f3ddc6d63874e04d"
+      },
+      {
+        "path": "tests/rn-screen-contracts.test.js",
+        "sha256": "b879bda112a6e8e65188ba693ebc7256773ce41ed4fd929f5f9a487c4c4abbe0"
+      }
+    ],
+    "rn_owner_snapshot_sha256": "cb17582ebbf6879ee237707471a98116ab333a58c516c4322de5fa1c676c749f"
+  },
+  "generation_constraints": {
+    "external_api_used": false,
+    "local_llm_used": false,
+    "runtime_randomness_allowed": false,
+    "candidate_enumeration_bounded": true,
+    "v1_production_owner_retained": true,
+    "v2_runtime_connected": false
+  },
+  "holdout_policy": {
+    "holdout_a_fixture_created": false,
+    "holdout_b_fixture_created": false,
+    "holdout_a_opened": false,
+    "holdout_b_opened": false,
+    "holdout_materialization_owner": "step2",
+    "holdout_a_first_open_owner": "step8_after_v2_freeze",
+    "holdout_b_first_open_owner": "step9_without_code_change",
+    "holdout_failure_action": "stop_without_case_specific_repair"
+  },
+  "step0_status": "completed",
+  "progression_authority": "none",
+  "valid_for_runtime_switch": false
+}

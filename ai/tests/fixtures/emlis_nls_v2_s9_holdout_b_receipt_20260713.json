@@ -1,0 +1,33 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.holdout_b_blocked_receipt.v1",
+  "evaluation_date": "2026-07-13",
+  "cohort": "holdout_b",
+  "step9_status": "blocked_by_step8_stop_condition",
+  "overall_status": "not_evaluated",
+  "evaluation_run_count": 0,
+  "opened_for_evaluation": false,
+  "fixture_parsed": false,
+  "block_reason_codes": [
+    "holdout_a_overall_stop",
+    "holdout_a_paired_threshold_not_met",
+    "holdout_a_product_threshold_not_met",
+    "holdout_a_distribution_threshold_not_met"
+  ],
+  "holdout_a_receipt_sha256": "16c6040caf3d12304cc54955f874667b5cc24836d2f6e8f103b8a2578c848cf1",
+  "holdout_a_status": "stop",
+  "protocol_freeze_sha256": "b1df0cee2de94ddff3e93d9d3fbc04f96e207545e58a06b4874420a07dc97d41",
+  "expected_fixture_sha256_from_preopen_freeze": "18c05d940da4a1b644afddf140cf74dc04077b0eeb03c1fe48fd3e963161d171",
+  "dependency_closure_sha256": "cc605d96f8dac7b72c471ac59764e2e48c933c9e1a74ac647e4b1ffd079cbd5b",
+  "selector_config_sha256": "27efab39eee10111daf4a6ca700a2ad293127039c0bf455b14c1ea87b49fc3eb",
+  "evaluation_runner_sha256": "b292122b3068a47a2601d79f5a8c01d993471e4f01d2a35451cf369e47ee178b",
+  "receipt_test_sha256": "05790abaa8b7ae127035047eda9c0af71a04d739f88c132ea225611f7fa1be24",
+  "reply_service_sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6",
+  "source_or_protocol_change_count": 0,
+  "candidate_bodies_included": false,
+  "selected_bodies_included": false,
+  "raw_input_included": false,
+  "raw_text_included": false,
+  "runtime_connected": false,
+  "public_contract_changed": false,
+  "failure_action": "stop_v2_without_holdout_specific_repair_and_reassess_model_free_quality_ceiling"
+}

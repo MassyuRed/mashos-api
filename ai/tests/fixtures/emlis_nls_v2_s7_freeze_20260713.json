@@ -1,0 +1,71 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.s7_freeze.v1",
+  "freeze_date": "2026-07-13",
+  "cohort": "development",
+  "case_count": 42,
+  "structural_redesign_count": 1,
+  "holdout_a_opened": false,
+  "holdout_b_opened": false,
+  "candidate_bodies_included": false,
+  "selected_bodies_included": false,
+  "runtime_connected": false,
+  "public_contract_changed": false,
+  "selector_config_sha256": "27efab39eee10111daf4a6ca700a2ad293127039c0bf455b14c1ea87b49fc3eb",
+  "development_body_free_receipt_sha256": "25d844a2fb0d367a7b5fc530bf792c05587ead47f1ade43fd66c1a215ff9fb1d",
+  "source_snapshot": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_content_plan_v2.py",
+      "sha256": "515bc6b171b79e9e938b7c5710dbaddd5c88ebeb9b97b1e7037f75af323f23f6"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_plan_v2.py",
+      "sha256": "2bb1b15c951d709bfa44b14d9bc678c0cfaae6a5bd42021ec9a53028104a7674"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception_v2.py",
+      "sha256": "7541cb9262a502cfff071a8056cd6d005a2990084c122043c1de3d18f5b3b607"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_selector_v2.py",
+      "sha256": "ec61bc59d2e40effb97f39ffb52f2ea7073c9ea1beb680e5fe6c4a84b6f7f6ef"
+    }
+  ],
+  "source_snapshot_sha256": "682d19aeb0e2511dcbcb67623eb4e98c22048a2bc64638816f6b40d88c79ef6f",
+  "development_summary": {
+    "selected_count": 42,
+    "v2_no_valid_candidate_count": 0,
+    "candidate_count": 213,
+    "hard_gate_pass_candidate_count": 193,
+    "hard_gate_fail_candidate_count": 20,
+    "hard_gate_failure_counts": {
+      "enumeration_only": 20
+    },
+    "depth_counts": {
+      "minimal": 12,
+      "focused": 21,
+      "layered": 9
+    },
+    "exact_duplicate_count": 0,
+    "rich_single_sentence_count": 0,
+    "short_meaningless_inflation_count": 0,
+    "max_strategy_share": 0.428571,
+    "max_terminal_family_share": 0.642857,
+    "max_predicate_family_share": 0.329268,
+    "max_skeleton_share": 0.357143
+  },
+  "development_author_read": {
+    "reviewer": "karen",
+    "review_mode": "development_author_read_not_holdout_blind",
+    "body_persisted": false,
+    "read_feeling_pass_count": 39,
+    "naturalness_pass_count": 39,
+    "non_template_pass_count": 42,
+    "wants_more_input_or_accumulation_pass_count": 38,
+    "self_blame_non_amplification_pass_count": 42,
+    "overclaim_absence_pass_count": 42,
+    "paired_v2_clearly_better_count": 37,
+    "paired_same_count": 5,
+    "paired_v1_clearly_better_count": 0,
+    "family_clearly_worse_than_v1_count": 0
+  }
+}

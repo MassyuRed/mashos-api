@@ -1,0 +1,152 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.s8_s9.protocol_freeze.v1",
+  "freeze_date": "2026-07-13",
+  "created_before_holdout_a_parse": true,
+  "source_archive": {
+    "received_ref": "mashos-api_5(111).zip",
+    "sha256": "3d673ad4f01ffcb53db8528528a0ebe6151af656ba9e29588648b5df68d153b5",
+    "matches_step7_tree_excluding_pycache": true
+  },
+  "step7_freeze": {
+    "fixture_sha256": "2057ea8d3462dcd78cffb479414e50be516d0310b4135eb614f32ada964ff79d",
+    "source_snapshot_sha256": "682d19aeb0e2511dcbcb67623eb4e98c22048a2bc64638816f6b40d88c79ef6f",
+    "selector_config_sha256": "27efab39eee10111daf4a6ca700a2ad293127039c0bf455b14c1ea87b49fc3eb",
+    "development_body_free_receipt_sha256": "25d844a2fb0d367a7b5fc530bf792c05587ead47f1ade43fd66c1a215ff9fb1d",
+    "structural_redesign_count": 1
+  },
+  "step2_manifest": {
+    "sha256": "ecb51a1336ebecfe548bc3b601667c5f35bae838551ca846ed6be9e03e40a284",
+    "corpus_identity_sha256": "852457051bcc9bdc82a74d0d59d833f1f9c32837a85c29812fee8a775d69228e"
+  },
+  "dependency_closure": {
+    "root_module_count": 4,
+    "file_count": 16,
+    "algorithm": "recursive_local_emlis_imports_path_sorted_canonical_json_sha256",
+    "sha256": "cc605d96f8dac7b72c471ac59764e2e48c933c9e1a74ac647e4b1ffd079cbd5b",
+    "files": [
+      {
+        "path": "ai/services/ai_inference/emlis_ai_current_input_bundle.py",
+        "sha256": "63ddb6bf3db472bdaddfd8c3fbef68034aeb3cf51188508c0ad8b8cd920271f8"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_evidence_ledger_service.py",
+        "sha256": "17e51d7ff39535d60f81ad17582f36ab252301502a3a3328e703d116cea7f9e2"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+        "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception_v2.py",
+        "sha256": "7541cb9262a502cfff071a8056cd6d005a2990084c122043c1de3d18f5b3b607"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+        "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_plan_v2.py",
+        "sha256": "2bb1b15c951d709bfa44b14d9bc678c0cfaae6a5bd42021ec9a53028104a7674"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_selector_v2.py",
+        "sha256": "ec61bc59d2e40effb97f39ffb52f2ea7073c9ea1beb680e5fe6c4a84b6f7f6ef"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_content_plan_v2.py",
+        "sha256": "515bc6b171b79e9e938b7c5710dbaddd5c88ebeb9b97b1e7037f75af323f23f6"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_observation_integrator_service.py",
+        "sha256": "20aa4f793054844904084ee72c4bdc3b3198a7ad849c8a29fe526a655ce1bf21"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_perspective_board.py",
+        "sha256": "c4eabe4403c1cf98f4c645ca94cdf8164f69408d9027f7996f18965dc9c34e93"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_perspective_observers.py",
+        "sha256": "cca669364efa7359bd08fcfe8bf5335519be76a81f6700254ed5d0be713ecb61"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_response_contract.py",
+        "sha256": "e2c0e7af36700865cb471ef598fa99afa0b775507172571d5a44946b2d71a4c7"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_safety_boundary_service.py",
+        "sha256": "77c0317a5bcdf2a71e932f6bd9b53cec2beceb80ddf69f0f5bcb18a22a1c66b7"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_safety_triage.py",
+        "sha256": "9aa7ee3b0742fa267e7396b946694d6f99e3ac8f65217e65453b1faad5b2425b"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_types.py",
+        "sha256": "3a0cfc7ee9c49cb0dd2b014493357ccd84924f455b22cc483272bf1872d80b17"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_user_address_service.py",
+        "sha256": "eecc778d6fc58204801617a4531ffff268346e5f683d9bccfdb45ec382cd3913"
+      }
+    ]
+  },
+  "evaluation_protocol": {
+    "runner_path": "ai/tests/helpers/emlis_nls_v2_s8_s9_holdout.py",
+    "runner_sha256": "b292122b3068a47a2601d79f5a8c01d993471e4f01d2a35451cf369e47ee178b",
+    "receipt_test_path": "ai/tests/test_emlis_nls_v2_s8_s9_holdout_evaluation.py",
+    "receipt_test_sha256": "05790abaa8b7ae127035047eda9c0af71a04d739f88c132ea225611f7fa1be24",
+    "blind_display_order_rule": "family_number_parity_v1_left_on_odd_v1_right_on_even",
+    "case_id_visible_to_reviewer": false,
+    "variant_identity_visible_to_reviewer": false,
+    "automatic_gate_and_human_review_separate": true,
+    "visible_review_packet_storage": "ephemeral_outside_repository_only",
+    "receipt_body_policy": "ids_enums_counts_hashes_and_body_free_meta_only"
+  },
+  "holdout_fixtures": {
+    "holdout_a": {
+      "fixture_sha256": "1e291bc8a57e346b755dcb6de2cb1751a312608eeb823d1988f366ce1d2767bb",
+      "case_count": 14,
+      "first_parse_owner": "step8_after_protocol_freeze"
+    },
+    "holdout_b": {
+      "fixture_sha256": "18c05d940da4a1b644afddf140cf74dc04077b0eeb03c1fe48fd3e963161d171",
+      "case_count": 14,
+      "first_parse_owner": "step9_after_holdout_a_pass_without_change"
+    }
+  },
+  "holdout_a_evaluation_run_limit": 1,
+  "holdout_b_evaluation_run_limit": 1,
+  "holdout_b_requires_holdout_a_pass": true,
+  "post_holdout_a_code_fixture_weight_change_allowed": false,
+  "holdout_failure_action": "stop_without_case_specific_repair_or_holdout_b_open",
+  "thresholds": {
+    "absolute_failure_max": 0,
+    "fatal_semantic_failure_max": 0,
+    "v2_clearly_better_min": 10,
+    "v1_clearly_better_max": 1,
+    "same_max": 3,
+    "read_feeling_pass_min": 13,
+    "naturalness_pass_min": 13,
+    "non_template_pass_min": 13,
+    "wants_more_floor_min": 12,
+    "wants_more_product_target_min": 13,
+    "self_blame_non_amplification_pass_min": 14,
+    "overclaim_absence_pass_min": 14,
+    "exact_duplicate_max": 0,
+    "rich_single_sentence_max": 0,
+    "short_meaningless_inflation_max": 0,
+    "strategy_share_max": 0.45,
+    "terminal_family_share_max": 0.65,
+    "predicate_family_share_max": 0.45,
+    "skeleton_share_max": 0.45
+  },
+  "runtime_boundary": {
+    "reply_service_path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+    "reply_service_sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6",
+    "runtime_connected": false,
+    "public_contract_changed": false
+  },
+  "candidate_bodies_included": false,
+  "selected_bodies_included": false,
+  "raw_holdout_body_included": false
+}

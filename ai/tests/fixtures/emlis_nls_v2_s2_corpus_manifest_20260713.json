@@ -1,0 +1,126 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.evaluation_corpus_manifest.v1",
+  "step2_status": "completed",
+  "body_free_metadata": true,
+  "artifact_role": "evaluation_corpus_freeze_not_expected_surface",
+  "source_archive": {
+    "received_ref": "mashos-api_2(148).zip",
+    "sha256": "6edcca5819f1110a26fe2307ac5642e57649d418fa6a9e15a6ee6ba36e9a8845",
+    "matches_step0_step1_source_tree": true,
+    "comparison_excluded_paths": ["__pycache__"]
+  },
+  "family_order": [
+    "low_information_short",
+    "limited_grounding",
+    "daily_unpleasant",
+    "daily_positive",
+    "self_denial",
+    "anger_or_boundary",
+    "uncertainty_support",
+    "standard_state_answer",
+    "structure_question",
+    "long_meaning_arc",
+    "relationship_gratitude_recovery",
+    "change_future_intention_transition",
+    "source_unavailable_high_information",
+    "history_line_eligible_input"
+  ],
+  "family_count": 14,
+  "cases_per_family": 5,
+  "total_case_count": 70,
+  "cohorts": {
+    "development": {
+      "fixture_ref": "../local_only/emlis_nls_v2_s2_development42_20260713.json",
+      "fixture_sha256": "9e8e81b553b8f3d5d51e66c434350ebbc2fa134a813250dbb5bc5de251e6aa36",
+      "case_count": 42,
+      "cases_per_family": 3,
+      "case_identity_sha256": "6a1d8be7594fecb730eae342d0512e3e5ebb6640852e31a76e3124faee377197",
+      "content_access": "implementation_and_adjustment_allowed",
+      "expected_surface_included": false
+    },
+    "holdout_a": {
+      "fixture_ref": "../local_only/holdout/emlis_nls_v2_s2_holdout_a14_20260713.json",
+      "fixture_sha256": "1e291bc8a57e346b755dcb6de2cb1751a312608eeb823d1988f366ce1d2767bb",
+      "case_count": 14,
+      "cases_per_family": 1,
+      "case_identity_sha256": "4fcd863022d7171db9d4946c3129c21083d13b05919a2a2f6cf25dea173e9318",
+      "content_access": "sealed_until_step8_after_v2_freeze",
+      "opened_for_evaluation": false,
+      "development_test_import_allowed": false,
+      "expected_surface_included": false
+    },
+    "holdout_b": {
+      "fixture_ref": "../local_only/holdout/emlis_nls_v2_s2_holdout_b14_20260713.json",
+      "fixture_sha256": "18c05d940da4a1b644afddf140cf74dc04077b0eeb03c1fe48fd3e963161d171",
+      "case_count": 14,
+      "cases_per_family": 1,
+      "case_identity_sha256": "63c00343936e6b53db1001b00d92eefd6c2c8b68206eb6e7a2db03e467c83ee0",
+      "content_access": "sealed_until_step9_without_code_change_after_holdout_a",
+      "opened_for_evaluation": false,
+      "development_test_import_allowed": false,
+      "expected_surface_included": false
+    }
+  },
+  "corpus_identity_sha256": "852457051bcc9bdc82a74d0d59d833f1f9c32837a85c29812fee8a775d69228e",
+  "current_input_identity_set_sha256": "e74fd4408a15a70d824ec1170626728003399d147de3803938cb78d7280fd7cc",
+  "semantic_contract_set_sha256": "cda423b94f4c6aa19dae1db87a9d45e396c31993800b66abdf4c9bfc2164ef07",
+  "case_contract": {
+    "required_fields": [
+      "case_id",
+      "family",
+      "current_input",
+      "semantic_obligation_codes",
+      "forbidden_claim_codes",
+      "polarity_contract",
+      "topic_separation_codes",
+      "response_opportunity_codes",
+      "depth_range",
+      "safety_boundary_codes"
+    ],
+    "fixed_as_answer": [],
+    "expected_surface_allowed": false,
+    "expected_terminal_allowed": false,
+    "expected_predicate_allowed": false,
+    "single_expected_sentence_count_allowed": false,
+    "v1_string_match_required": false
+  },
+  "app_option_contract": {
+    "emotion_values": ["喜び", "悲しみ", "怒り", "不安", "平穏", "自己理解"],
+    "category_values": ["生活", "仕事", "趣味", "人間関係", "恋愛", "健康", "学習", "価値観", "人生"],
+    "strength_values": ["weak", "medium", "strong"],
+    "rn_option_owner_ref": "Cocolon/screens/input/inputOptions.js",
+    "rn_option_owner_sha256": "8463777a6d44eb7047cba18b80ceb15697d8815daf5d06f34b012b32271ac2a7",
+    "backend_category_owner_ref": "ai/services/ai_inference/api_emotion_submit.py",
+    "backend_category_owner_sha256": "0705dc5cd7d4a78a4b8f6de1721b80b1ea6ae70b1d48a064acff9a8277af1822"
+  },
+  "freeze_validation": {
+    "required_field_case_count": 70,
+    "app_valid_option_case_count": 70,
+    "family_depth_contract_case_count": 70,
+    "semantic_obligation_case_count": 70,
+    "forbidden_claim_case_count": 70,
+    "expected_surface_case_count": 0,
+    "duplicate_case_id_count": 0,
+    "duplicate_current_input_identity_count": 0,
+    "exact8_current_input_identity_overlap_count": 0,
+    "families_with_five_distinct_semantic_obligation_sets": 14,
+    "same_meaning_expression_swap_used_as_holdout": false,
+    "self_denial_observation_boundary_case_count": 5,
+    "history_lookup_enabled": false
+  },
+  "separation_policy": {
+    "separate_fixture_per_cohort": true,
+    "development_loader_knows_holdout_paths": false,
+    "step3_content_planner_uses_development_only": true,
+    "holdout_a_first_evaluation_owner": "step8_after_v2_freeze",
+    "holdout_b_first_evaluation_owner": "step9_without_code_change_after_holdout_a",
+    "holdout_failure_action": "stop_without_case_specific_repair"
+  },
+  "raw_input_included": false,
+  "raw_text_included": false,
+  "surface_text_included": false,
+  "candidate_text_included": false,
+  "expected_text_included": false,
+  "holdout_a_opened_for_evaluation": false,
+  "holdout_b_opened_for_evaluation": false
+}

@@ -1,0 +1,1193 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.v1_baseline_receipt.v1",
+  "created_date": "2026-07-13",
+  "design_stage": "step1_v1_baseline_receipt",
+  "step0_freeze_ref": "emlis_nls_v2_s0_freeze_20260713.json",
+  "step0_freeze_sha256": "7a6b02e2abfa1b60cea681238a1482f4b310f0010214e7fd8e7175bd891fdddd",
+  "source_snapshot_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    }
+  ],
+  "source_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac",
+  "visible_artifact_ref": "../local_only/emlis_nls_v2_s1_visible_20260713.json",
+  "visible_artifact_sha256": "3d7cbb5487901027c83a9082bd10d872b87412cd50a6d94a14f6585c9cad199e",
+  "cohort_case_counts": {
+    "exact8": 8,
+    "existing_unseen12": 12,
+    "existing_i6_probe8": 8,
+    "total": 28
+  },
+  "cohort_sources": {
+    "exact8": {
+      "ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb"
+    },
+    "existing_unseen12": {
+      "ref": "../local_only/grounded_human_reception_rr8_unseen12_20260713.json",
+      "sha256": "d53740015a091898d776caec56d11517ff7d4aaf44c5a48172cde54ef3cb132d"
+    },
+    "existing_i6_probe8": {
+      "ref": "../helpers/emlis_ai_grounded_observation_i6_cases.py",
+      "sha256": "6d36cb6fc2de9bbbb0120747332e771fd7be39dcc86966e447f2ebea4cde2966"
+    }
+  },
+  "cohort_case_order_sha256": {
+    "exact8": "f84225b350d64ec23ca54e742188964a16081bbbc6b34a9daa1c425bc5a5b380",
+    "existing_unseen12": "ccd24f710b890c90e0057ec92b9e8dd92fc94e57b9220962518eba2befb0feb4",
+    "existing_i6_probe8": "04ccad6344db0abfdf5a6530a35ce7ca0cc88badac5b698e64658f8427789324"
+  },
+  "cases": [
+    {
+      "case_id": "A",
+      "cohort": "exact8",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "visible_surface_sha256": "2831eced030b599096412135efa356e01fb7b532b557c0643ff8860bcc53c054",
+      "observation_section_sha256": "7ac119e38a6af0d0a80db318733df96ce317d66dbf496c0ce8b3b21095fa5f8f",
+      "reception_section_sha256": "233486cb0bdc633b81e16b44e7ffa5388ff6d0523aa413d59392645c47993880",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 18,
+        "section_character_count": 46,
+        "dependency_basis_points": 3913
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 29,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.852135,
+        "median_ms": 2.947405,
+        "p95_ms": 3.029166,
+        "max_ms": 3.029166
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "B",
+      "cohort": "exact8",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "visible_surface_sha256": "e12ade7fd87d00278c5ad1a605ab4b4d233243689a086d78e67ad35b8a8dd9a8",
+      "observation_section_sha256": "ed02e2efdfbcfba6dca10bffb0f2ba97369bfbfdadf1c2523926f4028939df03",
+      "reception_section_sha256": "25aecf526d01097208ea4e21439cee9014e9e066185fcb1d129a4461a170e2ab",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 186,
+        "section_character_count": 266,
+        "dependency_basis_points": 6992
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 49,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 8.907763,
+        "median_ms": 9.230228,
+        "p95_ms": 9.312831,
+        "max_ms": 9.312831
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "C",
+      "cohort": "exact8",
+      "current_input_sha256": "ab0c44e4eb1c9dc3d2ce6eef4b77a38a1d3c59d9b291cffd6feaf23165b9dcbd",
+      "visible_surface_sha256": "0297bab3ba43a4252e11fca38fee22e87ee68e1a13d506816c5f213cc34f4b93",
+      "observation_section_sha256": "c833c993822b03179fa3b99bf1e92c6d75467d57acdea71ffa92c5524937e64f",
+      "reception_section_sha256": "346d3c007240ae76b7ca0b483636b56fffebee9a997697cdc766e597d085e8c7",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 145,
+        "section_character_count": 230,
+        "dependency_basis_points": 6304
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 45,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_gentle_respect"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 6.475627,
+        "median_ms": 6.564309,
+        "p95_ms": 7.510404,
+        "max_ms": 7.510404
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "D",
+      "cohort": "exact8",
+      "current_input_sha256": "233f853d6f5f59fff3e1e4667b8b1c02c474785e285612605a9319acfe373dd3",
+      "visible_surface_sha256": "0aa296a7a8a6a09be28fe912628329d046088678b104a8d9eacf191bb69d0cdf",
+      "observation_section_sha256": "43f036219af6b87c5570eed484dc6bc296263d661a2a03ed6febbdb1fb889d53",
+      "reception_section_sha256": "beed8f668731e9c4e277aa7b93fe8b80ac785f1e9410cca8402d5a2fc7e5755a",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 35,
+        "section_character_count": 116,
+        "dependency_basis_points": 3017
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 91,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.2484,
+        "median_ms": 3.312875,
+        "p95_ms": 3.939087,
+        "max_ms": 3.939087
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S03",
+      "cohort": "exact8",
+      "current_input_sha256": "e29bf70914d51cd6b988854f61dd356f25fbe14d801a08beef426bf08cc21d1d",
+      "visible_surface_sha256": "a91e810292c59d7cffa19fe4d1bbf98335f96350f9eab54757e6dcc897acece5",
+      "observation_section_sha256": "05125be669323d82c45f71e946f7f6a382fcd2107b147f4a6d154f6c91983d8a",
+      "reception_section_sha256": "89e1213379f4e013acd9e4c1ff7c90779f7803a6e4446a85e54f0625daf2c87f",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 28,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.21755,
+        "median_ms": 2.226332,
+        "p95_ms": 3.064929,
+        "max_ms": 3.064929
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L03",
+      "cohort": "exact8",
+      "current_input_sha256": "49907f7559d0918bf3eefd85a606a081afe405d9858d6b073fa893f86cac3742",
+      "visible_surface_sha256": "fe4159a54168beda4451091d3b2eadf85f1156e5b441891566d0f5af7508e253",
+      "observation_section_sha256": "eb8f874c81be3bca4ca91672db98ee2b527eb95d34b708ec1c19a83a9ed77123",
+      "reception_section_sha256": "afbc2ffb1611adc403fb224c48c50af3755dc127baffd9b98df7c36951d9de56",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 102,
+        "section_character_count": 211,
+        "dependency_basis_points": 4834
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 16,
+        "section_character_count": 70,
+        "dependency_basis_points": 2286
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.742216,
+        "median_ms": 6.033265,
+        "p95_ms": 9.103622,
+        "max_ms": 9.103622
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C01",
+      "cohort": "exact8",
+      "current_input_sha256": "f165f3a2d68be93a125031f65a8561604fbbf56937fd5a4463facdd48a74eab0",
+      "visible_surface_sha256": "1f0245ec5bb1883775e30bc8d23885b1de50ef99a39b5125a558041bd684019c",
+      "observation_section_sha256": "42a820fd6731e1adfc3e74014af5c4798047ba23dc5633af54b756243cc25f15",
+      "reception_section_sha256": "31a4ab7124523f935273a1abad8ebd4a8751263cc805c499ddf00675cda4f1aa",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 65,
+        "section_character_count": 132,
+        "dependency_basis_points": 4924
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 67,
+        "dependency_basis_points": 1791
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.436251,
+        "median_ms": 4.609065,
+        "p95_ms": 4.738516,
+        "max_ms": 4.738516
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D02",
+      "cohort": "exact8",
+      "current_input_sha256": "9a0aa76ecd7d411699edcfb176005e01ae662e89ea74af4c93b2261149369920",
+      "visible_surface_sha256": "3c8a58c67f7d87dd1e9d782cbfab30d03bdd7f72c98aebeec02884223dc5b39a",
+      "observation_section_sha256": "d4d58a5d68eebcc58603f1983f926c05dbadc9b75f7fde003436b05f588b69da",
+      "reception_section_sha256": "1290c9963d9f6e0ef8b027a737d407cb663a758642cf4e2fa036faf404fd01a9",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 27,
+        "section_character_count": 101,
+        "dependency_basis_points": 2673
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 106,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.467652,
+        "median_ms": 3.633047,
+        "p95_ms": 4.060297,
+        "max_ms": 4.060297
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U01",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "498730aa060410cf23ef72bb793d550f4077073db92abdbde9f2c6ae93fea65b",
+      "visible_surface_sha256": "4e2a671ca7cb68694eb07973ce790ddbca8eb2ba99876f4d307b75e85be5c9c3",
+      "observation_section_sha256": "a18412946b7f6fbd6be89d968cccc3089cfe98d29793082d5dc58f9a311e8ac7",
+      "reception_section_sha256": "def4ddeb5e0943e0a36f7e1e6042249853b41ffa3e97f3a77e5227488d9fde70",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 9,
+        "section_character_count": 28,
+        "dependency_basis_points": 3214
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 36,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.219963,
+        "median_ms": 2.282125,
+        "p95_ms": 2.359269,
+        "max_ms": 2.359269
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U02",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "e29bf70914d51cd6b988854f61dd356f25fbe14d801a08beef426bf08cc21d1d",
+      "visible_surface_sha256": "a91e810292c59d7cffa19fe4d1bbf98335f96350f9eab54757e6dcc897acece5",
+      "observation_section_sha256": "05125be669323d82c45f71e946f7f6a382fcd2107b147f4a6d154f6c91983d8a",
+      "reception_section_sha256": "89e1213379f4e013acd9e4c1ff7c90779f7803a6e4446a85e54f0625daf2c87f",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 28,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.209257,
+        "median_ms": 2.280092,
+        "p95_ms": 2.293651,
+        "max_ms": 2.293651
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U03",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "cd61fb4721b93694b80c3663a9461207346c1af82a284d9b8d44b89fe11a24cc",
+      "visible_surface_sha256": "a1e961f53231b3ec489e9ae8cae79ad7f85445d74bae85a8ba2350453b3c5d9e",
+      "observation_section_sha256": "10c52a39d63b6bcc596b589a70a3fac748fd134bb2d8a124bab7185ed4b98df6",
+      "reception_section_sha256": "a979fb5235fb5651813ab2fd5c1968790669d662f1fa26e9553181db00a52747",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 51,
+        "section_character_count": 105,
+        "dependency_basis_points": 4857
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 41,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.523626,
+        "median_ms": 3.772232,
+        "p95_ms": 4.876109,
+        "max_ms": 4.876109
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U04",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "eb69151f30271b862bf792180be6a762878930c57c1b22aae930716b024c892e",
+      "visible_surface_sha256": "bdc1c1ccfd63d27b552c05bfc2c8159a459f3c5b95a563cadf648683dc27096c",
+      "observation_section_sha256": "7a0660195a6f44b220b7fca8a6e3ac54e12fb1284c14357b50586b8b5884b3a2",
+      "reception_section_sha256": "7b10d2c145d5a5812e3cf1ceead46db4e8bf23d67b2f02f959f382efbc323789",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 64,
+        "section_character_count": 120,
+        "dependency_basis_points": 5333
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 64,
+        "dependency_basis_points": 2031
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.173734,
+        "median_ms": 4.247242,
+        "p95_ms": 4.305658,
+        "max_ms": 4.305658
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U05",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "0fc8c2a5de4ea2879fd39b3fefb2790206c45f5ccda6c32f7d58204d3a13b544",
+      "visible_surface_sha256": "b653fb7e832c5737e2eb57512f18695bf9c899a56ba4daadc9c08f73b62cb935",
+      "observation_section_sha256": "9c116a5318b273a64c1d1e2652813834b6d4e5ec871f1e54f5153fc4a10d63da",
+      "reception_section_sha256": "5d3ea6120468fa30edf586bb21adb28fdfd9e366dcd03f0bafd602442866d421",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 40,
+        "section_character_count": 63,
+        "dependency_basis_points": 6349
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 23,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_significance_intention_preserved"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.778867,
+        "median_ms": 2.840578,
+        "p95_ms": 2.941026,
+        "max_ms": 2.941026
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U06",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "1a2bc808b503a3715b9a63b25baa15b377d8db8be50dcb80b20f3abf2320a156",
+      "visible_surface_sha256": "a9d80535f370f721fb27f2a85357cb037681ebc6f90b18e247d2f3e6dff5fba5",
+      "observation_section_sha256": "2228722f4ade05e5e084b1609ac805a12413fbaa638c691abfd1da75378b9adc",
+      "reception_section_sha256": "77ed48fd339b620c667611104ab3ab5d90c2ce50ffe323292c06a0e59939c9d1",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 3,
+        "quoted_character_count": 48,
+        "section_character_count": 86,
+        "dependency_basis_points": 5581
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 44,
+        "dependency_basis_points": 2727
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.392822,
+        "median_ms": 3.40535,
+        "p95_ms": 3.408465,
+        "max_ms": 3.408465
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U07",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "55fac07472703ab845938daf4eaa8d6569afc8d5c592aadfbc54f68a0574256c",
+      "visible_surface_sha256": "52dd6234d9e76c68c26a6dccd939747191ec566795aefcc729e30d1cd652e6db",
+      "observation_section_sha256": "47240125bc9539c37671222e6fd96fdd4970f81b24ac77db0b56fe05140c91af",
+      "reception_section_sha256": "5ef26f6532418b432866993a7fbb9bf1ba12c1f0cb4fdc7d287848c7f0eba5c4",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 91,
+        "section_character_count": 200,
+        "dependency_basis_points": 4550
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 67,
+        "dependency_basis_points": 1940
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.321025,
+        "median_ms": 5.390738,
+        "p95_ms": 5.814743,
+        "max_ms": 5.814743
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U08",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "2318d5dc6cb2093eb1b98fb96fd7f599f45e71acf27a8297114c72fa7f6c9962",
+      "visible_surface_sha256": "ad8bcced7bc30d6441f9f59ba608d1c33fa9583b88fc610861d70aa70be49c77",
+      "observation_section_sha256": "645d16884a09d3db3b63f283a3034857f9bd3fc69be8ba29af388b6796c61850",
+      "reception_section_sha256": "233486cb0bdc633b81e16b44e7ffa5388ff6d0523aa413d59392645c47993880",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 11,
+        "section_character_count": 39,
+        "dependency_basis_points": 2821
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 29,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.720706,
+        "median_ms": 3.795375,
+        "p95_ms": 3.84599,
+        "max_ms": 3.84599
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U09",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "f7afe941e0bfa75f53697f7306c2be311424ee5d6d39e37fa70186ed779d162c",
+      "visible_surface_sha256": "b37040eb32e091ef6ab260b92958b215e71af7409f1df8cbac51338a5d935882",
+      "observation_section_sha256": "2cf6a453d14a11db427d2a174bddfe71fbb0aa7d90637b3b23ef578ab110e068",
+      "reception_section_sha256": "ff0b498babf97057b158b46292980d1f3a74994c68b4161114f3cf64401fd73a",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 81,
+        "section_character_count": 140,
+        "dependency_basis_points": 5786
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 11,
+        "section_character_count": 61,
+        "dependency_basis_points": 1803
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.411795,
+        "median_ms": 4.467606,
+        "p95_ms": 4.573903,
+        "max_ms": 4.573903
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U10",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "a47600b5607c119518c7f77bf1aea0522ac1543b44e0f9460ff2a415157e9dc2",
+      "visible_surface_sha256": "12ebfe3c92b6d263c80a943de3ef915da90589aad2f2bac388f13d2889ba9981",
+      "observation_section_sha256": "20d28b7ee116ec70366c07bfe60a5281e240a3df6c326dff2b57f9a04364b728",
+      "reception_section_sha256": "bfaaa24cc404961e8fb86d4195463a3f9caed44d9a3e07b10d71d1352514c8d8",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 32,
+        "section_character_count": 90,
+        "dependency_basis_points": 3556
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 33,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.818275,
+        "median_ms": 2.892415,
+        "p95_ms": 4.092513,
+        "max_ms": 4.092513
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U11",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "7455b0a880d953715789d6e181b310a2c2ea17638572c75244278145a7c7b2a8",
+      "visible_surface_sha256": "fc76ded499c84740f3ffce81fcdc0bb7e84c92acca3a5b760b1d97e0e42cf556",
+      "observation_section_sha256": "5b694f5684331164acf3de2b6d8d8f47eca410fdc3c299098d7fb6319269f033",
+      "reception_section_sha256": "3ab729c6ae6da6e0aff9688831d222d0d100861de671548e347b934f2b478ac0",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 29,
+        "section_character_count": 103,
+        "dependency_basis_points": 2816
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 102,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.313525,
+        "median_ms": 3.402667,
+        "p95_ms": 3.443427,
+        "max_ms": 3.443427
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U12",
+      "cohort": "existing_unseen12",
+      "current_input_sha256": "83f17e1ab52f68c0717fac7c2bcf441b542dfd652f076e08d79bee0a1cf53fd1",
+      "visible_surface_sha256": "b7819bd35f0dfbd88ee75f1ca4e1e9afb996b07c358b2a3884b2be022ee91306",
+      "observation_section_sha256": "65e91f5b6c88ef6018368d530a13c7536a7ad762ffd413378af97c9b68aa04fe",
+      "reception_section_sha256": "c6f37470296dc1e54145ebf651749a06ef63b0ef529877e917313f80365757cc",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 4,
+        "section_character_count": 49,
+        "dependency_basis_points": 816
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 32,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 1.951778,
+        "median_ms": 1.989674,
+        "p95_ms": 1.991847,
+        "max_ms": 1.991847
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S01",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "3a3b5e08d8d7f340638d2c74423e6251a2166c832dcb041faf3780a9eefc8e5b",
+      "visible_surface_sha256": "a5bdbe3945c5acbe999bdf2cd4821d9088676b7ad64ab8a424cecc0bf5250f1a",
+      "observation_section_sha256": "11ace525498ac80c8cb29c5c59d27dc47f236dc7328664bb544505bd1ebe4504",
+      "reception_section_sha256": "def4ddeb5e0943e0a36f7e1e6042249853b41ffa3e97f3a77e5227488d9fde70",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 36,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.228886,
+        "median_ms": 2.274844,
+        "p95_ms": 2.314472,
+        "max_ms": 2.314472
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S02",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "b5c153ad78c5968513a97bf428d1d7e3442d5a930929b85d5ae01843d78ee547",
+      "visible_surface_sha256": "385db434c9be7e9413b8079df50abf39ac10546babc00792ff08fe831243de0a",
+      "observation_section_sha256": "ed946b6fe44c7989d4a352a12bf62467151b0743cef1b9bb32af5f08709f9dca",
+      "reception_section_sha256": "991cb70850dc5fbf7035a51e8944c7841a75999b51f700459c57f948c5875709",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 8,
+        "section_character_count": 27,
+        "dependency_basis_points": 2963
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 40,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.229076,
+        "median_ms": 2.242856,
+        "p95_ms": 2.300292,
+        "max_ms": 2.300292
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L01",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "35cb4cc9a8243d62ed599d9b0a8b8655326c89b721aeed907bf67904fd3603b8",
+      "visible_surface_sha256": "4dedc6d1b46abf83dbe8ad18c7074f7372b9a3fa064954bedc7fd731acea486a",
+      "observation_section_sha256": "5b5fe9080df336e92d298eb25fb490df85a23f2ee11d6e6e869d4412e457cef2",
+      "reception_section_sha256": "ee908c8282c943a26f4fb756399cb754cd23f1814008c5f971337254006d6a5d",
+      "observation_sentence_count": 5,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 7,
+      "observation_quote_dependency": {
+        "span_count": 8,
+        "quoted_character_count": 101,
+        "section_character_count": 222,
+        "dependency_basis_points": 4550
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 78,
+        "dependency_basis_points": 1538
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.772921,
+        "median_ms": 6.041167,
+        "p95_ms": 6.958008,
+        "max_ms": 6.958008
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L02",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "eb171d9e683957beade958e79685690a0d919b195c00ef128c03cec678f9722b",
+      "visible_surface_sha256": "6a851659d839d801553a6754036f76749508ab610240ca31a97cbe6bb22b4926",
+      "observation_section_sha256": "f4e676261d18d39187bb9542c02c3bf249b6da0def60d22f4a3090d74b4fb90e",
+      "reception_section_sha256": "a3be9531e7c6318773fe71d065ab1b683d60779370e54f744709a258c949d0ae",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 99,
+        "section_character_count": 203,
+        "dependency_basis_points": 4877
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 68,
+        "dependency_basis_points": 1912
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.4734,
+        "median_ms": 5.669699,
+        "p95_ms": 5.826981,
+        "max_ms": 5.826981
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C02",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "a74b1598e5ff24239e24772565e8298cff2e0e654413f42c562dc69a9ef6c069",
+      "visible_surface_sha256": "ddbe586a2097220119496d50b440b4d08a05ce37773536bf40e2ad5098f9d717",
+      "observation_section_sha256": "99b89793415079850cafbe36a20ac3664198e5721344a26fa27c525c3da10f83",
+      "reception_section_sha256": "fa915826a536f0d3b477419c30c005a135e736aedc02a1c5c60936cc0a68f7f5",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 78,
+        "section_character_count": 137,
+        "dependency_basis_points": 5693
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 16,
+        "section_character_count": 66,
+        "dependency_basis_points": 2424
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.325137,
+        "median_ms": 4.345387,
+        "p95_ms": 5.147409,
+        "max_ms": 5.147409
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C03",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "4e4d17fee11279374fa46f7b878a6ec104736a7c6cc630005e9cf5aa384f315f",
+      "visible_surface_sha256": "8061ef935d72ead5f2caf3e3c7a19079aadfb4b818ba0e96c29d1312450557f9",
+      "observation_section_sha256": "5de82d9650548cee9c77a1f77da880f82669931dca53008be68ee5fb258ea72f",
+      "reception_section_sha256": "a9f59016a651a3d5297af0a0c426aa53f285e773121751207c36920a66ad0e7e",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 71,
+        "section_character_count": 138,
+        "dependency_basis_points": 5145
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 63,
+        "dependency_basis_points": 2063
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.119383,
+        "median_ms": 4.147325,
+        "p95_ms": 4.312969,
+        "max_ms": 4.312969
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D01",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "207031831b6f2fd4ae9ef893f0b554690b2a49b490e7a4c3d59c7bc4c3aa9afd",
+      "visible_surface_sha256": "886978476b4eb250b12c9460c0b183ed26ab7636170861b5d097e115c5f8558b",
+      "observation_section_sha256": "f58789fe885dd5362f71668279ea1f07dc2f418812696fa1bb4d6a94bc4fb77c",
+      "reception_section_sha256": "ee2296b7a8cccf4ba200bd209318c9a87e8609741686577659d015b5975c6e5d",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 28,
+        "section_character_count": 109,
+        "dependency_basis_points": 2569
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 84,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.279665,
+        "median_ms": 3.319645,
+        "p95_ms": 3.484637,
+        "max_ms": 3.484637
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D03",
+      "cohort": "existing_i6_probe8",
+      "current_input_sha256": "a0fbafcd6ed6e4761cc013f288e2617887759c6fc8e5d16120b789d3242e0c02",
+      "visible_surface_sha256": "f62e0e2b4259c2cdfdab2af87dc003c23baaefdbf9a4500db469621168881cba",
+      "observation_section_sha256": "16e79b63a22e86de6722085890ecc4cf42b09570da4833d45d40452ae990cc66",
+      "reception_section_sha256": "3ab729c6ae6da6e0aff9688831d222d0d100861de671548e347b934f2b478ac0",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 20,
+        "section_character_count": 94,
+        "dependency_basis_points": 2128
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 102,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.433161,
+        "median_ms": 3.610203,
+        "p95_ms": 3.749188,
+        "max_ms": 3.749188
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    }
+  ],
+  "aggregate_metrics": {
+    "runtime_latency": {
+      "measurement_scope": "render_emlis_ai_reply_local_process_no_route_db_or_network",
+      "clock": "perf_counter_ns",
+      "warmup_runs_per_case": 1,
+      "samples_per_case": 5,
+      "python_version": "3.12.13",
+      "platform": "linux_x86_64",
+      "sample_count": 140,
+      "min_ms": 1.951778,
+      "median_ms": 3.623868,
+      "p95_ms": 6.958008,
+      "max_ms": 9.312831,
+      "acceptance_budget_status": "not_fixed_before_step10_shadow"
+    },
+    "observation_sentence_count_distribution": {
+      "1": 8,
+      "2": 7,
+      "3": 9,
+      "4": 3,
+      "5": 1
+    },
+    "reception_sentence_count_distribution": {
+      "1": 12,
+      "2": 16
+    },
+    "visible_sentence_count_distribution": {
+      "2": 8,
+      "3": 3,
+      "4": 5,
+      "5": 8,
+      "6": 3,
+      "7": 1
+    },
+    "observation_quote_dependency_basis_points": {
+      "median": 4232,
+      "max": 6992
+    },
+    "reception_quote_dependency_basis_points": {
+      "median": 0,
+      "max": 2727
+    },
+    "reception_terminal_predicate_family_counts": {
+      "human_response_attention_stood_out": 12,
+      "human_response_bounded_counterposition": 5,
+      "human_response_felt_gentle_respect": 1,
+      "human_response_felt_respect_for_effort": 4,
+      "human_response_hold_help_seeking": 3,
+      "human_response_quiet_presence": 12,
+      "human_response_recognize_change": 6,
+      "human_response_significance_intention_preserved": 1
+    },
+    "predicate_concentration_limit_status": "pending_step2_development42_baseline"
+  },
+  "public_contract_snapshot": {
+    "route": "/emotion/submit",
+    "response_container": "input_feedback",
+    "comment_path": "input_feedback.comment_text",
+    "status_path": "input_feedback.emlis_ai.observation_status",
+    "visibility_predicate": "status_passed_and_comment_nonempty",
+    "two_stage_order": "observation_then_reception",
+    "backend_owner_files": [
+      {
+        "path": "ai/services/ai_inference/api_emotion_submit.py",
+        "sha256": "0705dc5cd7d4a78a4b8f6de1721b80b1ea6ae70b1d48a064acff9a8277af1822"
+      },
+      {
+        "path": "ai/services/ai_inference/emotion_submit_service.py",
+        "sha256": "818ee1edb7ac4ff5f12cc7f8537eeb10fedc9f7dd37a4d165c5248a7249830f2"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_public_feedback_meta.py",
+        "sha256": "097be8c02eb68abb7d6a034243b3bd7296842f634f01269349c41b4f8c029029"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+        "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+      }
+    ],
+    "backend_owner_snapshot_sha256": "53ec1715f613a6c51e8662d95fb76b56e1c4464297dbeb313652099a7c108a50",
+    "rn_owner_snapshot_ref": "step0_freeze.public_contract_snapshot.rn_owner_files",
+    "api_response_key_changed": false,
+    "rn_visibility_contract_changed": false,
+    "db_write_path_changed": false
+  },
+  "generation_contract": {
+    "generation_method": "functional_atom_grounded_realizer",
+    "composer_source": "grounded_plan_realizer",
+    "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+    "runtime_owner": "v1",
+    "v2_runtime_connected": false
+  },
+  "v1_baseline_role": "comparison_only_not_v2_expected_text",
+  "v1_expected_text_for_v2": false,
+  "body_free_metadata": true,
+  "raw_input_included": false,
+  "raw_text_included": false,
+  "source_text_included": false,
+  "comment_text_included": false,
+  "surface_body_included": false,
+  "visible_text_included": false,
+  "observation_text_included": false,
+  "reception_text_included": false,
+  "candidate_body_included": false,
+  "holdout_a_opened": false,
+  "holdout_b_opened": false,
+  "current_product_status": "repair_required",
+  "step1_status": "completed",
+  "progression_authority": "none",
+  "valid_for_progression": false
+}
