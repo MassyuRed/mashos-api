@@ -1,0 +1,144 @@
+{
+  "schema_version": "cocolon.emlis.grounded_human_reception.rr10_representative4_device_readiness.v1",
+  "created_date": "2026-07-13",
+  "design_stage": "RR10",
+  "readiness_status": "ready_for_mash_actual_device_execution",
+  "actual_device_status": "not_run",
+  "source_archive_sha256": "78d8ad3c938c9cd6a13f4e27627ea7ec093caf4f10d5be8e70a1c73ed21c4064",
+  "design_source_sha256": "bef049a1751e636dc05bc065c90e297ab5bded23208bfd52523f8e36ae0c22f4",
+  "source_snapshot_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    }
+  ],
+  "source_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac",
+  "exact8_fixture_ref": "grounded_human_reception_exact8_v2_20260712.json",
+  "exact8_fixture_sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+  "rr8_local_qa_receipt_ref": "grounded_human_reception_rr8_local_qa_receipt_20260713.json",
+  "rr8_local_qa_receipt_sha256": "fda39c36e551798c4f019dcb0e9a03b4de9f3b5ad669ef5c500cec5ba6e5aaee",
+  "rr9_visible_packet_ref": "../local_only/grounded_human_reception_rr9_visible_packet_20260713.json",
+  "rr9_visible_packet_sha256": "8f12108a1a5265852dce3d315d604b9e11eff0fe0c49dceaf02d4b8cf066c5b6",
+  "rr9_karen_review_receipt_ref": "grounded_human_reception_rr9_karen_review_receipt_20260713.json",
+  "rr9_karen_review_receipt_sha256": "cbab31aa13d74ff5ed1e01c96807f2f160b15bedbe11b2d4e5361f304901db3d",
+  "expected_packet_ref": "../local_only/grounded_human_reception_rr10_representative4_expected_packet_20260713.json",
+  "expected_packet_sha256": "f4f03dd10088ad18a56e925a02a4aebd06e31b126c6c2230869d5e17c6d03576",
+  "evidence_template_ref": "../local_only/grounded_human_reception_rr10_actual_device_evidence_template_20260713.json",
+  "evidence_template_sha256": "b0be832a8e55238523620a99b1a282c4517c36bdb8afb481ac08698623a01241",
+  "evidence_verifier_ref": "../../tools/emlis_grounded_human_reception_rr10_verify_device_evidence.py",
+  "evidence_verifier_sha256": "6185bcea0e7f900f7aec805af9c05349b88d8aff2ce5e98af79a4d062211bc82",
+  "rr8_technical_acceptance": "passed",
+  "rr9_karen_local_product_readfeel": "human_pass",
+  "technical_pass_is_product_pass": false,
+  "legacy_r7_device_packet_reused": false,
+  "legacy_actual_device_evidence_reused": false,
+  "representative_case_order": [
+    "A",
+    "B",
+    "I6-L03",
+    "I6-D02"
+  ],
+  "cases": [
+    {
+      "case_id": "A",
+      "current_input_sha256": "362b3de5105640ee5cf56d9609fb1a8fe2f97a5253f066ac9392ffdcdf52d36c",
+      "expected_visible_surface_sha256": "2831eced030b599096412135efa356e01fb7b532b557c0643ff8860bcc53c054",
+      "expected_observation_section_sha256": "7ac119e38a6af0d0a80db318733df96ce317d66dbf496c0ce8b3b21095fa5f8f",
+      "expected_reception_section_sha256": "233486cb0bdc633b81e16b44e7ffa5388ff6d0523aa413d59392645c47993880",
+      "expected_depth_level": "minimal",
+      "expected_move_count": 1,
+      "expected_sentence_count": 1
+    },
+    {
+      "case_id": "B",
+      "current_input_sha256": "7235617e8207869fd0ffb865a98a26766bfa0dbe17810af90915b02b6e82052a",
+      "expected_visible_surface_sha256": "e12ade7fd87d00278c5ad1a605ab4b4d233243689a086d78e67ad35b8a8dd9a8",
+      "expected_observation_section_sha256": "ed02e2efdfbcfba6dca10bffb0f2ba97369bfbfdadf1c2523926f4028939df03",
+      "expected_reception_section_sha256": "25aecf526d01097208ea4e21439cee9014e9e066185fcb1d129a4461a170e2ab",
+      "expected_depth_level": "layered",
+      "expected_move_count": 2,
+      "expected_sentence_count": 2
+    },
+    {
+      "case_id": "I6-L03",
+      "current_input_sha256": "49907f7559d0918bf3eefd85a606a081afe405d9858d6b073fa893f86cac3742",
+      "expected_visible_surface_sha256": "fe4159a54168beda4451091d3b2eadf85f1156e5b441891566d0f5af7508e253",
+      "expected_observation_section_sha256": "eb8f874c81be3bca4ca91672db98ee2b527eb95d34b708ec1c19a83a9ed77123",
+      "expected_reception_section_sha256": "afbc2ffb1611adc403fb224c48c50af3755dc127baffd9b98df7c36951d9de56",
+      "expected_depth_level": "layered",
+      "expected_move_count": 2,
+      "expected_sentence_count": 2
+    },
+    {
+      "case_id": "I6-D02",
+      "current_input_sha256": "9a0aa76ecd7d411699edcfb176005e01ae662e89ea74af4c93b2261149369920",
+      "expected_visible_surface_sha256": "3c8a58c67f7d87dd1e9d782cbfab30d03bdd7f72c98aebeec02884223dc5b39a",
+      "expected_observation_section_sha256": "d4d58a5d68eebcc58603f1983f926c05dbadc9b75f7fde003436b05f588b69da",
+      "expected_reception_section_sha256": "1290c9963d9f6e0ef8b027a737d407cb663a758642cf4e2fa036faf404fd01a9",
+      "expected_depth_level": "focused",
+      "expected_move_count": 2,
+      "expected_sentence_count": 2
+    }
+  ],
+  "required_actual_device_evidence_fields": [
+    "exact_current_input_identity",
+    "observed_selection_order_and_input_screen",
+    "request_payload_reference_and_sha256",
+    "observed_current_input_sha256",
+    "request_trace_identity",
+    "app_build_and_deploy_identity",
+    "backend_response_reference_and_sha256",
+    "backend_raw_comment_text_reference",
+    "backend_body_free_gate_meta_reference",
+    "visible_body_screenshot_reference",
+    "visible_surface_sha256",
+    "observation_section_sha256",
+    "reception_section_sha256",
+    "two_stage_display_result",
+    "observation_regression_result",
+    "depth_target_result",
+    "observed_depth_move_sentence_metrics",
+    "clipping_overlap_scroll_result",
+    "mash_product_readfeel_six_axes"
+  ],
+  "actual_device_result_included": false,
+  "raw_input_included": false,
+  "surface_body_included": false,
+  "comment_text_included": false,
+  "screenshot_included": false,
+  "backend_gate_meta_body_included": false,
+  "next_required_owner": "mash_actual_device_operator",
+  "exact8_actual_device_allowed": false,
+  "p5_formal_24_start_allowed": false,
+  "p6_start_allowed": false,
+  "p8_start_allowed": false,
+  "progression_authority": "none",
+  "valid_for_progression": false,
+  "local_execution": {
+    "rr10_contract_test_count": 23,
+    "r0_through_rr10_contract_test_count": 253,
+    "r0_through_rr10_contract_test_file_count": 19,
+    "relevant_backend_regression_test_count": 342,
+    "relevant_backend_regression_test_file_count": 22,
+    "failed_test_count": 0,
+    "warning_count": 1,
+    "warning_ref": "existing_pydantic_v1_root_validator_deprecation",
+    "compile_status": "passed"
+  }
+}
