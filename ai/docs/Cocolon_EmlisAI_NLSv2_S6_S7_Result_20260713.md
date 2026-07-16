@@ -1,5 +1,8 @@
 # Cocolon EmlisAI Natural Language Surface v2 Step 6 / Step 7 実装結果
 
+> **2026-07-13 全Step再監査による訂正**  
+> Step 6は本文意味ではなく候補metadataを信頼するGateがあり、入力固有の必須意味を欠く汎用文でも14 Gateすべてを通過できる。Step 7のauthor readはcase別証拠を持たず、構造再設計のpre/post系譜と分布上限の事前freezeもないため、完了・freeze判定を撤回する。以下は当時の実装記録として保持し、現在の正式判定は`Cocolon_EmlisAI_NLSv2_AllSteps_Audit_Correction_20260713.md`を正とする。
+
 - 実施日: 2026-07-13
 - 対象: `Step 6. Hard Gate / Selector実装`、`Step 7. Development cohort調整`
 - 入力アーカイブ: `mashos-api_4(116).zip`

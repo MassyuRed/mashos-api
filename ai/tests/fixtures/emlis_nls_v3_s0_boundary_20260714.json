@@ -1,0 +1,351 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.step0_version_boundary.v1",
+  "created_date": "2026-07-14",
+  "design_stage": "step0_revised_design_version_boundary_freeze",
+  "design": {
+    "received_ref": "Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV3_DetailedDesign_ImplementationOrder_20260714_Revised_Cycle(1).md",
+    "sha256": "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc",
+    "status": "revised_cycle_adopted"
+  },
+  "received_artifacts": [
+    {
+      "role": "backend_source",
+      "received_ref": "mashos-api(224).zip",
+      "design_basis_ref": "mashos-api(223).zip",
+      "sha256": "f97df95b5f7065854826051636d7d8223db49f7b1fce958697c4ae20f6a42415",
+      "byte_identical_to_design_basis": true
+    },
+    {
+      "role": "rn_source",
+      "received_ref": "Cocolon(299).zip",
+      "design_basis_ref": "Cocolon(298).zip",
+      "sha256": "2287550897799bee5ce1ac8a4235f4aa364ed7ef088c1bd3ef7d84fd2d009100",
+      "byte_identical_to_design_basis": true
+    },
+    {
+      "role": "premise",
+      "received_ref": "Cocolon_前提資料(338).zip",
+      "design_basis_ref": "Cocolon_前提資料(337).zip",
+      "sha256": "c2c2f3d4d71127b5ee7e029f3240dfb2b8f33c3e34b1c0b47c28c20ec73d4d5b",
+      "byte_identical_to_design_basis": true
+    },
+    {
+      "role": "implemented_docs",
+      "received_ref": "EmlisAIの実装済み資料(134).zip",
+      "sha256": "d3e756cea48b817f28ce38a9cdefac889d93ba5ecf33261152d4083197313a4d"
+    },
+    {
+      "role": "question_roadmap",
+      "received_ref": "Cocolon_EmlisAI_longterm_roadmap_20260608_P7P8_question_need_observation_20260619(16).md",
+      "sha256": "04fb9e4e11af2b1530d03d95d8e959ba644503722f72094a289bde1d4368ce5b"
+    }
+  ],
+  "version_identity": {
+    "product_name": "Cocolon EmlisAI",
+    "feature_name": "Natural Language Surface",
+    "candidate_version": "nls_v3",
+    "generation_path": "grounded_natural_language_surface_v3",
+    "runtime_state": "offline",
+    "allowed_runtime_states": [
+      "disabled",
+      "offline",
+      "shadow",
+      "tester_only_preview",
+      "owner",
+      "stopped"
+    ],
+    "current_observation_stage": "normal_observation",
+    "allowed_observation_stages": [
+      "normal_observation",
+      "pre_question_observation",
+      "refined_observation"
+    ],
+    "runtime_connected": false,
+    "runtime_owner": false
+  },
+  "current_runtime": {
+    "production_surface_owner": "grounded_sentence_surface_canonical_v1",
+    "production_generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+    "reply_meta_emlis_ai_version_is_not_nls_version": true,
+    "source_owner_files": [
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+        "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+        "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+        "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+        "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+        "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+      }
+    ],
+    "source_owner_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac"
+  },
+  "v2_boundary": {
+    "state": "offline_only_stopped",
+    "reopen_allowed": false,
+    "repair_allowed": false,
+    "import_from_v3_allowed": false,
+    "immutable_files": [
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_AllSteps_Audit_Correction_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "cef3ca599d1472dfc4ac04c07fea459c5424035c376fd5e1eb9714ddb5b950fa"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S0_S1_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "3d9e756a6719db98c6a59ec0274f773ee809c8b761d35a4023097731178011f9"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S10_S11_Blocked_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "d343fbff60f027d39a6f868e27693dc77259fdf0981cd6ddf4e45864bd720c70"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S12_S13_DeviceCheck_Blocked_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "e1e88b98c20d762417bf77a7ed491dfdf0056bc2f3b90df2d40956baa845fbdb"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S2_S3_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "44c7b1b2697a314d09c29328e1e6d84ba2b62a0aa245ee8f474dc7016c2d0dc2"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S4_S5_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "9bae012c640c5b2c1a65c0def915678ab3c8a594f4c423c5010388d53cc47a59"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S6_S7_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "4cc6a25ee365aaf0269ff6c468677b3994c633d46af3d9dcf75f62de227d1815"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S8_S9_Result_20260713.md",
+        "role": "historical_result_doc",
+        "sha256": "36601868afe426ed3fec0e83b120da98b18eb818937d491369b0a285cca38ab7"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception_v2.py",
+        "role": "stopped_source",
+        "sha256": "7541cb9262a502cfff071a8056cd6d005a2990084c122043c1de3d18f5b3b607"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_plan_v2.py",
+        "role": "stopped_source",
+        "sha256": "2bb1b15c951d709bfa44b14d9bc678c0cfaae6a5bd42021ec9a53028104a7674"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_selector_v2.py",
+        "role": "stopped_source",
+        "sha256": "ec61bc59d2e40effb97f39ffb52f2ea7073c9ea1beb680e5fe6c4a84b6f7f6ef"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_reception_content_plan_v2.py",
+        "role": "stopped_source",
+        "sha256": "515bc6b171b79e9e938b7c5710dbaddd5c88ebeb9b97b1e7037f75af323f23f6"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_all_steps_audit_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "e86b8d26baa44f058a4dca962c1c0ce54ca9c959a41bafe4ed738a216c6c65c1"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s0_freeze_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "7a6b02e2abfa1b60cea681238a1482f4b310f0010214e7fd8e7175bd891fdddd"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s10_s11_runtime_blocked_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "19aad8448e9e60ae385ddf1da6cf67c6da86c3303acf605b0b673cfe02b12f98"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s12_s13_device_blocked_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "5677675b30cdf32a5cb56a52b81a12766ba2902af8e24237111d53bf0988fb29"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s1_receipt_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "fff9164a291907b2dea03f2e062bc3db808d2728db6b9217f0e823d977721af7"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s2_corpus_manifest_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "ecb51a1336ebecfe548bc3b601667c5f35bae838551ca846ed6be9e03e40a284"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s7_freeze_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "2057ea8d3462dcd78cffb479414e50be516d0310b4135eb614f32ada964ff79d"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s8_holdout_a_receipt_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "16c6040caf3d12304cc54955f874667b5cc24836d2f6e8f103b8a2578c848cf1"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s8_s9_protocol_freeze_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "b1df0cee2de94ddff3e93d9d3fbc04f96e207545e58a06b4874420a07dc97d41"
+      },
+      {
+        "path": "ai/tests/fixtures/emlis_nls_v2_s9_holdout_b_receipt_20260713.json",
+        "role": "frozen_fixture_or_receipt",
+        "sha256": "9f23860ecbad2408710eedc220144a185555cc81b56323647b2de6179dbda495"
+      },
+      {
+        "path": "ai/tests/helpers/emlis_nls_v2_s1_baseline.py",
+        "role": "historical_helper",
+        "sha256": "df639b57be911ca91f0886dca67742020a874abe618bcb3ef6bac879434a14be"
+      },
+      {
+        "path": "ai/tests/helpers/emlis_nls_v2_s2_development.py",
+        "role": "historical_helper",
+        "sha256": "cf29cbebceea3c4489adc00bb7744aa0c29b43a1376cd9d5ce2809aa0f58f140"
+      },
+      {
+        "path": "ai/tests/helpers/emlis_nls_v2_s6_s7_development.py",
+        "role": "historical_helper",
+        "sha256": "18632c50b057b6340d54d94279e00302761cb32bb7bc0fcc7f0c168e8248c752"
+      },
+      {
+        "path": "ai/tests/helpers/emlis_nls_v2_s8_s9_holdout.py",
+        "role": "historical_helper",
+        "sha256": "b292122b3068a47a2601d79f5a8c01d993471e4f01d2a35451cf369e47ee178b"
+      },
+      {
+        "path": "ai/tests/local_only/emlis_nls_v2_s1_visible_20260713.json",
+        "role": "historical_body_full_local_only",
+        "sha256": "3d7cbb5487901027c83a9082bd10d872b87412cd50a6d94a14f6585c9cad199e"
+      },
+      {
+        "path": "ai/tests/local_only/emlis_nls_v2_s2_development42_20260713.json",
+        "role": "historical_body_full_local_only",
+        "sha256": "9e8e81b553b8f3d5d51e66c434350ebbc2fa134a813250dbb5bc5de251e6aa36"
+      },
+      {
+        "path": "ai/tests/local_only/holdout/emlis_nls_v2_s2_holdout_a14_20260713.json",
+        "role": "historical_body_full_local_only",
+        "sha256": "1e291bc8a57e346b755dcb6de2cb1751a312608eeb823d1988f366ce1d2767bb"
+      },
+      {
+        "path": "ai/tests/local_only/holdout/emlis_nls_v2_s2_holdout_b14_20260713.json",
+        "role": "historical_body_full_local_only",
+        "sha256": "18c05d940da4a1b644afddf140cf74dc04077b0eeb03c1fe48fd3e963161d171"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_all_steps_audit.py",
+        "role": "historical_test",
+        "sha256": "5057fbcbd6592fec628c49e87ef26059181f8a5062ea2102d9f1dd37133f7dc7"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s0_s1.py",
+        "role": "historical_test",
+        "sha256": "5d3e7fe3857123aa81d57917a6a01f32b9c1349f02564f87fc068fab60a92a82"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s10_s11_runtime_blocked.py",
+        "role": "historical_test",
+        "sha256": "14eb14b77931cce1a9e7bbe83cfd9b51cd274eea9d4b5f03b8b069ffec8b4583"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s12_s13_device_blocked.py",
+        "role": "historical_test",
+        "sha256": "222ce7cd5c29bfc64668a2d1c04dab7cf0b60f811a790c5b79f41c3f79ece94c"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s2_corpus_freeze.py",
+        "role": "historical_test",
+        "sha256": "44b9484b338276a56ba93660e296c22dede0bb1927546af9a60573669eb27a45"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s3_content_plan.py",
+        "role": "historical_test",
+        "sha256": "f8e72c6c93be4de6ebf88cbd42b5e89992b3e124b6afc1220433a6aebdace61d"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s4_candidate_plan.py",
+        "role": "historical_test",
+        "sha256": "34b5768623751a440123fb5fc4c4eaeccb877e2cf7abbfec7a3d164244c90585"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s5_surface_candidates.py",
+        "role": "historical_test",
+        "sha256": "0f28601c2fe1a5e8a5500154df27ea6f8357c990d77905659cc85b2d1cc83b61"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s6_candidate_selector.py",
+        "role": "historical_test",
+        "sha256": "19b453caf30ae155449619e321eee1605a1f7204dfabefee628db2146d30ac63"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s7_development_adjustment.py",
+        "role": "historical_test",
+        "sha256": "3a61ab90df567a5f2e77a105228c6b6c7bc238714e0e9b22aa4e6994999afb66"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_s8_s9_holdout_evaluation.py",
+        "role": "historical_test",
+        "sha256": "05790abaa8b7ae127035047eda9c0af71a04d739f88c132ea225611f7fa1be24"
+      }
+    ],
+    "immutable_manifest_sha256": "afad6eaf3905839d716d7f68f271bcb2ab7d204a6689de8376accd2cca11f6c5",
+    "holdout_a_status": "stop",
+    "holdout_b_status": "not_evaluated"
+  },
+  "unchanged_contracts": {
+    "route": "POST /emotion/submit",
+    "public_body_path": "input_feedback.comment_text",
+    "public_status_path": "input_feedback.emlis_ai.observation_status",
+    "rn_visibility_predicate": "observation_status_passed_and_comment_text_nonempty",
+    "section_order": "observation_blankline_reception",
+    "section_labels": [
+      "見えたこと：",
+      "Emlisから："
+    ],
+    "greeting_and_address_owner": "unchanged_existing_owner",
+    "db_physical_names_changed": false,
+    "db_write_paths_changed": false,
+    "rn_production_changed": false,
+    "public_response_keys_changed": false,
+    "account_subscription_access_deletion_changed": false,
+    "safety_emergency_owner_changed": false,
+    "raw_or_candidate_body_added_to_public_meta": false
+  },
+  "evaluation_policy": {
+    "new_cases_per_cycle": 100,
+    "minimum_cycle_count": 10,
+    "minimum_karen_generated_valid_cases": 1000,
+    "minimum_is_not_completion_guarantee": true,
+    "cumulative_full_rerun_after_text_change": true,
+    "secret_input_required": false,
+    "open_once_cohort_required": false,
+    "external_reviewer_required": false,
+    "actual_device_after_local_stability": true,
+    "recent_first_run_major_defect_free_batch_count": 2
+  },
+  "completion_condition": "design_receipt_and_immutable_boundaries_verified",
+  "step0_status": "completed",
+  "next_step_authority": "step1_only",
+  "valid_for_step1": true,
+  "valid_for_step2": false,
+  "valid_for_runtime_switch": false,
+  "body_free": true,
+  "raw_input_included": false,
+  "comment_text_included": false,
+  "candidate_body_included": false
+}

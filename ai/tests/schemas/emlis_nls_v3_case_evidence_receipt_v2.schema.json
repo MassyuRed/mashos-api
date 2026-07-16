@@ -1,0 +1,503 @@
+{
+  "$defs": {
+    "commitment": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "reasonCode": {
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+      "type": "string"
+    }
+  },
+  "$id": "cocolon.emlis.nls_v3.case_evidence_receipt.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "hard_gate": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "hard_gate"
+        ]
+      },
+      "then": {
+        "properties": {
+          "selector_decision": {
+            "properties": {
+              "status": {
+                "const": "selected"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "hard_gate": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "hard_gate"
+        ]
+      },
+      "then": {
+        "properties": {
+          "selector_decision": {
+            "properties": {
+              "status": {
+                "const": "no_valid_candidate"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "local_product_review": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "local_product_review"
+        ]
+      },
+      "then": {
+        "properties": {
+          "hard_gate": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "app_reachable_validation": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "cocolon.input_contract.20260714"
+        },
+        "status": {
+          "const": "passed"
+        }
+      },
+      "required": [
+        "status",
+        "contract_version"
+      ],
+      "type": "object"
+    },
+    "batch_id": {
+      "pattern": "^nls3_batch_[0-9]{3}$",
+      "type": "string"
+    },
+    "body_free": {
+      "const": true
+    },
+    "candidate_set_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "candidate_version_id": {
+      "pattern": "^nls_v3_rc_[0-9]{4}$",
+      "type": "string"
+    },
+    "case_identity_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "commitment_policy": {
+      "additionalProperties": false,
+      "properties": {
+        "key_or_nonce_stored_in_receipt": {
+          "const": false
+        },
+        "policy_sha256": {
+          "$ref": "#/$defs/commitment"
+        },
+        "scheme": {
+          "enum": [
+            "hmac_sha256_v1",
+            "salted_sha256_v1"
+          ]
+        }
+      },
+      "required": [
+        "scheme",
+        "policy_sha256",
+        "key_or_nonce_stored_in_receipt"
+      ],
+      "type": "object"
+    },
+    "content_plan_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "environment_sha256": {
+      "$ref": "#/$defs/commitment"
+    },
+    "hard_gate": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failed_codes": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failed_codes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "failed_codes": {
+          "items": {
+            "$ref": "#/$defs/reasonCode"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "failed_codes"
+      ],
+      "type": "object"
+    },
+    "local_product_review": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not_reviewed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason_codes": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason_codes": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason_codes": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "reason_codes": {
+          "items": {
+            "$ref": "#/$defs/reasonCode"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_reviewed"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "reason_codes"
+      ],
+      "type": "object"
+    },
+    "obligation_ledger_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "observation_stage": {
+      "enum": [
+        "normal_observation",
+        "pre_question_observation",
+        "refined_observation"
+      ]
+    },
+    "observation_stage_context_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "parsed_witness_binding_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "previous_output": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "changed": {
+              "type": "null"
+            },
+            "commitment": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "changed": {
+              "type": "boolean"
+            },
+            "commitment": {
+              "$ref": "#/$defs/commitment"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "changed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "commitment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/commitment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "commitment",
+        "changed"
+      ],
+      "type": "object"
+    },
+    "rubric_sha256": {
+      "$ref": "#/$defs/commitment"
+    },
+    "run_id": {
+      "pattern": "^nls3run_[0-9a-f]{16,64}$",
+      "type": "string"
+    },
+    "runner_sha256": {
+      "$ref": "#/$defs/commitment"
+    },
+    "sample_source": {
+      "enum": [
+        "karen_generated",
+        "other_ai_generated_reviewed",
+        "real_user_current_valid",
+        "known_regression"
+      ]
+    },
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.case_evidence_receipt.v2"
+    },
+    "selected_candidate_body_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "selected_discourse_plan_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "selected_surface_ast_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "selector_decision": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "selected"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_candidate_id": {
+                "pattern": "^nls3cand_[0-9a-f]{16,64}$",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "no_valid_candidate"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_candidate_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "selected_candidate_id": {
+          "anyOf": [
+            {
+              "pattern": "^nls3cand_[0-9a-f]{16,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selection_attributes_sha256": {
+          "$ref": "#/$defs/commitment"
+        },
+        "status": {
+          "enum": [
+            "selected",
+            "no_valid_candidate"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "selected_candidate_id",
+        "selection_attributes_sha256"
+      ],
+      "type": "object"
+    },
+    "source_dependency_closure_sha256": {
+      "$ref": "#/$defs/commitment"
+    },
+    "source_observation_plan_commitment": {
+      "$ref": "#/$defs/commitment"
+    },
+    "v1_baseline_body_commitment": {
+      "$ref": "#/$defs/commitment"
+    }
+  },
+  "required": [
+    "schema_version",
+    "candidate_version_id",
+    "run_id",
+    "batch_id",
+    "sample_source",
+    "case_identity_commitment",
+    "commitment_policy",
+    "app_reachable_validation",
+    "observation_stage",
+    "observation_stage_context_commitment",
+    "source_dependency_closure_sha256",
+    "source_observation_plan_commitment",
+    "obligation_ledger_commitment",
+    "content_plan_commitment",
+    "candidate_set_commitment",
+    "selected_discourse_plan_commitment",
+    "selected_surface_ast_commitment",
+    "selected_candidate_body_commitment",
+    "parsed_witness_binding_commitment",
+    "hard_gate",
+    "selector_decision",
+    "v1_baseline_body_commitment",
+    "local_product_review",
+    "previous_output",
+    "environment_sha256",
+    "runner_sha256",
+    "rubric_sha256",
+    "body_free"
+  ],
+  "title": "Cocolon EmlisAI NLS v3 body-free case evidence receipt",
+  "type": "object"
+}

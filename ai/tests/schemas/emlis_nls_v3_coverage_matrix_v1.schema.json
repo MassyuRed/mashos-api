@@ -1,0 +1,172 @@
+{
+  "$id": "cocolon.emlis.nls_v3.coverage_matrix.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "axis_counts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "axis": {
+            "enum": [
+              "category_cardinality",
+              "category_text_alignment",
+              "cause_explicitness",
+              "emotion_cardinality",
+              "emotion_strength_shape",
+              "expected_depth_range",
+              "families",
+              "input_field_presence",
+              "intention_state",
+              "length_class",
+              "question_system_relevance",
+              "referent_clarity",
+              "structural_variation.merge_split_eligible",
+              "structural_variation.minimal_single_structure_expected",
+              "structural_variation.order_variation_eligible",
+              "structural_variation.reception_position_variation_eligible",
+              "surface_shape",
+              "temporal_scope",
+              "thought_action_relation",
+              "topic_cardinality",
+              "valence"
+            ]
+          },
+          "value_counts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "case_count": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "value": {
+                  "enum": [
+                    "single",
+                    "multiple",
+                    "strong",
+                    "weak",
+                    "explicit",
+                    "unknown",
+                    "self_insight_only",
+                    "single_strength",
+                    "mixed_strength",
+                    "self_insight_medium",
+                    "low_information_short",
+                    "limited_grounding",
+                    "daily_unpleasant",
+                    "daily_positive",
+                    "self_denial",
+                    "anger_or_boundary",
+                    "uncertainty_support",
+                    "standard_state_answer",
+                    "structure_question",
+                    "long_meaning_arc",
+                    "relationship_gratitude_recovery",
+                    "change_future_intention_transition",
+                    "source_unavailable_high_information",
+                    "history_eligible_current_input_only",
+                    "thought_only",
+                    "action_only",
+                    "both",
+                    "none",
+                    "uncertain",
+                    "completed",
+                    "short",
+                    "medium",
+                    "long",
+                    "very_long",
+                    "not_needed",
+                    "possible",
+                    "burden_risk",
+                    "future_refined_candidate",
+                    "clear",
+                    "multiple_candidates",
+                    "omitted",
+                    "complete_sentence",
+                    "fragment",
+                    "colloquial",
+                    "colloquial_fragment",
+                    "typo_or_orthographic_variation",
+                    "truncated",
+                    "past",
+                    "current",
+                    "future_intention",
+                    "mixed",
+                    "not_applicable",
+                    "same",
+                    "complement",
+                    "contrast",
+                    "time_shift",
+                    "cause_unknown",
+                    "positive",
+                    "negative",
+                    "neutral",
+                    "self_denial_adjacent",
+                    "minimal",
+                    "focused",
+                    "layered",
+                    "false",
+                    "true"
+                  ]
+                }
+              },
+              "required": [
+                "case_count",
+                "value"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "axis",
+          "value_counts"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "batch_id": {
+      "pattern": "^nls3_batch_[0-9]{3}$",
+      "type": "string"
+    },
+    "body_free": {
+      "const": true
+    },
+    "case_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "matrix_id": {
+      "pattern": "^nls3cov_[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "sample_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.coverage_matrix.v1"
+    },
+    "source_case_set_commitment": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "axis_counts",
+    "batch_id",
+    "body_free",
+    "case_count",
+    "matrix_id",
+    "sample_schema_sha256",
+    "schema_version",
+    "source_case_set_commitment"
+  ],
+  "title": "Cocolon EmlisAI NLS v3 coverage matrix",
+  "type": "object"
+}

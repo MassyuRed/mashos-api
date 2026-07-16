@@ -1,0 +1,434 @@
+{
+  "$id": "cocolon.emlis.nls_v3.sample_batch_manifest.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "VALIDATED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "case_count": {
+            "const": 100
+          },
+          "privacy_review": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "valid_case_count": {
+            "const": 100
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "frozen": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "const": "VALIDATED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "next_authority": {
+            "const": "step3_only"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "batch_id": {
+            "const": "nls3_batch_001"
+          },
+          "case_count": {
+            "const": 100
+          },
+          "frozen": {
+            "const": true
+          },
+          "state": {
+            "const": "VALIDATED"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "batch_id": {
+      "pattern": "^nls3_batch_[0-9]{3}$",
+      "type": "string"
+    },
+    "body_free": {
+      "const": true
+    },
+    "case_commitments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "case_commitment": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "case_id": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_commitment",
+          "case_id"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "case_count": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "case_ids": {
+      "items": {
+        "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "corpus_file_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "corpus_file_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "corpus_set_commitment": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "counts_toward_karen_minimum": {
+      "const": false
+    },
+    "coverage_matrix_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "coverage_matrix_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "duplicate_counts": {
+      "additionalProperties": false,
+      "properties": {
+        "exact": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "near": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "normalized": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exact",
+        "near",
+        "normalized"
+      ],
+      "type": "object"
+    },
+    "duplicate_policy_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "duplicate_report_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "duplicate_report_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "frozen": {
+      "type": "boolean"
+    },
+    "invalid_case_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "invalid_case_history": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "invalid_case_id": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "replacement_case_id": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "status": {
+            "const": "replaced_before_manifest_freeze"
+          }
+        },
+        "required": [
+          "invalid_case_id",
+          "reason_code",
+          "replacement_case_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "manifest_id": {
+      "pattern": "^nls3manifest_[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "near_review_decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "left_case_id": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "right_case_id": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "accepted_distinct",
+              "reject_duplicate"
+            ]
+          }
+        },
+        "required": [
+          "left_case_id",
+          "reason_code",
+          "right_case_id",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "near_review_summary": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_distinct_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "candidate_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rejected_duplicate_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unresolved_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accepted_distinct_count",
+        "candidate_count",
+        "rejected_duplicate_count",
+        "unresolved_count"
+      ],
+      "type": "object"
+    },
+    "next_authority": {
+      "enum": [
+        "continue_batch_construction",
+        "freeze_batch_manifest",
+        "step3_only",
+        "none_outside_step2_transition"
+      ]
+    },
+    "parent_registry_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "parent_registry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "privacy_review": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expected_response_absent": {
+              "const": false
+            },
+            "pii_absent": {
+              "const": false
+            },
+            "real_user_text_copy_absent": {
+              "const": false
+            },
+            "reviewer": {
+              "const": null
+            },
+            "status": {
+              "const": "pending"
+            }
+          },
+          "required": [
+            "expected_response_absent",
+            "pii_absent",
+            "real_user_text_copy_absent",
+            "reviewer",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expected_response_absent": {
+              "const": true
+            },
+            "pii_absent": {
+              "const": true
+            },
+            "real_user_text_copy_absent": {
+              "const": true
+            },
+            "reviewer": {
+              "const": "karen"
+            },
+            "status": {
+              "const": "passed"
+            }
+          },
+          "required": [
+            "expected_response_absent",
+            "pii_absent",
+            "real_user_text_copy_absent",
+            "reviewer",
+            "status"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "reference_case_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reference_corpus_set_commitment": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "replacement_policy": {
+      "const": "invalid_case_id_never_reused_replacement_gets_new_id"
+    },
+    "sample_schema_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "sample_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.sample_batch_manifest.v1"
+    },
+    "source_partition": {
+      "const": "karen_generated"
+    },
+    "state": {
+      "enum": [
+        "DRAFT",
+        "VALIDATED"
+      ]
+    },
+    "valid_case_count": {
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "validator_policy_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch_id",
+    "body_free",
+    "case_commitments",
+    "case_count",
+    "case_ids",
+    "corpus_file_ref",
+    "corpus_file_sha256",
+    "corpus_set_commitment",
+    "counts_toward_karen_minimum",
+    "coverage_matrix_ref",
+    "coverage_matrix_sha256",
+    "duplicate_counts",
+    "duplicate_policy_sha256",
+    "duplicate_report_ref",
+    "duplicate_report_sha256",
+    "frozen",
+    "invalid_case_count",
+    "invalid_case_history",
+    "manifest_id",
+    "near_review_decisions",
+    "near_review_summary",
+    "next_authority",
+    "parent_registry_ref",
+    "parent_registry_sha256",
+    "privacy_review",
+    "reference_case_count",
+    "reference_corpus_set_commitment",
+    "replacement_policy",
+    "sample_schema_ref",
+    "sample_schema_sha256",
+    "schema_version",
+    "source_partition",
+    "state",
+    "valid_case_count",
+    "validator_policy_sha256"
+  ],
+  "title": "Cocolon EmlisAI NLS v3 Step 2 sample batch manifest",
+  "type": "object"
+}

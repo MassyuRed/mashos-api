@@ -1,0 +1,417 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.all_steps_audit.v1",
+  "created_at": "2026-07-13",
+  "design": {
+    "name": "Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV2_DetailedDesign_ImplementationOrder_20260713.md",
+    "received_name": "Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV2_DetailedDesign_ImplementationOrder_20260713(1).md",
+    "sha256": "b2441917ee80b22c84973c4205bc1cb1a9c471037fe270391438cbd7d7694752"
+  },
+  "source_archive": {
+    "name": "mashos-api_9(64).zip",
+    "sha256": "61b8dc77a1dd9b9bc15fc1f30c5b8ed0c988511b71c50097853aada7db48e325",
+    "byte_size": 10249291,
+    "zip_integrity": "pass",
+    "entry_count": 1837,
+    "file_count": 1789,
+    "non_cache_file_count": 1761,
+    "unsafe_path_count": 0,
+    "symlink_count": 0,
+    "duplicate_entry_count": 0,
+    "non_cache_match_to_previous_complete_tree": "1761/1761"
+  },
+  "external_context": {
+    "repository": "MassyuRed/Karen-Diary",
+    "files_read_in_required_order": [
+      {
+        "path": "00_READ_FIRST.md",
+        "blob_sha": "0b800402f09f4a1c6270f77542aa3638d76edb5f"
+      },
+      {
+        "path": "memory/karen_operating_principles.md",
+        "blob_sha": "d0979181a3e1514d816838f183b2a68ba6a98465"
+      },
+      {
+        "path": "memory/mash_and_karen.md",
+        "blob_sha": "a880792b373bbbe903e6475d576ac416a243b886"
+      }
+    ],
+    "used_as_cocolon_specification": false
+  },
+  "body_policy": {
+    "body_free_metadata": true,
+    "raw_input_included": false,
+    "raw_text_included": false,
+    "source_text_included": false,
+    "candidate_bodies_included": false,
+    "selected_bodies_included": false,
+    "expected_text_included": false,
+    "holdout_b_body_parsed": false
+  },
+  "audit_boundary": {
+    "last_fully_verified_step": 2,
+    "first_confirmed_underimplementation_step": 3,
+    "first_surface_quality_defect_step": 5,
+    "first_formal_nonpass_step": 8,
+    "first_wholly_unperformed_step": 9,
+    "current_runtime_owner": "grounded_sentence_surface_canonical_v1",
+    "current_v2_state": "offline_only_stopped",
+    "in_place_v2_repair_allowed_after_holdout_a_stop": false,
+    "new_design_and_fresh_holdouts_required": true
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "design_freeze",
+      "audit_status": "verified_complete",
+      "execution_status": "completed",
+      "correction_required": false,
+      "evidence_codes": [
+        "DESIGN_HASH_LIVE",
+        "OWNER_AND_NO_CHANGE_CONTRACT_FROZEN"
+      ]
+    },
+    {
+      "step": 1,
+      "name": "v1_baseline_receipt",
+      "audit_status": "verified_complete",
+      "execution_status": "completed",
+      "correction_required": false,
+      "evidence_codes": [
+        "V1_28_REGENERATABLE",
+        "BODY_FULL_BODY_FREE_SEPARATED",
+        "PUBLIC_CONTRACT_FROZEN"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "evaluation_corpus_70_freeze",
+      "audit_status": "verified_complete",
+      "execution_status": "completed",
+      "correction_required": false,
+      "evidence_codes": [
+        "FOURTEEN_FAMILIES_TIMES_FIVE",
+        "COHORTS_SEPARATED",
+        "SEMANTIC_OBLIGATIONS_PRESENT",
+        "APP_OPTIONS_VALID"
+      ]
+    },
+    {
+      "step": 3,
+      "name": "content_planner_v2_contract",
+      "audit_status": "underimplemented_contract_invalid",
+      "execution_status": "implemented_but_not_complete",
+      "correction_required": true,
+      "evidence_codes": [
+        "VALIDATOR_ACCEPTS_INVALID_ROLE",
+        "VALIDATOR_ACCEPTS_NON_BOOLEAN_REQUIRED",
+        "VALIDATOR_ACCEPTS_WRONG_SAFETY_REF",
+        "VALIDATOR_ACCEPTS_UNBOUNDED_QUOTE_POLICY",
+        "VALIDATOR_ACCEPTS_UNKNOWN_DISCOURSE_STRATEGY",
+        "FELT_RESPONSE_ZERO_OF_42",
+        "ATTENTION_THEN_FELT_ALLOWED_WITHOUT_FELT_UNIT",
+        "PRIMARY_ATTENTION_REUSES_V1_REQUIRED_MOVE"
+      ]
+    },
+    {
+      "step": 4,
+      "name": "discourse_candidate_planner",
+      "audit_status": "partial_purpose_unproven",
+      "execution_status": "implemented_but_not_complete",
+      "correction_required": true,
+      "evidence_codes": [
+        "BOUNDED_STABLE_MULTIPLE_PLANS_PRESENT",
+        "MERGED_SENTENCE_GROUP_CASES_ZERO_OF_42",
+        "SENTENCE_COUNT_VARIATION_CASES_ZERO_OF_42",
+        "DISCOURSE_COMPOSITION_DIVERSITY_NOT_PROVEN"
+      ]
+    },
+    {
+      "step": 5,
+      "name": "surface_candidate_generator",
+      "audit_status": "underimplemented_surface_quality",
+      "execution_status": "implemented_but_product_goal_not_met",
+      "correction_required": true,
+      "evidence_codes": [
+        "GENERIC_REFERENT_PREDICATE_SKELETON_CONCENTRATION",
+        "INPUT_ANCHOR_REPLAY_SELECTED_32_OF_42",
+        "LONG_MEANING_COLLAPSE",
+        "HOLDOUT_A_NON_TEMPLATE_ONE_OF_14"
+      ]
+    },
+    {
+      "step": 6,
+      "name": "hard_gate_selector",
+      "audit_status": "underimplemented_semantic_gate",
+      "execution_status": "implemented_but_not_complete",
+      "correction_required": true,
+      "evidence_codes": [
+        "REQUIRED_COVERAGE_TRUSTS_SELF_REPORTED_METADATA",
+        "GENERIC_SURFACE_PASSES_ALL_14_GATES",
+        "NINE_OF_14_GATES_LACK_INDEPENDENT_NEGATIVE_PATH",
+        "SOFT_SCORE_REWARDS_SOURCE_ANCHORS"
+      ]
+    },
+    {
+      "step": 7,
+      "name": "development_cohort_adjustment",
+      "audit_status": "completion_revoked_freeze_not_auditable",
+      "execution_status": "performed_but_completion_unproven",
+      "correction_required": true,
+      "evidence_codes": [
+        "AUTHOR_READ_HAS_NO_PER_CASE_REVIEW_EVIDENCE",
+        "NON_TEMPLATE_42_OF_42_NOT_REPRODUCIBLE",
+        "STRUCTURAL_REDESIGN_COUNT_HAS_NO_PRE_POST_LINEAGE",
+        "DISTRIBUTION_THRESHOLDS_NOT_PREDECLARED",
+        "CORPUS_SEMANTIC_OBLIGATIONS_NOT_ENFORCED"
+      ]
+    },
+    {
+      "step": 8,
+      "name": "holdout_a_evaluation",
+      "audit_status": "executed_stop",
+      "execution_status": "completed_with_nonpass_result",
+      "correction_required": false,
+      "evidence_codes": [
+        "ONE_SHOT_RUN_COUNT_ONE",
+        "MACHINE_FAILURE_ONE",
+        "DISTRIBUTION_FAIL",
+        "NATURALNESS_FIVE_OF_14",
+        "NON_TEMPLATE_ONE_OF_14",
+        "V2_BETTER_FIVE_SAME_THREE_V1_BETTER_SIX",
+        "OVERALL_STOP"
+      ]
+    },
+    {
+      "step": 9,
+      "name": "holdout_b_evaluation",
+      "audit_status": "not_executed_correctly_blocked",
+      "execution_status": "not_executed",
+      "correction_required": false,
+      "evidence_codes": [
+        "HOLDOUT_B_RUN_COUNT_ZERO",
+        "BLOCKED_BY_HOLDOUT_A_STOP"
+      ]
+    },
+    {
+      "step": 10,
+      "name": "runtime_preconnection_shadow",
+      "audit_status": "feature_not_implemented_not_executed",
+      "execution_status": "not_executed",
+      "correction_required": false,
+      "evidence_codes": [
+        "SHADOW_RUN_COUNT_ZERO",
+        "ONLY_FAIL_CLOSED_GUARD_IMPLEMENTED",
+        "BLOCKED_BY_HOLDOUT_A_STOP"
+      ]
+    },
+    {
+      "step": 11,
+      "name": "runtime_owner_switch",
+      "audit_status": "feature_not_implemented_not_executed",
+      "execution_status": "not_executed",
+      "correction_required": false,
+      "evidence_codes": [
+        "OWNER_SWITCH_COUNT_ZERO",
+        "RUNTIME_OWNER_REMAINS_V1",
+        "BLOCKED_BY_UNQUALIFIED_V2"
+      ]
+    },
+    {
+      "step": 12,
+      "name": "device_verification",
+      "audit_status": "formal_v2_not_executed",
+      "execution_status": "v1_evidence_review_only",
+      "correction_required": false,
+      "evidence_codes": [
+        "REPRESENTATIVE_FOUR_ARE_CANONICAL_V1",
+        "FORMAL_V2_DEVICE_RUN_COUNT_ZERO",
+        "EXACT8_RUN_COUNT_ZERO",
+        "HOLDOUT_DERIVED_RUN_COUNT_ZERO"
+      ]
+    },
+    {
+      "step": 13,
+      "name": "two_stage_quantity_ratio_adjustment",
+      "audit_status": "feature_not_implemented_not_executed",
+      "execution_status": "v1_ratio_analysis_only",
+      "correction_required": false,
+      "evidence_codes": [
+        "PRODUCTION_ADJUSTMENT_COUNT_ZERO",
+        "NATURAL_LANGUAGE_V2_NOT_QUALIFIED",
+        "BLOCKED_BY_STEP12_PREREQUISITE"
+      ]
+    }
+  ],
+  "holdout_a_facts": {
+    "evaluation_run_count": 1,
+    "overall_status": "stop",
+    "machine_failure_case_count": 1,
+    "distribution_pass": false,
+    "naturalness_pass_count": 5,
+    "non_template_pass_count": 1,
+    "overclaim_absence_pass_count": 13,
+    "v2_clearly_better_count": 5,
+    "same_count": 3,
+    "v1_clearly_better_count": 6,
+    "independent_external_reviewer": false
+  },
+  "known_frozen_test_state": {
+    "acceptance_red_count": 2,
+    "self_matching_string_assertion_red_count": 1,
+    "actual_forbidden_holdout_runner_call_count_by_ast": 0,
+    "frozen_test_modified": false,
+    "classified_failures": [
+      {
+        "test_id": "test_emlis_nls_v2_s8_s9_holdout_evaluation.py::test_step8_holdout_a_one_shot_body_free_receipt_passes",
+        "classification": "expected_red_holdout_a_stop"
+      },
+      {
+        "test_id": "test_emlis_nls_v2_s8_s9_holdout_evaluation.py::test_step8_step9_do_not_reexecute_holdouts_from_tests_or_persist_review_bodies",
+        "classification": "frozen_test_self_matching_string_assertion"
+      },
+      {
+        "test_id": "test_emlis_nls_v2_s8_s9_holdout_evaluation.py::test_step9_holdout_b_one_shot_body_free_receipt_passes_without_a_to_b_change",
+        "classification": "expected_red_holdout_b_not_evaluated"
+      }
+    ]
+  },
+  "verification": {
+    "new_audit_test_pass_count": 7,
+    "new_audit_test_fail_count": 0,
+    "all_nls_v2_zero_argument_test_pass_count": 62,
+    "all_nls_v2_zero_argument_test_fail_count": 3,
+    "classified_failure_count": 3,
+    "unclassified_failure_count": 0,
+    "compileall": "pass",
+    "json_validation": "pass"
+  },
+  "frozen_artifact_hashes": [
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s0_freeze_20260713.json",
+      "sha256": "7a6b02e2abfa1b60cea681238a1482f4b310f0010214e7fd8e7175bd891fdddd"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s1_receipt_20260713.json",
+      "sha256": "fff9164a291907b2dea03f2e062bc3db808d2728db6b9217f0e823d977721af7"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s2_corpus_manifest_20260713.json",
+      "sha256": "ecb51a1336ebecfe548bc3b601667c5f35bae838551ca846ed6be9e03e40a284"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s7_freeze_20260713.json",
+      "sha256": "2057ea8d3462dcd78cffb479414e50be516d0310b4135eb614f32ada964ff79d"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s8_s9_protocol_freeze_20260713.json",
+      "sha256": "b1df0cee2de94ddff3e93d9d3fbc04f96e207545e58a06b4874420a07dc97d41"
+    },
+    {
+      "path": "ai/tests/test_emlis_nls_v2_s8_s9_holdout_evaluation.py",
+      "sha256": "05790abaa8b7ae127035047eda9c0af71a04d739f88c132ea225611f7fa1be24"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s8_holdout_a_receipt_20260713.json",
+      "sha256": "16c6040caf3d12304cc54955f874667b5cc24836d2f6e8f103b8a2578c848cf1"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s9_holdout_b_receipt_20260713.json",
+      "sha256": "9f23860ecbad2408710eedc220144a185555cc81b56323647b2de6179dbda495"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s10_s11_runtime_blocked_20260713.json",
+      "sha256": "19aad8448e9e60ae385ddf1da6cf67c6da86c3303acf605b0b673cfe02b12f98"
+    },
+    {
+      "path": "ai/tests/fixtures/emlis_nls_v2_s12_s13_device_blocked_20260713.json",
+      "sha256": "5677675b30cdf32a5cb56a52b81a12766ba2902af8e24237111d53bf0988fb29"
+    }
+  ],
+  "v2_source_snapshot": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_content_plan_v2.py",
+      "sha256": "515bc6b171b79e9e938b7c5710dbaddd5c88ebeb9b97b1e7037f75af323f23f6"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_plan_v2.py",
+      "sha256": "2bb1b15c951d709bfa44b14d9bc678c0cfaae6a5bd42021ec9a53028104a7674"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception_v2.py",
+      "sha256": "7541cb9262a502cfff071a8056cd6d005a2990084c122043c1de3d18f5b3b607"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_reception_candidate_selector_v2.py",
+      "sha256": "ec61bc59d2e40effb97f39ffb52f2ea7073c9ea1beb680e5fe6c4a84b6f7f6ef"
+    }
+  ],
+  "runtime_source_snapshot": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    }
+  ],
+  "correction_file_manifest": {
+    "changed_or_new_file_count": 8,
+    "hash_bound_file_count": 7,
+    "self_referential_file_count": 1,
+    "hash_bound_files": [
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_AllSteps_Audit_Correction_20260713.md",
+        "change_type": "new",
+        "sha256": "cef3ca599d1472dfc4ac04c07fea459c5424035c376fd5e1eb9714ddb5b950fa"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S2_S3_Result_20260713.md",
+        "change_type": "modified",
+        "sha256": "44c7b1b2697a314d09c29328e1e6d84ba2b62a0aa245ee8f474dc7016c2d0dc2"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S4_S5_Result_20260713.md",
+        "change_type": "modified",
+        "sha256": "9bae012c640c5b2c1a65c0def915678ab3c8a594f4c423c5010388d53cc47a59"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S6_S7_Result_20260713.md",
+        "change_type": "modified",
+        "sha256": "4cc6a25ee365aaf0269ff6c468677b3994c633d46af3d9dcf75f62de227d1815"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S10_S11_Blocked_Result_20260713.md",
+        "change_type": "modified",
+        "sha256": "d343fbff60f027d39a6f868e27693dc77259fdf0981cd6ddf4e45864bd720c70"
+      },
+      {
+        "path": "ai/docs/Cocolon_EmlisAI_NLSv2_S12_S13_DeviceCheck_Blocked_Result_20260713.md",
+        "change_type": "modified",
+        "sha256": "e1e88b98c20d762417bf77a7ed491dfdf0056bc2f3b90df2d40956baa845fbdb"
+      },
+      {
+        "path": "ai/tests/test_emlis_nls_v2_all_steps_audit.py",
+        "change_type": "new",
+        "sha256": "5057fbcbd6592fec628c49e87ef26059181f8a5062ea2102d9f1dd37133f7dc7"
+      }
+    ],
+    "receipt_self": {
+      "path": "ai/tests/fixtures/emlis_nls_v2_all_steps_audit_20260713.json",
+      "change_type": "new",
+      "sha256_omitted_reason": "self_referential_receipt"
+    }
+  },
+  "correction_scope": {
+    "production_files_modified": [],
+    "runtime_files_modified": [],
+    "holdout_files_modified": [],
+    "historical_freeze_files_modified": [],
+    "source_code_repair_deferred_reason": "holdout_a_stop_prohibits_in_place_post_holdout_repair",
+    "required_next_authority": "approve_a_new_version_design_and_new_independent_holdout_cohorts"
+  }
+}

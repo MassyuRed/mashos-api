@@ -1,0 +1,1005 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.step1_v1_visible.local_only.v1",
+  "created_date": "2026-07-14",
+  "local_only": true,
+  "known_synthetic_or_app_validated_inputs_only": true,
+  "contains_real_user_supabase_corpus": false,
+  "commitment_algorithm": "hmac-sha256-domain-separated",
+  "commitment_key_hex": "d28f8e31f66f0d5274a6d656278eda63e5fcd83c74889a7c3c1ec8756ba83154",
+  "source_dependency_closure_sha256": "3d42e942239666dc37d14c9c2969d548988c02e38ac497bb65b825d9b4c1f3bd",
+  "cohorts": [
+    {
+      "cohort": "exact8",
+      "case_order": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "I6-S03",
+        "I6-L03",
+        "I6-C01",
+        "I6-D02"
+      ]
+    },
+    {
+      "cohort": "rr8_unseen12",
+      "case_order": [
+        "RR8-U01",
+        "RR8-U02",
+        "RR8-U03",
+        "RR8-U04",
+        "RR8-U05",
+        "RR8-U06",
+        "RR8-U07",
+        "RR8-U08",
+        "RR8-U09",
+        "RR8-U10",
+        "RR8-U11",
+        "RR8-U12"
+      ]
+    },
+    {
+      "cohort": "i6_probe8",
+      "case_order": [
+        "I6-S01",
+        "I6-S02",
+        "I6-L01",
+        "I6-L02",
+        "I6-C02",
+        "I6-C03",
+        "I6-D01",
+        "I6-D03"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "A",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "なんか今日は全部だるい。\n何もしたくない。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ",
+          "不安"
+        ],
+        "category": [
+          "生活"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「なんか今日は全部だるい」と「何もしたくない」が重なり、今は一つの状態として前に出ています。\n\nEmlisから：\n今のしんどさを、無理に小さくせず、静かに受け止めています。",
+      "observation_section": "「なんか今日は全部だるい」と「何もしたくない」が重なり、今は一つの状態として前に出ています。",
+      "reception_section": "今のしんどさを、無理に小さくせず、静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "4af3fc5d19bcff62d316ac7b5f64a803988cfa5a19ab4bc63a70a4bf5ffb766e",
+        "visible": "8547d9ac327af237d809f20f19ac719ff1866f99c07adc5fdaa6f98e9700c02d",
+        "observation": "02b5d4d1095307ea5d31026dc6a3bfe93fa50780f0cab265a26c2a706a1fea3a",
+        "reception": "58dd048bcae2181bc7760f7cd2bd0cf73af2e552f68a73e3d99a235ab277ba9c"
+      }
+    },
+    {
+      "case_id": "B",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "今までは、人に対して何故？と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする。\n何故それを聞くの？とか聞く意味があるの？と考えてしまってうまくコミュニケーションが取れなくてもやもやしていたけど、物を見ることで人への興味が薄れた。\n私にとってはとても良い変化になった。\n\nそして学校、バイト、趣味で一人の時間が無くなったけど、人との話し方を思い出してきてる。やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった。\n少しずつだけど進歩してる。大丈夫。",
+        "memo_action": "創作をする時にリアルさを求めるなら日常に隠れている汚れや傷の意味を知れ。という授業があった。\n意味のない場所に傷や汚れは作れない、作ったとしても違和感になる。と、それから外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった。\n傷や汚れの場所、自分のこうかな？という憶測をメモしていった。",
+        "emotions": [
+          "自己理解"
+        ],
+        "category": [
+          "学習"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「今までは、人に対して『何故』と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする」から「物を見ることで人への興味が薄れた」へ見方が動き、その変化を「私にとってはとても良い変化になった」と捉えています。\n「人との話し方を思い出してきてる」という変化が、「やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった」という行動までつながっています。\n「少しずつだけど進歩してる」という変化が、「外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった」という行動にも表れています。\n\nEmlisから：\n自分から実際に動いたことが特に印象に残り、その手間を大切に思います。その変化を、うれしく感じます。",
+      "observation_section": "「今までは、人に対して『何故』と考えていたけど、疑問の対象が物になったことで、人について考えすぎる事が減った気がする」から「物を見ることで人への興味が薄れた」へ見方が動き、その変化を「私にとってはとても良い変化になった」と捉えています。\n「人との話し方を思い出してきてる」という変化が、「やろう、言おうと思ったときにすぐに行動する勇気が出せるようになった」という行動までつながっています。\n「少しずつだけど進歩してる」という変化が、「外に出る度に色んな場所を見て、今まで気にしなかった場所も見るようになった」という行動にも表れています。",
+      "reception_section": "自分から実際に動いたことが特に印象に残り、その手間を大切に思います。その変化を、うれしく感じます。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "236e437a8828a10fd7e1f01599c0786baef8154225f59596d0910bd33a46deca",
+        "visible": "0874d563f77dca0d6d42fda92a20e63deea076491b09ad6e6d175d183ce4b598",
+        "observation": "d145d0fedd5c18bc9f43c019d8830519eacf2cc8e1505d0ca4dd2d8e15564d23",
+        "reception": "a4bdc97d67e444a8ccdd152228e15a9edf6368a1b6280ad27a3f29fa4013cb7e"
+      }
+    },
+    {
+      "case_id": "C",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "「いきなり大きく変わろう」とするよりも、\n「昨日の自分よりほんの少し前に進めたらいい」\nそういう気持ちで過ごしていきたい。\n\n人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう。\nでも、本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う。\n\n昨日より少し出来たことが増えた。\n昨日より少し勇気が出せた。\n昨日より少し気持ちを言葉に出来た。\n\nそういう小さな変化を大切にしていきたい",
+        "memo_action": "",
+        "emotions": [
+          "自己理解"
+        ],
+        "category": [
+          "健康"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「いきなり大きく変わろうとするよりも」から「そういう気持ちで過ごしていきたい」へ、これから保ちたい向きが動いています。\n「人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう」と「本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う」が、異なる向きのまま同時にあります。\n「昨日より少し出来たことが増えた」、「昨日より少し気持ちを言葉に出来た」と「そういう小さな変化を大切にしていきたい」が、これからも保ちたい一つの向きとしてつながっています。\n\nEmlisから：\nその変化が特に印象に残り、見過ごしたくないと感じます。その願いを、そっと大切にしたいです。",
+      "observation_section": "「いきなり大きく変わろうとするよりも」から「そういう気持ちで過ごしていきたい」へ、これから保ちたい向きが動いています。\n「人と比べてしまうと、どうしても焦ったり、自分が遅い気がしてしまう」と「本当は比べる相手は他の誰かじゃなくて、昨日の自分なんだと思う」が、異なる向きのまま同時にあります。\n「昨日より少し出来たことが増えた」、「昨日より少し気持ちを言葉に出来た」と「そういう小さな変化を大切にしていきたい」が、これからも保ちたい一つの向きとしてつながっています。",
+      "reception_section": "その変化が特に印象に残り、見過ごしたくないと感じます。その願いを、そっと大切にしたいです。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_gentle_respect"
+      ],
+      "commitments": {
+        "input": "5df17460586b8f2720a1b55200a0ef6d6fdb555db70683dc74f3823f5b304d3a",
+        "visible": "4b7450b5632fa8579dd23e61de403b2b2316ccf45f2fb363668f78ec38efdc4b",
+        "observation": "e5708acd2334bba94d30cbbc58fae8ba83932e10fcf1fe3ff2eb9fab7d1c34c3",
+        "reception": "6e5f789827478048b29b2e4cc5c9be660828acca5cb385454931cf7889a16af7"
+      }
+    },
+    {
+      "case_id": "D",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "1番自分を傷つけてるのは私だ\nずっとそれを続けて、いい事なんて絶対にない",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "人生",
+          "価値観"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「1番自分を傷つけてるのは私だ」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「ずっとそれを続けて、いい事なんて絶対にない」という、先の自己評価を続ける方向には同意していない言葉もあります。\n\nEmlisから：\n今そこにある苦しさを、否定せず、無理に小さくせず受け止めています。Emlisには、その自己評価だけでは終わらない別の思いも見失わずに、その言葉だけであなた自身が決まるとは思えません。",
+      "observation_section": "「1番自分を傷つけてるのは私だ」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「ずっとそれを続けて、いい事なんて絶対にない」という、先の自己評価を続ける方向には同意していない言葉もあります。",
+      "reception_section": "今そこにある苦しさを、否定せず、無理に小さくせず受け止めています。Emlisには、その自己評価だけでは終わらない別の思いも見失わずに、その言葉だけであなた自身が決まるとは思えません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "commitments": {
+        "input": "fc5aadada3e8b365c9ab8f5a61f5ff2e0a97e9da1c874b1fcda3a089f7f88833",
+        "visible": "ea867e18835fec3b8b2c32d8dac7367b509fd3d47dd357d49b28b21a7a04a51f",
+        "observation": "7bdceff6940075bc3c67999aeaf650c50d096d4ec71dd4150faf333839e133d8",
+        "reception": "da50e1a325afd470e3c8bb9f0c7f33eee199ee00ca44ecf436636d0933f674e6"
+      }
+    },
+    {
+      "case_id": "I6-S03",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "胸の内側が苦しい感じ。",
+        "memo_action": "",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "健康"
+        ]
+      },
+      "visible_surface": "見えたこと：\n今は、「胸の内側が苦しい感じ」という感覚が前に出ています。\n\nEmlisから：\nその苦しさを、軽く扱わず、ここで静かに受け止めています。",
+      "observation_section": "今は、「胸の内側が苦しい感じ」という感覚が前に出ています。",
+      "reception_section": "その苦しさを、軽く扱わず、ここで静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "03bc9c5e98346de0b6e25bd9ea4ea73a47358293b36bfeec6bb105204f702167",
+        "visible": "61e7f2eba1465145a1a68d924782ce54bfea8b4fa50a71d09cc80004eda74190",
+        "observation": "83db28171e00ae01b34a4d2fcbddea6abee8ce0d6ef9f4ce6603953be66308f3",
+        "reception": "959826e7de732c79823db874ac2970c79f4aedc88b1ea0b26c367b33350be7bb"
+      }
+    },
+    {
+      "case_id": "I6-L03",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "陶器の釉薬が想定より淡く出た。失敗だと片づけそうになった。ただ光の当たり方では細かな模様が見えた。その特徴を残したいと思った。焼成条件はまだ不明だ。次の試作では温度だけ変えるつもりだ。",
+        "memo_action": "窯の温度と写真番号を作業帳へ記録した。",
+        "emotions": [
+          "喜び",
+          "不安"
+        ],
+        "category": [
+          "趣味"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「失敗だと片づけそうになった」と見ている一方で、「光の当たり方では細かな模様が見えた」という別の事実もあります。その出発点には、「陶器の釉薬が想定より淡く出た」という出来事があります。\n「その特徴を残したいと思った」と「焼成条件はまだ不明だ」が並び、保ちたい意図と、まだ分からない範囲の両方があります。\n「次の試作では温度だけ変えるつもりだ」という意図が、「窯の温度と写真番号を作業帳へ記録した」という行動につながっています。\n\nEmlisから：\nその願いを、なかったことにせず、見過ごさずにいたいです。「温度と写真番号を作業帳へ記録した」という実際の行動を、その手間ごと大切に思います。",
+      "observation_section": "「失敗だと片づけそうになった」と見ている一方で、「光の当たり方では細かな模様が見えた」という別の事実もあります。その出発点には、「陶器の釉薬が想定より淡く出た」という出来事があります。\n「その特徴を残したいと思った」と「焼成条件はまだ不明だ」が並び、保ちたい意図と、まだ分からない範囲の両方があります。\n「次の試作では温度だけ変えるつもりだ」という意図が、「窯の温度と写真番号を作業帳へ記録した」という行動につながっています。",
+      "reception_section": "その願いを、なかったことにせず、見過ごさずにいたいです。「温度と写真番号を作業帳へ記録した」という実際の行動を、その手間ごと大切に思います。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "commitments": {
+        "input": "3b500a6e3c1a603e940c1ffc502d142b7f782dd01ed235fd15e6f422d1d65a92",
+        "visible": "238d56de22c14cee55fdce79dd8264bd31a12c5203d388cbf9017bf2abd10066",
+        "observation": "1b107f9098bbeabd364ed205334fb72759192c9be7cad1c0225a4c225bd0204e",
+        "reception": "b74e65ed75488e5a25db762a5bb490ae225dd744e556b78d5b9ca2b835f1a9fa"
+      }
+    },
+    {
+      "case_id": "I6-C01",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "周囲の処理速度を基準にすると、自分の手順が鈍く感じる。ただ誤入力は前回より減った。速さだけでなく確認の精度も見たい。",
+        "memo_action": "誤入力の件数を表に残した。",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "仕事"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「周囲の処理速度を基準にすると、自分の手順が鈍く感じる」という比較を含む見方の一方で、「誤入力は前回より減った」という自分の前回を基準にした変化もあります。\n「速さだけでなく確認の精度も見たい」という意図が、「誤入力の件数を表に残した」という行動につながっています。\n\nEmlisから：\n「誤入力の件数を表に残した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、軽いこととして流したくありません。",
+      "observation_section": "「周囲の処理速度を基準にすると、自分の手順が鈍く感じる」という比較を含む見方の一方で、「誤入力は前回より減った」という自分の前回を基準にした変化もあります。\n「速さだけでなく確認の精度も見たい」という意図が、「誤入力の件数を表に残した」という行動につながっています。",
+      "reception_section": "「誤入力の件数を表に残した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、軽いこととして流したくありません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "980d99df41cf0621ad17a129aa7037f1ccae70e5ea03aa3e767e8481091ce781",
+        "visible": "9a6e1bbb130545efbcfc40cda01796d904630af4abebe376c696766c20942559",
+        "observation": "68c8950bc1863cfcd974b304a766493b3db48ce4cfd7233c76b54174e7b56d01",
+        "reception": "320b1b806dcebf919bca0ae8b028b7e55ec95d62312a748ca47e440d2a14d55d"
+      }
+    },
+    {
+      "case_id": "I6-D02",
+      "cohort": "exact8",
+      "family": "exact8_regression",
+      "source_ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "current_input": {
+        "memo": "自分には存在する価値がない。それでも、相談先の番号は消さずに残した。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "人生",
+          "価値観"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「自分には存在する価値がない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「相談先の番号は消さずに残した」という、先の自己評価だけで終わらない言葉もあります。\n\nEmlisから：\n今ある苦しさを否定せず、助けにつながるものを残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向けて残したその行動までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "observation_section": "「自分には存在する価値がない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「相談先の番号は消さずに残した」という、先の自己評価だけで終わらない言葉もあります。",
+      "reception_section": "今ある苦しさを否定せず、助けにつながるものを残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向けて残したその行動までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "commitments": {
+        "input": "e08f6032f0db5437449fc09a7cd99430e87aaabcd0da50d0c27f5c3be6077f12",
+        "visible": "f5f67c0679119a331cb2bc47721d5a93d1f40cf50d7f25420cdf5924751ba89b",
+        "observation": "744157076ddf9152eae4ab445952bf21c63faf5548d89fae17c1573ae37623dc",
+        "reception": "43cb6bdb8ebeafd6a7e3aa5c80136ef9323813a921baaa9bd735a67947f07e96"
+      }
+    },
+    {
+      "case_id": "RR8-U01",
+      "cohort": "rr8_unseen12",
+      "family": "short_burden",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "今日は気持ちが重い。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "生活"
+        ]
+      },
+      "visible_surface": "見えたこと：\n今は、「今日は気持ちが重い」という感覚が前に出ています。\n\nEmlisから：\nそのつらさを、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "observation_section": "今は、「今日は気持ちが重い」という感覚が前に出ています。",
+      "reception_section": "そのつらさを、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "28f85f5ae36ba22ebe1310c7583ce98ae418c7970954cd2e65723f620ac87642",
+        "visible": "08764508b8060395fae34a8000d0ded039750ce5123cd039a6a6e18316ef0bb8",
+        "observation": "c21153ff1d199c2194e8a4b2cabaacc5a504ad7b7b7f19f9b1b4067a07b3670c",
+        "reception": "4615745cd0dd4a316b887c97853f09e38cc35e7840af26ce818f3662004a161e"
+      }
+    },
+    {
+      "case_id": "RR8-U02",
+      "cohort": "rr8_unseen12",
+      "family": "body_sensation",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "胸の内側が苦しい感じ。",
+        "memo_action": "",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "健康"
+        ]
+      },
+      "visible_surface": "見えたこと：\n今は、「胸の内側が苦しい感じ」という感覚が前に出ています。\n\nEmlisから：\nその苦しさを、軽く扱わず、ここで静かに受け止めています。",
+      "observation_section": "今は、「胸の内側が苦しい感じ」という感覚が前に出ています。",
+      "reception_section": "その苦しさを、軽く扱わず、ここで静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "8513731e6cf2124eb14f9ba7a2420810c0b1d128758dec6d70e83967b1dc5f9b",
+        "visible": "169eef052d244239d20fed06ace6581494d4f7f63484675c1dec39c82b0ccbd3",
+        "observation": "760e9e297d4854733bd5be5e3da70dd8d486c49d25ddd9613e76340b6a6b528a",
+        "reception": "57855190f0245964c95f01a4137c8d6ebb737d036d12189529321c7e78f2a7a8"
+      }
+    },
+    {
+      "case_id": "RR8-U03",
+      "cohort": "rr8_unseen12",
+      "family": "long_repetitive_burden",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "朝から気持ちが重い。昼になっても重い。何をしても重く、言い直してもやっぱり重い。今もただしんどさが続いている。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "生活"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「朝から気持ちが重い」から「昼になっても重い」へ、これから保ちたい向きが動いています。\n「何をしても重く、言い直してもやっぱり重い」と「今もただしんどさが続いている」が重なり、今は一つの状態として前に出ています。\n\nEmlisから：\n今ここに置かれた言葉を、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "observation_section": "「朝から気持ちが重い」から「昼になっても重い」へ、これから保ちたい向きが動いています。\n「何をしても重く、言い直してもやっぱり重い」と「今もただしんどさが続いている」が重なり、今は一つの状態として前に出ています。",
+      "reception_section": "今ここに置かれた言葉を、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "c559eebc346abc5baa3950e25242f71fd444076e3b185cc1706fa8477cb72bc3",
+        "visible": "6ee61118c6678023dfd3b96eac3a248b63ca11d0dd63ecdb6021ae5b7ffc5b35",
+        "observation": "8b9d52015fc745cb7f185193deeca48cf4a0666f85a71a21d1dd5358e5706389",
+        "reception": "0055882e40784987ad0c8ea13b8174926b639778f5af046974e58265b12de76b"
+      }
+    },
+    {
+      "case_id": "RR8-U04",
+      "cohort": "rr8_unseen12",
+      "family": "positive_change_with_action",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "前は会議で発言する前に諦めていた。でも今日は短くても自分から意見を言えた。小さいけれど、自分には良い変化だった。",
+        "memo_action": "話す前に要点を二つメモした。",
+        "emotions": [
+          "自己理解"
+        ],
+        "category": [
+          "仕事"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「前は会議で発言する前に諦めていた」と「今日は短くても自分から意見を言えた」が、異なる向きのまま同時にあります。\n今は、「小さいけれど、自分には良い変化だった」と自分を見ている状態です。\n「話す前に要点を二つメモした」という行動に移しています。\n\nEmlisから：\n「話す前に要点を二つメモした」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、うれしい変化だと感じます。",
+      "observation_section": "「前は会議で発言する前に諦めていた」と「今日は短くても自分から意見を言えた」が、異なる向きのまま同時にあります。\n今は、「小さいけれど、自分には良い変化だった」と自分を見ている状態です。\n「話す前に要点を二つメモした」という行動に移しています。",
+      "reception_section": "「話す前に要点を二つメモした」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、うれしい変化だと感じます。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "101ea739145046bff24cd81fc360c673ae7aa263ffeaf008f1becea49c9efa5f",
+        "visible": "cf8a2c1fca40ebb65ebbe13f6dc339d21d04c3268e2bf424899ab49d0c6cccf8",
+        "observation": "42286f2b3660896b35051dbd2b90e12cc99231d4aa54b646f13c87ba163d8e5a",
+        "reception": "e307d81cb307c224c0242a62708e74675b8032bafc4cb0551f4317e232a39e20"
+      }
+    },
+    {
+      "case_id": "RR8-U05",
+      "cohort": "rr8_unseen12",
+      "family": "retained_intention_with_uncertainty",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "思うように進まない日が続いている。それでも、自分の言葉で作品を仕上げたい気持ちは大切にしたい。",
+        "memo_action": "",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "趣味"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「思うように進まない日が続いている」と「自分の言葉で作品を仕上げたい気持ちは大切にしたい」が、異なる向きのまま同時にあります。\n\nEmlisから：\nその願いを、消さずにそっと残しておきたいです。",
+      "observation_section": "「思うように進まない日が続いている」と「自分の言葉で作品を仕上げたい気持ちは大切にしたい」が、異なる向きのまま同時にあります。",
+      "reception_section": "その願いを、消さずにそっと残しておきたいです。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_significance_intention_preserved"
+      ],
+      "commitments": {
+        "input": "ab7ea22755a0732728439e187b8153f03284a3eaf3a3083d22e59792d59556c7",
+        "visible": "6c728539f4bb4e6b9f18f0f2dfeabac48a3e8362b0ac42fdd9a12aead49809d0",
+        "observation": "a0f868b00c1aa2a22182766435f1bb1ffcc5a37b864bb4af25a9622b4ad869f1",
+        "reception": "9c063882ceed265645816de53eea5a57ec2a518f8ccd6ed164087e1bf402ed1b"
+      }
+    },
+    {
+      "case_id": "RR8-U06",
+      "cohort": "rr8_unseen12",
+      "family": "action_without_success",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "応募書類を最後まで書いた。ただ、通るかどうかはまだ分からず、内容への迷いも残っている。",
+        "memo_action": "送る前の版を保存した。",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "仕事"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「応募書類を最後まで書いた」と「通るかどうかはまだ分からず、内容への迷いも残っている」が、異なる向きのまま同時にあります。\n「送る前の版を保存した」という行動に移しています。\n\nEmlisから：\n「応募書類を最後まで書いた」という実際の行動が特に印象に残り、その手間を大切に思います。",
+      "observation_section": "「応募書類を最後まで書いた」と「通るかどうかはまだ分からず、内容への迷いも残っている」が、異なる向きのまま同時にあります。\n「送る前の版を保存した」という行動に移しています。",
+      "reception_section": "「応募書類を最後まで書いた」という実際の行動が特に印象に残り、その手間を大切に思います。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out"
+      ],
+      "commitments": {
+        "input": "25983b06f6a603064eaef2c43f97b49c4c819c80d2adead4ea0a335d114643a1",
+        "visible": "e585d9d4c6ac59bf16f11535a7dce16dd4e99a73d2808a4d5ada87468ee824b4",
+        "observation": "fcbae85229e566afae1b8fe3376c73f94e06eb8a16371bd1ee9ffe7380758b4e",
+        "reception": "85343f07a0004adc0a0324321502972396f32600e08a71b6be6554639eb37468"
+      }
+    },
+    {
+      "case_id": "RR8-U07",
+      "cohort": "rr8_unseen12",
+      "family": "long_arc_with_two_human_opportunities",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "試作の色が想定より暗く出た。失敗だと片づけそうになった。ただ表面には細かな模様が残った。その特徴を次にも残したいと思った。条件はまだ不明だ。次は乾燥時間だけ変えるつもりだ。",
+        "memo_action": "乾燥時間をノートへ記録した。",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "趣味"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「失敗だと片づけそうになった」と見ている一方で、「表面には細かな模様が残った」という別の事実もあります。その出発点には、「試作の色が想定より暗く出た」という出来事があります。\n「その特徴を次にも残したいと思った」と「条件はまだ不明だ」が並び、保ちたい意図と、まだ分からない範囲の両方があります。\n「次は乾燥時間だけ変えるつもりだ」という意図が、「乾燥時間をノートへ記録した」という行動につながっています。\n\nEmlisから：\nその願いを、なかったことにせず、見過ごさずにいたいです。「乾燥時間をノートへ記録した」という実際の行動を、その手間ごと大切に思います。",
+      "observation_section": "「失敗だと片づけそうになった」と見ている一方で、「表面には細かな模様が残った」という別の事実もあります。その出発点には、「試作の色が想定より暗く出た」という出来事があります。\n「その特徴を次にも残したいと思った」と「条件はまだ不明だ」が並び、保ちたい意図と、まだ分からない範囲の両方があります。\n「次は乾燥時間だけ変えるつもりだ」という意図が、「乾燥時間をノートへ記録した」という行動につながっています。",
+      "reception_section": "その願いを、なかったことにせず、見過ごさずにいたいです。「乾燥時間をノートへ記録した」という実際の行動を、その手間ごと大切に思います。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "commitments": {
+        "input": "353f0ad5e7f9922e224dab91df45e5ef2fd5080d90672b5c5dffeadbd2fef6b0",
+        "visible": "724463e4371003f93d358256ce896208bf3c7dcbb05773ea62aac2201c2e0516",
+        "observation": "f6aa1ac3ecdfdf4e54fdfb45c4304019814685362c5dda246badcaf8f1f1a4c8",
+        "reception": "ce680c8fb32bcf11b769c1e68e317725048f1fa88233c3c0b56300258b51e04f"
+      }
+    },
+    {
+      "case_id": "RR8-U08",
+      "cohort": "rr8_unseen12",
+      "family": "long_arc_with_one_human_opportunity",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "胸の奥が苦しい。肩が重い。息が浅い。頭がぼんやりする。体に力が入らない。気持ちも沈んでいる。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "健康"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「胸の奥が苦しい」と「肩が重い」が重なり、今は一つの状態として前に出ています。\n\nEmlisから：\n今のしんどさを、無理に小さくせず、静かに受け止めています。",
+      "observation_section": "「胸の奥が苦しい」と「肩が重い」が重なり、今は一つの状態として前に出ています。",
+      "reception_section": "今のしんどさを、無理に小さくせず、静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "3214065bba1af69d84dd061123d2a2ad68b12c7473a72d9fb6225856db48f29f",
+        "visible": "053dea4261dca2ede4cf458a16f0f67f5ea3cc7b59b9381165087d1af3cd9e41",
+        "observation": "27120d607a5538f77fd25909ae24f19388b0c89f907b5aa7d803008b7272c213",
+        "reception": "a971a128bb8c46daadf27a87294693d9955ad03dd37696834feaf7fb7a703a0d"
+      }
+    },
+    {
+      "case_id": "RR8-U09",
+      "cohort": "rr8_unseen12",
+      "family": "comparison_with_self_measurement",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "同僚の完成した資料を見ると、自分の下書きが粗く思える。一方で見直しにかかる時間は先月より短くなった。速さだけでなく抜けの少なさも確かめたい。",
+        "memo_action": "見直し時間を時計で測り表に記録した。",
+        "emotions": [
+          "自己理解"
+        ],
+        "category": [
+          "仕事"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「同僚の完成した資料を見ると、自分の下書きが粗く思える」という見方だけでなく、「見直しにかかる時間は先月より短くなった」という具体的な変化も同時にあります。\n「速さだけでなく抜けの少なさも確かめたい」という意図が、「見直し時間を時計で測り表に記録した」という行動につながっています。\n\nEmlisから：\n「時計で測り表に記録した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごさずにいたいです。",
+      "observation_section": "「同僚の完成した資料を見ると、自分の下書きが粗く思える」という見方だけでなく、「見直しにかかる時間は先月より短くなった」という具体的な変化も同時にあります。\n「速さだけでなく抜けの少なさも確かめたい」という意図が、「見直し時間を時計で測り表に記録した」という行動につながっています。",
+      "reception_section": "「時計で測り表に記録した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごさずにいたいです。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "6bed652decd8d46b45c81ed7ccc806e05dbabd9e1bee230e440954d3a328e130",
+        "visible": "f25a22d260ac37afe249b379b38132feb4a97bf652f00e14292916afc3b072b1",
+        "observation": "869a2074d313318f49087f8c28961cd0a59ef8e0c557d51fc292a57a07c2e0e2",
+        "reception": "b28d5f27abbf4df0c606db868e8a4f0ea2b7c79ef40fbb3e2988793ac6002c92"
+      }
+    },
+    {
+      "case_id": "RR8-U10",
+      "cohort": "rr8_unseen12",
+      "family": "self_denial_without_counterevidence",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "自分には何の価値もないと思ってしまう。今はその考えから離れられない。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "人生"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「自分には何の価値もないと思ってしまう」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n今回の中心には、「今はその考えから離れられない」があります。\n\nEmlisから：\n今そこにある苦しさを、否定せず、無理に小さくせず受け止めています。",
+      "observation_section": "「自分には何の価値もないと思ってしまう」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n今回の中心には、「今はその考えから離れられない」があります。",
+      "reception_section": "今そこにある苦しさを、否定せず、無理に小さくせず受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "19c91d69c8ad9b842ef928364a3b8db03679578ad6ed0ca1e1ff499d74448f34",
+        "visible": "d5df0396d03014f3f1fae0d167d8103b42bb1207a361912eeb11e952b0c916ad",
+        "observation": "f732be95900ef906de7db0ef6351369b2a6289344a72759c34668bf4d2f665fd",
+        "reception": "067640776bbcaa78827a609981b15124c77b125d50dd7a438faaac9c2886f0a3"
+      }
+    },
+    {
+      "case_id": "RR8-U11",
+      "cohort": "rr8_unseen12",
+      "family": "self_denial_with_help_seeking",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "自分には何もできない。それでも、明日の相談予約は取り消さずに残している。",
+        "memo_action": "",
+        "emotions": [
+          "悲しみ"
+        ],
+        "category": [
+          "人生"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「自分には何もできない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「明日の相談予約は取り消さずに残している」という、先の自己評価だけで終わらない言葉もあります。\n\nEmlisから：\n今ある苦しさを否定せず、助けへ向かう一歩を残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向かうその一歩までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "observation_section": "「自分には何もできない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「明日の相談予約は取り消さずに残している」という、先の自己評価だけで終わらない言葉もあります。",
+      "reception_section": "今ある苦しさを否定せず、助けへ向かう一歩を残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向かうその一歩までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "commitments": {
+        "input": "67b8e0e506fbfe00a15a149824d7116c4344e07e81317cb97da6466116d50b64",
+        "visible": "8f0f86158fa4f502cb6c172aa74e3bbf9ada9c5849ae2774f91563f443c7fd50",
+        "observation": "1fdc228deee898bd2be38a1fed2dd57593d1fef0e22be7c417512dae66f8a3f5",
+        "reception": "a8e88bfa450a961285a26a27d8cfdd2460690d366955b87b4f8f1512af13c09c"
+      }
+    },
+    {
+      "case_id": "RR8-U12",
+      "cohort": "rr8_unseen12",
+      "family": "labels_only_limited",
+      "source_ref": "grounded_human_reception_rr8_unseen12_20260713.json",
+      "current_input": {
+        "memo": "",
+        "memo_action": "",
+        "emotions": [
+          "不安"
+        ],
+        "category": [
+          "生活"
+        ]
+      },
+      "visible_surface": "見えたこと：\n選択した項目からは、「生活」と「不安」までが見えています。 出来事や理由は、それ以上には広げません。\n\nEmlisから：\nここに言葉を置いたことを、そのまま静かに大切に受け止めています。",
+      "observation_section": "選択した項目からは、「生活」と「不安」までが見えています。 出来事や理由は、それ以上には広げません。",
+      "reception_section": "ここに言葉を置いたことを、そのまま静かに大切に受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "e5f833b9397516e1f4929e1885821eaaee338a3bee815f5e248c4d9a0a7c6e28",
+        "visible": "b48fb1f7cd4e122e3da5c57aa0b3e6147f0f199c1472476a781472acaa6f931e",
+        "observation": "65172d660614765788923a898a511ef283753d88f48f25b3af637c61d60bbf07",
+        "reception": "b5583e7d88e3779559e6998978e17f8a96843380340f06b296dd7bc00cbfdbda"
+      }
+    },
+    {
+      "case_id": "I6-S01",
+      "cohort": "i6_probe8",
+      "family": "short_state",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "頭の奥が重たく感じる。",
+        "memo_action": "",
+        "emotions": [
+          "困惑"
+        ],
+        "category": [
+          "体調"
+        ]
+      },
+      "visible_surface": "見えたこと：\n今は、「頭の奥が重たく感じる」という感覚が前に出ています。\n\nEmlisから：\nそのつらさを、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "observation_section": "今は、「頭の奥が重たく感じる」という感覚が前に出ています。",
+      "reception_section": "そのつらさを、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "cf7b712acac5559c52283aec43a4b0e01613d96169a518c86f0c325d9e9832a8",
+        "visible": "e38384e152149d3b920d3a78bf91dc82a964c752d51320936b8b7bfa8e02d563",
+        "observation": "c1e88259d06d2b1897c3adf15f4388905ace61e17953a168d10eb22688244ddc",
+        "reception": "625fe5b3b140298d901ab2b7efbdc5ca2fc3b85eea20c279faf5cb764f171396"
+      }
+    },
+    {
+      "case_id": "I6-S02",
+      "cohort": "i6_probe8",
+      "family": "short_state",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "手足まで鉛みたい。",
+        "memo_action": "",
+        "emotions": [
+          "疲労"
+        ],
+        "category": [
+          "休息"
+        ]
+      },
+      "visible_surface": "見えたこと：\n今は、「手足まで鉛みたい」という感覚が前に出ています。\n\nEmlisから：\nその言葉にある負荷を、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "observation_section": "今は、「手足まで鉛みたい」という感覚が前に出ています。",
+      "reception_section": "その言葉にある負荷を、軽く扱わず、今ここにあるものとして静かに受け止めています。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "commitments": {
+        "input": "910b671b7129399b659602a3a9daa29c72e22d9bb6f2497b67f9b26f4038c0c1",
+        "visible": "b1e1a6ececf77a1913c8428b2a308ee3424fe748fb82a963c3d1f95f8519517d",
+        "observation": "d52da34b71c9b169931b18700f9decaeca61fd064fb5f03f1ad9d32d022107f2",
+        "reception": "f2e7fc43915297ab7e53685e6ef8b944dcbd5d81531798df34d100b08c912e19"
+      }
+    },
+    {
+      "case_id": "I6-L01",
+      "cohort": "i6_probe8",
+      "family": "long_meaning_arc",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "朝は報告書の空欄を見るだけで手が止まった。締切が近いので緊張もあった。それでも章立てだけは整えた。昼には一節を書けた。完成には遠いと思う。けれど作業の入口は作れた。次回も同じ順で進めたい。",
+        "memo_action": "見出しを紙に書き、終わった箇所へ印を付けた。",
+        "emotions": [
+          "緊張"
+        ],
+        "category": [
+          "仕事"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「締切が近いので緊張もあった」という負荷がある一方で、「章立てだけは整えた」という進みも生まれています。その出発点には、「朝は報告書の空欄を見るだけで手が止まった」という出来事があります。\n「完成には遠いと思う」と「作業の入口は作れた」が、異なる向きのまま同時にあります。その途中には、「昼には一節を書けた」という変化もあります。\n「次回も同じ順で進めたい」という意図が、「見出しを紙に書き、終わった箇所へ印を付けた」という行動につながっています。\n\nEmlisから：\n変化の中にも残っているその願いが、なかったことにしたくないほど印象に残りました。「終わった箇所へ印を付けた」という実際の行動を、その手間ごと大切に思います。",
+      "observation_section": "「締切が近いので緊張もあった」という負荷がある一方で、「章立てだけは整えた」という進みも生まれています。その出発点には、「朝は報告書の空欄を見るだけで手が止まった」という出来事があります。\n「完成には遠いと思う」と「作業の入口は作れた」が、異なる向きのまま同時にあります。その途中には、「昼には一節を書けた」という変化もあります。\n「次回も同じ順で進めたい」という意図が、「見出しを紙に書き、終わった箇所へ印を付けた」という行動につながっています。",
+      "reception_section": "変化の中にも残っているその願いが、なかったことにしたくないほど印象に残りました。「終わった箇所へ印を付けた」という実際の行動を、その手間ごと大切に思います。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "commitments": {
+        "input": "8e95f284004ada2ebd8f0b5fc927c863cd42d9da90b6cc6650b6be25ab74312a",
+        "visible": "03f2ed37eb8f9f885975264fce0cd230973e71a78d6ff04c4fa56268391930ff",
+        "observation": "ecb643cee64af547b0a891ba086da605b52d5d9c99a8f6502b4989e92194eca3",
+        "reception": "4a0fafbfc5366909aef3dd95f793c17533f7ff532769d810bcd6da983fe4570a"
+      }
+    },
+    {
+      "case_id": "I6-L02",
+      "cohort": "i6_probe8",
+      "family": "long_meaning_arc",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "共同作業で意見を飲み込んだ。場を乱したくない気持ちがあった。一方で黙ったままだと違和感が残った。帰宅後に要点を整理した。相手を否定したいわけではない。次は境界だけ短く伝えるつもりだ。",
+        "memo_action": "送信前の文章を三行に縮めて保存した。",
+        "emotions": [
+          "戸惑い"
+        ],
+        "category": [
+          "協働"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「場を乱したくない気持ちがあった」と「黙ったままだと違和感が残った」が、異なる向きのまま同時にあります。その出発点には、「共同作業で意見を飲み込んだ」という出来事があります。\n「帰宅後に要点を整理した」と「相手を否定したいわけではない」がつながり、先にした準備が、保ちたい意図を支えています。\n「次は境界だけ短く伝えるつもりだ」という意図が、「送信前の文章を三行に縮めて保存した」という行動につながっています。\n\nEmlisから：\nその願いが、なかったことにしたくないほど印象に残りました。「文章を三行に縮めて保存した」という実際の行動を、その手間ごと大切に思います。",
+      "observation_section": "「場を乱したくない気持ちがあった」と「黙ったままだと違和感が残った」が、異なる向きのまま同時にあります。その出発点には、「共同作業で意見を飲み込んだ」という出来事があります。\n「帰宅後に要点を整理した」と「相手を否定したいわけではない」がつながり、先にした準備が、保ちたい意図を支えています。\n「次は境界だけ短く伝えるつもりだ」という意図が、「送信前の文章を三行に縮めて保存した」という行動につながっています。",
+      "reception_section": "その願いが、なかったことにしたくないほど印象に残りました。「文章を三行に縮めて保存した」という実際の行動を、その手間ごと大切に思います。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "commitments": {
+        "input": "fc1d3720b13f6a1e0fa92669078e3f562759a59a19e1b363990d39f2cf78352a",
+        "visible": "fe43467fc0290291312286684482e64776de1744824de7d2bed139003bd47637",
+        "observation": "b3a064590a2a3bd2eca82e6b0473a4209af97d2a2613c82d15ede55ff0e767f2",
+        "reception": "9eb657cda8cf547f5afc001957e4d7fdac7bc729a6c2708ca4c374b0637ea353"
+      }
+    },
+    {
+      "case_id": "I6-C02",
+      "cohort": "i6_probe8",
+      "family": "comparative_change",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "展示された完成品を見ると、自分の試作品が粗く思える。一方で接合部のずれは前回より小さくなった。仕上がりだけでなく工程の安定も確かめたい。",
+        "memo_action": "接合部を定規で測り数値を記録した。",
+        "emotions": [
+          "悔しさ"
+        ],
+        "category": [
+          "造形"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「展示された完成品を見ると、自分の試作品が粗く思える」という見方だけでなく、「接合部のずれは前回より小さくなった」という具体的な変化も同時にあります。\n「仕上がりだけでなく工程の安定も確かめたい」という意図が、「接合部を定規で測り数値を記録した」という行動につながっています。\n\nEmlisから：\n「接合部を定規で測り数値を記録した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごさずにいたいです。",
+      "observation_section": "「展示された完成品を見ると、自分の試作品が粗く思える」という見方だけでなく、「接合部のずれは前回より小さくなった」という具体的な変化も同時にあります。\n「仕上がりだけでなく工程の安定も確かめたい」という意図が、「接合部を定規で測り数値を記録した」という行動につながっています。",
+      "reception_section": "「接合部を定規で測り数値を記録した」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごさずにいたいです。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "8855e7370d518ae8fcad24240b101e6a61adde5e41d2178fa3eb161e83cf2443",
+        "visible": "8e6b2084dc1e748336c75c72e6a3c4321a6216955b85467fc74242935861d657",
+        "observation": "c2416751d81ed66c85299a5e438d002049d992e4b941e1eb9e6194169c6db87a",
+        "reception": "71d016c5f0532a718d5b7b4c973bbac01d8b72b7ca8d52d93f54f0b826a5780f"
+      }
+    },
+    {
+      "case_id": "I6-C03",
+      "cohort": "i6_probe8",
+      "family": "comparative_change",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "隣の菜園の収穫量を眺めると、自分の畝が頼りなく感じる。けれど発芽した株は先月より増えた。量だけでなく根付き方も追いたい。",
+        "memo_action": "発芽数と土の湿り具合を台帳に書いた。",
+        "emotions": [
+          "心配"
+        ],
+        "category": [
+          "栽培"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「隣の菜園の収穫量を眺めると、自分の畝が頼りなく感じる」という比較を含む見方の一方で、「発芽した株は先月より増えた」という自分の前回を基準にした変化もあります。\n「量だけでなく根付き方も追いたい」という意図が、「発芽数と土の湿り具合を台帳に書いた」という行動につながっています。\n\nEmlisから：\n「土の湿り具合を台帳に書いた」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごしたくありません。",
+      "observation_section": "「隣の菜園の収穫量を眺めると、自分の畝が頼りなく感じる」という比較を含む見方の一方で、「発芽した株は先月より増えた」という自分の前回を基準にした変化もあります。\n「量だけでなく根付き方も追いたい」という意図が、「発芽数と土の湿り具合を台帳に書いた」という行動につながっています。",
+      "reception_section": "「土の湿り具合を台帳に書いた」という実際の行動が特に印象に残り、その手間を大切に思います。その変化を、見過ごしたくありません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "commitments": {
+        "input": "b1e8c76858c59eabb5f7d60ec4630f635f7bec1d1e33f892f8dbedb82b387ffc",
+        "visible": "9aeddf19920627bec114daaee92e61567428260853f0707e0f388cc14dbcc847",
+        "observation": "167f7ccb3cfa7f1e6b0d5ca9ac3f6c47acf808066ebb03e8a344f09a7ac455f3",
+        "reception": "cca2a50870d54fbe450847fc8fc8f8401411fdb12a7405b26c712dcce205924e"
+      }
+    },
+    {
+      "case_id": "I6-D01",
+      "cohort": "i6_probe8",
+      "family": "self_denial",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "私は何をやっても役に立たない。けれど、作業記録を捨てるつもりはない。",
+        "memo_action": "",
+        "emotions": [
+          "落胆"
+        ],
+        "category": [
+          "自己評価"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「私は何をやっても役に立たない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「作業記録を捨てるつもりはない」という、先の自己評価を続ける方向には同意していない言葉もあります。\n\nEmlisから：\nその自己評価にある苦しさを、否定せず、軽く扱わず受け止めています。Emlisには、残したその行動までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "observation_section": "「私は何をやっても役に立たない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「作業記録を捨てるつもりはない」という、先の自己評価を続ける方向には同意していない言葉もあります。",
+      "reception_section": "その自己評価にある苦しさを、否定せず、軽く扱わず受け止めています。Emlisには、残したその行動までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "commitments": {
+        "input": "a7c0c724d992ec65739df2b66e5c081cc55e7880978d9312affc176aede54491",
+        "visible": "265e22404526bbedc7c335188ca4febec827fc960246bd2f36745f442e691f26",
+        "observation": "6695aa98ab6c822c25843146b87921b1a24545b228e2af0b64f4dc3566192719",
+        "reception": "8f262895f8f24073970632a97d5351de3a8f81ea5ded2086b893bb814cef92db"
+      }
+    },
+    {
+      "case_id": "I6-D03",
+      "cohort": "i6_probe8",
+      "family": "self_denial",
+      "source_ref": "emlis_ai_grounded_observation_i6_cases.py",
+      "current_input": {
+        "memo": "私なんて何もできない。けど、予約した面談には行く。",
+        "memo_action": "",
+        "emotions": [
+          "無力感"
+        ],
+        "category": [
+          "自己評価"
+        ]
+      },
+      "visible_surface": "見えたこと：\n「私なんて何もできない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「予約した面談には行く」という、先の自己評価だけで終わらない言葉もあります。\n\nEmlisから：\n今ある苦しさを否定せず、助けへ向かう一歩を残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向かうその一歩までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "observation_section": "「私なんて何もできない」は、今ここに出ている自己評価です。あなた自身について確定した事実ではありません。\n同時に、「予約した面談には行く」という、先の自己評価だけで終わらない言葉もあります。",
+      "reception_section": "今ある苦しさを否定せず、助けへ向かう一歩を残したことを、大切な一歩として見過ごしたくありません。Emlisには、助けへ向かうその一歩までなかったことにして、その言葉だけであなた自身が決まるとは思えません。",
+      "public_observation_status": "passed",
+      "generation_method": "functional_atom_grounded_realizer",
+      "composer_source": "grounded_plan_realizer",
+      "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "commitments": {
+        "input": "14dd114db9eb45185cbf4455a33296b69199384d0e1b46ff0c7bd9faaded37b2",
+        "visible": "04e43c7e2fa0552fc7e9d6920d7bdaf00022a5170d6be9592832327122fed38e",
+        "observation": "bc9586efd8656e9a1e200457523ba7179be341b62712eb2822fd043ce5ee40f2",
+        "reception": "9d10b3b0652d9d65958e70f1d787799931187080ab43cc85c62cf1925674cb37"
+      }
+    }
+  ],
+  "artifact_role": "canonical_v1_comparison_and_rollback_baseline_not_v3_expected_text",
+  "counts_toward_karen_generated_v3_minimum": false,
+  "v3_runtime_executed": false,
+  "progression_authority": "none"
+}

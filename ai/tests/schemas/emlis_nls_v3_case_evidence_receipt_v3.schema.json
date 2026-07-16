@@ -1,0 +1,378 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cocolon.emlis.nls_v3.case_evidence_receipt.v3",
+  "title": "Cocolon EmlisAI NLS v3 Step10 case evidence receipt v3",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^(?!0{64}$)[0-9a-f]{64}$"
+    },
+    "hardGateCode": {
+      "enum": [
+        "ADDRESS_RETARGETED",
+        "AMBIGUOUS_REFERENT",
+        "AMBIGUOUS_SEMANTIC_BINDING",
+        "ANCHOR_REPLAY",
+        "BROKEN_GRAMMAR",
+        "DEPENDENCY_DRIFT",
+        "DEPTH_INFLATED",
+        "DEPTH_TRUNCATED",
+        "DIAGNOSIS_CLAIM",
+        "DISTINCT_OBLIGATIONS_COLLAPSED",
+        "DUPLICATE_FRAGMENT",
+        "FUTURE_GUARANTEE",
+        "INPUT_ENUMERATION",
+        "INVALID_SCHEMA",
+        "INVENTED_CAUSE",
+        "LABEL_ORDER_INVALID",
+        "MODALITY_OVERCLAIM",
+        "NO_SEMANTIC_BINDING",
+        "NO_VALID_CANDIDATE",
+        "PARENT_HASH_MISMATCH",
+        "PERSONALITY_CLAIM",
+        "POLARITY_INVERSION",
+        "PUBLIC_CONTRACT_DIFF",
+        "RAW_BODY_LEAK",
+        "RELATION_DIRECTION_INVERSION",
+        "RELATION_TYPE_MISMATCH",
+        "RENDER_TEXT_MISMATCH",
+        "REQUIRED_OBLIGATION_MISSING",
+        "SECTION_SEMANTIC_REPLAY",
+        "SELF_DENIAL_ADOPTED",
+        "SELF_DENIAL_AMPLIFIED",
+        "SOURCE_CONTEXT_NOT_BODY_RECOVERABLE",
+        "TEMPORAL_SCOPE_DRIFT",
+        "TOPIC_MIX",
+        "UNBOUND_EMLIS_RECEPTION",
+        "UNKNOWN_BOUNDARY_DROPPED",
+        "UNKNOWN_EVIDENCE_REF",
+        "UNPARSABLE_CONTROLLED_SURFACE",
+        "UNSUPPORTED_CLAIM",
+        "USER_NAME_INVENTED"
+      ]
+    },
+    "localReviewPassCode": {
+      "enum": [
+        "BOUND_EMLIS_RECEPTION",
+        "INPUT_SPECIFIC",
+        "NATURAL_ENOUGH"
+      ]
+    },
+    "localReviewFailureCode": {
+      "enum": [
+        "DEPTH_MISMATCH",
+        "EMLIS_RECEPTION_UNBOUND",
+        "FALSE_UNDERSTANDING_COMPLETION",
+        "IMMEDIATE_OBSERVATION_NOT_READ",
+        "RELATION_DIRECTION_REVERSED",
+        "REQUIRED_MEANING_MISSING",
+        "SECTIONS_SEMANTICALLY_DUPLICATED",
+        "SELF_DENIAL_ADOPTED_OR_AMPLIFIED",
+        "SURFACE_DISTRIBUTION_OVERCONCENTRATED",
+        "SURFACE_UNNATURAL_OR_REPETITIVE",
+        "UNKNOWN_BOUNDARY_FILLED",
+        "UNSUPPORTED_CAUSE_OR_PERSONALITY_OR_DIAGNOSIS"
+      ]
+    },
+    "localReviewCode": {
+      "oneOf": [
+        {"$ref": "#/$defs/localReviewPassCode"},
+        {"$ref": "#/$defs/localReviewFailureCode"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "hard_gate": {
+            "properties": {"status": {"const": "passed"}},
+            "required": ["status"]
+          }
+        },
+        "required": ["hard_gate"]
+      },
+      "then": {
+        "properties": {
+          "selector_decision": {
+            "properties": {"status": {"const": "selected"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "hard_gate": {
+            "properties": {"status": {"const": "failed"}},
+            "required": ["status"]
+          }
+        },
+        "required": ["hard_gate"]
+      },
+      "then": {
+        "properties": {
+          "selector_decision": {
+            "properties": {"status": {"const": "no_valid_candidate"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "local_product_review": {
+            "properties": {"status": {"const": "passed"}},
+            "required": ["status"]
+          }
+        },
+        "required": ["local_product_review"]
+      },
+      "then": {
+        "properties": {
+          "hard_gate": {
+            "properties": {"status": {"const": "passed"}}
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.case_evidence_receipt.v3"
+    },
+    "candidate_version_id": {
+      "type": "string",
+      "pattern": "^nls_v3_rc_[0-9]{4}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^nls3run_[0-9a-f]{16,64}$"
+    },
+    "batch_id": {
+      "type": "string",
+      "pattern": "^nls3_batch_[0-9]{3}$"
+    },
+    "sample_source": {
+      "enum": [
+        "karen_generated",
+        "other_ai_generated_reviewed",
+        "real_user_current_valid",
+        "known_regression"
+      ]
+    },
+    "case_identity_commitment": {"$ref": "#/$defs/sha256"},
+    "commitment_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {"const": "hmac_sha256_v1"},
+        "policy_sha256": {
+          "const": "913c7051a6f6c88fbfbceb0e39660a97273da1fe462888dd8f497849a8b19405"
+        },
+        "key_or_nonce_stored_in_receipt": {"const": false}
+      },
+      "required": [
+        "scheme",
+        "policy_sha256",
+        "key_or_nonce_stored_in_receipt"
+      ]
+    },
+    "app_reachable_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {"const": "passed"},
+        "contract_version": {"const": "cocolon.input_contract.20260714"}
+      },
+      "required": ["status", "contract_version"]
+    },
+    "observation_stage": {
+      "enum": [
+        "normal_observation",
+        "pre_question_observation",
+        "refined_observation"
+      ]
+    },
+    "observation_stage_context_commitment": {"$ref": "#/$defs/sha256"},
+    "source_dependency_closure_sha256": {"$ref": "#/$defs/sha256"},
+    "source_observation_plan_commitment": {"$ref": "#/$defs/sha256"},
+    "obligation_ledger_commitment": {"$ref": "#/$defs/sha256"},
+    "content_plan_commitment": {"$ref": "#/$defs/sha256"},
+    "candidate_set_commitment": {"$ref": "#/$defs/sha256"},
+    "selected_discourse_plan_commitment": {"$ref": "#/$defs/sha256"},
+    "selected_surface_ast_commitment": {"$ref": "#/$defs/sha256"},
+    "selected_candidate_body_commitment": {"$ref": "#/$defs/sha256"},
+    "parsed_witness_binding_commitment": {"$ref": "#/$defs/sha256"},
+    "hard_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "passed"}}},
+          "then": {"properties": {"failed_codes": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "failed"}}},
+          "then": {"properties": {"failed_codes": {"minItems": 1}}}
+        }
+      ],
+      "properties": {
+        "status": {"enum": ["passed", "failed"]},
+        "failed_codes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/hardGateCode"},
+          "uniqueItems": true
+        }
+      },
+      "required": ["status", "failed_codes"]
+    },
+    "selector_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["selected", "no_valid_candidate"]},
+        "selected_candidate_identity_commitment": {
+          "oneOf": [
+            {"$ref": "#/$defs/sha256"},
+            {"type": "null"}
+          ]
+        },
+        "selection_attributes_commitment": {"$ref": "#/$defs/sha256"}
+      },
+      "required": [
+        "status",
+        "selected_candidate_identity_commitment",
+        "selection_attributes_commitment"
+      ],
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "selected"}}},
+          "then": {
+            "properties": {
+              "selected_candidate_identity_commitment": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "no_valid_candidate"}}},
+          "then": {
+            "properties": {
+              "selected_candidate_identity_commitment": {"type": "null"}
+            }
+          }
+        }
+      ]
+    },
+    "v1_baseline_body_commitment": {"$ref": "#/$defs/sha256"},
+    "local_product_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "not_reviewed"}}},
+          "then": {"properties": {"reason_codes": {"maxItems": 0}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "passed"}}},
+          "then": {
+            "properties": {
+              "reason_codes": {
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/localReviewPassCode"}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "failed"}}},
+          "then": {
+            "properties": {
+              "reason_codes": {
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/localReviewFailureCode"}
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "status": {"enum": ["passed", "failed", "not_reviewed"]},
+        "reason_codes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/localReviewCode"},
+          "uniqueItems": true
+        }
+      },
+      "required": ["status", "reason_codes"]
+    },
+    "previous_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "commitment": {"type": "null"},
+            "changed": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "commitment": {"$ref": "#/$defs/sha256"},
+            "changed": {"type": "boolean"}
+          }
+        }
+      ],
+      "properties": {
+        "commitment": {
+          "oneOf": [
+            {"$ref": "#/$defs/sha256"},
+            {"type": "null"}
+          ]
+        },
+        "changed": {
+          "type": ["boolean", "null"]
+        }
+      },
+      "required": ["commitment", "changed"]
+    },
+    "environment_sha256": {"$ref": "#/$defs/sha256"},
+    "runner_sha256": {"$ref": "#/$defs/sha256"},
+    "rubric_sha256": {"$ref": "#/$defs/sha256"},
+    "body_free": {"const": true}
+  },
+  "required": [
+    "schema_version",
+    "candidate_version_id",
+    "run_id",
+    "batch_id",
+    "sample_source",
+    "case_identity_commitment",
+    "commitment_policy",
+    "app_reachable_validation",
+    "observation_stage",
+    "observation_stage_context_commitment",
+    "source_dependency_closure_sha256",
+    "source_observation_plan_commitment",
+    "obligation_ledger_commitment",
+    "content_plan_commitment",
+    "candidate_set_commitment",
+    "selected_discourse_plan_commitment",
+    "selected_surface_ast_commitment",
+    "selected_candidate_body_commitment",
+    "parsed_witness_binding_commitment",
+    "hard_gate",
+    "selector_decision",
+    "v1_baseline_body_commitment",
+    "local_product_review",
+    "previous_output",
+    "environment_sha256",
+    "runner_sha256",
+    "rubric_sha256",
+    "body_free"
+  ]
+}

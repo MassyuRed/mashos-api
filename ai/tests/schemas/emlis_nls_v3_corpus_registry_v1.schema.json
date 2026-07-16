@@ -1,0 +1,411 @@
+{
+  "$id": "cocolon.emlis.nls_v3.corpus_registry.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "aggregate_counts": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_karen_minimum": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "contract_fixture_valid": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "invalid_contract": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "legacy_input": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "other_ai_generated_reviewed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "real_user_current_valid": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accepted_karen_minimum",
+        "contract_fixture_valid",
+        "invalid_contract",
+        "legacy_input",
+        "other_ai_generated_reviewed",
+        "real_user_current_valid"
+      ],
+      "type": "object"
+    },
+    "batch001_status": {
+      "const": "not_created_post_step2_transition"
+    },
+    "body_free": {
+      "const": true
+    },
+    "collections": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "app_reachable_valid_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "case_count": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "classification": {
+            "enum": [
+              "karen_generated",
+              "other_ai_generated_reviewed",
+              "invalid_contract",
+              "legacy_input",
+              "real_user_current_valid"
+            ]
+          },
+          "collection_id": {
+            "pattern": "^[a-z][a-z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "corpus_ref": {
+            "oneOf": [
+              {
+                "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "corpus_sha256": {
+            "oneOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "counts_toward_karen_minimum": {
+            "const": false
+          },
+          "private_commitment_policy": {
+            "enum": [
+              "none_repo_safe_synthetic",
+              "hmac_sha256_private_key_required"
+            ]
+          },
+          "provenance_subtype": {
+            "pattern": "^[a-z][a-z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "raw_body_in_registry": {
+            "const": false
+          },
+          "status": {
+            "enum": [
+              "available_contract_fixture",
+              "not_received",
+              "private_local_only",
+              "accepted"
+            ]
+          },
+          "storage": {
+            "enum": [
+              "repo_safe_synthetic_fixture",
+              "private_local_only"
+            ]
+          }
+        },
+        "required": [
+          "app_reachable_valid_count",
+          "case_count",
+          "classification",
+          "collection_id",
+          "corpus_ref",
+          "corpus_sha256",
+          "counts_toward_karen_minimum",
+          "private_commitment_policy",
+          "provenance_subtype",
+          "raw_body_in_registry",
+          "status",
+          "storage"
+        ],
+        "type": "object"
+      },
+      "minItems": 4,
+      "type": "array"
+    },
+    "completion_condition": {
+      "const": "strict_schema_validator_duplicate_registry_annotation_guard_green"
+    },
+    "cumulative_novelty_index": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_batch_refs": {
+          "items": {
+            "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "accepted_karen_case_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exact_input_identities": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "identity_scope": {
+          "const": "repo_safe_synthetic_only_private_sources_require_hmac"
+        },
+        "normalized_input_identities": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "reference_case_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "registered_case_ids": {
+          "items": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "retired_invalid_case_ids": {
+          "items": {
+            "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "replacement_case_id_reuse_allowed": {
+          "const": false
+        }
+      },
+      "required": [
+        "accepted_batch_refs",
+        "accepted_karen_case_count",
+        "exact_input_identities",
+        "identity_scope",
+        "normalized_input_identities",
+        "reference_case_count",
+        "registered_case_ids",
+        "retired_invalid_case_ids",
+        "replacement_case_id_reuse_allowed"
+      ],
+      "type": "object"
+    },
+    "design_sha256": {
+      "const": "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc"
+    },
+    "next_step_authority": {
+      "const": "create_and_freeze_batch001_then_step3_only"
+    },
+    "parent_step1_ref": {
+      "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+      "type": "string"
+    },
+    "parent_step1_sha256": {
+      "const": "669835b0fdce3bc1e2e897325ab37b5f82abc9a353bc864993aa284083b7a518"
+    },
+    "policies": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation_projection": {
+          "const": "explicit_input_allowlist_only"
+        },
+        "duplicate_policy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "private_real_user_identity": {
+          "const": "versioned_domain_separated_hmac_private_key"
+        },
+        "raw_real_user_repo_allowed": {
+          "const": false
+        },
+        "validator_policy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "annotation_projection",
+        "duplicate_policy_sha256",
+        "private_real_user_identity",
+        "raw_real_user_repo_allowed",
+        "validator_policy_sha256"
+      ],
+      "type": "object"
+    },
+    "registry_id": {
+      "pattern": "^nls3registry_[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "schemas": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "sample_case",
+              "coverage_matrix",
+              "sample_batch_manifest",
+              "corpus_registry"
+            ]
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "role",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.corpus_registry.v1"
+    },
+    "step2_status": {
+      "const": "completed"
+    },
+    "test_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "independent_negative_fixture_count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "legacy_fixture_count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "live_completion_probes_passed": {
+          "const": true
+        },
+        "positive_fixture_count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "required_test_contracts": {
+          "items": {
+            "enum": [
+              "app_reachable_positive_and_independent_negative",
+              "rn_contract_and_hash_drift",
+              "canonical_json_and_jsonl_adversarial",
+              "exact_normalized_near_and_order_determinism",
+              "schema_runtime_parity",
+              "annotation_projection_allowlist",
+              "private_hmac_and_shareable_source_boundary",
+              "coverage_manifest_registry_recomputation",
+              "batch001_100_case_transition_boundary",
+              "invalid_replacement_lineage_and_retired_id_nonreuse"
+            ]
+          },
+          "minItems": 10,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "test_ref": {
+          "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+          "type": "string"
+        },
+        "test_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "independent_negative_fixture_count",
+        "legacy_fixture_count",
+        "live_completion_probes_passed",
+        "positive_fixture_count",
+        "required_test_contracts",
+        "test_ref",
+        "test_sha256"
+      ],
+      "type": "object"
+    },
+    "valid_for_batch001_creation": {
+      "const": true
+    },
+    "valid_for_runtime_switch": {
+      "const": false
+    },
+    "validator_owner": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "pattern": "^(?!.*//)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "aggregate_counts",
+    "batch001_status",
+    "body_free",
+    "collections",
+    "completion_condition",
+    "cumulative_novelty_index",
+    "design_sha256",
+    "next_step_authority",
+    "parent_step1_ref",
+    "parent_step1_sha256",
+    "policies",
+    "registry_id",
+    "schemas",
+    "schema_version",
+    "step2_status",
+    "test_evidence",
+    "valid_for_batch001_creation",
+    "valid_for_runtime_switch",
+    "validator_owner"
+  ],
+  "title": "Cocolon EmlisAI NLS v3 corpus registry and Step 2 receipt",
+  "type": "object"
+}

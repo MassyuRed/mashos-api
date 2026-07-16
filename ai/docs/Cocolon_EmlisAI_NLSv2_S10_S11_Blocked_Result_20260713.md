@@ -1,5 +1,8 @@
 # Cocolon EmlisAI Natural Language Surface v2 Step 10 / Step 11 遮断結果
 
+> **2026-07-13 全Step再監査による表現訂正**  
+> Step 10のshadow機能とStep 11のowner切替機能は、どちらも未実装・未実行である。実装したのはHoldout Aの`STOP`後に進行しないfail-closed guardとreceiptである。「Step 10／11を実装した」という意味には扱わない。
+
 実施日: 2026-07-13  
 対象入力: `mashos-api_6(102).zip`  
 入力SHA-256: `a2c8262219309a991c8b13afd474e8387285de1873053f7eb2b3f65773909386`
@@ -8,7 +11,7 @@
 
 Step 10のruntime接続前shadowとStep 11のruntime owner切替は実行していない。
 
-これは未着手ではなく、設計のfail-closed条件を実装した結果である。
+機能としては未実装・未実行であり、設計のfail-closed条件をguardとして実装した結果である。
 
 - Holdout Aは`STOP`である。
 - Holdout Bは設計どおり未評価である。

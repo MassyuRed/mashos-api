@@ -87,6 +87,60 @@ def _safe_grounded_gate_meta_fallback(report: Any) -> Dict[str, Any]:
     return GroundedObservationGateReport.as_body_free_meta(report)
 
 
+_NLS_V3_STEP10_PUBLIC_ROUTING_STATE = "disabled"
+
+
+def _step10_dormant_v3_public_hook(
+    *,
+    user_id: str,
+    current_input: Dict[str, Any],
+) -> ReplyEnvelope | None:
+    """Default-off one-way connection point; Step 10 cannot activate owner v3.
+
+    The disabled branch deliberately performs no v3 import.  This keeps the v1
+    production owner importable even if a dormant v3 dependency is unavailable.
+    Offline batch tooling uses the explicit private bridge below.
+    """
+
+    _ = (user_id, current_input)
+    if _NLS_V3_STEP10_PUBLIC_ROUTING_STATE == "disabled":
+        return None
+    raise RuntimeError("nls_v3_step10_public_activation_forbidden")
+
+
+def _render_emlis_ai_reply_v3_dormant(
+    *,
+    current_input: Dict[str, Any],
+    candidate_version_id: str,
+    runtime_state: Any = None,
+    execution_scope: str = "offline_batch",
+    tester_authority: Any = None,
+    account_identity_commitment: str | None = None,
+    map_to_reply_envelope: bool = False,
+) -> Any:
+    """Private local/test bridge to the exact future runtime adapter bytes."""
+
+    from emlis_ai_dormant_runtime_adapter_v3 import (
+        DEFAULT_RUNTIME_STATE,
+        execute_dormant_v3,
+        map_verified_v3_bytes_to_reply_envelope,
+    )
+
+    execution = execute_dormant_v3(
+        current_input,
+        candidate_version_id=candidate_version_id,
+        runtime_state=(
+            DEFAULT_RUNTIME_STATE if runtime_state is None else runtime_state
+        ),
+        execution_scope=execution_scope,
+        tester_authority=tester_authority,
+        account_identity_commitment=account_identity_commitment,
+    )
+    if map_to_reply_envelope:
+        return map_verified_v3_bytes_to_reply_envelope(execution)
+    return execution
+
+
 async def render_emlis_ai_reply(
     *,
     user_id: str,
@@ -101,6 +155,13 @@ async def render_emlis_ai_reply(
     The retained optional arguments keep callers stable.  They cannot select a
     second substantive body path after cutover.
     """
+
+    dormant_override = _step10_dormant_v3_public_hook(
+        user_id=user_id,
+        current_input=current_input,
+    )
+    if dormant_override is not None:
+        return dormant_override
 
     _ = (user_id, display_name, timezone_name, composer_client)
     trace_id = f"emlisobs-{uuid4().hex[:16]}"

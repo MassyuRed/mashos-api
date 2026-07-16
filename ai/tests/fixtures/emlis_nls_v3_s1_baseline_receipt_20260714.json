@@ -1,0 +1,2216 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.step1_baseline_receipt.v1",
+  "created_date": "2026-07-14",
+  "design_stage": "step1_baseline_actual_input_contract_freeze",
+  "parent_step0_ref": "emlis_nls_v3_s0_boundary_20260714.json",
+  "parent_step0_sha256": "57f0a583ca970c753bfe656627ca75879dd279ff4e2a1471ee2dd7b55586a024",
+  "input_contract_ref": "emlis_nls_v3_s1_input_contract_20260714.json",
+  "input_contract_sha256": "d577ac80457e25389c0bac351139b2c80a9a506f225023fb7928a1b9068d53c6",
+  "backend_archive_sha256": "f97df95b5f7065854826051636d7d8223db49f7b1fce958697c4ae20f6a42415",
+  "source_owner_files": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    }
+  ],
+  "source_owner_snapshot_sha256": "ed9d7463778909c97115096345d25d6ce260d21ed737a72d7c06ccd8e08687ac",
+  "source_dependency_entry": "ai/services/ai_inference/emlis_ai_reply_service.py",
+  "source_dependency_closure": [
+    {
+      "path": "ai/services/ai_inference/emlis_ai_capability.py",
+      "sha256": "6edba1c3a097c980b87d68a34f50a3666bc62eaeee8a872b9b456d630c53c311"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_current_input_bundle.py",
+      "sha256": "63ddb6bf3db472bdaddfd8c3fbef68034aeb3cf51188508c0ad8b8cd920271f8"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_evidence_ledger_service.py",
+      "sha256": "17e51d7ff39535d60f81ad17582f36ab252301502a3a3328e703d116cea7f9e2"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_human_reception.py",
+      "sha256": "a3db3804298ec4c78007faf245f898e64eafbaf04c640b78f2dc24434ffc2298"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+      "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+      "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+      "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_observation_integrator_service.py",
+      "sha256": "20aa4f793054844904084ee72c4bdc3b3198a7ad849c8a29fe526a655ce1bf21"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_perspective_board.py",
+      "sha256": "c4eabe4403c1cf98f4c645ca94cdf8164f69408d9027f7996f18965dc9c34e93"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_perspective_observers.py",
+      "sha256": "cca669364efa7359bd08fcfe8bf5335519be76a81f6700254ed5d0be713ecb61"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+      "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_response_contract.py",
+      "sha256": "e2c0e7af36700865cb471ef598fa99afa0b775507172571d5a44946b2d71a4c7"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_safety_boundary_service.py",
+      "sha256": "77c0317a5bcdf2a71e932f6bd9b53cec2beceb80ddf69f0f5bcb18a22a1c66b7"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_safety_triage.py",
+      "sha256": "9aa7ee3b0742fa267e7396b946694d6f99e3ac8f65217e65453b1faad5b2425b"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_types.py",
+      "sha256": "3a0cfc7ee9c49cb0dd2b014493357ccd84924f455b22cc483272bf1872d80b17"
+    },
+    {
+      "path": "ai/services/ai_inference/emlis_ai_user_address_service.py",
+      "sha256": "eecc778d6fc58204801617a4531ffff268346e5f683d9bccfdb45ec382cd3913"
+    },
+    {
+      "path": "ai/services/ai_inference/subscription.py",
+      "sha256": "9cf2a0b6c7aa4e9a7d79ab9497c8ab26b293b38f245c900259933c5dca743713"
+    }
+  ],
+  "source_dependency_closure_sha256": "3d42e942239666dc37d14c9c2969d548988c02e38ac497bb65b825d9b4c1f3bd",
+  "visible_artifact_ref": "../local_only/emlis_nls_v3_s1_v1_visible_20260714.json",
+  "visible_artifact_sha256": "ba7e1f3d11bd7cd156da80dc6594e889b10e57b123df2e6b9c80e4345f47286d",
+  "commitment_policy": {
+    "algorithm": "hmac-sha256",
+    "domain_separated": true,
+    "key_location": "body_full_local_only_artifact",
+    "key_in_body_free_receipt": false,
+    "raw_sha256_used_for_short_body_commitment": false
+  },
+  "cohort_case_counts": {
+    "exact8": 8,
+    "rr8_unseen12": 12,
+    "i6_probe8": 8,
+    "total": 28
+  },
+  "cohort_sources": {
+    "exact8": {
+      "ref": "grounded_human_reception_exact8_v2_20260712.json",
+      "sha256": "cb601019dc2c7e4e46281133d3965addf04adf4f6af8defaf715f91f522e3efb",
+      "classification": "known_legacy_or_app_validated_v1_comparison"
+    },
+    "rr8_unseen12": {
+      "ref": "../local_only/grounded_human_reception_rr8_unseen12_20260713.json",
+      "sha256": "d53740015a091898d776caec56d11517ff7d4aaf44c5a48172cde54ef3cb132d",
+      "classification": "known_legacy_v1_comparison"
+    },
+    "i6_probe8": {
+      "ref": "../helpers/emlis_ai_grounded_observation_i6_cases.py",
+      "sha256": "6d36cb6fc2de9bbbb0120747332e771fd7be39dcc86966e447f2ebea4cde2966",
+      "classification": "known_legacy_v1_comparison"
+    }
+  },
+  "cases": [
+    {
+      "case_id": "A",
+      "cohort": "exact8",
+      "input_identity_commitment": "4af3fc5d19bcff62d316ac7b5f64a803988cfa5a19ab4bc63a70a4bf5ffb766e",
+      "v1_body_commitment": "8547d9ac327af237d809f20f19ac719ff1866f99c07adc5fdaa6f98e9700c02d",
+      "observation_commitment": "02b5d4d1095307ea5d31026dc6a3bfe93fa50780f0cab265a26c2a706a1fea3a",
+      "reception_commitment": "58dd048bcae2181bc7760f7cd2bd0cf73af2e552f68a73e3d99a235ab277ba9c",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 18,
+        "section_character_count": 46,
+        "dependency_basis_points": 3913
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 29,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 7,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 7,
+        "relation_count": 1,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.898178,
+        "median_ms": 2.97933,
+        "p95_ms": 3.05814,
+        "max_ms": 3.05814,
+        "samples_ms": [
+          3.031149,
+          2.93939,
+          3.05814,
+          2.898178,
+          2.97933
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "B",
+      "cohort": "exact8",
+      "input_identity_commitment": "236e437a8828a10fd7e1f01599c0786baef8154225f59596d0910bd33a46deca",
+      "v1_body_commitment": "0874d563f77dca0d6d42fda92a20e63deea076491b09ad6e6d175d183ce4b598",
+      "observation_commitment": "d145d0fedd5c18bc9f43c019d8830519eacf2cc8e1505d0ca4dd2d8e15564d23",
+      "reception_commitment": "a4bdc97d67e444a8ccdd152228e15a9edf6368a1b6280ad27a3f29fa4013cb7e",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 186,
+        "section_character_count": 266,
+        "dependency_basis_points": 6992
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 49,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 19,
+        "text_evidence_span_count": 16,
+        "nucleus_count": 19,
+        "relation_count": 10,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 8.953145,
+        "median_ms": 9.298527,
+        "p95_ms": 9.457688,
+        "max_ms": 9.457688,
+        "samples_ms": [
+          9.298527,
+          8.953145,
+          9.457688,
+          9.064003,
+          9.40043
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "C",
+      "cohort": "exact8",
+      "input_identity_commitment": "5df17460586b8f2720a1b55200a0ef6d6fdb555db70683dc74f3823f5b304d3a",
+      "v1_body_commitment": "4b7450b5632fa8579dd23e61de403b2b2316ccf45f2fb363668f78ec38efdc4b",
+      "observation_commitment": "e5708acd2334bba94d30cbbc58fae8ba83932e10fcf1fe3ff2eb9fab7d1c34c3",
+      "reception_commitment": "6e5f789827478048b29b2e4cc5c9be660828acca5cb385454931cf7889a16af7",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 145,
+        "section_character_count": 230,
+        "dependency_basis_points": 6304
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 45,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_gentle_respect"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 13,
+        "text_evidence_span_count": 10,
+        "nucleus_count": 13,
+        "relation_count": 8,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 6.625108,
+        "median_ms": 6.742766,
+        "p95_ms": 6.930539,
+        "max_ms": 6.930539,
+        "samples_ms": [
+          6.930539,
+          6.742766,
+          6.625108,
+          6.801094,
+          6.668053
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "D",
+      "cohort": "exact8",
+      "input_identity_commitment": "fc5aadada3e8b365c9ab8f5a61f5ff2e0a97e9da1c874b1fcda3a089f7f88833",
+      "v1_body_commitment": "ea867e18835fec3b8b2c32d8dac7367b509fd3d47dd357d49b28b21a7a04a51f",
+      "observation_commitment": "7bdceff6940075bc3c67999aeaf650c50d096d4ec71dd4150faf333839e133d8",
+      "reception_commitment": "da50e1a325afd470e3c8bb9f0c7f33eee199ee00ca44ecf436636d0933f674e6",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 35,
+        "section_character_count": 116,
+        "dependency_basis_points": 3017
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 91,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 6,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 6,
+        "relation_count": 1,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 2,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.271703,
+        "median_ms": 3.455039,
+        "p95_ms": 3.564945,
+        "max_ms": 3.564945,
+        "samples_ms": [
+          3.455039,
+          3.271703,
+          3.29658,
+          3.46194,
+          3.564945
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S03",
+      "cohort": "exact8",
+      "input_identity_commitment": "03bc9c5e98346de0b6e25bd9ea4ea73a47358293b36bfeec6bb105204f702167",
+      "v1_body_commitment": "61e7f2eba1465145a1a68d924782ce54bfea8b4fa50a71d09cc80004eda74190",
+      "observation_commitment": "83db28171e00ae01b34a4d2fcbddea6abee8ce0d6ef9f4ce6603953be66308f3",
+      "reception_commitment": "959826e7de732c79823db874ac2970c79f4aedc88b1ea0b26c367b33350be7bb",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 28,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 4,
+        "text_evidence_span_count": 1,
+        "nucleus_count": 4,
+        "relation_count": 0,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.195968,
+        "median_ms": 2.262819,
+        "p95_ms": 2.449931,
+        "max_ms": 2.449931,
+        "samples_ms": [
+          2.271532,
+          2.449931,
+          2.215397,
+          2.262819,
+          2.195968
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L03",
+      "cohort": "exact8",
+      "input_identity_commitment": "3b500a6e3c1a603e940c1ffc502d142b7f782dd01ed235fd15e6f422d1d65a92",
+      "v1_body_commitment": "238d56de22c14cee55fdce79dd8264bd31a12c5203d388cbf9017bf2abd10066",
+      "observation_commitment": "1b107f9098bbeabd364ed205334fb72759192c9be7cad1c0225a4c225bd0204e",
+      "reception_commitment": "b74e65ed75488e5a25db762a5bb490ae225dd744e556b78d5b9ca2b835f1a9fa",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 102,
+        "section_character_count": 211,
+        "dependency_basis_points": 4834
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 16,
+        "section_character_count": 70,
+        "dependency_basis_points": 2286
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 13,
+        "text_evidence_span_count": 8,
+        "nucleus_count": 13,
+        "relation_count": 6,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.779651,
+        "median_ms": 5.999373,
+        "p95_ms": 6.061727,
+        "max_ms": 6.061727,
+        "samples_ms": [
+          5.999373,
+          5.779651,
+          5.827223,
+          6.061727,
+          6.03695
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C01",
+      "cohort": "exact8",
+      "input_identity_commitment": "980d99df41cf0621ad17a129aa7037f1ccae70e5ea03aa3e767e8481091ce781",
+      "v1_body_commitment": "9a6e1bbb130545efbcfc40cda01796d904630af4abebe376c696766c20942559",
+      "observation_commitment": "68c8950bc1863cfcd974b304a766493b3db48ce4cfd7233c76b54174e7b56d01",
+      "reception_commitment": "320b1b806dcebf919bca0ae8b028b7e55ec95d62312a748ca47e440d2a14d55d",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 65,
+        "section_character_count": 132,
+        "dependency_basis_points": 4924
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 67,
+        "dependency_basis_points": 1791
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 8,
+        "text_evidence_span_count": 5,
+        "nucleus_count": 8,
+        "relation_count": 3,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.379487,
+        "median_ms": 4.465155,
+        "p95_ms": 4.787362,
+        "max_ms": 4.787362,
+        "samples_ms": [
+          4.465155,
+          4.379487,
+          4.387338,
+          4.787362,
+          4.530003
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D02",
+      "cohort": "exact8",
+      "input_identity_commitment": "e08f6032f0db5437449fc09a7cd99430e87aaabcd0da50d0c27f5c3be6077f12",
+      "v1_body_commitment": "f5f67c0679119a331cb2bc47721d5a93d1f40cf50d7f25420cdf5924751ba89b",
+      "observation_commitment": "744157076ddf9152eae4ab445952bf21c63faf5548d89fae17c1573ae37623dc",
+      "reception_commitment": "43cb6bdb8ebeafd6a7e3aa5c80136ef9323813a921baaa9bd735a67947f07e96",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 27,
+        "section_character_count": 101,
+        "dependency_basis_points": 2673
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 106,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 6,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 6,
+        "relation_count": 1,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 1,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.539437,
+        "median_ms": 3.648942,
+        "p95_ms": 3.743976,
+        "max_ms": 3.743976,
+        "samples_ms": [
+          3.672047,
+          3.543302,
+          3.743976,
+          3.648942,
+          3.539437
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U01",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "28f85f5ae36ba22ebe1310c7583ce98ae418c7970954cd2e65723f620ac87642",
+      "v1_body_commitment": "08764508b8060395fae34a8000d0ded039750ce5123cd039a6a6e18316ef0bb8",
+      "observation_commitment": "c21153ff1d199c2194e8a4b2cabaacc5a504ad7b7b7f19f9b1b4067a07b3670c",
+      "reception_commitment": "4615745cd0dd4a316b887c97853f09e38cc35e7840af26ce818f3662004a161e",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 9,
+        "section_character_count": 28,
+        "dependency_basis_points": 3214
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 36,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 4,
+        "text_evidence_span_count": 1,
+        "nucleus_count": 4,
+        "relation_count": 0,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.321447,
+        "median_ms": 2.353165,
+        "p95_ms": 2.630374,
+        "max_ms": 2.630374,
+        "samples_ms": [
+          2.372534,
+          2.321447,
+          2.353165,
+          2.346044,
+          2.630374
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U02",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "8513731e6cf2124eb14f9ba7a2420810c0b1d128758dec6d70e83967b1dc5f9b",
+      "v1_body_commitment": "169eef052d244239d20fed06ace6581494d4f7f63484675c1dec39c82b0ccbd3",
+      "observation_commitment": "760e9e297d4854733bd5be5e3da70dd8d486c49d25ddd9613e76340b6a6b528a",
+      "reception_commitment": "57855190f0245964c95f01a4137c8d6ebb737d036d12189529321c7e78f2a7a8",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 28,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 4,
+        "text_evidence_span_count": 1,
+        "nucleus_count": 4,
+        "relation_count": 0,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.289428,
+        "median_ms": 2.380336,
+        "p95_ms": 2.52893,
+        "max_ms": 2.52893,
+        "samples_ms": [
+          2.347497,
+          2.289428,
+          2.461899,
+          2.52893,
+          2.380336
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U03",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "c559eebc346abc5baa3950e25242f71fd444076e3b185cc1706fa8477cb72bc3",
+      "v1_body_commitment": "6ee61118c6678023dfd3b96eac3a248b63ca11d0dd63ecdb6021ae5b7ffc5b35",
+      "observation_commitment": "8b9d52015fc745cb7f185193deeca48cf4a0666f85a71a21d1dd5358e5706389",
+      "reception_commitment": "0055882e40784987ad0c8ea13b8174926b639778f5af046974e58265b12de76b",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 51,
+        "section_character_count": 105,
+        "dependency_basis_points": 4857
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 41,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 7,
+        "text_evidence_span_count": 4,
+        "nucleus_count": 7,
+        "relation_count": 3,
+        "unknown_boundary_count": 4,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.580308,
+        "median_ms": 3.656303,
+        "p95_ms": 3.744717,
+        "max_ms": 3.744717,
+        "samples_ms": [
+          3.595762,
+          3.656303,
+          3.580308,
+          3.736334,
+          3.744717
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U04",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "101ea739145046bff24cd81fc360c673ae7aa263ffeaf008f1becea49c9efa5f",
+      "v1_body_commitment": "cf8a2c1fca40ebb65ebbe13f6dc339d21d04c3268e2bf424899ab49d0c6cccf8",
+      "observation_commitment": "42286f2b3660896b35051dbd2b90e12cc99231d4aa54b646f13c87ba163d8e5a",
+      "reception_commitment": "e307d81cb307c224c0242a62708e74675b8032bafc4cb0551f4317e232a39e20",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 64,
+        "section_character_count": 120,
+        "dependency_basis_points": 5333
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 64,
+        "dependency_basis_points": 2031
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 8,
+        "text_evidence_span_count": 5,
+        "nucleus_count": 8,
+        "relation_count": 3,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.380878,
+        "median_ms": 4.782966,
+        "p95_ms": 5.973695,
+        "max_ms": 5.973695,
+        "samples_ms": [
+          4.782966,
+          5.973695,
+          5.453959,
+          4.394749,
+          4.380878
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U05",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "ab7ea22755a0732728439e187b8153f03284a3eaf3a3083d22e59792d59556c7",
+      "v1_body_commitment": "6c728539f4bb4e6b9f18f0f2dfeabac48a3e8362b0ac42fdd9a12aead49809d0",
+      "observation_commitment": "a0f868b00c1aa2a22182766435f1bb1ffcc5a37b864bb4af25a9622b4ad869f1",
+      "reception_commitment": "9c063882ceed265645816de53eea5a57ec2a518f8ccd6ed164087e1bf402ed1b",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 40,
+        "section_character_count": 63,
+        "dependency_basis_points": 6349
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 23,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_significance_intention_preserved"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 5,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 5,
+        "relation_count": 1,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.840801,
+        "median_ms": 3.24372,
+        "p95_ms": 3.881263,
+        "max_ms": 3.881263,
+        "samples_ms": [
+          3.881263,
+          3.28321,
+          2.999141,
+          3.24372,
+          2.840801
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U06",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "25983b06f6a603064eaef2c43f97b49c4c819c80d2adead4ea0a335d114643a1",
+      "v1_body_commitment": "e585d9d4c6ac59bf16f11535a7dce16dd4e99a73d2808a4d5ada87468ee824b4",
+      "observation_commitment": "fcbae85229e566afae1b8fe3376c73f94e06eb8a16371bd1ee9ffe7380758b4e",
+      "reception_commitment": "85343f07a0004adc0a0324321502972396f32600e08a71b6be6554639eb37468",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 3,
+        "quoted_character_count": 48,
+        "section_character_count": 86,
+        "dependency_basis_points": 5581
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 44,
+        "dependency_basis_points": 2727
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 7,
+        "text_evidence_span_count": 4,
+        "nucleus_count": 7,
+        "relation_count": 2,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.440288,
+        "median_ms": 3.51446,
+        "p95_ms": 3.54789,
+        "max_ms": 3.54789,
+        "samples_ms": [
+          3.518745,
+          3.440288,
+          3.51446,
+          3.54789,
+          3.478574
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U07",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "353f0ad5e7f9922e224dab91df45e5ef2fd5080d90672b5c5dffeadbd2fef6b0",
+      "v1_body_commitment": "724463e4371003f93d358256ce896208bf3c7dcbb05773ea62aac2201c2e0516",
+      "observation_commitment": "f6aa1ac3ecdfdf4e54fdfb45c4304019814685362c5dda246badcaf8f1f1a4c8",
+      "reception_commitment": "ce680c8fb32bcf11b769c1e68e317725048f1fa88233c3c0b56300258b51e04f",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 91,
+        "section_character_count": 200,
+        "dependency_basis_points": 4550
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 67,
+        "dependency_basis_points": 1940
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 11,
+        "text_evidence_span_count": 8,
+        "nucleus_count": 11,
+        "relation_count": 6,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.590125,
+        "median_ms": 5.629885,
+        "p95_ms": 5.702805,
+        "max_ms": 5.702805,
+        "samples_ms": [
+          5.620841,
+          5.642273,
+          5.702805,
+          5.590125,
+          5.629885
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U08",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "3214065bba1af69d84dd061123d2a2ad68b12c7473a72d9fb6225856db48f29f",
+      "v1_body_commitment": "053dea4261dca2ede4cf458a16f0f67f5ea3cc7b59b9381165087d1af3cd9e41",
+      "observation_commitment": "27120d607a5538f77fd25909ae24f19388b0c89f907b5aa7d803008b7272c213",
+      "reception_commitment": "a971a128bb8c46daadf27a87294693d9955ad03dd37696834feaf7fb7a703a0d",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 11,
+        "section_character_count": 39,
+        "dependency_basis_points": 2821
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 29,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 9,
+        "text_evidence_span_count": 6,
+        "nucleus_count": 9,
+        "relation_count": 5,
+        "unknown_boundary_count": 4,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.863366,
+        "median_ms": 3.894734,
+        "p95_ms": 4.214727,
+        "max_ms": 4.214727,
+        "samples_ms": [
+          3.863366,
+          3.966562,
+          3.894734,
+          3.883797,
+          4.214727
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U09",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "6bed652decd8d46b45c81ed7ccc806e05dbabd9e1bee230e440954d3a328e130",
+      "v1_body_commitment": "f25a22d260ac37afe249b379b38132feb4a97bf652f00e14292916afc3b072b1",
+      "observation_commitment": "869a2074d313318f49087f8c28961cd0a59ef8e0c557d51fc292a57a07c2e0e2",
+      "reception_commitment": "b28d5f27abbf4df0c606db868e8a4f0ea2b7c79ef40fbb3e2988793ac6002c92",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 81,
+        "section_character_count": 140,
+        "dependency_basis_points": 5786
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 11,
+        "section_character_count": 61,
+        "dependency_basis_points": 1803
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 8,
+        "text_evidence_span_count": 5,
+        "nucleus_count": 8,
+        "relation_count": 3,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.457744,
+        "median_ms": 4.578156,
+        "p95_ms": 4.70626,
+        "max_ms": 4.70626,
+        "samples_ms": [
+          4.457744,
+          4.482041,
+          4.578156,
+          4.70626,
+          4.691608
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U10",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "19c91d69c8ad9b842ef928364a3b8db03679578ad6ed0ca1e1ff499d74448f34",
+      "v1_body_commitment": "d5df0396d03014f3f1fae0d167d8103b42bb1207a361912eeb11e952b0c916ad",
+      "observation_commitment": "f732be95900ef906de7db0ef6351369b2a6289344a72759c34668bf4d2f665fd",
+      "reception_commitment": "067640776bbcaa78827a609981b15124c77b125d50dd7a438faaac9c2886f0a3",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 32,
+        "section_character_count": 90,
+        "dependency_basis_points": 3556
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 33,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 5,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 5,
+        "relation_count": 1,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 1,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.795103,
+        "median_ms": 2.856265,
+        "p95_ms": 2.962275,
+        "max_ms": 2.962275,
+        "samples_ms": [
+          2.962275,
+          2.850576,
+          2.795103,
+          2.874603,
+          2.856265
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U11",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "67b8e0e506fbfe00a15a149824d7116c4344e07e81317cb97da6466116d50b64",
+      "v1_body_commitment": "8f0f86158fa4f502cb6c172aa74e3bbf9ada9c5849ae2774f91563f443c7fd50",
+      "observation_commitment": "1fdc228deee898bd2be38a1fed2dd57593d1fef0e22be7c417512dae66f8a3f5",
+      "reception_commitment": "a8e88bfa450a961285a26a27d8cfdd2460690d366955b87b4f8f1512af13c09c",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 29,
+        "section_character_count": 103,
+        "dependency_basis_points": 2816
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 102,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 5,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 5,
+        "relation_count": 1,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 1,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.346135,
+        "median_ms": 3.630133,
+        "p95_ms": 3.635001,
+        "max_ms": 3.635001,
+        "samples_ms": [
+          3.346135,
+          3.635001,
+          3.426937,
+          3.630133,
+          3.633609
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "RR8-U12",
+      "cohort": "rr8_unseen12",
+      "input_identity_commitment": "e5f833b9397516e1f4929e1885821eaaee338a3bee815f5e248c4d9a0a7c6e28",
+      "v1_body_commitment": "b48fb1f7cd4e122e3da5c57aa0b3e6147f0f199c1472476a781472acaa6f931e",
+      "observation_commitment": "65172d660614765788923a898a511ef283753d88f48f25b3af637c61d60bbf07",
+      "reception_commitment": "b5583e7d88e3779559e6998978e17f8a96843380340f06b296dd7bc00cbfdbda",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 3,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 4,
+        "section_character_count": 49,
+        "dependency_basis_points": 816
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 32,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 3,
+        "text_evidence_span_count": 0,
+        "nucleus_count": 3,
+        "relation_count": 0,
+        "unknown_boundary_count": 8,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.15846,
+        "median_ms": 2.599777,
+        "p95_ms": 3.135316,
+        "max_ms": 3.135316,
+        "samples_ms": [
+          2.599777,
+          3.135316,
+          3.026722,
+          2.480818,
+          2.15846
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S01",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "cf7b712acac5559c52283aec43a4b0e01613d96169a518c86f0c325d9e9832a8",
+      "v1_body_commitment": "e38384e152149d3b920d3a78bf91dc82a964c752d51320936b8b7bfa8e02d563",
+      "observation_commitment": "c1e88259d06d2b1897c3adf15f4388905ace61e17953a168d10eb22688244ddc",
+      "reception_commitment": "625fe5b3b140298d901ab2b7efbdc5ca2fc3b85eea20c279faf5cb764f171396",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 10,
+        "section_character_count": 29,
+        "dependency_basis_points": 3448
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 36,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 4,
+        "text_evidence_span_count": 1,
+        "nucleus_count": 4,
+        "relation_count": 0,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.147044,
+        "median_ms": 2.227726,
+        "p95_ms": 2.428248,
+        "max_ms": 2.428248,
+        "samples_ms": [
+          2.147044,
+          2.227726,
+          2.200904,
+          2.428248,
+          2.29047
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-S02",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "910b671b7129399b659602a3a9daa29c72e22d9bb6f2497b67f9b26f4038c0c1",
+      "v1_body_commitment": "b1e1a6ececf77a1913c8428b2a308ee3424fe748fb82a963c3d1f95f8519517d",
+      "observation_commitment": "d52da34b71c9b169931b18700f9decaeca61fd064fb5f03f1ad9d32d022107f2",
+      "reception_commitment": "f2e7fc43915297ab7e53685e6ef8b944dcbd5d81531798df34d100b08c912e19",
+      "observation_sentence_count": 1,
+      "reception_sentence_count": 1,
+      "visible_sentence_count": 2,
+      "observation_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 8,
+        "section_character_count": 27,
+        "dependency_basis_points": 2963
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 40,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "minimal",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 4,
+        "text_evidence_span_count": 1,
+        "nucleus_count": 4,
+        "relation_count": 0,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 1
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 2.136578,
+        "median_ms": 2.275157,
+        "p95_ms": 2.524774,
+        "max_ms": 2.524774,
+        "samples_ms": [
+          2.524774,
+          2.298462,
+          2.144319,
+          2.275157,
+          2.136578
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L01",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "8e95f284004ada2ebd8f0b5fc927c863cd42d9da90b6cc6650b6be25ab74312a",
+      "v1_body_commitment": "03f2ed37eb8f9f885975264fce0cd230973e71a78d6ff04c4fa56268391930ff",
+      "observation_commitment": "ecb643cee64af547b0a891ba086da605b52d5d9c99a8f6502b4989e92194eca3",
+      "reception_commitment": "4a0fafbfc5366909aef3dd95f793c17533f7ff532769d810bcd6da983fe4570a",
+      "observation_sentence_count": 5,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 7,
+      "observation_quote_dependency": {
+        "span_count": 8,
+        "quoted_character_count": 101,
+        "section_character_count": 222,
+        "dependency_basis_points": 4550
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 12,
+        "section_character_count": 78,
+        "dependency_basis_points": 1538
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 11,
+        "text_evidence_span_count": 8,
+        "nucleus_count": 11,
+        "relation_count": 7,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.668163,
+        "median_ms": 5.710697,
+        "p95_ms": 5.93125,
+        "max_ms": 5.93125,
+        "samples_ms": [
+          5.93125,
+          5.793913,
+          5.685979,
+          5.710697,
+          5.668163
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-L02",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "fc1d3720b13f6a1e0fa92669078e3f562759a59a19e1b363990d39f2cf78352a",
+      "v1_body_commitment": "fe43467fc0290291312286684482e64776de1744824de7d2bed139003bd47637",
+      "observation_commitment": "b3a064590a2a3bd2eca82e6b0473a4209af97d2a2613c82d15ede55ff0e767f2",
+      "reception_commitment": "9eb657cda8cf547f5afc001957e4d7fdac7bc729a6c2708ca4c374b0637ea353",
+      "observation_sentence_count": 4,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 6,
+      "observation_quote_dependency": {
+        "span_count": 7,
+        "quoted_character_count": 99,
+        "section_character_count": 203,
+        "dependency_basis_points": 4877
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 68,
+        "dependency_basis_points": 1912
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_felt_respect_for_effort"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 11,
+        "text_evidence_span_count": 8,
+        "nucleus_count": 11,
+        "relation_count": 6,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 5.545858,
+        "median_ms": 5.642293,
+        "p95_ms": 5.958411,
+        "max_ms": 5.958411,
+        "samples_ms": [
+          5.569483,
+          5.642293,
+          5.683015,
+          5.545858,
+          5.958411
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C02",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "8855e7370d518ae8fcad24240b101e6a61adde5e41d2178fa3eb161e83cf2443",
+      "v1_body_commitment": "8e6b2084dc1e748336c75c72e6a3c4321a6216955b85467fc74242935861d657",
+      "observation_commitment": "c2416751d81ed66c85299a5e438d002049d992e4b941e1eb9e6194169c6db87a",
+      "reception_commitment": "71d016c5f0532a718d5b7b4c973bbac01d8b72b7ca8d52d93f54f0b826a5780f",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 78,
+        "section_character_count": 137,
+        "dependency_basis_points": 5693
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 16,
+        "section_character_count": 66,
+        "dependency_basis_points": 2424
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 8,
+        "text_evidence_span_count": 5,
+        "nucleus_count": 8,
+        "relation_count": 3,
+        "unknown_boundary_count": 6,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.367457,
+        "median_ms": 4.424924,
+        "p95_ms": 4.469191,
+        "max_ms": 4.469191,
+        "samples_ms": [
+          4.367457,
+          4.469191,
+          4.413266,
+          4.424924,
+          4.453038
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-C03",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "b1e8c76858c59eabb5f7d60ec4630f635f7bec1d1e33f892f8dbedb82b387ffc",
+      "v1_body_commitment": "9aeddf19920627bec114daaee92e61567428260853f0707e0f388cc14dbcc847",
+      "observation_commitment": "167f7ccb3cfa7f1e6b0d5ca9ac3f6c47acf808066ebb03e8a344f09a7ac455f3",
+      "reception_commitment": "cca2a50870d54fbe450847fc8fc8f8401411fdb12a7405b26c712dcce205924e",
+      "observation_sentence_count": 2,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 4,
+      "observation_quote_dependency": {
+        "span_count": 4,
+        "quoted_character_count": 71,
+        "section_character_count": 138,
+        "dependency_basis_points": 5145
+      },
+      "reception_quote_dependency": {
+        "span_count": 1,
+        "quoted_character_count": 13,
+        "section_character_count": 63,
+        "dependency_basis_points": 2063
+      },
+      "reception_depth_level": "layered",
+      "reception_terminal_predicate_families": [
+        "human_response_attention_stood_out",
+        "human_response_recognize_change"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 7,
+        "text_evidence_span_count": 4,
+        "nucleus_count": 7,
+        "relation_count": 3,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 0,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 4.227066,
+        "median_ms": 4.243941,
+        "p95_ms": 4.304032,
+        "max_ms": 4.304032,
+        "samples_ms": [
+          4.228467,
+          4.243941,
+          4.304032,
+          4.260366,
+          4.227066
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D01",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "a7c0c724d992ec65739df2b66e5c081cc55e7880978d9312affc176aede54491",
+      "v1_body_commitment": "265e22404526bbedc7c335188ca4febec827fc960246bd2f36745f442e691f26",
+      "observation_commitment": "6695aa98ab6c822c25843146b87921b1a24545b228e2af0b64f4dc3566192719",
+      "reception_commitment": "8f262895f8f24073970632a97d5351de3a8f81ea5ded2086b893bb814cef92db",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 28,
+        "section_character_count": 109,
+        "dependency_basis_points": 2569
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 84,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_quiet_presence",
+        "human_response_bounded_counterposition"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 5,
+        "text_evidence_span_count": 2,
+        "nucleus_count": 5,
+        "relation_count": 1,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 2,
+        "reception_opportunity_count": 2
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.285113,
+        "median_ms": 3.298383,
+        "p95_ms": 3.430622,
+        "max_ms": 3.430622,
+        "samples_ms": [
+          3.430622,
+          3.346976,
+          3.298383,
+          3.290411,
+          3.285113
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    },
+    {
+      "case_id": "I6-D03",
+      "cohort": "i6_probe8",
+      "input_identity_commitment": "14dd114db9eb45185cbf4455a33296b69199384d0e1b46ff0c7bd9faaded37b2",
+      "v1_body_commitment": "04e43c7e2fa0552fc7e9d6920d7bdaf00022a5170d6be9592832327122fed38e",
+      "observation_commitment": "bc9586efd8656e9a1e200457523ba7179be341b62712eb2822fd043ce5ee40f2",
+      "reception_commitment": "9d10b3b0652d9d65958e70f1d787799931187080ab43cc85c62cf1925674cb37",
+      "observation_sentence_count": 3,
+      "reception_sentence_count": 2,
+      "visible_sentence_count": 5,
+      "observation_quote_dependency": {
+        "span_count": 2,
+        "quoted_character_count": 20,
+        "section_character_count": 94,
+        "dependency_basis_points": 2128
+      },
+      "reception_quote_dependency": {
+        "span_count": 0,
+        "quoted_character_count": 0,
+        "section_character_count": 102,
+        "dependency_basis_points": 0
+      },
+      "reception_depth_level": "focused",
+      "reception_terminal_predicate_families": [
+        "human_response_hold_help_seeking",
+        "human_response_bounded_counterposition"
+      ],
+      "source_resource_counts": {
+        "evidence_span_count": 6,
+        "text_evidence_span_count": 3,
+        "nucleus_count": 6,
+        "relation_count": 1,
+        "unknown_boundary_count": 5,
+        "safety_policy_count": 1,
+        "safety_required_boundary_code_count": 1,
+        "reception_opportunity_count": 3
+      },
+      "gate_status": {
+        "plan_validity_gate": "passed",
+        "evidence_resolution_gate": "passed",
+        "required_coverage_gate": "passed",
+        "text_semantic_retention_gate": "passed",
+        "anti_template_gate": "passed",
+        "mechanical_restatement_gate": "passed",
+        "two_stage_contract_gate": "passed",
+        "reception_all_gates_passed": true,
+        "semantic_quality_gate": "passed",
+        "runtime_final_contract_guard": "passed"
+      },
+      "runtime_latency": {
+        "sample_count": 5,
+        "min_ms": 3.423622,
+        "median_ms": 3.434549,
+        "p95_ms": 3.494199,
+        "max_ms": 3.494199,
+        "samples_ms": [
+          3.426486,
+          3.434549,
+          3.423622,
+          3.494199,
+          3.450983
+        ]
+      },
+      "public_observation_status": "passed",
+      "public_comment_present": true
+    }
+  ],
+  "aggregate_metrics": {
+    "runtime_latency": {
+      "measurement_scope": "render_emlis_ai_reply_local_process_no_http_route_db_or_network",
+      "clock": "perf_counter_ns",
+      "warmup_runs_per_case": 1,
+      "samples_per_case": 5,
+      "python_version": "3.12.13",
+      "platform": "linux_x86_64",
+      "sample_count": 140,
+      "min_ms": 2.136578,
+      "median_ms": 3.612947,
+      "p95_ms": 6.742766,
+      "max_ms": 9.457688,
+      "acceptance_budget_status": "not_invented_pending_step15_protocol"
+    },
+    "observation_sentence_count_distribution": {
+      "1": 8,
+      "2": 7,
+      "3": 9,
+      "4": 3,
+      "5": 1
+    },
+    "reception_sentence_count_distribution": {
+      "1": 12,
+      "2": 16
+    },
+    "visible_sentence_count_distribution": {
+      "2": 8,
+      "3": 3,
+      "4": 5,
+      "5": 8,
+      "6": 3,
+      "7": 1
+    },
+    "reception_terminal_predicate_family_counts": {
+      "human_response_attention_stood_out": 12,
+      "human_response_bounded_counterposition": 5,
+      "human_response_felt_gentle_respect": 1,
+      "human_response_felt_respect_for_effort": 4,
+      "human_response_hold_help_seeking": 3,
+      "human_response_quiet_presence": 12,
+      "human_response_recognize_change": 6,
+      "human_response_significance_intention_preserved": 1
+    },
+    "source_resource_maxima_in_known_28": {
+      "evidence_span_count": 19,
+      "nucleus_count": 19,
+      "reception_opportunity_count": 3,
+      "relation_count": 10,
+      "safety_policy_count": 1,
+      "safety_required_boundary_code_count": 2,
+      "text_evidence_span_count": 16,
+      "unknown_boundary_count": 8
+    }
+  },
+  "generation_contract": {
+    "runtime_owner": "grounded_sentence_surface_canonical_v1",
+    "generation_method": "functional_atom_grounded_realizer",
+    "composer_source": "grounded_plan_realizer",
+    "generation_path": "grounded_observation_plan_sentence_surface_canonical_v1",
+    "v3_runtime_connected": false,
+    "v3_runtime_executed": false
+  },
+  "known_regression_inventory": [
+    {
+      "regression_id": "V1_KNOWN_COMPARISON_28",
+      "classification": "executable_known_regression",
+      "case_count": 28,
+      "counts_toward_v3_minimum": false
+    },
+    {
+      "regression_id": "V2_DEVELOPMENT_42",
+      "classification": "known_regression_not_novel_evidence",
+      "case_count": 42,
+      "counts_toward_v3_minimum": false
+    },
+    {
+      "regression_id": "V2_STEP3_STRICT_CONTRACT_GAP",
+      "classification": "body_free_historical_failure",
+      "status": "confirmed_underimplementation"
+    },
+    {
+      "regression_id": "V2_STEP4_DISCOURSE_VARIATION_GAP",
+      "classification": "body_free_historical_failure",
+      "status": "confirmed_partial"
+    },
+    {
+      "regression_id": "V2_STEP5_GENERIC_SURFACE_CONVERGENCE",
+      "classification": "body_free_historical_failure",
+      "status": "confirmed_product_failure"
+    },
+    {
+      "regression_id": "V2_STEP6_METADATA_SELF_REPORT_ATTACK",
+      "classification": "body_free_historical_failure",
+      "status": "confirmed_gate_failure"
+    },
+    {
+      "regression_id": "V2_STEP7_CASE_EVIDENCE_GAP",
+      "classification": "body_free_historical_failure",
+      "status": "completion_withdrawn"
+    },
+    {
+      "regression_id": "V2_HOLDOUT_A",
+      "classification": "sealed_historical_only_do_not_reopen",
+      "status": "stop"
+    },
+    {
+      "regression_id": "V2_HOLDOUT_B",
+      "classification": "sealed_historical_only_do_not_open",
+      "status": "not_evaluated"
+    },
+    {
+      "regression_id": "V1_KNOWN_DEVICE_REPRESENTATIVE4_20260713",
+      "classification": "known_legacy_ui_unreachable_device_product_failure",
+      "status": "confirmed_product_failure",
+      "source_ref": "emlis_nls_v2_s12_s13_device_blocked_20260713.json",
+      "source_sha256": "5677675b30cdf32a5cb56a52b81a12766ba2902af8e24237111d53bf0988fb29",
+      "raw_input_owner": {
+        "ref": "../test_emlis_nls_v2_s12_s13_device_blocked.py",
+        "sha256": "222ce7cd5c29bfc64668a2d1c04dab7cf0b60f811a790c5b79f41c3f79ece94c",
+        "imported_by_v3": false
+      },
+      "result_doc": {
+        "ref": "../../docs/Cocolon_EmlisAI_NLSv2_S12_S13_DeviceCheck_Blocked_Result_20260713.md",
+        "sha256": "e1e88b98c20d762417bf77a7ed491dfdf0056bc2f3b90df2d40956baa845fbdb"
+      },
+      "device_baseline_owner": "grounded_sentence_surface_canonical_v1",
+      "case_count": 4,
+      "local_v1_visual_match_count": 4,
+      "product_pass_count": 0,
+      "product_failure_count": 4,
+      "app_reachable_under_current_contract": false,
+      "counts_toward_v3_minimum": false,
+      "formal_v2_evaluation_status": "not_executed",
+      "input_identity_binding": {
+        "exact_case_order_and_identity_verified_by_helper": true,
+        "raw_input_owner_file_sha256_bound": true,
+        "raw_unsalted_short_input_sha256_republished": false
+      },
+      "evidence_limitations": {
+        "screenshot_review_is_raw_body_hash_proof": false,
+        "actual_device_raw_comment_sha256_machine_match": "not_available_from_screenshots",
+        "evidence_role": "canonical_v1_actual_device_baseline_not_v2_acceptance",
+        "v2_runtime_generation_count": 0
+      },
+      "cases": [
+        {
+          "case_number": 1,
+          "family": "low_information_short",
+          "failure_codes": [
+            "EMLIS_CONTENT_GENERIC",
+            "EMLIS_SEMANTIC_DENSITY_LOW",
+            "TWO_STAGE_RATIO_OUTSIDE_GUIDE_LOW_INFORMATION_SHORT"
+          ]
+        },
+        {
+          "case_number": 2,
+          "family": "daily_positive",
+          "failure_codes": [
+            "OBSERVATION_QUOTE_REPLAY_EXCESS",
+            "SECTION_ROLE_DISTINCTNESS_LOW",
+            "EMLIS_SEMANTIC_DENSITY_LOW",
+            "TWO_STAGE_RATIO_OUTSIDE_GUIDE_DAILY_POSITIVE"
+          ]
+        },
+        {
+          "case_number": 3,
+          "family": "rich_change_long_arc",
+          "failure_codes": [
+            "LONG_INPUT_ENUMERATION_REPLAY",
+            "OBSERVATION_TEMPLATE_CLAUSE_DUPLICATION",
+            "SEMANTIC_RELATION_DISTORTION",
+            "EMLIS_REFERENCE_AMBIGUOUS",
+            "EMLIS_ANCHOR_CONTEXT_LOSS",
+            "EMLIS_SEMANTIC_DENSITY_LOW",
+            "TWO_STAGE_RATIO_OUTSIDE_GUIDE_RICH_LONG",
+            "SCROLL_REQUIRED"
+          ]
+        },
+        {
+          "case_number": 4,
+          "family": "self_denial_with_concrete_action",
+          "failure_codes": [
+            "OBSERVATION_QUOTE_REPLAY_EXCESS",
+            "EMLIS_GENERIC_RECEPTION_OPENING",
+            "SECTION_ROLE_DISTINCTNESS_LOW",
+            "EMLIS_SEMANTIC_DENSITY_LOW",
+            "TWO_STAGE_RATIO_OUTSIDE_GUIDE_SELF_DENIAL",
+            "SCROLL_REQUIRED"
+          ]
+        }
+      ]
+    },
+    {
+      "regression_id": "R8_RR10_V1_DEVICE_BASELINE",
+      "classification": "actual_device_operator_required_later",
+      "status": "not_run",
+      "distinct_from_historical_device4": true,
+      "representative_case_order": [
+        "A",
+        "B",
+        "I6-L03",
+        "I6-D02"
+      ],
+      "readiness": {
+        "ref": "grounded_human_reception_rr10_representative4_device_readiness_20260713.json",
+        "sha256": "fdb7d67b075cb78cbb2e3cd0170d88fb489fccf22c80ef35a271329984a52f82"
+      },
+      "expected_packet": {
+        "ref": "../local_only/grounded_human_reception_rr10_representative4_expected_packet_20260713.json",
+        "sha256": "f4f03dd10088ad18a56e925a02a4aebd06e31b126c6c2230869d5e17c6d03576"
+      },
+      "evidence_template": {
+        "ref": "../local_only/grounded_human_reception_rr10_actual_device_evidence_template_20260713.json",
+        "sha256": "b0be832a8e55238523620a99b1a282c4517c36bdb8afb481ac08698623a01241"
+      },
+      "evidence_verifier": {
+        "ref": "../../tools/emlis_grounded_human_reception_rr10_verify_device_evidence.py",
+        "sha256": "6185bcea0e7f900f7aec805af9c05349b88d8aff2ce5e98af79a4d062211bc82"
+      },
+      "actual_device_result_included": false,
+      "progression_authority": "none",
+      "valid_for_progression": false
+    }
+  ],
+  "known_regression_source": {
+    "ref": "emlis_nls_v2_all_steps_audit_20260713.json",
+    "sha256": "e86b8d26baa44f058a4dca962c1c0ce54ca9c959a41bafe4ed738a216c6c65c1"
+  },
+  "supabase_corpus_status": "not_received_not_blocking",
+  "source_modified_by_step1": false,
+  "performance_budget_invented": false,
+  "step1_status": "completed",
+  "completion_condition": "source_v1_gate_latency_input_contract_and_known_regression_frozen",
+  "next_step_authority": "step2_only",
+  "valid_for_step2": true,
+  "valid_for_runtime_switch": false,
+  "body_free": true,
+  "raw_input_included": false,
+  "comment_text_included": false,
+  "candidate_body_included": false
+}

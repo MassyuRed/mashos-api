@@ -1,0 +1,3 @@
+{"classification":"legacy_input","fixture_id":"legacy_backend_string_emotion","legacy_payload":{"category":[],"emotion":"悲しみ","memo":"古い形式の合成入力。","memo_action":""},"provenance_subtype":"synthetic_real_user_legacy"}
+{"classification":"legacy_input","fixture_id":"legacy_string_emotion_array","legacy_payload":{"action_text":"","categories":["生活"],"emotions":["不安"],"thought_text":"古い形式の感情配列を持つ合成入力。"},"provenance_subtype":"synthetic_real_user_legacy"}
+{"classification":"legacy_input","fixture_id":"legacy_self_insight_mixed","legacy_payload":{"action_text":"","categories":["価値観"],"emotions":[{"strength":"medium","type":"自己理解"},{"strength":"weak","type":"平穏"}],"thought_text":"現行UIでは到達不能な組み合わせを示す合成入力。"},"provenance_subtype":"synthetic_real_user_legacy"}

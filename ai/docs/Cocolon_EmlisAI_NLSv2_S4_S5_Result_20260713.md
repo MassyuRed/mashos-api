@@ -1,5 +1,8 @@
 # Cocolon EmlisAI Natural Language Surface v2 Step 4 / Step 5 実装結果
 
+> **2026-07-13 全Step再監査による訂正**  
+> Step 4はbounded／stableな複数候補という形式contractを満たすが、現行Development 42件でmerged sentence groupと文数variationがともに0件で、談話構成の目的は未証明である。Step 5は汎用骨格とsource anchorへ収束し、商品目的を満たしていない。以下は当時の実装記録として保持し、現在の正式判定は`Cocolon_EmlisAI_NLSv2_AllSteps_Audit_Correction_20260713.md`を正とする。
+
 - 実施日: 2026-07-13
 - 対象: `Step 4. Discourse Candidate Planner実装`、`Step 5. Surface Candidate Generator実装`
 - 入力アーカイブ: `mashos-api_3(123).zip`
@@ -107,4 +110,3 @@
 ただし、215候補はまだ「採用可能な215候補」ではありません。Step 5は生成責任までであり、意味の正しさ、参照scope、未知保持、section distinctnessを合格認定する責任は持たせていません。したがって、Step 6を経ずにruntimeへ接続するべきではありません。
 
 このStep 4 / Step 5の完了について、Mash側で必要な追加作業はありません。
-

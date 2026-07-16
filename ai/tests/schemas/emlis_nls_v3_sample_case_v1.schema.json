@@ -1,0 +1,400 @@
+{
+  "$id": "cocolon.emlis.nls_v3.sample_case.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "batch_id": {
+      "pattern": "^nls3_batch_[0-9]{3}$",
+      "type": "string"
+    },
+    "case_id": {
+      "pattern": "^nls3s_b[0-9]{3}_[0-9]{4}$",
+      "type": "string"
+    },
+    "coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "category_cardinality": {
+          "enum": [
+            "single",
+            "multiple"
+          ]
+        },
+        "category_text_alignment": {
+          "enum": [
+            "strong",
+            "weak"
+          ]
+        },
+        "cause_explicitness": {
+          "enum": [
+            "explicit",
+            "unknown"
+          ]
+        },
+        "emotion_cardinality": {
+          "enum": [
+            "single",
+            "multiple",
+            "self_insight_only"
+          ]
+        },
+        "emotion_strength_shape": {
+          "enum": [
+            "single_strength",
+            "mixed_strength",
+            "self_insight_medium"
+          ]
+        },
+        "families": {
+          "items": {
+            "enum": [
+              "low_information_short",
+              "limited_grounding",
+              "daily_unpleasant",
+              "daily_positive",
+              "self_denial",
+              "anger_or_boundary",
+              "uncertainty_support",
+              "standard_state_answer",
+              "structure_question",
+              "long_meaning_arc",
+              "relationship_gratitude_recovery",
+              "change_future_intention_transition",
+              "source_unavailable_high_information",
+              "history_eligible_current_input_only"
+            ]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "input_field_presence": {
+          "enum": [
+            "thought_only",
+            "action_only",
+            "both"
+          ]
+        },
+        "intention_state": {
+          "enum": [
+            "none",
+            "explicit",
+            "uncertain",
+            "completed"
+          ]
+        },
+        "length_class": {
+          "enum": [
+            "short",
+            "medium",
+            "long",
+            "very_long"
+          ]
+        },
+        "question_system_relevance": {
+          "enum": [
+            "not_needed",
+            "possible",
+            "burden_risk",
+            "future_refined_candidate"
+          ]
+        },
+        "referent_clarity": {
+          "enum": [
+            "clear",
+            "multiple_candidates",
+            "omitted"
+          ]
+        },
+        "structural_variation": {
+          "additionalProperties": false,
+          "properties": {
+            "merge_split_eligible": {
+              "type": "boolean"
+            },
+            "minimal_single_structure_expected": {
+              "type": "boolean"
+            },
+            "order_variation_eligible": {
+              "type": "boolean"
+            },
+            "reception_position_variation_eligible": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "merge_split_eligible",
+            "minimal_single_structure_expected",
+            "order_variation_eligible",
+            "reception_position_variation_eligible"
+          ],
+          "type": "object"
+        },
+        "surface_shape": {
+          "enum": [
+            "complete_sentence",
+            "fragment",
+            "colloquial",
+            "colloquial_fragment",
+            "typo_or_orthographic_variation",
+            "truncated"
+          ]
+        },
+        "temporal_scope": {
+          "enum": [
+            "past",
+            "current",
+            "future_intention",
+            "mixed"
+          ]
+        },
+        "thought_action_relation": {
+          "enum": [
+            "not_applicable",
+            "same",
+            "complement",
+            "contrast",
+            "time_shift",
+            "cause_unknown"
+          ]
+        },
+        "topic_cardinality": {
+          "enum": [
+            "single",
+            "multiple"
+          ]
+        },
+        "valence": {
+          "enum": [
+            "positive",
+            "negative",
+            "mixed",
+            "neutral",
+            "self_denial_adjacent"
+          ]
+        }
+      },
+      "required": [
+        "category_cardinality",
+        "category_text_alignment",
+        "cause_explicitness",
+        "emotion_cardinality",
+        "emotion_strength_shape",
+        "families",
+        "input_field_presence",
+        "intention_state",
+        "length_class",
+        "question_system_relevance",
+        "referent_clarity",
+        "structural_variation",
+        "surface_shape",
+        "temporal_scope",
+        "thought_action_relation",
+        "topic_cardinality",
+        "valence"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "action_text": {
+          "type": "string"
+        },
+        "categories": {
+          "items": {
+            "enum": [
+              "生活",
+              "仕事",
+              "趣味",
+              "人間関係",
+              "恋愛",
+              "健康",
+              "学習",
+              "価値観",
+              "人生"
+            ]
+          },
+          "maxItems": 9,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "emotions": {
+          "oneOf": [
+            {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "strength": {
+                    "enum": [
+                      "weak",
+                      "medium",
+                      "strong"
+                    ]
+                  },
+                  "type": {
+                    "enum": [
+                      "喜び",
+                      "悲しみ",
+                      "怒り",
+                      "不安",
+                      "平穏"
+                    ]
+                  }
+                },
+                "required": [
+                  "strength",
+                  "type"
+                ],
+                "type": "object"
+              },
+              "maxItems": 5,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "strength": {
+                    "const": "medium"
+                  },
+                  "type": {
+                    "const": "自己理解"
+                  }
+                },
+                "required": [
+                  "strength",
+                  "type"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1,
+              "minItems": 1,
+              "type": "array"
+            }
+          ]
+        },
+        "thought_text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_text",
+        "categories",
+        "emotions",
+        "thought_text"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "cocolon.emlis.nls_v3.sample_case.v1"
+    },
+    "semantic_contract": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_depth_range": {
+          "oneOf": [
+            {
+              "const": [
+                "minimal"
+              ]
+            },
+            {
+              "const": [
+                "focused"
+              ]
+            },
+            {
+              "const": [
+                "layered"
+              ]
+            },
+            {
+              "const": [
+                "minimal",
+                "focused"
+              ]
+            },
+            {
+              "const": [
+                "focused",
+                "layered"
+              ]
+            },
+            {
+              "const": [
+                "minimal",
+                "focused",
+                "layered"
+              ]
+            }
+          ]
+        },
+        "forbidden_claim_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "relation_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "required_meaning_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "unknown_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "expected_depth_range",
+        "forbidden_claim_codes",
+        "relation_codes",
+        "required_meaning_codes",
+        "unknown_codes"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "enum": [
+        "karen_generated",
+        "other_ai_generated_reviewed",
+        "real_user_anonymized_private"
+      ]
+    }
+  },
+  "required": [
+    "batch_id",
+    "case_id",
+    "coverage",
+    "input",
+    "schema_version",
+    "semantic_contract",
+    "source"
+  ],
+  "title": "Cocolon EmlisAI NLS v3 sample case",
+  "type": "object"
+}

@@ -1,0 +1,407 @@
+{
+  "schema_version": "cocolon.emlis.nls_v2.s12_s13.device_blocked.v1",
+  "decision_date": "2026-07-13",
+  "decision": "blocked_fail_closed",
+  "design_sha256": "b2441917ee80b22c84973c4205bc1cb1a9c471037fe270391438cbd7d7694752",
+  "source_archive": {
+    "received_ref": "mashos-api_7(92).zip",
+    "sha256": "6271d8fafb3e6abe7ae8a1eb7a1c7688f0a441dc1de00314a4d651cf75092076",
+    "byte_size": 7045120,
+    "archive_complete": false,
+    "central_directory_present": false,
+    "integrity_status": "truncated_missing_end_of_central_directory",
+    "local_header_entry_count_before_truncation": 806,
+    "safely_decoded_file_count": 768,
+    "safely_decoded_non_pycache_file_count": 740,
+    "safely_decoded_non_pycache_diff_count_against_basis": 0,
+    "recovered_only_pycache_file_count": 28,
+    "complete_working_tree_basis_ref": "mashos-api_6(102).zip",
+    "complete_working_tree_basis_sha256": "a2c8262219309a991c8b13afd474e8387285de1873053f7eb2b3f65773909386",
+    "complete_working_tree_basis_integrity_status": "verified_complete",
+    "current_archive_used_as_complete_source": false
+  },
+  "prerequisite_evidence": {
+    "holdout_a": {
+      "receipt_ref": "emlis_nls_v2_s8_holdout_a_receipt_20260713.json",
+      "receipt_sha256": "16c6040caf3d12304cc54955f874667b5cc24836d2f6e8f103b8a2578c848cf1",
+      "evaluation_run_count": 1,
+      "overall_status": "stop"
+    },
+    "holdout_b": {
+      "receipt_ref": "emlis_nls_v2_s9_holdout_b_receipt_20260713.json",
+      "receipt_sha256": "9f23860ecbad2408710eedc220144a185555cc81b56323647b2de6179dbda495",
+      "evaluation_run_count": 0,
+      "overall_status": "not_evaluated",
+      "opened_for_evaluation": false
+    },
+    "runtime_steps": {
+      "receipt_ref": "emlis_nls_v2_s10_s11_runtime_blocked_20260713.json",
+      "receipt_sha256": "19aad8448e9e60ae385ddf1da6cf67c6da86c3303acf605b0b673cfe02b12f98",
+      "step10_status": "not_executed",
+      "step11_status": "not_executed",
+      "production_owner": "v1",
+      "v2_state": "offline_only"
+    },
+    "local_holdout_contract_pass": false,
+    "runtime_owner_switch_complete": false,
+    "formal_step12_progression_allowed": false
+  },
+  "device_evidence": {
+    "archive_ref": "実機確認結果４.zip",
+    "archive_sha256": "c043f5c0f011aa8f8ad6085faabc4d367b3ebcc998d54d875544a9beb7fa85f8",
+    "archive_valid": true,
+    "archive_entry_count": 11,
+    "evidence_file_count": 10,
+    "display_screenshot_count": 6,
+    "backend_log_screenshot_count": 4,
+    "screenshot_review_status": "complete",
+    "screenshot_review_is_raw_body_hash_proof": false,
+    "actual_device_raw_comment_sha256_machine_match": "not_available_from_screenshots",
+    "evidence_role": "canonical_v1_actual_device_baseline_not_v2_acceptance",
+    "local_v1_reproduction_count": 4,
+    "local_v1_visible_match_count": 4,
+    "v2_runtime_generation_count": 0,
+    "lineage_resolution": "manual_visible_transcription_exactly_reproduced_by_canonical_v1"
+  },
+  "representative4_review": {
+    "evidence_intake_status": "complete",
+    "formal_v2_evaluation_status": "not_executed",
+    "device_baseline_owner": "grounded_sentence_surface_canonical_v1",
+    "product_read_status": "fail",
+    "case_count": 4,
+    "product_pass_count": 0,
+    "product_failure_count": 4,
+    "ratio_guidance_is_hard_gate": false,
+    "cases": [
+      {
+        "case_number": 1,
+        "family": "low_information_short",
+        "input_identity_sha256": "5ff92167f1474258f68d2e120f1273480ae249f2fb6e687dc381e3c9804d055b",
+        "backend_log_ref": {
+          "path": "実機確認結果４/１ログ.png",
+          "sha256": "55e758a3ae9f08e9adf3a569f66f3f09c083198e0abbcb61d2161d1a4a7767fe",
+          "width_px": 3560,
+          "height_px": 1799
+        },
+        "screenshot_refs": [
+          {
+            "path": "実機確認結果４/１画面表示.png",
+            "sha256": "e6ccfb1a02605279949512726b64c75bb242551669bc69890f91880c8f5696c3",
+            "width_px": 376,
+            "height_px": 499
+          }
+        ],
+        "actual_device_visual_match_to_local_v1": "pass",
+        "generation_path": "grounded_sentence_surface_canonical_v1",
+        "observation_section_sha256": "2a611ea5e066d03fb59ac760617e79cf4b92cdc43dbba487599fd6f31ae900ea",
+        "reception_section_sha256": "a979fb5235fb5651813ab2fd5c1968790669d662f1fa26e9553181db00a52747",
+        "visible_surface_sha256": "eb03f754a9ecc8966e0c909d28e35c531a2228b22be47e673431406c92d5204b",
+        "observation_char_count": 24,
+        "reception_char_count": 41,
+        "observation_share": 0.369231,
+        "reception_share": 0.630769,
+        "ratio_guidance": {
+          "gate_type": "qa_advisory",
+          "observation_min": 0.4,
+          "observation_max": 0.5,
+          "reception_min": 0.5,
+          "reception_max": 0.6,
+          "within_guidance": false
+        },
+        "layout": {
+          "clipping_observed": false,
+          "overlap_observed": false,
+          "scroll_required": false,
+          "single_screen_complete": true
+        },
+        "semantic_review": {
+          "short_input_non_inflation": "pass",
+          "positive_without_suffering_reaction": "not_applicable",
+          "long_input_not_enumeration": "not_applicable",
+          "mixed_topic_separation": "not_applicable",
+          "reception_input_specificity": "fail",
+          "observation_replay_compression": "pass",
+          "reception_semantic_density": "fail",
+          "section_role_distinctness": "partial",
+          "safety_boundary": "not_applicable"
+        },
+        "product_status": "fail",
+        "failure_codes": [
+          "EMLIS_CONTENT_GENERIC",
+          "EMLIS_SEMANTIC_DENSITY_LOW",
+          "TWO_STAGE_RATIO_OUTSIDE_GUIDE_LOW_INFORMATION_SHORT"
+        ]
+      },
+      {
+        "case_number": 2,
+        "family": "daily_positive",
+        "input_identity_sha256": "ceb9d9a92a8865584f4cf17e4d8af08bac26126a4efb64bd95fd62d6464d4cb4",
+        "backend_log_ref": {
+          "path": "実機確認結果４/２ログ.png",
+          "sha256": "8f8ddf25cba7c07c33ed7d41ff9dba69c02789f4fc346065178e77b5d520da73",
+          "width_px": 3571,
+          "height_px": 1815
+        },
+        "screenshot_refs": [
+          {
+            "path": "実機確認結果４/２画面表示.png",
+            "sha256": "625857285b4774d4b0314ee7b5bd782501dca2032334b9a8db80ef50b468c5a2",
+            "width_px": 364,
+            "height_px": 646
+          }
+        ],
+        "actual_device_visual_match_to_local_v1": "pass",
+        "generation_path": "grounded_sentence_surface_canonical_v1",
+        "observation_section_sha256": "d1e60e404bf1fd9e2cc2390e2fa2c9b0ee281f4db5c017bc801ab4621eab98fb",
+        "reception_section_sha256": "d556db6abb843120814e94d64ee4c79ce01a4d832d38b3d2d773ab0849e1c098",
+        "visible_surface_sha256": "e746591f678be5d22e17e850508eac2b72a75b30a492079ae41b797062342623",
+        "observation_char_count": 99,
+        "reception_char_count": 62,
+        "observation_share": 0.614907,
+        "reception_share": 0.385093,
+        "ratio_guidance": {
+          "gate_type": "qa_advisory",
+          "observation_min": 0.2,
+          "observation_max": 0.35,
+          "reception_min": 0.65,
+          "reception_max": 0.8,
+          "within_guidance": false
+        },
+        "layout": {
+          "clipping_observed": false,
+          "overlap_observed": false,
+          "scroll_required": false,
+          "single_screen_complete": true
+        },
+        "semantic_review": {
+          "short_input_non_inflation": "not_applicable",
+          "positive_without_suffering_reaction": "pass",
+          "long_input_not_enumeration": "not_applicable",
+          "mixed_topic_separation": "not_applicable",
+          "reception_input_specificity": "partial",
+          "observation_replay_compression": "fail",
+          "reception_semantic_density": "fail",
+          "section_role_distinctness": "fail",
+          "safety_boundary": "not_applicable"
+        },
+        "product_status": "fail",
+        "failure_codes": [
+          "OBSERVATION_QUOTE_REPLAY_EXCESS",
+          "SECTION_ROLE_DISTINCTNESS_LOW",
+          "EMLIS_SEMANTIC_DENSITY_LOW",
+          "TWO_STAGE_RATIO_OUTSIDE_GUIDE_DAILY_POSITIVE"
+        ]
+      },
+      {
+        "case_number": 3,
+        "family": "rich_change_long_arc",
+        "input_identity_sha256": "1ca9ee3fde883d13e044f629352688781869b279f6514dda52eaf59538217e74",
+        "backend_log_ref": {
+          "path": "実機確認結果４/３ログ.png",
+          "sha256": "c9d6cc36ecfaeddd42af52f1b8c9fd320bcf6ec046372b0591fdbefe341ef0fa",
+          "width_px": 3549,
+          "height_px": 1762
+        },
+        "screenshot_refs": [
+          {
+            "path": "実機確認結果４/３画面表示_1.png",
+            "sha256": "dbb6371b6764b1fc23be374f4625eeb33c8e0ee76ff1235216981dd5c1e7e210",
+            "width_px": 391,
+            "height_px": 671
+          },
+          {
+            "path": "実機確認結果４/３画面表示_2.png",
+            "sha256": "e250cb563f841dd56f1a7deb14992855c74bd2ad62838d0862f42f4ca9ac7d18",
+            "width_px": 381,
+            "height_px": 676
+          }
+        ],
+        "actual_device_visual_match_to_local_v1": "pass",
+        "generation_path": "grounded_sentence_surface_canonical_v1",
+        "observation_section_sha256": "9751db4bb89d2ebd57ebaf998574e69a0d9770a4bc4c003e75c915de281d554f",
+        "reception_section_sha256": "a58d2bdf67503304b13ab21334f9ba10641579644a065b0f20c6cf7a7dd28707",
+        "visible_surface_sha256": "c9faf5cfa0212482293271e755237249a7bf34177b673b8890110a1c8c5f10e6",
+        "observation_char_count": 296,
+        "reception_char_count": 62,
+        "observation_share": 0.826816,
+        "reception_share": 0.173184,
+        "ratio_guidance": {
+          "gate_type": "qa_advisory",
+          "observation_min": 0.35,
+          "observation_max": 0.55,
+          "reception_min": 0.45,
+          "reception_max": 0.65,
+          "within_guidance": false
+        },
+        "layout": {
+          "clipping_observed": false,
+          "overlap_observed": false,
+          "scroll_required": true,
+          "single_screen_complete": false
+        },
+        "semantic_review": {
+          "short_input_non_inflation": "not_applicable",
+          "positive_without_suffering_reaction": "not_applicable",
+          "long_input_not_enumeration": "fail",
+          "mixed_topic_separation": "fail",
+          "reception_input_specificity": "fail",
+          "observation_replay_compression": "fail",
+          "reception_semantic_density": "fail",
+          "section_role_distinctness": "fail",
+          "safety_boundary": "not_applicable"
+        },
+        "product_status": "fail",
+        "failure_codes": [
+          "LONG_INPUT_ENUMERATION_REPLAY",
+          "OBSERVATION_TEMPLATE_CLAUSE_DUPLICATION",
+          "SEMANTIC_RELATION_DISTORTION",
+          "EMLIS_REFERENCE_AMBIGUOUS",
+          "EMLIS_ANCHOR_CONTEXT_LOSS",
+          "EMLIS_SEMANTIC_DENSITY_LOW",
+          "TWO_STAGE_RATIO_OUTSIDE_GUIDE_RICH_LONG",
+          "SCROLL_REQUIRED"
+        ]
+      },
+      {
+        "case_number": 4,
+        "family": "self_denial_with_concrete_action",
+        "input_identity_sha256": "d6d0c20b4b1770322005375c19233ea4ede9f87c654c7155b5c4641079a7227e",
+        "backend_log_ref": {
+          "path": "実機確認結果４/４ログ.png",
+          "sha256": "8a7241702814c54f3e3cd5c6228bebe786adc6d0b83f1a9df3bd2ef28d25988a",
+          "width_px": 3557,
+          "height_px": 1785
+        },
+        "screenshot_refs": [
+          {
+            "path": "実機確認結果４/４画面表示_1.png",
+            "sha256": "495e16ad167aa7f07f32eba3d1c2db390f68f095c8c692397e33c7ab124ada6a",
+            "width_px": 396,
+            "height_px": 671
+          },
+          {
+            "path": "実機確認結果４/４画面表示_2.png",
+            "sha256": "392c3d3582226154041c83f32b71cd2f12e788b9ff97c30c30e7fe446edc944a",
+            "width_px": 366,
+            "height_px": 649
+          }
+        ],
+        "actual_device_visual_match_to_local_v1": "pass",
+        "generation_path": "grounded_sentence_surface_canonical_v1",
+        "observation_section_sha256": "6ebc5b0b8ccdd81de91ca706fd9d46d1f4aa5f6df072d7e146c367975b783ffe",
+        "reception_section_sha256": "c1c316b0946fe535bd6f9da5aeadde916f24c34449a045307d677400c5537821",
+        "visible_surface_sha256": "963b723d4d6f93f183a28de9526579c21947d531bd8477a9eb313c006b870ffd",
+        "observation_char_count": 163,
+        "reception_char_count": 84,
+        "observation_share": 0.659919,
+        "reception_share": 0.340081,
+        "ratio_guidance": {
+          "gate_type": "qa_advisory",
+          "observation_min": 0.3,
+          "observation_max": 0.45,
+          "reception_min": 0.55,
+          "reception_max": 0.7,
+          "within_guidance": false
+        },
+        "layout": {
+          "clipping_observed": false,
+          "overlap_observed": false,
+          "scroll_required": true,
+          "single_screen_complete": false
+        },
+        "semantic_review": {
+          "short_input_non_inflation": "not_applicable",
+          "positive_without_suffering_reaction": "not_applicable",
+          "long_input_not_enumeration": "not_applicable",
+          "mixed_topic_separation": "pass",
+          "reception_input_specificity": "partial",
+          "observation_replay_compression": "fail",
+          "reception_semantic_density": "fail",
+          "section_role_distinctness": "fail",
+          "safety_boundary": "pass"
+        },
+        "product_status": "fail",
+        "failure_codes": [
+          "OBSERVATION_QUOTE_REPLAY_EXCESS",
+          "EMLIS_GENERIC_RECEPTION_OPENING",
+          "SECTION_ROLE_DISTINCTNESS_LOW",
+          "EMLIS_SEMANTIC_DENSITY_LOW",
+          "TWO_STAGE_RATIO_OUTSIDE_GUIDE_SELF_DENIAL",
+          "SCROLL_REQUIRED"
+        ]
+      }
+    ],
+    "exact8": {
+      "status": "not_executed",
+      "run_count": 0
+    },
+    "holdout_derived_representatives": {
+      "status": "not_executed",
+      "run_count": 0,
+      "holdout_b_opened": false
+    },
+    "completion_status": "stopped_before_valid_v2_device_evaluation",
+    "progression_allowed": false
+  },
+  "step13_two_stage_quantity_ratio_adjustment": {
+    "status": "not_executed",
+    "v1_device_baseline_ratio_review_status": "complete",
+    "natural_language_v2_qualified": false,
+    "prerequisite_met": false,
+    "production_adjustment_count": 0,
+    "v1_source_modified": false,
+    "v2_source_modified": false,
+    "reception_density_adjustment_performed": false,
+    "sentence_count_adjustment_performed": false,
+    "observation_replay_compression_performed": false,
+    "observation_coverage_revalidation_performed": false,
+    "rn_visual_emphasis_changed": false,
+    "ui_order_changed": false,
+    "completion_status": "blocked_by_unqualified_v2_and_non_v2_device_evidence"
+  },
+  "runtime_boundary": {
+    "production_owner": "v1",
+    "v2_state": "offline_only",
+    "runtime_source_modified_count": 0,
+    "runtime_source_files": [
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_sentence_surface.py",
+        "sha256": "e9679d31ee647fa34831def3917a9bc5b17ef5e725f5815635aa4fe3e6f875e0"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_gate.py",
+        "sha256": "932b43a7b6dc5cd8d58ddeff3d7ba3bd5e044ba71858fd6b4f6fdde3b7656c2f"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_reply_service.py",
+        "sha256": "a8b494ff6d14df771e3f1c17d7d516c8457daf17a9431a118f3b44088aff90b6"
+      }
+    ],
+    "api_contract_changed": false,
+    "db_contract_changed": false,
+    "rn_contract_changed": false,
+    "public_contract_diff_count": 0
+  },
+  "block_reason_codes": [
+    "HOLDOUT_A_FAILED",
+    "HOLDOUT_B_NOT_EVALUATED_BY_DESIGN",
+    "RUNTIME_SHADOW_NOT_EXECUTED",
+    "RUNTIME_OWNER_SWITCH_NOT_EXECUTED",
+    "PRODUCTION_OWNER_IS_V1",
+    "DEVICE_OUTPUT_IS_NOT_V2",
+    "REPRESENTATIVE4_PRODUCT_FAILURE",
+    "EXACT8_NOT_RUN",
+    "HOLDOUT_DERIVED_DEVICE_SET_NOT_RUN",
+    "STEP13_PREREQUISITE_UNMET",
+    "STEP13_NOT_EXECUTED",
+    "SOURCE_ARCHIVE_TRUNCATED"
+  ],
+  "production_files_modified": [],
+  "holdout_files_modified": [],
+  "screenshot_files_included": false,
+  "candidate_bodies_included": false,
+  "selected_bodies_included": false,
+  "raw_input_included": false,
+  "returned_surface_included": false,
+  "next_action": "new_design_decision_and_complete_source_archive_required_without_opening_holdout_b"
+}

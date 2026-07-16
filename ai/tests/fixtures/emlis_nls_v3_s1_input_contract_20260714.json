@@ -1,0 +1,340 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.step1_input_contract.v1",
+  "created_date": "2026-07-14",
+  "contract_version": "cocolon.input_contract.20260714",
+  "authority": "current_rn_production_files",
+  "rn_archive_sha256": "2287550897799bee5ce1ac8a4235f4aa364ed7ef088c1bd3ef7d84fd2d009100",
+  "rn_owner_files": [
+    {
+      "path": "screens/input/inputOptions.js",
+      "sha256": "8463777a6d44eb7047cba18b80ceb15697d8815daf5d06f34b012b32271ac2a7"
+    },
+    {
+      "path": "screens/InputScreen.js",
+      "sha256": "6c82c1ac5bdd9a8eef06f64986f3a054ed6971f01a5ed154f3ddc6d63874e04d"
+    },
+    {
+      "path": "screens/input/InputEmotionSection.js",
+      "sha256": "0621aa08a3e4be728b06bb65792165661614b7d429bde947f3a91ae29bf54cbe"
+    },
+    {
+      "path": "screens/input/InputCategorySection.js",
+      "sha256": "1a805e8d01586cb501219f92dc7b7df00e79e0de1c2370601520e9f5459efa7f"
+    },
+    {
+      "path": "screens/input/InputMemoSection.js",
+      "sha256": "9f0663def2703e04be7259fa6a2d2fcb2f3f20238deb718c2d5bf56c9cbc700c"
+    },
+    {
+      "path": "screens/input/inputDraftModel.js",
+      "sha256": "c57a95de2351fea3bdfcb3b3848bc0036820090d23bb23096762a5d18941e15d"
+    }
+  ],
+  "rn_owner_snapshot_sha256": "095500a7a31958d4c9a7f86064027ce67b91a5174a4f63b9fa41866313a6b9c5",
+  "field_mapping": {
+    "thought_text": "memo",
+    "action_text": "memo_action",
+    "emotions": "emotion_details_or_emotions",
+    "categories": "category"
+  },
+  "app_reachable": {
+    "text_requirement": "trimmed_memo_or_memo_action_nonempty",
+    "emotion_min_count": 1,
+    "emotion_unique": true,
+    "emotion_types": [
+      "喜び",
+      "悲しみ",
+      "怒り",
+      "不安",
+      "平穏",
+      "自己理解"
+    ],
+    "strength_types": [
+      "weak",
+      "medium",
+      "strong"
+    ],
+    "self_insight_type": "自己理解",
+    "self_insight_exclusive": true,
+    "self_insight_strength": "medium",
+    "non_self_insight_multiple_allowed": true,
+    "category_min_count": 1,
+    "category_unique": true,
+    "category_types": [
+      "生活",
+      "仕事",
+      "趣味",
+      "人間関係",
+      "恋愛",
+      "健康",
+      "学習",
+      "価値観",
+      "人生"
+    ],
+    "category_multiple_allowed": true,
+    "text_length_limit_added_by_nls_v3": false,
+    "submit_condition": "not_submitting_and_text_and_emotion_and_category"
+  },
+  "backend_compatibility_boundary": {
+    "owner_files": [
+      {
+        "path": "ai/services/ai_inference/api_emotion_submit.py",
+        "sha256": "0705dc5cd7d4a78a4b8f6de1721b80b1ea6ae70b1d48a064acff9a8277af1822"
+      },
+      {
+        "path": "ai/services/ai_inference/emotion_submit_service.py",
+        "sha256": "818ee1edb7ac4ff5f12cc7f8537eeb10fedc9f7dd37a4d165c5248a7249830f2"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_current_input_bundle.py",
+        "sha256": "63ddb6bf3db472bdaddfd8c3fbef68034aeb3cf51188508c0ad8b8cd920271f8"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_public_feedback_meta.py",
+        "sha256": "097be8c02eb68abb7d6a034243b3bd7296842f634f01269349c41b4f8c029029"
+      }
+    ],
+    "owner_snapshot_sha256": "9ab46889a9536484fa42180eaf5fd63eb8d69696d79927feb2a05614941e46e1",
+    "legacy_string_emotion_accepted": true,
+    "unknown_emotion_type_rejected": false,
+    "unknown_strength_coerced_to_medium": true,
+    "self_insight_mixed_rejected": false,
+    "self_insight_nonmedium_rejected": false,
+    "duplicate_emotion_rejected": false,
+    "duplicate_category_rejected": false,
+    "duplicate_category_deduplicated": true,
+    "blank_thought_and_action_rejected": false,
+    "memo_without_category_rejected": false,
+    "empty_emotions_rejected": true,
+    "unknown_category_rejected": true,
+    "backend_permissiveness_is_app_valid_authority": false
+  },
+  "baseline_fixture_boundary": {
+    "known_fixture_string_emotions_are_legacy_comparison_inputs": true,
+    "known_fixture_strength_omission_is_not_app_contract_authority": true,
+    "known_fixture_cases_count_toward_karen_1000": false
+  },
+  "source_resource_bound_policy": {
+    "schema_version": "cocolon.emlis.nls_v3.source_resource_bound_policy.v1",
+    "authority": "received_canonical_v1_source_and_current_rn_api_contract",
+    "owner_files": [
+      {
+        "path": "ai/services/ai_inference/api_emotion_submit.py",
+        "sha256": "0705dc5cd7d4a78a4b8f6de1721b80b1ea6ae70b1d48a064acff9a8277af1822"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_evidence_ledger_service.py",
+        "sha256": "17e51d7ff39535d60f81ad17582f36ab252301502a3a3328e703d116cea7f9e2"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_perspective_observers.py",
+        "sha256": "cca669364efa7359bd08fcfe8bf5335519be76a81f6700254ed5d0be713ecb61"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_observation_integrator_service.py",
+        "sha256": "20aa4f793054844904084ee72c4bdc3b3198a7ad849c8a29fe526a655ce1bf21"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_safety_triage.py",
+        "sha256": "9aa7ee3b0742fa267e7396b946694d6f99e3ac8f65217e65453b1faad5b2425b"
+      },
+      {
+        "path": "ai/services/ai_inference/emlis_ai_grounded_observation_plan.py",
+        "sha256": "b422093f907f3a825ec30f687f2f8b1d2688bf89950d9bc7436bfe0b5a67d177"
+      }
+    ],
+    "owner_snapshot_sha256": "63e343ae957fc10ca29f12eca3fa17a9518b3cb308db244b8fce4a603f9652e8",
+    "rn_text_limit_owner": {
+      "path": "screens/input/InputMemoSection.js",
+      "sha256": "9f0663def2703e04be7259fa6a2d2fcb2f3f20238deb718c2d5bf56c9cbc700c"
+    },
+    "symbols": {
+      "E": "current_request_evidence_span_count",
+      "T": "current_request_text_source_evidence_span_count",
+      "N": "validated_current_request_nucleus_count",
+      "R": "validated_current_request_relation_count",
+      "U": "validated_current_request_unknown_boundary_count",
+      "S": "validated_current_request_safety_policy_count",
+      "K": "validated_current_request_safety_required_boundary_code_count",
+      "O": "validated_current_request_reception_opportunity_count"
+    },
+    "global_finite_text_character_limit_present": false,
+    "global_finite_nucleus_limit_derivable": false,
+    "global_finite_relation_limit_derivable": false,
+    "fixed_finite_global_limit_must_not_be_invented": true,
+    "app_reachable_structured_label_max": {
+      "non_self_insight_emotion_count": 5,
+      "self_insight_emotion_count": 1,
+      "category_count": 9,
+      "maximum_emotion_plus_category_count": 14
+    },
+    "backend_ui_unreachable_list_length_limit_present": false,
+    "source_component_bounds": {
+      "nucleus_count": {
+        "bound_kind": "request_relative_lossless",
+        "upper_bound_formula": "E",
+        "derivation": "one_nucleus_per_evidence_span"
+      },
+      "relation_count": {
+        "bound_kind": "request_relative_conservative_lossless",
+        "upper_bound_formula": "min(N * (N - 1), T + 9)",
+        "derivation": "distinct_directed_nucleus_pairs_intersect_source_order_at_most_T_minus_1_plus_memo_action_1_plus_observer_edges_9"
+      },
+      "unknown_boundary_count": {
+        "bound_kind": "fixed_source_conservative",
+        "upper_bound": 11,
+        "app_reachable_upper_bound": 7,
+        "derivation": "nine_observer_uncertainty_slots_plus_three_graph_missing_information_slots_minus_the_shared_relation_not_confident_code"
+      },
+      "safety_policy_count": {
+        "bound_kind": "fixed_source_exact",
+        "upper_bound": 1,
+        "derivation": "one_GroundedSafetyPolicy_per_observation_plan"
+      },
+      "safety_required_boundary_code_count": {
+        "bound_kind": "fixed_source_vocabulary",
+        "upper_bound": 9,
+        "derivation": "deduped_current_safety_reason_and_boundary_code_vocabulary"
+      },
+      "reception_opportunity_count": {
+        "bound_kind": "fixed_source_exact",
+        "upper_bound": 4,
+        "derivation": "canonical_family_mapping_and_pruning_allow_at_most_four_simultaneous_opportunity_rows"
+      }
+    },
+    "canonical_obligation_identity_policy": {
+      "base_nonstance": {
+        "nucleus_identity": [
+          "kind",
+          "nucleus_id"
+        ],
+        "relation_identity": [
+          "grounded_relation_preservation",
+          "relation_id"
+        ],
+        "unknown_identity": [
+          "unknown_boundary_preservation",
+          "unknown_id"
+        ],
+        "maximum_per_exact_identity": 1,
+        "maximum_formula": "B = 4*N + R + U",
+        "nucleus_owned_kinds": [
+          "grounded_nucleus_notice",
+          "significance_or_shift",
+          "intention_or_next_action",
+          "self_denial_boundary"
+        ],
+        "relation_owned_kinds": [
+          "grounded_relation_preservation"
+        ],
+        "unknown_boundary_owned_kinds": [
+          "unknown_boundary_preservation"
+        ]
+      },
+      "bounded_counterposition": {
+        "identity": [
+          "safety_authority_token",
+          "target_base_obligation_id"
+        ],
+        "maximum_per_identity": 1,
+        "safety_authority_token": "safety_policy_default_or_one_required_boundary_code",
+        "safety_authority_token_count_formula": "S + K",
+        "maximum_formula": "C = (S + K) * B",
+        "per_target_capacity_required": true
+      },
+      "bound_emlis_reception": {
+        "identity": [
+          "reception_authority_token",
+          "target_nonstance_obligation_id"
+        ],
+        "maximum_per_identity": 1,
+        "reception_authority_token": "default_reception_authority_or_one_opportunity_id",
+        "reception_authority_token_count_formula": "O + 1",
+        "default_authority_present_when_O_is_zero": true,
+        "conservative_target_capacity_formula": "P = B + C",
+        "maximum_formula": "Q = (O + 1) * P",
+        "runtime_target_must_be_base_nonstance": true,
+        "counterposition_capacity_is_not_runtime_reception_target": true,
+        "capacity_superset_is_intentionally_conservative": true
+      },
+      "canonical_merge": {
+        "same_identity_duplicate_allowed": false,
+        "same_primary_source_same_kind_scalar_projection_must_be_identical": true,
+        "counting_identity_does_not_narrow_source_authority_codes": true,
+        "secondary_source_authorities_must_be_lossless_union": true,
+        "array_fields_lossless_union": [
+          "evidence_ids",
+          "nucleus_ids",
+          "relation_ids",
+          "unknown_boundary_ids",
+          "target_obligation_ids",
+          "topic_scope_ids",
+          "must_not_merge_with",
+          "allowed_response_acts",
+          "forbidden_claim_codes",
+          "source_authority_codes"
+        ],
+        "scalar_conflict_failure_code": "OBLIGATION_CANONICAL_PROJECTION_CONFLICT",
+        "semantic_duplicate_failure_code": "OBLIGATION_CANONICAL_DUPLICATE",
+        "canonical_failure_must_not_truncate": true,
+        "semantic_information_drop_allowed": false
+      },
+      "normal_surface_eligibility": {
+        "minimum_base_nonstance_obligation_count": 1,
+        "zero_base_failure_code": "OBLIGATION_SOURCE_UNAVAILABLE",
+        "zero_base_visible_text_allowed": false,
+        "separate_safety_owner_excluded": true
+      }
+    },
+    "per_request_obligation_inventory_upper_bound_formula": "(4*N + R + U) * (S + K + 1) * (O + 2)",
+    "per_request_obligation_inventory_upper_bound_derivation": {
+      "B": "4*N + R + U",
+      "C": "(S + K) * B",
+      "P": "B + C",
+      "Q": "(O + 1) * P",
+      "I": "P + Q"
+    },
+    "obligation_kind_added_requires_policy_version_change": true,
+    "candidate_count_limit": 12,
+    "candidate_count_is_obligation_inventory_limit": false,
+    "truncate_source_or_obligation_inventory_at_bound": false,
+    "overflow_failure_code": "OBLIGATION_INVENTORY_OVERFLOW",
+    "required_boundary_tests": [
+      "bound_minus_one",
+      "bound",
+      "bound_plus_one"
+    ],
+    "step4_must_derive_obligation_inventory_bound_from_these_components": true
+  },
+  "supabase_future_intake": {
+    "current_status": "not_received_not_blocking",
+    "required_intake_checks": [
+      "header",
+      "row_count",
+      "missing_fields",
+      "exact_duplicates",
+      "near_duplicates",
+      "legacy_ratio",
+      "current_valid_ratio",
+      "personal_information",
+      "usage_scope"
+    ],
+    "excluded_fields": [
+      "user_id",
+      "auth",
+      "email",
+      "notification_data",
+      "historical_emlis_output"
+    ],
+    "raw_corpus_repo_allowed": false,
+    "raw_corpus_public_receipt_allowed": false,
+    "private_local_workspace_required": true,
+    "current_valid_and_legacy_separated": true,
+    "replaces_karen_generated_1000": false
+  },
+  "step1_input_contract_status": "completed",
+  "body_free": true,
+  "raw_input_included": false,
+  "comment_text_included": false,
+  "candidate_body_included": false
+}

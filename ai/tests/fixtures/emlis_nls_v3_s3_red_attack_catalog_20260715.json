@@ -1,0 +1,131 @@
+{
+  "attacks": [
+    {
+      "attack_id": "V3A-01_GENERIC_THREE_SENTENCES_RETAINED_METADATA",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "UNKNOWN_FIELD",
+        "PARENT_HASH_MISMATCH",
+        "SPAN_HASH_MISMATCH"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-02_ORIGINAL_BODY_OTHER_OBLIGATION_METADATA",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "UNKNOWN_FIELD",
+        "ATOM_OBLIGATION_KIND_MISMATCH"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-03_ORIGINAL_BODY_OTHER_CASE_EVIDENCE",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "UNRESOLVED_EVIDENCE_REFERENCE"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-04_CLAUSE_DELETION_STALE_SPAN_MAP",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "PARENT_HASH_MISMATCH",
+        "SPAN_HASH_MISMATCH"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-05_AST_CHANGED_BODY_UNCHANGED",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "PARENT_HASH_MISMATCH"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-06_AST_AND_BODY_CHANGED_TO_OTHER_MEANING",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [],
+      "step3_state": "semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-07_CANDIDATE_PERMUTATION",
+      "earliest_semantic_closure_step": 9,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [],
+      "step3_state": "selector_red_frozen"
+    },
+    {
+      "attack_id": "V3A-08_SAME_BODY_REUSED_MULTIPLE_INPUTS",
+      "earliest_semantic_closure_step": 10,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [],
+      "step3_state": "runner_red_frozen"
+    },
+    {
+      "attack_id": "V3A-09_ANCHOR_ONLY_GENERIC_PREDICATE",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "SEMANTIC_NODE_TYPE_REQUIRED"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-10_EMLIS_TOKEN_ONLY_RECEPTION",
+      "earliest_semantic_closure_step": 8,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "EMLIS_STANCE_NODE_REQUIRED"
+      ],
+      "step3_state": "contract_envelope_closed_semantic_red_frozen"
+    },
+    {
+      "attack_id": "V3A-11_FAKE_COVERED_OBLIGATION_IDS",
+      "earliest_semantic_closure_step": 3,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "UNKNOWN_FIELD"
+      ],
+      "step3_state": "closed"
+    },
+    {
+      "attack_id": "V3A-12_BODY_MIXED_INTO_RECEIPT",
+      "earliest_semantic_closure_step": 3,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "BODY_CONTENT_FORBIDDEN",
+        "UNKNOWN_FIELD"
+      ],
+      "step3_state": "closed"
+    },
+    {
+      "attack_id": "V3A-13_BATCH_FAMILY_CASE_ID_GENERATION_CUE",
+      "earliest_semantic_closure_step": 10,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [
+        "UNKNOWN_FIELD"
+      ],
+      "step3_state": "contract_input_closed_runner_red_frozen"
+    },
+    {
+      "attack_id": "V3A-14_PAST_FAILURE_TRIGGER_BRANCH",
+      "earliest_semantic_closure_step": 10,
+      "release_blocking": true,
+      "step3_contract_closure_codes": [],
+      "step3_state": "call_graph_red_frozen"
+    }
+  ],
+  "body_free": true,
+  "design_sha256": "6aa3fb799919ac30b0eb84571ac4009d62a2bd799c84322272a59bba533f13bc",
+  "parent_batch001_manifest_sha256": "2b3308c4ada090539a2fc71c1cb235970aa0b90687b8d9633464ba61e94deba4",
+  "schema_version": "cocolon.emlis.nls_v3.step3_red_attack_catalog.v1"
+}

@@ -1,12 +1,15 @@
 # Cocolon EmlisAI Natural Language Surface v2 — Step 2 / Step 3 実装結果
 
+> **2026-07-13 全Step再監査による訂正**  
+> Step 2は再検査で適合した。Step 3の完了判定は撤回する。`validate_reception_content_plan_v2()`が不正role、非bool `required`、誤ったsafety policy、上限外quote policy、未知discourse strategyを拒否せず、現行Developmentでは`felt_response`が0 / 42件である。以下は当時の実装記録として保持し、現在の正式判定は`Cocolon_EmlisAI_NLSv2_AllSteps_Audit_Correction_20260713.md`を正とする。
+
 作成日: 2026-07-13  
 対象設計: `Cocolon_EmlisAI_ModelFreeNaturalLanguageSurfaceV2_DetailedDesign_ImplementationOrder_20260713.md`  
 実装範囲: Step 2「70件評価コーパス固定」およびStep 3「Content Planner v2 contract実装」
 
 ## 1. 結論
 
-Step 2とStep 3を完了した。
+当時はStep 2とStep 3を完了と判定した。全Step再監査後の判定は、Step 2が適合、Step 3が未完成である。
 
 - 14 family × 5件 = 70件を、Development 42／Holdout A 14／Holdout B 14へ分離して固定した。
 - 各caseに、family、semantic obligation、forbidden claim、極性、topic分離、反応可能点、depth範囲、safety境界を持たせた。
