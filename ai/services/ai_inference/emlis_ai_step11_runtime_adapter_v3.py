@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Offline-only runtime adapter for the Step 11 rc0023 surface.
+"""Offline-only runtime adapter for the Step 11 rc0024 surface.
 
 The adapter deliberately leaves the frozen Step 0--10 production path alone.
 It rebuilds the established Step 4--6 source lineage, hands only the exact
-four-field app projection to the rc0023 forward surface, and accepts bytes only
-after the independent rc0023 matcher and hard gate select the candidate.
+four-field app projection to the rc0024 forward surface, and accepts bytes only
+after the independent rc0024 matcher and hard gate select the candidate.
 
 Body-bearing values live only in the private, ``repr=False`` execution result.
 The public helper emits a separately validated body-free summary.
@@ -70,6 +70,9 @@ STEP11_RUNTIME_SUMMARY_SCHEMA = (
     "cocolon.emlis.nls_v3.step11_runtime_execution_summary.v2"
 )
 STEP11_RUNTIME_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0024.v1"
+)
+STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION = (
     "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0023.v1"
 )
 STEP11_HISTORICAL_RC0022_RUNTIME_ADAPTER_VERSION = (
@@ -161,7 +164,7 @@ def _build_step11_discourse_plan_set(
     inventory_result: SemanticObligationInventoryResult,
     content_plan: Mapping[str, Any],
 ) -> DiscourseGraphPlanSet:
-    """Use the frozen planner first, then one fail-closed rc0023 successor."""
+    """Use the frozen planner first, then one fail-closed rc0024 successor."""
 
     try:
         return build_discourse_graph_plans(inventory_result, content_plan)
@@ -275,7 +278,7 @@ def execute_step11_offline_v3(
     source_dependency_closure_sha256: str,
     execution_scope: str = STEP11_RUNTIME_EXECUTION_SCOPE,
 ) -> Step11RuntimeExecution:
-    """Run raw app input through rc0023 without touching production ownership."""
+    """Run raw app input through rc0024 without touching production ownership."""
 
     if type(current_input) is not dict:
         raise Step11RuntimeAdapterError("STEP11_RUNTIME_INPUT_MAPPING_REQUIRED")
@@ -378,7 +381,7 @@ def execute_step11_offline_v3(
 
 
 def validate_step11_runtime_execution(value: Any) -> tuple[str, ...]:
-    """Fully and independently recompute the private rc0023 execution."""
+    """Fully and independently recompute the private rc0024 execution."""
 
     if type(value) is not Step11RuntimeExecution:
         return ("STEP11_RUNTIME_EXECUTION_TYPE_INVALID",)
@@ -722,6 +725,7 @@ __all__ = [
     "STEP11_HISTORICAL_RC0020_RUNTIME_ADAPTER_VERSION",
     "STEP11_HISTORICAL_RC0021_RUNTIME_ADAPTER_VERSION",
     "STEP11_HISTORICAL_RC0022_RUNTIME_ADAPTER_VERSION",
+    "STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION",
     "STEP11_RUNTIME_ADAPTER_VERSION",
     "STEP11_RUNTIME_CANDIDATE_LIMIT",
     "STEP11_RUNTIME_EXECUTION_SCHEMA",

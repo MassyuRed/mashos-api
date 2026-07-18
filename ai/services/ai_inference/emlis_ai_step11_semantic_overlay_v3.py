@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Source-bound semantic overlay for the Step 11 rc0023 successor.
+"""Source-bound semantic overlay for the Step 11 rc0024 successor.
 
 The frozen Step 4--6 owners remain the semantic authority.  This module adds a
 closed, re-computable view needed by a natural surface successor when an
@@ -46,7 +46,7 @@ from emlis_ai_step11_planning_frontier_v3 import (
 STEP11_SEMANTIC_OVERLAY_SCHEMA = (
     "cocolon.emlis.nls_v3.step11_semantic_overlay.v6"
 )
-STEP11_SEMANTIC_OVERLAY_VERSION = "nls_v3_rc_0023"
+STEP11_SEMANTIC_OVERLAY_VERSION = "nls_v3_rc_0024"
 
 _INPUT_KEYS = frozenset(
     {"thought_text", "action_text", "emotions", "categories"}
@@ -3411,6 +3411,8 @@ def _reception_antecedent_bindings(
             if nucleus_id in nucleus_by_id
             and getattr(nucleus_by_id[nucleus_id], "kind", None)
             == "action"
+            and "memo_action"
+            in getattr(nucleus_by_id[nucleus_id], "source_fields", ())
         }
         if not statuses:
             return "not_applicable"
@@ -4109,7 +4111,7 @@ def build_step11_semantic_overlay(
     content_plan: Mapping[str, Any],
     discourse_plan: Mapping[str, Any],
 ) -> Step11SemanticOverlay:
-    """Build the exact rc0023 overlay from app input and Step 4--6 parents."""
+    """Build the exact rc0024 overlay from app input and Step 4--6 parents."""
 
     result = _build_overlay(
         current_input,

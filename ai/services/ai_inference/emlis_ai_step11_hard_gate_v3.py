@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Forward-aware hard gate and deterministic selector for Step 11 rc0023.
+"""Forward-aware hard gate and deterministic selector for Step 11 rc0024.
 
 The body parser and semantic matcher remain inverse-only owners.  This module
 is the trust boundary that joins their result to the exact forward candidate

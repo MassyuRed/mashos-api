@@ -124,7 +124,7 @@ def _relation_atom(witness):
     return rows[0]
 
 
-def test_rc0023_version_boundary_is_explicit_everywhere() -> None:
+def test_rc0024_version_boundary_is_explicit_everywhere() -> None:
     assert STEP11_CANDIDATE_VERSION_ID == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
@@ -135,9 +135,9 @@ def test_rc0023_version_boundary_is_explicit_everywhere() -> None:
         STEP11_CANDIDATE_VERSION_ID
     )
     assert matcher_module.STEP11_SOURCE_UNKNOWN_ORACLE_SCHEMA.endswith(
-        ".rc0023.v1"
+        ".rc0024.v1"
     )
-    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0023.v1")
+    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0024.v1")
 
 
 def test_surface_frontier_is_limited_to_selected_or_integrated_obligations(

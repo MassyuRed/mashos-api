@@ -39,7 +39,7 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     KNOWN28_RECEIPT_SCHEMA,
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
-    STEP11_RC0023_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
+    STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
     STEP11_BATCH_RUN_SCHEMA,
     STEP11_RUNTIME_ADAPTER_VERSION,
     STEP11_SUCCESSOR_CANDIDATE_VERSION_ID,
@@ -135,11 +135,11 @@ def test_s11_batch_runtime_receives_only_app_reachable_projection() -> None:
     assert runtime_calls[0].args[0].id == "projected_input"
 
 
-def test_s11_rc0023_schema_and_tool_version_boundary() -> None:
+def test_s11_rc0024_schema_and_tool_version_boundary() -> None:
     assert STEP11_CANDIDATE_VERSION_ID == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0023"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
     assert STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID == (
         "nls_v3_rc_0021"
     )
@@ -153,12 +153,12 @@ def test_s11_rc0023_schema_and_tool_version_boundary() -> None:
     assert STEP11_RUNTIME_SUMMARY_SCHEMA == (
         "cocolon.emlis.nls_v3.step11_runtime_execution_summary.v2"
     )
-    assert STEP11_RC0023_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA == (
+    assert STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA == (
         "cocolon.emlis.nls_v3."
-        "surface_distribution_assessment.step11.rc0023.v1"
+        "surface_distribution_assessment.step11.rc0024.v1"
     )
     assert STEP11_RUNTIME_ADAPTER_VERSION == RUNTIME_ADAPTER_VERSION
-    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0023.v1")
+    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0024.v1")
 
 
 def test_s11_surface_distribution_rejects_opening_concentration() -> None:
@@ -436,19 +436,19 @@ def test_s11_known28_applicability_policy_and_inventory_are_frozen() -> None:
     }
 
 
-def test_s11_cycle001_rc0023_formal_evidence_is_consistent_and_accepted() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0023.json")
+def test_s11_cycle001_rc0024_formal_evidence_is_consistent_and_accepted() -> None:
+    dependency = _json("cycle001_dependency_manifest_rc0024.json")
     initial_summary = _json("cycle001_initial_rc0010_summary.json")
-    final_summary = _json("cycle001_final_rc0023_summary.json")
+    final_summary = _json("cycle001_final_rc0024_summary.json")
     private_verification = _json(
-        "cycle001_final_rc0023_private_verification.json"
+        "cycle001_final_rc0024_private_verification.json"
     )
-    known28 = _json("cycle001_known28_rc0023.json")
-    development42 = _json("cycle001_development42_rc0023.json")
-    invalid16 = _json("cycle001_invalid16_rc0023.json")
+    known28 = _json("cycle001_known28_rc0024.json")
+    development42 = _json("cycle001_development42_rc0024.json")
+    invalid16 = _json("cycle001_invalid16_rc0024.json")
 
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0023"
-    assert STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0023"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
+    assert STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
     assert KNOWN28_RECEIPT_SCHEMA == "cocolon.emlis.nls_v3.known28_receipt.v3"
     assert CUMULATIVE100_RECEIPT_SCHEMA.endswith(".v4")
     assert CYCLE_ACCEPTANCE_SCHEMA.endswith(".v6")
@@ -557,7 +557,7 @@ def test_s11_cycle001_rc0023_formal_evidence_is_consistent_and_accepted() -> Non
         "correction_lineage_complete_and_ready"
     ] is True
     assert acceptance["acceptance_conditions"][
-        "lineage_final_rc0022_parents_exact"
+        "lineage_final_rc0024_parents_exact"
     ] is True
     assert (
         cumulative["aggregate"]["invalid16_expected_rejection_match_count"]
@@ -568,9 +568,9 @@ def test_s11_cycle001_rc0023_formal_evidence_is_consistent_and_accepted() -> Non
 
 
 def test_s11_known28_applicability_exclusion_cannot_false_green() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0023.json")
-    final_summary = _json("cycle001_final_rc0023_summary.json")
-    known28 = _json("cycle001_known28_rc0023.json")
+    dependency = _json("cycle001_dependency_manifest_rc0024.json")
+    final_summary = _json("cycle001_final_rc0024_summary.json")
+    known28 = _json("cycle001_known28_rc0024.json")
     assert validate_known28_receipt(
         known28,
         final_batch_summary=final_summary,
@@ -615,9 +615,9 @@ def test_s11_known28_applicability_exclusion_cannot_false_green() -> None:
 
 
 def test_s11_known28_nonapp_issue_substitution_cannot_false_green() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0023.json")
-    final_summary = _json("cycle001_final_rc0023_summary.json")
-    known28 = _json("cycle001_known28_rc0023.json")
+    dependency = _json("cycle001_dependency_manifest_rc0024.json")
+    final_summary = _json("cycle001_final_rc0024_summary.json")
+    known28 = _json("cycle001_known28_rc0024.json")
     forged_rows = deepcopy(known28["rows"])
     nonapp_row = next(
         row

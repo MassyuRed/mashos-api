@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Independent inverse parser and semantic matcher for rc0023.
+"""Independent inverse parser and semantic matcher for rc0024.
 
 The inverse path intentionally does not import the rc0020 forward AST,
 renderer, or candidate module.  It observes canonical body bytes, the shared
@@ -59,11 +59,11 @@ STEP11_VERIFIED_BINDING_SCHEMA = (
     "cocolon.emlis.nls_v3.step11_verified_surface_binding.v6"
 )
 STEP11_SOURCE_UNKNOWN_ORACLE_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_source_unknown_oracle.rc0023.v1"
+    "cocolon.emlis.nls_v3.step11_source_unknown_oracle.rc0024.v1"
 )
 STEP11_HARD_GATE_SCHEMA = "cocolon.emlis.nls_v3.step11_hard_gate_result.v3"
 STEP11_SELECTION_SCHEMA = "cocolon.emlis.nls_v3.step11_selection_result.v3"
-STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0023"
+STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
 
 _SLOT_ORDER = {"thought": 0, "action": 1, "emotion": 2, "category": 3}
 _SOURCE_FIELD_TO_SLOT = {
@@ -166,10 +166,13 @@ def _independent_action_lifecycle_for_nuclei(
     """Rebuild one exact-owned action lifecycle from source authority.
 
     The visible Reception and the forward semantic overlay are not authority
-    here.  Explicit grammar in the app-reachable action field takes priority;
-    only when it is silent may the independently revalidated source nucleus
-    modality carry a plain dictionary-form intention.  Distinct exact-owned
-    nuclei must agree or the matcher keeps the lifecycle undetermined.
+    here.  The app-reachable action field may classify only nuclei whose exact
+    source owner is ``memo_action``; a semantic action extracted from ``memo``
+    remains thought-slot content and must not borrow lifecycle grammar from an
+    unrelated action field.  Only when exact action-field grammar is silent
+    may the independently revalidated source nucleus modality carry a plain
+    dictionary-form intention.  Distinct exact-owned nuclei must agree or the
+    matcher keeps the lifecycle undetermined.
     """
 
     def classify(nucleus: Any) -> str:
@@ -192,6 +195,8 @@ def _independent_action_lifecycle_for_nuclei(
         for nucleus_id in nucleus_ids
         if nucleus_id in nucleus_by_id
         and getattr(nucleus_by_id[nucleus_id], "kind", None) == "action"
+        and "memo_action"
+        in getattr(nucleus_by_id[nucleus_id], "source_fields", ())
     }
     if not statuses:
         return "not_applicable"
@@ -1206,7 +1211,7 @@ def _mixed_emotion_compound_clause(
     tuple[Step11EndpointReference, Step11EndpointReference],
     tuple[str, str],
 ] | None:
-    """Parse the current rc0023 positive/negative compound independently."""
+    """Parse the current rc0024 positive/negative compound independently."""
 
     skeleton, fragments = _scan_quoted(clause)
     if len(fragments) != 2:
@@ -1739,7 +1744,7 @@ def _typed_reception_clause(
     str,
     tuple[Step11EndpointReference, ...],
 ] | None:
-    """Parse a visible rc0023 local-referent reception clause."""
+    """Parse a visible rc0024 local-referent reception clause."""
 
     skeleton, fragments = _scan_quoted(clause)
     if fragments:
@@ -3416,7 +3421,7 @@ def _independent_reception_owner_contract(
     discourse_plan: Mapping[str, Any],
     projection: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Rebuild rc0023 reception ownership without trusting the overlay."""
+    """Rebuild rc0024 reception ownership without trusting the overlay."""
 
     nodes = discourse_plan.get("nodes")
     if type(nodes) is not list or any(type(row) is not dict for row in nodes):
@@ -5023,7 +5028,7 @@ def match_step11_natural_surface(
         if row.source_slot == "emotion"
         and row.label in _EMOTION_VALENCE["negative"]
     )
-    # rc0023 independently reconstructs the first exact positive/negative
+    # rc0024 independently reconstructs the first exact positive/negative
     # pair as one typed compound atom.  Additional labels remain independently
     # introduced source owners; no corpus-side semantic contract participates.
     legacy_mixed_atoms = tuple(

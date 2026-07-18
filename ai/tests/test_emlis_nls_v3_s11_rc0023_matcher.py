@@ -154,8 +154,17 @@ def test_rc0023_plain_future_reception_status_tamper_fails_closed(
     )
 
 
-def _source_nucleus(modality: str, *, kind: str = "action"):
-    return SimpleNamespace(kind=kind, modality=modality)
+def _source_nucleus(
+    modality: str,
+    *,
+    kind: str = "action",
+    source_fields: tuple[str, ...] = ("memo_action",),
+):
+    return SimpleNamespace(
+        kind=kind,
+        modality=modality,
+        source_fields=source_fields,
+    )
 
 
 @pytest.mark.parametrize(

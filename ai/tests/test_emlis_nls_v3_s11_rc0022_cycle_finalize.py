@@ -158,14 +158,16 @@ def test_rc0021_and_rc0022_scope_aliases_remain_historical_for_rc0023(
             **parents
         )
     )
-    current_rc23 = finalizer.build_available_input_scope_receipt(**parents)
+    historical_rc23 = (
+        finalizer._build_rc0023_available_input_scope_receipt(**parents)
+    )
 
     assert historical_rc21["candidate_version_id"] == "nls_v3_rc_0021"
     assert historical_rc21["schema_version"].endswith(".rc0021.v1")
     assert historical_rc22["candidate_version_id"] == "nls_v3_rc_0022"
     assert historical_rc22["schema_version"].endswith(".rc0022.v1")
-    assert current_rc23["candidate_version_id"] == "nls_v3_rc_0023"
-    assert current_rc23["schema_version"].endswith(".rc0023.v1")
+    assert historical_rc23["candidate_version_id"] == "nls_v3_rc_0023"
+    assert historical_rc23["schema_version"].endswith(".rc0023.v1")
 
 
 def test_rc0022_finalizer_requires_both_historical_failure_inputs() -> None:

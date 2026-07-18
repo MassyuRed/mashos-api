@@ -353,13 +353,15 @@ def test_rc0023_scope_is_current_while_rc0022_alias_stays_historical(
     compatibility_rc22 = (
         finalizer._build_rc0022_available_input_scope_receipt(**parents)
     )
-    current_rc23 = finalizer.build_available_input_scope_receipt(**parents)
+    historical_rc23 = (
+        finalizer._build_rc0023_available_input_scope_receipt(**parents)
+    )
 
     assert historical_rc22 == compatibility_rc22
     assert historical_rc22["candidate_version_id"] == "nls_v3_rc_0022"
     assert historical_rc22["schema_version"].endswith(".rc0022.v1")
-    assert current_rc23["candidate_version_id"] == "nls_v3_rc_0023"
-    assert current_rc23["schema_version"].endswith(".rc0023.v1")
+    assert historical_rc23["candidate_version_id"] == "nls_v3_rc_0023"
+    assert historical_rc23["schema_version"].endswith(".rc0023.v1")
 
 
 def test_rc0023_finalizer_requires_all_exact_rc0022_parent_inputs() -> None:
