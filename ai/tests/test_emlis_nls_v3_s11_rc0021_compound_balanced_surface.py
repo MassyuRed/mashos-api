@@ -65,16 +65,16 @@ def dense_generic_execution():
     return execution
 
 
-def test_rc0024_contract_retains_rc0021_balance_regression() -> None:
+def test_rc0025_contract_retains_rc0021_balance_regression() -> None:
     assert STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID == (
         "nls_v3_rc_0021"
     )
     assert surface.STEP11_CANDIDATE_VERSION_ID == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
     assert surface.STEP11_SURFACE_REALIZATION_PLAN_SCHEMA.endswith(
-        ".rc0024.v1"
+        ".rc0025.v1"
     )
     assert STEP11_SURFACE_CATALOG["candidate_version_id"] == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
@@ -85,12 +85,12 @@ def test_rc0024_contract_retains_rc0021_balance_regression() -> None:
     assert STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_SCHEMA.endswith(
         ".rc0021.v1"
     )
-    assert STEP11_PLANNING_FRONTIER_VERSION == "nls_v3_rc_0024"
-    assert STEP11_PLANNING_FRONTIER_SCHEMA.endswith(".rc0024.v1")
+    assert STEP11_PLANNING_FRONTIER_VERSION == "nls_v3_rc_0025"
+    assert STEP11_PLANNING_FRONTIER_SCHEMA.endswith(".rc0025.v1")
     assert STEP11_HISTORICAL_RC0021_RUNTIME_ADAPTER_VERSION.endswith(
         ".rc0021.v1"
     )
-    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0024.v1")
+    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0025.v1")
     assert STEP11_SURFACE_CATALOG["group_grammar"][
         "maximum_observation_clauses_per_sentence"
     ] == 4

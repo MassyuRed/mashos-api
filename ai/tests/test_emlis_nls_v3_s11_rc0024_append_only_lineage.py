@@ -16,8 +16,8 @@ from emlis_ai_step11_cycle_evidence_v3 import (
     FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256,
     RC_CORRECTION_RERUN_LINEAGE_EVENT_V6_SCHEMA,
     RC_CORRECTION_RERUN_LINEAGE_V6_SCHEMA,
-    STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION,
     Step11CycleEvidenceError,
     build_rc0010_rc0024_correction_rerun_lineage,
@@ -174,7 +174,9 @@ def _rc0024_material(
 
 def test_rc0024_versions_and_frozen_rc0023_constants_are_explicit() -> None:
     assert STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID == "nls_v3_rc_0023"
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
+    assert STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID == (
+        "nls_v3_rc_0024"
+    )
     assert STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION.endswith(
         ".rc0023.v1"
     )
@@ -383,7 +385,7 @@ def test_rc0024_dependency_manifest_is_exact_diff_from_frozen_rc0023(
     monkeypatch.setattr(
         dependency_tool,
         "STEP11_CANDIDATE_VERSION_ID",
-        STEP11_CURRENT_CANDIDATE_VERSION_ID,
+        STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
     )
     monkeypatch.setattr(dependency_tool, "_sha256", lambda path: current[path])
 

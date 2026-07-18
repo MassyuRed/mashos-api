@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Forward-only rc0024 natural surface successor.
+"""Forward-only rc0025 natural surface successor.
 
 The module consumes only the current input projection and independently
 revalidated Step 4--6 semantic artifacts.  It does not import the frozen Step
@@ -36,14 +36,14 @@ from emlis_ai_step11_semantic_overlay_v3 import (
 )
 
 
-STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
+STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
 STEP11_SURFACE_AST_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_surface_ast.v6"
 STEP11_RENDERED_SURFACE_SCHEMA = (
     "cocolon.emlis.nls_v3.step11_canonical_rendered_surface.v6"
 )
 STEP11_CANDIDATE_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_candidate.v6"
 STEP11_SURFACE_REALIZATION_PLAN_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_surface_realization_plan.rc0024.v1"
+    "cocolon.emlis.nls_v3.step11_surface_realization_plan.rc0025.v1"
 )
 
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -3830,7 +3830,7 @@ def _derive_surface_realization_plan(
     observation_lines: Sequence[_Step11OwnedObservationLine],
     reception_lines: Sequence[_Step11OwnedReceptionLine],
 ) -> Step11SurfaceRealizationPlan:
-    """Recompute the committed rc0024 plan from semantic ownership only."""
+    """Recompute the committed rc0025 plan from semantic ownership only."""
 
     observation_sentences = tuple(
         row for row in ast.sentences if row.section_role == "observation"

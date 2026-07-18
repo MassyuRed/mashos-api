@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Declarative controlled-surface catalog for the Step 11 rc0024 successor.
+"""Declarative controlled-surface catalog for the Step 11 rc0025 successor.
 
 This owner intentionally contains no corpus, case, family, expected response,
 or executable traversal logic.  The forward renderer and inverse body parser
@@ -248,7 +248,7 @@ def _build_legacy_quoted_relation_forms() -> dict[str, Any]:
 
 STEP11_SURFACE_CATALOG: dict[str, Any] = {
     "schema_version": "cocolon.emlis.nls_v3.step11_surface_catalog.v6",
-    "candidate_version_id": "nls_v3_rc_0024",
+    "candidate_version_id": "nls_v3_rc_0025",
     "labels": {
         "observation": "見えたこと：",
         "reception": "Emlisから：",
@@ -936,9 +936,12 @@ FROZEN_RC0022_STEP11_SURFACE_CATALOG_SHA256 = (
 FROZEN_RC0023_STEP11_SURFACE_CATALOG_SHA256 = (
     "96305ca538159f9f19b1397d3ab0063285ed0b1d253643be19e7659024436d7a"
 )
+FROZEN_RC0024_STEP11_SURFACE_CATALOG_SHA256 = (
+    "30b449931b3933531ad9716b6e73dc317d4145a38328f8ef2309ac2a0a7d92c6"
+)
 # Patched only after the declarative current artifact above is finalised.
 FROZEN_STEP11_SURFACE_CATALOG_SHA256 = (
-    "30b449931b3933531ad9716b6e73dc317d4145a38328f8ef2309ac2a0a7d92c6"
+    "9b00e442e812885265f7170917a2c6529dbdbf647eb1a8a5cae9fa1ba5a05903"
 )
 STEP11_SURFACE_CATALOG_SHA256 = artifact_sha256(STEP11_SURFACE_CATALOG)
 
@@ -950,7 +953,7 @@ def validate_step11_surface_catalog() -> tuple[str, ...]:
         != "cocolon.emlis.nls_v3.step11_surface_catalog.v6"
     ):
         issues.append("STEP11_SURFACE_CATALOG_SCHEMA_INVALID")
-    if STEP11_SURFACE_CATALOG.get("candidate_version_id") != "nls_v3_rc_0024":
+    if STEP11_SURFACE_CATALOG.get("candidate_version_id") != "nls_v3_rc_0025":
         issues.append("STEP11_SURFACE_CATALOG_VERSION_INVALID")
     if STEP11_SURFACE_CATALOG.get("body_free") is not True:
         issues.append("STEP11_SURFACE_CATALOG_BODY_FREE_REQUIRED")
@@ -1766,6 +1769,7 @@ def validate_step11_surface_catalog() -> tuple[str, ...]:
 __all__ = [
     "FROZEN_RC0022_STEP11_SURFACE_CATALOG_SHA256",
     "FROZEN_RC0023_STEP11_SURFACE_CATALOG_SHA256",
+    "FROZEN_RC0024_STEP11_SURFACE_CATALOG_SHA256",
     "FROZEN_STEP11_SURFACE_CATALOG_SHA256",
     "STEP11_SURFACE_CATALOG",
     "STEP11_SURFACE_CATALOG_SHA256",

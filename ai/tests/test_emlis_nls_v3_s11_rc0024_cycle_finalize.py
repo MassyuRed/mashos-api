@@ -315,7 +315,7 @@ def test_rc0024_private_verification_exact_frozen_rc0023_is_accepted() -> None:
         )
 
 
-def test_rc0024_scope_is_current_while_rc0023_alias_stays_historical(
+def test_rc0024_scope_stays_historical_while_rc0025_is_current(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     historical_rc22 = {
@@ -342,13 +342,24 @@ def test_rc0024_scope_is_current_while_rc0023_alias_stays_historical(
     compatibility_rc23 = (
         finalizer._build_rc0023_available_input_scope_receipt(**parents)
     )
-    current_rc24 = finalizer.build_available_input_scope_receipt(**parents)
+    historical_rc24 = (
+        finalizer.build_historical_rc0024_available_input_scope_receipt(
+            **parents
+        )
+    )
+    compatibility_rc24 = (
+        finalizer._build_rc0024_available_input_scope_receipt(**parents)
+    )
+    current_rc25 = finalizer.build_available_input_scope_receipt(**parents)
 
     assert historical_rc23 == compatibility_rc23
     assert historical_rc23["candidate_version_id"] == "nls_v3_rc_0023"
     assert historical_rc23["schema_version"].endswith(".rc0023.v1")
-    assert current_rc24["candidate_version_id"] == "nls_v3_rc_0024"
-    assert current_rc24["schema_version"].endswith(".rc0024.v1")
+    assert historical_rc24 == compatibility_rc24
+    assert historical_rc24["candidate_version_id"] == "nls_v3_rc_0024"
+    assert historical_rc24["schema_version"].endswith(".rc0024.v1")
+    assert current_rc25["candidate_version_id"] == "nls_v3_rc_0025"
+    assert current_rc25["schema_version"].endswith(".rc0025.v1")
 
 
 def test_rc0024_finalizer_requires_all_exact_rc0023_parent_inputs() -> None:

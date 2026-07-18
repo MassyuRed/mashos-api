@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""rc0024 planning frontier over the frozen Step 4--9 parents.
+"""rc0025 planning frontier over the frozen Step 4--9 parents.
 
 Step 9 freezes the bytes of the original obligation, content-selection, and
 discourse owners.  Step 11 therefore does not rewrite those parents.  This
@@ -50,10 +50,11 @@ STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_SCHEMA = (
 STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0021"
 STEP11_HISTORICAL_RC0022_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0022"
 STEP11_HISTORICAL_RC0023_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0023"
+STEP11_HISTORICAL_RC0024_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0024"
 STEP11_PLANNING_FRONTIER_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_planning_frontier.rc0024.v1"
+    "cocolon.emlis.nls_v3.step11_planning_frontier.rc0025.v1"
 )
-STEP11_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0024"
+STEP11_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0025"
 _ACTIVE_STATUSES = frozenset({"selected", "integrated_into"})
 
 
@@ -737,6 +738,7 @@ __all__ = [
     "STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_VERSION",
     "STEP11_HISTORICAL_RC0022_PLANNING_FRONTIER_VERSION",
     "STEP11_HISTORICAL_RC0023_PLANNING_FRONTIER_VERSION",
+    "STEP11_HISTORICAL_RC0024_PLANNING_FRONTIER_VERSION",
     "STEP11_PLANNING_FRONTIER_SCHEMA",
     "STEP11_PLANNING_FRONTIER_VERSION",
     "Step11PlanningFrontier",

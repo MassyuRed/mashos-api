@@ -577,6 +577,8 @@ def _observation_surface_role(
         return "retained_intention_arc"
     if "semantic_role:current_change" in attributes:
         return "current_change_arc"
+    if len(nuclei) > 1 and all(nucleus.kind == "event" for nucleus in nuclei):
+        return "coexisting_event_arc"
     if all(nucleus.kind in {"state", "reaction", "constraint"} for nucleus in nuclei):
         return "state_arc"
     return "coexisting_observation"
@@ -1039,6 +1041,58 @@ def _merge_homogeneous_state_groups(
     return tuple(tuple(group) for group in merged)
 
 
+def _merge_source_local_relation_free_event_groups(
+    groups: Sequence[Sequence[str]],
+    relation_ids: Sequence[str],
+    nucleus_index: Mapping[str, GroundedSemanticNucleus],
+    relation_index: Mapping[str, GroundedSemanticRelation],
+) -> tuple[tuple[str, ...], ...]:
+    """Keep adjacent source-local events in one neutral observation unit.
+
+    Separate event-only groups otherwise realize through the same fallback
+    predicate even though no required relation licenses a stronger semantic
+    arc.  Co-locating the source-ordered anchors avoids repeated template
+    lines while leaving their relation set empty and making no causal claim.
+    """
+
+    merged: list[list[str]] = []
+    for group in groups:
+        current = list(group)
+        if not current:
+            continue
+        current_nuclei = [nucleus_index[item] for item in current]
+        current_fields = {
+            field for nucleus in current_nuclei for field in nucleus.source_fields
+        }
+        current_event_only = all(
+            nucleus.kind == "event" for nucleus in current_nuclei
+        )
+        if merged:
+            previous_nuclei = [nucleus_index[item] for item in merged[-1]]
+            previous_fields = {
+                field for nucleus in previous_nuclei for field in nucleus.source_fields
+            }
+            previous_event_only = all(
+                nucleus.kind == "event" for nucleus in previous_nuclei
+            )
+            combined_ids = (*merged[-1], *current)
+            if (
+                current_event_only
+                and previous_event_only
+                and len(current_fields) == 1
+                and current_fields == previous_fields
+                and not _internal_relation_ids(
+                    combined_ids,
+                    relation_ids,
+                    relation_index,
+                )
+            ):
+                merged[-1].extend(current)
+                continue
+        merged.append(current)
+    return tuple(tuple(group) for group in merged)
+
+
 def _clause_structure_atoms(
     nucleus_ids: Sequence[str],
     nucleus_index: Mapping[str, GroundedSemanticNucleus],
@@ -1422,6 +1476,12 @@ def _build_regular_lines(
             max_groups=max_observation_groups,
         )
         groups = _merge_homogeneous_state_groups(groups, nucleus_index)
+        groups = _merge_source_local_relation_free_event_groups(
+            groups,
+            relation_candidates,
+            nucleus_index,
+            relation_index,
+        )
         for group_index, group in enumerate(groups):
             internal_relations = _internal_relation_ids(group, relation_candidates, relation_index)
             covered_relations.update(internal_relations)
@@ -1856,6 +1916,8 @@ def _render_observation(
             return f"{prefix}{joined}が、今感じている変化としてつながっています。"
         if "observation_surface_role:state_arc" in atoms:
             return f"{prefix}{joined}が重なり、今は一つの状態として前に出ています。"
+        if "observation_surface_role:coexisting_event_arc" in atoms:
+            return f"{prefix}{joined}が、同じ入力に置かれた出来事として並んでいます。"
         return f"{prefix}{joined}が、同じ入力の中で一つの流れになっています。"
     nucleus = nucleus_index[binding.nucleus_ids[0]]
     if "lexical:preserve_source_predicate" in nucleus.semantic_frame.attribute_codes:

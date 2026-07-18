@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Run Cycle 001 rc0024 Known28, Development42 and invalid regressions."""
+"""Run Cycle 001 rc0025 Known28, Development42 and invalid regressions."""
 
 import argparse
 import asyncio
@@ -395,7 +395,7 @@ async def _v1_body(current_input: Mapping[str, Any], case_ref: str) -> str:
         current_input=dict(current_input),
     )
     if type(reply.comment_text) is not str or not reply.comment_text:
-        raise ValueError("step11_known28_v1_body_invalid")
+        raise ValueError(f"step11_v1_body_invalid:case_ref={case_ref}")
     return reply.comment_text
 
 
@@ -1488,7 +1488,7 @@ def run_development42(
     commitment_key: bytes,
     run_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Execute every current-applicable Development42 case via rc0024."""
+    """Execute every current-applicable Development42 case via rc0025."""
 
     closure, _ = _development42_final_parent(
         final_batch_summary,
@@ -1766,7 +1766,7 @@ def load_invalid16_fixtures(path: Path) -> list[Mapping[str, Any]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Cycle 001 rc0024 regressions with the exact frozen rc0023 "
+            "Run Cycle 001 rc0025 regressions with the exact frozen rc0024 "
             "clean formal-run manifest as predecessor."
         )
     )

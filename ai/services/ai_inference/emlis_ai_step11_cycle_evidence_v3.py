@@ -50,7 +50,8 @@ STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID = (
 STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID = "nls_v3_rc_0021"
 STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID = "nls_v3_rc_0022"
 STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID = "nls_v3_rc_0023"
-STEP11_CURRENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
+STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
+STEP11_CURRENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
 
 # Exact body-free rc0020 preflight parents.  They are historical observations,
 # never rc0021 defaults and never evidence that rc0020 passed Product Read.
@@ -115,6 +116,23 @@ FROZEN_RC0023_FORMAL_BATCH_SUMMARY_SHA256 = (
 )
 FROZEN_RC0023_FORMAL_PRIVATE_VERIFICATION_SHA256 = (
     "26747b6166babceadc23c51ef67f8b53abdb60b7af4a4c565aaa6052d63c051e"
+)
+
+# Exact body-free rc0024 formal-run parents.  The machine run was clean and
+# remains immutable even though the later Development42 regression aborted
+# before durable regression receipts could be produced.  rc0025 is the
+# immediate source successor and never relabels that execution as failed.
+FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256 = (
+    "bbe785c144ac0e721aa8887b0f49848b104f65e6c2820a2f62b7f7d4ed3ac811"
+)
+FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256 = (
+    "fa52aa55627dbeada60c5fe2187a7551cd4ab0c72fde289157a82945c0c6467d"
+)
+FROZEN_RC0024_FORMAL_BATCH_SUMMARY_SHA256 = (
+    "de09a19ef35b1fbbab78ae6417b0e23f7b0e3701b71fbf58d07bed79aa449534"
+)
+FROZEN_RC0024_FORMAL_PRIVATE_VERIFICATION_SHA256 = (
+    "355c412df6e1e21c07ffad37aef077db7fd80bd096b3905e64e1fde9ca4c58e8"
 )
 
 FROZEN_BATCH001_MANIFEST_SHA256 = (
@@ -208,6 +226,12 @@ RC_CORRECTION_RERUN_LINEAGE_V6_SCHEMA = (
 RC_CORRECTION_RERUN_LINEAGE_EVENT_V6_SCHEMA = (
     "cocolon.emlis.nls_v3.rc_correction_rerun_lineage_event.step11.v6"
 )
+RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage.step11.v7"
+)
+RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage_event.step11.v7"
+)
 STEP11_RC0021_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
     "cocolon.emlis.nls_v3.surface_distribution_assessment.step11.rc0021.v1"
 )
@@ -231,6 +255,12 @@ STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
 )
 STEP11_RC0024_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
     "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0024.v1"
+)
+STEP11_RC0025_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.surface_distribution_assessment.step11.rc0025.v1"
+)
+STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0025.v1"
 )
 # Historical generic alias used only by the frozen rc0020 evidence graph.
 AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
@@ -279,6 +309,9 @@ STEP11_SURFACE_DISTRIBUTION_POLICY_SHA256 = artifact_sha256(
 )
 
 STEP11_RUNTIME_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0025.v1"
+)
+STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION = (
     "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0024.v1"
 )
 STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION = (
@@ -360,6 +393,9 @@ _RC0010_RC0023_SEQUENCE = tuple(
 )
 _RC0010_RC0024_SEQUENCE = tuple(
     f"nls_v3_rc_{number:04d}" for number in range(10, 25)
+)
+_RC0010_RC0025_SEQUENCE = tuple(
+    f"nls_v3_rc_{number:04d}" for number in range(10, 26)
 )
 _RC0020_FROZEN_HISTORICAL_BATCH_SUMMARY_SHA256 = (
     (
@@ -2523,6 +2559,7 @@ def _project_step11_final(
             STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
             STEP11_CURRENT_CANDIDATE_VERSION_ID,
         }
         or dependency_manifest.get("candidate_version_id")
@@ -3812,7 +3849,10 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
     historical_rc0023 = (
         candidate == STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID
     )
-    current_rc0024 = candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
+    historical_rc0024 = (
+        candidate == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+    )
+    current_rc0025 = candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
     if (
         type(value) is not dict
         or not (
@@ -3820,7 +3860,8 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
             or historical_rc0021
             or historical_rc0022
             or historical_rc0023
-            or current_rc0024
+            or historical_rc0024
+            or current_rc0025
         )
         or (
             historical_rc0020
@@ -3847,9 +3888,14 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
             != STEP11_RC0023_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
         )
         or (
-            current_rc0024
+            historical_rc0024
             and value.get("schema_version")
             != STEP11_RC0024_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        )
+        or (
+            current_rc0025
+            and value.get("schema_version")
+            != STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
         )
         or value.get("formal_status") != "scope_frozen"
         or value.get("body_free") is not True
@@ -3883,6 +3929,15 @@ def _clean_correction_rerun_lineage(
         else None
     )
     if current_candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID:
+        lineage_issues = validate_rc0010_rc0025_correction_rerun_lineage(
+            value,
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    elif (
+        current_candidate
+        == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+    ):
         lineage_issues = validate_rc0010_rc0024_correction_rerun_lineage(
             value,
             dependency_manifests=dependency_manifests,
@@ -3930,6 +3985,7 @@ def _clean_correction_rerun_lineage(
             STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
             STEP11_CURRENT_CANDIDATE_VERSION_ID,
         }
         or value.get("historical_sequence_complete") is not True
@@ -3967,6 +4023,7 @@ def _require_lineage_final_parent_binding(
         STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
         STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
         STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
+        STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
         STEP11_CURRENT_CANDIDATE_VERSION_ID,
     }:
         raise Step11CycleEvidenceError("LINEAGE_FINAL_PARENT_BINDING_INVALID")
@@ -4113,8 +4170,11 @@ def _auxiliary_acceptance_conditions(
                 "lineage_final_rc0020_parents_exact"
                 if lineage_candidate
                 == STEP11_SUCCESSOR_CANDIDATE_VERSION_ID
-                else "lineage_final_rc0024_parents_exact"
+                else "lineage_final_rc0025_parents_exact"
                 if lineage_candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
+                else "lineage_final_rc0024_parents_exact"
+                if lineage_candidate
+                == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
                 else "lineage_final_rc0023_parents_exact"
                 if lineage_candidate
                 == STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID
@@ -4534,6 +4594,7 @@ def build_cycle_change_ledger(
                 STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
                 STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
                 STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
+                STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
                 STEP11_CURRENT_CANDIDATE_VERSION_ID,
             }
             or dependency["candidate_version_id"]
@@ -5215,6 +5276,81 @@ def _require_frozen_rc0024_historical_parents(
         raise Step11CycleEvidenceError(
             "RC_LINEAGE_RC0023_FORMAL_SUMMARY_MISMATCH"
         )
+
+
+def _require_frozen_rc0025_historical_parents(
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    summaries: Sequence[Mapping[str, Any]],
+) -> None:
+    """Bind v7 history to the exact machine-clean rc0024 formal run."""
+
+    _require_frozen_rc0024_historical_parents(
+        dependency_manifests,
+        summaries,
+    )
+    rc0024_manifests = [
+        value
+        for value in dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+    ]
+    if (
+        len(rc0024_manifests) != 1
+        or validate_step11_dependency_manifest(rc0024_manifests[0])
+        or artifact_sha256(rc0024_manifests[0])
+        != FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0024_manifests[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0024_manifests[0].get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID
+        or rc0024_manifests[0].get("before_source_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0024_manifests[0].get("file_hashes")) is not list
+        or len(rc0024_manifests[0]["file_hashes"]) != 148
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0024_FORMAL_MANIFEST_MISMATCH"
+        )
+
+    rc0024_summaries = [
+        value
+        for value in summaries
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+    ]
+    if len(rc0024_summaries) != 1:
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0024_FORMAL_SUMMARY_MISMATCH"
+        )
+    summary = rc0024_summaries[0]
+    aggregate = summary.get("aggregate", {})
+    if (
+        artifact_sha256(summary)
+        != FROZEN_RC0024_FORMAL_BATCH_SUMMARY_SHA256
+        or summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_start_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_end_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_stable") is not True
+        or summary.get("machine_status") != "clean"
+        or summary.get("all_expected_cases_executed") is not True
+        or summary.get("executed_case_count") != 100
+        or aggregate.get("selected_count") != 100
+        or aggregate.get("no_valid_candidate_count") != 0
+        or aggregate.get("exception_count") != 0
+        or aggregate.get("v1_fallback_count") != 0
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0024_FORMAL_SUMMARY_MISMATCH"
+        )
+
+
 def _lineage_event(
     *,
     event_index: int,
@@ -6196,9 +6332,53 @@ def build_rc0010_rc0024_correction_rerun_lineage(
         dependency_manifests=dependency_manifests,
         batch_run_summaries=batch_run_summaries,
         candidate_sequence=_RC0010_RC0024_SEQUENCE,
-        final_candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
+        final_candidate_version_id=(
+            STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+        ),
         lineage_schema=RC_CORRECTION_RERUN_LINEAGE_V6_SCHEMA,
         event_schema=RC_CORRECTION_RERUN_LINEAGE_EVENT_V6_SCHEMA,
+        require_immediate_final_dependency_base=True,
+        required_failed_product_read_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
+        ),
+        required_product_read_failure_case_ids={
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID: (
+                "nls3s_b001_0035",
+            )
+        },
+        required_failed_execution_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
+        ),
+    )
+
+
+def build_rc0010_rc0025_correction_rerun_lineage(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Append rc0025 after the exact machine-clean rc0024 formal run.
+
+    rc0024 remains a clean receipt-backed execution.  The later
+    Development42 abort produced no durable regression receipt, so the
+    append-only chain records only the source correction and superseding
+    decision before the immediate rc0025 dependency diff.
+    """
+
+    _require_frozen_rc0025_historical_parents(
+        dependency_manifests,
+        batch_run_summaries,
+    )
+    return _build_rc_correction_rerun_lineage(
+        events,
+        dependency_manifests=dependency_manifests,
+        batch_run_summaries=batch_run_summaries,
+        candidate_sequence=_RC0010_RC0025_SEQUENCE,
+        final_candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
+        lineage_schema=RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA,
+        event_schema=RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA,
         require_immediate_final_dependency_base=True,
         required_failed_product_read_candidate_version_ids=(
             STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
@@ -6394,6 +6574,27 @@ def validate_rc0010_rc0024_correction_rerun_lineage(
         return ("RC_CORRECTION_RERUN_LINEAGE_MAPPING_REQUIRED",)
     try:
         expected = build_rc0010_rc0024_correction_rerun_lineage(
+            _rc_lineage_input_events(value, allow_product_read=True),
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    except (KeyError, TypeError, ValueError, Step11CycleEvidenceError):
+        return ("RC_CORRECTION_RERUN_LINEAGE_CONTRACT_INVALID",)
+    return () if value == expected else (
+        "RC_CORRECTION_RERUN_LINEAGE_RECOMPUTATION_MISMATCH",
+    )
+
+
+def validate_rc0010_rc0025_correction_rerun_lineage(
+    value: Any,
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    if type(value) is not dict:
+        return ("RC_CORRECTION_RERUN_LINEAGE_MAPPING_REQUIRED",)
+    try:
+        expected = build_rc0010_rc0025_correction_rerun_lineage(
             _rc_lineage_input_events(value, allow_product_read=True),
             dependency_manifests=dependency_manifests,
             batch_run_summaries=batch_run_summaries,
@@ -6789,6 +6990,10 @@ __all__ = [
     "FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256",
     "FROZEN_RC0023_FORMAL_PRIVATE_VERIFICATION_SHA256",
     "FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256",
+    "FROZEN_RC0024_FORMAL_BATCH_SUMMARY_SHA256",
+    "FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256",
+    "FROZEN_RC0024_FORMAL_PRIVATE_VERIFICATION_SHA256",
+    "FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256",
     "FROZEN_BATCH001_DUPLICATE_REPORT_SHA256",
     "FROZEN_BATCH001_MANIFEST_SHA256",
     "FROZEN_BATCH001_MATRIX_SHA256",
@@ -6814,12 +7019,14 @@ __all__ = [
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V4_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V5_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V6_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V1_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V3_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V4_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V5_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V6_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V1_SCHEMA",
     "STEP11_BATCH_ID",
     "STEP11_BATCH_RUN_SCHEMA",
@@ -6836,6 +7043,8 @@ __all__ = [
     "STEP11_HISTORICAL_RC0022_RUNTIME_ADAPTER_VERSION",
     "STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID",
     "STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION",
+    "STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID",
+    "STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION",
     "STEP11_PRIVATE_VERIFICATION_RECEIPT_SCHEMA",
     "STEP11_CURRENT_CANDIDATE_VERSION_ID",
     "STEP11_RC0021_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
@@ -6846,6 +7055,8 @@ __all__ = [
     "STEP11_RC0023_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_RC0024_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
     "STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
+    "STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
+    "STEP11_RC0025_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_REVIEW_RUBRIC_SHA256",
     "STEP11_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_SURFACE_DISTRIBUTION_POLICY",
@@ -6871,6 +7082,7 @@ __all__ = [
     "build_rc0010_rc0022_correction_rerun_lineage",
     "build_rc0010_rc0023_correction_rerun_lineage",
     "build_rc0010_rc0024_correction_rerun_lineage",
+    "build_rc0010_rc0025_correction_rerun_lineage",
     "build_step11_batch_run_summary",
     "build_step11_private_verification_receipt",
     "build_step11_dependency_manifest",
@@ -6893,6 +7105,7 @@ __all__ = [
     "validate_rc0010_rc0022_correction_rerun_lineage",
     "validate_rc0010_rc0023_correction_rerun_lineage",
     "validate_rc0010_rc0024_correction_rerun_lineage",
+    "validate_rc0010_rc0025_correction_rerun_lineage",
     "validate_step11_batch_run_summary",
     "validate_step11_dependency_manifest",
     "validate_step11_private_verification_receipt",

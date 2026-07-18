@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Independent inverse parser and semantic matcher for rc0024.
+"""Independent inverse parser and semantic matcher for rc0025.
 
 The inverse path intentionally does not import the rc0020 forward AST,
 renderer, or candidate module.  It observes canonical body bytes, the shared
@@ -59,11 +59,11 @@ STEP11_VERIFIED_BINDING_SCHEMA = (
     "cocolon.emlis.nls_v3.step11_verified_surface_binding.v6"
 )
 STEP11_SOURCE_UNKNOWN_ORACLE_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_source_unknown_oracle.rc0024.v1"
+    "cocolon.emlis.nls_v3.step11_source_unknown_oracle.rc0025.v1"
 )
 STEP11_HARD_GATE_SCHEMA = "cocolon.emlis.nls_v3.step11_hard_gate_result.v3"
 STEP11_SELECTION_SCHEMA = "cocolon.emlis.nls_v3.step11_selection_result.v3"
-STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
+STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
 
 _SLOT_ORDER = {"thought": 0, "action": 1, "emotion": 2, "category": 3}
 _SOURCE_FIELD_TO_SLOT = {
@@ -1211,7 +1211,7 @@ def _mixed_emotion_compound_clause(
     tuple[Step11EndpointReference, Step11EndpointReference],
     tuple[str, str],
 ] | None:
-    """Parse the current rc0024 positive/negative compound independently."""
+    """Parse the current rc0025 positive/negative compound independently."""
 
     skeleton, fragments = _scan_quoted(clause)
     if len(fragments) != 2:
@@ -1744,7 +1744,7 @@ def _typed_reception_clause(
     str,
     tuple[Step11EndpointReference, ...],
 ] | None:
-    """Parse a visible rc0024 local-referent reception clause."""
+    """Parse a visible rc0025 local-referent reception clause."""
 
     skeleton, fragments = _scan_quoted(clause)
     if fragments:
@@ -3421,7 +3421,7 @@ def _independent_reception_owner_contract(
     discourse_plan: Mapping[str, Any],
     projection: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Rebuild rc0024 reception ownership without trusting the overlay."""
+    """Rebuild rc0025 reception ownership without trusting the overlay."""
 
     nodes = discourse_plan.get("nodes")
     if type(nodes) is not list or any(type(row) is not dict for row in nodes):
@@ -5028,7 +5028,7 @@ def match_step11_natural_surface(
         if row.source_slot == "emotion"
         and row.label in _EMOTION_VALENCE["negative"]
     )
-    # rc0024 independently reconstructs the first exact positive/negative
+    # rc0025 independently reconstructs the first exact positive/negative
     # pair as one typed compound atom.  Additional labels remain independently
     # introduced source owners; no corpus-side semantic contract participates.
     legacy_mixed_atoms = tuple(
