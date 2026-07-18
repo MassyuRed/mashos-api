@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Build the exact rc0022-to-rc0023 Cycle 001 source closure."""
+"""Build the exact rc0023-to-rc0024 Cycle 001 source closure."""
 
 import argparse
 import hashlib
@@ -28,11 +28,14 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     FROZEN_RC0021_PREFLIGHT_SOURCE_CLOSURE_SHA256,
     FROZEN_RC0022_FORMAL_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0022_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256,
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0019_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
     STEP11_SUCCESSOR_CANDIDATE_VERSION_ID,
     build_step11_dependency_manifest,
     validate_step11_dependency_manifest,
@@ -46,6 +49,7 @@ from emlis_nls_v3_batch_run import _write_json  # noqa: E402
 FROZEN_RC0020_PREFLIGHT_FILE_COUNT = 136
 FROZEN_RC0021_PREFLIGHT_FILE_COUNT = 138
 FROZEN_RC0022_FORMAL_FILE_COUNT = 141
+FROZEN_RC0023_FORMAL_FILE_COUNT = 145
 FROZEN_RC0019_PREFLIGHT_MANIFEST_ARTIFACT_SHA256 = (
     "78c8d1fc3271857ce2790bf2e166c51656af51c5f0fd455793ccc524bf68a695"
 )
@@ -71,6 +75,11 @@ RC0023_ADDED_SOURCE_PATHS = (
     "ai/tests/test_emlis_nls_v3_s11_rc0023_batch_evidence.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0023_cycle_finalize.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0023_matcher.py",
+)
+RC0024_ADDED_SOURCE_PATHS = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0024_append_only_lineage.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0024_cycle_finalize.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0024_source_slot_ownership.py",
 )
 RC0020_ADDED_SOURCE_PATHS = (
     "ai/tests/test_emlis_nls_v3_s11_rc0020_append_only_lineage.py",
@@ -147,6 +156,29 @@ def _validated_rc0022_formal_manifest(
         or len(value["file_hashes"]) != FROZEN_RC0022_FORMAL_FILE_COUNT
     ):
         raise ValueError("step11_rc0022_formal_manifest_invalid")
+    return dict(value)
+
+
+def _validated_rc0023_formal_manifest(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        type(value) is not dict
+        or validate_step11_dependency_manifest(value)
+        or artifact_sha256(value)
+        != FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("candidate_version_id")
+        != STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID
+        or value.get("before_source_closure_sha256")
+        != FROZEN_RC0022_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(value.get("file_hashes")) is not list
+        or len(value["file_hashes"]) != FROZEN_RC0023_FORMAL_FILE_COUNT
+    ):
+        raise ValueError("step11_rc0023_formal_manifest_invalid")
     return dict(value)
 
 
@@ -260,13 +292,28 @@ def build_current_step11_dependency_manifest(
             ),
         )
 
-    predecessor = _validated_rc0022_formal_manifest(before_manifest)
+    if (
+        type(before_manifest) is dict
+        and before_manifest.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID
+    ):
+        predecessor = _validated_rc0022_formal_manifest(before_manifest)
+        return _build_dependency_successor(
+            predecessor,
+            predecessor_file_count=FROZEN_RC0022_FORMAL_FILE_COUNT,
+            added_source_paths=RC0023_ADDED_SOURCE_PATHS,
+            candidate_version_id=(
+                STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID
+            ),
+        )
+
+    predecessor = _validated_rc0023_formal_manifest(before_manifest)
     if STEP11_CANDIDATE_VERSION_ID != STEP11_CURRENT_CANDIDATE_VERSION_ID:
-        raise ValueError("step11_rc0023_candidate_owner_mismatch")
+        raise ValueError("step11_rc0024_candidate_owner_mismatch")
     return _build_dependency_successor(
         predecessor,
-        predecessor_file_count=FROZEN_RC0022_FORMAL_FILE_COUNT,
-        added_source_paths=RC0023_ADDED_SOURCE_PATHS,
+        predecessor_file_count=FROZEN_RC0023_FORMAL_FILE_COUNT,
+        added_source_paths=RC0024_ADDED_SOURCE_PATHS,
         candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
     )
 

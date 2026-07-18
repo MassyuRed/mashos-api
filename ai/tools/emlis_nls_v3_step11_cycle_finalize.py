@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Recompute and write the body-free rc0023 Cycle 001 evidence graph."""
+"""Recompute and write the body-free rc0024 Cycle 001 evidence graph."""
 
 import argparse
 import ast
@@ -41,6 +41,7 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     build_rc0010_rc0021_correction_rerun_lineage,
     build_rc0010_rc0022_correction_rerun_lineage,
     build_rc0010_rc0023_correction_rerun_lineage,
+    build_rc0010_rc0024_correction_rerun_lineage,
     FROZEN_RC0020_PREFLIGHT_BATCH_SUMMARY_SHA256,
     FROZEN_RC0020_PREFLIGHT_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0020_PREFLIGHT_SOURCE_CLOSURE_SHA256,
@@ -52,6 +53,10 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     FROZEN_RC0022_FORMAL_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0022_FORMAL_PRIVATE_VERIFICATION_SHA256,
     FROZEN_RC0022_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0023_FORMAL_BATCH_SUMMARY_SHA256,
+    FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0023_FORMAL_PRIVATE_VERIFICATION_SHA256,
+    FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256,
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     validate_cycle001_acceptance,
     WORKAROUND_NEGATIVE_POLICY_SHA256,
@@ -111,6 +116,9 @@ _FROZEN_BATCH001_CORPUS_SHA256 = (
     "013dd2ad1c1f446f843f400b3eb16231e8f32649e30114e70039b4cb709e8414"
 )
 AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0024.v1"
+)
+HISTORICAL_RC0023_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
     "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0023.v1"
 )
 HISTORICAL_RC0022_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
@@ -130,9 +138,12 @@ _FROZEN_LEGACY_FIXTURE_SHA256 = (
 )
 _STEP11_SCOPE_CANDIDATE_VERSION_ID = STEP11_CURRENT_CANDIDATE_VERSION_ID
 _WORKAROUND_SCAN_INPUT_SCOPE_SCHEMA = (
-    "cocolon.emlis.nls_v3.workaround_scan_input_scope.step11.rc0023.v1"
+    "cocolon.emlis.nls_v3.workaround_scan_input_scope.step11.rc0024.v1"
 )
 _RC_CORRECTION_SUPPORT_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_support.step11.rc0024.v1"
+)
+_RC0023_CORRECTION_SUPPORT_SCHEMA = (
     "cocolon.emlis.nls_v3.rc_correction_support.step11.rc0023.v1"
 )
 _RC0022_CORRECTION_SUPPORT_SCHEMA = (
@@ -158,6 +169,7 @@ _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES = frozenset(
         "nls_v3_rc_0020",
         "nls_v3_rc_0021",
         "nls_v3_rc_0022",
+        "nls_v3_rc_0023",
     }
 )
 _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES = frozenset(
@@ -170,6 +182,7 @@ _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES = frozenset(
         "nls_v3_rc_0020",
         "nls_v3_rc_0021",
         "nls_v3_rc_0022",
+        "nls_v3_rc_0023",
     }
 )
 _RC_CORRECTION_SCOPE_CODES = {
@@ -236,6 +249,10 @@ _RC_CORRECTION_SCOPE_CODES = {
         "batch_evidence_reference_resolution",
         "independent_action_lifecycle_source_modality",
         "failed_machine_run_append_only_lineage",
+    ),
+    "nls_v3_rc_0024": (
+        "reception_action_lifecycle_source_slot_ownership",
+        "independent_reception_source_slot_recomputation",
     ),
 }
 _LEGACY_DISPOSITIONS = frozenset(
@@ -653,9 +670,9 @@ def build_available_input_scope_receipt(
     step1_input_contract: Mapping[str, Any],
     step2_corpus_registry: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Current rc0023 scope alias over the immutable rc0022 alias."""
+    """Current rc0024 scope alias over the immutable rc0023 alias."""
 
-    historical = build_historical_rc0022_available_input_scope_receipt(
+    historical = build_historical_rc0023_available_input_scope_receipt(
         step1_baseline_receipt=step1_baseline_receipt,
         step1_input_contract=step1_input_contract,
         step2_corpus_registry=step2_corpus_registry,
@@ -664,6 +681,28 @@ def build_available_input_scope_receipt(
         **historical,
         "schema_version": AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA,
         "candidate_version_id": _STEP11_SCOPE_CANDIDATE_VERSION_ID,
+    }
+
+
+def build_historical_rc0023_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Historical rc0023 alias over the immutable rc0022 computation."""
+
+    historical = build_historical_rc0022_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+    return {
+        **historical,
+        "schema_version": (
+            HISTORICAL_RC0023_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        ),
+        "candidate_version_id": "nls_v3_rc_0023",
     }
 
 
@@ -747,7 +786,22 @@ def _build_rc0023_available_input_scope_receipt(
     step1_input_contract: Mapping[str, Any],
     step2_corpus_registry: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Compatibility name for the current rc0023 append-only scope alias."""
+    """Compatibility name for the frozen rc0023 append-only scope alias."""
+
+    return build_historical_rc0023_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+
+
+def _build_rc0024_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compatibility name for the current rc0024 append-only scope alias."""
 
     return build_available_input_scope_receipt(
         step1_baseline_receipt=step1_baseline_receipt,
@@ -1488,6 +1542,36 @@ def _validate_frozen_rc0022_private_verification(
         )
 
 
+def _validate_frozen_rc0023_private_verification(
+    value: Mapping[str, Any],
+) -> None:
+    """Require the exact body-free verification of the clean rc0023 run."""
+
+    if (
+        type(value) is not dict
+        or artifact_sha256(value)
+        != FROZEN_RC0023_FORMAL_PRIVATE_VERIFICATION_SHA256
+        or value.get("candidate_version_id") != "nls_v3_rc_0023"
+        or value.get("dependency_manifest_sha256")
+        != FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("final_batch_summary_sha256")
+        != FROZEN_RC0023_FORMAL_BATCH_SUMMARY_SHA256
+        or value.get("verified_case_count") != 100
+        or value.get("verified_selected_count") != 100
+        or value.get("verified_no_valid_candidate_count") != 0
+        or value.get("verified_exception_count") != 0
+        or value.get("private_packet_validation_status") != "clean"
+        or value.get("body_free") is not True
+        or "hmac_key_hex" in value
+        or "commitment_key" in value
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0023_private_verification_required"
+        )
+
+
 def _build_rc0010_rc0021_lineage(
     *,
     initial_summary: Mapping[str, Any],
@@ -1500,18 +1584,24 @@ def _build_rc0010_rc0021_lineage(
     rc0020_product_read_failure: Mapping[str, Any] | None,
     rc0021_product_read_failure: Mapping[str, Any] | None = None,
     rc0022_private_verification_receipt: Mapping[str, Any] | None = None,
+    rc0023_private_verification_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     """Build an honest append-only history from retained receipts only."""
 
+    rc0024_mode = rc0023_private_verification_receipt is not None
     rc0023_mode = rc0022_private_verification_receipt is not None
     rc0022_mode = rc0021_product_read_failure is not None
     rc0021_mode = rc0020_product_read_failure is not None
+    if rc0024_mode and not rc0023_mode:
+        raise ValueError("step11_lineage_rc0022_private_parent_required")
     if rc0023_mode and not rc0022_mode:
         raise ValueError("step11_lineage_rc0021_product_read_parent_required")
     if rc0022_mode and not rc0021_mode:
         raise ValueError("step11_lineage_rc0020_product_read_parent_required")
     current_candidate = (
-        "nls_v3_rc_0023"
+        "nls_v3_rc_0024"
+        if rc0024_mode
+        else "nls_v3_rc_0023"
         if rc0023_mode
         else "nls_v3_rc_0022"
         if rc0022_mode
@@ -1521,33 +1611,41 @@ def _build_rc0010_rc0021_lineage(
     )
     historical_manifest_candidates = (
         _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
+        if rc0024_mode
+        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES - {"nls_v3_rc_0023"}
         if rc0023_mode
-        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES - {"nls_v3_rc_0022"}
+        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
+        - {"nls_v3_rc_0022", "nls_v3_rc_0023"}
         if rc0022_mode
         else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
         - (
-            {"nls_v3_rc_0021", "nls_v3_rc_0022"}
+            {"nls_v3_rc_0021", "nls_v3_rc_0022", "nls_v3_rc_0023"}
             if rc0021_mode
             else {
                 "nls_v3_rc_0020",
                 "nls_v3_rc_0021",
                 "nls_v3_rc_0022",
+                "nls_v3_rc_0023",
             }
         )
     )
     historical_summary_candidates = (
         _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
+        if rc0024_mode
+        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES - {"nls_v3_rc_0023"}
         if rc0023_mode
-        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES - {"nls_v3_rc_0022"}
+        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
+        - {"nls_v3_rc_0022", "nls_v3_rc_0023"}
         if rc0022_mode
         else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
         - (
-            {"nls_v3_rc_0021", "nls_v3_rc_0022"}
+            {"nls_v3_rc_0021", "nls_v3_rc_0022", "nls_v3_rc_0023"}
             if rc0021_mode
             else {
                 "nls_v3_rc_0020",
                 "nls_v3_rc_0021",
                 "nls_v3_rc_0022",
+                "nls_v3_rc_0023",
             }
         )
     )
@@ -1620,6 +1718,48 @@ def _build_rc0010_rc0021_lineage(
     if rc0023_mode:
         _validate_frozen_rc0022_private_verification(
             rc0022_private_verification_receipt
+        )
+    rc0023_manifest = manifest_by_candidate.get("nls_v3_rc_0023")
+    rc0023_summary = summary_by_candidate.get("nls_v3_rc_0023")
+    if rc0024_mode and (
+        rc0023_manifest is None
+        or artifact_sha256(rc0023_manifest)
+        != FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0023_manifest.get("source_dependency_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0023_manifest.get("before_candidate_version_id")
+        != "nls_v3_rc_0022"
+        or rc0023_manifest.get("before_source_closure_sha256")
+        != FROZEN_RC0022_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0023_manifest.get("file_hashes")) is not list
+        or len(rc0023_manifest["file_hashes"]) != 145
+        or rc0023_summary is None
+        or artifact_sha256(rc0023_summary)
+        != FROZEN_RC0023_FORMAL_BATCH_SUMMARY_SHA256
+        or rc0023_summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0023_summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0023_summary.get("source_closure_start_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0023_summary.get("source_closure_end_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0023_summary.get("source_closure_stable") is not True
+        or rc0023_summary.get("machine_status") != "clean"
+        or rc0023_summary.get("all_expected_cases_executed") is not True
+        or rc0023_summary.get("executed_case_count") != 100
+        or rc0023_summary.get("aggregate", {}).get("selected_count") != 100
+        or rc0023_summary.get("aggregate", {}).get(
+            "no_valid_candidate_count"
+        )
+        != 0
+        or rc0023_summary.get("aggregate", {}).get("exception_count") != 0
+        or rc0023_summary.get("aggregate", {}).get("v1_fallback_count") != 0
+    ):
+        raise ValueError("step11_lineage_exact_rc0023_formal_clean_required")
+    if rc0024_mode:
+        _validate_frozen_rc0023_private_verification(
+            rc0023_private_verification_receipt
         )
     product_read = (
         _validated_product_read_failure(
@@ -1709,7 +1849,15 @@ def _build_rc0010_rc0021_lineage(
 
     for number in range(
         11,
-        24 if rc0023_mode else 23 if rc0022_mode else 22 if rc0021_mode else 21,
+        25
+        if rc0024_mode
+        else 24
+        if rc0023_mode
+        else 23
+        if rc0022_mode
+        else 22
+        if rc0021_mode
+        else 21,
     ):
         candidate = f"nls_v3_rc_{number:04d}"
         predecessor = f"nls_v3_rc_{number - 1:04d}"
@@ -2008,6 +2156,8 @@ def _build_rc0010_rc0021_lineage(
     correction_support = {
         "schema_version": (
             _RC_CORRECTION_SUPPORT_SCHEMA
+            if rc0024_mode
+            else _RC0023_CORRECTION_SUPPORT_SCHEMA
             if rc0023_mode
             else _RC0022_CORRECTION_SUPPORT_SCHEMA
             if rc0022_mode
@@ -2061,11 +2211,22 @@ def _build_rc0010_rc0021_lineage(
             if rc0023_mode
             else {}
         ),
+        **(
+            {
+                "rc0023_private_verification_receipt_sha256": (
+                    artifact_sha256(rc0023_private_verification_receipt)
+                )
+            }
+            if rc0024_mode
+            else {}
+        ),
         "raw_input_included": False,
         "body_free": True,
     }
     lineage_builder = (
-        build_rc0010_rc0023_correction_rerun_lineage
+        build_rc0010_rc0024_correction_rerun_lineage
+        if rc0024_mode
+        else build_rc0010_rc0023_correction_rerun_lineage
         if rc0023_mode
         else build_rc0010_rc0022_correction_rerun_lineage
         if rc0022_mode
@@ -2160,7 +2321,7 @@ def _build_rc0010_rc0023_lineage(
     list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
-    """Current rc0023 lineage over the exact failed rc0022 formal run."""
+    """Historical rc0023 lineage over the exact failed rc0022 formal run."""
 
     return _build_rc0010_rc0021_lineage(
         initial_summary=initial_summary,
@@ -2174,6 +2335,46 @@ def _build_rc0010_rc0023_lineage(
         rc0021_product_read_failure=rc0021_product_read_failure,
         rc0022_private_verification_receipt=(
             rc0022_private_verification_receipt
+        ),
+    )
+
+
+def _build_rc0010_rc0024_lineage(
+    *,
+    initial_summary: Mapping[str, Any],
+    initial_review: Mapping[str, Any],
+    final_summary: Mapping[str, Any],
+    dependency_manifest: Mapping[str, Any],
+    historical_dependency_manifests: Sequence[Mapping[str, Any]],
+    historical_batch_run_summaries: Sequence[Mapping[str, Any]],
+    workaround_scan_input_scope: Mapping[str, Any],
+    rc0020_product_read_failure: Mapping[str, Any],
+    rc0021_product_read_failure: Mapping[str, Any],
+    rc0022_private_verification_receipt: Mapping[str, Any],
+    rc0023_private_verification_receipt: Mapping[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Current rc0024 lineage over the exact clean rc0023 formal run."""
+
+    return _build_rc0010_rc0021_lineage(
+        initial_summary=initial_summary,
+        initial_review=initial_review,
+        final_summary=final_summary,
+        dependency_manifest=dependency_manifest,
+        historical_dependency_manifests=historical_dependency_manifests,
+        historical_batch_run_summaries=historical_batch_run_summaries,
+        workaround_scan_input_scope=workaround_scan_input_scope,
+        rc0020_product_read_failure=rc0020_product_read_failure,
+        rc0021_product_read_failure=rc0021_product_read_failure,
+        rc0022_private_verification_receipt=(
+            rc0022_private_verification_receipt
+        ),
+        rc0023_private_verification_receipt=(
+            rc0023_private_verification_receipt
         ),
     )
 
@@ -2229,6 +2430,7 @@ def build_cycle_artifacts(
     rc0021_product_read_failure: Mapping[str, Any],
     rc0021_private_verification_receipt: Mapping[str, Any],
     rc0022_private_verification_receipt: Mapping[str, Any],
+    rc0023_private_verification_receipt: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
     rc0022_parents = [
         value
@@ -2246,15 +2448,40 @@ def build_cycle_artifacts(
         raise ValueError(
             "step11_finalize_exact_rc0022_formal_manifest_required"
         )
+    rc0023_parents = [
+        value
+        for value in historical_lineage_dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id") == "nls_v3_rc_0023"
+    ]
+    if (
+        len(rc0023_parents) != 1
+        or artifact_sha256(rc0023_parents[0])
+        != FROZEN_RC0023_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0023_parents[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0023_parents[0].get("before_candidate_version_id")
+        != "nls_v3_rc_0022"
+        or rc0023_parents[0].get("before_source_closure_sha256")
+        != FROZEN_RC0022_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0023_parents[0].get("file_hashes")) is not list
+        or len(rc0023_parents[0]["file_hashes"]) != 145
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0023_formal_manifest_required"
+        )
     _validate_frozen_rc0021_private_verification(
         rc0021_private_verification_receipt
     )
     _validate_frozen_rc0022_private_verification(
         rc0022_private_verification_receipt
     )
+    _validate_frozen_rc0023_private_verification(
+        rc0023_private_verification_receipt
+    )
     current_dependency_issues = validate_current_step11_dependency_manifest(
         dependency_manifest,
-        before_manifest=rc0022_parents[0],
+        before_manifest=rc0023_parents[0],
     )
     if current_dependency_issues:
         raise ValueError(
@@ -2268,7 +2495,7 @@ def build_cycle_artifacts(
         development42_receipt=development42_receipt,
         invalid16_receipt=invalid16_receipt,
     )
-    available_input_scope = _build_rc0023_available_input_scope_receipt(
+    available_input_scope = _build_rc0024_available_input_scope_receipt(
         step1_baseline_receipt=load_step1_json(STEP1_RECEIPT_PATH),
         step1_input_contract=load_step1_json(STEP1_INPUT_CONTRACT_PATH),
         step2_corpus_registry=load_step1_json(REGISTRY_PATH),
@@ -2358,7 +2585,7 @@ def build_cycle_artifacts(
         correction_support,
         lineage_dependency_manifests,
         lineage_batch_run_summaries,
-    ) = _build_rc0010_rc0023_lineage(
+    ) = _build_rc0010_rc0024_lineage(
         initial_summary=initial_summary,
         initial_review=initial_review,
         final_summary=final_summary,
@@ -2374,6 +2601,9 @@ def build_cycle_artifacts(
         rc0021_product_read_failure=rc0021_product_read_failure,
         rc0022_private_verification_receipt=(
             rc0022_private_verification_receipt
+        ),
+        rc0023_private_verification_receipt=(
+            rc0023_private_verification_receipt
         ),
     )
     correction_support = {
@@ -2400,7 +2630,7 @@ def build_cycle_artifacts(
         lineage_dependency_manifests=lineage_dependency_manifests,
         lineage_batch_run_summaries=lineage_batch_run_summaries,
         final_dependency_manifest=dependency_manifest,
-        cumulative_run_id="nls3cum_0023c00100000001",
+        cumulative_run_id="nls3cum_0024c00100000001",
     )
     ledger = build_cycle_change_ledger(
         lock,
@@ -2490,9 +2720,9 @@ def build_cycle_artifacts(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Finalize body-free rc0023 Cycle 001 evidence from the exact "
-            "failed rc0022 formal parent and ordered rc0020/rc0021 Product "
-            "Read MAJOR failure receipts."
+            "Finalize body-free rc0024 Cycle 001 evidence from the exact "
+            "clean rc0023 formal parent, retained failed rc0022 formal "
+            "parent, and ordered rc0020/rc0021 Product Read MAJOR receipts."
         )
     )
     for name in (
@@ -2513,6 +2743,7 @@ def main(argv: list[str] | None = None) -> int:
         "rc0021-product-read-failure",
         "rc0021-private-verification-receipt",
         "rc0022-private-verification-receipt",
+        "rc0023-private-verification-receipt",
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument(
@@ -2524,8 +2755,8 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Repeat for retained historical manifests rc0011/14/15/16/18/19; "
             "include the exact frozen rc0020/rc0021 preflight manifests and "
-            "the exact failed rc0022 formal manifest; the current rc0023 "
-            "manifest is appended internally."
+            "the exact failed rc0022 plus clean rc0023 formal manifests; "
+            "the current rc0024 manifest is appended internally."
         ),
     )
     parser.add_argument(
@@ -2537,8 +2768,8 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Repeat for retained historical summaries rc0014/15/16/18/19; "
             "include the exact frozen rc0020/rc0021 preflight summaries and "
-            "the exact failed rc0022 formal summary; rc0010 and current "
-            "rc0023 are appended internally."
+            "the exact failed rc0022 plus clean rc0023 formal summaries; "
+            "rc0010 and current rc0024 are appended internally."
         ),
     )
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -2580,6 +2811,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         rc0022_private_verification_receipt=load_canonical_json(
             args.rc0022_private_verification_receipt
+        ),
+        rc0023_private_verification_receipt=load_canonical_json(
+            args.rc0023_private_verification_receipt
         ),
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)

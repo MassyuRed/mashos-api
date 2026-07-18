@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Run Cycle 001 through the offline rc0023 adapter.
+"""Run Cycle 001 through the offline rc0024 adapter.
 
 The body-full packet and HMAC key are private local artifacts.  The companion
 summary contains commitments and closed structural metrics only.  This tool
@@ -1341,8 +1341,8 @@ def validate_step11_private_packet(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run frozen Cycle 001 through the offline rc0023 adapter with "
-            "the exact frozen rc0022 failed-run manifest as predecessor."
+            "Run frozen Cycle 001 through the offline rc0024 adapter with "
+            "the exact frozen clean rc0023 formal manifest as predecessor."
         )
     )
     parser.add_argument("--batch", type=Path, required=True)
