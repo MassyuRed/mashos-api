@@ -1,0 +1,14 @@
+{
+  "schema_version": "cocolon.emlis.nls_v3.product_read_failure.step11.rc0020.v1",
+  "candidate_version_id": "nls_v3_rc_0020",
+  "batch_summary_sha256": "719cdacac4492e911502c7b25d46cf50815599825bad6eeaf7208be83e1b3193",
+  "review_outcome": "failed",
+  "maximum_severity": "MAJOR",
+  "failure_axis_codes": [
+    "NATURAL_NON_REPETITIVE_SURFACE"
+  ],
+  "failure_reason_codes": [
+    "SURFACE_UNNATURAL_OR_REPETITIVE"
+  ],
+  "body_free": true
+}

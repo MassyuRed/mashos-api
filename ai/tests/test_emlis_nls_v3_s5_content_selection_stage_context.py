@@ -596,6 +596,20 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
         "emlis_ai_dormant_runtime_adapter_v3.py",
         "emlis_ai_step10_dependency_manifest_v3.py",
         "emlis_ai_step10_evidence_v3.py",
+        "emlis_ai_step11_cycle_evidence_v3.py",
+        "emlis_ai_step11_hard_gate_v3.py",
+        "emlis_ai_step11_natural_surface_matcher_v3.py",
+        "emlis_ai_step11_natural_surface_v3.py",
+        "emlis_ai_step11_planning_frontier_v3.py",
+        "emlis_ai_step11_runtime_adapter_v3.py",
+        "emlis_ai_step11_semantic_overlay_v3.py",
+        "emlis_ai_step11_surface_catalog_v3.py",
+    }
+    tool_module_names = {
+        "emlis_nls_v3_step11_batch_run.py",
+        "emlis_nls_v3_step11_cycle_finalize.py",
+        "emlis_nls_v3_step11_dependency_manifest.py",
+        "emlis_nls_v3_step11_regression.py",
     }
     generation_source = inspect.getsource(
         __import__("emlis_ai_content_selection_v3")
@@ -615,7 +629,10 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
     assert "def artifact_sha256" not in generation_source
 
     for path in _AI_ROOT.rglob("*.py"):
-        if "tests" in path.parts or path.name in module_names:
+        if (
+            "tests" in path.parts
+            or path.name in module_names | tool_module_names
+        ):
             continue
         source = path.read_text(encoding="utf-8")
         assert (
@@ -626,3 +643,7 @@ def test_s5_new_modules_are_runtime_disconnected_and_do_not_read_fixture_cues() 
         assert "emlis_ai_semantic_obligation_inventory_v3" not in source, path
         assert "emlis_ai_content_selection_v3" not in source, path
     assert all((service_root / name).is_file() for name in module_names)
+    assert all(
+        (_AI_ROOT / "tools" / name).is_file()
+        for name in tool_module_names
+    )
