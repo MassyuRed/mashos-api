@@ -11,6 +11,9 @@ from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
 
 
 def _grouped_body() -> bytes:
+    introductions = STEP11_SURFACE_CATALOG["endpoint_reference_grammar"][
+        "natural_introduction"
+    ]["forms"]
     relation = STEP11_SURFACE_CATALOG["relation_forms"]["precedes"][
         "source_to_target"
     ]["proposition"]["action"][0]["stem"].format(
@@ -19,8 +22,12 @@ def _grouped_body() -> bytes:
     )
     observation = "、また、".join(
         (
-            "1つ目の記述内容として、『A、また、B』があります",
-            "2つ目の行動として、『書いた』があります",
+            introductions["thought"]["proposition"][0].format(
+                quoted_literal="『A、また、B』"
+            ),
+            introductions["action"]["action"][0].format(
+                quoted_literal="『書いた』"
+            ),
             relation,
         )
     )
@@ -40,7 +47,7 @@ def _grouped_body() -> bytes:
 def test_parser_recovers_group_sentences_and_typed_references() -> None:
     witness = matcher.parse_step11_natural_surface(_grouped_body())
 
-    assert witness.schema_version.endswith("witness.v6")
+    assert witness.schema_version.endswith("witness.v7")
     assert len(witness.sentences) == 2
     assert witness.sentences[0].clause_atom_ids == tuple(
         row.atom_id for row in witness.atoms[:3]

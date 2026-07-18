@@ -65,15 +65,15 @@ def _dense_units() -> tuple[surface.Step11SurfaceRealizationUnit, ...]:
     )
 
 
-def test_rc0025_retains_chunk_and_typed_reception_contracts() -> None:
+def test_rc0027_retains_chunk_and_historical_typed_reception_grammar() -> None:
     grammar = STEP11_SURFACE_CATALOG["group_grammar"]
     reception = STEP11_SURFACE_CATALOG["reception_forms"][
         "typed_reference_grammar"
     ]
 
     assert validate_step11_surface_catalog() == ()
-    assert surface.STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
-    assert surface.STEP11_SURFACE_AST_SCHEMA.endswith(".v6")
+    assert surface.STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
+    assert surface.STEP11_SURFACE_AST_SCHEMA.endswith(".v8")
     assert grammar["maximum_visible_clauses_per_grammatical_sentence"] == 2
     assert grammar["maximum_repeated_joiner_per_group"] == 2
     assert grammar["grammatical_chunk_separator"] == "。"
@@ -102,7 +102,7 @@ def test_dense_units_are_committed_to_bounded_grammatical_chunks() -> None:
         reception_group_ids=(),
     )
 
-    assert plan.schema_version.endswith(".rc0025.v1")
+    assert plan.schema_version.endswith(".rc0027.v1")
     assert plan.peak_observation_clause_count == 4
     assert plan.peak_grammatical_clause_count <= 2
     assert plan.peak_grammatical_complexity_load <= 4

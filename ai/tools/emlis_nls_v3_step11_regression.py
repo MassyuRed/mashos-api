@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Run Cycle 001 rc0025 Known28, Development42 and invalid regressions."""
+"""Run Cycle 001 rc0027 Known28, Development42 and invalid regressions."""
 
 import argparse
 import asyncio
@@ -1488,7 +1488,7 @@ def run_development42(
     commitment_key: bytes,
     run_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Execute every current-applicable Development42 case via rc0025."""
+    """Execute every current-applicable Development42 case via rc0027."""
 
     closure, _ = _development42_final_parent(
         final_batch_summary,
@@ -1766,8 +1766,8 @@ def load_invalid16_fixtures(path: Path) -> list[Mapping[str, Any]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Cycle 001 rc0025 regressions with the exact frozen rc0024 "
-            "clean formal-run manifest as predecessor."
+            "Run Cycle 001 rc0027 regressions with the exact frozen rc0026 "
+            "machine-clean formal-run manifest as predecessor."
         )
     )
     parser.add_argument("--final-summary", type=Path, required=True)

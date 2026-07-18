@@ -51,7 +51,9 @@ STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID = "nls_v3_rc_0021"
 STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID = "nls_v3_rc_0022"
 STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID = "nls_v3_rc_0023"
 STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID = "nls_v3_rc_0024"
-STEP11_CURRENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
+STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
+STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID = "nls_v3_rc_0026"
+STEP11_CURRENT_CANDIDATE_VERSION_ID = "nls_v3_rc_0027"
 
 # Exact body-free rc0020 preflight parents.  They are historical observations,
 # never rc0021 defaults and never evidence that rc0020 passed Product Read.
@@ -133,6 +135,92 @@ FROZEN_RC0024_FORMAL_BATCH_SUMMARY_SHA256 = (
 )
 FROZEN_RC0024_FORMAL_PRIVATE_VERIFICATION_SHA256 = (
     "355c412df6e1e21c07ffad37aef077db7fd80bd096b3905e64e1fde9ca4c58e8"
+)
+
+# Exact body-free rc0025 formal-run parents.  The machine execution was clean
+# and remains immutable.  The later local Product Read is a distinct BLOCKER
+# observation over those bytes; rc0026 records both facts without relabelling
+# the successful machine execution.
+FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256 = (
+    "222007643aeb46337ebe31e4a46c6a88b96c75134e6ddf881944f52b6723cb47"
+)
+FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256 = (
+    "983a85aab08b217fd3b09e965c52f789d332f72cac2c03bdb06c9452983e728d"
+)
+FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256 = (
+    "1aaf8b8818eec31ad637a27d9414a7ec801e28675b8b88bd6d281718a7d0c19a"
+)
+FROZEN_RC0025_FORMAL_PRIVATE_VERIFICATION_SHA256 = (
+    "4ca6eedf954455325b74a306dfb32c37c2e4d16ed59cea18de38eb2606b568b5"
+)
+FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES = (
+    "DISTRIBUTION_NOT_OVERCONCENTRATED",
+    "IMMEDIATE_OBSERVATION_FEELS_READ",
+    "NATURAL_NON_REPETITIVE_SURFACE",
+    "NO_CAUSE_PERSONALITY_DIAGNOSIS_PROMOTION",
+    "PRIMARY_MEANING_RETAINED",
+    "RELATION_DIRECTION_CORRECT",
+    "UNKNOWN_BOUNDARY_PRESERVED",
+)
+FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS = (
+    "IMMEDIATE_OBSERVATION_NOT_READ",
+    "RELATION_DIRECTION_REVERSED",
+    "REQUIRED_MEANING_MISSING",
+    "SURFACE_DISTRIBUTION_OVERCONCENTRATED",
+    "SURFACE_UNNATURAL_OR_REPETITIVE",
+    "UNKNOWN_BOUNDARY_FILLED",
+    "UNSUPPORTED_CAUSE_OR_PERSONALITY_OR_DIAGNOSIS",
+)
+FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256 = (
+    "9e13435575e822e30874d7c7340430138c199554d371d36922ce06a1ec5ceea7"
+)
+FROZEN_RC0025_KNOWN28_RECEIPT_SHA256 = (
+    "6e90569825d3f7e2f964a7aa54f26256668a4865193e3cd85f4ef3490d326ecb"
+)
+FROZEN_RC0025_DEVELOPMENT42_RECEIPT_SHA256 = (
+    "dafdf8aec57cf909c74315e734d961a4c129fb4d138c2be69a824e56d5ccdadf"
+)
+FROZEN_RC0025_INVALID16_RECEIPT_SHA256 = (
+    "c9a5a67f39574be8d12726ae7c7fae6828467ff1673430be0074ab717f7db440"
+)
+
+# Exact body-free rc0026 formal-run parents.  The machine execution and all
+# three regression suites were clean.  The later local Product Read is a
+# distinct MAJOR observation over those immutable bytes; rc0027 records every
+# receipt without relabelling the machine-clean rc0026 execution.
+FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256 = (
+    "79d4b7b2bf2c926f914c4da6fc3c108dd1e539c5cf44b315c5625e48a3ac62af"
+)
+FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256 = (
+    "9c21d9eaac57e342e4097757b6500a73eb278e786f77db04ca0525e00290c1a4"
+)
+FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256 = (
+    "10abda72ad1607460dac1ec2cddcb90c477d566dffe16d2b24d822b2fe1a6ebd"
+)
+FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256 = (
+    "fa89570f7ea356c0240628326b42977ea0dd955a989b100e160ada75af2849ba"
+)
+FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES = (
+    "DISTRIBUTION_NOT_OVERCONCENTRATED",
+    "IMMEDIATE_OBSERVATION_FEELS_READ",
+    "NATURAL_NON_REPETITIVE_SURFACE",
+)
+FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS = (
+    "IMMEDIATE_OBSERVATION_NOT_READ",
+    "SURFACE_DISTRIBUTION_OVERCONCENTRATED",
+    "SURFACE_UNNATURAL_OR_REPETITIVE",
+)
+FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256 = (
+    "44cca9c2d0721148a65e233a6efca9c14a7e745abd4e383b9b5aa10a5742a5c4"
+)
+FROZEN_RC0026_KNOWN28_RECEIPT_SHA256 = (
+    "ed87f6761e9281dcb93c1a30cccf5dc0397648db61923b106fd111a9a21fe62f"
+)
+FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256 = (
+    "ad655c195d2e2e32326daa0c8e95dce998b6823b7d134f8d9f3ba612f9ee3d56"
+)
+FROZEN_RC0026_INVALID16_RECEIPT_SHA256 = (
+    "74adfa3491dc89400ad54e00380501c86fe40de9afe0d6fa0cdd512f550bca4a"
 )
 
 FROZEN_BATCH001_MANIFEST_SHA256 = (
@@ -232,6 +320,18 @@ RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA = (
 RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA = (
     "cocolon.emlis.nls_v3.rc_correction_rerun_lineage_event.step11.v7"
 )
+RC_CORRECTION_RERUN_LINEAGE_V8_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage.step11.v8"
+)
+RC_CORRECTION_RERUN_LINEAGE_EVENT_V8_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage_event.step11.v8"
+)
+RC_CORRECTION_RERUN_LINEAGE_V9_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage.step11.v9"
+)
+RC_CORRECTION_RERUN_LINEAGE_EVENT_V9_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_rerun_lineage_event.step11.v9"
+)
 STEP11_RC0021_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
     "cocolon.emlis.nls_v3.surface_distribution_assessment.step11.rc0021.v1"
 )
@@ -261,6 +361,18 @@ STEP11_RC0025_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
 )
 STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
     "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0025.v1"
+)
+STEP11_RC0026_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.surface_distribution_assessment.step11.rc0026.v1"
+)
+STEP11_RC0026_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0026.v1"
+)
+STEP11_RC0027_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA = (
+    "cocolon.emlis.nls_v3.surface_distribution_assessment.step11.rc0027.v1"
+)
+STEP11_RC0027_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0027.v1"
 )
 # Historical generic alias used only by the frozen rc0020 evidence graph.
 AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
@@ -309,6 +421,12 @@ STEP11_SURFACE_DISTRIBUTION_POLICY_SHA256 = artifact_sha256(
 )
 
 STEP11_RUNTIME_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0027.v1"
+)
+STEP11_HISTORICAL_RC0026_RUNTIME_ADAPTER_VERSION = (
+    "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0026.v1"
+)
+STEP11_HISTORICAL_RC0025_RUNTIME_ADAPTER_VERSION = (
     "cocolon.emlis.nls_v3.runtime_adapter.step11.rc0025.v1"
 )
 STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION = (
@@ -397,6 +515,12 @@ _RC0010_RC0024_SEQUENCE = tuple(
 _RC0010_RC0025_SEQUENCE = tuple(
     f"nls_v3_rc_{number:04d}" for number in range(10, 26)
 )
+_RC0010_RC0026_SEQUENCE = tuple(
+    f"nls_v3_rc_{number:04d}" for number in range(10, 27)
+)
+_RC0010_RC0027_SEQUENCE = tuple(
+    f"nls_v3_rc_{number:04d}" for number in range(10, 28)
+)
 _RC0020_FROZEN_HISTORICAL_BATCH_SUMMARY_SHA256 = (
     (
         "nls_v3_rc_0014",
@@ -442,6 +566,12 @@ _LINEAGE_PRODUCT_READ_OUTCOMES = frozenset({"failed", "passed"})
 _LINEAGE_PRODUCT_READ_SEVERITIES = frozenset(
     {"NONE", "MINOR", "MAJOR", "BLOCKER"}
 )
+_LINEAGE_REGRESSION_SUITE_SEQUENCE = (
+    "known28",
+    "development42",
+    "invalid16",
+)
+_LINEAGE_REGRESSION_SUITES = frozenset(_LINEAGE_REGRESSION_SUITE_SEQUENCE)
 
 _DEVELOPMENT42_CASE_IDS = tuple(
     f"NLS2-F{family:02d}-D{depth:02d}"
@@ -2560,6 +2690,8 @@ def _project_step11_final(
             STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
             STEP11_CURRENT_CANDIDATE_VERSION_ID,
         }
         or dependency_manifest.get("candidate_version_id")
@@ -3852,7 +3984,13 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
     historical_rc0024 = (
         candidate == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
     )
-    current_rc0025 = candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
+    historical_rc0025 = (
+        candidate == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+    )
+    historical_rc0026 = (
+        candidate == STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+    )
+    current_rc0027 = candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
     if (
         type(value) is not dict
         or not (
@@ -3861,7 +3999,9 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
             or historical_rc0022
             or historical_rc0023
             or historical_rc0024
-            or current_rc0025
+            or historical_rc0025
+            or historical_rc0026
+            or current_rc0027
         )
         or (
             historical_rc0020
@@ -3893,9 +4033,19 @@ def _clean_available_input_scope(value: Any) -> dict[str, Any]:
             != STEP11_RC0024_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
         )
         or (
-            current_rc0025
+            historical_rc0025
             and value.get("schema_version")
             != STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        )
+        or (
+            historical_rc0026
+            and value.get("schema_version")
+            != STEP11_RC0026_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        )
+        or (
+            current_rc0027
+            and value.get("schema_version")
+            != STEP11_RC0027_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
         )
         or value.get("formal_status") != "scope_frozen"
         or value.get("body_free") is not True
@@ -3929,6 +4079,24 @@ def _clean_correction_rerun_lineage(
         else None
     )
     if current_candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID:
+        lineage_issues = validate_rc0010_rc0027_correction_rerun_lineage(
+            value,
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    elif (
+        current_candidate
+        == STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+    ):
+        lineage_issues = validate_rc0010_rc0026_correction_rerun_lineage(
+            value,
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    elif (
+        current_candidate
+        == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+    ):
         lineage_issues = validate_rc0010_rc0025_correction_rerun_lineage(
             value,
             dependency_manifests=dependency_manifests,
@@ -3986,6 +4154,8 @@ def _clean_correction_rerun_lineage(
             STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
             STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
             STEP11_CURRENT_CANDIDATE_VERSION_ID,
         }
         or value.get("historical_sequence_complete") is not True
@@ -4024,6 +4194,8 @@ def _require_lineage_final_parent_binding(
         STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
         STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
         STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+        STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+        STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
         STEP11_CURRENT_CANDIDATE_VERSION_ID,
     }:
         raise Step11CycleEvidenceError("LINEAGE_FINAL_PARENT_BINDING_INVALID")
@@ -4170,8 +4342,14 @@ def _auxiliary_acceptance_conditions(
                 "lineage_final_rc0020_parents_exact"
                 if lineage_candidate
                 == STEP11_SUCCESSOR_CANDIDATE_VERSION_ID
-                else "lineage_final_rc0025_parents_exact"
+                else "lineage_final_rc0027_parents_exact"
                 if lineage_candidate == STEP11_CURRENT_CANDIDATE_VERSION_ID
+                else "lineage_final_rc0026_parents_exact"
+                if lineage_candidate
+                == STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+                else "lineage_final_rc0025_parents_exact"
+                if lineage_candidate
+                == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
                 else "lineage_final_rc0024_parents_exact"
                 if lineage_candidate
                 == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
@@ -4595,6 +4773,8 @@ def build_cycle_change_ledger(
                 STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
                 STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
                 STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+                STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+                STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
                 STEP11_CURRENT_CANDIDATE_VERSION_ID,
             }
             or dependency["candidate_version_id"]
@@ -5351,6 +5531,152 @@ def _require_frozen_rc0025_historical_parents(
         )
 
 
+def _require_frozen_rc0026_historical_parents(
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    summaries: Sequence[Mapping[str, Any]],
+) -> None:
+    """Bind v8 history to the exact machine-clean rc0025 formal run."""
+
+    _require_frozen_rc0025_historical_parents(
+        dependency_manifests,
+        summaries,
+    )
+    rc0025_manifests = [
+        value
+        for value in dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+    ]
+    if (
+        len(rc0025_manifests) != 1
+        or validate_step11_dependency_manifest(rc0025_manifests[0])
+        or artifact_sha256(rc0025_manifests[0])
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0025_manifests[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_manifests[0].get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+        or rc0025_manifests[0].get("before_source_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0025_manifests[0].get("file_hashes")) is not list
+        or len(rc0025_manifests[0]["file_hashes"]) != 151
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0025_FORMAL_MANIFEST_MISMATCH"
+        )
+
+    rc0025_summaries = [
+        value
+        for value in summaries
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+    ]
+    if len(rc0025_summaries) != 1:
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0025_FORMAL_SUMMARY_MISMATCH"
+        )
+    summary = rc0025_summaries[0]
+    aggregate = summary.get("aggregate", {})
+    if (
+        artifact_sha256(summary)
+        != FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256
+        or summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_start_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_end_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_stable") is not True
+        or summary.get("machine_status") != "clean"
+        or summary.get("all_expected_cases_executed") is not True
+        or summary.get("executed_case_count") != 100
+        or aggregate.get("selected_count") != 100
+        or aggregate.get("no_valid_candidate_count") != 0
+        or aggregate.get("exception_count") != 0
+        or aggregate.get("v1_fallback_count") != 0
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0025_FORMAL_SUMMARY_MISMATCH"
+        )
+
+
+def _require_frozen_rc0027_historical_parents(
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    summaries: Sequence[Mapping[str, Any]],
+) -> None:
+    """Bind v9 history to the exact machine-clean rc0026 formal run."""
+
+    _require_frozen_rc0026_historical_parents(
+        dependency_manifests,
+        summaries,
+    )
+    rc0026_manifests = [
+        value
+        for value in dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+    ]
+    if (
+        len(rc0026_manifests) != 1
+        or validate_step11_dependency_manifest(rc0026_manifests[0])
+        or artifact_sha256(rc0026_manifests[0])
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0026_manifests[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_manifests[0].get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+        or rc0026_manifests[0].get("before_source_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0026_manifests[0].get("file_hashes")) is not list
+        or len(rc0026_manifests[0]["file_hashes"]) != 156
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0026_FORMAL_MANIFEST_MISMATCH"
+        )
+
+    rc0026_summaries = [
+        value
+        for value in summaries
+        if type(value) is dict
+        and value.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+    ]
+    if len(rc0026_summaries) != 1:
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0026_FORMAL_SUMMARY_MISMATCH"
+        )
+    summary = rc0026_summaries[0]
+    aggregate = summary.get("aggregate", {})
+    if (
+        artifact_sha256(summary)
+        != FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+        or summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_start_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_end_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or summary.get("source_closure_stable") is not True
+        or summary.get("machine_status") != "clean"
+        or summary.get("all_expected_cases_executed") is not True
+        or summary.get("executed_case_count") != 100
+        or aggregate.get("selected_count") != 100
+        or aggregate.get("no_valid_candidate_count") != 0
+        or aggregate.get("exception_count") != 0
+        or aggregate.get("v1_fallback_count") != 0
+    ):
+        raise Step11CycleEvidenceError(
+            "RC_LINEAGE_RC0026_FORMAL_SUMMARY_MISMATCH"
+        )
+
+
 def _lineage_event(
     *,
     event_index: int,
@@ -5386,7 +5712,22 @@ def _build_rc_correction_rerun_lineage(
         str, Sequence[str]
     ]
     | None = None,
+    required_product_read_failure_axis_codes: Mapping[
+        str, Sequence[str]
+    ]
+    | None = None,
+    required_product_read_failure_reason_codes: Mapping[
+        str, Sequence[str]
+    ]
+    | None = None,
+    required_product_read_execution_scopes: Mapping[str, str] | None = None,
+    required_product_read_maximum_severities: Mapping[str, str] | None = None,
+    required_product_read_receipt_commitments: Mapping[str, str] | None = None,
     required_failed_execution_candidate_version_ids: Sequence[str]
+    | None = None,
+    required_regression_receipt_commitments: Mapping[
+        str, Mapping[str, str]
+    ]
     | None = None,
 ) -> dict[str, Any]:
     """Build one closed append-only correction/rerun history.
@@ -5460,15 +5801,90 @@ def _build_rc_correction_rerun_lineage(
             required_product_read_failure_case_ids or {}
         ).items()
     }
+    required_axes_by_candidate = {
+        candidate: tuple(codes)
+        for candidate, codes in (
+            required_product_read_failure_axis_codes or {}
+        ).items()
+    }
+    required_reasons_by_candidate = {
+        candidate: tuple(codes)
+        for candidate, codes in (
+            required_product_read_failure_reason_codes or {}
+        ).items()
+    }
+    required_scope_by_candidate = {
+        candidate: "preflight" for candidate in required_product_read_candidates
+    }
+    required_scope_by_candidate.update(
+        required_product_read_execution_scopes or {}
+    )
+    required_severity_by_candidate = {
+        candidate: "MAJOR" for candidate in required_product_read_candidates
+    }
+    required_severity_by_candidate.update(
+        required_product_read_maximum_severities or {}
+    )
+    required_receipt_by_candidate = dict(
+        required_product_read_receipt_commitments or {}
+    )
+    required_regressions_by_candidate = {
+        candidate: dict(receipts)
+        for candidate, receipts in (
+            required_regression_receipt_commitments or {}
+        ).items()
+    }
     if (
         not set(required_case_ids_by_candidate)
         <= set(required_product_read_candidates)
+        or not set(required_axes_by_candidate)
+        <= set(required_product_read_candidates)
+        or not set(required_reasons_by_candidate)
+        <= set(required_product_read_candidates)
+        or not set(required_receipt_by_candidate)
+        <= set(required_product_read_candidates)
+        or not set(required_regressions_by_candidate)
+        <= set(required_product_read_candidates)
+        or set(required_scope_by_candidate)
+        != set(required_product_read_candidates)
+        or set(required_severity_by_candidate)
+        != set(required_product_read_candidates)
+        or any(
+            scope not in _LINEAGE_EXECUTION_SCOPES
+            for scope in required_scope_by_candidate.values()
+        )
+        or any(
+            severity not in _LINEAGE_PRODUCT_READ_SEVERITIES
+            or severity in {"NONE", "MINOR"}
+            for severity in required_severity_by_candidate.values()
+        )
+        or any(
+            not _valid_nonzero_sha(commitment)
+            for commitment in required_receipt_by_candidate.values()
+        )
+        or any(
+            set(receipts) != _LINEAGE_REGRESSION_SUITES
+            or any(
+                not _valid_nonzero_sha(commitment)
+                for commitment in receipts.values()
+            )
+            for receipts in required_regressions_by_candidate.values()
+        )
         or any(
             not case_ids
             or len(case_ids) != len(set(case_ids))
             or tuple(sorted(case_ids)) != case_ids
             or any(case_id not in _CASE_ID_SET for case_id in case_ids)
             for case_ids in required_case_ids_by_candidate.values()
+        )
+        or any(
+            not codes
+            or tuple(sorted(set(codes))) != codes
+            or any(_CODE_RE.fullmatch(code) is None for code in codes)
+            for codes in (
+                *required_axes_by_candidate.values(),
+                *required_reasons_by_candidate.values(),
+            )
         )
     ):
         raise Step11CycleEvidenceError(
@@ -5551,6 +5967,7 @@ def _build_rc_correction_rerun_lineage(
                 "terminal_disposition": None,
                 "pending_recorded": False,
                 "product_reads": [],
+                "regression_receipts": [],
             }
             append_event(
                 {
@@ -5666,6 +6083,7 @@ def _build_rc_correction_rerun_lineage(
                 "terminal_disposition": None,
                 "pending_recorded": False,
                 "product_reads": [],
+                "regression_receipts": [],
             }
             append_event(
                 {
@@ -5761,12 +6179,88 @@ def _build_rc_correction_rerun_lineage(
             )
             continue
 
+        if event_type == "regression_receipt_observed":
+            row = _require_exact_keys(
+                raw_event,
+                {
+                    "event_type",
+                    "candidate_version_id",
+                    "batch_summary_sha256",
+                    "regression_suite",
+                    "receipt_commitment",
+                },
+                "RC_LINEAGE_REGRESSION_RECEIPT_EVENT_INVALID",
+            )
+            state = candidate_states[active_candidate]
+            expected_receipts = required_regressions_by_candidate.get(
+                str(active_candidate)
+            )
+            observed_receipts = state["regression_receipts"]
+            expected_suite = (
+                _LINEAGE_REGRESSION_SUITE_SEQUENCE[len(observed_receipts)]
+                if len(observed_receipts)
+                < len(_LINEAGE_REGRESSION_SUITE_SEQUENCE)
+                else None
+            )
+            matching_execution = next(
+                (
+                    execution
+                    for execution in state["executions"]
+                    if execution["batch_summary_sha256"]
+                    == row["batch_summary_sha256"]
+                ),
+                None,
+            )
+            if (
+                expected_receipts is None
+                or row["candidate_version_id"] != active_candidate
+                or state["terminal_disposition"] is not None
+                or state["product_reads"]
+                or matching_execution is None
+                or matching_execution["execution_scope"]
+                != "formal_cumulative_rerun"
+                or matching_execution["machine_status"] != "clean"
+                or matching_execution["all_expected_cases_executed"] is not True
+                or matching_execution["executed_case_count"] != 100
+                or row["regression_suite"] != expected_suite
+                or row["receipt_commitment"]
+                != expected_receipts.get(str(expected_suite))
+            ):
+                raise Step11CycleEvidenceError(
+                    "RC_LINEAGE_REGRESSION_RECEIPT_EVENT_INVALID"
+                )
+            observation = {
+                "batch_summary_sha256": row["batch_summary_sha256"],
+                "regression_suite": row["regression_suite"],
+                "receipt_commitment": row["receipt_commitment"],
+            }
+            observed_receipts.append(observation)
+            append_event(
+                {
+                    "event_type": event_type,
+                    "candidate_version_id": active_candidate,
+                    **observation,
+                    "receipt_bound": True,
+                    "counts_as_passed_rerun": False,
+                }
+            )
+            continue
+
         if event_type == "product_read_observed":
             if not required_product_read_candidates:
                 raise Step11CycleEvidenceError(
                     "RC_LINEAGE_PRODUCT_READ_EVENT_INVALID"
                 )
             expected_failure_case_ids = required_case_ids_by_candidate.get(
+                str(active_candidate)
+            )
+            expected_failure_axes = required_axes_by_candidate.get(
+                str(active_candidate)
+            )
+            expected_failure_reasons = required_reasons_by_candidate.get(
+                str(active_candidate)
+            )
+            expected_receipt_commitment = required_receipt_by_candidate.get(
                 str(active_candidate)
             )
             product_read_keys = {
@@ -5805,13 +6299,23 @@ def _build_rc_correction_rerun_lineage(
                 or state["terminal_disposition"] is not None
                 or state["product_reads"]
                 or matching_execution is None
-                or matching_execution["execution_scope"] != "preflight"
+                or matching_execution["execution_scope"]
+                != required_scope_by_candidate[active_candidate]
                 or matching_execution["machine_status"] != "clean"
                 or matching_execution["all_expected_cases_executed"] is not True
                 or matching_execution["executed_case_count"] != 100
+                or (
+                    active_candidate in required_regressions_by_candidate
+                    and [
+                        observation["regression_suite"]
+                        for observation in state["regression_receipts"]
+                    ]
+                    != list(_LINEAGE_REGRESSION_SUITE_SEQUENCE)
+                )
                 or row["review_outcome"] != "failed"
                 or row["review_outcome"] not in _LINEAGE_PRODUCT_READ_OUTCOMES
-                or row["maximum_severity"] != "MAJOR"
+                or row["maximum_severity"]
+                != required_severity_by_candidate[active_candidate]
                 or row["maximum_severity"]
                 not in _LINEAGE_PRODUCT_READ_SEVERITIES
                 or type(failure_axes) is not list
@@ -5821,6 +6325,10 @@ def _build_rc_correction_rerun_lineage(
                     type(code) is not str or _CODE_RE.fullmatch(code) is None
                     for code in failure_axes
                 )
+                or (
+                    expected_failure_axes is not None
+                    and failure_axes != list(expected_failure_axes)
+                )
                 or type(failure_reasons) is not list
                 or not failure_reasons
                 or failure_reasons != sorted(set(failure_reasons))
@@ -5829,11 +6337,20 @@ def _build_rc_correction_rerun_lineage(
                     for code in failure_reasons
                 )
                 or (
+                    expected_failure_reasons is not None
+                    and failure_reasons != list(expected_failure_reasons)
+                )
+                or (
                     expected_failure_case_ids is not None
                     and failure_case_ids
                     != list(expected_failure_case_ids)
                 )
                 or not _valid_nonzero_sha(row["review_receipt_commitment"])
+                or (
+                    expected_receipt_commitment is not None
+                    and row["review_receipt_commitment"]
+                    != expected_receipt_commitment
+                )
             ):
                 raise Step11CycleEvidenceError(
                     "RC_LINEAGE_PRODUCT_READ_EVENT_INVALID"
@@ -6017,7 +6534,7 @@ def _build_rc_correction_rerun_lineage(
             or product_state["product_reads"][0]["review_outcome"]
             != "failed"
             or product_state["product_reads"][0]["maximum_severity"]
-            != "MAJOR"
+            != required_severity_by_candidate[product_candidate]
             or (
                 expected_failure_case_ids is not None
                 and product_state["product_reads"][0].get(
@@ -6049,6 +6566,25 @@ def _build_rc_correction_rerun_lineage(
         ):
             raise Step11CycleEvidenceError(
                 "RC_LINEAGE_REQUIRED_FAILED_EXECUTION_MISSING"
+            )
+    for regression_candidate, required_receipts in (
+        required_regressions_by_candidate.items()
+    ):
+        regression_state = candidate_states.get(regression_candidate)
+        if (
+            regression_state is None
+            or {
+                observation["regression_suite"]: observation[
+                    "receipt_commitment"
+                ]
+                for observation in regression_state["regression_receipts"]
+            }
+            != required_receipts
+            or regression_state["terminal_disposition"]
+            != "superseded_after_observed_result"
+        ):
+            raise Step11CycleEvidenceError(
+                "RC_LINEAGE_REQUIRED_REGRESSION_RECEIPTS_MISSING"
             )
     if used_manifests != set(manifest_by_sha):
         raise Step11CycleEvidenceError("RC_LINEAGE_UNUSED_DEPENDENCY_PARENT")
@@ -6110,6 +6646,16 @@ def _build_rc_correction_rerun_lineage(
                 if required_failed_execution_candidates
                 else {}
             ),
+            **(
+                {
+                    "regression_receipt_observation_count": sum(
+                        len(state["regression_receipts"])
+                        for state in candidate_states.values()
+                    )
+                }
+                if required_regressions_by_candidate
+                else {}
+            ),
         },
         **(
             {
@@ -6127,6 +6673,16 @@ def _build_rc_correction_rerun_lineage(
                 )
             }
             if required_failed_execution_candidates
+            else {}
+        ),
+        **(
+            {
+                "regression_receipt_candidate_sequence": sorted(
+                    required_regressions_by_candidate,
+                    key=candidate_order.__getitem__,
+                )
+            }
+            if required_regressions_by_candidate
             else {}
         ),
         "historical_sequence_complete": True,
@@ -6376,7 +6932,9 @@ def build_rc0010_rc0025_correction_rerun_lineage(
         dependency_manifests=dependency_manifests,
         batch_run_summaries=batch_run_summaries,
         candidate_sequence=_RC0010_RC0025_SEQUENCE,
-        final_candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
+        final_candidate_version_id=(
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+        ),
         lineage_schema=RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA,
         event_schema=RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA,
         require_immediate_final_dependency_base=True,
@@ -6395,10 +6953,156 @@ def build_rc0010_rc0025_correction_rerun_lineage(
     )
 
 
+def build_rc0010_rc0026_correction_rerun_lineage(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Append rc0026 after clean rc0025 and its BLOCKER Product Read."""
+
+    _require_frozen_rc0026_historical_parents(
+        dependency_manifests,
+        batch_run_summaries,
+    )
+    return _build_rc_correction_rerun_lineage(
+        events,
+        dependency_manifests=dependency_manifests,
+        batch_run_summaries=batch_run_summaries,
+        candidate_sequence=_RC0010_RC0026_SEQUENCE,
+        final_candidate_version_id=(
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+        ),
+        lineage_schema=RC_CORRECTION_RERUN_LINEAGE_V8_SCHEMA,
+        event_schema=RC_CORRECTION_RERUN_LINEAGE_EVENT_V8_SCHEMA,
+        require_immediate_final_dependency_base=True,
+        required_failed_product_read_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+        ),
+        required_product_read_failure_case_ids={
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID: (
+                "nls3s_b001_0035",
+            )
+        },
+        required_product_read_failure_axis_codes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES
+            )
+        },
+        required_product_read_failure_reason_codes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS
+            )
+        },
+        required_product_read_execution_scopes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                "formal_cumulative_rerun"
+            )
+        },
+        required_product_read_maximum_severities={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: "BLOCKER"
+        },
+        required_product_read_receipt_commitments={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256
+            )
+        },
+        required_failed_execution_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
+        ),
+    )
+
+
+def build_rc0010_rc0027_correction_rerun_lineage(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Append rc0027 after clean rc0026, three regressions, and MAJOR read."""
+
+    _require_frozen_rc0027_historical_parents(
+        dependency_manifests,
+        batch_run_summaries,
+    )
+    return _build_rc_correction_rerun_lineage(
+        events,
+        dependency_manifests=dependency_manifests,
+        batch_run_summaries=batch_run_summaries,
+        candidate_sequence=_RC0010_RC0027_SEQUENCE,
+        final_candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
+        lineage_schema=RC_CORRECTION_RERUN_LINEAGE_V9_SCHEMA,
+        event_schema=RC_CORRECTION_RERUN_LINEAGE_EVENT_V9_SCHEMA,
+        require_immediate_final_dependency_base=True,
+        required_failed_product_read_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
+        ),
+        required_product_read_failure_case_ids={
+            STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID: (
+                "nls3s_b001_0035",
+            )
+        },
+        required_product_read_failure_axis_codes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES
+            ),
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES
+            ),
+        },
+        required_product_read_failure_reason_codes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS
+            ),
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS
+            ),
+        },
+        required_product_read_execution_scopes={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                "formal_cumulative_rerun"
+            ),
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: (
+                "formal_cumulative_rerun"
+            ),
+        },
+        required_product_read_maximum_severities={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: "BLOCKER",
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: "MAJOR",
+        },
+        required_product_read_receipt_commitments={
+            STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256
+            ),
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: (
+                FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256
+            ),
+        },
+        required_failed_execution_candidate_version_ids=(
+            STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
+        ),
+        required_regression_receipt_commitments={
+            STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID: {
+                "known28": FROZEN_RC0026_KNOWN28_RECEIPT_SHA256,
+                "development42": (
+                    FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256
+                ),
+                "invalid16": FROZEN_RC0026_INVALID16_RECEIPT_SHA256,
+            }
+        },
+    )
+
+
 def _rc_lineage_input_events(
     value: Mapping[str, Any],
     *,
     allow_product_read: bool = False,
+    allow_regression_receipts: bool = False,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for event in value.get("events", []):
@@ -6443,6 +7147,17 @@ def _rc_lineage_input_events(
             }
             if "failure_case_ids" in event:
                 keys.add("failure_case_ids")
+        elif (
+            event_type == "regression_receipt_observed"
+            and allow_regression_receipts
+        ):
+            keys = {
+                "event_type",
+                "candidate_version_id",
+                "batch_summary_sha256",
+                "regression_suite",
+                "receipt_commitment",
+            }
         elif event_type == "revision_disposition":
             keys = {
                 "event_type",
@@ -6596,6 +7311,52 @@ def validate_rc0010_rc0025_correction_rerun_lineage(
     try:
         expected = build_rc0010_rc0025_correction_rerun_lineage(
             _rc_lineage_input_events(value, allow_product_read=True),
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    except (KeyError, TypeError, ValueError, Step11CycleEvidenceError):
+        return ("RC_CORRECTION_RERUN_LINEAGE_CONTRACT_INVALID",)
+    return () if value == expected else (
+        "RC_CORRECTION_RERUN_LINEAGE_RECOMPUTATION_MISMATCH",
+    )
+
+
+def validate_rc0010_rc0026_correction_rerun_lineage(
+    value: Any,
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    if type(value) is not dict:
+        return ("RC_CORRECTION_RERUN_LINEAGE_MAPPING_REQUIRED",)
+    try:
+        expected = build_rc0010_rc0026_correction_rerun_lineage(
+            _rc_lineage_input_events(value, allow_product_read=True),
+            dependency_manifests=dependency_manifests,
+            batch_run_summaries=batch_run_summaries,
+        )
+    except (KeyError, TypeError, ValueError, Step11CycleEvidenceError):
+        return ("RC_CORRECTION_RERUN_LINEAGE_CONTRACT_INVALID",)
+    return () if value == expected else (
+        "RC_CORRECTION_RERUN_LINEAGE_RECOMPUTATION_MISMATCH",
+    )
+
+
+def validate_rc0010_rc0027_correction_rerun_lineage(
+    value: Any,
+    *,
+    dependency_manifests: Sequence[Mapping[str, Any]],
+    batch_run_summaries: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    if type(value) is not dict:
+        return ("RC_CORRECTION_RERUN_LINEAGE_MAPPING_REQUIRED",)
+    try:
+        expected = build_rc0010_rc0027_correction_rerun_lineage(
+            _rc_lineage_input_events(
+                value,
+                allow_product_read=True,
+                allow_regression_receipts=True,
+            ),
             dependency_manifests=dependency_manifests,
             batch_run_summaries=batch_run_summaries,
         )
@@ -6994,6 +7755,26 @@ __all__ = [
     "FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256",
     "FROZEN_RC0024_FORMAL_PRIVATE_VERIFICATION_SHA256",
     "FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256",
+    "FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256",
+    "FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256",
+    "FROZEN_RC0025_FORMAL_PRIVATE_VERIFICATION_SHA256",
+    "FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256",
+    "FROZEN_RC0025_DEVELOPMENT42_RECEIPT_SHA256",
+    "FROZEN_RC0025_INVALID16_RECEIPT_SHA256",
+    "FROZEN_RC0025_KNOWN28_RECEIPT_SHA256",
+    "FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES",
+    "FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS",
+    "FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256",
+    "FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256",
+    "FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256",
+    "FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256",
+    "FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256",
+    "FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256",
+    "FROZEN_RC0026_INVALID16_RECEIPT_SHA256",
+    "FROZEN_RC0026_KNOWN28_RECEIPT_SHA256",
+    "FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES",
+    "FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS",
+    "FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256",
     "FROZEN_BATCH001_DUPLICATE_REPORT_SHA256",
     "FROZEN_BATCH001_MANIFEST_SHA256",
     "FROZEN_BATCH001_MATRIX_SHA256",
@@ -7020,6 +7801,8 @@ __all__ = [
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V5_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V6_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V7_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_EVENT_V8_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_EVENT_V9_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_EVENT_V1_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V3_SCHEMA",
@@ -7027,6 +7810,8 @@ __all__ = [
     "RC_CORRECTION_RERUN_LINEAGE_V5_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V6_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V7_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_V8_SCHEMA",
+    "RC_CORRECTION_RERUN_LINEAGE_V9_SCHEMA",
     "RC_CORRECTION_RERUN_LINEAGE_V1_SCHEMA",
     "STEP11_BATCH_ID",
     "STEP11_BATCH_RUN_SCHEMA",
@@ -7045,6 +7830,10 @@ __all__ = [
     "STEP11_HISTORICAL_RC0023_RUNTIME_ADAPTER_VERSION",
     "STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID",
     "STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION",
+    "STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID",
+    "STEP11_HISTORICAL_RC0025_RUNTIME_ADAPTER_VERSION",
+    "STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID",
+    "STEP11_HISTORICAL_RC0026_RUNTIME_ADAPTER_VERSION",
     "STEP11_PRIVATE_VERIFICATION_RECEIPT_SCHEMA",
     "STEP11_CURRENT_CANDIDATE_VERSION_ID",
     "STEP11_RC0021_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
@@ -7057,6 +7846,10 @@ __all__ = [
     "STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
     "STEP11_RC0025_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
+    "STEP11_RC0026_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
+    "STEP11_RC0026_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
+    "STEP11_RC0027_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA",
+    "STEP11_RC0027_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_REVIEW_RUBRIC_SHA256",
     "STEP11_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA",
     "STEP11_SURFACE_DISTRIBUTION_POLICY",
@@ -7083,6 +7876,8 @@ __all__ = [
     "build_rc0010_rc0023_correction_rerun_lineage",
     "build_rc0010_rc0024_correction_rerun_lineage",
     "build_rc0010_rc0025_correction_rerun_lineage",
+    "build_rc0010_rc0026_correction_rerun_lineage",
+    "build_rc0010_rc0027_correction_rerun_lineage",
     "build_step11_batch_run_summary",
     "build_step11_private_verification_receipt",
     "build_step11_dependency_manifest",
@@ -7106,6 +7901,8 @@ __all__ = [
     "validate_rc0010_rc0023_correction_rerun_lineage",
     "validate_rc0010_rc0024_correction_rerun_lineage",
     "validate_rc0010_rc0025_correction_rerun_lineage",
+    "validate_rc0010_rc0026_correction_rerun_lineage",
+    "validate_rc0010_rc0027_correction_rerun_lineage",
     "validate_step11_batch_run_summary",
     "validate_step11_dependency_manifest",
     "validate_step11_private_verification_receipt",

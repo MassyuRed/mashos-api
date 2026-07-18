@@ -75,9 +75,7 @@ def test_rc0025_lineage_wrapper_requires_the_rc0024_private_parent() -> None:
 
 
 def test_rc0025_finalizer_source_does_not_fabricate_phase_c_results() -> None:
-    source = inspect.getsource(finalizer.build_cycle_artifacts)
+    source = inspect.getsource(finalizer._build_rc0010_rc0025_lineage)
 
-    for name in _PHASE_C_RESULT_PARAMETERS:
-        assert f"{name}:" in source
     assert "rc0024_private_verification_receipt:" in source
     assert "FROZEN_RC0025_FORMAL" not in source

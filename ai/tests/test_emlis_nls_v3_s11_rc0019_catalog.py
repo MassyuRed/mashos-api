@@ -10,11 +10,11 @@ from emlis_ai_step11_surface_catalog_v3 import (
 )
 
 
-def test_rc0022_catalog_owns_ref_only_relations_and_group_delimiters(
+def test_rc0027_catalog_owns_fused_obligations_and_historical_relations(
     monkeypatch,
 ) -> None:
     assert validate_step11_surface_catalog() == ()
-    assert STEP11_SURFACE_CATALOG["schema_version"].endswith(".v6")
+    assert STEP11_SURFACE_CATALOG["schema_version"].endswith(".v8")
     assert STEP11_SURFACE_CATALOG["candidate_version_id"] == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
@@ -23,9 +23,9 @@ def test_rc0022_catalog_owns_ref_only_relations_and_group_delimiters(
     references = STEP11_SURFACE_CATALOG["endpoint_reference_grammar"]
     assert group == {
         "schema_version": (
-            "cocolon.emlis.nls_v3.step11_group_grammar.rc0022.v1"
+            "cocolon.emlis.nls_v3.step11_group_grammar.rc0027.v1"
         ),
-        "clause_separator": "、また、",
+        "clause_separator": "。あわせて、",
         "sentence_suffix": "。",
         "grammatical_chunk_separator": "。",
         "one_line_per_discourse_sentence_group": True,
@@ -41,19 +41,25 @@ def test_rc0022_catalog_owns_ref_only_relations_and_group_delimiters(
         "{ordinal}つ目の{role_label}"
     )
     assert references["relation_endpoint_policy"] == "typed_reference_only"
-    assert references["direct_introduction"]["literal_owner_policy"] == (
+    assert references["natural_introduction"]["literal_owner_policy"] == (
         "exact_source_identity_once"
     )
-    direct_stems = references["direct_introduction"]["stems"]
-    assert len(direct_stems) >= 4
-    assert len(direct_stems) == len(set(direct_stems))
+    natural_stems = tuple(
+        stem
+        for by_role in references["natural_introduction"]["forms"].values()
+        for stems in by_role.values()
+        for stem in stems
+    )
+    assert len(natural_stems) >= 4
+    assert len(natural_stems) == len(set(natural_stems))
     assert all(
         stem.count("{quoted_literal}") == 1
         and group["clause_separator"] not in stem
         and not stem.endswith(group["sentence_suffix"])
         and "『" not in stem
         and "』" not in stem
-        for stem in direct_stems
+        and "{ordinal}" not in stem
+        for stem in natural_stems
     )
     assert STEP11_SURFACE_CATALOG[
         "legacy_quoted_relation_forms_rc0018"

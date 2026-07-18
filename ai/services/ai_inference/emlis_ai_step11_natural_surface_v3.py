@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Forward-only rc0025 natural surface successor.
+"""Forward-only rc0027 natural surface successor.
 
 The module consumes only the current input projection and independently
 revalidated Step 4--6 semantic artifacts.  It does not import the frozen Step
 7--9 renderer, parser, gate, selector, runtime, corpus, or test owners.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import re
 import unicodedata
@@ -29,6 +29,16 @@ from emlis_ai_step11_surface_catalog_v3 import (
     STEP11_SURFACE_CATALOG_SHA256,
     validate_step11_surface_catalog,
 )
+from emlis_ai_step11_grounded_lexicalization_v3 import (
+    Step11GroundedLexicalizationError,
+    Step11GroundedPhraseSpec,
+    Step11VisibleSourceAnchorUse,
+    build_step11_grounded_phrase_specs,
+    render_step11_grounded_phrase,
+    select_step11_visible_source_anchor_use,
+    step11_grounded_phrase_spec_material,
+    step11_visible_source_anchor_use_material,
+)
 from emlis_ai_step11_semantic_overlay_v3 import (
     Step11SemanticOverlay,
     build_step11_semantic_overlay,
@@ -36,14 +46,14 @@ from emlis_ai_step11_semantic_overlay_v3 import (
 )
 
 
-STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0025"
-STEP11_SURFACE_AST_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_surface_ast.v6"
+STEP11_CANDIDATE_VERSION_ID = "nls_v3_rc_0027"
+STEP11_SURFACE_AST_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_surface_ast.v10"
 STEP11_RENDERED_SURFACE_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_canonical_rendered_surface.v6"
+    "cocolon.emlis.nls_v3.step11_canonical_rendered_surface.v10"
 )
-STEP11_CANDIDATE_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_candidate.v6"
+STEP11_CANDIDATE_SCHEMA = "cocolon.emlis.nls_v3.step11_natural_candidate.v10"
 STEP11_SURFACE_REALIZATION_PLAN_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_surface_realization_plan.rc0025.v1"
+    "cocolon.emlis.nls_v3.step11_surface_realization_plan.rc0027.v1"
 )
 
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -245,6 +255,8 @@ class Step11NaturalSurfaceAst:
     current_input_projection_sha256: str
     surface_catalog_sha256: str
     surface_realization_plan: Step11SurfaceRealizationPlan | None
+    grounded_phrase_specs: tuple[Step11GroundedPhraseSpec, ...]
+    visible_source_anchor_use: Step11VisibleSourceAnchorUse | None
     source_fragments: tuple[Step11SourceFragment, ...]
     nucleus_surface_references: tuple[
         Step11NucleusSurfaceReference, ...
@@ -268,6 +280,8 @@ class Step11CanonicalRenderedSurface:
     schema_version: str
     source_surface_ast_sha256: str
     surface_catalog_sha256: str
+    visible_source_anchor_count: int
+    source_anchor_reason_codes: tuple[str, ...]
     utf8_bytes: bytes
     sha256: str
 
@@ -310,6 +324,10 @@ class _Step11OwnedReceptionLine:
     visible_reference_ordinals: tuple[int, ...]
     antecedent_observation_line_indices: tuple[int, ...]
     literal_anchor_ids: tuple[str, ...] = ()
+    reception_act: str = ""
+    reception_scope: str = ""
+    realization_status: str = ""
+    typed_placeholders: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1421,6 +1439,18 @@ def step11_surface_ast_material(
             is Step11SurfaceRealizationPlan
             else None
         ),
+        "grounded_phrase_specs": [
+            step11_grounded_phrase_spec_material(row)
+            for row in value.grounded_phrase_specs
+        ],
+        "visible_source_anchor_use": (
+            step11_visible_source_anchor_use_material(
+                value.visible_source_anchor_use
+            )
+            if type(value.visible_source_anchor_use)
+            is Step11VisibleSourceAnchorUse
+            else None
+        ),
         "source_fragments": [
             _fragment_material(row) for row in value.source_fragments
         ],
@@ -2062,6 +2092,263 @@ def _build_ast(
         clauses=all_clauses,
         nucleus_surface_references=nucleus_surface_references,
     )
+    clause_nucleus_ids = {
+        nucleus_id
+        for clause in all_clauses
+        for nucleus_id in clause.source_nucleus_ids
+    }
+    render_reachable_nucleus_ids = {
+        nucleus_id
+        for reference in nucleus_surface_references
+        for nucleus_id in reference.nucleus_ids
+    }
+    additional_owner_obligation_ids = {
+        nucleus_id: tuple(
+            obligation_id
+            for obligation_id, obligation in by_id.items()
+            if nucleus_id in obligation.get("nucleus_ids", [])
+        )
+        for nucleus_id in sorted(
+            render_reachable_nucleus_ids - clause_nucleus_ids
+        )
+    }
+    if any(not values for values in additional_owner_obligation_ids.values()):
+        raise Step11NaturalSurfaceError(
+            "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+        )
+    label_strength_by_nucleus: dict[str, str] = {}
+    action_lifecycle_by_nucleus: dict[str, str] = {}
+    allowed_action_lifecycles = frozenset(
+        STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+        ["lifecycle_authority_policy"]["action_projection"]
+    )
+    for fragment in source_fragments:
+        if fragment.label_strength is not None:
+            for nucleus_id in fragment.source_nucleus_ids:
+                previous = label_strength_by_nucleus.setdefault(
+                    nucleus_id, fragment.label_strength
+                )
+                if previous != fragment.label_strength:
+                    raise Step11NaturalSurfaceError(
+                        "STEP11_GROUNDED_LABEL_STRENGTH_AMBIGUOUS"
+                    )
+        if (
+            fragment.source_slot == "action"
+            and fragment.fragment_role == "nucleus"
+            and fragment.realization_status in allowed_action_lifecycles
+        ):
+            for nucleus_id in fragment.source_nucleus_ids:
+                previous = action_lifecycle_by_nucleus.setdefault(
+                    nucleus_id, fragment.realization_status
+                )
+                if previous != fragment.realization_status:
+                    raise Step11NaturalSurfaceError(
+                        "STEP11_GROUNDED_ACTION_LIFECYCLE_AMBIGUOUS"
+                    )
+    source_by_nucleus_id = {
+        str(source.source_id): source
+        for source in inventory_result.source_snapshot.nuclei
+    }
+    if any(
+        str(source_by_nucleus_id[nucleus_id].kind) != "action"
+        for nucleus_id in action_lifecycle_by_nucleus
+        if nucleus_id in source_by_nucleus_id
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_GROUNDED_ACTION_LIFECYCLE_OWNER_INVALID"
+        )
+    additional_visible_features: dict[str, dict[str, str]] = {}
+    for nucleus_id, label_strength in label_strength_by_nucleus.items():
+        additional_visible_features.setdefault(nucleus_id, {})[
+            "label_strength"
+        ] = label_strength
+    for nucleus_id, lifecycle in action_lifecycle_by_nucleus.items():
+        additional_visible_features.setdefault(nucleus_id, {})[
+            "realization_lifecycle"
+        ] = lifecycle
+    try:
+        grounded_phrase_specs = build_step11_grounded_phrase_specs(
+            inventory_result.source_snapshot,
+            all_clauses,
+            additional_owner_obligation_ids=(
+                additional_owner_obligation_ids
+            ),
+            additional_visible_feature_values=additional_visible_features,
+        )
+        phrase_owner_nucleus_ids = {
+            nucleus_id
+            for spec in grounded_phrase_specs
+            for nucleus_id in spec.owner_nucleus_ids
+        }
+        spec_by_nucleus_id = {
+            spec.owner_nucleus_ids[0]: spec
+            for spec in grounded_phrase_specs
+        }
+        source_order = {
+            str(source.source_id): ordinal
+            for ordinal, source in enumerate(
+                inventory_result.source_snapshot.nuclei
+            )
+        }
+        required_relation_nucleus_ids = tuple(
+            dict.fromkeys(
+                nucleus_id
+                for relation in integrated_relations
+                if relation.required
+                for nucleus_id in (
+                    relation.from_nucleus_id,
+                    relation.to_nucleus_id,
+                )
+            )
+        )
+        required_unknown_nucleus_ids = tuple(
+            dict.fromkeys(
+                nucleus_id
+                for unknown in integrated_unknowns
+                for nucleus_id in (
+                    *unknown.target_nucleus_ids,
+                    *unknown.context_nucleus_ids,
+                )
+            )
+        )
+        all_render_ids = tuple(
+            nucleus_id
+            for source in inventory_result.source_snapshot.nuclei
+            for nucleus_id in (str(source.source_id),)
+            if nucleus_id in phrase_owner_nucleus_ids
+        )
+        lexical_catalog = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+        registry = lexical_catalog["phrase_profile_registry"]
+        profile_by_id = {
+            str(row["profile_id"]): row for row in registry["profiles"]
+        }
+        generic_profile_ids = frozenset(
+            str(value)
+            for value in registry["specificity_policy"][
+                "kind_only_generic_profile_ids"
+            ]
+        )
+        residual_policy = lexical_catalog[
+            "residual_information_loss_policy"
+        ]
+        semantic_prefixes = tuple(
+            str(value)
+            for value in residual_policy["semantic_attribute_prefixes"]
+        )
+        high_signal_codes = frozenset(
+            str(value)
+            for value in residual_policy["high_signal_attribute_codes"]
+        )
+        concrete_action_code = str(
+            residual_policy["concrete_action_attribute_code"]
+        )
+        kind_implied_codes = {
+            str(kind): frozenset(str(code) for code in codes)
+            for kind, codes in residual_policy[
+                "kind_implied_attribute_codes"
+            ].items()
+        }
+        required_relation_or_unknown_ids = frozenset(
+            (*required_relation_nucleus_ids, *required_unknown_nucleus_ids)
+        )
+        action_input_core = projection.action_text.strip().rstrip(
+            "。！？!?"
+        )
+        trusted_complete_action_input = bool(
+            2 <= len(action_input_core) <= 16
+            and not any(
+                character.isspace()
+                or unicodedata.category(character).startswith("C")
+                or character
+                in "。、，．！？!?;；:：,.\"'`()[]{}（）［］｛｝〈〉《》【】〔〕「」『』"
+                for character in action_input_core
+            )
+        )
+
+        def residual_priority_key(nucleus_id: str) -> tuple[Any, ...]:
+            source = source_by_nucleus_id[nucleus_id]
+            spec = spec_by_nucleus_id[nucleus_id]
+            profile = profile_by_id[spec.phrase_profile_id]
+            match = profile["match"]
+            source_codes = frozenset(
+                str(value) for value in source.source_attribute_codes
+            )
+            captured_codes = frozenset(
+                str(value)
+                for value in match.get("all_attribute_codes", [])
+            ) | frozenset(
+                str(value)
+                for value in match.get("any_attribute_codes", [])
+                if str(value) in source_codes
+            )
+            semantic_codes = frozenset(
+                code
+                for code in source_codes
+                if code.startswith(semantic_prefixes)
+            )
+            uncaptured_codes = (
+                semantic_codes
+                - captured_codes
+                - kind_implied_codes.get(str(source.kind), frozenset())
+            )
+            uncaptured_high_signal_codes = (
+                uncaptured_codes & high_signal_codes
+            )
+            required = bool(source.required)
+            kind_only_generic = (
+                spec.phrase_profile_id in generic_profile_ids
+            )
+            qualified_concrete_action = bool(
+                concrete_action_code in source_codes
+                and (
+                    uncaptured_high_signal_codes
+                    or trusted_complete_action_input
+                )
+            )
+            return (
+                -int(required and kind_only_generic),
+                -int(nucleus_id in required_relation_or_unknown_ids),
+                -int(required),
+                -len(uncaptured_high_signal_codes),
+                -int(qualified_concrete_action),
+                -len(uncaptured_codes),
+                -int(kind_only_generic),
+                -spec.anchor_risk_rank,
+                source_order[nucleus_id],
+                nucleus_id,
+            )
+
+        preferred_anchor_owner_ids = tuple(
+            sorted(all_render_ids, key=residual_priority_key)
+        )
+        visible_source_anchor_use = (
+            select_step11_visible_source_anchor_use(
+                grounded_phrase_specs,
+                source_fragments,
+                preferred_owner_nucleus_ids=preferred_anchor_owner_ids,
+                require_input_specific_binding=True,
+            )
+        )
+        if (
+            registry["specificity_policy"][
+                "unanchored_required_kind_only_generic"
+            ]
+            == "fail_closed"
+        ):
+            unanchored_required_generic_ids = tuple(
+                nucleus_id
+                for nucleus_id in all_render_ids
+                if nucleus_id != visible_source_anchor_use.owner_nucleus_id
+                and bool(source_by_nucleus_id[nucleus_id].required)
+                and spec_by_nucleus_id[nucleus_id].phrase_profile_id
+                in generic_profile_ids
+            )
+            if unanchored_required_generic_ids:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_REQUIRED_OWNER_INPUT_SPECIFICITY_UNRESOLVED"
+                )
+    except Step11GroundedLexicalizationError as exc:
+        raise Step11NaturalSurfaceError(exc.code) from None
     ast = Step11NaturalSurfaceAst(
         schema_version=STEP11_SURFACE_AST_SCHEMA,
         candidate_version_id=STEP11_CANDIDATE_VERSION_ID,
@@ -2077,6 +2364,8 @@ def _build_ast(
         ),
         surface_catalog_sha256=STEP11_SURFACE_CATALOG_SHA256,
         surface_realization_plan=None,
+        grounded_phrase_specs=grounded_phrase_specs,
+        visible_source_anchor_use=visible_source_anchor_use,
         source_fragments=source_fragments,
         nucleus_surface_references=nucleus_surface_references,
         sentences=tuple(sentences),
@@ -2112,6 +2401,8 @@ def _build_ast(
         current_input_projection_sha256=ast.current_input_projection_sha256,
         surface_catalog_sha256=ast.surface_catalog_sha256,
         surface_realization_plan=realization_plan,
+        grounded_phrase_specs=ast.grounded_phrase_specs,
+        visible_source_anchor_use=ast.visible_source_anchor_use,
         source_fragments=ast.source_fragments,
         nucleus_surface_references=ast.nucleus_surface_references,
         sentences=ast.sentences,
@@ -2141,6 +2432,8 @@ def _build_ast(
         current_input_projection_sha256=ast.current_input_projection_sha256,
         surface_catalog_sha256=ast.surface_catalog_sha256,
         surface_realization_plan=ast.surface_realization_plan,
+        grounded_phrase_specs=ast.grounded_phrase_specs,
+        visible_source_anchor_use=ast.visible_source_anchor_use,
         source_fragments=ast.source_fragments,
         nucleus_surface_references=ast.nucleus_surface_references,
         sentences=ast.sentences,
@@ -2209,42 +2502,90 @@ def _fragment_by_anchor_id(
     return result
 
 
+def _grounded_phrase_spec_for_nucleus(
+    ast: Step11NaturalSurfaceAst,
+    nucleus_id: str,
+) -> Step11GroundedPhraseSpec:
+    matches = tuple(
+        spec
+        for spec in ast.grounded_phrase_specs
+        if nucleus_id in spec.owner_nucleus_ids
+    )
+    if len(matches) != 1:
+        raise Step11NaturalSurfaceError(
+            "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+        )
+    return matches[0]
+
+
+def _grounded_phrase_text(
+    ast: Step11NaturalSurfaceAst,
+    nucleus_id: str,
+    *,
+    include_visible_anchor: bool = False,
+) -> str:
+    spec = _grounded_phrase_spec_for_nucleus(ast, nucleus_id)
+    anchor = (
+        ast.visible_source_anchor_use
+        if include_visible_anchor
+        and ast.visible_source_anchor_use is not None
+        and ast.visible_source_anchor_use.owner_nucleus_id == nucleus_id
+        else None
+    )
+    try:
+        return render_step11_grounded_phrase(spec, anchor)
+    except Step11GroundedLexicalizationError as exc:
+        raise Step11NaturalSurfaceError(exc.code) from None
+
+
 def _relation_line(
     relation: Step11IntegratedRelation,
     *,
     ast: Step11NaturalSurfaceAst,
+    from_is_anaphoric: bool = False,
+    to_is_anaphoric: bool = False,
+    visible_anchor_nucleus_id: str | None = None,
 ) -> str:
-    variants = STEP11_SURFACE_CATALOG["relation_forms"][
-        relation.relation_type
-    ][relation.relation_direction][relation.from_endpoint_role][
-        relation.to_endpoint_role
+    grammar = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+    rule = grammar["relation_atoms"][relation.relation_type][
+        relation.relation_direction
     ]
-    rule = _pick_variant(
-        variants,
-        fingerprint=ast.current_input_projection_sha256,
-        form_id=(
-            f"relation:{relation.source_relation_id}:"
-            f"{relation.relation_type}:{relation.relation_direction}:"
-            f"{relation.from_endpoint_role}:{relation.to_endpoint_role}"
-        ),
-    )
     if (
-        rule.get("endpoint_realization") != "typed_reference_only"
-        or type(rule.get("stem")) is not str
+        type(rule) is not dict
+        or set(rule) != {"endpoint_order", "left", "right"}
+        or rule["endpoint_order"] not in (["from", "to"], ["to", "from"])
+        or type(rule["left"]) is not str
+        or type(rule["right"]) is not str
     ):
-        raise Step11NaturalSurfaceError(
-            "STEP11_RELATION_REFERENCE_FORM_INVALID"
-        )
-    return rule["stem"].format(
-        from_ref=_endpoint_reference_token(
-            relation.from_reference_ordinal,
-            relation.from_endpoint_role,
-        ),
-        to_ref=_endpoint_reference_token(
-            relation.to_reference_ordinal,
-            relation.to_endpoint_role,
+        raise Step11NaturalSurfaceError("STEP11_RELATION_ATOMS_INVALID")
+    from_text = _grounded_phrase_text(
+        ast,
+        relation.from_nucleus_id,
+        include_visible_anchor=(
+            visible_anchor_nucleus_id == relation.from_nucleus_id
         ),
     )
+    to_text = _grounded_phrase_text(
+        ast,
+        relation.to_nucleus_id,
+        include_visible_anchor=(
+            visible_anchor_nucleus_id == relation.to_nucleus_id
+        ),
+    )
+    anaphors = grammar["local_anaphors"]
+    from_endpoint = (
+        anaphors[relation.from_endpoint_role]
+        if from_is_anaphoric
+        else from_text
+    )
+    to_endpoint = (
+        anaphors[relation.to_endpoint_role]
+        if to_is_anaphoric
+        else to_text
+    )
+    endpoints = {"from": from_endpoint, "to": to_endpoint}
+    first, second = rule["endpoint_order"]
+    return endpoints[first] + rule["left"] + endpoints[second] + rule["right"]
 
 
 def _endpoint_reference_token(ordinal: int, endpoint_role: str) -> str:
@@ -2316,29 +2657,26 @@ def _references_for_unknown_targets(
     return references
 
 
-def _direct_introduction_line(
+def _natural_introduction_line(
     fragment: Step11SourceFragment,
     *,
     ast: Step11NaturalSurfaceAst,
+    include_visible_anchor: bool = False,
 ) -> str:
     reference = _reference_for_anchor(ast, fragment.source_anchor_id)
-    direct = STEP11_SURFACE_CATALOG[
-        "endpoint_reference_grammar"
-    ]["direct_introduction"]
-    stem = _pick_variant(
-        direct["stems"],
-        fingerprint=ast.current_input_projection_sha256,
-        form_id=(
-            f"endpoint_introduction:{reference.reference_ordinal}:"
-            f"{reference.endpoint_role}:{reference.source_identity_key}"
-        ),
-    )
-    return direct["wrapper"].format(
-        reference=_endpoint_reference_token(
-            reference.reference_ordinal,
-            reference.endpoint_role,
-        ),
-        stem=stem.format(quoted_literal=_quoted(fragment.text)),
+    if len(reference.nucleus_ids) != 1:
+        raise Step11NaturalSurfaceError(
+            "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+        )
+    return (
+        _grounded_phrase_text(
+            ast,
+            reference.nucleus_ids[0],
+            include_visible_anchor=include_visible_anchor,
+        )
+        + STEP11_SURFACE_CATALOG["grounded_lexicalization"][
+            "observation_predicate"
+        ]
     )
 
 
@@ -2439,11 +2777,26 @@ def _additional_observation_lines(
         for clause in sentence.clauses
     )
     claimed_basic_obligations: set[str] = set()
+    visible_anchor_emitted = False
     realised_unknown_obligation_ids = {
         obligation_id
         for unknown in ast.integrated_unknowns
         for obligation_id in unknown.owner_obligation_ids
     }
+
+    def take_visible_anchor(
+        nucleus_ids: Sequence[str],
+    ) -> str | None:
+        nonlocal visible_anchor_emitted
+        anchor = ast.visible_source_anchor_use
+        if (
+            anchor is None
+            or visible_anchor_emitted
+            or anchor.owner_nucleus_id not in nucleus_ids
+        ):
+            return None
+        visible_anchor_emitted = True
+        return anchor.owner_nucleus_id
     def equivalent_anchor_ids(anchor_id: str) -> tuple[str, ...]:
         fragment = _fragment_by_anchor_id(ast, anchor_id)
         if fragment.fragment_role == "label":
@@ -2555,24 +2908,58 @@ def _additional_observation_lines(
             relation.from_source_anchor_ids[0],
             relation.to_source_anchor_ids[0],
         )
+        from_anchor_ids = equivalent_anchor_ids(endpoint_anchor_ids[0])
+        to_anchor_ids = equivalent_anchor_ids(endpoint_anchor_ids[1])
         owned_anchor_ids = tuple(
+            dict.fromkeys((*from_anchor_ids, *to_anchor_ids))
+        )
+        from_is_anaphoric = bool(
+            set(from_anchor_ids) & covered_anchor_ids
+        )
+        to_is_anaphoric = bool(set(to_anchor_ids) & covered_anchor_ids)
+        visible_anchor_nucleus_id = take_visible_anchor(
+            (relation.from_nucleus_id, relation.to_nucleus_id)
+        )
+        if visible_anchor_nucleus_id == relation.from_nucleus_id:
+            from_is_anaphoric = False
+        if visible_anchor_nucleus_id == relation.to_nucleus_id:
+            to_is_anaphoric = False
+        if from_is_anaphoric and to_is_anaphoric:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RELATION_MULTI_EDGE_LOCAL_ANAPHORA_AMBIGUOUS"
+            )
+        literal_anchor_ids = tuple(
             dict.fromkeys(
-                anchor_id
-                for endpoint_id in endpoint_anchor_ids
-                for anchor_id in equivalent_anchor_ids(endpoint_id)
+                (
+                    *(() if from_is_anaphoric else from_anchor_ids),
+                    *(() if to_is_anaphoric else to_anchor_ids),
+                )
             )
         )
         nucleus_ids = (relation.from_nucleus_id, relation.to_nucleus_id)
-        owner_ids = relation.owner_obligation_ids
+        owner_ids = tuple(
+            dict.fromkeys(
+                (
+                    *relation.owner_obligation_ids,
+                    *claim_basic_obligations(nucleus_ids),
+                )
+            )
+        )
         lines.append(
             _Step11OwnedObservationLine(
-                text=_relation_line(relation, ast=ast),
+                    text=_relation_line(
+                        relation,
+                        ast=ast,
+                        from_is_anaphoric=from_is_anaphoric,
+                        to_is_anaphoric=to_is_anaphoric,
+                        visible_anchor_nucleus_id=visible_anchor_nucleus_id,
+                    ),
                 owned_anchor_ids=owned_anchor_ids,
                 owned_nucleus_ids=nucleus_ids,
                 owned_relation_ids=relation.source_relation_ids,
                 owned_obligation_ids=owner_ids,
                 owned_mixed_emotion_requirement_ids=(),
-                literal_anchor_ids=(),
+                    literal_anchor_ids=literal_anchor_ids,
                 required_relation_ids=(
                     (relation.source_relation_id,)
                     if relation.required
@@ -2588,6 +2975,7 @@ def _additional_observation_lines(
                 ),
             )
         )
+        covered_anchor_ids.update(owned_anchor_ids)
 
     for requirement in ast.mixed_emotion_requirements:
         if (
@@ -2622,52 +3010,70 @@ def _additional_observation_lines(
             raise Step11NaturalSurfaceError(
                 "STEP11_MIXED_EMOTION_REFERENCE_INVALID"
             )
-        compound = STEP11_SURFACE_CATALOG[
-            "mixed_emotion_compound_grammar"
-        ]
-        rule = _pick_variant(
-            compound["forms"],
-            fingerprint=ast.current_input_projection_sha256,
-            form_id=(
-                "mixed_emotion_compound:"
-                f"{requirement.requirement_id}"
-            ),
+        ordered_endpoints = tuple(
+            sorted(
+                (
+                    (positive_reference, positive),
+                    (negative_reference, negative),
+                ),
+                key=lambda row: row[0].reference_ordinal,
+            )
         )
-        anchor_ids = (positive_id, negative_id)
+        anchor_ids = tuple(
+            row.source_anchor_id for _reference, row in ordered_endpoints
+        )
+        reference_ordinals = tuple(
+            row.reference_ordinal for row, _fragment in ordered_endpoints
+        )
         nucleus_ids = tuple(
             dict.fromkeys(
                 (*positive.source_nucleus_ids, *negative.source_nucleus_ids)
             )
         )
+        if any(
+            len(reference.nucleus_ids) != 1
+            for reference, _fragment in ordered_endpoints
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+            )
+        visible_anchor_nucleus_id = take_visible_anchor(nucleus_ids)
+        lexical = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+        text = (
+            _grounded_phrase_text(
+                ast,
+                ordered_endpoints[0][0].nucleus_ids[0],
+                include_visible_anchor=(
+                    visible_anchor_nucleus_id
+                    == ordered_endpoints[0][0].nucleus_ids[0]
+                ),
+            )
+            + lexical["coexisting_joiner"]
+            + _grounded_phrase_text(
+                ast,
+                ordered_endpoints[1][0].nucleus_ids[0],
+                include_visible_anchor=(
+                    visible_anchor_nucleus_id
+                    == ordered_endpoints[1][0].nucleus_ids[0]
+                ),
+            )
+            + lexical["coexisting_predicate"]
+        )
+        owned_obligation_ids = claim_basic_obligations(nucleus_ids)
+        literal_anchor_ids = anchor_ids
         lines.append(
             _Step11OwnedObservationLine(
-                text=rule.format(
-                        positive_ref=_endpoint_reference_token(
-                            positive_reference.reference_ordinal,
-                            "affect",
-                        ),
-                        positive_literal=_quoted(positive.text),
-                        negative_ref=_endpoint_reference_token(
-                            negative_reference.reference_ordinal,
-                            "affect",
-                        ),
-                        negative_literal=_quoted(negative.text),
-                ),
+                text=text,
                 owned_anchor_ids=anchor_ids,
                 owned_nucleus_ids=nucleus_ids,
                 owned_relation_ids=(),
-                owned_obligation_ids=claim_basic_obligations(
-                    nucleus_ids
-                ),
+                owned_obligation_ids=owned_obligation_ids,
                 owned_mixed_emotion_requirement_ids=(
                     requirement.requirement_id,
                 ),
-                literal_anchor_ids=anchor_ids,
+                literal_anchor_ids=literal_anchor_ids,
                 required_relation_ids=(requirement.requirement_id,),
-                used_reference_ordinals=(
-                    positive_reference.reference_ordinal,
-                    negative_reference.reference_ordinal,
-                ),
+                used_reference_ordinals=reference_ordinals,
             )
         )
         covered_anchor_ids.update(anchor_ids)
@@ -2740,15 +3146,6 @@ def _additional_observation_lines(
             raise Step11NaturalSurfaceError(
                 "STEP11_UNKNOWN_ANTECEDENT_OWNER_AMBIGUOUS"
             )
-        anaphora_key = (
-            "referent_other"
-            if dimension == "other_person_awareness"
-            or (
-                dimension == "referent"
-                and "other_person" in unknown.dimension_code.casefold()
-            )
-            else dimension
-        )
         target_references = _references_for_unknown_targets(
             ast,
             unknown.target_nucleus_ids,
@@ -2802,72 +3199,79 @@ def _additional_observation_lines(
             raise Step11NaturalSurfaceError(
                 "STEP11_UNKNOWN_TARGET_REFERENCE_UNRESOLVED"
             )
-        unknown_rules = forms["unknown_anaphora"][anaphora_key]
-        preferred = _pick_variant(
-            unknown_rules,
-            fingerprint=ast.current_input_projection_sha256,
-            form_id=(
-                f"unknown_anaphora:{anaphora_key}:"
-                f"{unknown.source_unknown_id}:{anchor_id}"
-            ),
-        )
-        preferred_index = unknown_rules.index(preferred)
-        used_indices = used_unknown_rule_indices.setdefault(
-            anaphora_key, set()
-        )
-        available_indices = tuple(
-            index
-            for offset in range(len(unknown_rules))
-            for index in ((preferred_index + offset) % len(unknown_rules),)
-            if index not in used_indices
-        )
-        selected_index = (
-            available_indices[0]
-            if available_indices
-            else preferred_index
-        )
-        used_indices.add(selected_index)
-        rule = unknown_rules[selected_index]
-        if type(rule) is not dict or set(rule) != {"stem"}:
-            raise Step11NaturalSurfaceError(
-                "STEP11_UNKNOWN_TARGET_REFERENCE_FORM_INVALID"
+        tail_key = (
+            "other_person_awareness"
+            if dimension == "other_person_awareness"
+            or (
+                dimension == "referent"
+                and "other_person" in unknown.dimension_code.casefold()
             )
-        if dimension == "relation":
-            unknown_text = str(rule["stem"]).format(
-                from_ref=_endpoint_reference_token(
-                    target_references[0].reference_ordinal,
-                    target_references[0].endpoint_role,
-                ),
-                to_ref=_endpoint_reference_token(
-                    target_references[1].reference_ordinal,
-                    target_references[1].endpoint_role,
-                ),
+            else dimension
+        )
+        lexical = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+        dimension_atom = lexical["unknown_dimension_atoms"].get(
+            tail_key,
+            lexical["unknown_dimension_atoms"]["generic"],
+        )
+        unknown_text = dimension_atom + lexical["unknown_predicate"]
+        if type(unknown_text) is not str or not unknown_text:
+            raise Step11NaturalSurfaceError(
+                "STEP11_UNKNOWN_FUSED_TAIL_INVALID"
+            )
+        if relation_owners:
+            owner_indices = tuple(
+                index
+                for index, line in enumerate(lines)
+                if any(line is owner for owner in relation_owners)
             )
         else:
-            target_reference_text = "と".join(
-                _endpoint_reference_token(
-                    reference.reference_ordinal,
-                    reference.endpoint_role,
+            owner_indices = tuple(
+                index
+                for index, line in enumerate(lines)
+                if line_owns_anchor(
+                    line,
+                    anchor_id,
+                    target_nucleus_ids=unknown.target_nucleus_ids,
                 )
-                for reference in target_references
             )
-            unknown_text = str(rule["stem"]).format(
-                target_ref=target_reference_text
+        if len(owner_indices) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_UNKNOWN_FUSED_OWNER_INVALID"
             )
-        lines.append(
-            _Step11OwnedObservationLine(
-                text=unknown_text,
-                owned_anchor_ids=anchor_owner_ids,
-                owned_nucleus_ids=owned_nucleus_ids,
-                owned_relation_ids=(),
-                owned_obligation_ids=owner_obligation_ids,
-                owned_mixed_emotion_requirement_ids=(),
-                literal_anchor_ids=(),
-                required_relation_ids=(),
-                used_reference_ordinals=tuple(
+        owner_index = owner_indices[0]
+        owner = lines[owner_index]
+        lines[owner_index] = _Step11OwnedObservationLine(
+            text=(
+                f"{owner.text}が、"
+                f"{unknown_text.removeprefix('ただ、')}"
+            ),
+            owned_anchor_ids=tuple(
+                dict.fromkeys((*owner.owned_anchor_ids, *anchor_owner_ids))
+            ),
+            owned_nucleus_ids=tuple(
+                dict.fromkeys((*owner.owned_nucleus_ids, *owned_nucleus_ids))
+            ),
+            owned_relation_ids=owner.owned_relation_ids,
+            owned_obligation_ids=tuple(
+                dict.fromkeys(
+                    (*owner.owned_obligation_ids, *owner_obligation_ids)
+                )
+            ),
+            owned_mixed_emotion_requirement_ids=(
+                owner.owned_mixed_emotion_requirement_ids
+            ),
+            literal_anchor_ids=owner.literal_anchor_ids,
+            required_relation_ids=owner.required_relation_ids,
+            used_reference_ordinals=tuple(
+                dict.fromkeys(
+                    (
+                        *owner.used_reference_ordinals,
+                        *(
                     reference.reference_ordinal
                     for reference in target_references
-                ),
+                        ),
+                    )
+                )
             ),
         )
 
@@ -2971,6 +3375,96 @@ def _additional_observation_lines(
             for unknown in unknowns
         )
 
+    # A thought and an action with no typed relation are one neutral
+    # co-presence unit.  This preserves both exact literals without inventing
+    # a causal or temporal edge between them.
+    if not ast.integrated_relations:
+        thought_references = tuple(
+            row
+            for row in ast.nucleus_surface_references
+            if row.source_slot == "thought"
+            and not set(row.source_anchor_ids) & covered_anchor_ids
+        )
+        action_references = tuple(
+            row
+            for row in ast.nucleus_surface_references
+            if row.source_slot == "action"
+            and not set(row.source_anchor_ids) & covered_anchor_ids
+        )
+        if len(thought_references) == len(action_references) == 1:
+            thought_reference = thought_references[0]
+            action_reference = action_references[0]
+            thought_fragment = _fragment_by_anchor_id(
+                ast, thought_reference.source_anchor_ids[0]
+            )
+            action_fragment = _fragment_by_anchor_id(
+                ast, action_reference.source_anchor_ids[0]
+            )
+            pair_nucleus_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *thought_reference.nucleus_ids,
+                        *action_reference.nucleus_ids,
+                    )
+                )
+            )
+            pair_anchor_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *thought_reference.source_anchor_ids,
+                        *action_reference.source_anchor_ids,
+                    )
+                )
+            )
+            if (
+                len(thought_reference.nucleus_ids) != 1
+                or len(action_reference.nucleus_ids) != 1
+            ):
+                raise Step11NaturalSurfaceError(
+                    "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+                )
+            visible_anchor_nucleus_id = take_visible_anchor(pair_nucleus_ids)
+            lexical = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+            text = (
+                _grounded_phrase_text(
+                    ast,
+                    thought_reference.nucleus_ids[0],
+                    include_visible_anchor=(
+                        visible_anchor_nucleus_id
+                        == thought_reference.nucleus_ids[0]
+                    ),
+                )
+                + lexical["coexisting_joiner"]
+                + _grounded_phrase_text(
+                    ast,
+                    action_reference.nucleus_ids[0],
+                    include_visible_anchor=(
+                        visible_anchor_nucleus_id
+                        == action_reference.nucleus_ids[0]
+                    ),
+                )
+                + lexical["coexisting_predicate"]
+            )
+            lines.append(
+                _Step11OwnedObservationLine(
+                    text=text,
+                    owned_anchor_ids=pair_anchor_ids,
+                    owned_nucleus_ids=pair_nucleus_ids,
+                    owned_relation_ids=(),
+                    owned_obligation_ids=claim_basic_obligations(
+                        pair_nucleus_ids
+                    ),
+                    owned_mixed_emotion_requirement_ids=(),
+                    literal_anchor_ids=pair_anchor_ids,
+                    required_relation_ids=(),
+                    used_reference_ordinals=(
+                        thought_reference.reference_ordinal,
+                        action_reference.reference_ordinal,
+                    ),
+                )
+            )
+            covered_anchor_ids.update(pair_anchor_ids)
+
     # Preserve every active exact nucleus or label through an internally
     # owned line.  A standalone unknown or self-evaluation span also needs
     # one literal source owner before its boundary is stated anaphorically.
@@ -3006,13 +3500,35 @@ def _additional_observation_lines(
             if is_reference_owner
             else None
         )
+        visible_anchor_nucleus_id = take_visible_anchor(
+            fragment.source_nucleus_ids
+        )
         if reference is not None:
-            text = _direct_introduction_line(fragment, ast=ast)
+            text = _natural_introduction_line(
+                fragment,
+                ast=ast,
+                include_visible_anchor=(
+                    visible_anchor_nucleus_id in reference.nucleus_ids
+                ),
+            )
         else:
-            rule = _observation_rule(fragment, ast=ast)
+            if not fragment.source_nucleus_ids:
+                raise Step11NaturalSurfaceError(
+                    "STEP11_GROUNDED_PHRASE_OWNER_UNRESOLVED"
+                )
+            lexical = STEP11_SURFACE_CATALOG["grounded_lexicalization"]
             text = (
-                f"{rule['prefix']}{_quoted(fragment.text)}"
-                f"{rule['suffix']}"
+                lexical["coexisting_joiner"].join(
+                    _grounded_phrase_text(
+                        ast,
+                        nucleus_id,
+                        include_visible_anchor=(
+                            visible_anchor_nucleus_id == nucleus_id
+                        ),
+                    )
+                    for nucleus_id in fragment.source_nucleus_ids
+                )
+                + lexical["observation_predicate"]
             )
         lines.append(
             _Step11OwnedObservationLine(
@@ -3035,13 +3551,106 @@ def _additional_observation_lines(
         )
         covered_anchor_ids.update(equivalent_ids)
 
-    # Each typed unknown is realised exactly once by its overlay-owned anchor.
-    for _anchor_id, unknowns in unknown_by_anchor.items():
-        for unknown in unknowns:
-            append_unknown(unknown)
+    # Unknowns sharing one visible owner and one semantic boundary are one
+    # compositional tail.  Their source identities and obligation ownership
+    # remain a union in metadata; emitting one dependent ``...が`` chain per
+    # source would make a single relation unreadable without adding meaning.
+    unknown_groups: dict[
+        tuple[int, str, str, str], list[Step11IntegratedUnknown]
+    ] = {}
+    for unknown in ast.integrated_unknowns:
+        relation_owners = relation_antecedent_owners(unknown)
+        if len(relation_owners) > 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_UNKNOWN_ANTECEDENT_OWNER_AMBIGUOUS"
+            )
+        if relation_owners:
+            owner_indices = tuple(
+                index
+                for index, line in enumerate(lines)
+                if line is relation_owners[0]
+            )
+        else:
+            owner_indices = tuple(
+                index
+                for index, line in enumerate(lines)
+                if line_owns_anchor(
+                    line,
+                    unknown.source_anchor_ids[0],
+                    target_nucleus_ids=unknown.target_nucleus_ids,
+                )
+            )
+        if len(owner_indices) != 1:
+            raise Step11NaturalSurfaceError(
+                "STEP11_UNKNOWN_FUSED_OWNER_INVALID"
+            )
+        key = (
+            owner_indices[0],
+            _unknown_dimension_class(unknown.dimension_code),
+            unknown.surface_policy,
+            unknown.decision_state,
+        )
+        unknown_groups.setdefault(key, []).append(unknown)
+
+    for rows in unknown_groups.values():
+        first = rows[0]
+        merged = replace(
+            first,
+            source_slots=tuple(
+                dict.fromkeys(
+                    slot for row in rows for slot in row.source_slots
+                )
+            ),
+            target_nucleus_ids=tuple(
+                dict.fromkeys(
+                    nucleus_id
+                    for row in rows
+                    for nucleus_id in row.target_nucleus_ids
+                )
+            ),
+            source_unknown_ids=tuple(
+                dict.fromkeys(
+                    unknown_id
+                    for row in rows
+                    for unknown_id in row.source_unknown_ids
+                )
+            ),
+            owner_obligation_ids=tuple(
+                dict.fromkeys(
+                    obligation_id
+                    for row in rows
+                    for obligation_id in row.owner_obligation_ids
+                )
+            ),
+            source_rules=tuple(
+                dict.fromkeys(
+                    rule for row in rows for rule in row.source_rules
+                )
+            ),
+            context_nucleus_ids=tuple(
+                dict.fromkeys(
+                    nucleus_id
+                    for row in rows
+                    for nucleus_id in row.context_nucleus_ids
+                )
+            ),
+            context_anchor_ids=tuple(
+                dict.fromkeys(
+                    anchor_id
+                    for row in rows
+                    for anchor_id in row.context_anchor_ids
+                )
+            ),
+        )
+        append_unknown(merged)
+        realised_unknowns.update(row.source_unknown_id for row in rows)
 
     for anchor_id in ast.self_denial_source_anchor_ids:
         append_self_denial(anchor_id)
+    if ast.visible_source_anchor_use is not None and not visible_anchor_emitted:
+        raise Step11NaturalSurfaceError(
+            "STEP11_VISIBLE_SOURCE_ANCHOR_OWNER_MISSING"
+        )
     result = tuple(lines)
     if not result or any(not row.text for row in result):
         raise Step11NaturalSurfaceError(
@@ -3129,6 +3738,35 @@ def _reception_relation_action_status(
     return _reception_action_status(action_fragments)
 
 
+def _canonical_reception_content(options: Any) -> str:
+    if (
+        type(options) is not list
+        or not options
+        or type(options[0]) is not str
+        or not options[0]
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RECEPTION_ANAPHORIC_BINDING_UNREPRESENTABLE"
+        )
+    content = options[0]
+    if content.endswith("ずに"):
+        content = content[:-2] + "ず、"
+    return content
+
+
+def _canonical_reception_predicate(options: Any) -> str:
+    if (
+        type(options) is not list
+        or not options
+        or type(options[0]) is not str
+        or not options[0]
+    ):
+        raise Step11NaturalSurfaceError(
+            "STEP11_RECEPTION_ACT_PREDICATE_UNRESOLVED"
+        )
+    return options[0]
+
+
 def _reception_lines(
     ast: Step11NaturalSurfaceAst,
     *,
@@ -3166,6 +3804,22 @@ def _reception_lines(
         )
     forms = STEP11_SURFACE_CATALOG["reception_forms"]
     typed_grammar = forms["typed_reference_grammar"]
+    globally_unique_reference_by_slot = {
+        slot: rows[0]
+        for slot in ("thought", "action")
+        for rows in (
+            tuple(
+                row
+                for row in ast.nucleus_surface_references
+                if row.source_slot == slot
+            ),
+        )
+        if len(rows) == 1
+    }
+    reference_by_ordinal = {
+        row.reference_ordinal: row
+        for row in ast.nucleus_surface_references
+    }
 
     def references_for_nuclei(
         nucleus_ids: Sequence[str],
@@ -3377,10 +4031,6 @@ def _reception_lines(
                 key=lambda row: row.reference_ordinal,
             )
         )
-        reference_by_ordinal = {
-            row.reference_ordinal: row
-            for row in ast.nucleus_surface_references
-        }
         placeholders: dict[str, str] = {}
         if scope in {"relation", "relation_action"}:
             if len(owned_relations) != 1:
@@ -3485,6 +4135,10 @@ def _reception_lines(
                 antecedent_observation_line_indices=(
                     existing.antecedent_observation_line_indices
                 ),
+                reception_act=existing.reception_act,
+                reception_scope=existing.reception_scope,
+                realization_status=existing.realization_status,
+                typed_placeholders=existing.typed_placeholders,
             )
             continue
         canonical_contract_id = artifact_sha256(
@@ -3511,30 +4165,56 @@ def _reception_lines(
                 ],
             }
         )[:16]
-        content = _pick_variant(
-            typed_grammar["content_forms"][scope][status],
-            fingerprint=ast.current_input_projection_sha256,
-            form_id=(
-                f"reception_typed_content:{canonical_contract_id}:"
-                f"{clause.reception_act}:{scope}:{status}"
-            ),
-        ).format(**placeholders)
-        predicate = _pick_variant(
-            forms["act_predicates"][clause.reception_act],
-            fingerprint=ast.current_input_projection_sha256,
-            form_id=(
-                f"reception_predicate:{canonical_contract_id}:"
-                f"{clause.reception_act}:{scope}:{status}"
-            ),
+        visible_reference_ordinals = frozenset(
+            row.reference_ordinal for row in visible_references
         )
-        sentence_template = _pick_variant(
-            forms["sentence_templates"],
-            fingerprint=ast.current_input_projection_sha256,
-            form_id=(
-                f"reception_sentence:{canonical_contract_id}:"
-                f"{clause.reception_act}:{scope}:{status}"
-            ),
+        unique_scope_references: tuple[
+            Step11NucleusSurfaceReference, ...
+        ] = ()
+        if scope == "thought" and "thought" in globally_unique_reference_by_slot:
+            unique_scope_references = (
+                globally_unique_reference_by_slot["thought"],
+            )
+        elif scope == "action" and "action" in globally_unique_reference_by_slot:
+            unique_scope_references = (
+                globally_unique_reference_by_slot["action"],
+            )
+        elif scope == "thought_action" and {
+            "thought",
+            "action",
+        } <= set(globally_unique_reference_by_slot):
+            unique_scope_references = (
+                globally_unique_reference_by_slot["thought"],
+                globally_unique_reference_by_slot["action"],
+            )
+        elif (
+            scope == "relation"
+            and len(ast.integrated_relations) == 1
+            and len(owned_relations) == 1
+            and ast.integrated_relations[0].source_relation_id
+            == owned_relations[0].source_relation_id
+        ):
+            unique_scope_references = tuple(
+                reference_by_ordinal[ordinal]
+                for ordinal in (
+                    owned_relations[0].from_reference_ordinal,
+                    owned_relations[0].to_reference_ordinal,
+                )
+            )
+        if (
+            scope not in forms["anaphoric_content_forms"]
+            or status not in forms["anaphoric_content_forms"][scope]
+        ):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RECEPTION_ANAPHORIC_BINDING_UNREPRESENTABLE"
+            )
+        content = _canonical_reception_content(
+            forms["anaphoric_content_forms"][scope][status]
         )
+        predicate = _canonical_reception_predicate(
+            forms["act_predicates"][clause.reception_act]
+        )
+        sentence_template = forms["sentence_templates"][0]
         text = sentence_template.format(content=content, predicate=predicate)
         quote_tokens = tuple(
             token
@@ -3559,6 +4239,10 @@ def _reception_lines(
             antecedent_observation_line_indices=tuple(
                 (*antecedent_indices, *support_indices)
             ),
+            reception_act=str(clause.reception_act),
+            reception_scope=scope,
+            realization_status=status,
+            typed_placeholders=(),
         )
         family_index = line_index_by_family.get(family_contract)
         if type(family_index) is int:
@@ -3574,7 +4258,18 @@ def _reception_lines(
                 or new_references < existing_references
                 or (
                     existing_references == new_references
-                    and existing.text == new_line.text
+                    and (
+                        existing.reception_act,
+                        existing.reception_scope,
+                        existing.realization_status,
+                        existing.typed_placeholders,
+                    )
+                    == (
+                        new_line.reception_act,
+                        new_line.reception_scope,
+                        new_line.realization_status,
+                        new_line.typed_placeholders,
+                    )
                 )
             )
             if comparable:
@@ -3625,6 +4320,10 @@ def _reception_lines(
                             )
                         )
                     ),
+                    reception_act=dominant.reception_act,
+                    reception_scope=dominant.reception_scope,
+                    realization_status=dominant.realization_status,
+                    typed_placeholders=dominant.typed_placeholders,
                 )
                 line_index_by_contract[canonical_contract] = family_index
                 continue
@@ -3655,7 +4354,106 @@ def _reception_lines(
         raise Step11NaturalSurfaceError(
             "STEP11_RECEPTION_CANONICAL_OWNER_CARDINALITY_INVALID"
         )
-    return tuple(lines)
+
+    def render_final_line(
+        line: _Step11OwnedReceptionLine,
+    ) -> _Step11OwnedReceptionLine:
+        scope = line.reception_scope
+        status = line.realization_status
+        act = line.reception_act
+        visible = frozenset(line.visible_reference_ordinals)
+        unique_references: tuple[Step11NucleusSurfaceReference, ...] = ()
+        if scope == "thought" and "thought" in globally_unique_reference_by_slot:
+            unique_references = (
+                globally_unique_reference_by_slot["thought"],
+            )
+        elif scope == "action" and "action" in globally_unique_reference_by_slot:
+            unique_references = (
+                globally_unique_reference_by_slot["action"],
+            )
+        elif scope == "thought_action" and {
+            "thought",
+            "action",
+        } <= set(globally_unique_reference_by_slot):
+            unique_references = (
+                globally_unique_reference_by_slot["thought"],
+                globally_unique_reference_by_slot["action"],
+            )
+        elif scope == "relation" and len(ast.integrated_relations) == 1:
+            relation = ast.integrated_relations[0]
+            unique_references = tuple(
+                reference_by_ordinal[ordinal]
+                for ordinal in (
+                    relation.from_reference_ordinal,
+                    relation.to_reference_ordinal,
+                )
+            )
+        use_anaphoric = bool(
+            scope in forms["anaphoric_content_forms"]
+            and status in forms["anaphoric_content_forms"][scope]
+        )
+        final_contract_id = artifact_sha256(
+            {
+                "reception_act": act,
+                "scope": scope,
+                "status": status,
+                "binding_ids": list(line.binding_ids),
+                "reception_obligation_ids": list(
+                    line.reception_obligation_ids
+                ),
+                "antecedent_obligation_ids": list(
+                    line.antecedent_obligation_ids
+                ),
+                "supporting_obligation_ids": list(
+                    line.supporting_obligation_ids
+                ),
+                "visible_reference_ordinals": list(
+                    line.visible_reference_ordinals
+                ),
+            }
+        )[:16]
+        if not use_anaphoric:
+            raise Step11NaturalSurfaceError(
+                "STEP11_RECEPTION_ANAPHORIC_BINDING_UNREPRESENTABLE"
+            )
+        content = _canonical_reception_content(
+            forms["anaphoric_content_forms"][scope][status]
+        )
+        predicate = _canonical_reception_predicate(
+            forms["act_predicates"][act]
+        )
+        sentence_template = forms["sentence_templates"][0]
+        text = sentence_template.format(
+            content=content,
+            predicate=predicate,
+        )
+        quote_tokens = tuple(
+            token
+            for pair in STEP11_SURFACE_CATALOG["layout"]["quote_pairs"]
+            for token in (pair["open"], pair["close"])
+        )
+        if any(token in text for token in quote_tokens):
+            raise Step11NaturalSurfaceError(
+                "STEP11_RECEPTION_LITERAL_FORBIDDEN"
+            )
+        return _Step11OwnedReceptionLine(
+            text=text,
+            binding_ids=line.binding_ids,
+            reception_obligation_ids=line.reception_obligation_ids,
+            antecedent_obligation_ids=line.antecedent_obligation_ids,
+            supporting_obligation_ids=line.supporting_obligation_ids,
+            visible_reference_ordinals=line.visible_reference_ordinals,
+            antecedent_observation_line_indices=(
+                line.antecedent_observation_line_indices
+            ),
+            literal_anchor_ids=line.literal_anchor_ids,
+            reception_act=act,
+            reception_scope=scope,
+            realization_status=status,
+            typed_placeholders=line.typed_placeholders,
+        )
+
+    return tuple(render_final_line(line) for line in lines)
 
 
 def _separator_occurs_outside_quotes(value: str, separator: str) -> bool:
@@ -3830,7 +4628,7 @@ def _derive_surface_realization_plan(
     observation_lines: Sequence[_Step11OwnedObservationLine],
     reception_lines: Sequence[_Step11OwnedReceptionLine],
 ) -> Step11SurfaceRealizationPlan:
-    """Recompute the committed rc0025 plan from semantic ownership only."""
+    """Recompute the committed rc0026 plan from semantic ownership only."""
 
     observation_sentences = tuple(
         row for row in ast.sentences if row.section_role == "observation"
@@ -3944,12 +4742,12 @@ def _derive_surface_realization_plan(
             (
                 (
                     _SURFACE_PHASE_ORDER[row_phase],
+                    original_index,
                     min(introduced or used or (10**6,)),
                     min(
                         observation_group_index[group_id]
                         for group_id in lineage
                     ),
-                    original_index,
                 ),
                 line,
                 row_phase,
@@ -4219,9 +5017,9 @@ def _observation_sentence_lines(
             (
                 (
                     _SURFACE_PHASE_ORDER[row_phase],
+                    original_index,
                     min(introduced or used or (10**6,)),
                     min(group_index[row] for row in lineage),
-                    original_index,
                 ),
                 line,
                 row_phase,
@@ -4543,6 +5341,14 @@ def render_step11_natural_surface(
             step11_surface_ast_material(ast)
         ),
         surface_catalog_sha256=STEP11_SURFACE_CATALOG_SHA256,
+        visible_source_anchor_count=(
+            1 if ast.visible_source_anchor_use is not None else 0
+        ),
+        source_anchor_reason_codes=(
+            (ast.visible_source_anchor_use.reason_code,)
+            if ast.visible_source_anchor_use is not None
+            else ()
+        ),
         utf8_bytes=utf8_bytes,
         sha256=hashlib.sha256(utf8_bytes).hexdigest(),
     )

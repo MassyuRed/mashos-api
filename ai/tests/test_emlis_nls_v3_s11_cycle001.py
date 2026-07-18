@@ -30,6 +30,15 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     _valid_change_negative_test_ids,
     CUMULATIVE100_RECEIPT_SCHEMA,
     CYCLE_ACCEPTANCE_SCHEMA,
+    FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256,
+    FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256,
+    FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256,
+    FROZEN_RC0026_INVALID16_RECEIPT_SHA256,
+    FROZEN_RC0026_KNOWN28_RECEIPT_SHA256,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256,
     FROZEN_KNOWN28_EXPECTED_APPLICABILITY_SHA256,
     FROZEN_KNOWN28_GENERIC_PROJECTION_POLICY_SHA256,
     KNOWN28_EXPECTED_APPLICABILITY,
@@ -40,8 +49,11 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
     STEP11_RC0024_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
     STEP11_RC0025_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
+    STEP11_RC0026_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
+    STEP11_RC0027_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA,
     STEP11_BATCH_RUN_SCHEMA,
     STEP11_RUNTIME_ADAPTER_VERSION,
     STEP11_SUCCESSOR_CANDIDATE_VERSION_ID,
@@ -51,6 +63,7 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     validate_step11_batch_run_summary,
     validate_step11_private_verification_receipt,
 )
+from emlis_ai_nls_v3_artifact_contract import artifact_sha256  # noqa: E402
 from emlis_ai_step11_natural_surface_v3 import (  # noqa: E402
     STEP11_CANDIDATE_VERSION_ID,
 )
@@ -76,7 +89,6 @@ from emlis_nls_v3_step11_cycle_finalize import (  # noqa: E402
 )
 from emlis_nls_v3_step11_regression import (  # noqa: E402
     STEP11_DEVELOPMENT42_RECEIPT_SCHEMA,
-    validate_development42_receipt,
 )
 
 
@@ -137,11 +149,14 @@ def test_s11_batch_runtime_receives_only_app_reachable_projection() -> None:
     assert runtime_calls[0].args[0].id == "projected_input"
 
 
-def test_s11_rc0025_schema_and_tool_version_boundary() -> None:
+def test_s11_rc0027_schema_and_tool_version_boundary() -> None:
     assert STEP11_CANDIDATE_VERSION_ID == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
+    assert STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID == (
+        "nls_v3_rc_0026"
+    )
     assert STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID == (
         "nls_v3_rc_0024"
     )
@@ -166,8 +181,16 @@ def test_s11_rc0025_schema_and_tool_version_boundary() -> None:
         "cocolon.emlis.nls_v3."
         "surface_distribution_assessment.step11.rc0025.v1"
     )
+    assert STEP11_RC0026_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA == (
+        "cocolon.emlis.nls_v3."
+        "surface_distribution_assessment.step11.rc0026.v1"
+    )
+    assert STEP11_RC0027_SURFACE_DISTRIBUTION_ASSESSMENT_SCHEMA == (
+        "cocolon.emlis.nls_v3."
+        "surface_distribution_assessment.step11.rc0027.v1"
+    )
     assert STEP11_RUNTIME_ADAPTER_VERSION == RUNTIME_ADAPTER_VERSION
-    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0025.v1")
+    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0027.v1")
 
 
 def test_s11_surface_distribution_rejects_opening_concentration() -> None:
@@ -445,22 +468,27 @@ def test_s11_known28_applicability_policy_and_inventory_are_frozen() -> None:
     }
 
 
-def test_s11_cycle001_rc0025_formal_evidence_is_consistent_and_accepted() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0025.json")
+def test_s11_cycle001_rc0026_machine_clean_but_product_read_failed() -> None:
+    dependency = _json("cycle001_dependency_manifest_rc0026.json")
     initial_summary = _json("cycle001_initial_rc0010_summary.json")
-    final_summary = _json("cycle001_final_rc0025_summary.json")
+    final_summary = _json("cycle001_final_rc0026_summary.json")
     private_verification = _json(
-        "cycle001_final_rc0025_private_verification.json"
+        "cycle001_final_rc0026_private_verification.json"
     )
-    known28 = _json("cycle001_known28_rc0025.json")
-    development42 = _json("cycle001_development42_rc0025.json")
-    invalid16 = _json("cycle001_invalid16_rc0025.json")
+    known28 = _json("cycle001_known28_rc0026.json")
+    development42 = _json("cycle001_development42_rc0026.json")
+    invalid16 = _json("cycle001_invalid16_rc0026.json")
+    product_read_failure = json.loads(
+        (
+            _CYCLE / "cycle001_product_read_failure_rc0026.json"
+        ).read_text(encoding="utf-8")
+    )
 
     assert dependency["candidate_version_id"] == (
-        STEP11_CURRENT_CANDIDATE_VERSION_ID
+        STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
     )
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
-    assert STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
+    assert STEP11_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
     assert KNOWN28_RECEIPT_SCHEMA == "cocolon.emlis.nls_v3.known28_receipt.v3"
     assert CUMULATIVE100_RECEIPT_SCHEMA.endswith(".v4")
     assert CYCLE_ACCEPTANCE_SCHEMA.endswith(".v6")
@@ -475,65 +503,45 @@ def test_s11_cycle001_rc0025_formal_evidence_is_consistent_and_accepted() -> Non
         final_batch_summary=final_summary,
         final_dependency_manifest=dependency,
     ) == ()
-    assert validate_development42_receipt(
+    for artifact in (
+        dependency,
+        final_summary,
+        private_verification,
+        known28,
         development42,
-        final_batch_summary=final_summary,
-        dependency_manifest=dependency,
-    ) == ()
-    artifact_names = {
-        "cycle001_acceptance.json",
-        "cycle001_available_input_scope.json",
-        "cycle001_change_ledger.json",
-        "cycle001_corpus_validation.json",
-        "cycle001_cumulative100.json",
-        "cycle001_final_review.json",
-        "cycle001_initial_review.json",
-        "cycle001_initial_run_lock.json",
-        "cycle001_output_change_review.json",
-        "cycle001_output_diff.json",
-        "cycle001_rc_correction_rerun_lineage.json",
-        "cycle001_rc_correction_support.json",
-        "cycle001_workaround_scan.json",
-        "cycle001_workaround_scan_input_scope.json",
-    }
-    artifacts = {name: _json(name) for name in artifact_names}
-    for name, artifact in artifacts.items():
+        invalid16,
+        product_read_failure,
+    ):
         assert_body_free(artifact)
 
-    acceptance = artifacts["cycle001_acceptance.json"]
-    cumulative = artifacts["cycle001_cumulative100.json"]
-    workaround = artifacts["cycle001_workaround_scan.json"]
-    assert acceptance["state"] == "ACCEPTED"
-    assert acceptance["counts_toward_karen_minimum"] == 100
-    assert all(acceptance["acceptance_conditions"].values())
-    assert cumulative["aggregate"]["selected_count"] == 100
-    assert cumulative["aggregate"]["exception_count"] == 0
-    assert cumulative["aggregate"]["no_valid_candidate_count"] == 0
-    assert cumulative["aggregate"]["known28_pass_count"] == 28
-    assert cumulative["aggregate"]["known28_selected_count"] == 19
-    assert (
-        cumulative["aggregate"][
-            "known28_expected_non_applicable_match_count"
-        ]
-        == 9
+    assert artifact_sha256(dependency) == (
+        FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
     )
-    assert development42["schema_version"] == (
-        STEP11_DEVELOPMENT42_RECEIPT_SCHEMA
+    assert artifact_sha256(final_summary) == (
+        FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
     )
-    assert cumulative["aggregate"]["development42_pass_count"] == 42
-    assert cumulative["aggregate"]["development42_selected_count"] == 24
-    assert (
-        cumulative["aggregate"][
-            "development42_expected_non_applicable_match_count"
-        ]
-        == 18
+    assert artifact_sha256(private_verification) == (
+        FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256
     )
-    assert cumulative["aggregate"]["known_regression_pass_count"] == 70
-    assert cumulative["aggregate"]["legacy_registered_case_count"] == 3
-    assert (
-        cumulative["aggregate"]["available_real_user_current_valid_count"]
-        == 0
+    assert artifact_sha256(known28) == FROZEN_RC0026_KNOWN28_RECEIPT_SHA256
+    assert artifact_sha256(development42) == (
+        FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256
     )
+    assert artifact_sha256(invalid16) == (
+        FROZEN_RC0026_INVALID16_RECEIPT_SHA256
+    )
+    assert artifact_sha256(product_read_failure) == (
+        FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256
+    )
+
+    assert final_summary["machine_status"] == "clean"
+    assert final_summary["source_closure_stable"] is True
+    assert final_summary["aggregate"]["selected_count"] == 100
+    assert final_summary["aggregate"]["hard_gate_pass_count"] == 100
+    assert final_summary["aggregate"]["app_reachable_pass_count"] == 100
+    assert final_summary["aggregate"]["exception_count"] == 0
+    assert final_summary["aggregate"]["no_valid_candidate_count"] == 0
+    assert final_summary["aggregate"]["v1_fallback_count"] == 0
     assert known28["schema_version"] == KNOWN28_RECEIPT_SCHEMA
     assert known28["generic_projection_policy_sha256"] == (
         FROZEN_KNOWN28_GENERIC_PROJECTION_POLICY_SHA256
@@ -553,36 +561,25 @@ def test_s11_cycle001_rc0025_formal_evidence_is_consistent_and_accepted() -> Non
         "v1_fallback_count": 0,
         "failure_case_count": 0,
     }
-    assert acceptance["acceptance_conditions"][
-        "known28_app_reachable_selected_19"
-    ] is True
-    assert acceptance["acceptance_conditions"][
-        "known28_expected_non_applicable_matched_9"
-    ] is True
-    assert acceptance["acceptance_conditions"][
-        "development42_app_reachable_selected_24"
-    ] is True
-    assert acceptance["acceptance_conditions"][
-        "development42_expected_non_applicable_matched_18"
-    ] is True
-    assert acceptance["acceptance_conditions"][
-        "correction_lineage_complete_and_ready"
-    ] is True
-    assert acceptance["acceptance_conditions"][
-        "lineage_final_rc0025_parents_exact"
-    ] is True
-    assert (
-        cumulative["aggregate"]["invalid16_expected_rejection_match_count"]
-        == 16
+    assert development42["schema_version"] == (
+        STEP11_DEVELOPMENT42_RECEIPT_SCHEMA
     )
-    assert workaround["finding_count"] == 0
-    assert all(workaround["negative_test_results"].values())
+    assert development42["aggregate"]["pass_count"] == 42
+    assert invalid16["aggregate"]["expected_rejection_match_count"] == 16
+    assert product_read_failure["review_outcome"] == "failed"
+    assert product_read_failure["maximum_severity"] == "MAJOR"
+    assert tuple(product_read_failure["failure_axis_codes"]) == (
+        FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES
+    )
+    assert tuple(product_read_failure["failure_reason_codes"]) == (
+        FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS
+    )
 
 
 def test_s11_known28_applicability_exclusion_cannot_false_green() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0025.json")
-    final_summary = _json("cycle001_final_rc0025_summary.json")
-    known28 = _json("cycle001_known28_rc0025.json")
+    dependency = _json("cycle001_dependency_manifest_rc0026.json")
+    final_summary = _json("cycle001_final_rc0026_summary.json")
+    known28 = _json("cycle001_known28_rc0026.json")
     assert validate_known28_receipt(
         known28,
         final_batch_summary=final_summary,
@@ -627,9 +624,9 @@ def test_s11_known28_applicability_exclusion_cannot_false_green() -> None:
 
 
 def test_s11_known28_nonapp_issue_substitution_cannot_false_green() -> None:
-    dependency = _json("cycle001_dependency_manifest_rc0025.json")
-    final_summary = _json("cycle001_final_rc0025_summary.json")
-    known28 = _json("cycle001_known28_rc0025.json")
+    dependency = _json("cycle001_dependency_manifest_rc0026.json")
+    final_summary = _json("cycle001_final_rc0026_summary.json")
+    known28 = _json("cycle001_known28_rc0026.json")
     forged_rows = deepcopy(known28["rows"])
     nonapp_row = next(
         row

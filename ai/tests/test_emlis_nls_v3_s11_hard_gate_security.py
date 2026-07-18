@@ -801,13 +801,13 @@ def test_thought_only_omitted_referent_anaphora_closes_end_to_end(
     }
 
     assert thought_owner.source_fragments == ("まだよく分からない",)
-    assert thought_owner.source_slot_hints == ()
+    assert thought_owner.source_slot_hints == ("thought",)
     assert thought_owner.predicate_role == "proposition"
     assert unknown.source_fragments == ()
     assert unknown.unknown_dimension_class == "referent"
-    assert reception.form_id.startswith("reception:typed:")
+    assert reception.form_id.startswith("reception:anaphoric:")
     assert reception.source_fragments == ()
-    assert reception.reception_antecedent_references
+    assert reception.reception_antecedent_references == ()
     assert len(required_ids) == 3
     assert {
         ledger_by_id[obligation_id]["kind"]
@@ -1046,7 +1046,7 @@ def test_thought_only_unknown_anaphora_rejects_target_ownership_swap(
     assert "S11_MATCH_REQUIRED_OBLIGATION_UNBOUND" in binding.issue_codes
 
 
-def test_unique_observation_antecedent_renders_typed_reception(
+def test_unique_observation_antecedent_renders_anaphoric_reception(
     completed_action_execution,
 ) -> None:
     selected = completed_action_execution.selected_candidate
@@ -1068,19 +1068,19 @@ def test_unique_observation_antecedent_renders_typed_reception(
         sorted(row.binding_id for row in overlay.reception_antecedent_bindings)
     )
 
-    assert reception.form_id.startswith("reception:typed:")
+    assert reception.form_id.startswith("reception:anaphoric:")
     assert reception.source_fragments == ()
-    assert reception.reception_antecedent_references
+    assert reception.reception_antecedent_references == ()
     assert binding.verified is True
     assert binding.integrated_reception_binding_ids == expected_binding_ids
     assert any(
         row.match_basis
-        == "bound_reception_typed_referent_exact_source_owner"
+        == "bound_reception_anaphoric_unique_exact_source_owner"
         for row in binding.binding_rows
     )
 
 
-def test_typed_reception_requires_visible_unique_antecedent(
+def test_anaphoric_reception_requires_visible_unique_antecedent(
     completed_action_execution,
 ) -> None:
     selected = completed_action_execution.selected_candidate
@@ -1091,7 +1091,7 @@ def test_typed_reception_requires_visible_unique_antecedent(
     reception = next(
         atom for atom in witness.atoms if atom.section_role == "reception"
     )
-    assert reception.form_id.startswith("reception:typed:")
+    assert reception.form_id.startswith("reception:anaphoric:")
     antecedent = next(
         atom
         for atom in witness.atoms
@@ -1099,7 +1099,11 @@ def test_typed_reception_requires_visible_unique_antecedent(
         and atom.source_fragments
         and atom.predicate_role == "action"
     )
-    without_antecedent = replace(antecedent, source_fragments=())
+    without_antecedent = replace(
+        antecedent,
+        source_fragments=(),
+        introduced_reference=None,
+    )
     forged_witness = replace(
         witness,
         atoms=tuple(
@@ -1244,11 +1248,11 @@ def test_reception_direct_literal_fallback_is_forbidden(
     reception = next(
         atom for atom in witness.atoms if atom.section_role == "reception"
     )
-    assert reception.form_id.startswith("reception:typed:")
+    assert reception.form_id.startswith("reception:anaphoric:")
     forged_reception = replace(
         reception,
         form_id=reception.form_id.replace(
-            "reception:typed:", "reception:direct:"
+            "reception:anaphoric:", "reception:direct:"
         ),
     )
     forged_witness = replace(

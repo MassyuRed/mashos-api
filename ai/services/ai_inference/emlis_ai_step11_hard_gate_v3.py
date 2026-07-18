@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Forward-aware hard gate and deterministic selector for Step 11 rc0025.
+"""Forward-aware hard gate and deterministic selector for Step 11 rc0027.
 
 The body parser and semantic matcher remain inverse-only owners.  This module
 is the trust boundary that joins their result to the exact forward candidate
@@ -11,6 +11,7 @@ and candidate identity before any bytes can become selectable.
 
 import hashlib
 import re
+import unicodedata
 from typing import Any, Mapping, Sequence
 
 from emlis_ai_content_selection_v3 import (
@@ -35,8 +36,10 @@ from emlis_ai_step11_natural_surface_matcher_v3 import (
     Step11InverseSurfaceError,
     Step11ParsedSurfaceWitness,
     Step11SelectionResult,
+    Step11SelectorAttributes,
     Step11VerifiedSurfaceBinding,
     _binding_material,
+    _independent_action_lifecycle_for_nuclei,
     _witness_material,
     match_step11_natural_surface,
     parse_step11_natural_surface,
@@ -89,12 +92,217 @@ _GATE_CODES = (
 )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_GATE_ANCHOR_FORBIDDEN_RE = re.compile(
+    r"[\r\n\x00-\x1f\x7f\u2028\u2029"
+    r"。、，．！？!?;；:：,.'\"`"
+    r"\(\)\[\]\{\}（）［］｛｝〈〉《》【】〔〕"
+    r"\u300c\u300d\u300e\u300f]"
+)
+_GATE_ANCHOR_SEGMENT_AUTHORITIES = (
+    "trusted_fragment_entire_text",
+    "complete_punctuation_delimited_run",
+)
+_GATE_ANCHOR_DANGLING_PREFIXES = (
+    "そして", "また", "ただ", "それでも", "けれど", "けど", "だけ", "は",
+    "が", "を", "に", "へ", "と", "の", "も", "や", "で", "から",
+    "ので",
+)
+_GATE_ANCHOR_DANGLING_SUFFIXES = (
+    "は", "が", "を", "に", "へ", "と", "の", "も", "や", "て", "で",
+    "し", "から", "ので", "けれど", "けど", "ながら", "つつ", "たり",
+    "なら", "れば", "たら",
+)
+
+
+def _step11_gate_visible_anchor_text_safe(
+    value: Any, maximum_scalars: int = 16
+) -> bool:
+    """Revalidate visible anchor scalars at the forward-aware gate."""
+
+    return bool(
+        type(value) is str
+        and type(maximum_scalars) is int
+        and type(maximum_scalars) is not bool
+        and maximum_scalars >= 2
+        and unicodedata.normalize("NFC", value) == value
+        and value == value.strip()
+        and 2 <= len(value) <= maximum_scalars
+        and _GATE_ANCHOR_FORBIDDEN_RE.search(value) is None
+        and not any(scalar.isspace() for scalar in value)
+        and not any(
+            label in value for label in ("見えたこと", "Emlisから", "Emlis")
+        )
+        and not any(
+            unicodedata.category(scalar).startswith("C")
+            for scalar in value
+        )
+    )
+
+
+def _step11_gate_anchor_candidate_complete(
+    value: Any, maximum_scalars: int = 16
+) -> bool:
+    return bool(
+        _step11_gate_visible_anchor_text_safe(value, maximum_scalars)
+        and not str(value).startswith(_GATE_ANCHOR_DANGLING_PREFIXES)
+        and not str(value).endswith(_GATE_ANCHOR_DANGLING_SUFFIXES)
+    )
+
+
+def _step11_gate_safe_anchor_segments(
+    source_text: Any, maximum_scalars: int = 16
+) -> tuple[tuple[str, int, int], ...]:
+    """Gate-owned reconstruction of whole trusted/punctuation runs only."""
+
+    if (
+        type(source_text) is not str
+        or unicodedata.normalize("NFC", source_text) != source_text
+        or type(maximum_scalars) is not int
+        or type(maximum_scalars) is bool
+        or maximum_scalars < 2
+        or any(
+            scalar.isspace()
+            or unicodedata.category(scalar).startswith("C")
+            for scalar in source_text
+        )
+    ):
+        return ()
+
+    runs: list[tuple[int, int]] = []
+    run_start: int | None = None
+    for index, scalar in enumerate(source_text):
+        punctuation = _GATE_ANCHOR_FORBIDDEN_RE.search(scalar) is not None
+        if not punctuation and run_start is None:
+            run_start = index
+        if punctuation and run_start is not None:
+            runs.append((run_start, index))
+            run_start = None
+    if run_start is not None:
+        runs.append((run_start, len(source_text)))
+    candidates: set[tuple[str, int, int]] = set()
+    for run_start, run_end in runs:
+        run = source_text[run_start:run_end]
+        if len(run) <= maximum_scalars and (
+            _step11_gate_anchor_candidate_complete(run, maximum_scalars)
+        ):
+            candidates.add((run, run_start, run_end))
+    return tuple(
+        (text, start, end) for text, start, end in sorted(
+            candidates,
+            key=lambda row: (-len(row[0]), row[1], row[2], row[0]),
+        )
+    )
+
+
+def _step11_gate_action_lifecycle_green(
+    *,
+    witness: Step11ParsedSurfaceWitness,
+    binding: Step11VerifiedSurfaceBinding,
+    inventory_result: SemanticObligationInventoryResult,
+    semantic_overlay: Any,
+    action_text: str,
+) -> bool:
+    """Recompute observation and Reception lifecycle from source authority."""
+
+    nucleus_by_id = {
+        str(row.source_id): row
+        for row in inventory_result.source_snapshot.nuclei
+    }
+    parsed_phrases = tuple(
+        phrase
+        for atom in witness.atoms
+        if atom.section_role == "observation"
+        for phrase in getattr(atom, "grounded_phrases", ())
+    )
+    phrase_bindings = tuple(binding.grounded_phrase_bindings)
+    if len(parsed_phrases) != len(phrase_bindings):
+        return False
+    expected_action_lifecycles: set[str] = set()
+    for phrase, row in zip(parsed_phrases, phrase_bindings):
+        if len(row.owner_nucleus_ids) != 1:
+            return False
+        expected = _independent_action_lifecycle_for_nuclei(
+            row.owner_nucleus_ids,
+            nucleus_by_id=nucleus_by_id,
+            action_text=action_text,
+        )
+        if (
+            phrase.action_lifecycle != expected
+            or row.action_lifecycle != expected
+            or dict(phrase.visible_feature_fields).get(
+                "action_lifecycle", "not_applicable"
+            )
+            != expected
+        ):
+            return False
+        owner = nucleus_by_id.get(row.owner_nucleus_ids[0])
+        if owner is None:
+            return False
+        if expected != "not_applicable":
+            if (
+                getattr(owner, "kind", None) != "action"
+                or row.binding_family not in {None, "action_lifecycle"}
+            ):
+                return False
+            expected_action_lifecycles.add(expected)
+
+    for overlay_row in semantic_overlay.reception_antecedent_bindings:
+        target_ids = tuple(
+            dict.fromkeys(
+                (
+                    *overlay_row.antecedent_nucleus_ids,
+                    *overlay_row.supporting_nucleus_ids,
+                )
+            )
+        )
+        expected = _independent_action_lifecycle_for_nuclei(
+            target_ids,
+            nucleus_by_id=nucleus_by_id,
+            action_text=action_text,
+        )
+        if str(overlay_row.action_lifecycle) != expected:
+            return False
+        if expected != "not_applicable":
+            expected_action_lifecycles.add(expected)
+
+    reception_statuses = {
+        str(atom.realization_status)
+        for atom in witness.atoms
+        if atom.section_role == "reception"
+        and atom.reception_scope
+        in {"action", "thought_action", "relation_action"}
+    }
+    if reception_statuses and (
+        not expected_action_lifecycles
+        or not reception_statuses <= expected_action_lifecycles
+    ):
+        return False
+    contradictory = (
+        {"intended"}
+        & (reception_statuses | expected_action_lifecycles)
+        and {
+            "reported_completed",
+            "reported_ongoing",
+            "reported_not_completed",
+        }
+        & (reception_statuses | expected_action_lifecycles)
+    )
+    return not bool(contradictory)
 _EVIDENCE_BINDING_ISSUES = frozenset(
     {
         "S11_MATCH_FRAGMENT_NOT_SOURCE_BACKED",
+        "S11_MATCH_FUSED_LITERAL_OWNER_AMBIGUOUS",
+        "S11_MATCH_FUSED_LITERAL_OWNER_COVERAGE_MISMATCH",
+        "S11_MATCH_FUSED_LITERAL_OWNER_UNRESOLVED",
         "S11_MATCH_LABEL_ANCHOR_CONTRACT_MISMATCH",
         "S11_MATCH_NUCLEUS_BINDING_CONTRACT_MISMATCH",
         "S11_MATCH_SOURCE_ANCHOR_CONTRACT_MISMATCH",
+        "S11_MATCH_GROUNDED_ACTION_LIFECYCLE_MISMATCH",
+        "S11_MATCH_GROUNDED_PROFILE_UNRESOLVED",
+        "S11_MATCH_VISIBLE_SOURCE_ANCHOR_FAMILY_INVALID",
+        "S11_MATCH_VISIBLE_SOURCE_ANCHOR_FAMILY_MISMATCH",
+        "S11_MATCH_VISIBLE_SOURCE_ANCHOR_BOUNDARY_INVALID",
+        "S11_MATCH_VISIBLE_REFERENCE_BOOKKEEPING_FORBIDDEN",
     }
 )
 _UNSUPPORTED_EXACT_ISSUES = frozenset(
@@ -115,6 +323,7 @@ _DEPTH_BUDGET_ROWS = (
     ("focused", 1, 2, 1, 2, 4),
     ("layered", 2, 3, 1, 2, 5),
 )
+_TARGET_GROUP_COUNT = {"minimal": 2, "focused": 3, "layered": 4}
 _DEPTH_BUDGET_KEYS = (
     "observation_sentence_min",
     "observation_sentence_max",
@@ -278,33 +487,43 @@ def _reception_binding_green(
     reception_atoms = tuple(
         row for row in witness.atoms if row.section_role == "reception"
     )
+    reception_atom_by_id = {
+        row.atom_id: row for row in reception_atoms
+    }
     reception_atom_ids = {row.atom_id for row in reception_atoms}
+
+    def row_mode_green(row: Any) -> bool:
+        if len(row.atom_ids) != 1:
+            return False
+        atom = reception_atom_by_id.get(row.atom_ids[0])
+        if atom is None:
+            return False
+        anaphoric_green = bool(
+            row.match_basis
+            == "bound_reception_anaphoric_exact_semantic_owner"
+            and atom.form_id.startswith("reception:anaphoric:")
+            and not atom.reception_antecedent_references
+        )
+        return bool(
+            anaphoric_green
+            and atom.claim_kinds == ("bound_reception",)
+            and atom.source_fragments == ()
+            and atom.introduced_reference is None
+            and not atom.compound_label_references
+            and not atom.relation_endpoint_references
+            and not atom.unknown_target_references
+        )
+
     return bool(
         expected_ids
         and binding.integrated_reception_binding_ids == expected_ids
         and {row.obligation_id for row in reception_rows}
         == expected_obligation_ids
-        and all(
-            len(row.atom_ids) == 1
-            and row.atom_ids[0] in reception_atom_ids
-            and row.match_basis
-            == "bound_reception_typed_referent_exact_source_owner"
-            for row in reception_rows
-        )
+        and all(row_mode_green(row) for row in reception_rows)
         and {row.atom_ids[0] for row in reception_rows}
         == reception_atom_ids
         and all(
-            row.form_id.startswith("reception:typed:")
-            and row.claim_kinds == ("bound_reception",)
-            and row.source_fragments == ()
-            and row.reception_antecedent_references
-            and len(row.reception_antecedent_references)
-            == len(
-                {
-                    reference.reference_ordinal
-                    for reference in row.reception_antecedent_references
-                }
-            )
+            row.form_id.startswith("reception:anaphoric:")
             for row in reception_atoms
         )
         and not any(
@@ -324,6 +543,15 @@ def _relation_binding_green(
     anchor_by_id = {row.anchor_id: row for row in semantic_overlay.anchors}
     label_by_id = {
         row.label_anchor_id: row for row in semantic_overlay.label_anchors
+    }
+    grounded_owner_sequence_by_atom = {
+        atom.atom_id: tuple(
+            row.owner_nucleus_ids[0]
+            for row in binding.grounded_phrase_bindings
+            if row.atom_id == atom.atom_id
+            and len(row.owner_nucleus_ids) == 1
+        )
+        for atom in witness.atoms
     }
 
     def endpoint_values(
@@ -352,36 +580,6 @@ def _relation_binding_green(
         )
     )
 
-    def introduction_reference(
-        atom: Any,
-        literal: str,
-        endpoint_role: str,
-    ) -> Any:
-        if (
-            atom.claim_kinds == ("nucleus_notice",)
-            and atom.source_fragments == (literal,)
-            and atom.introduced_reference is not None
-            and atom.introduced_reference.endpoint_role == endpoint_role
-        ):
-            return atom.introduced_reference
-        if (
-            atom.claim_kinds
-            == ("nucleus_notice", "mixed_emotion_relation")
-            and len(atom.source_fragments)
-            == len(atom.compound_label_references)
-        ):
-            matches = tuple(
-                reference
-                for fragment, reference in zip(
-                    atom.source_fragments,
-                    atom.compound_label_references,
-                )
-                if fragment == literal
-                and reference.endpoint_role == endpoint_role
-            )
-            return matches[0] if len(matches) == 1 else None
-        return None
-
     owned_atom_ids: list[str] = []
     for relation in semantic_overlay.relations:
         left = endpoint_values(
@@ -394,59 +592,175 @@ def _relation_binding_green(
         )
         if len(left) != 1 or len(right) != 1:
             return False
-        left_introductions = tuple(
-            (atom, introduction_reference(
-                atom, left[0], relation.from_endpoint_role
-            ))
-            for atom in witness.atoms
-            if atom.section_role == "observation"
-            and introduction_reference(
-                atom, left[0], relation.from_endpoint_role
-            ) is not None
-        )
-        right_introductions = tuple(
-            (atom, introduction_reference(
-                atom, right[0], relation.to_endpoint_role
-            ))
-            for atom in witness.atoms
-            if atom.section_role == "observation"
-            and introduction_reference(
-                atom, right[0], relation.to_endpoint_role
-            ) is not None
-        )
-        if len(left_introductions) != 1 or len(right_introductions) != 1:
-            return False
-        expected_references = (
-            left_introductions[0][1],
-            right_introductions[0][1],
-        )
-        if (
-            expected_references[0] is None
-            or expected_references[1] is None
-            or expected_references[0].reference_ordinal
-            == expected_references[1].reference_ordinal
-        ):
-            return False
-        roles = (
-            relation.from_endpoint_role,
-            relation.to_endpoint_role,
-        )
         prefix = (
-            f"relation:{relation.relation_type}:"
-            f"{relation.relation_direction}:{roles[0]}:{roles[1]}:"
+            "obligation_fused:relation:"
+            f"{relation.relation_type}:"
+            f"{relation.relation_direction}:"
         )
+        ambiguous_prefix = (
+            "obligation_fused:relation:"
+            f"{relation.relation_type}:source_or_target:"
+        )
+
+        def relation_surface_green(atom: Any) -> bool:
+            if not atom.form_id.startswith((prefix, ambiguous_prefix)):
+                return False
+            if getattr(atom, "grounded_phrases", ()):
+                form_parts = atom.form_id.split(":")
+                local_marker = (
+                    form_parts[5]
+                    if len(form_parts) >= 8
+                    and form_parts[5].startswith("local_")
+                    else None
+                )
+                owner_sequence = grounded_owner_sequence_by_atom.get(
+                    atom.atom_id, ()
+                )
+                if local_marker is not None:
+                    local_role = form_parts[6]
+                    for local_endpoint in {
+                        "local_from": ("from",),
+                        "local_to": ("to",),
+                        "local_source_or_target": ("from", "to"),
+                    }.get(local_marker, ()):
+                        local_nucleus_id = (
+                            relation.from_nucleus_id
+                            if local_endpoint == "from"
+                            else relation.to_nucleus_id
+                        )
+                        exact_nucleus_id = (
+                            relation.to_nucleus_id
+                            if local_endpoint == "from"
+                            else relation.from_nucleus_id
+                        )
+                        endpoint_role = (
+                            relation.from_endpoint_role
+                            if local_endpoint == "from"
+                            else relation.to_endpoint_role
+                        )
+                        earlier_local_owners = tuple(
+                            row
+                            for row in witness.atoms
+                            if row.section_role == "observation"
+                            and local_nucleus_id
+                            in grounded_owner_sequence_by_atom.get(
+                                row.atom_id, ()
+                            )
+                            and row.byte_start < atom.byte_start
+                        )
+                        if (
+                            local_role == endpoint_role
+                            and owner_sequence == (exact_nucleus_id,)
+                            and len(earlier_local_owners) == 1
+                        ):
+                            return True
+                    return False
+                lexical_rule = STEP11_SURFACE_CATALOG[
+                    "grounded_lexicalization"
+                ]["relation_atoms"][relation.relation_type][
+                    relation.relation_direction
+                ]
+                owner_by_endpoint = {
+                    "from": relation.from_nucleus_id,
+                    "to": relation.to_nucleus_id,
+                }
+                return owner_sequence == tuple(
+                    owner_by_endpoint[endpoint]
+                    for endpoint in lexical_rule["endpoint_order"]
+                )
+            try:
+                form_parts = atom.form_id.split(":")
+                rule_index = int(form_parts[4])
+                rule = STEP11_SURFACE_CATALOG[
+                    "obligation_fused_grammar"
+                ]["relation_forms"][relation.relation_type][
+                    relation.relation_direction
+                ][rule_index]
+                stem = rule["stem"]
+            except (IndexError, KeyError, TypeError, ValueError):
+                return False
+            if type(stem) is not str:
+                return False
+            local_marker = (
+                form_parts[5]
+                if len(form_parts) >= 8
+                and form_parts[5].startswith("local_")
+                else None
+            )
+            if local_marker is not None:
+                local_role = form_parts[6]
+                try:
+                    anaphor_index = int(form_parts[7])
+                    local_anaphor = STEP11_SURFACE_CATALOG[
+                        "obligation_fused_grammar"
+                    ]["local_anaphors"][local_role][anaphor_index]
+                except (IndexError, KeyError, TypeError, ValueError):
+                    return False
+                if type(local_anaphor) is not str or not local_anaphor:
+                    return False
+                endpoint_contracts = {
+                    "from": (left[0], right[0], relation.from_endpoint_role),
+                    "to": (right[0], left[0], relation.to_endpoint_role),
+                }
+                allowed_local_endpoints = {
+                    "local_from": ("from",),
+                    "local_to": ("to",),
+                    "local_source_or_target": ("from", "to"),
+                }.get(local_marker, ())
+                observation_atoms = tuple(
+                    row
+                    for row in witness.atoms
+                    if row.section_role == "observation"
+                )
+                for endpoint in allowed_local_endpoints:
+                    local_value, exact_value, endpoint_role = (
+                        endpoint_contracts[endpoint]
+                    )
+                    local_owners = tuple(
+                        row
+                        for row in observation_atoms
+                        if local_value in row.source_fragments
+                    )
+                    exact_owners = tuple(
+                        row
+                        for row in observation_atoms
+                        if exact_value in row.source_fragments
+                    )
+                    if (
+                        local_role == endpoint_role
+                        and len(local_owners) == 1
+                        and local_owners[0].byte_start < atom.byte_start
+                        and exact_owners == (atom,)
+                        and atom.source_fragments == (exact_value,)
+                    ):
+                        return True
+                return False
+            values = {
+                "{from_endpoint}": left[0],
+                "{to_endpoint}": right[0],
+            }
+            visible = tuple(
+                values[token]
+                for token in sorted(values, key=lambda row: stem.index(row))
+            )
+            return atom.source_fragments == visible
+
         matches = tuple(
             atom
             for atom in witness.atoms
             if atom.section_role == "observation"
-            and atom.form_id.startswith(prefix)
-            and atom.claim_kinds == ("relation_notice",)
-            and atom.source_fragments == ()
+            and atom.form_id.startswith((prefix, ambiguous_prefix))
+            and "nucleus_notice" in atom.claim_kinds
+            and "relation_notice" in atom.claim_kinds
+            and relation_surface_green(atom)
             and atom.introduced_reference is None
-            and atom.relation_endpoint_references == expected_references
+            and not atom.compound_label_references
+            and not atom.relation_endpoint_references
+            and not atom.unknown_target_references
+            and not atom.reception_antecedent_references
             and atom.relation_type == relation.relation_type
-            and atom.relation_direction == relation.relation_direction
-            and atom.relation_endpoint_roles == roles
+            and atom.relation_direction
+            in {relation.relation_direction, "source_or_target"}
         )
         if len(matches) != 1:
             return False
@@ -649,12 +963,246 @@ def _surface_density_green(
     )
 
 
-def _surface_quality_key(attributes: Sequence[int]) -> tuple[int, ...]:
-    """Keep peak and repetition ahead of every identity tie-break."""
+def _surface_quality_key(attributes: Any) -> tuple[Any, ...]:
+    """Return the frozen section-14.1 lexicographic direction tuple."""
 
+    if type(attributes) is Step11SelectorAttributes:
+        return (
+            -attributes.required_binding_count,
+            -attributes.required_distinctness_group_count,
+            -attributes.bound_reception_target_count,
+            attributes.section_semantic_replay_count,
+            attributes.generic_referent_count,
+            attributes.unnecessary_source_anchor_count,
+            attributes.redundant_atom_count,
+            attributes.depth_deviation,
+            attributes.anaphora_distance,
+            attributes.candidate_id.encode("ascii"),
+        )
+    # Append-only compatibility for historical unit tests that exercise the
+    # old helper directly.  Production results never enter this branch.
     if type(attributes) not in {list, tuple} or len(attributes) < 2:
         return (999, 999)
-    return tuple(int(value) for value in attributes)
+    try:
+        return tuple(int(value) for value in attributes)
+    except (TypeError, ValueError):
+        return (999, 999)
+
+
+def _selector_atom_semantic_key(
+    atom: Any,
+    *,
+    bound_obligation_ids: Sequence[str],
+    reception_target_ids: Sequence[str],
+) -> tuple[Any, ...]:
+    """Rebuild one body/binding semantic key without candidate metadata."""
+
+    return (
+        tuple(atom.claim_kinds),
+        tuple(sorted(bound_obligation_ids)),
+        tuple(sorted(reception_target_ids)),
+        tuple(
+            (
+                phrase.visible_feature_fingerprint_sha256,
+                phrase.anchor_text,
+            )
+            for phrase in getattr(atom, "grounded_phrases", ())
+        ),
+        atom.predicate_role,
+        atom.realization_status,
+        atom.relation_type,
+        atom.relation_direction,
+        tuple(atom.relation_endpoint_roles),
+        atom.unknown_dimension_class,
+        atom.self_denial_not_fact,
+        atom.reception_act,
+        atom.reception_scope,
+    )
+
+
+def _step11_selector_attributes(
+    *,
+    candidate_id: str,
+    inventory_result: SemanticObligationInventoryResult,
+    content_plan: Mapping[str, Any],
+    discourse_plan: Mapping[str, Any],
+    witness: Step11ParsedSurfaceWitness | None,
+    binding: Step11VerifiedSurfaceBinding | None,
+    semantic_overlay: Any,
+) -> Step11SelectorAttributes:
+    """Compute the ten canonical attributes from inverse-owned evidence."""
+
+    required = {
+        value
+        for value in content_plan.get(
+            "required_coverage_obligation_ids", []
+        )
+        if type(value) is str
+    }
+    ledger_rows = inventory_result.ledger.get("obligations", [])
+    obligation_by_id = {
+        row.get("obligation_id"): row
+        for row in ledger_rows
+        if type(row) is dict and type(row.get("obligation_id")) is str
+    }
+    binding_rows = binding.binding_rows if binding is not None else ()
+    bound_required = {
+        row.obligation_id for row in binding_rows if row.obligation_id in required
+    }
+    distinctness_groups = {
+        obligation_by_id[obligation_id].get("distinctness_group")
+        for obligation_id in bound_required
+        if obligation_id in obligation_by_id
+        and type(
+            obligation_by_id[obligation_id].get("distinctness_group")
+        )
+        is str
+    }
+
+    integrated_reception_ids = (
+        set(binding.integrated_reception_binding_ids)
+        if binding is not None
+        else set()
+    )
+    reception_binding_rows = tuple(
+        row
+        for row in getattr(
+            semantic_overlay, "reception_antecedent_bindings", ()
+        )
+        if row.binding_id in integrated_reception_ids
+    )
+    reception_targets = {
+        obligation_id
+        for row in reception_binding_rows
+        for obligation_id in row.source_target_obligation_ids
+        if obligation_id in required
+        and obligation_by_id.get(obligation_id, {}).get("kind")
+        != STANCE_KIND
+    }
+
+    bound_by_atom: dict[str, set[str]] = {}
+    for row in binding_rows:
+        for atom_id in row.atom_ids:
+            bound_by_atom.setdefault(atom_id, set()).add(row.obligation_id)
+    reception_targets_by_atom: dict[str, set[str]] = {}
+    reception_atom_by_obligation = {
+        row.obligation_id: atom_id
+        for row in binding_rows
+        if row.obligation_kind == STANCE_KIND and len(row.atom_ids) == 1
+        for atom_id in row.atom_ids
+    }
+    for row in reception_binding_rows:
+        atom_id = reception_atom_by_obligation.get(
+            row.reception_obligation_id
+        )
+        if atom_id is not None:
+            reception_targets_by_atom.setdefault(atom_id, set()).update(
+                row.source_target_obligation_ids
+            )
+
+    keys_by_section: dict[str, list[tuple[Any, ...]]] = {
+        "observation": [],
+        "reception": [],
+    }
+    if witness is not None:
+        for atom in witness.atoms:
+            if atom.section_role not in keys_by_section:
+                continue
+            keys_by_section[atom.section_role].append(
+                _selector_atom_semantic_key(
+                    atom,
+                    bound_obligation_ids=bound_by_atom.get(
+                        atom.atom_id, ()
+                    ),
+                    reception_target_ids=reception_targets_by_atom.get(
+                        atom.atom_id, ()
+                    ),
+                )
+            )
+    section_replay = len(
+        set(keys_by_section["observation"])
+        & set(keys_by_section["reception"])
+    )
+    redundant = sum(
+        len(rows) - len(set(rows)) for rows in keys_by_section.values()
+    )
+    generic_referents = (
+        sum(
+            atom.section_role == "observation"
+            and not atom.source_fragments
+            and not getattr(atom, "grounded_phrases", ())
+            for atom in witness.atoms
+        )
+        if witness is not None
+        else 999
+    )
+    unnecessary_anchors = sum(
+        bool(getattr(row, "source_anchor_ids", ()))
+        and getattr(row, "match_candidate_count", 0) == 1
+        and getattr(row, "source_anchor_use_reason_code", None) is None
+        for row in (
+            getattr(binding, "grounded_phrase_bindings", ())
+            if binding is not None
+            else ()
+        )
+    )
+    actual_groups = (
+        len(discourse_plan.get("sentence_groups", []))
+        if type(discourse_plan) is dict
+        else 999
+    )
+    target_groups = _TARGET_GROUP_COUNT.get(
+        content_plan.get("depth"), actual_groups
+    )
+
+    anaphora_pairs: set[tuple[str, str]] = set()
+    atom_order = (
+        {
+            atom.atom_id: index
+            for index, atom in enumerate(
+                sorted(witness.atoms, key=lambda row: row.byte_start)
+            )
+        }
+        if witness is not None
+        else {}
+    )
+    owner_atoms_by_obligation = {
+        row.obligation_id: tuple(row.atom_ids) for row in binding_rows
+    }
+    for reception in reception_binding_rows:
+        reception_atom_id = reception_atom_by_obligation.get(
+            reception.reception_obligation_id
+        )
+        if reception_atom_id is None:
+            continue
+        for obligation_id in (
+            *reception.antecedent_obligation_ids,
+            *reception.supporting_obligation_ids,
+        ):
+            for owner_atom_id in owner_atoms_by_obligation.get(
+                obligation_id, ()
+            ):
+                anaphora_pairs.add((reception_atom_id, owner_atom_id))
+    anaphora_distance = sum(
+        max(
+            0,
+            atom_order.get(reception_atom_id, 0)
+            - atom_order.get(owner_atom_id, 0),
+        )
+        for reception_atom_id, owner_atom_id in anaphora_pairs
+    )
+    return Step11SelectorAttributes(
+        required_binding_count=len(bound_required),
+        required_distinctness_group_count=len(distinctness_groups),
+        bound_reception_target_count=len(reception_targets),
+        section_semantic_replay_count=section_replay,
+        generic_referent_count=generic_referents,
+        unnecessary_source_anchor_count=unnecessary_anchors,
+        redundant_atom_count=redundant,
+        depth_deviation=abs(actual_groups - target_groups),
+        anaphora_distance=anaphora_distance,
+        candidate_id=candidate_id,
+    )
 
 
 def _depth_contract_green(
@@ -861,6 +1409,11 @@ def evaluate_step11_natural_surface_candidate(
         except (AttributeError, KeyError, TypeError, UnicodeError, ValueError):
             semantic_overlay = None
     canonical_recomputed = None
+    projected_input = None
+    try:
+        projected_input = project_step11_current_input(current_input)
+    except (KeyError, TypeError, UnicodeError, ValueError):
+        projected_input = None
     if exact_candidate and type(discourse_plan) is dict:
         try:
             canonical_recomputed = render_step11_natural_surface(
@@ -951,7 +1504,11 @@ def evaluate_step11_natural_surface_candidate(
     binding_verified = binding is not None and binding.verified is True
     binding_issues = set(binding.issue_codes) if binding is not None else set()
     exact_fragment_count = (
-        sum(len(row.source_fragments) for row in witness.atoms)
+        sum(
+            len(row.source_fragments)
+            + len(getattr(row, "grounded_phrases", ()))
+            for row in witness.atoms
+        )
         if witness is not None
         else -1
     )
@@ -969,6 +1526,17 @@ def evaluate_step11_natural_surface_candidate(
         and binding.discourse_plan_sha256 == artifact_sha256(discourse_plan)
         and binding.source_fragment_count == exact_fragment_count
         and exact_fragment_count > 0
+        and len(binding.grounded_phrase_bindings)
+        == sum(
+            len(getattr(row, "grounded_phrases", ()))
+            for row in witness.atoms
+        )
+        and all(
+            row.match_candidate_count == 1
+            and len(row.owner_nucleus_ids) == 1
+            and bool(row.owner_obligation_ids)
+            for row in binding.grounded_phrase_bindings
+        )
         and _valid_nonzero_sha256(binding.source_unknown_oracle_sha256)
         and not binding_issues & _EVIDENCE_BINDING_ISSUES
     )
@@ -998,8 +1566,19 @@ def evaluate_step11_natural_surface_candidate(
     checks["polarity_modality_time"] = bool(
         binding_verified
         and binding is not None
+        and witness is not None
+        and semantic_overlay is not None
+        and projected_input is not None
+        and _step11_gate_action_lifecycle_green(
+            witness=witness,
+            binding=binding,
+            inventory_result=inventory_result,
+            semantic_overlay=semantic_overlay,
+            action_text=projected_input.action_text,
+        )
         and not binding_issues
         & {
+            "S11_MATCH_GROUNDED_ACTION_LIFECYCLE_MISMATCH",
             "S11_MATCH_MODALITY_STATUS_MISMATCH",
             "S11_MATCH_PREDICATE_ROLE_MISMATCH",
             "S11_MATCH_RECEPTION_TARGET_SCOPE_STATUS_MISMATCH",
@@ -1019,7 +1598,9 @@ def evaluate_step11_natural_surface_candidate(
     checks["referent_topic"] = bool(
         binding is not None
         and not any(
-            code.startswith("S11_MATCH_UNKNOWN_")
+            code.startswith(
+                ("S11_MATCH_UNKNOWN_", "S11_MATCH_REFERENCE_")
+            )
             for code in binding_issues
         )
     )
@@ -1053,47 +1634,295 @@ def evaluate_step11_natural_surface_candidate(
     )
 
     if witness is not None and type(body) is bytes:
-        try:
-            projection = project_step11_current_input(current_input)
-        except (KeyError, TypeError, UnicodeError, ValueError):
-            projection = None
+        projection = projected_input
         literal_fragments = tuple(
             item for row in witness.atoms for item in row.source_fragments
         )
         unique_fragments = set(literal_fragments)
-        whole_maximum = int(
-            STEP11_SURFACE_CATALOG["fragment_policy"]["whole_text_max_chars"]
+        parsed_grounded_phrases = tuple(
+            phrase
+            for atom in witness.atoms
+            if atom.section_role == "observation"
+            for phrase in getattr(atom, "grounded_phrases", ())
         )
-        long_sources = (
+        parsed_anchor_phrases = tuple(
+            phrase
+            for phrase in parsed_grounded_phrases
+            if phrase.anchor_text is not None
+        )
+        phrase_binding_rows = tuple(
+            binding.grounded_phrase_bindings
+            if binding is not None
+            else ()
+        )
+        ast_specs = tuple(
+            getattr(candidate.surface_ast, "grounded_phrase_specs", ())
+            if type(candidate.surface_ast) is Step11NaturalSurfaceAst
+            else ()
+        )
+        ast_anchor = (
+            getattr(candidate.surface_ast, "visible_source_anchor_use", None)
+            if type(candidate.surface_ast) is Step11NaturalSurfaceAst
+            else None
+        )
+        grounded_contract_green = bool(
+            parsed_grounded_phrases
+            and len(parsed_grounded_phrases)
+            == len(phrase_binding_rows)
+            == len(ast_specs)
+            and all(
+                phrase_binding.match_candidate_count == 1
+                and len(phrase_binding.owner_nucleus_ids) == 1
+                and sum(
+                    spec.phrase_text == phrase.phrase_text
+                    and spec.visible_feature_fields
+                    == phrase.visible_feature_fields
+                    and spec.visible_feature_fingerprint_sha256
+                    == phrase.visible_feature_fingerprint_sha256
+                    and spec.phrase_profile_id
+                    == phrase.phrase_profile_id
+                    == phrase_binding.phrase_profile_id
+                    and spec.anchor_risk_rank
+                    == phrase.anchor_risk_rank
+                    == phrase_binding.anchor_risk_rank
+                    and dict(spec.visible_feature_fields).get(
+                        "action_lifecycle", "not_applicable"
+                    )
+                    == phrase.action_lifecycle
+                    == phrase_binding.action_lifecycle
+                    and tuple(spec.owner_nucleus_ids)
+                    == tuple(phrase_binding.owner_nucleus_ids)
+                    and set(spec.owner_obligation_ids)
+                    == set(phrase_binding.owner_obligation_ids)
+                    for spec in ast_specs
+                )
+                == 1
+                for phrase, phrase_binding in zip(
+                    parsed_grounded_phrases, phrase_binding_rows
+                )
+            )
+        )
+        anchor_binding_rows = tuple(
+            row for row in phrase_binding_rows if row.source_anchor_ids
+        )
+        overlay_anchor_by_id = {
+            str(row.anchor_id): row
+            for row in (
+                semantic_overlay.anchors
+                if semantic_overlay is not None
+                else ()
+            )
+        }
+        gate_lexical_contract = STEP11_SURFACE_CATALOG.get(
+            "grounded_lexicalization", {}
+        )
+        gate_anchor_policy = (
+            gate_lexical_contract.get("anchor_segment_policy", {})
+            if type(gate_lexical_contract) is dict
+            else {}
+        )
+        gate_anchor_policy_green = bool(
+            type(gate_anchor_policy) is dict
+            and gate_anchor_policy.get("unicode_category_c_forbidden") is True
+            and gate_anchor_policy.get("mechanical_prefix_truncation") is False
+            and gate_anchor_policy.get("minimum_scalars") == 2
+            and gate_anchor_policy.get("maximum_scalars") == 16
+            and tuple(
+                gate_anchor_policy.get("accepted_segment_authorities", ())
+            )
+            == _GATE_ANCHOR_SEGMENT_AUTHORITIES
+            and gate_anchor_policy.get("long_run_subrange_authority")
+            == "forbidden"
+            and gate_anchor_policy.get("whitespace_or_control_disposition")
+            == "fail_closed"
+            and gate_anchor_policy.get("unsafe_result") == "fail_closed"
+            and "clause_boundary_tokens" not in gate_anchor_policy
+            and "safe_subrange_terminal_suffixes" not in gate_anchor_policy
+        )
+        gate_binding_families_green = bool(
+            type(gate_lexical_contract) is dict
+            and gate_lexical_contract.get("source_anchor_binding_families")
+            == {
+                "reported_profile": "に表れている",
+                "action_lifecycle": "として示された",
+                "relation_shift": "を起点にした",
+            }
+        )
+        gate_safe_boundary_green = False
+        if ast_anchor is not None and len(anchor_binding_rows) == 1:
+            phrase_binding = anchor_binding_rows[0]
+            source_anchor_id = str(
+                getattr(ast_anchor, "source_fragment_anchor_id", "")
+            )
+            source_anchor = overlay_anchor_by_id.get(source_anchor_id)
+            if source_anchor is not None:
+                anchor_text = str(getattr(ast_anchor, "anchor_text", ""))
+                relative_start = int(getattr(ast_anchor, "source_start", -1)) - int(
+                    source_anchor.start
+                )
+                relative_end = int(getattr(ast_anchor, "source_end", -1)) - int(
+                    source_anchor.start
+                )
+                safe_segments = _step11_gate_safe_anchor_segments(
+                    str(source_anchor.text), 16
+                )
+                gate_safe_boundary_green = bool(
+                    (anchor_text, relative_start, relative_end)
+                    in safe_segments
+                    and phrase_binding.source_anchor_slot
+                    == getattr(ast_anchor, "source_slot", None)
+                    == str(source_anchor.source_slot)
+                    and phrase_binding.source_anchor_start
+                    == getattr(ast_anchor, "source_start", None)
+                    and phrase_binding.source_anchor_end
+                    == getattr(ast_anchor, "source_end", None)
+                    and phrase_binding.source_anchor_text_sha256
+                    == getattr(ast_anchor, "anchor_text_sha256", None)
+                    == hashlib.sha256(anchor_text.encode("utf-8")).hexdigest()
+                )
+        anchor_contract_green = bool(
+            gate_anchor_policy_green
+            and gate_binding_families_green
+            and ast_anchor is not None
+            and len(parsed_anchor_phrases) == 1
+            and len(anchor_binding_rows) == 1
+            and len(anchor_binding_rows[0].source_anchor_ids) == 1
+            and parsed_anchor_phrases[0].anchor_text
+            == getattr(ast_anchor, "anchor_text", None)
+            and _step11_gate_visible_anchor_text_safe(
+                parsed_anchor_phrases[0].anchor_text, 16
+            )
+            and _step11_gate_visible_anchor_text_safe(
+                getattr(ast_anchor, "anchor_text", None), 16
+            )
+            and tuple(anchor_binding_rows[0].owner_nucleus_ids)
+            == (getattr(ast_anchor, "owner_nucleus_id", None),)
+            and getattr(ast_anchor, "owner_obligation_id", None)
+            in anchor_binding_rows[0].owner_obligation_ids
+            and anchor_binding_rows[0].source_anchor_ids
+            == (getattr(ast_anchor, "source_fragment_anchor_id", None),)
+            and parsed_anchor_phrases[0].binding_family
+            == anchor_binding_rows[0].binding_family
+            == getattr(ast_anchor, "binding_family", None)
+            and getattr(ast_anchor, "binding_family", None)
+            in {"reported_profile", "action_lifecycle", "relation_shift"}
+            and body.decode("utf-8").count(
+                "「"
+                + str(getattr(ast_anchor, "anchor_text", ""))
+                + "」"
+                + str(
+                    STEP11_SURFACE_CATALOG["grounded_lexicalization"]
+                    ["source_anchor_binding_families"].get(
+                        getattr(ast_anchor, "binding_family", None), ""
+                    )
+                )
+            )
+            == 1
+            and anchor_binding_rows[0].source_anchor_use_reason_code
+            == "INPUT_SPECIFIC_BINDING_REQUIRED"
+            and getattr(ast_anchor, "reason_code", None)
+            == "INPUT_SPECIFIC_BINDING_REQUIRED"
+            and getattr(ast_anchor, "scalar_count", None)
+            == len(parsed_anchor_phrases[0].anchor_text or "")
+            and 2 <= getattr(ast_anchor, "scalar_count", 0) <= 16
+            and getattr(ast_anchor, "source_end", 0)
+            - getattr(ast_anchor, "source_start", 0)
+            == getattr(ast_anchor, "scalar_count", -1)
+            and _valid_nonzero_sha256(
+                getattr(ast_anchor, "anchor_text_sha256", None)
+            )
+            and gate_safe_boundary_green
+        )
+        raw_sources = (
             {
                 value
                 for value in (
                     projection.thought_text,
                     projection.action_text,
                 )
-                if len(value) > whole_maximum
+                if value
             }
             if projection is not None
             else set()
         )
-        # Equal text is not itself a replay: one exact source endpoint may be
-        # owned by several distinct required relations.  The inverse matcher
-        # resolves source ranges and enforces its owner budget; this gate adds
-        # the independent whole-input/enumeration ceiling without collapsing
-        # those graph edges by their display text.
+        decoded_body = body.decode("utf-8")
+        raw_source_replay_green = bool(
+            projection is not None
+            and all(
+                source not in decoded_body
+                or (
+                    len(source) <= 16
+                    and len(parsed_anchor_phrases) == 1
+                    and parsed_anchor_phrases[0].anchor_text == source
+                    and decoded_body.count(source) == 1
+                )
+                for source in raw_sources
+            )
+        )
+        fused_grammar = STEP11_SURFACE_CATALOG.get(
+            "obligation_fused_grammar", {}
+        )
+        forbidden_fragments = fused_grammar.get(
+            "forbidden_generated_fragments", []
+        )
+        forbidden_patterns = fused_grammar.get(
+            "forbidden_generated_patterns", []
+        )
+        visible_contract_green = bool(
+            type(forbidden_fragments) is list
+            and type(forbidden_patterns) is list
+            and all(type(row) is str for row in forbidden_fragments)
+            and all(type(row) is str for row in forbidden_patterns)
+            and not any(
+                fragment.encode("utf-8") in body
+                for fragment in forbidden_fragments
+            )
+            and not any(
+                re.search(pattern, body.decode("utf-8")) is not None
+                for pattern in forbidden_patterns
+            )
+            and all(
+                row.introduced_reference is None
+                and not row.compound_label_references
+                and not row.relation_endpoint_references
+                and not row.unknown_target_references
+                and not row.reception_antecedent_references
+                for row in witness.atoms
+            )
+            and grounded_contract_green
+            and anchor_contract_green
+        )
         checks["input_enumeration"] = bool(
             projection is not None
             and binding_verified
-            and all(len(item) <= whole_maximum for item in unique_fragments)
-            and not (unique_fragments & long_sources)
+            and visible_contract_green
+            and literal_fragments
+            == tuple(
+                phrase.anchor_text
+                for phrase in parsed_anchor_phrases
+                if phrase.anchor_text is not None
+            )
+            and len(unique_fragments) == 1
+            and all(2 <= len(item) <= 16 for item in unique_fragments)
+            and raw_source_replay_green
             and not any(
                 row.form_id.startswith("relation_chain:")
                 for row in witness.atoms
             )
             and not binding_issues
             & {
+                "S11_MATCH_GROUNDED_PHRASE_ASSIGNMENT_AMBIGUOUS",
+                "S11_MATCH_GROUNDED_PHRASE_COVERAGE_MISMATCH",
+                "S11_MATCH_GROUNDED_PHRASE_UNRESOLVED",
                 "S11_MATCH_LITERAL_OWNER_BUDGET_EXCEEDED",
                 "S11_MATCH_LITERAL_SOURCE_RANGE_INVALID",
+                "S11_MATCH_RAW_INPUT_REPLAY_FORBIDDEN",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_COUNT_INVALID",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_BOUNDARY_INVALID",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_FAMILY_INVALID",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_FAMILY_MISMATCH",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_OWNER_INVALID",
+                "S11_MATCH_VISIBLE_SOURCE_ANCHOR_RANGE_INVALID",
             }
         )
         semantic_signatures = tuple(
@@ -1102,6 +1931,16 @@ def evaluate_step11_natural_surface_candidate(
                 row.form_id,
                 row.claim_kinds,
                 row.source_fragments,
+                tuple(
+                    (
+                        phrase.visible_feature_fingerprint_sha256,
+                        phrase.phrase_profile_id,
+                        phrase.action_lifecycle,
+                        phrase.binding_family,
+                        phrase.anchor_text,
+                    )
+                    for phrase in getattr(row, "grounded_phrases", ())
+                ),
                 row.predicate_role,
                 row.realization_status,
                 row.relation_type,
@@ -1125,10 +1964,13 @@ def evaluate_step11_natural_surface_candidate(
             and witness.observation_atom_count >= 1
             and witness.reception_atom_count >= 1
             and all(
-                not row.form_id.startswith("reception:direct:")
-                and row.form_id.startswith("reception:typed:")
+                row.form_id.startswith("reception:anaphoric:")
                 and row.source_fragments == ()
-                and row.reception_antecedent_references
+                and row.introduced_reference is None
+                and not row.compound_label_references
+                and not row.relation_endpoint_references
+                and not row.unknown_target_references
+                and not row.reception_antecedent_references
                 for row in witness.atoms
                 if row.section_role == "reception"
             )
@@ -1165,8 +2007,10 @@ def evaluate_step11_natural_surface_candidate(
                     "unknown",
                     "self_denial",
                     "bounded_counter",
+                    "obligation_fused:",
                     "mixed_emotion:",
                     "mixed_emotion_compound:",
+                    "mixed_emotion_relation:",
                 )
             )
             for row in witness.atoms
@@ -1197,15 +2041,16 @@ def evaluate_step11_natural_surface_candidate(
     failures = tuple(
         row.failure_code for row in outcomes if row.failure_code is not None
     )
-    density = _surface_density_metrics(body, witness)
-    attributes = (
-        density[0],
-        density[1],
-        density[2],
-        -len(binding.binding_rows) if binding_verified else 0,
-        len(binding.integrated_relation_ids) if binding_verified else 999,
-        witness.observation_atom_count if witness is not None else 999,
-        witness.reception_atom_count if witness is not None else 999,
+    attributes = _step11_selector_attributes(
+        candidate_id=candidate_id,
+        inventory_result=inventory_result,
+        content_plan=content_plan,
+        discourse_plan=(
+            discourse_plan if type(discourse_plan) is dict else {}
+        ),
+        witness=witness,
+        binding=binding,
+        semantic_overlay=semantic_overlay,
     )
     return Step11HardGateResult(
         schema_version=STEP11_HARD_GATE_SCHEMA,
@@ -1285,8 +2130,7 @@ def select_step11_natural_surface_candidates(
             continue
         body_sha256 = hashlib.sha256(candidate.final_utf8_bytes).hexdigest()
         row = (
-            _surface_quality_key(result.selector_attributes)
-            + (result.candidate_id,),
+            _surface_quality_key(result.selector_attributes),
             candidate,
             result,
         )

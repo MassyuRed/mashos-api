@@ -28,13 +28,11 @@ from emlis_ai_step11_surface_catalog_v3 import STEP11_SURFACE_CATALOG
 
 def _compound_body(*, positive: str = "喜び", negative: str = "不安") -> bytes:
     template = STEP11_SURFACE_CATALOG["mixed_emotion_compound_grammar"][
-        "forms"
+        "adjacent_forms"
     ][0]
     observation = template.format(
-        positive_ref="1つ目の感情",
-        positive_literal=f"『{positive}』",
-        negative_ref="2つ目の感情",
-        negative_literal=f"『{negative}』",
+        first_literal=f"『{positive}』",
+        second_literal=f"『{negative}』",
     )
     return (
         "見えたこと：\n"
@@ -65,16 +63,16 @@ def dense_generic_execution():
     return execution
 
 
-def test_rc0025_contract_retains_rc0021_balance_regression() -> None:
+def test_rc0027_contract_retains_rc0021_balance_regression() -> None:
     assert STEP11_HISTORICAL_RC0021_CANDIDATE_VERSION_ID == (
         "nls_v3_rc_0021"
     )
     assert surface.STEP11_CANDIDATE_VERSION_ID == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
     )
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
     assert surface.STEP11_SURFACE_REALIZATION_PLAN_SCHEMA.endswith(
-        ".rc0025.v1"
+        ".rc0027.v1"
     )
     assert STEP11_SURFACE_CATALOG["candidate_version_id"] == (
         STEP11_CURRENT_CANDIDATE_VERSION_ID
@@ -85,12 +83,12 @@ def test_rc0025_contract_retains_rc0021_balance_regression() -> None:
     assert STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_SCHEMA.endswith(
         ".rc0021.v1"
     )
-    assert STEP11_PLANNING_FRONTIER_VERSION == "nls_v3_rc_0025"
-    assert STEP11_PLANNING_FRONTIER_SCHEMA.endswith(".rc0025.v1")
+    assert STEP11_PLANNING_FRONTIER_VERSION == "nls_v3_rc_0027"
+    assert STEP11_PLANNING_FRONTIER_SCHEMA.endswith(".rc0027.v1")
     assert STEP11_HISTORICAL_RC0021_RUNTIME_ADAPTER_VERSION.endswith(
         ".rc0021.v1"
     )
-    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0025.v1")
+    assert STEP11_RUNTIME_ADAPTER_VERSION.endswith(".rc0027.v1")
     assert STEP11_SURFACE_CATALOG["group_grammar"][
         "maximum_observation_clauses_per_sentence"
     ] == 4
@@ -123,9 +121,9 @@ def test_typed_mixed_emotion_compound_is_one_independent_atom() -> None:
 @pytest.mark.parametrize(
     ("mutation", "issue"),
     (
-        ("delete", "S11_MATCH_MIXED_EMOTION_COMPOUND_COVERAGE_MISMATCH"),
+        ("delete", "S11_MATCH_MIXED_EMOTION_REALIZATION_MODE_MISMATCH"),
         ("swap", "S11_MATCH_MIXED_EMOTION_COMPOUND_ORDER_MISMATCH"),
-        ("duplicate", "S11_MATCH_MIXED_EMOTION_COMPOUND_DUPLICATE"),
+        ("duplicate", "S11_MATCH_MIXED_EMOTION_REALIZATION_MODE_MISMATCH"),
     ),
 )
 def test_compound_deletion_swap_and_duplicate_fail_closed(
@@ -152,7 +150,7 @@ def test_compound_deletion_swap_and_duplicate_fail_closed(
     else:
         atoms = (atom, replace(atom, atom_id=atom.atom_id + "x"))
 
-    issues = matcher._independent_mixed_emotion_compound_issues(
+    issues = matcher._independent_mixed_emotion_surface_issues(
         atoms,
         expected_positive_label="喜び",
         expected_negative_label="不安",

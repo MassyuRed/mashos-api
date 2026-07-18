@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Source-bound semantic overlay for the Step 11 rc0025 successor.
+"""Source-bound semantic overlay for the Step 11 rc0027 successor.
 
 The frozen Step 4--6 owners remain the semantic authority.  This module adds a
 closed, re-computable view needed by a natural surface successor when an
@@ -44,9 +44,9 @@ from emlis_ai_step11_planning_frontier_v3 import (
 
 
 STEP11_SEMANTIC_OVERLAY_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_semantic_overlay.v6"
+    "cocolon.emlis.nls_v3.step11_semantic_overlay.v7"
 )
-STEP11_SEMANTIC_OVERLAY_VERSION = "nls_v3_rc_0025"
+STEP11_SEMANTIC_OVERLAY_VERSION = "nls_v3_rc_0027"
 
 _INPUT_KEYS = frozenset(
     {"thought_text", "action_text", "emotions", "categories"}
@@ -153,6 +153,15 @@ _RECEPTION_BINDING_ID_RE = re.compile(r"^s11recv_[0-9a-f]{16}$")
 _EVIDENCE_ID_RE = re.compile(r"^s[1-9][0-9]*$")
 _SURFACE_ANCHOR_ORDINAL_RE = re.compile(r"^[A-Za-z_]*?([0-9]+)$")
 _BASE_NUCLEUS_SPAN_RE = re.compile(r"^nucleus:(s[1-9][0-9]*)$")
+_GENERIC_TRANSITION_SOURCE_REF = (
+    "source_field_transition:memo_to_memo_action"
+)
+_GENERIC_TRANSITION_ALLOWED_SOURCE_REFS = frozenset(
+    {_GENERIC_TRANSITION_SOURCE_REF, "whole_input_source_order"}
+)
+_LEADING_DEPENDENT_RELATION_RESIDUE_RE = re.compile(
+    r"^(?:(?:で|では|に|へ|を|が|は|と|も|から|まで|より))[、，,]\s*"
+)
 _TWO_PREDICATE_CONNECTIVE_RE = re.compile(
     r"^(?P<left>.{4,}?(?P<connector>後になると|けれど|だけど|のに|けど|て|で))、"
     r"(?P<right>.{4,})$"
@@ -1431,6 +1440,64 @@ def _nucleus_realization_status(
     return "undetermined"
 
 
+def _dependent_relation_residue_end(
+    *,
+    nucleus_id: str,
+    span: Any,
+    spans: Sequence[Any],
+    relations: Sequence[Any],
+    active_relation_ids: frozenset[str],
+) -> int:
+    """Return a safe leading trim owned by a contiguous relation marker.
+
+    The result is a relative offset into ``span.raw_text``.  No source bytes
+    are rewritten or stitched: the active relation owns the marker and the
+    nucleus keeps one exact contiguous subrange of its original evidence.
+    """
+
+    if (
+        type(span.start_index) is not int
+        or span.start_index < 0
+        or span.source_field not in {"memo", "memo_action"}
+    ):
+        return 0
+    marker_rows = tuple(
+        row
+        for row in spans
+        if row.source_field == span.source_field
+        and row.detected_type == "relation_marker"
+        and type(row.end_index) is int
+        and row.end_index == span.start_index
+    )
+    if len(marker_rows) > 1:
+        raise Step11SemanticOverlayError(
+            "STEP11_OVERLAY_DEPENDENT_RESIDUE_MARKER_AMBIGUOUS"
+        )
+    if not marker_rows:
+        return 0
+    marker = marker_rows[0]
+    marker_ref = f"evidence_relation_marker:{marker.span_id}"
+    owning_relations = tuple(
+        relation
+        for relation in relations
+        if relation.source_id in active_relation_ids
+        and relation.to_nucleus_id == nucleus_id
+        and marker_ref in relation.source_relation_ids
+    )
+    if len(owning_relations) > 1:
+        raise Step11SemanticOverlayError(
+            "STEP11_OVERLAY_DEPENDENT_RESIDUE_RELATION_AMBIGUOUS"
+        )
+    if not owning_relations:
+        return 0
+    match = _LEADING_DEPENDENT_RELATION_RESIDUE_RE.match(
+        str(span.raw_text)
+    )
+    if match is None or match.end() >= len(str(span.raw_text)):
+        return 0
+    return match.end()
+
+
 def _nucleus_anchor_bindings(
     current_input: Mapping[str, Any],
     projection: Mapping[str, Any],
@@ -1439,6 +1506,7 @@ def _nucleus_anchor_bindings(
     *,
     inventory_result: SemanticObligationInventoryResult,
     active_nucleus_ids: frozenset[str],
+    active_relation_ids: frozenset[str],
 ) -> tuple[
     tuple[Step11NucleusAnchorBinding, ...],
     dict[str, tuple[str, ...]],
@@ -1503,7 +1571,18 @@ def _nucleus_anchor_bindings(
         if base_match is not None:
             span = span_by_id.get(base_match.group(1))
             if span is not None:
-                source_range = (span, 0, len(str(span.raw_text)))
+                relative_start = _dependent_relation_residue_end(
+                    nucleus_id=nucleus_id,
+                    span=span,
+                    spans=spans,
+                    relations=inventory_result.source_snapshot.relations,
+                    active_relation_ids=active_relation_ids,
+                )
+                source_range = (
+                    span,
+                    relative_start,
+                    len(str(span.raw_text)),
+                )
         elif str(nucleus.actual_source_id).startswith("semantic_unit:"):
             source_range = _semantic_unit_source_range(
                 str(nucleus.actual_source_id), spans
@@ -1667,6 +1746,27 @@ def _relation_semantic_signature(relation: Any) -> tuple[str, ...]:
     )
 
 
+def _generic_transition_requires_neutral_copresence(
+    relation: Any,
+    *,
+    source_slots: tuple[str, ...],
+    target_slots: tuple[str, ...],
+) -> bool:
+    """Recognise the frozen field-transition edge without upgrading it."""
+
+    source_refs = frozenset(str(row) for row in relation.source_relation_ids)
+    return (
+        relation.grounding_kind == "bounded_structural_inference"
+        and relation.source_relation_kind == "action_supports_change"
+        and relation.relation_type == "supports_without_guarantee"
+        and relation.relation_direction == "source_to_target"
+        and _GENERIC_TRANSITION_SOURCE_REF in source_refs
+        and source_refs <= _GENERIC_TRANSITION_ALLOWED_SOURCE_REFS
+        and source_slots == ("thought",)
+        and target_slots == ("action",)
+    )
+
+
 def _relation_endpoint_role(nucleus: Any) -> str:
     """Return one closed semantic endpoint role from frozen source fields."""
 
@@ -1674,6 +1774,8 @@ def _relation_endpoint_role(nucleus: Any) -> str:
     kind = str(nucleus.kind)
     predicate_kind = str(nucleus.source_predicate_kind)
     modality = str(nucleus.modality)
+    if slots == ("thought",) and kind == "wish":
+        return "proposition"
     if "action" in slots or kind in {"action", "wish"} or predicate_kind == "action":
         return "action"
     if (
@@ -1809,7 +1911,18 @@ def _overlay_relations(
             not relation.required
             and relation.source_relation_kind == "uncertain_connection"
         )
-        if same_event_restatement:
+        generic_transition_copresence = (
+            _generic_transition_requires_neutral_copresence(
+                relation,
+                source_slots=source_slots,
+                target_slots=target_slots,
+            )
+        )
+        if generic_transition_copresence:
+            surface_relation_type = "coexists_with"
+            surface_relation_direction = "bidirectional"
+            evidence_grade = "cross_field_copresence_only"
+        elif same_event_restatement:
             evidence_grade = "cross_field_same_event_restatement"
         elif optional_uncertain:
             # Optional uncertain connections are useful for spanning the
@@ -1825,7 +1938,11 @@ def _overlay_relations(
                 if source_slots != target_slots
                 else "source_order_copresence_only"
             )
-        if optional_uncertain and not same_event_restatement:
+        if (
+            optional_uncertain
+            and not same_event_restatement
+            and not generic_transition_copresence
+        ):
             surface_relation_direction = "bidirectional"
         result.append(
             Step11OverlayRelation(
@@ -3961,6 +4078,7 @@ def _build_overlay(
             label_anchors,
             inventory_result=inventory_result,
             active_nucleus_ids=display_nucleus_ids,
+            active_relation_ids=display_relation_ids,
         )
     )
     self_evaluations = _reported_self_evaluations(
@@ -4111,7 +4229,7 @@ def build_step11_semantic_overlay(
     content_plan: Mapping[str, Any],
     discourse_plan: Mapping[str, Any],
 ) -> Step11SemanticOverlay:
-    """Build the exact rc0025 overlay from app input and Step 4--6 parents."""
+    """Build the exact rc0027 overlay from app input and Step 4--6 parents."""
 
     result = _build_overlay(
         current_input,

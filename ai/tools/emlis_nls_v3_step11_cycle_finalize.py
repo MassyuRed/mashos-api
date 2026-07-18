@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Recompute and write the body-free rc0025 Cycle 001 evidence graph."""
+"""Recompute and write the body-free rc0027 Cycle 001 evidence graph."""
 
 import argparse
 import ast
@@ -43,6 +43,8 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     build_rc0010_rc0023_correction_rerun_lineage,
     build_rc0010_rc0024_correction_rerun_lineage,
     build_rc0010_rc0025_correction_rerun_lineage,
+    build_rc0010_rc0026_correction_rerun_lineage,
+    build_rc0010_rc0027_correction_rerun_lineage,
     FROZEN_RC0020_PREFLIGHT_BATCH_SUMMARY_SHA256,
     FROZEN_RC0020_PREFLIGHT_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0020_PREFLIGHT_SOURCE_CLOSURE_SHA256,
@@ -62,8 +64,30 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0024_FORMAL_PRIVATE_VERIFICATION_SHA256,
     FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256,
+    FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0025_FORMAL_PRIVATE_VERIFICATION_SHA256,
+    FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0025_DEVELOPMENT42_RECEIPT_SHA256,
+    FROZEN_RC0025_INVALID16_RECEIPT_SHA256,
+    FROZEN_RC0025_KNOWN28_RECEIPT_SHA256,
+    FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES,
+    FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS,
+    FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256,
+    FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256,
+    FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256,
+    FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256,
+    FROZEN_RC0026_INVALID16_RECEIPT_SHA256,
+    FROZEN_RC0026_KNOWN28_RECEIPT_SHA256,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS,
+    FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256,
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     validate_cycle001_acceptance,
+    validate_invalid16_receipt,
+    validate_known28_receipt,
     WORKAROUND_NEGATIVE_POLICY_SHA256,
 )
 from emlis_nls_v3_batch_run import _write_json  # noqa: E402
@@ -121,6 +145,12 @@ _FROZEN_BATCH001_CORPUS_SHA256 = (
     "013dd2ad1c1f446f843f400b3eb16231e8f32649e30114e70039b4cb709e8414"
 )
 AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0027.v1"
+)
+HISTORICAL_RC0026_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
+    "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0026.v1"
+)
+HISTORICAL_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
     "cocolon.emlis.nls_v3.available_input_scope_receipt.step11.rc0025.v1"
 )
 HISTORICAL_RC0024_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA = (
@@ -146,9 +176,15 @@ _FROZEN_LEGACY_FIXTURE_SHA256 = (
 )
 _STEP11_SCOPE_CANDIDATE_VERSION_ID = STEP11_CURRENT_CANDIDATE_VERSION_ID
 _WORKAROUND_SCAN_INPUT_SCOPE_SCHEMA = (
-    "cocolon.emlis.nls_v3.workaround_scan_input_scope.step11.rc0025.v1"
+    "cocolon.emlis.nls_v3.workaround_scan_input_scope.step11.rc0027.v1"
 )
 _RC_CORRECTION_SUPPORT_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_support.step11.rc0027.v1"
+)
+_RC0026_CORRECTION_SUPPORT_SCHEMA = (
+    "cocolon.emlis.nls_v3.rc_correction_support.step11.rc0026.v1"
+)
+_RC0025_CORRECTION_SUPPORT_SCHEMA = (
     "cocolon.emlis.nls_v3.rc_correction_support.step11.rc0025.v1"
 )
 _RC0024_CORRECTION_SUPPORT_SCHEMA = (
@@ -169,6 +205,12 @@ _RC0020_PRODUCT_READ_FAILURE_SCHEMA = (
 _RC0021_PRODUCT_READ_FAILURE_SCHEMA = (
     "cocolon.emlis.nls_v3.product_read_failure.step11.rc0021.v1"
 )
+_RC0025_PRODUCT_READ_FAILURE_SCHEMA = (
+    "cocolon.emlis.nls_v3.product_read_failure.step11.rc0025.v1"
+)
+_RC0026_PRODUCT_READ_FAILURE_SCHEMA = (
+    "cocolon.emlis.nls_v3.product_read_failure.step11.rc0026.v1"
+)
 _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES = frozenset(
     {
         "nls_v3_rc_0011",
@@ -182,6 +224,8 @@ _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES = frozenset(
         "nls_v3_rc_0022",
         "nls_v3_rc_0023",
         "nls_v3_rc_0024",
+        "nls_v3_rc_0025",
+        "nls_v3_rc_0026",
     }
 )
 _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES = frozenset(
@@ -196,6 +240,8 @@ _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES = frozenset(
         "nls_v3_rc_0022",
         "nls_v3_rc_0023",
         "nls_v3_rc_0024",
+        "nls_v3_rc_0025",
+        "nls_v3_rc_0026",
     }
 )
 _RC_CORRECTION_SCOPE_CODES = {
@@ -271,6 +317,17 @@ _RC_CORRECTION_SCOPE_CODES = {
         "source_local_independent_event_grouping",
         "neutral_coexisting_event_surface_role",
         "development42_v1_body_diagnostic_binding",
+    ),
+    "nls_v3_rc_0026": (
+        "primary_meaning_retention",
+        "relation_direction_and_cause_promotion_prevention",
+        "unknown_boundary_preservation",
+        "natural_surface_distribution_repair",
+    ),
+    "nls_v3_rc_0027": (
+        "fused_semantic_surface_composition",
+        "immediate_observation_product_read_repair",
+        "append_only_regression_receipt_lineage",
     ),
 }
 _LEGACY_DISPOSITIONS = frozenset(
@@ -688,9 +745,9 @@ def build_available_input_scope_receipt(
     step1_input_contract: Mapping[str, Any],
     step2_corpus_registry: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Current rc0025 scope alias over the immutable rc0024 alias."""
+    """Current rc0027 scope alias over the immutable rc0026 alias."""
 
-    historical = build_historical_rc0024_available_input_scope_receipt(
+    historical = build_historical_rc0026_available_input_scope_receipt(
         step1_baseline_receipt=step1_baseline_receipt,
         step1_input_contract=step1_input_contract,
         step2_corpus_registry=step2_corpus_registry,
@@ -699,6 +756,50 @@ def build_available_input_scope_receipt(
         **historical,
         "schema_version": AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA,
         "candidate_version_id": _STEP11_SCOPE_CANDIDATE_VERSION_ID,
+    }
+
+
+def build_historical_rc0026_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Historical rc0026 alias over the immutable rc0025 computation."""
+
+    historical = build_historical_rc0025_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+    return {
+        **historical,
+        "schema_version": (
+            HISTORICAL_RC0026_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        ),
+        "candidate_version_id": "nls_v3_rc_0026",
+    }
+
+
+def build_historical_rc0025_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Historical rc0025 alias over the immutable rc0024 computation."""
+
+    historical = build_historical_rc0024_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+    return {
+        **historical,
+        "schema_version": (
+            HISTORICAL_RC0025_AVAILABLE_INPUT_SCOPE_RECEIPT_SCHEMA
+        ),
+        "candidate_version_id": "nls_v3_rc_0025",
     }
 
 
@@ -856,7 +957,37 @@ def _build_rc0025_available_input_scope_receipt(
     step1_input_contract: Mapping[str, Any],
     step2_corpus_registry: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Compatibility name for the current rc0025 append-only scope alias."""
+    """Compatibility name for the frozen rc0025 append-only scope alias."""
+
+    return build_historical_rc0025_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+
+
+def _build_rc0026_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compatibility name for the frozen rc0026 append-only scope alias."""
+
+    return build_historical_rc0026_available_input_scope_receipt(
+        step1_baseline_receipt=step1_baseline_receipt,
+        step1_input_contract=step1_input_contract,
+        step2_corpus_registry=step2_corpus_registry,
+    )
+
+
+def _build_rc0027_available_input_scope_receipt(
+    *,
+    step1_baseline_receipt: Mapping[str, Any],
+    step1_input_contract: Mapping[str, Any],
+    step2_corpus_registry: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compatibility name for the current rc0027 append-only scope alias."""
 
     return build_available_input_scope_receipt(
         step1_baseline_receipt=step1_baseline_receipt,
@@ -1507,6 +1638,8 @@ def _validated_product_read_failure(
     failure_axis_codes: Sequence[str],
     failure_reason_codes: Sequence[str],
     failure_case_ids: Sequence[str] | None = None,
+    maximum_severity: str = "MAJOR",
+    exact_parent_receipt_sha256s: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     row = dict(value) if type(value) is dict else {}
     expected_keys = {
@@ -1521,15 +1654,21 @@ def _validated_product_read_failure(
     }
     if failure_case_ids is not None:
         expected_keys.add("failure_case_ids")
+    expected_parent_receipts = dict(exact_parent_receipt_sha256s or {})
+    expected_keys.update(expected_parent_receipts)
     if (
         set(row) != expected_keys
         or row.get("schema_version") != schema_version
         or row.get("candidate_version_id") != candidate_version_id
         or row.get("batch_summary_sha256") != batch_summary_sha256
         or row.get("review_outcome") != "failed"
-        or row.get("maximum_severity") != "MAJOR"
+        or row.get("maximum_severity") != maximum_severity
         or row.get("failure_axis_codes") != list(failure_axis_codes)
         or row.get("failure_reason_codes") != list(failure_reason_codes)
+        or any(
+            row.get(name) != sha256
+            for name, sha256 in expected_parent_receipts.items()
+        )
         or (
             failure_case_ids is not None
             and row.get("failure_case_ids") != list(failure_case_ids)
@@ -1657,6 +1796,196 @@ def _validate_frozen_rc0024_private_verification(
         )
 
 
+def _validate_frozen_rc0025_private_verification(
+    value: Mapping[str, Any],
+) -> None:
+    """Require the exact body-free verification of the clean rc0025 run."""
+
+    if (
+        type(value) is not dict
+        or artifact_sha256(value)
+        != FROZEN_RC0025_FORMAL_PRIVATE_VERIFICATION_SHA256
+        or value.get("candidate_version_id") != "nls_v3_rc_0025"
+        or value.get("dependency_manifest_sha256")
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("final_batch_summary_sha256")
+        != FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256
+        or value.get("verified_case_count") != 100
+        or value.get("verified_selected_count") != 100
+        or value.get("verified_no_valid_candidate_count") != 0
+        or value.get("verified_exception_count") != 0
+        or value.get("private_packet_validation_status") != "clean"
+        or value.get("body_free") is not True
+        or "hmac_key_hex" in value
+        or "commitment_key" in value
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0025_private_verification_required"
+        )
+
+
+def _validate_frozen_rc0026_private_verification(
+    value: Mapping[str, Any],
+) -> None:
+    """Require rc0026's exact machine-clean body-free verification."""
+
+    if (
+        type(value) is not dict
+        or artifact_sha256(value)
+        != FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256
+        or value.get("schema_version")
+        != "cocolon.emlis.nls_v3.private_verification_receipt.step11.v1"
+        or value.get("candidate_version_id") != "nls_v3_rc_0026"
+        or value.get("dependency_manifest_sha256")
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("final_batch_summary_sha256")
+        != FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+        or value.get("verified_case_count") != 100
+        or value.get("verified_selected_count") != 100
+        or value.get("verified_no_valid_candidate_count") != 0
+        or value.get("verified_exception_count") != 0
+        or value.get("private_packet_validation_status") != "clean"
+        or value.get("body_free") is not True
+        or "hmac_key_hex" in value
+        or "commitment_key" in value
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0026_private_verification_required"
+        )
+
+
+def _validated_frozen_rc0025_regression_bindings(
+    *,
+    known28_receipt: Mapping[str, Any],
+    development42_receipt: Mapping[str, Any],
+    invalid16_receipt: Mapping[str, Any],
+    final_batch_summary: Mapping[str, Any],
+    dependency_manifest: Mapping[str, Any],
+) -> dict[str, str]:
+    """Validate and bind the exact clean rc0025 regression receipts."""
+
+    known_issues = validate_known28_receipt(
+        known28_receipt,
+        final_batch_summary=final_batch_summary,
+        final_dependency_manifest=dependency_manifest,
+    )
+    development_issues = validate_development42_receipt(
+        development42_receipt,
+        final_batch_summary=final_batch_summary,
+        dependency_manifest=dependency_manifest,
+    )
+    invalid_issues = validate_invalid16_receipt(
+        invalid16_receipt,
+        final_batch_summary=final_batch_summary,
+        final_dependency_manifest=dependency_manifest,
+    )
+    bindings = {
+        "known28_receipt_sha256": artifact_sha256(known28_receipt),
+        "development42_receipt_sha256": artifact_sha256(
+            development42_receipt
+        ),
+        "invalid16_receipt_sha256": artifact_sha256(invalid16_receipt),
+    }
+    run_ids = (
+        final_batch_summary.get("run_id"),
+        known28_receipt.get("run_id"),
+        development42_receipt.get("run_id"),
+        invalid16_receipt.get("run_id"),
+    )
+    if (
+        known_issues
+        or development_issues
+        or invalid_issues
+        or bindings
+        != {
+            "known28_receipt_sha256": (
+                FROZEN_RC0025_KNOWN28_RECEIPT_SHA256
+            ),
+            "development42_receipt_sha256": (
+                FROZEN_RC0025_DEVELOPMENT42_RECEIPT_SHA256
+            ),
+            "invalid16_receipt_sha256": (
+                FROZEN_RC0025_INVALID16_RECEIPT_SHA256
+            ),
+        }
+        or any(type(run_id) is not str or not run_id for run_id in run_ids)
+        or len(set(run_ids)) != 4
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0025_regression_receipts_required"
+        )
+    return bindings
+
+
+def _validated_frozen_rc0026_regression_bindings(
+    *,
+    known28_receipt: Mapping[str, Any],
+    development42_receipt: Mapping[str, Any],
+    invalid16_receipt: Mapping[str, Any],
+    final_batch_summary: Mapping[str, Any],
+    dependency_manifest: Mapping[str, Any],
+) -> dict[str, str]:
+    """Bind exact clean rc0026 regressions without overriding Product Read."""
+
+    receipts = (
+        known28_receipt,
+        development42_receipt,
+        invalid16_receipt,
+    )
+    expected_schemas = (
+        "cocolon.emlis.nls_v3.known28_receipt.v3",
+        "cocolon.emlis.nls_v3.development42_receipt.step11.v1",
+        "cocolon.emlis.nls_v3.invalid16_receipt.v2",
+    )
+    bindings = {
+        "known28_receipt_sha256": artifact_sha256(known28_receipt),
+        "development42_receipt_sha256": artifact_sha256(
+            development42_receipt
+        ),
+        "invalid16_receipt_sha256": artifact_sha256(invalid16_receipt),
+    }
+    run_ids = (
+        final_batch_summary.get("run_id"),
+        *(receipt.get("run_id") for receipt in receipts),
+    )
+    if (
+        bindings
+        != {
+            "known28_receipt_sha256": (
+                FROZEN_RC0026_KNOWN28_RECEIPT_SHA256
+            ),
+            "development42_receipt_sha256": (
+                FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256
+            ),
+            "invalid16_receipt_sha256": (
+                FROZEN_RC0026_INVALID16_RECEIPT_SHA256
+            ),
+        }
+        or any(
+            type(receipt) is not dict
+            or receipt.get("schema_version") != expected_schema
+            or receipt.get("candidate_version_id") != "nls_v3_rc_0026"
+            or receipt.get("final_batch_summary_sha256")
+            != FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+            or receipt.get("source_dependency_closure_sha256")
+            != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+            or receipt.get("formal_status") != "clean"
+            or receipt.get("body_free") is not True
+            for receipt, expected_schema in zip(receipts, expected_schemas)
+        )
+        or any(type(run_id) is not str or not run_id for run_id in run_ids)
+        or len(set(run_ids)) != 4
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0026_regression_receipts_required"
+        )
+    return bindings
+
+
 def _build_rc0010_rc0021_lineage(
     *,
     initial_summary: Mapping[str, Any],
@@ -1671,14 +2000,52 @@ def _build_rc0010_rc0021_lineage(
     rc0022_private_verification_receipt: Mapping[str, Any] | None = None,
     rc0023_private_verification_receipt: Mapping[str, Any] | None = None,
     rc0024_private_verification_receipt: Mapping[str, Any] | None = None,
+    rc0025_private_verification_receipt: Mapping[str, Any] | None = None,
+    rc0025_product_read_failure: Mapping[str, Any] | None = None,
+    rc0025_known28_receipt: Mapping[str, Any] | None = None,
+    rc0025_development42_receipt: Mapping[str, Any] | None = None,
+    rc0025_invalid16_receipt: Mapping[str, Any] | None = None,
+    rc0026_private_verification_receipt: Mapping[str, Any] | None = None,
+    rc0026_product_read_failure: Mapping[str, Any] | None = None,
+    rc0026_known28_receipt: Mapping[str, Any] | None = None,
+    rc0026_development42_receipt: Mapping[str, Any] | None = None,
+    rc0026_invalid16_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     """Build an honest append-only history from retained receipts only."""
 
+    rc0027_parents = (
+        rc0026_private_verification_receipt,
+        rc0026_product_read_failure,
+        rc0026_known28_receipt,
+        rc0026_development42_receipt,
+        rc0026_invalid16_receipt,
+    )
+    rc0027_mode = all(value is not None for value in rc0027_parents)
+    if any(value is not None for value in rc0027_parents) and not rc0027_mode:
+        raise ValueError(
+            "step11_lineage_complete_rc0026_formal_parent_set_required"
+        )
+    rc0026_parents = (
+        rc0025_private_verification_receipt,
+        rc0025_product_read_failure,
+        rc0025_known28_receipt,
+        rc0025_development42_receipt,
+        rc0025_invalid16_receipt,
+    )
+    rc0026_mode = all(value is not None for value in rc0026_parents)
+    if any(value is not None for value in rc0026_parents) and not rc0026_mode:
+        raise ValueError(
+            "step11_lineage_complete_rc0025_formal_parent_set_required"
+        )
     rc0025_mode = rc0024_private_verification_receipt is not None
     rc0024_mode = rc0023_private_verification_receipt is not None
     rc0023_mode = rc0022_private_verification_receipt is not None
     rc0022_mode = rc0021_product_read_failure is not None
     rc0021_mode = rc0020_product_read_failure is not None
+    if rc0027_mode and not rc0026_mode:
+        raise ValueError("step11_lineage_rc0025_parent_set_required")
+    if rc0026_mode and not rc0025_mode:
+        raise ValueError("step11_lineage_rc0024_private_parent_required")
     if rc0025_mode and not rc0024_mode:
         raise ValueError("step11_lineage_rc0023_private_parent_required")
     if rc0024_mode and not rc0023_mode:
@@ -1688,7 +2055,11 @@ def _build_rc0010_rc0021_lineage(
     if rc0022_mode and not rc0021_mode:
         raise ValueError("step11_lineage_rc0020_product_read_parent_required")
     current_candidate = (
-        "nls_v3_rc_0025"
+        "nls_v3_rc_0027"
+        if rc0027_mode
+        else "nls_v3_rc_0026"
+        if rc0026_mode
+        else "nls_v3_rc_0025"
         if rc0025_mode
         else "nls_v3_rc_0024"
         if rc0024_mode
@@ -1700,63 +2071,16 @@ def _build_rc0010_rc0021_lineage(
         if rc0021_mode
         else "nls_v3_rc_0020"
     )
-    historical_manifest_candidates = (
-        _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
-        if rc0025_mode
-        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES - {"nls_v3_rc_0024"}
-        if rc0024_mode
-        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
-        - {"nls_v3_rc_0023", "nls_v3_rc_0024"}
-        if rc0023_mode
-        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
-        - {"nls_v3_rc_0022", "nls_v3_rc_0023", "nls_v3_rc_0024"}
-        if rc0022_mode
-        else _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
-        - (
-            {
-                "nls_v3_rc_0021",
-                "nls_v3_rc_0022",
-                "nls_v3_rc_0023",
-                "nls_v3_rc_0024",
-            }
-            if rc0021_mode
-            else {
-                "nls_v3_rc_0020",
-                "nls_v3_rc_0021",
-                "nls_v3_rc_0022",
-                "nls_v3_rc_0023",
-                "nls_v3_rc_0024",
-            }
-        )
+    current_number = int(current_candidate.rsplit("_", 1)[1])
+    historical_manifest_candidates = frozenset(
+        candidate
+        for candidate in _HISTORICAL_LINEAGE_MANIFEST_CANDIDATES
+        if int(candidate.rsplit("_", 1)[1]) < current_number
     )
-    historical_summary_candidates = (
-        _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
-        if rc0025_mode
-        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES - {"nls_v3_rc_0024"}
-        if rc0024_mode
-        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
-        - {"nls_v3_rc_0023", "nls_v3_rc_0024"}
-        if rc0023_mode
-        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
-        - {"nls_v3_rc_0022", "nls_v3_rc_0023", "nls_v3_rc_0024"}
-        if rc0022_mode
-        else _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
-        - (
-            {
-                "nls_v3_rc_0021",
-                "nls_v3_rc_0022",
-                "nls_v3_rc_0023",
-                "nls_v3_rc_0024",
-            }
-            if rc0021_mode
-            else {
-                "nls_v3_rc_0020",
-                "nls_v3_rc_0021",
-                "nls_v3_rc_0022",
-                "nls_v3_rc_0023",
-                "nls_v3_rc_0024",
-            }
-        )
+    historical_summary_candidates = frozenset(
+        candidate
+        for candidate in _HISTORICAL_LINEAGE_SUMMARY_CANDIDATES
+        if int(candidate.rsplit("_", 1)[1]) < current_number
     )
 
     manifest_by_candidate = _lineage_artifacts_by_candidate(
@@ -1912,6 +2236,48 @@ def _build_rc0010_rc0021_lineage(
         _validate_frozen_rc0024_private_verification(
             rc0024_private_verification_receipt
         )
+    rc0025_manifest = manifest_by_candidate.get("nls_v3_rc_0025")
+    rc0025_summary = summary_by_candidate.get("nls_v3_rc_0025")
+    if rc0026_mode and (
+        rc0025_manifest is None
+        or artifact_sha256(rc0025_manifest)
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0025_manifest.get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_manifest.get("before_candidate_version_id")
+        != "nls_v3_rc_0024"
+        or rc0025_manifest.get("before_source_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0025_manifest.get("file_hashes")) is not list
+        or len(rc0025_manifest["file_hashes"]) != 151
+        or rc0025_summary is None
+        or artifact_sha256(rc0025_summary)
+        != FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256
+        or rc0025_summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0025_summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_summary.get("source_closure_start_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_summary.get("source_closure_end_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_summary.get("source_closure_stable") is not True
+        or rc0025_summary.get("machine_status") != "clean"
+        or rc0025_summary.get("all_expected_cases_executed") is not True
+        or rc0025_summary.get("executed_case_count") != 100
+        or rc0025_summary.get("aggregate", {}).get("selected_count") != 100
+        or rc0025_summary.get("aggregate", {}).get(
+            "no_valid_candidate_count"
+        )
+        != 0
+        or rc0025_summary.get("aggregate", {}).get("exception_count") != 0
+        or rc0025_summary.get("aggregate", {}).get("v1_fallback_count") != 0
+    ):
+        raise ValueError("step11_lineage_exact_rc0025_formal_clean_required")
+    if rc0026_mode:
+        _validate_frozen_rc0025_private_verification(
+            rc0025_private_verification_receipt
+        )
     product_read = (
         _validated_product_read_failure(
             rc0020_product_read_failure,
@@ -1947,6 +2313,144 @@ def _build_rc0010_rc0021_lineage(
             failure_case_ids=("nls3s_b001_0035",),
         )
         if rc0022_mode
+        else {}
+    )
+    rc0025_product_read = (
+        _validated_product_read_failure(
+            rc0025_product_read_failure,
+            schema_version=_RC0025_PRODUCT_READ_FAILURE_SCHEMA,
+            candidate_version_id="nls_v3_rc_0025",
+            batch_summary_sha256=(
+                FROZEN_RC0025_FORMAL_BATCH_SUMMARY_SHA256
+            ),
+            failure_axis_codes=FROZEN_RC0025_PRODUCT_READ_FAILURE_AXES,
+            failure_reason_codes=FROZEN_RC0025_PRODUCT_READ_FAILURE_REASONS,
+            maximum_severity="BLOCKER",
+            exact_parent_receipt_sha256s={
+                "private_verification_receipt_sha256": (
+                    FROZEN_RC0025_FORMAL_PRIVATE_VERIFICATION_SHA256
+                ),
+                "known28_receipt_sha256": (
+                    FROZEN_RC0025_KNOWN28_RECEIPT_SHA256
+                ),
+                "development42_receipt_sha256": (
+                    FROZEN_RC0025_DEVELOPMENT42_RECEIPT_SHA256
+                ),
+                "invalid16_receipt_sha256": (
+                    FROZEN_RC0025_INVALID16_RECEIPT_SHA256
+                ),
+            },
+        )
+        if rc0026_mode
+        else {}
+    )
+    if (
+        rc0026_mode
+        and artifact_sha256(rc0025_product_read)
+        != FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256
+    ):
+        raise ValueError(
+            "step11_lineage_exact_rc0025_product_read_failure_required"
+        )
+    rc0025_regression_bindings = (
+        _validated_frozen_rc0025_regression_bindings(
+            known28_receipt=rc0025_known28_receipt,
+            development42_receipt=rc0025_development42_receipt,
+            invalid16_receipt=rc0025_invalid16_receipt,
+            final_batch_summary=rc0025_summary,
+            dependency_manifest=rc0025_manifest,
+        )
+        if rc0026_mode
+        else {}
+    )
+    rc0026_manifest = manifest_by_candidate.get("nls_v3_rc_0026")
+    rc0026_summary = summary_by_candidate.get("nls_v3_rc_0026")
+    if rc0027_mode and (
+        rc0026_manifest is None
+        or artifact_sha256(rc0026_manifest)
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0026_manifest.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_manifest.get("before_candidate_version_id")
+        != "nls_v3_rc_0025"
+        or rc0026_manifest.get("before_source_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0026_manifest.get("file_hashes")) is not list
+        or len(rc0026_manifest["file_hashes"]) != 156
+        or rc0026_summary is None
+        or artifact_sha256(rc0026_summary)
+        != FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+        or rc0026_summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0026_summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_summary.get("source_closure_start_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_summary.get("source_closure_end_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_summary.get("source_closure_stable") is not True
+        or rc0026_summary.get("machine_status") != "clean"
+        or rc0026_summary.get("all_expected_cases_executed") is not True
+        or rc0026_summary.get("executed_case_count") != 100
+        or rc0026_summary.get("aggregate", {}).get("selected_count") != 100
+        or rc0026_summary.get("aggregate", {}).get(
+            "no_valid_candidate_count"
+        )
+        != 0
+        or rc0026_summary.get("aggregate", {}).get("exception_count") != 0
+        or rc0026_summary.get("aggregate", {}).get("v1_fallback_count") != 0
+    ):
+        raise ValueError("step11_lineage_exact_rc0026_formal_clean_required")
+    if rc0027_mode:
+        _validate_frozen_rc0026_private_verification(
+            rc0026_private_verification_receipt
+        )
+    rc0026_product_read = (
+        _validated_product_read_failure(
+            rc0026_product_read_failure,
+            schema_version=_RC0026_PRODUCT_READ_FAILURE_SCHEMA,
+            candidate_version_id="nls_v3_rc_0026",
+            batch_summary_sha256=(
+                FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+            ),
+            failure_axis_codes=FROZEN_RC0026_PRODUCT_READ_FAILURE_AXES,
+            failure_reason_codes=FROZEN_RC0026_PRODUCT_READ_FAILURE_REASONS,
+            maximum_severity="MAJOR",
+            exact_parent_receipt_sha256s={
+                "private_verification_receipt_sha256": (
+                    FROZEN_RC0026_FORMAL_PRIVATE_VERIFICATION_SHA256
+                ),
+                "known28_receipt_sha256": (
+                    FROZEN_RC0026_KNOWN28_RECEIPT_SHA256
+                ),
+                "development42_receipt_sha256": (
+                    FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256
+                ),
+                "invalid16_receipt_sha256": (
+                    FROZEN_RC0026_INVALID16_RECEIPT_SHA256
+                ),
+            },
+        )
+        if rc0027_mode
+        else {}
+    )
+    if (
+        rc0027_mode
+        and artifact_sha256(rc0026_product_read)
+        != FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256
+    ):
+        raise ValueError(
+            "step11_lineage_exact_rc0026_product_read_failure_required"
+        )
+    rc0026_regression_bindings = (
+        _validated_frozen_rc0026_regression_bindings(
+            known28_receipt=rc0026_known28_receipt,
+            development42_receipt=rc0026_development42_receipt,
+            invalid16_receipt=rc0026_invalid16_receipt,
+            final_batch_summary=rc0026_summary,
+            dependency_manifest=rc0026_manifest,
+        )
+        if rc0027_mode
         else {}
     )
     manifest_by_candidate[current_candidate] = dict(dependency_manifest)
@@ -1998,20 +2502,7 @@ def _build_rc0010_rc0021_lineage(
     if type(security_sha) is not str or _SHA_RE.fullmatch(security_sha) is None:
         raise ValueError("step11_lineage_current_security_test_unbound")
 
-    for number in range(
-        11,
-        26
-        if rc0025_mode
-        else 25
-        if rc0024_mode
-        else 24
-        if rc0023_mode
-        else 23
-        if rc0022_mode
-        else 22
-        if rc0021_mode
-        else 21,
-    ):
+    for number in range(11, current_number + 1):
         candidate = f"nls_v3_rc_{number:04d}"
         predecessor = f"nls_v3_rc_{number - 1:04d}"
         manifest = manifest_by_candidate.get(candidate)
@@ -2090,6 +2581,30 @@ def _build_rc0010_rc0021_lineage(
                 artifact_sha256(predecessor_summary)
                 if predecessor_summary is not None
                 else None
+            ),
+            **(
+                {
+                    "predecessor_regression_receipt_sha256s": dict(
+                        rc0025_regression_bindings
+                    ),
+                    "predecessor_product_read_failure_receipt_sha256": (
+                        FROZEN_RC0025_PRODUCT_READ_FAILURE_SHA256
+                    ),
+                }
+                if rc0026_mode and candidate == "nls_v3_rc_0026"
+                else {}
+            ),
+            **(
+                {
+                    "predecessor_regression_receipt_sha256s": dict(
+                        rc0026_regression_bindings
+                    ),
+                    "predecessor_product_read_failure_receipt_sha256": (
+                        FROZEN_RC0026_PRODUCT_READ_FAILURE_SHA256
+                    ),
+                }
+                if rc0027_mode and candidate == "nls_v3_rc_0027"
+                else {}
             ),
             "unreceipted_execution_claimed": False,
             "body_free": True,
@@ -2246,6 +2761,26 @@ def _build_rc0010_rc0021_lineage(
                     ),
                 }
             )
+        if rc0027_mode and candidate == "nls_v3_rc_0026":
+            for regression_suite, receipt_commitment in (
+                ("known28", FROZEN_RC0026_KNOWN28_RECEIPT_SHA256),
+                (
+                    "development42",
+                    FROZEN_RC0026_DEVELOPMENT42_RECEIPT_SHA256,
+                ),
+                ("invalid16", FROZEN_RC0026_INVALID16_RECEIPT_SHA256),
+            ):
+                events.append(
+                    {
+                        "event_type": "regression_receipt_observed",
+                        "candidate_version_id": candidate,
+                        "batch_summary_sha256": (
+                            FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+                        ),
+                        "regression_suite": regression_suite,
+                        "receipt_commitment": receipt_commitment,
+                    }
+                )
         if rc0021_mode and candidate == "nls_v3_rc_0020":
             events.append(
                 {
@@ -2295,6 +2830,56 @@ def _build_rc0010_rc0021_lineage(
                     ),
                 }
             )
+        if rc0026_mode and candidate == "nls_v3_rc_0025":
+            events.append(
+                {
+                    "event_type": "product_read_observed",
+                    "candidate_version_id": candidate,
+                    "batch_summary_sha256": rc0025_product_read[
+                        "batch_summary_sha256"
+                    ],
+                    "review_outcome": rc0025_product_read[
+                        "review_outcome"
+                    ],
+                    "maximum_severity": rc0025_product_read[
+                        "maximum_severity"
+                    ],
+                    "failure_axis_codes": rc0025_product_read[
+                        "failure_axis_codes"
+                    ],
+                    "failure_reason_codes": rc0025_product_read[
+                        "failure_reason_codes"
+                    ],
+                    "review_receipt_commitment": artifact_sha256(
+                        rc0025_product_read
+                    ),
+                }
+            )
+        if rc0027_mode and candidate == "nls_v3_rc_0026":
+            events.append(
+                {
+                    "event_type": "product_read_observed",
+                    "candidate_version_id": candidate,
+                    "batch_summary_sha256": rc0026_product_read[
+                        "batch_summary_sha256"
+                    ],
+                    "review_outcome": rc0026_product_read[
+                        "review_outcome"
+                    ],
+                    "maximum_severity": rc0026_product_read[
+                        "maximum_severity"
+                    ],
+                    "failure_axis_codes": rc0026_product_read[
+                        "failure_axis_codes"
+                    ],
+                    "failure_reason_codes": rc0026_product_read[
+                        "failure_reason_codes"
+                    ],
+                    "review_receipt_commitment": artifact_sha256(
+                        rc0026_product_read
+                    ),
+                }
+            )
         events.append(
             {
                 "event_type": "revision_disposition",
@@ -2309,6 +2894,10 @@ def _build_rc0010_rc0021_lineage(
     correction_support = {
         "schema_version": (
             _RC_CORRECTION_SUPPORT_SCHEMA
+            if rc0027_mode
+            else _RC0026_CORRECTION_SUPPORT_SCHEMA
+            if rc0026_mode
+            else _RC0025_CORRECTION_SUPPORT_SCHEMA
             if rc0025_mode
             else _RC0024_CORRECTION_SUPPORT_SCHEMA
             if rc0024_mode
@@ -2384,11 +2973,45 @@ def _build_rc0010_rc0021_lineage(
             if rc0025_mode
             else {}
         ),
+        **(
+            {
+                "rc0025_private_verification_receipt_sha256": (
+                    artifact_sha256(rc0025_private_verification_receipt)
+                ),
+                "rc0025_product_read_failure_receipt_sha256": (
+                    artifact_sha256(rc0025_product_read)
+                ),
+                "rc0025_regression_receipt_sha256s": dict(
+                    rc0025_regression_bindings
+                ),
+            }
+            if rc0026_mode
+            else {}
+        ),
+        **(
+            {
+                "rc0026_private_verification_receipt_sha256": (
+                    artifact_sha256(rc0026_private_verification_receipt)
+                ),
+                "rc0026_product_read_failure_receipt_sha256": (
+                    artifact_sha256(rc0026_product_read)
+                ),
+                "rc0026_regression_receipt_sha256s": dict(
+                    rc0026_regression_bindings
+                ),
+            }
+            if rc0027_mode
+            else {}
+        ),
         "raw_input_included": False,
         "body_free": True,
     }
     lineage_builder = (
-        build_rc0010_rc0025_correction_rerun_lineage
+        build_rc0010_rc0027_correction_rerun_lineage
+        if rc0027_mode
+        else build_rc0010_rc0026_correction_rerun_lineage
+        if rc0026_mode
+        else build_rc0010_rc0025_correction_rerun_lineage
         if rc0025_mode
         else build_rc0010_rc0024_correction_rerun_lineage
         if rc0024_mode
@@ -2565,7 +3188,7 @@ def _build_rc0010_rc0025_lineage(
     list[dict[str, Any]],
     list[dict[str, Any]],
 ]:
-    """Current rc0025 lineage over the exact clean rc0024 formal run."""
+    """Historical rc0025 lineage over the exact clean rc0024 formal run."""
 
     return _build_rc0010_rc0021_lineage(
         initial_summary=initial_summary,
@@ -2586,6 +3209,130 @@ def _build_rc0010_rc0025_lineage(
         rc0024_private_verification_receipt=(
             rc0024_private_verification_receipt
         ),
+    )
+
+
+def _build_rc0010_rc0026_lineage(
+    *,
+    initial_summary: Mapping[str, Any],
+    initial_review: Mapping[str, Any],
+    final_summary: Mapping[str, Any],
+    dependency_manifest: Mapping[str, Any],
+    historical_dependency_manifests: Sequence[Mapping[str, Any]],
+    historical_batch_run_summaries: Sequence[Mapping[str, Any]],
+    workaround_scan_input_scope: Mapping[str, Any],
+    rc0020_product_read_failure: Mapping[str, Any],
+    rc0021_product_read_failure: Mapping[str, Any],
+    rc0022_private_verification_receipt: Mapping[str, Any],
+    rc0023_private_verification_receipt: Mapping[str, Any],
+    rc0024_private_verification_receipt: Mapping[str, Any],
+    rc0025_private_verification_receipt: Mapping[str, Any],
+    rc0025_product_read_failure: Mapping[str, Any],
+    rc0025_known28_receipt: Mapping[str, Any],
+    rc0025_development42_receipt: Mapping[str, Any],
+    rc0025_invalid16_receipt: Mapping[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Historical rc0026 lineage over clean rc0025 and its BLOCKER review."""
+
+    return _build_rc0010_rc0021_lineage(
+        initial_summary=initial_summary,
+        initial_review=initial_review,
+        final_summary=final_summary,
+        dependency_manifest=dependency_manifest,
+        historical_dependency_manifests=historical_dependency_manifests,
+        historical_batch_run_summaries=historical_batch_run_summaries,
+        workaround_scan_input_scope=workaround_scan_input_scope,
+        rc0020_product_read_failure=rc0020_product_read_failure,
+        rc0021_product_read_failure=rc0021_product_read_failure,
+        rc0022_private_verification_receipt=(
+            rc0022_private_verification_receipt
+        ),
+        rc0023_private_verification_receipt=(
+            rc0023_private_verification_receipt
+        ),
+        rc0024_private_verification_receipt=(
+            rc0024_private_verification_receipt
+        ),
+        rc0025_private_verification_receipt=(
+            rc0025_private_verification_receipt
+        ),
+        rc0025_product_read_failure=rc0025_product_read_failure,
+        rc0025_known28_receipt=rc0025_known28_receipt,
+        rc0025_development42_receipt=rc0025_development42_receipt,
+        rc0025_invalid16_receipt=rc0025_invalid16_receipt,
+    )
+
+
+def _build_rc0010_rc0027_lineage(
+    *,
+    initial_summary: Mapping[str, Any],
+    initial_review: Mapping[str, Any],
+    final_summary: Mapping[str, Any],
+    dependency_manifest: Mapping[str, Any],
+    historical_dependency_manifests: Sequence[Mapping[str, Any]],
+    historical_batch_run_summaries: Sequence[Mapping[str, Any]],
+    workaround_scan_input_scope: Mapping[str, Any],
+    rc0020_product_read_failure: Mapping[str, Any],
+    rc0021_product_read_failure: Mapping[str, Any],
+    rc0022_private_verification_receipt: Mapping[str, Any],
+    rc0023_private_verification_receipt: Mapping[str, Any],
+    rc0024_private_verification_receipt: Mapping[str, Any],
+    rc0025_private_verification_receipt: Mapping[str, Any],
+    rc0025_product_read_failure: Mapping[str, Any],
+    rc0025_known28_receipt: Mapping[str, Any],
+    rc0025_development42_receipt: Mapping[str, Any],
+    rc0025_invalid16_receipt: Mapping[str, Any],
+    rc0026_private_verification_receipt: Mapping[str, Any],
+    rc0026_product_read_failure: Mapping[str, Any],
+    rc0026_known28_receipt: Mapping[str, Any],
+    rc0026_development42_receipt: Mapping[str, Any],
+    rc0026_invalid16_receipt: Mapping[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Current rc0027 lineage over rc0026 machine-clean and Product Read failure parents."""
+
+    return _build_rc0010_rc0021_lineage(
+        initial_summary=initial_summary,
+        initial_review=initial_review,
+        final_summary=final_summary,
+        dependency_manifest=dependency_manifest,
+        historical_dependency_manifests=historical_dependency_manifests,
+        historical_batch_run_summaries=historical_batch_run_summaries,
+        workaround_scan_input_scope=workaround_scan_input_scope,
+        rc0020_product_read_failure=rc0020_product_read_failure,
+        rc0021_product_read_failure=rc0021_product_read_failure,
+        rc0022_private_verification_receipt=(
+            rc0022_private_verification_receipt
+        ),
+        rc0023_private_verification_receipt=(
+            rc0023_private_verification_receipt
+        ),
+        rc0024_private_verification_receipt=(
+            rc0024_private_verification_receipt
+        ),
+        rc0025_private_verification_receipt=(
+            rc0025_private_verification_receipt
+        ),
+        rc0025_product_read_failure=rc0025_product_read_failure,
+        rc0025_known28_receipt=rc0025_known28_receipt,
+        rc0025_development42_receipt=rc0025_development42_receipt,
+        rc0025_invalid16_receipt=rc0025_invalid16_receipt,
+        rc0026_private_verification_receipt=(
+            rc0026_private_verification_receipt
+        ),
+        rc0026_product_read_failure=rc0026_product_read_failure,
+        rc0026_known28_receipt=rc0026_known28_receipt,
+        rc0026_development42_receipt=rc0026_development42_receipt,
+        rc0026_invalid16_receipt=rc0026_invalid16_receipt,
     )
 
 
@@ -2642,6 +3389,17 @@ def build_cycle_artifacts(
     rc0022_private_verification_receipt: Mapping[str, Any],
     rc0023_private_verification_receipt: Mapping[str, Any],
     rc0024_private_verification_receipt: Mapping[str, Any],
+    rc0025_private_verification_receipt: Mapping[str, Any],
+    rc0025_product_read_failure: Mapping[str, Any],
+    rc0025_known28_receipt: Mapping[str, Any],
+    rc0025_development42_receipt: Mapping[str, Any],
+    rc0025_invalid16_receipt: Mapping[str, Any],
+    rc0026_final_summary: Mapping[str, Any],
+    rc0026_private_verification_receipt: Mapping[str, Any],
+    rc0026_product_read_failure: Mapping[str, Any],
+    rc0026_known28_receipt: Mapping[str, Any],
+    rc0026_development42_receipt: Mapping[str, Any],
+    rc0026_invalid16_receipt: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
     rc0022_parents = [
         value
@@ -2703,6 +3461,82 @@ def build_cycle_artifacts(
         raise ValueError(
             "step11_finalize_exact_rc0024_formal_manifest_required"
         )
+    rc0025_parents = [
+        value
+        for value in historical_lineage_dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id") == "nls_v3_rc_0025"
+    ]
+    if (
+        len(rc0025_parents) != 1
+        or artifact_sha256(rc0025_parents[0])
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0025_parents[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0025_parents[0].get("before_candidate_version_id")
+        != "nls_v3_rc_0024"
+        or rc0025_parents[0].get("before_source_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0025_parents[0].get("file_hashes")) is not list
+        or len(rc0025_parents[0]["file_hashes"]) != 151
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0025_formal_manifest_required"
+        )
+    rc0026_parents = [
+        value
+        for value in historical_lineage_dependency_manifests
+        if type(value) is dict
+        and value.get("candidate_version_id") == "nls_v3_rc_0026"
+    ]
+    rc0026_summaries = [
+        value
+        for value in historical_lineage_batch_run_summaries
+        if type(value) is dict
+        and value.get("candidate_version_id") == "nls_v3_rc_0026"
+    ]
+    if (
+        len(rc0026_parents) != 1
+        or artifact_sha256(rc0026_parents[0])
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0026_parents[0].get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_parents[0].get("before_candidate_version_id")
+        != "nls_v3_rc_0025"
+        or rc0026_parents[0].get("before_source_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(rc0026_parents[0].get("file_hashes")) is not list
+        or len(rc0026_parents[0]["file_hashes"]) != 156
+        or len(rc0026_summaries) != 1
+        or rc0026_summaries[0] != rc0026_final_summary
+        or artifact_sha256(rc0026_final_summary)
+        != FROZEN_RC0026_FORMAL_BATCH_SUMMARY_SHA256
+        or rc0026_final_summary.get("dependency_manifest_sha256")
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or rc0026_final_summary.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_final_summary.get("source_closure_start_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_final_summary.get("source_closure_end_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or rc0026_final_summary.get("source_closure_stable") is not True
+        or rc0026_final_summary.get("machine_status") != "clean"
+        or rc0026_final_summary.get("all_expected_cases_executed") is not True
+        or rc0026_final_summary.get("executed_case_count") != 100
+        or rc0026_final_summary.get("aggregate", {}).get("selected_count")
+        != 100
+        or rc0026_final_summary.get("aggregate", {}).get(
+            "no_valid_candidate_count"
+        )
+        != 0
+        or rc0026_final_summary.get("aggregate", {}).get("exception_count")
+        != 0
+        or rc0026_final_summary.get("aggregate", {}).get("v1_fallback_count")
+        != 0
+    ):
+        raise ValueError(
+            "step11_finalize_exact_rc0026_formal_public_parents_required"
+        )
     _validate_frozen_rc0021_private_verification(
         rc0021_private_verification_receipt
     )
@@ -2715,9 +3549,15 @@ def build_cycle_artifacts(
     _validate_frozen_rc0024_private_verification(
         rc0024_private_verification_receipt
     )
+    _validate_frozen_rc0025_private_verification(
+        rc0025_private_verification_receipt
+    )
+    _validate_frozen_rc0026_private_verification(
+        rc0026_private_verification_receipt
+    )
     current_dependency_issues = validate_current_step11_dependency_manifest(
         dependency_manifest,
-        before_manifest=rc0024_parents[0],
+        before_manifest=rc0026_parents[0],
     )
     if current_dependency_issues:
         raise ValueError(
@@ -2731,7 +3571,7 @@ def build_cycle_artifacts(
         development42_receipt=development42_receipt,
         invalid16_receipt=invalid16_receipt,
     )
-    available_input_scope = _build_rc0025_available_input_scope_receipt(
+    available_input_scope = _build_rc0027_available_input_scope_receipt(
         step1_baseline_receipt=load_step1_json(STEP1_RECEIPT_PATH),
         step1_input_contract=load_step1_json(STEP1_INPUT_CONTRACT_PATH),
         step2_corpus_registry=load_step1_json(REGISTRY_PATH),
@@ -2821,7 +3661,7 @@ def build_cycle_artifacts(
         correction_support,
         lineage_dependency_manifests,
         lineage_batch_run_summaries,
-    ) = _build_rc0010_rc0025_lineage(
+    ) = _build_rc0010_rc0027_lineage(
         initial_summary=initial_summary,
         initial_review=initial_review,
         final_summary=final_summary,
@@ -2844,6 +3684,20 @@ def build_cycle_artifacts(
         rc0024_private_verification_receipt=(
             rc0024_private_verification_receipt
         ),
+        rc0025_private_verification_receipt=(
+            rc0025_private_verification_receipt
+        ),
+        rc0025_product_read_failure=rc0025_product_read_failure,
+        rc0025_known28_receipt=rc0025_known28_receipt,
+        rc0025_development42_receipt=rc0025_development42_receipt,
+        rc0025_invalid16_receipt=rc0025_invalid16_receipt,
+        rc0026_private_verification_receipt=(
+            rc0026_private_verification_receipt
+        ),
+        rc0026_product_read_failure=rc0026_product_read_failure,
+        rc0026_known28_receipt=rc0026_known28_receipt,
+        rc0026_development42_receipt=rc0026_development42_receipt,
+        rc0026_invalid16_receipt=rc0026_invalid16_receipt,
     )
     correction_support = {
         **correction_support,
@@ -2869,7 +3723,7 @@ def build_cycle_artifacts(
         lineage_dependency_manifests=lineage_dependency_manifests,
         lineage_batch_run_summaries=lineage_batch_run_summaries,
         final_dependency_manifest=dependency_manifest,
-        cumulative_run_id="nls3cum_0025c00100000001",
+        cumulative_run_id="nls3cum_0027c00100000001",
     )
     ledger = build_cycle_change_ledger(
         lock,
@@ -2959,9 +3813,9 @@ def build_cycle_artifacts(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Finalize body-free rc0025 Cycle 001 evidence from the exact "
-            "clean rc0024/rc0023 formal parents, retained failed rc0022 "
-            "formal parent, and ordered rc0020/rc0021 Product Read receipts."
+            "Finalize body-free rc0027 Cycle 001 evidence from exact "
+            "machine-clean rc0026/rc0025 formal parents, three regression "
+            "receipts, and ordered Product Read failures."
         )
     )
     for name in (
@@ -2984,6 +3838,17 @@ def main(argv: list[str] | None = None) -> int:
         "rc0022-private-verification-receipt",
         "rc0023-private-verification-receipt",
         "rc0024-private-verification-receipt",
+        "rc0025-private-verification-receipt",
+        "rc0025-product-read-failure",
+        "rc0025-known28-receipt",
+        "rc0025-development42-receipt",
+        "rc0025-invalid16-receipt",
+        "rc0026-final-summary",
+        "rc0026-private-verification-receipt",
+        "rc0026-product-read-failure",
+        "rc0026-known28-receipt",
+        "rc0026-development42-receipt",
+        "rc0026-invalid16-receipt",
     ):
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument(
@@ -2995,8 +3860,9 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Repeat for retained historical manifests rc0011/14/15/16/18/19; "
             "include the exact frozen rc0020/rc0021 preflight manifests and "
-            "the exact failed rc0022 plus clean rc0023/rc0024 formal "
-            "manifests; the current rc0025 manifest is appended internally."
+            "the exact failed rc0022 plus machine-clean "
+            "rc0023/rc0024/rc0025/rc0026 "
+            "formal manifests; current rc0027 is appended internally."
         ),
     )
     parser.add_argument(
@@ -3008,8 +3874,9 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Repeat for retained historical summaries rc0014/15/16/18/19; "
             "include the exact frozen rc0020/rc0021 preflight summaries and "
-            "the exact failed rc0022 plus clean rc0023/rc0024 formal "
-            "summaries; rc0010 and current rc0025 are appended internally."
+            "the exact failed rc0022 plus machine-clean "
+            "rc0023/rc0024/rc0025/rc0026 "
+            "formal summaries; rc0010 and current rc0027 are appended."
         ),
     )
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -3057,6 +3924,39 @@ def main(argv: list[str] | None = None) -> int:
         ),
         rc0024_private_verification_receipt=load_canonical_json(
             args.rc0024_private_verification_receipt
+        ),
+        rc0025_private_verification_receipt=load_canonical_json(
+            args.rc0025_private_verification_receipt
+        ),
+        rc0025_product_read_failure=load_canonical_json(
+            args.rc0025_product_read_failure
+        ),
+        rc0025_known28_receipt=load_canonical_json(
+            args.rc0025_known28_receipt
+        ),
+        rc0025_development42_receipt=load_canonical_json(
+            args.rc0025_development42_receipt
+        ),
+        rc0025_invalid16_receipt=load_canonical_json(
+            args.rc0025_invalid16_receipt
+        ),
+        rc0026_final_summary=load_canonical_json(
+            args.rc0026_final_summary
+        ),
+        rc0026_private_verification_receipt=load_canonical_json(
+            args.rc0026_private_verification_receipt
+        ),
+        rc0026_product_read_failure=load_canonical_json(
+            args.rc0026_product_read_failure
+        ),
+        rc0026_known28_receipt=load_canonical_json(
+            args.rc0026_known28_receipt
+        ),
+        rc0026_development42_receipt=load_canonical_json(
+            args.rc0026_development42_receipt
+        ),
+        rc0026_invalid16_receipt=load_canonical_json(
+            args.rc0026_invalid16_receipt
         ),
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Build the exact rc0024-to-rc0025 Cycle 001 source closure."""
+"""Build exact historical manifests and the rc0026-to-rc0027 closure."""
 
 import argparse
 import hashlib
@@ -32,6 +32,10 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     FROZEN_RC0023_FORMAL_SOURCE_CLOSURE_SHA256,
     FROZEN_RC0024_FORMAL_MANIFEST_ARTIFACT_SHA256,
     FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256,
+    FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256,
+    FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256,
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0019_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0020_CANDIDATE_VERSION_ID,
@@ -39,6 +43,8 @@ from emlis_ai_step11_cycle_evidence_v3 import (  # noqa: E402
     STEP11_HISTORICAL_RC0022_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0023_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
     STEP11_SUCCESSOR_CANDIDATE_VERSION_ID,
     build_step11_dependency_manifest,
     validate_step11_dependency_manifest,
@@ -54,6 +60,8 @@ FROZEN_RC0021_PREFLIGHT_FILE_COUNT = 138
 FROZEN_RC0022_FORMAL_FILE_COUNT = 141
 FROZEN_RC0023_FORMAL_FILE_COUNT = 145
 FROZEN_RC0024_FORMAL_FILE_COUNT = 148
+FROZEN_RC0025_FORMAL_FILE_COUNT = 151
+FROZEN_RC0026_FORMAL_FILE_COUNT = 156
 FROZEN_RC0019_PREFLIGHT_MANIFEST_ARTIFACT_SHA256 = (
     "78c8d1fc3271857ce2790bf2e166c51656af51c5f0fd455793ccc524bf68a695"
 )
@@ -89,6 +97,20 @@ RC0025_ADDED_SOURCE_PATHS = (
     "ai/tests/test_emlis_ai_nls_v3_rc0025_v1_surface_regression.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0025_append_only_lineage.py",
     "ai/tests/test_emlis_nls_v3_s11_rc0025_cycle_finalize.py",
+)
+RC0026_ADDED_SOURCE_PATHS = (
+    "ai/tests/test_emlis_nls_v3_s11_rc0026_append_only_lineage.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0026_cycle_finalize.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0026_product_read_surface_red.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0026_semantic_matcher_contract.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0026_semantic_source_contract_red.py",
+)
+RC0027_ADDED_SOURCE_PATHS = (
+    "ai/services/ai_inference/emlis_ai_step11_grounded_lexicalization_v3.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0027_append_only_lineage.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0027_cycle_finalize.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0027_grounded_lexicalization_red.py",
+    "ai/tests/test_emlis_nls_v3_s11_rc0027_product_surface_contract_red.py",
 )
 RC0020_ADDED_SOURCE_PATHS = (
     "ai/tests/test_emlis_nls_v3_s11_rc0020_append_only_lineage.py",
@@ -211,6 +233,52 @@ def _validated_rc0024_formal_manifest(
         or len(value["file_hashes"]) != FROZEN_RC0024_FORMAL_FILE_COUNT
     ):
         raise ValueError("step11_rc0024_formal_manifest_invalid")
+    return dict(value)
+
+
+def _validated_rc0025_formal_manifest(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        type(value) is not dict
+        or validate_step11_dependency_manifest(value)
+        or artifact_sha256(value)
+        != FROZEN_RC0025_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("candidate_version_id")
+        != STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+        or value.get("before_source_closure_sha256")
+        != FROZEN_RC0024_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(value.get("file_hashes")) is not list
+        or len(value["file_hashes"]) != FROZEN_RC0025_FORMAL_FILE_COUNT
+    ):
+        raise ValueError("step11_rc0025_formal_manifest_invalid")
+    return dict(value)
+
+
+def _validated_rc0026_formal_manifest(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        type(value) is not dict
+        or validate_step11_dependency_manifest(value)
+        or artifact_sha256(value)
+        != FROZEN_RC0026_FORMAL_MANIFEST_ARTIFACT_SHA256
+        or value.get("candidate_version_id")
+        != STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+        or value.get("source_dependency_closure_sha256")
+        != FROZEN_RC0026_FORMAL_SOURCE_CLOSURE_SHA256
+        or value.get("before_candidate_version_id")
+        != STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+        or value.get("before_source_closure_sha256")
+        != FROZEN_RC0025_FORMAL_SOURCE_CLOSURE_SHA256
+        or type(value.get("file_hashes")) is not list
+        or len(value["file_hashes"]) != FROZEN_RC0026_FORMAL_FILE_COUNT
+    ):
+        raise ValueError("step11_rc0026_formal_manifest_invalid")
     return dict(value)
 
 
@@ -354,13 +422,43 @@ def build_current_step11_dependency_manifest(
             ),
         )
 
-    predecessor = _validated_rc0024_formal_manifest(before_manifest)
+    if (
+        type(before_manifest) is dict
+        and before_manifest.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID
+    ):
+        predecessor = _validated_rc0024_formal_manifest(before_manifest)
+        return _build_dependency_successor(
+            predecessor,
+            predecessor_file_count=FROZEN_RC0024_FORMAL_FILE_COUNT,
+            added_source_paths=RC0025_ADDED_SOURCE_PATHS,
+            candidate_version_id=(
+                STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+            ),
+        )
+
+    if (
+        type(before_manifest) is dict
+        and before_manifest.get("candidate_version_id")
+        == STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID
+    ):
+        predecessor = _validated_rc0025_formal_manifest(before_manifest)
+        return _build_dependency_successor(
+            predecessor,
+            predecessor_file_count=FROZEN_RC0025_FORMAL_FILE_COUNT,
+            added_source_paths=RC0026_ADDED_SOURCE_PATHS,
+            candidate_version_id=(
+                STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID
+            ),
+        )
+
+    predecessor = _validated_rc0026_formal_manifest(before_manifest)
     if STEP11_CANDIDATE_VERSION_ID != STEP11_CURRENT_CANDIDATE_VERSION_ID:
-        raise ValueError("step11_rc0025_candidate_owner_mismatch")
+        raise ValueError("step11_rc0027_candidate_owner_mismatch")
     return _build_dependency_successor(
         predecessor,
-        predecessor_file_count=FROZEN_RC0024_FORMAL_FILE_COUNT,
-        added_source_paths=RC0025_ADDED_SOURCE_PATHS,
+        predecessor_file_count=FROZEN_RC0026_FORMAL_FILE_COUNT,
+        added_source_paths=RC0027_ADDED_SOURCE_PATHS,
         candidate_version_id=STEP11_CURRENT_CANDIDATE_VERSION_ID,
     )
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""rc0025 planning frontier over the frozen Step 4--9 parents.
+"""rc0027 planning frontier over the frozen Step 4--9 parents.
 
 Step 9 freezes the bytes of the original obligation, content-selection, and
 discourse owners.  Step 11 therefore does not rewrite those parents.  This
@@ -16,6 +16,7 @@ nuclei are never promoted, and no corpus/sample oracle is observable here.
 
 from dataclasses import dataclass
 from itertools import product
+import re
 from typing import Any, Mapping
 
 from emlis_ai_content_selection_v3 import validate_content_selection_policy
@@ -51,11 +52,28 @@ STEP11_HISTORICAL_RC0021_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0021"
 STEP11_HISTORICAL_RC0022_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0022"
 STEP11_HISTORICAL_RC0023_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0023"
 STEP11_HISTORICAL_RC0024_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0024"
+STEP11_HISTORICAL_RC0025_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0025"
 STEP11_PLANNING_FRONTIER_SCHEMA = (
-    "cocolon.emlis.nls_v3.step11_planning_frontier.rc0025.v1"
+    "cocolon.emlis.nls_v3.step11_planning_frontier.rc0027.v1"
 )
-STEP11_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0025"
+STEP11_PLANNING_FRONTIER_VERSION = "nls_v3_rc_0027"
 _ACTIVE_STATUSES = frozenset({"selected", "integrated_into"})
+_SOURCE_BOUNDARY_TEXT_FIELDS = ("memo", "memo_action")
+_SOURCE_BOUNDARY_TEXT_FIELD_ORDER = {
+    field: index for index, field in enumerate(_SOURCE_BOUNDARY_TEXT_FIELDS)
+}
+_SOURCE_BOUNDARY_COMPANION_MAXIMUM = 4
+_SOURCE_BOUNDARY_COMPANION_REASON = (
+    "source_boundary_clause_companion_integration"
+)
+_WHOLE_INPUT_SOURCE_ORDER_REF = "whole_input_source_order"
+_BASE_NUCLEUS_SPAN_RE = re.compile(r"^nucleus:(s[1-9][0-9]*)$")
+_SURFACE_ANCHOR_ORDINAL_RE = re.compile(r"^[A-Za-z_]*?([0-9]+)$")
+_SOURCE_BOUNDARY_TARGET_KIND_PRIORITY = {
+    "grounded_nucleus_notice": 0,
+    "intention_or_next_action": 1,
+    "grounded_relation_preservation": 2,
+}
 
 
 class Step11PlanningFrontierError(ValueError):
@@ -245,6 +263,227 @@ def _trusted_parent_rows(
     return ledger, by_id, base_active, node_by_obligation, group_by_node
 
 
+def _base_text_nucleus_position(value: Any) -> tuple[str, int] | None:
+    """Return one source-field position for an explicit base text nucleus."""
+
+    source_fields = tuple(value.source_fields)
+    if (
+        len(source_fields) != 1
+        or source_fields[0] not in _SOURCE_BOUNDARY_TEXT_FIELD_ORDER
+        or value.grounding_kind != "explicit"
+        or _BASE_NUCLEUS_SPAN_RE.fullmatch(str(value.actual_source_id)) is None
+    ):
+        return None
+    ordinals = tuple(
+        int(match.group(1))
+        for anchor_id in value.surface_anchor_ids
+        for match in [_SURFACE_ANCHOR_ORDINAL_RE.fullmatch(str(anchor_id))]
+        if match is not None
+    )
+    if not ordinals:
+        return None
+    return source_fields[0], min(ordinals)
+
+
+def _single_nucleus_notice_obligations(
+    by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for obligation_id, row in by_id.items():
+        nucleus_ids = tuple(row.get("nucleus_ids", ()))
+        if (
+            row.get("kind") != "grounded_nucleus_notice"
+            or len(nucleus_ids) != 1
+            or row.get("relation_ids")
+            or row.get("unknown_boundary_ids")
+        ):
+            continue
+        nucleus_id = str(nucleus_ids[0])
+        if nucleus_id in result:
+            raise Step11PlanningFrontierError(
+                "STEP11_PLANNING_SINGLE_NUCLEUS_NOTICE_AMBIGUOUS"
+            )
+        result[nucleus_id] = obligation_id
+    return result
+
+
+def _source_boundary_companion_specs(
+    inventory_result: SemanticObligationInventoryResult,
+    *,
+    by_id: Mapping[str, Mapping[str, Any]],
+    decision_by_id: Mapping[str, Mapping[str, Any]],
+    base_active: frozenset[str],
+) -> tuple[tuple[str, str, str, str, int], ...]:
+    """Find narrow source-boundary clauses omitted only by the frozen budget.
+
+    The optional source-order relation establishes adjacency only.  It is not
+    promoted into the Step 11 active relation frontier.
+    """
+
+    snapshot = inventory_result.source_snapshot
+    nucleus_by_id = {row.source_id: row for row in snapshot.nuclei}
+    if len(nucleus_by_id) != len(snapshot.nuclei):
+        raise Step11PlanningFrontierError(
+            "STEP11_PLANNING_SOURCE_NUCLEUS_IDENTITY_INVALID"
+        )
+    base_rows_by_field: dict[str, list[tuple[int, str]]] = {
+        field: [] for field in _SOURCE_BOUNDARY_TEXT_FIELDS
+    }
+    for nucleus_id, nucleus in nucleus_by_id.items():
+        position = _base_text_nucleus_position(nucleus)
+        if position is None:
+            continue
+        field, ordinal = position
+        base_rows_by_field[field].append((ordinal, nucleus_id))
+    for rows in base_rows_by_field.values():
+        rows.sort()
+        if len({ordinal for ordinal, _nucleus_id in rows}) != len(rows):
+            raise Step11PlanningFrontierError(
+                "STEP11_PLANNING_SOURCE_NUCLEUS_ORDER_AMBIGUOUS"
+            )
+
+    boundary_ids: set[str] = set()
+    position_by_nucleus: dict[str, tuple[str, int, int]] = {}
+    for field, rows in base_rows_by_field.items():
+        for index, (ordinal, nucleus_id) in enumerate(rows):
+            position_by_nucleus[nucleus_id] = (field, index, ordinal)
+        if rows:
+            boundary_ids.add(rows[0][1])
+            boundary_ids.add(rows[-1][1])
+
+    notice_by_nucleus = _single_nucleus_notice_obligations(by_id)
+    active_nucleus_ids = frozenset(
+        nucleus_id
+        for obligation_id in base_active
+        for nucleus_id in by_id[obligation_id].get("nucleus_ids", ())
+    )
+    specs: list[tuple[str, str, str, str, int]] = []
+    for nucleus_id in sorted(boundary_ids):
+        nucleus = nucleus_by_id[nucleus_id]
+        obligation_id = notice_by_nucleus.get(nucleus_id)
+        if (
+            nucleus.retention != "should"
+            or nucleus.required is not False
+            or obligation_id is None
+            or decision_by_id.get(obligation_id, {}).get("status")
+            != "deferred_by_budget"
+        ):
+            continue
+        field, index, ordinal = position_by_nucleus[nucleus_id]
+        adjacency_rows: list[tuple[Any, str]] = []
+        for relation in snapshot.relations:
+            if (
+                relation.required is not False
+                or relation.retention != "should"
+                or tuple(relation.source_relation_ids)
+                != (_WHOLE_INPUT_SOURCE_ORDER_REF,)
+                or nucleus_id
+                not in {relation.from_nucleus_id, relation.to_nucleus_id}
+            ):
+                continue
+            adjacent_id = (
+                relation.to_nucleus_id
+                if relation.from_nucleus_id == nucleus_id
+                else relation.from_nucleus_id
+            )
+            adjacent_position = position_by_nucleus.get(adjacent_id)
+            if (
+                adjacent_id not in active_nucleus_ids
+                or adjacent_position is None
+                or adjacent_position[0] != field
+                or abs(adjacent_position[1] - index) != 1
+            ):
+                continue
+            adjacency_rows.append((relation, adjacent_id))
+        if len(adjacency_rows) > 1:
+            raise Step11PlanningFrontierError(
+                "STEP11_PLANNING_BOUNDARY_COMPANION_ADJACENCY_AMBIGUOUS"
+            )
+        if not adjacency_rows:
+            continue
+        _relation, adjacent_id = adjacency_rows[0]
+        specs.append(
+            (obligation_id, nucleus_id, adjacent_id, field, ordinal)
+        )
+
+    specs.sort(
+        key=lambda row: (
+            _SOURCE_BOUNDARY_TEXT_FIELD_ORDER[row[3]],
+            row[4],
+            row[0],
+        )
+    )
+    if len(specs) > _SOURCE_BOUNDARY_COMPANION_MAXIMUM:
+        raise Step11PlanningFrontierError(
+            "STEP11_PLANNING_BOUNDARY_COMPANION_LIMIT_EXCEEDED"
+        )
+    return tuple(specs)
+
+
+def _source_boundary_companion_integrations(
+    inventory_result: SemanticObligationInventoryResult,
+    *,
+    by_id: Mapping[str, Mapping[str, Any]],
+    decision_by_id: Mapping[str, Mapping[str, Any]],
+    base_active: frozenset[str],
+    node_by_obligation: Mapping[str, str],
+    group_by_node: Mapping[str, str],
+) -> tuple[Step11PlanningIntegration, ...]:
+    result: list[Step11PlanningIntegration] = []
+    for (
+        obligation_id,
+        nucleus_id,
+        adjacent_nucleus_id,
+        _field,
+        _ordinal,
+    ) in _source_boundary_companion_specs(
+        inventory_result,
+        by_id=by_id,
+        decision_by_id=decision_by_id,
+        base_active=base_active,
+    ):
+        target_candidates = tuple(
+            sorted(
+                (
+                    candidate_id
+                    for candidate_id in base_active
+                    if by_id[candidate_id].get("kind") != STANCE_KIND
+                    and adjacent_nucleus_id
+                    in by_id[candidate_id].get("nucleus_ids", ())
+                ),
+                key=lambda candidate_id: (
+                    _SOURCE_BOUNDARY_TARGET_KIND_PRIORITY.get(
+                        str(by_id[candidate_id].get("kind")), 99
+                    ),
+                    candidate_id,
+                ),
+            )
+        )
+        if not target_candidates:
+            raise Step11PlanningFrontierError(
+                "STEP11_PLANNING_BOUNDARY_COMPANION_TARGET_UNRESOLVED"
+            )
+        target_obligation_id = target_candidates[0]
+        try:
+            target_group_id = group_by_node[
+                node_by_obligation[target_obligation_id]
+            ]
+        except KeyError as exc:
+            raise Step11PlanningFrontierError(
+                "STEP11_PLANNING_BOUNDARY_COMPANION_GROUP_UNRESOLVED"
+            ) from exc
+        result.append(
+            Step11PlanningIntegration(
+                obligation_id=obligation_id,
+                integrated_into_obligation_id=target_obligation_id,
+                target_sentence_group_id=target_group_id,
+                nucleus_ids=(nucleus_id,),
+                reason_code=_SOURCE_BOUNDARY_COMPANION_REASON,
+            )
+        )
+    return tuple(result)
+
+
 def build_step11_planning_frontier(
     inventory_result: SemanticObligationInventoryResult,
     content_plan: Mapping[str, Any],
@@ -272,6 +511,22 @@ def build_step11_planning_frontier(
         if _trusted_rows is None
         else _trusted_rows
     )
+    decisions = content_plan.get("decisions")
+    if type(decisions) is not list:
+        raise Step11PlanningFrontierError(
+            "STEP11_PLANNING_CONTENT_DECISIONS_INVALID"
+        )
+    decision_by_id = {
+        row.get("obligation_id"): row
+        for row in decisions
+        if type(row) is dict and type(row.get("obligation_id")) is str
+    }
+    if len(decision_by_id) != len(decisions) or set(decision_by_id) != set(
+        by_id
+    ):
+        raise Step11PlanningFrontierError(
+            "STEP11_PLANNING_CONTENT_DECISION_COVERAGE_INVALID"
+        )
 
     authoritative_emotions = tuple(
         row
@@ -335,7 +590,7 @@ def build_step11_planning_frontier(
         if target_obligation_id is not None
         else None
     )
-    integrations = tuple(
+    mixed_emotion_integrations = tuple(
         Step11PlanningIntegration(
             obligation_id=obligation_id,
             integrated_into_obligation_id=str(target_obligation_id),
@@ -344,7 +599,28 @@ def build_step11_planning_frontier(
         )
         for obligation_id in deferred_mixed_ids
     )
-    participating = tuple(sorted((*base_active, *deferred_mixed_ids)))
+    boundary_companion_integrations = (
+        _source_boundary_companion_integrations(
+            inventory_result,
+            by_id=by_id,
+            decision_by_id=decision_by_id,
+            base_active=base_active,
+            node_by_obligation=node_by_obligation,
+            group_by_node=group_by_node,
+        )
+    )
+    integrations = (
+        *mixed_emotion_integrations,
+        *boundary_companion_integrations,
+    )
+    integrated_obligation_ids = tuple(
+        sorted({row.obligation_id for row in integrations})
+    )
+    if len(integrated_obligation_ids) != len(integrations):
+        raise Step11PlanningFrontierError(
+            "STEP11_PLANNING_INTEGRATION_IDENTITY_AMBIGUOUS"
+        )
+    participating = tuple(sorted((*base_active, *integrated_obligation_ids)))
     active_nuclei = tuple(
         sorted(
             {
@@ -383,7 +659,7 @@ def build_step11_planning_frontier(
         source_content_plan_sha256=artifact_sha256(content_plan),
         source_discourse_plan_sha256=artifact_sha256(discourse_plan),
         base_active_obligation_ids=tuple(sorted(base_active)),
-        integrated_obligation_ids=deferred_mixed_ids,
+        integrated_obligation_ids=integrated_obligation_ids,
         participating_obligation_ids=participating,
         active_nucleus_ids=active_nuclei,
         active_relation_ids=active_relations,
@@ -739,6 +1015,7 @@ __all__ = [
     "STEP11_HISTORICAL_RC0022_PLANNING_FRONTIER_VERSION",
     "STEP11_HISTORICAL_RC0023_PLANNING_FRONTIER_VERSION",
     "STEP11_HISTORICAL_RC0024_PLANNING_FRONTIER_VERSION",
+    "STEP11_HISTORICAL_RC0025_PLANNING_FRONTIER_VERSION",
     "STEP11_PLANNING_FRONTIER_SCHEMA",
     "STEP11_PLANNING_FRONTIER_VERSION",
     "Step11PlanningFrontier",

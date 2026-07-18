@@ -19,6 +19,8 @@ from emlis_ai_step11_cycle_evidence_v3 import (
     STEP11_CURRENT_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID,
     STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION,
+    STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID,
+    STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID,
     Step11CycleEvidenceError,
     build_rc0010_rc0025_correction_rerun_lineage,
     build_step11_dependency_manifest,
@@ -149,7 +151,9 @@ def _rc0025_material(
 
 def test_rc0025_versions_and_frozen_rc0024_constants_are_explicit() -> None:
     assert STEP11_HISTORICAL_RC0024_CANDIDATE_VERSION_ID == "nls_v3_rc_0024"
-    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
+    assert STEP11_HISTORICAL_RC0025_CANDIDATE_VERSION_ID == "nls_v3_rc_0025"
+    assert STEP11_CURRENT_CANDIDATE_VERSION_ID == "nls_v3_rc_0027"
+    assert STEP11_HISTORICAL_RC0026_CANDIDATE_VERSION_ID == "nls_v3_rc_0026"
     assert STEP11_HISTORICAL_RC0024_RUNTIME_ADAPTER_VERSION.endswith(
         ".rc0024.v1"
     )
